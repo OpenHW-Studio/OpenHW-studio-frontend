@@ -1,0 +1,102 @@
+export const PIN_DEFS = {
+  'wokwi-arduino-uno': [
+    // Digital pins (right side)
+    { id: 'D13', label: 'D13', x: 125, y: 9 },
+    { id: 'D12', label: 'D12', x: 135, y: 9 },
+    { id: 'D11', label: 'D11', x: 145, y: 9 },
+    { id: 'D10', label: 'D10', x: 155, y: 9 },
+    { id: 'D9',  label: 'D9',  x: 165, y: 9 },
+    { id: 'D8',  label: 'D8',  x: 175, y: 9 },
+    { id: 'D7',  label: 'D7',  x: 190, y: 9 },
+    { id: 'D6',  label: 'D6',  x: 200, y: 9 },
+    { id: 'D5',  label: 'D5',  x: 210, y: 9 },
+    { id: 'D4',  label: 'D4',  x: 220, y: 9 },
+    // Power (top)
+    { id: '5V',  label: '5V',  x: 160,  y: 192 },
+    { id: 'GND', label: 'GND', x: 170,  y: 192 },
+    { id: '3V3', label: '3.3V',x: 150,  y: 192},
+    // Analog (bottom)
+    { id: 'A0',  label: 'A0',  x: 207,  y: 192 },
+    { id: 'A1',  label: 'A1',  x: 217,  y: 192 },
+    { id: 'A2',  label: 'A2',  x: 227,  y: 192 },
+    { id: 'A3',  label: 'A3',  x: 237, y: 192 },
+  ],
+  'wokwi-raspberry-pi-pico': [
+    // Top row (left side)
+    { id: 'GP0',  label: 'GP0',  x: 10, y: 10 },
+    { id: 'GP1',  label: 'GP1',  x: 10, y: 20 },
+    { id: 'GND',  label: 'GND',  x: 10, y: 30 },
+    { id: 'GP2',  label: 'GP2',  x: 10, y: 40 },
+    { id: 'GP3',  label: 'GP3',  x: 10, y: 50 },
+    { id: 'GP4',  label: 'GP4',  x: 10, y: 60 },
+    { id: 'GP5',  label: 'GP5',  x: 10, y: 70 },
+    // Bottom row (right side)
+    { id: '3V3',  label: '3.3V', x: 200, y: 10 },
+    { id: 'VREF', label: 'VREF',x: 200, y: 20 },
+    { id: 'GP28', label: 'GP28', x: 200, y: 30 },
+    { id: 'GND',  label: 'GND',  x: 200, y: 40 },
+    { id: 'GP27', label: 'GP27', x: 200, y: 50 },
+    { id: 'GP26', label: 'GP26', x: 200, y: 60 },
+    { id: 'RUN',  label: 'RUN',  x: 200, y: 70 },
+  ],
+  'wokwi-esp32-devkit-v1': [
+    // Left side
+    { id: 'GND',  label: 'GND',  x: 15, y: 10 },
+    { id: 'IO23', label: 'IO23', x: 15, y: 20 },
+    { id: 'IO22', label: 'IO22', x: 15, y: 30 },
+    { id: 'IO21', label: 'IO21', x: 15, y: 40 },
+    { id: 'IO19', label: 'IO19', x: 15, y: 50 },
+    { id: 'IO18', label: 'IO18', x: 15, y: 60 },
+    { id: 'IO17', label: 'IO17', x: 15, y: 70 },
+    { id: 'IO16', label: 'IO16', x: 15, y: 80 },
+    // Right side
+    { id: '3V3',  label: '3.3V', x: 175, y: 10 },
+    { id: 'IO13', label: 'IO13', x: 175, y: 20 },
+    { id: 'IO12', label: 'IO12', x: 175, y: 30 },
+    { id: 'IO14', label: 'IO14', x: 175, y: 40 },
+    { id: 'IO27', label: 'IO27', x: 175, y: 50 },
+    { id: 'IO26', label: 'IO26', x: 175, y: 60 },
+    { id: 'IO25', label: 'IO25', x: 175, y: 70 },
+    { id: 'IO32', label: 'IO32', x: 175, y: 80 },
+  ],
+  'wokwi-led': [
+    { id: 'A',   label: 'A+',  x: 15, y: 0  },
+    { id: 'K',   label: 'K−',  x: 15, y: 60 },
+  ],
+  'wokwi-resistor': [
+    { id: '1',   label: '1',   x: 0,  y: 15 },
+    { id: '2',   label: '2',   x: 80, y: 15 },
+  ],
+  'wokwi-pushbutton': [
+    { id: '1a',  label: '1a',  x: 0,  y: 10 },
+    { id: '2a',  label: '2a',  x: 40, y: 10 },
+    { id: '1b',  label: '1b',  x: 0,  y: 30 },
+    { id: '2b',  label: '2b',  x: 40, y: 30 },
+  ],
+  'wokwi-buzzer': [
+    { id: '+',   label: '+',   x: 15, y: 0  },
+    { id: '-',   label: '−',   x: 35, y: 0  },
+  ],
+  'wokwi-servo': [
+    { id: 'GND', label: 'GND', x: 10, y: 50 },
+    { id: 'V+',  label: 'V+',  x: 35, y: 50 },
+    { id: 'PWM', label: 'PWM', x: 60, y: 50 },
+  ],
+  'wokwi-neopixel': [
+    { id: 'GND', label: 'GND', x: 0,  y: 15 },
+    { id: 'VCC', label: 'VCC', x: 10, y: 0  },
+    { id: 'DIN', label: 'DIN', x: 20, y: 15 },
+    { id: 'DOUT',label: 'OUT', x: 30, y: 0  },
+  ],
+  'wokwi-lcd1602': [
+    { id: 'VSS', label: 'GND', x: 10,  y: 0  },
+    { id: 'VDD', label: 'VCC', x: 25,  y: 0  },
+    { id: 'RS',  label: 'RS',  x: 60,  y: 0  },
+    { id: 'RW',  label: 'RW',  x: 75,  y: 0  },
+    { id: 'E',   label: 'E',   x: 90,  y: 0  },
+    { id: 'D4',  label: 'D4',  x: 105, y: 0  },
+    { id: 'D5',  label: 'D5',  x: 120, y: 0  },
+    { id: 'D6',  label: 'D6',  x: 135, y: 0  },
+    { id: 'D7',  label: 'D7',  x: 150, y: 0  },
+  ],
+}
