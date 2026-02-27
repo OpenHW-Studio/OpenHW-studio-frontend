@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext.jsx'
+import AppLayout from './components/Layout/AppLayout.jsx'
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx'
 
 // Pages
@@ -14,38 +15,45 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/select-role" element={<RoleSelectPage />} />
-          
-          {/* Guest accessible simulator */}
-          <Route path="/simulator" element={<SimulatorPage />} />
+  <Routes>
 
-          {/* Protected: Student */}
-          <Route
-            path="/student/dashboard"
-            element={
-              <ProtectedRoute allowedRole="student">
-                <StudentDashboard />
-              </ProtectedRoute>
-            }
-          />
+  {/* PUBLIC ROUTES (No Layout) */}
+  <Route path="/" element={<LandingPage />} />
+  <Route path="/login" element={<LoginPage />} />
+  <Route path="/select-role" element={<RoleSelectPage />} />
 
-          {/* Protected: Teacher */}
-          <Route
-            path="/teacher/dashboard"
-            element={
-              <ProtectedRoute allowedRole="teacher">
-                <TeacherDashboard />
-              </ProtectedRoute>
-            }
-          />
+  {/* ROUTES WITH GLOBAL LAYOUT */}
+  <Route element={<AppLayout />}>
 
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+    {/* Guest accessible simulator */}
+    <Route path="/simulator" element={<SimulatorPage />} />
+
+    {/* Protected: Student */}
+    <Route
+      path="/student/dashboard"
+      element={
+        <ProtectedRoute allowedRole="student">
+          <StudentDashboard />
+        </ProtectedRoute>
+      }
+    />
+
+    {/* Protected: Teacher */}
+    <Route
+      path="/teacher/dashboard"
+      element={
+        <ProtectedRoute allowedRole="teacher">
+          <TeacherDashboard />
+        </ProtectedRoute>
+      }
+    />
+
+  </Route>
+
+  {/* Fallback */}
+  <Route path="*" element={<Navigate to="/" replace />} />
+
+</Routes>
       </AuthProvider>
     </BrowserRouter>
   )
