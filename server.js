@@ -49,16 +49,18 @@ wss.on('connection', (ws) => {
     }
 
     // 60fps status broadcast loop
-    let lastLog = '';
+    let lastPinStates = {};
     const _statusInterval = setInterval(() => {
         if (running && cpu) {
             ws.send(JSON.stringify({ type: 'state', pins: pinStates }));
 
-            // Debugging pin D13 output specifically
-            const currentLog = `Pin D13 is: ${pinStates['D13']}`;
-            if (currentLog !== lastLog) {
-                console.log(currentLog);
-                lastLog = currentLog;
+            // Dynamic pin state logging
+            for (const pin in pinStates) {
+                if (pinStates[pin] !== lastPinStates[pin]) {
+                    // Only log if the state changed, to prevent spam
+                    console.log(`Pin ${pin} is: ${pinStates[pin]}`);
+                    lastPinStates[pin] = pinStates[pin];
+                }
             }
         }
     }, 1000 / 60); // ~16ms
