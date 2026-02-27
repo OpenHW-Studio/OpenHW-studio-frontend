@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const { CPU, AVRTimer, avrInstruction, AVRUSART } = require('avr8js');
+const { CPU, AVRTimer, avrInstruction, timer0Config, timer1Config, timer2Config } = require('avr8js');
 const { parse } = require('intel-hex');
 
 const wss = new WebSocket.Server({ port: 8085 });
@@ -13,31 +13,53 @@ wss.on('connection', (ws) => {
     console.log('Client connected');
 
     let cpu = null;
-    let timer = null;
+    let timers = [];
     let running = false;
     let pinStates = {};
 
-    // High-performance loop
+    let lastTime = 0;
+
+    // Real-time synced loop
     function runSimulation() {
         if (!running || !cpu) return;
 
-        // Run for a small batch of instructions to prevent blocking the event loop completely
-        const startObj = cpu.cycles;
-        const targetObj = cpu.cycles + 50000; // run 50k instructions per tick
+        const now = Date.now();
+        if (lastTime === 0) lastTime = now;
 
-        while (cpu.cycles < targetObj && running) {
-            avrInstruction(cpu);
+        const deltaTime = now - lastTime;
+
+        if (deltaTime > 0) {
+            // 16 MHz = 16,000 CPU cycles per real-life millisecond
+            const cyclesToRun = deltaTime * 16000;
+
+            // Limit to at most 100ms of calculations at a time so the server doesn't freeze
+            const targetObj = cpu.cycles + Math.min(cyclesToRun, 1600000);
+
+            while (cpu.cycles < targetObj && running) {
+                avrInstruction(cpu);
+                cpu.tick();
+            }
+            lastTime = now;
         }
 
         if (running) {
-            setImmediate(runSimulation);
+            // Give 1ms gap so WebSocket has time to send data without lagging
+            setTimeout(runSimulation, 1);
         }
     }
 
     // 60fps status broadcast loop
+    let lastLog = '';
     const _statusInterval = setInterval(() => {
         if (running && cpu) {
             ws.send(JSON.stringify({ type: 'state', pins: pinStates }));
+
+            // Debugging pin D13 output specifically
+            const currentLog = `Pin D13 is: ${pinStates['D13']}`;
+            if (currentLog !== lastLog) {
+                console.log(currentLog);
+                lastLog = currentLog;
+            }
         }
     }, 1000 / 60); // ~16ms
 
@@ -59,11 +81,12 @@ wss.on('connection', (ws) => {
                 // Setup CPU
                 cpu = new CPU(program, 0x2200); // 2KB SRAM
 
-                // Set up the timer
-                timer = new AVRTimer(cpu, {
-                    spi: () => { }, compA: () => { }, compB: () => { }, compC: () => { },
-                    ovf: () => { }, input: () => { }
-                });
+                // Set up ALL hardware timers for delay() and millis() to work
+                timers = [
+                    new AVRTimer(cpu, timer0Config),
+                    new AVRTimer(cpu, timer1Config),
+                    new AVRTimer(cpu, timer2Config)
+                ];
 
                 // Listen to PORTB (D8-D13) and PORTD (D0-D7), PORTC (A0-A5)
                 // Let's attach a catch-all listener for simplicty.
@@ -73,7 +96,7 @@ wss.on('connection', (ws) => {
                 // PortD is 0x29 (PIND), 0x2A (DDRD), 0x2B (PORTD)
 
                 // Simplified pin mapping tracker
-                cpu.writeHooks[0x24] = (val) => { /* DDRB updated */ return true; };
+                cpu.writeHooks[0x24] = (val) => { /* DDRB updated */ return false; };
                 cpu.writeHooks[0x25] = (val) => {
                     // PORTB updated
                     pinStates['D8'] = (val & (1 << 0)) ? true : false;
@@ -82,10 +105,10 @@ wss.on('connection', (ws) => {
                     pinStates['D11'] = (val & (1 << 3)) ? true : false;
                     pinStates['D12'] = (val & (1 << 4)) ? true : false;
                     pinStates['D13'] = (val & (1 << 5)) ? true : false;
-                    return true;
+                    return false;
                 };
 
-                cpu.writeHooks[0x2A] = (val) => { /* DDRD updated */ return true; };
+                cpu.writeHooks[0x2A] = (val) => { /* DDRD updated */ return false; };
                 cpu.writeHooks[0x2B] = (val) => {
                     // PORTD updated
                     pinStates['D0'] = (val & (1 << 0)) ? true : false;
@@ -96,10 +119,10 @@ wss.on('connection', (ws) => {
                     pinStates['D5'] = (val & (1 << 5)) ? true : false;
                     pinStates['D6'] = (val & (1 << 6)) ? true : false;
                     pinStates['D7'] = (val & (1 << 7)) ? true : false;
-                    return true;
+                    return false;
                 };
 
-                cpu.writeHooks[0x27] = (val) => { /* DDRC updated */ return true; };
+                cpu.writeHooks[0x27] = (val) => { /* DDRC updated */ return false; };
                 cpu.writeHooks[0x28] = (val) => {
                     // PORTC updated
                     pinStates['A0'] = (val & (1 << 0)) ? true : false;
@@ -108,17 +131,18 @@ wss.on('connection', (ws) => {
                     pinStates['A3'] = (val & (1 << 3)) ? true : false;
                     pinStates['A4'] = (val & (1 << 4)) ? true : false;
                     pinStates['A5'] = (val & (1 << 5)) ? true : false;
-                    return true;
+                    return false;
                 };
 
                 running = true;
-                setImmediate(runSimulation);
+                lastTime = Date.now();
+                setTimeout(runSimulation, 1);
 
             } else if (data.type === 'STOP') {
                 console.log('Stopping simulation for client');
                 running = false;
                 cpu = null;
-                timer = null;
+                timers = [];
                 pinStates = {};
             }
         } catch (err) {
