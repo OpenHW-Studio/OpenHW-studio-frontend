@@ -4,7 +4,7 @@
 
 ---
 
-## 🚀 Key Integrations
+##  Key Integrations
 
 *   **WebSocket Architecture**
     *   Operates an independent high-speed `ws` server on port `8085`.
@@ -24,4 +24,13 @@
     *   Includes a comprehensive `.gitignore` preventing generated `out.txt` arrays and module dependencies from polluting version control.
 
 ---
+
+##  Recent Bug Fixes: The `delay()` & Continuous Glow Issue
+
+We recently resolved a major physics bug where the simulated LED would continuously glow instead of blinking, and `delay()` commands were ignored. The following fixes were applied to `server.js`:
+
+1.  **Fixed CPU Execution Speed:** The `runSimulation` loop was previously using `setImmediate` to run as fast as Node.js allowed, completing a 1000ms delay in less than a millisecond. We implemented a real-time synced `deltaTime` calculation to strictly limit execution to **16,000 cycles per real-time millisecond** (simulating a 16MHz clock).
+2.  **Fixed Write Hooks Blocking:** The memory interceptors (`cpu.writeHooks`) for the IO pins were previously ending with `return true;`, which in `avr8js` means "cancel this memory write". This broke internal state tracking. They now correctly `return false;`.
+3.  **Enabled Hardware Timers:** The Arduino `delay()` and `millis()` functions rely on internal hardware timers ticking. We explicitly imported `timer0Config`, `timer1Config`, and `timer2Config` and instantiated them with `new AVRTimer()` inside the CPU context. We also added `cpu.tick()` to the execution loop to physically advance these timers alongside the CPU instructions.
+
 *Generated for the Universal Emulator Integration.*
