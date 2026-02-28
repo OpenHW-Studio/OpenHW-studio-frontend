@@ -1,8 +1,12 @@
-const WebSocket = require('ws');
-const { CPU, AVRTimer, avrInstruction, timer0Config, timer1Config, timer2Config } = require('avr8js');
-const { parse } = require('intel-hex');
+import { WebSocketServer } from 'ws';
+import { CPU, AVRTimer, avrInstruction, timer0Config, timer1Config, timer2Config } from 'avr8js';
+import intelHex from 'intel-hex';
+const { parse } = intelHex;
+import connectDB from './connectDB.js';
 
-const wss = new WebSocket.Server({ port: 8085 });
+connectDB();
+
+const wss = new WebSocketServer({ port: 8085 });
 
 console.log('Universal Emulator WebSocket Server running on port 8085');
 
