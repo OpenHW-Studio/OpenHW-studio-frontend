@@ -160,7 +160,7 @@ wss.on('connection', (ws) => {
         console.log('Client disconnected');
         running = false;
         cpu = null;
-        timer = null;
+        timers = [];
         clearInterval(_statusInterval);
     });
 });
