@@ -17,6 +17,12 @@
     *   Directly intercepts core I/O memory writes to track physical Arduino pins.
     *   Maps `PORTB (0x25)` to `D8-D13`, `PORTC (0x28)` to `A0-A5`, and `PORTD (0x2B)` to `D0-D7`.
     *   Accurately evaluates binary state shifts (e.g., matching PORTB Bit 5 to Pin D13).
+*   **WS2812 NeoPixel Protocol Decoder**
+    *   Accepts NeoPixel wiring topology (component ID, Arduino pin, matrix dimensions) from the frontend at simulation start.
+    *   Maps Arduino pin names (e.g., `D6`) to AVR port addresses and bit masks via `getPinPortMapping()`.
+    *   Intercepts port write hooks and decodes WS2812 bit-bang timing: `HIGH > 10 cycles = bit 1`, `LOW > 800 cycles = reset/flush`.
+    *   Accumulates 24-bit GRB color bytes per pixel, converts to RGB floats, and stores in `neopixelState`.
+    *   Broadcasts decoded pixel data (`neopixels` field) alongside pin states at 60 FPS.
 *   **Real-time Output Streaming**
     *   Executes a continuous, non-blocking `setImmediate` instruction loop.
     *   Broadcasts serialized JSON state payloads (e.g., `{"type": "state", "pins": {"D13": true}}`) at ~60 FPS.
@@ -34,3 +40,4 @@ We recently resolved a major physics bug where the simulated LED would continuou
 3.  **Enabled Hardware Timers:** The Arduino `delay()` and `millis()` functions rely on internal hardware timers ticking. We explicitly imported `timer0Config`, `timer1Config`, and `timer2Config` and instantiated them with `new AVRTimer()` inside the CPU context. We also added `cpu.tick()` to the execution loop to physically advance these timers alongside the CPU instructions.
 
 *Generated for the Universal Emulator Integration.*
+
