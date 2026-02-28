@@ -68,6 +68,12 @@ const PIN_DEFS = {
     { id: 'D6', label: 'D6', x: 135, y: 0 },
     { id: 'D7', label: 'D7', x: 150, y: 0 },
   ],
+  'wokwi-neopixel-matrix': [
+    { id: 'GND', label: 'GND', x: 55, y: 170 },
+    { id: 'VCC', label: 'VCC', x: 70, y: 170 },
+    { id: 'DIN', label: 'DIN', x: 85, y: 170 },
+    { id: 'DOUT', label: 'DOUT', x: 100, y: 170 },
+  ],
 }
 
 // ─── VALIDATION RULES ─────────────────────────────────────────────────────────
@@ -96,6 +102,21 @@ function validateCircuit(components, wires) {
     const connected = wires.some(w => w.from.startsWith(b.id) || w.to.startsWith(b.id))
     if (!connected) {
       errors.push({ type: 'warning', message: `Buzzer "${b.id}" is not connected to anything.`, compIds: [b.id] })
+    }
+  })
+
+  // Check NeoPixel Matrix has DIN connected
+  const matrices = components.filter(c => c.type === 'wokwi-neopixel-matrix')
+  matrices.forEach(m => {
+    const dinPin = `${m.id}:DIN`
+    const dinConnected = wires.some(w => w.from === dinPin || w.to === dinPin)
+    if (!dinConnected) {
+      errors.push({ type: 'warning', message: `NeoPixel Matrix "${m.id}" has no data (DIN) connection.`, compIds: [m.id] })
+    }
+    const gndPin = `${m.id}:GND`
+    const gndConnected = wires.some(w => w.from === gndPin || w.to === gndPin)
+    if (!gndConnected) {
+      errors.push({ type: 'warning', message: `NeoPixel Matrix "${m.id}" has no GND connection.`, compIds: [m.id] })
     }
   })
 
@@ -144,6 +165,12 @@ const CATALOG = [
     ]
   },
   {
+    group: 'NeoPixel Matrix', items: [
+      { type: 'wokwi-neopixel-matrix', label: 'NeoPixel 8×8', icon: '🟩', w: 160, h: 180, attrs: { rows: '8', cols: '8' } },
+      { type: 'wokwi-neopixel-matrix', label: 'NeoPixel 16×16', icon: '🟩', w: 300, h: 320, attrs: { rows: '16', cols: '16' } },
+    ]
+  },
+  {
     group: 'Display', items: [
       { type: 'wokwi-lcd1602', label: 'LCD 1602', icon: '📺', w: 160, h: 60 },
     ]
@@ -187,7 +214,9 @@ export default function SimulatorPage() {
   const [showValidation, setShowValidation] = useState(true)
   const [isRunning, setIsRunning] = useState(false)
   const [pinStates, setPinStates] = useState({})
+  const [neopixelData, setNeopixelData] = useState({})
   const wsRef = useRef(null)
+  const neopixelRefs = useRef({})
 
   const canvasRef = useRef(null)
   const svgRef = useRef(null)
@@ -208,6 +237,20 @@ export default function SimulatorPage() {
   useEffect(() => {
     setValidationErrors(validateCircuit(components, wires))
   }, [components, wires])
+
+  // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
+  useEffect(() => {
+    if (!neopixelData || Object.keys(neopixelData).length === 0) return;
+    for (const [compId, pixels] of Object.entries(neopixelData)) {
+      const wrapper = neopixelRefs.current[compId];
+      if (!wrapper) continue;
+      const el = wrapper.querySelector('wokwi-neopixel-matrix');
+      if (!el || typeof el.setPixel !== 'function') continue;
+      for (const [row, col, rgb] of pixels) {
+        el.setPixel(row, col, rgb);
+      }
+    }
+  }, [neopixelData])
 
   // ── Error component IDs for highlighting ────────────────────────────────────
   const errorCompIds = useMemo(() =>
@@ -350,13 +393,32 @@ export default function SimulatorPage() {
 
       ws.onopen = () => {
         logSerial('Emulator connected. Sending hex...');
-        ws.send(JSON.stringify({ type: 'START', hex: result.hex }));
+        // Build neopixel wiring info from circuit
+        const neopixelWiring = components
+          .filter(c => c.type === 'wokwi-neopixel-matrix')
+          .map(c => {
+            const dinPin = `${c.id}:DIN`;
+            const wire = wires.find(w => w.from === dinPin || w.to === dinPin);
+            let arduinoPin = null;
+            if (wire) {
+              const otherEnd = wire.from === dinPin ? wire.to : wire.from;
+              if (otherEnd.startsWith('wokwi-arduino-uno')) {
+                arduinoPin = otherEnd.split(':')[1];
+              }
+            }
+            return { compId: c.id, pin: arduinoPin, rows: parseInt(c.attrs.rows || '8'), cols: parseInt(c.attrs.cols || '8') };
+          })
+          .filter(n => n.pin);
+        ws.send(JSON.stringify({ type: 'START', hex: result.hex, neopixels: neopixelWiring }));
       };
 
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         if (msg.type === 'state' && msg.pins) {
           setPinStates(msg.pins);
+        }
+        if (msg.type === 'state' && msg.neopixels) {
+          setNeopixelData(msg.neopixels);
         }
       };
 
@@ -385,6 +447,7 @@ export default function SimulatorPage() {
     }
     setIsRunning(false);
     setPinStates({});
+    setNeopixelData({});
   };
 
   const getComponentStateAttrs = (comp) => {
@@ -620,6 +683,11 @@ export default function SimulatorPage() {
                 {/* Wokwi element */}
                 <div
                   style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
+                  ref={el => {
+                    if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                      neopixelRefs.current[comp.id] = el;
+                    }
+                  }}
                   dangerouslySetInnerHTML={{
                     __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
                   }}
