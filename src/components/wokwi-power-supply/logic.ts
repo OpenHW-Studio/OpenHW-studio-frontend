@@ -8,7 +8,9 @@ export class PowerSupplyLogic extends BaseComponent {
 
     update(time: number, wires: any[], instances: BaseComponent[]) {
         super.update(time, wires, instances);
-        this.setPinVoltage('5V', 5.0);
+        const voltageStr = this.state.voltage ?? '5.0';
+        const voltage = parseFloat(voltageStr) || 0;
+        this.setPinVoltage('5V', voltage);
         this.setPinVoltage('GND', 0.0);
     }
 }
