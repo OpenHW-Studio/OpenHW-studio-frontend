@@ -1,0 +1,34 @@
+{
+    "type": "wokwi-neopixel-matrix",
+    "label": "WS2812B RGB LED",
+    "group": "Outputs",
+    "w": 30,
+    "h": 30,
+    "attrs": {
+        "rows": "1",
+        "cols": "1"
+    },
+    "pins": [
+        {
+            "id": "DIN",
+            "x": 0,
+            "y": 15,
+            "type": "digital",
+            "description": "Data In"
+        },
+        {
+            "id": "VCC",
+            "x": 15,
+            "y": 0,
+            "type": "power",
+            "description": "5V Power"
+        },
+        {
+            "id": "GND",
+            "x": 15,
+            "y": 30,
+            "type": "power",
+            "description": "Ground"
+        }
+    ]
+}

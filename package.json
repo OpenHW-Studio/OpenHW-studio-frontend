@@ -1,0 +1,26 @@
+{
+  "name": "@openhw/emulator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenHW-Studio/openhw-studio-emulator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/OpenHW-Studio/openhw-studio-emulator/issues"
+  },
+  "homepage": "https://github.com/OpenHW-Studio/openhw-studio-emulator#readme",
+  "dependencies": {
+    "avr8js": "^0.21.0",
+    "intel-hex": "^0.2.0",
+    "ws": "^8.19.0"
+  }
+}

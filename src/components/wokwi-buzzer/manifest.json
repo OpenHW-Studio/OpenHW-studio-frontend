@@ -1,0 +1,24 @@
+{
+    "type": "wokwi-buzzer",
+    "label": "Buzzer",
+    "group": "Outputs",
+    "w": 30,
+    "h": 30,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "1",
+            "x": 10,
+            "y": 30,
+            "type": "digital",
+            "description": "Positive"
+        },
+        {
+            "id": "2",
+            "x": 20,
+            "y": 30,
+            "type": "power",
+            "description": "Negative"
+        }
+    ]
+}

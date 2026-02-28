@@ -1,0 +1,101 @@
+{
+    "type": "wokwi-motor-driver",
+    "label": "L298N Motor Driver",
+    "group": "Actuators",
+    "w": 80,
+    "h": 80,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "ENA",
+            "x": 0,
+            "y": 10,
+            "type": "digital",
+            "description": "Enable A"
+        },
+        {
+            "id": "IN1",
+            "x": 0,
+            "y": 30,
+            "type": "digital",
+            "description": "Input 1"
+        },
+        {
+            "id": "IN2",
+            "x": 0,
+            "y": 50,
+            "type": "digital",
+            "description": "Input 2"
+        },
+        {
+            "id": "IN3",
+            "x": 0,
+            "y": 70,
+            "type": "digital",
+            "description": "Input 3"
+        },
+        {
+            "id": "IN4",
+            "x": 80,
+            "y": 10,
+            "type": "digital",
+            "description": "Input 4"
+        },
+        {
+            "id": "ENB",
+            "x": 80,
+            "y": 30,
+            "type": "digital",
+            "description": "Enable B"
+        },
+        {
+            "id": "OUT1",
+            "x": 20,
+            "y": 80,
+            "type": "power",
+            "description": "Output 1"
+        },
+        {
+            "id": "OUT2",
+            "x": 40,
+            "y": 80,
+            "type": "power",
+            "description": "Output 2"
+        },
+        {
+            "id": "OUT3",
+            "x": 60,
+            "y": 80,
+            "type": "power",
+            "description": "Output 3"
+        },
+        {
+            "id": "OUT4",
+            "x": 80,
+            "y": 80,
+            "type": "power",
+            "description": "Output 4"
+        },
+        {
+            "id": "12V",
+            "x": 20,
+            "y": 0,
+            "type": "power",
+            "description": "12V In"
+        },
+        {
+            "id": "GND",
+            "x": 40,
+            "y": 0,
+            "type": "power",
+            "description": "Ground"
+        },
+        {
+            "id": "5V",
+            "x": 60,
+            "y": 0,
+            "type": "power",
+            "description": "5V Out"
+        }
+    ]
+}

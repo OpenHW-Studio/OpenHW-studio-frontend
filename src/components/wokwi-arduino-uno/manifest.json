@@ -1,0 +1,205 @@
+{
+    "type": "wokwi-arduino-uno",
+    "label": "Arduino Uno",
+    "group": "Boards",
+    "w": 311,
+    "h": 228,
+    "pins": [
+        {
+            "id": "gnd_3",
+            "description": "GND",
+            "x": 115.6,
+            "y": 9.3,
+            "type": "power"
+        },
+        {
+            "id": "13",
+            "description": "D13",
+            "x": 125.3,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "12",
+            "description": "D12",
+            "x": 135.0,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "11",
+            "description": "D11",
+            "x": 144.6,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "10",
+            "description": "D10",
+            "x": 154.3,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "9",
+            "description": "D9",
+            "x": 163.9,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "8",
+            "description": "D8",
+            "x": 173.6,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "7",
+            "description": "D7",
+            "x": 189.7,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "6",
+            "description": "D6",
+            "x": 199.4,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "5",
+            "description": "D5",
+            "x": 209.0,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "4",
+            "description": "D4",
+            "x": 218.7,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "3",
+            "description": "D3",
+            "x": 228.3,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "2",
+            "description": "D2",
+            "x": 238.0,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "1",
+            "description": "D1",
+            "x": 247.7,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "0",
+            "description": "D0",
+            "x": 257.3,
+            "y": 9.3,
+            "type": "digital"
+        },
+        {
+            "id": "vin",
+            "description": "Vin",
+            "x": 189.0,
+            "y": 191.1,
+            "type": "power"
+        },
+        {
+            "id": "gnd_1",
+            "description": "GND",
+            "x": 179.6,
+            "y": 191.1,
+            "type": "power"
+        },
+        {
+            "id": "gnd_2",
+            "description": "GND",
+            "x": 170.2,
+            "y": 191.1,
+            "type": "power"
+        },
+        {
+            "id": "5V",
+            "description": "5V",
+            "x": 160.9,
+            "y": 191.1,
+            "type": "power"
+        },
+        {
+            "id": "3v3",
+            "description": "3.3V",
+            "x": 151.5,
+            "y": 191.1,
+            "type": "power"
+        },
+        {
+            "id": "rst",
+            "description": "RESET",
+            "x": 142.1,
+            "y": 191.1,
+            "type": "power"
+        },
+        {
+            "id": "ioref",
+            "description": "IOREF",
+            "x": 132.7,
+            "y": 191.1,
+            "type": "power"
+        },
+        {
+            "id": "A0",
+            "description": "A0",
+            "x": 207.9,
+            "y": 191.1,
+            "type": "analog"
+        },
+        {
+            "id": "A1",
+            "description": "A1",
+            "x": 217.3,
+            "y": 191.1,
+            "type": "analog"
+        },
+        {
+            "id": "A2",
+            "description": "A2",
+            "x": 226.7,
+            "y": 191.1,
+            "type": "analog"
+        },
+        {
+            "id": "A3",
+            "description": "A3",
+            "x": 236.0,
+            "y": 191.1,
+            "type": "analog"
+        },
+        {
+            "id": "A4",
+            "description": "A4",
+            "x": 245.4,
+            "y": 191.1,
+            "type": "analog"
+        },
+        {
+            "id": "A5",
+            "description": "A5",
+            "x": 254.8,
+            "y": 191.1,
+            "type": "analog"
+        }
+    ]
+}

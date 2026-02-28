@@ -1,0 +1,24 @@
+{
+    "type": "wokwi-motor",
+    "label": "DC Motor",
+    "group": "Outputs",
+    "w": 60,
+    "h": 60,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "1",
+            "x": 0,
+            "y": 20,
+            "type": "power",
+            "description": "Terminal 1"
+        },
+        {
+            "id": "2",
+            "x": 0,
+            "y": 40,
+            "type": "power",
+            "description": "Terminal 2"
+        }
+    ]
+}

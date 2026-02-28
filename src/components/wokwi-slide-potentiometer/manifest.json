@@ -1,0 +1,33 @@
+{
+    "type": "wokwi-slide-potentiometer",
+    "label": "Linear Potentiometer",
+    "group": "Sensors",
+    "w": 90,
+    "h": 30,
+    "attrs": {
+        "value": "50"
+    },
+    "pins": [
+        {
+            "id": "GND",
+            "x": 0,
+            "y": 30,
+            "type": "power",
+            "description": "Ground"
+        },
+        {
+            "id": "SIG",
+            "x": 45,
+            "y": 30,
+            "type": "analog",
+            "description": "Signal Output"
+        },
+        {
+            "id": "VCC",
+            "x": 90,
+            "y": 30,
+            "type": "power",
+            "description": "5V Power"
+        }
+    ]
+}

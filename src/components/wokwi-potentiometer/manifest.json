@@ -1,0 +1,33 @@
+{
+    "type": "wokwi-potentiometer",
+    "label": "Rotary Potentiometer",
+    "group": "Sensors",
+    "w": 30,
+    "h": 40,
+    "attrs": {
+        "value": "50"
+    },
+    "pins": [
+        {
+            "id": "1",
+            "x": 5,
+            "y": 40,
+            "type": "power",
+            "description": "Terminal 1"
+        },
+        {
+            "id": "2",
+            "x": 25,
+            "y": 40,
+            "type": "power",
+            "description": "Terminal 2"
+        },
+        {
+            "id": "SIG",
+            "x": 15,
+            "y": 40,
+            "type": "analog",
+            "description": "Wiper"
+        }
+    ]
+}

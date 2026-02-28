@@ -1,0 +1,26 @@
+{
+    "type": "wokwi-led",
+    "label": "LED",
+    "group": "Outputs",
+    "w": 38,
+    "h": 38,
+    "attrs": {
+        "color": "red"
+    },
+    "pins": [
+        {
+            "id": "A",
+            "x": 7,
+            "y": 38,
+            "type": "input",
+            "description": "Anode (+)"
+        },
+        {
+            "id": "K",
+            "x": 31,
+            "y": 38,
+            "type": "input",
+            "description": "Cathode (-)"
+        }
+    ]
+}
