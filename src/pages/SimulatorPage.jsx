@@ -68,11 +68,29 @@ const PIN_DEFS = {
     { id: 'D6', label: 'D6', x: 135, y: 0 },
     { id: 'D7', label: 'D7', x: 150, y: 0 },
   ],
-  'wokwi-neopixel-matrix': [
-    { id: 'GND', label: 'GND', x: 55, y: 170 },
-    { id: 'VCC', label: 'VCC', x: 70, y: 170 },
-    { id: 'DIN', label: 'DIN', x: 85, y: 170 },
-    { id: 'DOUT', label: 'DOUT', x: 100, y: 170 },
+  'wokwi-neopixel-matrix-8': [
+    { id: 'GND', label: 'GND', x: 86, y: 181 },
+    { id: 'VCC', label: 'VCC', x: 96, y: 181 },
+    { id: 'DIN', label: 'DIN', x: 105, y: 181 },
+    { id: 'DOUT', label: 'DOUT', x: 115, y: 181 },
+  ],
+  'wokwi-neopixel-matrix-16': [
+    { id: 'GND', label: 'GND', x: 187, y: 363 },
+    { id: 'VCC', label: 'VCC', x: 196, y: 363 },
+    { id: 'DIN', label: 'DIN', x: 206, y: 363 },
+    { id: 'DOUT', label: 'DOUT', x: 216, y: 363 },
+  ],
+  'wokwi-led-ring-12': [
+    { id: 'GND', label: 'GND', x: 44, y: 129 },
+    { id: 'VCC', label: 'VCC', x: 54, y: 129 },
+    { id: 'DIN', label: 'DIN', x: 64, y: 129 },
+    { id: 'DOUT', label: 'DOUT', x: 73, y: 129 },
+  ],
+  'wokwi-led-ring-24': [
+    { id: 'GND', label: 'GND', x: 80, y: 201 },
+    { id: 'VCC', label: 'VCC', x: 90, y: 201 },
+    { id: 'DIN', label: 'DIN', x: 100, y: 201 },
+    { id: 'DOUT', label: 'DOUT', x: 109, y: 201 },
   ],
 }
 
@@ -105,18 +123,18 @@ function validateCircuit(components, wires) {
     }
   })
 
-  // Check NeoPixel Matrix has DIN connected
-  const matrices = components.filter(c => c.type === 'wokwi-neopixel-matrix')
-  matrices.forEach(m => {
+  // Check NeoPixel Matrix / Ring has DIN connected
+  const neopixels = components.filter(c => c.type.startsWith('wokwi-neopixel-matrix') || c.type.startsWith('wokwi-led-ring'))
+  neopixels.forEach(m => {
     const dinPin = `${m.id}:DIN`
     const dinConnected = wires.some(w => w.from === dinPin || w.to === dinPin)
     if (!dinConnected) {
-      errors.push({ type: 'warning', message: `NeoPixel Matrix "${m.id}" has no data (DIN) connection.`, compIds: [m.id] })
+      errors.push({ type: 'warning', message: `NeoPixel component "${m.id}" has no data (DIN) connection.`, compIds: [m.id] })
     }
     const gndPin = `${m.id}:GND`
     const gndConnected = wires.some(w => w.from === gndPin || w.to === gndPin)
     if (!gndConnected) {
-      errors.push({ type: 'warning', message: `NeoPixel Matrix "${m.id}" has no GND connection.`, compIds: [m.id] })
+      errors.push({ type: 'warning', message: `NeoPixel component "${m.id}" has no GND connection.`, compIds: [m.id] })
     }
   })
 
@@ -166,8 +184,14 @@ const CATALOG = [
   },
   {
     group: 'NeoPixel Matrix', items: [
-      { type: 'wokwi-neopixel-matrix', label: 'NeoPixel 8×8', icon: '🟩', w: 160, h: 180, attrs: { rows: '8', cols: '8' } },
-      { type: 'wokwi-neopixel-matrix', label: 'NeoPixel 16×16', icon: '🟩', w: 300, h: 320, attrs: { rows: '16', cols: '16' } },
+      { type: 'wokwi-neopixel-matrix-8', label: 'NeoPixel 8×8', icon: '🟩', w: 202, h: 182, attrs: { rows: '8', cols: '8' } },
+      { type: 'wokwi-neopixel-matrix-16', label: 'NeoPixel 16×16', icon: '🟩', w: 403, h: 363, attrs: { rows: '16', cols: '16' } },
+    ]
+  },
+  {
+    group: 'LED Rings', items: [
+      { type: 'wokwi-led-ring-12', label: 'LED Ring (12)', icon: '⭕', w: 118, h: 129, attrs: { pixels: '12' } },
+      { type: 'wokwi-led-ring-24', label: 'LED Ring (24)', icon: '⭕', w: 190, h: 201, attrs: { pixels: '24' } },
     ]
   },
   {
@@ -244,10 +268,20 @@ export default function SimulatorPage() {
     for (const [compId, pixels] of Object.entries(neopixelData)) {
       const wrapper = neopixelRefs.current[compId];
       if (!wrapper) continue;
-      const el = wrapper.querySelector('wokwi-neopixel-matrix');
+
+      const comp = components.find(c => c.id === compId);
+      if (!comp) continue;
+
+      const el = wrapper.querySelector('wokwi-neopixel-matrix') || wrapper.querySelector('wokwi-led-ring');
       if (!el || typeof el.setPixel !== 'function') continue;
+
       for (const [row, col, rgb] of pixels) {
-        el.setPixel(row, col, rgb);
+        if (comp.type.startsWith('wokwi-neopixel-matrix')) {
+          el.setPixel(row, col, rgb);
+        } else if (comp.type.startsWith('wokwi-led-ring')) {
+          // The emulator treats it as a 1xN matrix, so row=0 and col=pixelIndex
+          el.setPixel(col, rgb);
+        }
       }
     }
   }, [neopixelData])
@@ -395,7 +429,7 @@ export default function SimulatorPage() {
         logSerial('Emulator connected. Sending hex...');
         // Build neopixel wiring info from circuit
         const neopixelWiring = components
-          .filter(c => c.type === 'wokwi-neopixel-matrix')
+          .filter(c => c.type.startsWith('wokwi-neopixel-matrix') || c.type.startsWith('wokwi-led-ring'))
           .map(c => {
             const dinPin = `${c.id}:DIN`;
             const wire = wires.find(w => w.from === dinPin || w.to === dinPin);
@@ -406,7 +440,12 @@ export default function SimulatorPage() {
                 arduinoPin = otherEnd.split(':')[1];
               }
             }
-            return { compId: c.id, pin: arduinoPin, rows: parseInt(c.attrs.rows || '8'), cols: parseInt(c.attrs.cols || '8') };
+            return {
+              compId: c.id,
+              pin: arduinoPin,
+              rows: c.type.startsWith('wokwi-neopixel-matrix') ? parseInt(c.attrs.rows || '8') : 1,
+              cols: c.type.startsWith('wokwi-neopixel-matrix') ? parseInt(c.attrs.cols || '8') : parseInt(c.attrs.pixels || '16')
+            };
           })
           .filter(n => n.pin);
         ws.send(JSON.stringify({ type: 'START', hex: result.hex, neopixels: neopixelWiring }));
@@ -684,12 +723,12 @@ export default function SimulatorPage() {
                 <div
                   style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
                   ref={el => {
-                    if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                    if ((comp.type.startsWith('wokwi-neopixel-matrix') || comp.type.startsWith('wokwi-led-ring')) && el) {
                       neopixelRefs.current[comp.id] = el;
                     }
                   }}
                   dangerouslySetInnerHTML={{
-                    __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
+                    __html: `<${comp.type.replace(/-\d+$/, '')} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type.replace(/-\d+$/, '')}>`,
                   }}
                 />
 
