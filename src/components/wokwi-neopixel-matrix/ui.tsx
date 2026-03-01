@@ -10,12 +10,31 @@ export const NeopixelUI = ({ state, attrs }: { state: any, attrs: any }) => {
         if (state?.pixels && elRef.current) {
             const el = elRef.current as any;
             if (typeof el.setPixel === 'function') {
-                for (const [row, col, rgb] of state.pixels) {
-                    el.setPixel(row, col, rgb);
-                }
+                const cols = parseInt(attrs?.cols || '8', 10);
+                let anyLit = false;
+
+                state.pixels.forEach((rgb: number, i: number) => {
+                    const row = Math.floor(i / cols);
+                    const col = i % cols;
+
+                    // Convert integrated rgb number back to CSS format or Hex string 
+                    // that wokwi-neopixel-matrix expects. Assuming the integer is 0xRRGGBB
+                    let r = (rgb >> 16) & 0xFF;
+                    let g = (rgb >> 8) & 0xFF;
+                    let b = rgb & 0xFF;
+
+                    if (rgb > 0) anyLit = true;
+                    // Assuming setPixel works with `{r, g, b}` format.
+                    // If it expects a CSS string, we can use rgb(...) instead. 
+                    // According to Wokwi internals, it expects a `{r, g, b}` object
+                    el.setPixel(row, col, { r, g, b });
+                });
+                if (anyLit) console.log(`[NeopixelUI] Rendered pixels updated!`);
+            } else {
+                console.warn(`[NeopixelUI] el.setPixel is not a function.`);
             }
         }
-    }, [state?.pixels]);
+    }, [state?.pixels, attrs?.cols]);
 
     return (
         <div style={{ pointerEvents: 'none' }}>
