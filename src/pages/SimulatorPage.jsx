@@ -138,6 +138,22 @@ function validateCircuit(components, wires) {
     }
   })
 
+  // Check Servo has PWM connected
+  const servos = components.filter(c => c.type === 'wokwi-servo')
+  servos.forEach(s => {
+    const pwmPin = `${s.id}:PWM`
+    const gndPin = `${s.id}:GND`
+    const pwmConnected = wires.some(w => w.from === pwmPin || w.to === pwmPin)
+    const gndConnected = wires.some(w => w.from === gndPin || w.to === gndPin)
+
+    if (!pwmConnected) {
+      errors.push({ type: 'warning', message: `Servo "${s.id}" has no PWM signal connection.`, compIds: [s.id] })
+    }
+    if (!gndConnected) {
+      errors.push({ type: 'warning', message: `Servo "${s.id}" has no GND connection.`, compIds: [s.id] })
+    }
+  })
+
   // Duplicate wire check
   const seen = new Set()
   wires.forEach(w => {
@@ -178,7 +194,7 @@ const CATALOG = [
   },
   {
     group: 'Actuators', items: [
-      { type: 'wokwi-servo', label: 'Servo', icon: '⚙️', w: 80, h: 50 },
+      { type: 'wokwi-servo', label: 'Servo Motor', icon: '⚙️', w: 170, h: 120, attrs: { angle: '0' } },
       { type: 'wokwi-neopixel', label: 'NeoPixel', icon: '🌈', w: 30, h: 30 },
     ]
   },
@@ -239,6 +255,7 @@ export default function SimulatorPage() {
   const [isRunning, setIsRunning] = useState(false)
   const [pinStates, setPinStates] = useState({})
   const [neopixelData, setNeopixelData] = useState({})
+  const [servoData, setServoData] = useState({})
   const wsRef = useRef(null)
   const neopixelRefs = useRef({})
 
@@ -330,7 +347,6 @@ export default function SimulatorPage() {
     }])
     dragPayload.current = null
   }, [])
-
   // ── Move component ─────────────────────────────────────────────────────────
   const onCompMouseDown = useCallback((e, id) => {
     if (wiringMode) return
@@ -448,7 +464,27 @@ export default function SimulatorPage() {
             };
           })
           .filter(n => n.pin);
-        ws.send(JSON.stringify({ type: 'START', hex: result.hex, neopixels: neopixelWiring }));
+
+        // Build servo wiring info
+        const servoWiring = components
+          .filter(c => c.type === 'wokwi-servo')
+          .map(c => {
+            const pwmPin = `${c.id}:PWM`;
+            const wire = wires.find(w => w.from === pwmPin || w.to === pwmPin);
+            let arduinoPin = null;
+            if (wire) {
+              const otherEnd = wire.from === pwmPin ? wire.to : wire.from;
+              if (otherEnd.startsWith('wokwi-arduino-uno')) {
+                const rawPin = otherEnd.split(':')[1];
+                // If it's just a number, prepend 'D' so the backend getPinPortMapping works
+                arduinoPin = !isNaN(rawPin) ? `D${rawPin}` : rawPin;
+              }
+            }
+            return { compId: c.id, pin: arduinoPin };
+          })
+          .filter(s => s.pin);
+
+        ws.send(JSON.stringify({ type: 'START', hex: result.hex, neopixels: neopixelWiring, servos: servoWiring }));
       };
 
       ws.onmessage = (event) => {
@@ -458,6 +494,9 @@ export default function SimulatorPage() {
         }
         if (msg.type === 'state' && msg.neopixels) {
           setNeopixelData(msg.neopixels);
+        }
+        if (msg.type === 'state' && msg.servos) {
+          setServoData(msg.servos);
         }
       };
 
@@ -508,6 +547,16 @@ export default function SimulatorPage() {
         }
       }
     }
+    if (comp.type === 'wokwi-servo') {
+      const liveAngle = servoData[comp.id]
+      console.log(`[UI Render] Servo ${comp.id} -> ${liveAngle} | raw state: `, servoData)
+      if (liveAngle !== undefined) {
+        attrs.angle = liveAngle.toString()
+      } else if (!attrs.angle) {
+        attrs.angle = "90"
+      }
+    }
+
     // Add handles for buzzed/servo in the future right here
     return attrs;
   };

@@ -24,6 +24,7 @@
 *   **Wokwi Component Glitches Fixed**
     *   Discovered an inherent UI bug where Wokwi LEDs evaluate the `value="0"` attribute as truthy.
     *   Overhauled the `getComponentStateAttrs` engine so the `value` property is actively injected or deleted from the DOM based on physical voltage rules.
-
-
-
+*   **Wokwi Servo Motor Integration (PWM)**
+    *   **Backend PWM Decoding**: Hardware timers (`avr8js` cycle counts) bypass standard memory hooks. Implemented a 16MHz high-frequency polling loop that tracks `pinStates` boolean toggles natively to measure pulse durations (µs).
+    *   **Math Transformation**: Pulses between 4800–48000 cycles are extracted and linearly interpolated into 0-180 degree angles.
+    *   **Frontend Data Binding**: The `ws.onmessage` handler listens for `msg.servos`, saves it to a React state hook, and dynamically binds `<wokwi-servo angle="{liveState}">` into the DOM, allowing fluid hardware-accelerated SVG rotation.
