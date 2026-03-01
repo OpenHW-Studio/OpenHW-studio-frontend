@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
+import { compileCode } from '../services/simulatorService.js'
 
 // ─── PIN DEFINITIONS per component type ──────────────────────────────────────
 // Each pin: { id, label, x, y } — offsets relative to component top-left
@@ -11,61 +12,85 @@ const PIN_DEFS = {
     { id: 'D12', label: 'D12', x: 192, y: 36 },
     { id: 'D11', label: 'D11', x: 192, y: 46 },
     { id: 'D10', label: 'D10', x: 192, y: 56 },
-    { id: 'D9',  label: 'D9',  x: 192, y: 66 },
-    { id: 'D8',  label: 'D8',  x: 192, y: 76 },
-    { id: 'D7',  label: 'D7',  x: 192, y: 90 },
-    { id: 'D6',  label: 'D6',  x: 192, y: 100 },
-    { id: 'D5',  label: 'D5',  x: 192, y: 110 },
-    { id: 'D4',  label: 'D4',  x: 192, y: 120 },
+    { id: 'D9', label: 'D9', x: 192, y: 66 },
+    { id: 'D8', label: 'D8', x: 192, y: 76 },
+    { id: 'D7', label: 'D7', x: 192, y: 90 },
+    { id: 'D6', label: 'D6', x: 192, y: 100 },
+    { id: 'D5', label: 'D5', x: 192, y: 110 },
+    { id: 'D4', label: 'D4', x: 192, y: 120 },
     // Power (top)
-    { id: '5V',  label: '5V',  x: 30,  y: 0 },
-    { id: 'GND', label: 'GND', x: 55,  y: 0 },
-    { id: '3V3', label: '3.3V',x: 80,  y: 0 },
+    { id: '5V', label: '5V', x: 30, y: 0 },
+    { id: 'GND', label: 'GND', x: 55, y: 0 },
+    { id: '3V3', label: '3.3V', x: 80, y: 0 },
     // Analog (bottom)
-    { id: 'A0',  label: 'A0',  x: 30,  y: 128 },
-    { id: 'A1',  label: 'A1',  x: 55,  y: 128 },
-    { id: 'A2',  label: 'A2',  x: 80,  y: 128 },
-    { id: 'A3',  label: 'A3',  x: 105, y: 128 },
+    { id: 'A0', label: 'A0', x: 30, y: 128 },
+    { id: 'A1', label: 'A1', x: 55, y: 128 },
+    { id: 'A2', label: 'A2', x: 80, y: 128 },
+    { id: 'A3', label: 'A3', x: 105, y: 128 },
   ],
   'wokwi-led': [
-    { id: 'A',   label: 'A+',  x: 15, y: 0  },
-    { id: 'K',   label: 'K−',  x: 15, y: 60 },
+    { id: 'A', label: 'A+', x: 15, y: 0 },
+    { id: 'K', label: 'K−', x: 15, y: 60 },
   ],
   'wokwi-resistor': [
-    { id: '1',   label: '1',   x: 0,  y: 15 },
-    { id: '2',   label: '2',   x: 80, y: 15 },
+    { id: '1', label: '1', x: 0, y: 15 },
+    { id: '2', label: '2', x: 80, y: 15 },
   ],
   'wokwi-pushbutton': [
-    { id: '1a',  label: '1a',  x: 0,  y: 10 },
-    { id: '2a',  label: '2a',  x: 40, y: 10 },
-    { id: '1b',  label: '1b',  x: 0,  y: 30 },
-    { id: '2b',  label: '2b',  x: 40, y: 30 },
+    { id: '1a', label: '1a', x: 0, y: 10 },
+    { id: '2a', label: '2a', x: 40, y: 10 },
+    { id: '1b', label: '1b', x: 0, y: 30 },
+    { id: '2b', label: '2b', x: 40, y: 30 },
   ],
   'wokwi-buzzer': [
-    { id: '+',   label: '+',   x: 15, y: 0  },
-    { id: '-',   label: '−',   x: 35, y: 0  },
+    { id: '+', label: '+', x: 15, y: 0 },
+    { id: '-', label: '−', x: 35, y: 0 },
   ],
   'wokwi-servo': [
     { id: 'GND', label: 'GND', x: 10, y: 50 },
-    { id: 'V+',  label: 'V+',  x: 35, y: 50 },
+    { id: 'V+', label: 'V+', x: 35, y: 50 },
     { id: 'PWM', label: 'PWM', x: 60, y: 50 },
   ],
   'wokwi-neopixel': [
-    { id: 'GND', label: 'GND', x: 0,  y: 15 },
-    { id: 'VCC', label: 'VCC', x: 10, y: 0  },
+    { id: 'GND', label: 'GND', x: 0, y: 15 },
+    { id: 'VCC', label: 'VCC', x: 10, y: 0 },
     { id: 'DIN', label: 'DIN', x: 20, y: 15 },
-    { id: 'DOUT',label: 'OUT', x: 30, y: 0  },
+    { id: 'DOUT', label: 'OUT', x: 30, y: 0 },
   ],
   'wokwi-lcd1602': [
-    { id: 'VSS', label: 'GND', x: 10,  y: 0  },
-    { id: 'VDD', label: 'VCC', x: 25,  y: 0  },
-    { id: 'RS',  label: 'RS',  x: 60,  y: 0  },
-    { id: 'RW',  label: 'RW',  x: 75,  y: 0  },
-    { id: 'E',   label: 'E',   x: 90,  y: 0  },
-    { id: 'D4',  label: 'D4',  x: 105, y: 0  },
-    { id: 'D5',  label: 'D5',  x: 120, y: 0  },
-    { id: 'D6',  label: 'D6',  x: 135, y: 0  },
-    { id: 'D7',  label: 'D7',  x: 150, y: 0  },
+    { id: 'VSS', label: 'GND', x: 10, y: 0 },
+    { id: 'VDD', label: 'VCC', x: 25, y: 0 },
+    { id: 'RS', label: 'RS', x: 60, y: 0 },
+    { id: 'RW', label: 'RW', x: 75, y: 0 },
+    { id: 'E', label: 'E', x: 90, y: 0 },
+    { id: 'D4', label: 'D4', x: 105, y: 0 },
+    { id: 'D5', label: 'D5', x: 120, y: 0 },
+    { id: 'D6', label: 'D6', x: 135, y: 0 },
+    { id: 'D7', label: 'D7', x: 150, y: 0 },
+  ],
+  'wokwi-neopixel-matrix-8': [
+    { id: 'GND', label: 'GND', x: 86, y: 181 },
+    { id: 'VCC', label: 'VCC', x: 96, y: 181 },
+    { id: 'DIN', label: 'DIN', x: 105, y: 181 },
+    { id: 'DOUT', label: 'DOUT', x: 115, y: 181 },
+  ],
+  'wokwi-neopixel-matrix-16': [
+    { id: 'GND', label: 'GND', x: 187, y: 363 },
+    { id: 'VCC', label: 'VCC', x: 196, y: 363 },
+    { id: 'DIN', label: 'DIN', x: 206, y: 363 },
+    { id: 'DOUT', label: 'DOUT', x: 216, y: 363 },
+  ],
+  'wokwi-led-ring-12': [
+    { id: 'GND', label: 'GND', x: 44, y: 129 },
+    { id: 'VCC', label: 'VCC', x: 54, y: 129 },
+    { id: 'DIN', label: 'DIN', x: 64, y: 129 },
+    { id: 'DOUT', label: 'DOUT', x: 73, y: 129 },
+  ],
+  'wokwi-led-ring-24': [
+    { id: 'GND', label: 'GND', x: 80, y: 201 },
+    { id: 'VCC', label: 'VCC', x: 90, y: 201 },
+    { id: 'DIN', label: 'DIN', x: 100, y: 201 },
+    { id: 'DOUT', label: 'DOUT', x: 109, y: 201 },
   ],
 }
 
@@ -98,6 +123,37 @@ function validateCircuit(components, wires) {
     }
   })
 
+  // Check NeoPixel Matrix / Ring has DIN connected
+  const neopixels = components.filter(c => c.type.startsWith('wokwi-neopixel-matrix') || c.type.startsWith('wokwi-led-ring'))
+  neopixels.forEach(m => {
+    const dinPin = `${m.id}:DIN`
+    const dinConnected = wires.some(w => w.from === dinPin || w.to === dinPin)
+    if (!dinConnected) {
+      errors.push({ type: 'warning', message: `NeoPixel component "${m.id}" has no data (DIN) connection.`, compIds: [m.id] })
+    }
+    const gndPin = `${m.id}:GND`
+    const gndConnected = wires.some(w => w.from === gndPin || w.to === gndPin)
+    if (!gndConnected) {
+      errors.push({ type: 'warning', message: `NeoPixel component "${m.id}" has no GND connection.`, compIds: [m.id] })
+    }
+  })
+
+  // Check Servo has PWM connected
+  const servos = components.filter(c => c.type === 'wokwi-servo')
+  servos.forEach(s => {
+    const pwmPin = `${s.id}:PWM`
+    const gndPin = `${s.id}:GND`
+    const pwmConnected = wires.some(w => w.from === pwmPin || w.to === pwmPin)
+    const gndConnected = wires.some(w => w.from === gndPin || w.to === gndPin)
+
+    if (!pwmConnected) {
+      errors.push({ type: 'warning', message: `Servo "${s.id}" has no PWM signal connection.`, compIds: [s.id] })
+    }
+    if (!gndConnected) {
+      errors.push({ type: 'warning', message: `Servo "${s.id}" has no GND connection.`, compIds: [s.id] })
+    }
+  })
+
   // Duplicate wire check
   const seen = new Set()
   wires.forEach(w => {
@@ -123,22 +179,42 @@ function wireColor(pinLabel) {
 }
 
 const CATALOG = [
-  { group: 'Boards', items: [
-    { type: 'wokwi-arduino-uno', label: 'Arduino Uno', icon: '🟦', w: 200, h: 130 },
-  ]},
-  { group: 'Basic', items: [
-    { type: 'wokwi-led',        label: 'LED',         icon: '💡', w: 30,  h: 60,  attrs: { color: 'red' } },
-    { type: 'wokwi-resistor',   label: 'Resistor',    icon: '〰️', w: 80,  h: 30,  attrs: { value: '220' } },
-    { type: 'wokwi-pushbutton', label: 'Push Button', icon: '🔘', w: 40,  h: 40 },
-    { type: 'wokwi-buzzer',     label: 'Buzzer',      icon: '🔊', w: 50,  h: 50 },
-  ]},
-  { group: 'Actuators', items: [
-    { type: 'wokwi-servo',      label: 'Servo',       icon: '⚙️', w: 80,  h: 50 },
-    { type: 'wokwi-neopixel',   label: 'NeoPixel',    icon: '🌈', w: 30,  h: 30 },
-  ]},
-  { group: 'Display', items: [
-    { type: 'wokwi-lcd1602',    label: 'LCD 1602',    icon: '📺', w: 160, h: 60 },
-  ]},
+  {
+    group: 'Boards', items: [
+      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', icon: '🟦', w: 200, h: 130 },
+    ]
+  },
+  {
+    group: 'Basic', items: [
+      { type: 'wokwi-led', label: 'LED', icon: '💡', w: 30, h: 60, attrs: { color: 'red' } },
+      { type: 'wokwi-resistor', label: 'Resistor', icon: '〰️', w: 80, h: 30, attrs: { value: '220' } },
+      { type: 'wokwi-pushbutton', label: 'Push Button', icon: '🔘', w: 40, h: 40 },
+      { type: 'wokwi-buzzer', label: 'Buzzer', icon: '🔊', w: 50, h: 50 },
+    ]
+  },
+  {
+    group: 'Actuators', items: [
+      { type: 'wokwi-servo', label: 'Servo Motor', icon: '⚙️', w: 170, h: 120, attrs: { angle: '0' } },
+      { type: 'wokwi-neopixel', label: 'NeoPixel', icon: '🌈', w: 30, h: 30 },
+    ]
+  },
+  {
+    group: 'NeoPixel Matrix', items: [
+      { type: 'wokwi-neopixel-matrix-8', label: 'NeoPixel 8×8', icon: '🟩', w: 202, h: 182, attrs: { rows: '8', cols: '8' } },
+      { type: 'wokwi-neopixel-matrix-16', label: 'NeoPixel 16×16', icon: '🟩', w: 403, h: 363, attrs: { rows: '16', cols: '16' } },
+    ]
+  },
+  {
+    group: 'LED Rings', items: [
+      { type: 'wokwi-led-ring-12', label: 'LED Ring (12)', icon: '⭕', w: 118, h: 129, attrs: { pixels: '12' } },
+      { type: 'wokwi-led-ring-24', label: 'LED Ring (24)', icon: '⭕', w: 190, h: 201, attrs: { pixels: '24' } },
+    ]
+  },
+  {
+    group: 'Display', items: [
+      { type: 'wokwi-lcd1602', label: 'LCD 1602', icon: '📺', w: 160, h: 60 },
+    ]
+  },
 ]
 
 let nextId = 1
@@ -157,36 +233,42 @@ export default function SimulatorPage() {
 
   // Theme Logic
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
-  
+
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark'
     setTheme(newTheme)
     document.documentElement.setAttribute('data-theme', newTheme)
   }
 
-  const [components,  setComponents]  = useState([])
-  const [wires,       setWires]       = useState([])
-  const [selected,    setSelected]    = useState(null)   // comp id
-  const [wiringMode,  setWiringMode]  = useState(false)
-  const [wireStart,   setWireStart]   = useState(null)   // { compId, pinId, pinLabel, x, y }
-  const [mousePos,    setMousePos]    = useState({ x: 0, y: 0 })
-  const [hoveredPin,  setHoveredPin]  = useState(null)
-  const [board,       setBoard]       = useState('arduino_uno')
-  const [codeTab,     setCodeTab]     = useState('code')
-  const [code,        setCode]        = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
+  const [components, setComponents] = useState([])
+  const [wires, setWires] = useState([])
+  const [selected, setSelected] = useState(null)   // comp id
+  const [wiringMode, setWiringMode] = useState(false)
+  const [wireStart, setWireStart] = useState(null)   // { compId, pinId, pinLabel, x, y }
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const [hoveredPin, setHoveredPin] = useState(null)
+  const [board, setBoard] = useState('arduino_uno')
+  const [codeTab, setCodeTab] = useState('code')
+  const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
   const [validationErrors, setValidationErrors] = useState([])
   const [showValidation, setShowValidation] = useState(true)
+  const [isRunning, setIsRunning] = useState(false)
+  const [pinStates, setPinStates] = useState({})
+  const [neopixelData, setNeopixelData] = useState({})
+  const [servoData, setServoData] = useState({})
+  const wsRef = useRef(null)
+  const neopixelRefs = useRef({})
 
-  const canvasRef     = useRef(null)
-  const svgRef        = useRef(null)
-  const dragPayload   = useRef(null)
-  const movingComp    = useRef(null)
+  const canvasRef = useRef(null)
+  const svgRef = useRef(null)
+  const dragPayload = useRef(null)
+  const movingComp = useRef(null)
 
   // ── Load Wokwi bundle ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!document.getElementById('wokwi-bundle')) {
       const s = document.createElement('script')
-      s.id  = 'wokwi-bundle'
+      s.id = 'wokwi-bundle'
       s.src = 'https://unpkg.com/@wokwi/elements@0.48.3/dist/wokwi-elements.bundle.js'
       document.head.appendChild(s)
     }
@@ -196,6 +278,30 @@ export default function SimulatorPage() {
   useEffect(() => {
     setValidationErrors(validateCircuit(components, wires))
   }, [components, wires])
+
+  // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
+  useEffect(() => {
+    if (!neopixelData || Object.keys(neopixelData).length === 0) return;
+    for (const [compId, pixels] of Object.entries(neopixelData)) {
+      const wrapper = neopixelRefs.current[compId];
+      if (!wrapper) continue;
+
+      const comp = components.find(c => c.id === compId);
+      if (!comp) continue;
+
+      const el = wrapper.querySelector('wokwi-neopixel-matrix') || wrapper.querySelector('wokwi-led-ring');
+      if (!el || typeof el.setPixel !== 'function') continue;
+
+      for (const [row, col, rgb] of pixels) {
+        if (comp.type.startsWith('wokwi-neopixel-matrix')) {
+          el.setPixel(row, col, rgb);
+        } else if (comp.type.startsWith('wokwi-led-ring')) {
+          // The emulator treats it as a 1xN matrix, so row=0 and col=pixelIndex
+          el.setPixel(col, rgb);
+        }
+      }
+    }
+  }, [neopixelData])
 
   // ── Error component IDs for highlighting ────────────────────────────────────
   const errorCompIds = useMemo(() =>
@@ -208,7 +314,7 @@ export default function SimulatorPage() {
     const comp = components.find(c => c.id === compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
-    const pin  = pins.find(p => p.id === pinId)
+    const pin = pins.find(p => p.id === pinId)
     if (!pin) return null
     return { x: comp.x + pin.x, y: comp.y + pin.y }
   }, [components])
@@ -231,7 +337,7 @@ export default function SimulatorPage() {
     if (!item) return
     const rect = canvasRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left - (item.w || 60) / 2
-    const y = e.clientY - rect.top  - (item.h || 60) / 2
+    const y = e.clientY - rect.top - (item.h || 60) / 2
     setComponents(prev => [...prev, {
       id: `${item.type}_${nextId++}`,
       type: item.type, label: item.label,
@@ -241,7 +347,6 @@ export default function SimulatorPage() {
     }])
     dragPayload.current = null
   }, [])
-
   // ── Move component ─────────────────────────────────────────────────────────
   const onCompMouseDown = useCallback((e, id) => {
     if (wiringMode) return
@@ -289,11 +394,11 @@ export default function SimulatorPage() {
         return
       }
       const newWire = {
-        id:    `w${nextWireId++}`,
-        from:  `${wireStart.compId}:${wireStart.pinId}`,
-        to:    `${compId}:${pinId}`,
+        id: `w${nextWireId++}`,
+        from: `${wireStart.compId}:${wireStart.pinId}`,
+        to: `${compId}:${pinId}`,
         fromLabel: wireStart.pinLabel,
-        toLabel:   pinLabel,
+        toLabel: pinLabel,
         color: wireColor(wireStart.pinLabel),
       }
       setWires(prev => [...prev, newWire])
@@ -301,11 +406,11 @@ export default function SimulatorPage() {
     }
   }, [wiringMode, wireStart, getPinPos])
 
-  // ── Cancel wire on Escape / delete selected ─────────────────────────────────
+  // Cancel wire on Escape / delete selected
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') { setWireStart(null) }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !wiringMode) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !wiringMode && !isRunning) {
         setComponents(prev => prev.filter(c => c.id !== selected))
         setWires(prev => prev.filter(w => !w.from.startsWith(selected) && !w.to.startsWith(selected)))
         setSelected(null)
@@ -313,9 +418,148 @@ export default function SimulatorPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, wiringMode])
+  }, [selected, wiringMode, isRunning])
 
-  const deleteWire = (id) => setWires(prev => prev.filter(w => w.id !== id))
+  const deleteWire = (id) => {
+    if (isRunning) return;
+    setWires(prev => prev.filter(w => w.id !== id))
+  }
+
+  // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
+  const logSerial = (msg, color = 'var(--text)') => {
+    // In a real implementation this would push to a serial console state array
+    console.log(`[SIM]`, msg);
+  };
+
+  const handleRun = async () => {
+    try {
+      setIsRunning(true);
+      logSerial('Compiling...');
+      const result = await compileCode(code);
+      logSerial('Compiled! Connecting to emulator...');
+
+      const ws = new WebSocket('ws://localhost:8085');
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        logSerial('Emulator connected. Sending hex...');
+        // Build neopixel wiring info from circuit
+        const neopixelWiring = components
+          .filter(c => c.type.startsWith('wokwi-neopixel-matrix') || c.type.startsWith('wokwi-led-ring'))
+          .map(c => {
+            const dinPin = `${c.id}:DIN`;
+            const wire = wires.find(w => w.from === dinPin || w.to === dinPin);
+            let arduinoPin = null;
+            if (wire) {
+              const otherEnd = wire.from === dinPin ? wire.to : wire.from;
+              if (otherEnd.startsWith('wokwi-arduino-uno')) {
+                arduinoPin = otherEnd.split(':')[1];
+              }
+            }
+            return {
+              compId: c.id,
+              pin: arduinoPin,
+              rows: c.type.startsWith('wokwi-neopixel-matrix') ? parseInt(c.attrs.rows || '8') : 1,
+              cols: c.type.startsWith('wokwi-neopixel-matrix') ? parseInt(c.attrs.cols || '8') : parseInt(c.attrs.pixels || '16')
+            };
+          })
+          .filter(n => n.pin);
+
+        // Build servo wiring info
+        const servoWiring = components
+          .filter(c => c.type === 'wokwi-servo')
+          .map(c => {
+            const pwmPin = `${c.id}:PWM`;
+            const wire = wires.find(w => w.from === pwmPin || w.to === pwmPin);
+            let arduinoPin = null;
+            if (wire) {
+              const otherEnd = wire.from === pwmPin ? wire.to : wire.from;
+              if (otherEnd.startsWith('wokwi-arduino-uno')) {
+                const rawPin = otherEnd.split(':')[1];
+                // If it's just a number, prepend 'D' so the backend getPinPortMapping works
+                arduinoPin = !isNaN(rawPin) ? `D${rawPin}` : rawPin;
+              }
+            }
+            return { compId: c.id, pin: arduinoPin };
+          })
+          .filter(s => s.pin);
+
+        ws.send(JSON.stringify({ type: 'START', hex: result.hex, neopixels: neopixelWiring, servos: servoWiring }));
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'state' && msg.pins) {
+          setPinStates(msg.pins);
+        }
+        if (msg.type === 'state' && msg.neopixels) {
+          setNeopixelData(msg.neopixels);
+        }
+        if (msg.type === 'state' && msg.servos) {
+          setServoData(msg.servos);
+        }
+      };
+
+      ws.onerror = (err) => {
+        console.error('WS Error:', err);
+        logSerial('Emulator connection error', 'var(--red)');
+        handleStop();
+      };
+
+      ws.onclose = () => {
+        logSerial('Emulator disconnected.');
+        setIsRunning(false);
+      }
+    } catch (err) {
+      setIsRunning(false);
+      console.error(err);
+      alert(err.message);
+    }
+  };
+
+  const handleStop = () => {
+    if (wsRef.current) {
+      wsRef.current.send(JSON.stringify({ type: 'STOP' }));
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setIsRunning(false);
+    setPinStates({});
+    setNeopixelData({});
+  };
+
+  const getComponentStateAttrs = (comp) => {
+    let attrs = { ...comp.attrs };
+    if (comp.type === 'wokwi-led') {
+      const aPin = `${comp.id}:A`;
+      const wire = wires.find(w => w.from === aPin || w.to === aPin);
+
+      // Default to OFF.
+      delete attrs.value;
+
+      if (wire && isRunning) {
+        const otherPin = wire.from === aPin ? wire.to : wire.from;
+        if (otherPin.startsWith('wokwi-arduino-uno')) {
+          const cpuPin = otherPin.split(':')[1];
+          if (pinStates[cpuPin]) {
+            attrs.value = "1";
+          }
+        }
+      }
+    }
+    if (comp.type === 'wokwi-servo') {
+      const liveAngle = servoData[comp.id]
+      console.log(`[UI Render] Servo ${comp.id} -> ${liveAngle} | raw state: `, servoData)
+      if (liveAngle !== undefined) {
+        attrs.angle = liveAngle.toString()
+      } else if (!attrs.angle) {
+        attrs.angle = "90"
+      }
+    }
+
+    // Add handles for buzzed/servo in the future right here
+    return attrs;
+  };
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -330,23 +574,23 @@ export default function SimulatorPage() {
             <option value="pico">Raspberry Pi Pico</option>
             <option value="esp32">ESP32</option>
           </select>
-          <Btn color="var(--green)">▶ Run</Btn>
-          <Btn>⏹ Stop</Btn>
+          <Btn color={isRunning ? "var(--border)" : "var(--green)"} onClick={!isRunning ? handleRun : undefined}>{isRunning ? '⏳ Running...' : '▶ Run'}</Btn>
+          <Btn color={isRunning ? "var(--red)" : undefined} onClick={isRunning ? handleStop : undefined}>⏹ Stop</Btn>
           <Btn
             color={wiringMode ? 'var(--orange)' : undefined}
-            onClick={() => { setWiringMode(v => !v); setWireStart(null) }}
+            onClick={() => { if (!isRunning) { setWiringMode(v => !v); setWireStart(null); } }}
             title="Toggle wiring mode (W)"
           >
             {wiringMode ? '✂ Exit Wiring' : '〰 Wire Mode'}
           </Btn>
-          {selected && !wiringMode && (
+          {selected && !wiringMode && !isRunning && (
             <Btn color="var(--red)" onClick={() => {
               setComponents(prev => prev.filter(c => c.id !== selected))
               setWires(prev => prev.filter(w => !w.from.startsWith(selected) && !w.to.startsWith(selected)))
               setSelected(null)
             }}>🗑 Delete</Btn>
           )}
-          <Btn onClick={() => { setComponents([]); setWires([]); setSelected(null) }}>↺ Clear All</Btn>
+          <Btn onClick={() => { if (!isRunning) { setComponents([]); setWires([]); setSelected(null); } }}>↺ Clear All</Btn>
 
           {/* THEME TOGGLE BUTTON */}
           <Btn onClick={toggleTheme} title="Toggle Dark/Light Mode">
@@ -435,9 +679,9 @@ export default function SimulatorPage() {
             {/* Placed wires */}
             {wires.map(w => {
               const fromParts = w.from.split(':')
-              const toParts   = w.to.split(':')
+              const toParts = w.to.split(':')
               const p1 = getPinPos(fromParts[0], fromParts[1])
-              const p2 = getPinPos(toParts[0],   toParts[1])
+              const p2 = getPinPos(toParts[0], toParts[1])
               if (!p1 || !p2) return null
               return (
                 <g key={w.id} style={{ pointerEvents: 'all', cursor: 'pointer' }} onClick={() => deleteWire(w.id)}>
@@ -527,8 +771,13 @@ export default function SimulatorPage() {
                 {/* Wokwi element */}
                 <div
                   style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
+                  ref={el => {
+                    if ((comp.type.startsWith('wokwi-neopixel-matrix') || comp.type.startsWith('wokwi-led-ring')) && el) {
+                      neopixelRefs.current[comp.id] = el;
+                    }
+                  }}
                   dangerouslySetInnerHTML={{
-                    __html: `<${comp.type} ${Object.entries(comp.attrs).map(([k,v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
+                    __html: `<${comp.type.replace(/-\d+$/, '')} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type.replace(/-\d+$/, '')}>`,
                   }}
                 />
 
@@ -546,8 +795,8 @@ export default function SimulatorPage() {
                         width: 12, height: 12,
                         borderRadius: '50%',
                         background: isWireStartPin ? 'var(--orange)'
-                                  : isHovered      ? 'var(--accent)'
-                                  :                  'var(--card)',
+                          : isHovered ? 'var(--accent)'
+                            : 'var(--card)',
                         border: `2px solid ${isWireStartPin ? 'var(--orange)' : isHovered ? 'var(--accent)' : 'var(--border)'}`,
                         cursor: wiringMode ? 'crosshair' : 'default',
                         zIndex: 20,
@@ -704,49 +953,49 @@ function Btn({ children, onClick, color, title }) {
 
 // ─── Styles (Refactored to map strictly to CSS variables) ───────────────────────
 const S = {
-  page:    { display:'flex', flexDirection:'column', height:'100vh', overflow:'hidden', background:'var(--bg)', fontFamily:"'Space Grotesk',sans-serif", color:'var(--text)' },
-  bar:     { display:'flex', alignItems:'center', gap:10, padding:'10px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', flexShrink:0, flexWrap:'wrap' },
-  logo:    { background:'none', border:'none', color:'var(--accent)', fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:'inherit', display:'flex', alignItems:'center', gap:6 },
-  barCenter: { display:'flex', alignItems:'center', gap:8, flex:1, flexWrap:'wrap' },
-  sel:     { background:'var(--card)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 12px', borderRadius:8, fontFamily:'inherit', fontSize:13, cursor:'pointer' },
-  userChip:{ background:'var(--card)', border:'1px solid var(--border)', padding:'7px 12px', borderRadius:8, fontSize:13, color:'var(--text2)' },
-  guestBanner: { background:'rgba(255,145,0,.1)', borderBottom:'1px solid rgba(255,145,0,.25)', color:'var(--orange)', padding:'8px 20px', fontSize:13, display:'flex', alignItems:'center', gap:12, flexShrink:0 },
-  bannerBtn:   { background:'none', border:'none', color:'var(--accent)', cursor:'pointer', fontSize:13, textDecoration:'underline', fontFamily:'inherit' },
-  workspace:   { display:'flex', flex:1, overflow:'hidden' },
+  page: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)', fontFamily: "'Space Grotesk',sans-serif", color: 'var(--text)' },
+  bar: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', flexShrink: 0, flexWrap: 'wrap' },
+  logo: { background: 'none', border: 'none', color: 'var(--accent)', fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 },
+  barCenter: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' },
+  sel: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 12px', borderRadius: 8, fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' },
+  userChip: { background: 'var(--card)', border: '1px solid var(--border)', padding: '7px 12px', borderRadius: 8, fontSize: 13, color: 'var(--text2)' },
+  guestBanner: { background: 'rgba(255,145,0,.1)', borderBottom: '1px solid rgba(255,145,0,.25)', color: 'var(--orange)', padding: '8px 20px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
+  bannerBtn: { background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit' },
+  workspace: { display: 'flex', flex: 1, overflow: 'hidden' },
 
-  palette:      { width:182, background:'var(--bg2)', borderRight:'1px solid var(--border)', overflowY:'auto', padding:'10px 8px', display:'flex', flexDirection:'column', gap:2, flexShrink:0 },
-  paletteHeader:{ fontSize:11, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.1em', padding:'4px 8px 8px' },
-  paletteSearch:{ background:'var(--card)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 10px', borderRadius:8, fontFamily:'inherit', fontSize:12, width:'100%', marginBottom:8, outline:'none' },
-  groupName:    { fontSize:10, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.08em', padding:'4px 8px' },
-  paletteItem:  { display:'flex', alignItems:'center', gap:8, padding:'8px 10px', borderRadius:8, cursor:'grab', transition:'all .15s', border:'1px solid transparent', userSelect:'none' },
-  paletteTip:   { marginTop:'auto', padding:'10px 8px', fontSize:11, color:'var(--text3)', lineHeight:1.6 },
+  palette: { width: 182, background: 'var(--bg2)', borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 },
+  paletteHeader: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '4px 8px 8px' },
+  paletteSearch: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, width: '100%', marginBottom: 8, outline: 'none' },
+  groupName: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '4px 8px' },
+  paletteItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: 'grab', transition: 'all .15s', border: '1px solid transparent', userSelect: 'none' },
+  paletteTip: { marginTop: 'auto', padding: '10px 8px', fontSize: 11, color: 'var(--text3)', lineHeight: 1.6 },
 
   canvas: {
-    flex:1, position:'relative', overflow:'hidden',
-    backgroundColor:'var(--canvas-bg)',
-    backgroundImage:'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
-    backgroundSize:'24px 24px',
+    flex: 1, position: 'relative', overflow: 'hidden',
+    backgroundColor: 'var(--canvas-bg)',
+    backgroundImage: 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
+    backgroundSize: '24px 24px',
   },
-  emptyState: { position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'var(--text3)', textAlign:'center', pointerEvents:'none' },
+  emptyState: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', textAlign: 'center', pointerEvents: 'none' },
 
-  rightPanel: { width:280, background:'var(--bg2)', borderLeft:'1px solid var(--border)', display:'flex', flexDirection:'column', flexShrink:0, overflow:'hidden' },
+  rightPanel: { width: 280, background: 'var(--bg2)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' },
 
-  validationPanel: { background:'var(--bg3)', borderBottom:'1px solid var(--border)', flexShrink:0 },
-  validationHeader:{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 12px', fontSize:12, fontWeight:700, color:'var(--orange)' },
-  closeBtn:        { background:'none', border:'none', color:'var(--text3)', cursor:'pointer', fontSize:14, fontFamily:'inherit' },
-  validationItem:  { padding:'6px 12px', fontSize:12, borderLeft:'3px solid', marginBottom:2, lineHeight:1.5 },
+  validationPanel: { background: 'var(--bg3)', borderBottom: '1px solid var(--border)', flexShrink: 0 },
+  validationHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', fontSize: 12, fontWeight: 700, color: 'var(--orange)' },
+  closeBtn: { background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit' },
+  validationItem: { padding: '6px 12px', fontSize: 12, borderLeft: '3px solid', marginBottom: 2, lineHeight: 1.5 },
 
-  wiresList:   { background:'var(--bg3)', borderBottom:'1px solid var(--border)', maxHeight:140, overflowY:'auto', flexShrink:0 },
-  wiresHeader: { fontSize:11, fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.08em', padding:'8px 12px 4px' },
-  wireItem:    { display:'flex', alignItems:'center', gap:8, padding:'4px 12px', borderBottom:'1px solid var(--border)' },
-  wireDelete:  { background:'none', border:'none', color:'var(--text3)', cursor:'pointer', fontSize:12, fontFamily:'inherit', flexShrink:0 },
+  wiresList: { background: 'var(--bg3)', borderBottom: '1px solid var(--border)', maxHeight: 140, overflowY: 'auto', flexShrink: 0 },
+  wiresHeader: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '8px 12px 4px' },
+  wireItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', borderBottom: '1px solid var(--border)' },
+  wireDelete: { background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', flexShrink: 0 },
 
-  codePanel:    { flex:1, display:'flex', flexDirection:'column', overflow:'hidden' },
-  codeTabs:     { display:'flex', borderBottom:'1px solid var(--border)', flexShrink:0 },
-  codeTab:      { flex:1, padding:'10px 4px', background:'none', border:'none', color:'var(--text3)', fontFamily:'inherit', fontSize:12, cursor:'pointer', borderBottom:'2px solid transparent', transition:'all .15s' },
-  codeTabActive:{ color:'var(--accent)', borderBottomColor:'var(--accent)' },
-  codeEditor:   { flex:1, background:'var(--bg)', color:'var(--text)', border:'none', outline:'none', padding:14, fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, resize:'none' },
-  codePlaceholder: { flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'var(--text3)', gap:8 },
-  serialOutput:    { flex:1, background:'var(--bg)', padding:12, overflowY:'auto' },
-  serialInput:     { flex:1, background:'var(--card)', border:'1px solid var(--border)', color:'var(--text)', padding:'7px 10px', borderRadius:8, fontFamily:'inherit', fontSize:12, outline:'none' },
+  codePanel: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+  codeTabs: { display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 },
+  codeTab: { flex: 1, padding: '10px 4px', background: 'none', border: 'none', color: 'var(--text3)', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', borderBottom: '2px solid transparent', transition: 'all .15s' },
+  codeTabActive: { color: 'var(--accent)', borderBottomColor: 'var(--accent)' },
+  codeEditor: { flex: 1, background: 'var(--bg)', color: 'var(--text)', border: 'none', outline: 'none', padding: 14, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, lineHeight: 1.7, resize: 'none' },
+  codePlaceholder: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', gap: 8 },
+  serialOutput: { flex: 1, background: 'var(--bg)', padding: 12, overflowY: 'auto' },
+  serialInput: { flex: 1, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, outline: 'none' },
 }
