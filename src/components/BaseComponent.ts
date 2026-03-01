@@ -24,7 +24,7 @@ export class BaseComponent {
         this.stateChanged = true;
     }
 
-    setPinVoltage(pinId: string, voltage: number) {
+    setPinVoltage(pinId: string, voltage: number, cpuCycles?: number) {
         if (this.pins[pinId] && this.pins[pinId].voltage !== voltage) {
             this.pins[pinId].voltage = voltage;
             this.stateChanged = true;
