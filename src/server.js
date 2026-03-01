@@ -128,6 +128,43 @@ wss.on('connection', (ws) => {
         decoder.currentBits = [];
     }
 
+    // ─── SERVO PWM DECODER ────────────────────────────────────────────────────────
+    let servoConfigs = [];
+    let servoDecoders = {}; // { pin: { lastHighCycle: number, lastVal: boolean } }
+    let servoState = {};     // { compId: angle }
+
+    function updateServoPWM() {
+        if (!cpu) return;
+
+        for (const config of servoConfigs) {
+            const decoder = servoDecoders[config.pin];
+            const isHigh = pinStates[config.pin] === true;
+
+            if (isHigh && !decoder.lastVal) {
+                // Rising edge: Start timing the PWM pulse
+                decoder.lastHighCycle = cpu.cycles;
+            } else if (!isHigh && decoder.lastVal) {
+                // Falling edge: Pulse finished, calculate duration
+                const durationInCycles = cpu.cycles - decoder.lastHighCycle;
+
+                let angle = (durationInCycles - 8704) / (38400 - 8704) * 180;
+
+                console.log(`[Servo PWM] Pulse detected on ${config.pin}. Duration: ${durationInCycles} cycles. Computed Angle: ${angle}`);
+
+                if (angle < 0) angle = 0;
+                if (angle > 180) angle = 180;
+
+                // Only update if the pulse was basically valid (e.g > 300us and < 3000us)
+                // if (durationInCycles > 4800 && durationInCycles < 48000) {
+                // Temporarily bypassing bounds to see if ANY angle gets calculated during browser test
+                servoState[config.compId] = Math.round(angle);
+                // }
+            }
+
+            decoder.lastVal = isHigh;
+        }
+    }
+
     let lastTime = 0;
 
     // Real-time synced loop
@@ -149,6 +186,9 @@ wss.on('connection', (ws) => {
             while (cpu.cycles < targetObj && running) {
                 avrInstruction(cpu);
                 cpu.tick();
+
+                // Track hardware PWM signals from Timer1/Timer2 continuously
+                if (servoConfigs.length > 0) updateServoPWM();
             }
             lastTime = now;
         }
@@ -170,6 +210,12 @@ wss.on('connection', (ws) => {
                 msg.neopixels = neopixelState;
                 // Clear after sending so we only send changes
                 neopixelState = {};
+            }
+
+            // Include servo data if any has moved
+            if (Object.keys(servoState).length > 0) {
+                msg.servos = servoState;
+                // We don't clear servo state because the frontend needs to know where it is
             }
 
             ws.send(JSON.stringify(msg));
@@ -209,10 +255,14 @@ wss.on('connection', (ws) => {
                     new AVRTimer(cpu, timer2Config)
                 ];
 
-                // ── Setup NeoPixel decoders from wiring info ──────────────
+                // ── Setup decoders from wiring info ──────────────
                 neopixelConfigs = [];
                 neopixelDecoders = {};
                 neopixelState = {};
+
+                servoConfigs = [];
+                servoDecoders = {};
+                servoState = {};
 
                 if (data.neopixels && data.neopixels.length > 0) {
                     console.log('NeoPixel configs received:', data.neopixels);
@@ -238,6 +288,27 @@ wss.on('connection', (ws) => {
                     }
                 }
 
+                if (data.servos && data.servos.length > 0) {
+                    console.log('Servo configs received:', JSON.stringify(data.servos));
+                    for (const s of data.servos) {
+                        const pinMap = getPinPortMapping(s.pin);
+                        if (pinMap) {
+                            servoConfigs.push({
+                                compId: s.compId,
+                                pin: s.pin,
+                                portAddr: pinMap.portAddr,
+                                bitMask: pinMap.bitMask,
+                            });
+
+                            servoDecoders[s.pin] = {
+                                lastHighCycle: 0,
+                                lastVal: false,
+                            };
+                            console.log(`Servo PWM decoder setup for pin ${s.pin}`);
+                        }
+                    }
+                }
+
                 // Listen to PORTB (D8-D13) and PORTD (D0-D7), PORTC (A0-A5)
                 // Let's attach a catch-all listener for simplicty.
                 // In avr8js, pins are mapped to CPU memory locations.
@@ -255,9 +326,9 @@ wss.on('connection', (ws) => {
                     pinStates['D11'] = (val & (1 << 3)) ? true : false;
                     pinStates['D12'] = (val & (1 << 4)) ? true : false;
                     pinStates['D13'] = (val & (1 << 5)) ? true : false;
-                    // Check for NeoPixel bit-bang on PORTB pins
+
                     processNeopixelWrite(0x25, val);
-                    return false;
+                    return true;
                 };
 
                 cpu.writeHooks[0x2A] = (val) => { /* DDRD updated */ return false; };
@@ -271,9 +342,9 @@ wss.on('connection', (ws) => {
                     pinStates['D5'] = (val & (1 << 5)) ? true : false;
                     pinStates['D6'] = (val & (1 << 6)) ? true : false;
                     pinStates['D7'] = (val & (1 << 7)) ? true : false;
-                    // Check for NeoPixel bit-bang on PORTD pins
+
                     processNeopixelWrite(0x2B, val);
-                    return false;
+                    return true;
                 };
 
                 cpu.writeHooks[0x27] = (val) => { /* DDRC updated */ return false; };
@@ -285,7 +356,7 @@ wss.on('connection', (ws) => {
                     pinStates['A3'] = (val & (1 << 3)) ? true : false;
                     pinStates['A4'] = (val & (1 << 4)) ? true : false;
                     pinStates['A5'] = (val & (1 << 5)) ? true : false;
-                    return false;
+                    return true;
                 };
 
                 running = true;
