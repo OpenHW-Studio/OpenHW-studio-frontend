@@ -1,230 +1,79 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import axios from 'axios'
 import { useAuth } from '../context/AuthContext.jsx'
 import { compileCode } from '../services/simulatorService.js'
 
-// ─── PIN DEFINITIONS per component type ──────────────────────────────────────
-// Each pin: { id, label, x, y } — offsets relative to component top-left
-const PIN_DEFS = {
-  'wokwi-arduino-uno': [
-    // Digital pins (right side)
-    { id: 'D13', label: 'D13', x: 192, y: 26 },
-    { id: 'D12', label: 'D12', x: 192, y: 36 },
-    { id: 'D11', label: 'D11', x: 192, y: 46 },
-    { id: 'D10', label: 'D10', x: 192, y: 56 },
-    { id: 'D9', label: 'D9', x: 192, y: 66 },
-    { id: 'D8', label: 'D8', x: 192, y: 76 },
-    { id: 'D7', label: 'D7', x: 192, y: 90 },
-    { id: 'D6', label: 'D6', x: 192, y: 100 },
-    { id: 'D5', label: 'D5', x: 192, y: 110 },
-    { id: 'D4', label: 'D4', x: 192, y: 120 },
-    // Power (top)
-    { id: '5V', label: '5V', x: 30, y: 0 },
-    { id: 'GND', label: 'GND', x: 55, y: 0 },
-    { id: '3V3', label: '3.3V', x: 80, y: 0 },
-    // Analog (bottom)
-    { id: 'A0', label: 'A0', x: 30, y: 128 },
-    { id: 'A1', label: 'A1', x: 55, y: 128 },
-    { id: 'A2', label: 'A2', x: 80, y: 128 },
-    { id: 'A3', label: 'A3', x: 105, y: 128 },
-  ],
-  'wokwi-led': [
-    { id: 'A', label: 'A+', x: 15, y: 0 },
-    { id: 'K', label: 'K−', x: 15, y: 60 },
-  ],
-  'wokwi-resistor': [
-    { id: '1', label: '1', x: 0, y: 15 },
-    { id: '2', label: '2', x: 80, y: 15 },
-  ],
-  'wokwi-pushbutton': [
-    { id: '1a', label: '1a', x: 0, y: 10 },
-    { id: '2a', label: '2a', x: 40, y: 10 },
-    { id: '1b', label: '1b', x: 0, y: 30 },
-    { id: '2b', label: '2b', x: 40, y: 30 },
-  ],
-  'wokwi-buzzer': [
-    { id: '+', label: '+', x: 15, y: 0 },
-    { id: '-', label: '−', x: 35, y: 0 },
-  ],
-  'wokwi-servo': [
-    { id: 'GND', label: 'GND', x: 10, y: 50 },
-    { id: 'V+', label: 'V+', x: 35, y: 50 },
-    { id: 'PWM', label: 'PWM', x: 60, y: 50 },
-  ],
-  'wokwi-neopixel': [
-    { id: 'GND', label: 'GND', x: 0, y: 15 },
-    { id: 'VCC', label: 'VCC', x: 10, y: 0 },
-    { id: 'DIN', label: 'DIN', x: 20, y: 15 },
-    { id: 'DOUT', label: 'OUT', x: 30, y: 0 },
-  ],
-  'wokwi-lcd1602': [
-    { id: 'VSS', label: 'GND', x: 10, y: 0 },
-    { id: 'VDD', label: 'VCC', x: 25, y: 0 },
-    { id: 'RS', label: 'RS', x: 60, y: 0 },
-    { id: 'RW', label: 'RW', x: 75, y: 0 },
-    { id: 'E', label: 'E', x: 90, y: 0 },
-    { id: 'D4', label: 'D4', x: 105, y: 0 },
-    { id: 'D5', label: 'D5', x: 120, y: 0 },
-    { id: 'D6', label: 'D6', x: 135, y: 0 },
-    { id: 'D7', label: 'D7', x: 150, y: 0 },
-  ],
-  'wokwi-neopixel-matrix-8': [
-    { id: 'GND', label: 'GND', x: 86, y: 181 },
-    { id: 'VCC', label: 'VCC', x: 96, y: 181 },
-    { id: 'DIN', label: 'DIN', x: 105, y: 181 },
-    { id: 'DOUT', label: 'DOUT', x: 115, y: 181 },
-  ],
-  'wokwi-neopixel-matrix-16': [
-    { id: 'GND', label: 'GND', x: 187, y: 363 },
-    { id: 'VCC', label: 'VCC', x: 196, y: 363 },
-    { id: 'DIN', label: 'DIN', x: 206, y: 363 },
-    { id: 'DOUT', label: 'DOUT', x: 216, y: 363 },
-  ],
-  'wokwi-led-ring-12': [
-    { id: 'GND', label: 'GND', x: 44, y: 129 },
-    { id: 'VCC', label: 'VCC', x: 54, y: 129 },
-    { id: 'DIN', label: 'DIN', x: 64, y: 129 },
-    { id: 'DOUT', label: 'DOUT', x: 73, y: 129 },
-  ],
-  'wokwi-led-ring-24': [
-    { id: 'GND', label: 'GND', x: 80, y: 201 },
-    { id: 'VCC', label: 'VCC', x: 90, y: 201 },
-    { id: 'DIN', label: 'DIN', x: 100, y: 201 },
-    { id: 'DOUT', label: 'DOUT', x: 109, y: 201 },
-  ],
-}
+import { wokwiLed as ledIndex, wokwiArduinoUno as unoIndex, wokwiResistor as resistorIndex, wokwiPushbutton as pushbuttonIndex, wokwiPowerSupply as powerSupplyIndex, wokwiNeopixelMatrix as neopixelIndex, wokwiBuzzer as buzzerIndex, wokwiMotor as motorIndex, wokwiServo as servoIndex, wokwiMotorDriver as motorDriverIndex, wokwiSlidePotentiometer as slidePotIndex, wokwiPotentiometer as potIndex } from '@openhw/emulator/src/components/index.ts';
 
-// ─── VALIDATION RULES ─────────────────────────────────────────────────────────
-// Returns array of { type: 'error'|'warning', message, compIds }
-function validateCircuit(components, wires) {
-  const errors = []
+// Web Editor features
+import Editor from 'react-simple-code-editor';
+import Prism from 'prismjs/components/prism-core';
+import 'prismjs/components/prism-clike';
+import 'prismjs/components/prism-c';
+import 'prismjs/components/prism-cpp';
+// Import a Prism theme (or we can inject our own CSS wrapper)
+import 'prismjs/themes/prism-tomorrow.css';
 
-  // Check LED has a resistor in series
-  const leds = components.filter(c => c.type === 'wokwi-led')
-  const resistors = components.filter(c => c.type === 'wokwi-resistor')
+// Build Catalog & UI Registry from local imports
+const COMPONENT_REGISTRY = {
+  'wokwi-led': ledIndex,
+  'wokwi-arduino-uno': unoIndex,
+  'wokwi-resistor': resistorIndex,
+  'wokwi-pushbutton': pushbuttonIndex,
+  'wokwi-power-supply': powerSupplyIndex,
+  'wokwi-neopixel-matrix': neopixelIndex,
+  'wokwi-buzzer': buzzerIndex,
+  'wokwi-motor': motorIndex,
+  'wokwi-servo': servoIndex,
+  'wokwi-motor-driver': motorDriverIndex,
+  'wokwi-slide-potentiometer': slidePotIndex,
+  'wokwi-potentiometer': potIndex
+};
 
-  leds.forEach(led => {
-    const ledPins = [`${led.id}:A`, `${led.id}:K`]
-    const connectedToResistor = wires.some(w =>
-      (ledPins.includes(w.from) || ledPins.includes(w.to)) &&
-      resistors.some(r => w.from.startsWith(r.id) || w.to.startsWith(r.id))
-    )
-    if (!connectedToResistor && wires.some(w => ledPins.includes(w.from) || ledPins.includes(w.to))) {
-      errors.push({ type: 'error', message: `LED "${led.id}" has no current-limiting resistor! Will burn out.`, compIds: [led.id] })
-    }
-  })
+const LOCAL_CATALOG = [];
+const LOCAL_PIN_DEFS = {};
 
-  // Check for unconnected power pins on buzzer/servo
-  const buzzers = components.filter(c => c.type === 'wokwi-buzzer')
-  buzzers.forEach(b => {
-    const connected = wires.some(w => w.from.startsWith(b.id) || w.to.startsWith(b.id))
-    if (!connected) {
-      errors.push({ type: 'warning', message: `Buzzer "${b.id}" is not connected to anything.`, compIds: [b.id] })
-    }
-  })
+Object.values(COMPONENT_REGISTRY).forEach(module => {
+  const manifest = module.manifest;
+  let group = LOCAL_CATALOG.find(g => g.group === manifest.group);
+  if (!group) {
+    group = { group: manifest.group, items: [] };
+    LOCAL_CATALOG.push(group);
+  }
 
-  // Check NeoPixel Matrix / Ring has DIN connected
-  const neopixels = components.filter(c => c.type.startsWith('wokwi-neopixel-matrix') || c.type.startsWith('wokwi-led-ring'))
-  neopixels.forEach(m => {
-    const dinPin = `${m.id}:DIN`
-    const dinConnected = wires.some(w => w.from === dinPin || w.to === dinPin)
-    if (!dinConnected) {
-      errors.push({ type: 'warning', message: `NeoPixel component "${m.id}" has no data (DIN) connection.`, compIds: [m.id] })
-    }
-    const gndPin = `${m.id}:GND`
-    const gndConnected = wires.some(w => w.from === gndPin || w.to === gndPin)
-    if (!gndConnected) {
-      errors.push({ type: 'warning', message: `NeoPixel component "${m.id}" has no GND connection.`, compIds: [m.id] })
-    }
-  })
+  const { pins, group: _, ...catalogItem } = manifest;
+  group.items.push(catalogItem);
 
-  // Check Servo has PWM connected
-  const servos = components.filter(c => c.type === 'wokwi-servo')
-  servos.forEach(s => {
-    const pwmPin = `${s.id}:PWM`
-    const gndPin = `${s.id}:GND`
-    const pwmConnected = wires.some(w => w.from === pwmPin || w.to === pwmPin)
-    const gndConnected = wires.some(w => w.from === gndPin || w.to === gndPin)
-
-    if (!pwmConnected) {
-      errors.push({ type: 'warning', message: `Servo "${s.id}" has no PWM signal connection.`, compIds: [s.id] })
-    }
-    if (!gndConnected) {
-      errors.push({ type: 'warning', message: `Servo "${s.id}" has no GND connection.`, compIds: [s.id] })
-    }
-  })
-
-  // Duplicate wire check
-  const seen = new Set()
-  wires.forEach(w => {
-    const key = [w.from, w.to].sort().join('--')
-    if (seen.has(key)) {
-      errors.push({ type: 'warning', message: `Duplicate wire between ${w.from} and ${w.to}.`, compIds: [] })
-    }
-    seen.add(key)
-  })
-
-  return errors
-}
-
-// ─── WIRE COLORS by signal type ───────────────────────────────────────────────
-const WIRE_COLOR = {
-  '5V': '#ff4444', 'VCC': '#ff4444', 'V+': '#ff4444',
-  'GND': '#333', 'VSS': '#333',
-  'PWM': '#ffaa00',
-  default: 'var(--accent)',
-}
-function wireColor(pinLabel) {
-  return WIRE_COLOR[pinLabel] || WIRE_COLOR.default
-}
-
-const CATALOG = [
-  {
-    group: 'Boards', items: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', icon: '🟦', w: 200, h: 130 },
-    ]
-  },
-  {
-    group: 'Basic', items: [
-      { type: 'wokwi-led', label: 'LED', icon: '💡', w: 30, h: 60, attrs: { color: 'red' } },
-      { type: 'wokwi-resistor', label: 'Resistor', icon: '〰️', w: 80, h: 30, attrs: { value: '220' } },
-      { type: 'wokwi-pushbutton', label: 'Push Button', icon: '🔘', w: 40, h: 40 },
-      { type: 'wokwi-buzzer', label: 'Buzzer', icon: '🔊', w: 50, h: 50 },
-    ]
-  },
-  {
-    group: 'Actuators', items: [
-      { type: 'wokwi-servo', label: 'Servo Motor', icon: '⚙️', w: 170, h: 120, attrs: { angle: '0' } },
-      { type: 'wokwi-neopixel', label: 'NeoPixel', icon: '🌈', w: 30, h: 30 },
-    ]
-  },
-  {
-    group: 'NeoPixel Matrix', items: [
-      { type: 'wokwi-neopixel-matrix-8', label: 'NeoPixel 8×8', icon: '🟩', w: 202, h: 182, attrs: { rows: '8', cols: '8' } },
-      { type: 'wokwi-neopixel-matrix-16', label: 'NeoPixel 16×16', icon: '🟩', w: 403, h: 363, attrs: { rows: '16', cols: '16' } },
-    ]
-  },
-  {
-    group: 'LED Rings', items: [
-      { type: 'wokwi-led-ring-12', label: 'LED Ring (12)', icon: '⭕', w: 118, h: 129, attrs: { pixels: '12' } },
-      { type: 'wokwi-led-ring-24', label: 'LED Ring (24)', icon: '⭕', w: 190, h: 201, attrs: { pixels: '24' } },
-    ]
-  },
-  {
-    group: 'Display', items: [
-      { type: 'wokwi-lcd1602', label: 'LCD 1602', icon: '📺', w: 160, h: 60 },
-    ]
-  },
-]
+  if (pins) {
+    LOCAL_PIN_DEFS[manifest.type] = pins;
+  }
+});
 
 let nextId = 1
 let nextWireId = 1
 
-// ─── BEZIER path between two points ──────────────────────────────────────────
-function bezierPath(x1, y1, x2, y2) {
-  const dx = Math.abs(x2 - x1)
-  const cx = dx * 0.5
-  return `M ${x1} ${y1} C ${x1 + cx} ${y1}, ${x2 - cx} ${y2}, ${x2} ${y2}`
+// ─── MULTI-SEGMENT ORTHOGONAL PATH ──────────────────────────────────────────
+function multiRoutePath(p1, p2, waypoints = []) {
+  if (!p1 || !p2) return '';
+  const pts = [p1, ...waypoints, p2];
+  let d = '';
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const midX = (a.x + b.x) / 2;
+    if (i === 0) d += `M ${a.x} ${a.y} `;
+    d += `L ${midX} ${a.y} L ${midX} ${b.y} L ${b.x} ${b.y} `;
+  }
+  return d;
+}
+
+function wireColor(pinLabel) {
+  if (!pinLabel) return '#2ecc71';
+  const l = pinLabel.toUpperCase();
+  if (l.includes('GND') || l === 'CATHODE') return '#000000'; // black
+  if (l.includes('5V') || l.includes('3.3V') || l === 'VCC' || l === 'ANODE') return '#e74c3c'; // red
+  return '#2ecc71'; // green default
 }
 
 export default function SimulatorPage() {
@@ -242,21 +91,26 @@ export default function SimulatorPage() {
 
   const [components, setComponents] = useState([])
   const [wires, setWires] = useState([])
-  const [selected, setSelected] = useState(null)   // comp id
-  const [wiringMode, setWiringMode] = useState(false)
+  const [showGuestBanner, setShowGuestBanner] = useState(true)
+  const [history, setHistory] = useState({ past: [], future: [] })
+  const [selected, setSelected] = useState(null)   // comp or wire id
   const [wireStart, setWireStart] = useState(null)   // { compId, pinId, pinLabel, x, y }
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const [hoveredPin, setHoveredPin] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
   const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
+  const [isPanelOpen, setIsPanelOpen] = useState(true)
+  const [panelWidth, setPanelWidth] = useState(400)
+  const [isDragging, setIsDragging] = useState(false)
+
   const [validationErrors, setValidationErrors] = useState([])
   const [showValidation, setShowValidation] = useState(true)
   const [isRunning, setIsRunning] = useState(false)
   const [pinStates, setPinStates] = useState({})
   const [neopixelData, setNeopixelData] = useState({})
-  const [servoData, setServoData] = useState({})
-  const wsRef = useRef(null)
+  const [oopStates, setOopStates] = useState({});
+  const workerRef = useRef(null)
   const neopixelRefs = useRef({})
 
   const canvasRef = useRef(null)
@@ -264,9 +118,83 @@ export default function SimulatorPage() {
   const dragPayload = useRef(null)
   const movingComp = useRef(null)
 
+  // ── Library Manager State ───────────────────────────────────────────────────
+  const [libQuery, setLibQuery] = useState('')
+  const [libResults, setLibResults] = useState([])
+  const [libInstalled, setLibInstalled] = useState([])
+  const [isSearchingLib, setIsSearchingLib] = useState(false)
+  const [installingLib, setInstallingLib] = useState(null)
+  const [libMessage, setLibMessage] = useState(null)
+
+  const fetchInstalledLibraries = async () => {
+    try {
+      const res = await axios.get('http://localhost:5000/api/lib-list');
+      setLibInstalled(res.data.libraries || []);
+    } catch (err) {
+      console.error('Failed to fetch installed libraries', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchInstalledLibraries();
+  }, []);
+
+  const searchLibraries = async (e) => {
+    e.preventDefault();
+    if (!libQuery.trim()) return;
+    setIsSearchingLib(true);
+    setLibMessage(null);
+    try {
+      const res = await axios.get(`http://localhost:5000/api/lib-search?q=${encodeURIComponent(libQuery)}`);
+      setLibResults(res.data.libraries || []);
+      if (res.data.libraries?.length === 0) setLibMessage({ type: 'error', text: 'No libraries found.' });
+    } catch (err) {
+      setLibMessage({ type: 'error', text: 'Failed to search libraries.' });
+    } finally {
+      setIsSearchingLib(false);
+    }
+  };
+
+  const installLibrary = async (libName) => {
+    setInstallingLib(libName);
+    setLibMessage(null);
+    try {
+      const res = await axios.post('http://localhost:5000/api/lib-install', { name: libName });
+      setLibMessage({ type: 'success', text: res.data.message });
+      fetchInstalledLibraries(); // Refresh the installed list!
+    } catch (err) {
+      setLibMessage({ type: 'error', text: 'Failed to install library.' });
+    } finally {
+      setInstallingLib(null);
+    }
+  };
+
+  // ── Handle Panel Resize ──────────────────────────────────────────────────────
+  const onMouseDownResize = useCallback((e) => {
+    e.preventDefault();
+    setIsDragging(true);
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+
+    const onMouseMove = (moveEvent) => {
+      const delta = startX - moveEvent.clientX; // Left drag increases width
+      const newWidth = Math.max(250, Math.min(800, startWidth + delta));
+      setPanelWidth(newWidth);
+    };
+
+    const onMouseUp = () => {
+      setIsDragging(false);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [panelWidth]);
+
   // ── Load Wokwi bundle ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (!document.getElementById('wokwi-bundle')) {
+    if (!customElements.get('wokwi-7segment') && !document.getElementById('wokwi-bundle')) {
       const s = document.createElement('script')
       s.id = 'wokwi-bundle'
       s.src = 'https://unpkg.com/@wokwi/elements@0.48.3/dist/wokwi-elements.bundle.js'
@@ -274,10 +202,16 @@ export default function SimulatorPage() {
     }
   }, [])
 
-  // ── Run validation whenever circuit changes ─────────────────────────────────
+  // ── Remote Validation ────────────────────────────────────────────────────────
   useEffect(() => {
-    setValidationErrors(validateCircuit(components, wires))
-  }, [components, wires])
+    // Skipping validation for now as logic moved to frontend worker completely
+    // We can add static validateCircuit functions back to the components if needed
+    setValidationErrors([]);
+  }, [components, wires, isRunning]);
+
+  // ── Load Catalog on Mount ────────────────────────────────────────────────────
+  const CATALOG = LOCAL_CATALOG;
+  const PIN_DEFS = LOCAL_PIN_DEFS;
 
   // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
   useEffect(() => {
@@ -285,20 +219,10 @@ export default function SimulatorPage() {
     for (const [compId, pixels] of Object.entries(neopixelData)) {
       const wrapper = neopixelRefs.current[compId];
       if (!wrapper) continue;
-
-      const comp = components.find(c => c.id === compId);
-      if (!comp) continue;
-
-      const el = wrapper.querySelector('wokwi-neopixel-matrix') || wrapper.querySelector('wokwi-led-ring');
+      const el = wrapper.querySelector('wokwi-neopixel-matrix');
       if (!el || typeof el.setPixel !== 'function') continue;
-
       for (const [row, col, rgb] of pixels) {
-        if (comp.type.startsWith('wokwi-neopixel-matrix')) {
-          el.setPixel(row, col, rgb);
-        } else if (comp.type.startsWith('wokwi-led-ring')) {
-          // The emulator treats it as a 1xN matrix, so row=0 and col=pixelIndex
-          el.setPixel(col, rgb);
-        }
+        el.setPixel(row, col, rgb);
       }
     }
   }, [neopixelData])
@@ -317,7 +241,7 @@ export default function SimulatorPage() {
     const pin = pins.find(p => p.id === pinId)
     if (!pin) return null
     return { x: comp.x + pin.x, y: comp.y + pin.y }
-  }, [components])
+  }, [components, PIN_DEFS])
 
   // ── Palette drag start ──────────────────────────────────────────────────────
   const onPaletteDragStart = (e, item) => {
@@ -330,11 +254,38 @@ export default function SimulatorPage() {
     setTimeout(() => document.body.removeChild(ghost), 0)
   }
 
+  // ── History & Undo/Redo ────────────────────────────────────────────────────
+  const saveHistory = useCallback(() => {
+    setHistory(h => ({
+      past: [...h.past.slice(-20), { components: JSON.parse(JSON.stringify(components)), wires: JSON.parse(JSON.stringify(wires)) }],
+      future: []
+    }))
+  }, [components, wires])
+
+  const undo = () => {
+    if (history.past.length === 0 || isRunning) return
+    const prev = history.past[history.past.length - 1]
+    setHistory(h => ({ past: h.past.slice(0, -1), future: [{ components: JSON.parse(JSON.stringify(components)), wires: JSON.parse(JSON.stringify(wires)) }, ...h.future] }))
+    setComponents(prev.components)
+    setWires(prev.wires)
+    setSelected(null)
+  }
+
+  const redo = () => {
+    if (history.future.length === 0 || isRunning) return
+    const next = history.future[0]
+    setHistory(h => ({ past: [...h.past, { components: JSON.parse(JSON.stringify(components)), wires: JSON.parse(JSON.stringify(wires)) }], future: h.future.slice(1) }))
+    setComponents(next.components)
+    setWires(next.wires)
+    setSelected(null)
+  }
+
   // ── Canvas drop ────────────────────────────────────────────────────────────
   const onCanvasDrop = useCallback((e) => {
     e.preventDefault()
     const item = dragPayload.current
     if (!item) return
+    saveHistory();
     const rect = canvasRef.current.getBoundingClientRect()
     const x = e.clientX - rect.left - (item.w || 60) / 2
     const y = e.clientY - rect.top - (item.h || 60) / 2
@@ -346,19 +297,24 @@ export default function SimulatorPage() {
       attrs: item.attrs || {},
     }])
     dragPayload.current = null
-  }, [])
-  // ── Move component ─────────────────────────────────────────────────────────
+  }, [saveHistory])
+
+  // ── Move and Select component ──────────────────────────────────────────────
   const onCompMouseDown = useCallback((e, id) => {
-    if (wiringMode) return
+    e.stopPropagation()
+    const comp = components.find(c => c.id === id)
+    movingComp.current = { id, sx: e.clientX, sy: e.clientY, cx: comp.x, cy: comp.y, moved: false, originalComps: JSON.parse(JSON.stringify(components)) }
+  }, [components])
+
+  const onCompClick = useCallback((e, id) => {
     e.stopPropagation()
     setSelected(id)
-    const comp = components.find(c => c.id === id)
-    movingComp.current = { id, sx: e.clientX, sy: e.clientY, cx: comp.x, cy: comp.y }
-  }, [components, wiringMode])
+  }, [])
 
   useEffect(() => {
     const onMove = (e) => {
       if (movingComp.current) {
+        movingComp.current.moved = true
         const { id, sx, sy, cx, cy } = movingComp.current
         setComponents(prev => prev.map(c =>
           c.id === id ? { ...c, x: Math.max(0, cx + e.clientX - sx), y: Math.max(0, cy + e.clientY - sy) } : c
@@ -370,16 +326,21 @@ export default function SimulatorPage() {
         setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
       }
     }
-    const onUp = () => { movingComp.current = null }
+    const onUp = () => {
+      if (movingComp.current?.moved) {
+        const origComps = movingComp.current.originalComps;
+        setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
+      }
+      movingComp.current = null;
+    }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
-  }, [wireStart])
+  }, [wireStart, wires])
 
   // ── Pin click — start or complete wire ─────────────────────────────────────
   const onPinClick = useCallback((e, compId, pinId, pinLabel) => {
     e.stopPropagation()
-    if (!wiringMode) return
 
     const pos = getPinPos(compId, pinId)
     if (!pos) return
@@ -393,6 +354,7 @@ export default function SimulatorPage() {
         setWireStart(null)
         return
       }
+      saveHistory();
       const newWire = {
         id: `w${nextWireId++}`,
         from: `${wireStart.compId}:${wireStart.pinId}`,
@@ -400,29 +362,41 @@ export default function SimulatorPage() {
         fromLabel: wireStart.pinLabel,
         toLabel: pinLabel,
         color: wireColor(wireStart.pinLabel),
+        waypoints: wireStart.waypoints || [],
       }
       setWires(prev => [...prev, newWire])
       setWireStart(null)
     }
-  }, [wiringMode, wireStart, getPinPos])
+  }, [wireStart, getPinPos, saveHistory])
+
+  const updateWireColor = (id, color) => {
+    setWires(prev => prev.map(w => w.id === id ? { ...w, color } : w));
+  };
 
   // Cancel wire on Escape / delete selected
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === 'Escape') { setWireStart(null) }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !wiringMode && !isRunning) {
-        setComponents(prev => prev.filter(c => c.id !== selected))
-        setWires(prev => prev.filter(w => !w.from.startsWith(selected) && !w.to.startsWith(selected)))
+      if (e.key === 'Escape') { setWireStart(null); setSelected(null); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning) {
+        saveHistory();
+        if (selected.startsWith('w')) {
+          setWires(prev => prev.filter(w => w.id !== selected))
+        } else {
+          setComponents(prev => prev.filter(c => c.id !== selected))
+          setWires(prev => prev.filter(w => !w.from.startsWith(selected) && !w.to.startsWith(selected)))
+        }
         setSelected(null)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, wiringMode, isRunning])
+  }, [selected, isRunning, saveHistory])
 
   const deleteWire = (id) => {
     if (isRunning) return;
+    saveHistory();
     setWires(prev => prev.filter(w => w.id !== id))
+    if (selected === id) setSelected(null);
   }
 
   // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
@@ -438,78 +412,50 @@ export default function SimulatorPage() {
       const result = await compileCode(code);
       logSerial('Compiled! Connecting to emulator...');
 
-      const ws = new WebSocket('ws://localhost:8085');
-      wsRef.current = ws;
+      // Load Web Worker
+      const worker = new Worker(new URL('../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
+      workerRef.current = worker;
 
-      ws.onopen = () => {
-        logSerial('Emulator connected. Sending hex...');
-        // Build neopixel wiring info from circuit
-        const neopixelWiring = components
-          .filter(c => c.type.startsWith('wokwi-neopixel-matrix') || c.type.startsWith('wokwi-led-ring'))
-          .map(c => {
-            const dinPin = `${c.id}:DIN`;
-            const wire = wires.find(w => w.from === dinPin || w.to === dinPin);
-            let arduinoPin = null;
-            if (wire) {
-              const otherEnd = wire.from === dinPin ? wire.to : wire.from;
-              if (otherEnd.startsWith('wokwi-arduino-uno')) {
-                arduinoPin = otherEnd.split(':')[1];
-              }
-            }
-            return {
-              compId: c.id,
-              pin: arduinoPin,
-              rows: c.type.startsWith('wokwi-neopixel-matrix') ? parseInt(c.attrs.rows || '8') : 1,
-              cols: c.type.startsWith('wokwi-neopixel-matrix') ? parseInt(c.attrs.cols || '8') : parseInt(c.attrs.pixels || '16')
-            };
-          })
-          .filter(n => n.pin);
-
-        // Build servo wiring info
-        const servoWiring = components
-          .filter(c => c.type === 'wokwi-servo')
-          .map(c => {
-            const pwmPin = `${c.id}:PWM`;
-            const wire = wires.find(w => w.from === pwmPin || w.to === pwmPin);
-            let arduinoPin = null;
-            if (wire) {
-              const otherEnd = wire.from === pwmPin ? wire.to : wire.from;
-              if (otherEnd.startsWith('wokwi-arduino-uno')) {
-                const rawPin = otherEnd.split(':')[1];
-                // If it's just a number, prepend 'D' so the backend getPinPortMapping works
-                arduinoPin = !isNaN(rawPin) ? `D${rawPin}` : rawPin;
-              }
-            }
-            return { compId: c.id, pin: arduinoPin };
-          })
-          .filter(s => s.pin);
-
-        ws.send(JSON.stringify({ type: 'START', hex: result.hex, neopixels: neopixelWiring, servos: servoWiring }));
-      };
-
-      ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
+      worker.onmessage = (event) => {
+        const msg = event.data;
         if (msg.type === 'state' && msg.pins) {
           setPinStates(msg.pins);
         }
         if (msg.type === 'state' && msg.neopixels) {
           setNeopixelData(msg.neopixels);
         }
-        if (msg.type === 'state' && msg.servos) {
-          setServoData(msg.servos);
+        if (msg.type === 'state' && msg.components) {
+          setOopStates(prev => {
+            const next = { ...prev };
+            msg.components.forEach(c => {
+              next[c.id] = c.state;
+            });
+            return next;
+          });
         }
       };
 
-      ws.onerror = (err) => {
-        console.error('WS Error:', err);
-        logSerial('Emulator connection error', 'var(--red)');
+      worker.onerror = (err) => {
+        console.error('Worker Error:', err);
+        logSerial('Worker threw an error', 'var(--red)');
         handleStop();
       };
 
-      ws.onclose = () => {
-        logSerial('Emulator disconnected.');
-        setIsRunning(false);
-      }
+      logSerial('Simulator started in Web Worker.');
+
+      const neopixelWiring = components
+        .filter(c => c.type === 'wokwi-neopixel-matrix')
+        .map(c => {
+          return null; // Handle Neopixels later
+        }).filter(n => n);
+
+      worker.postMessage({
+        type: 'START',
+        hex: result.hex,
+        neopixels: neopixelWiring,
+        wires: wires,
+        components: components
+      });
     } catch (err) {
       setIsRunning(false);
       console.error(err);
@@ -518,46 +464,48 @@ export default function SimulatorPage() {
   };
 
   const handleStop = () => {
-    if (wsRef.current) {
-      wsRef.current.send(JSON.stringify({ type: 'STOP' }));
-      wsRef.current.close();
-      wsRef.current = null;
+    if (workerRef.current) {
+      workerRef.current.postMessage({ type: 'STOP' });
+      workerRef.current.terminate();
+      workerRef.current = null;
     }
     setIsRunning(false);
     setPinStates({});
     setNeopixelData({});
+    setOopStates({});
   };
 
   const getComponentStateAttrs = (comp) => {
     let attrs = { ...comp.attrs };
+
+    // Remote OOP state takes priority
+    const remoteState = oopStates[comp.id];
+
     if (comp.type === 'wokwi-led') {
-      const aPin = `${comp.id}:A`;
-      const wire = wires.find(w => w.from === aPin || w.to === aPin);
-
-      // Default to OFF.
-      delete attrs.value;
-
-      if (wire && isRunning) {
-        const otherPin = wire.from === aPin ? wire.to : wire.from;
-        if (otherPin.startsWith('wokwi-arduino-uno')) {
-          const cpuPin = otherPin.split(':')[1];
-          if (pinStates[cpuPin]) {
-            attrs.value = "1";
-          }
-        }
+      delete attrs.value; // Let ui.tsx handle it
+    } else if (comp.type === 'wokwi-servo') {
+      if (remoteState && remoteState.angle !== undefined) {
+        attrs.angle = remoteState.angle.toString();
       }
-    }
-    if (comp.type === 'wokwi-servo') {
-      const liveAngle = servoData[comp.id]
-      console.log(`[UI Render] Servo ${comp.id} -> ${liveAngle} | raw state: `, servoData)
-      if (liveAngle !== undefined) {
-        attrs.angle = liveAngle.toString()
-      } else if (!attrs.angle) {
-        attrs.angle = "90"
+    } else if (comp.type === 'wokwi-buzzer') {
+      if (remoteState && remoteState.isBuzzing) {
+        // Wokwi buzzer visual indicator (if supported) can be driven here
+        attrs.color = "red";
       }
     }
 
-    // Add handles for buzzed/servo in the future right here
+    // Pass interactions to the Web Worker
+    attrs.onInteract = (event) => {
+      console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
+      if (workerRef.current && isRunning) {
+        workerRef.current.postMessage({
+          type: 'INTERACT',
+          compId: comp.id,
+          event: event
+        });
+      }
+    };
+
     return attrs;
   };
 
@@ -574,23 +522,26 @@ export default function SimulatorPage() {
             <option value="pico">Raspberry Pi Pico</option>
             <option value="esp32">ESP32</option>
           </select>
-          <Btn color={isRunning ? "var(--border)" : "var(--green)"} onClick={!isRunning ? handleRun : undefined}>{isRunning ? '⏳ Running...' : '▶ Run'}</Btn>
-          <Btn color={isRunning ? "var(--red)" : undefined} onClick={isRunning ? handleStop : undefined}>⏹ Stop</Btn>
-          <Btn
-            color={wiringMode ? 'var(--orange)' : undefined}
-            onClick={() => { if (!isRunning) { setWiringMode(v => !v); setWireStart(null); } }}
-            title="Toggle wiring mode (W)"
-          >
-            {wiringMode ? '✂ Exit Wiring' : '〰 Wire Mode'}
-          </Btn>
-          {selected && !wiringMode && !isRunning && (
-            <Btn color="var(--red)" onClick={() => {
+          <Btn color={isRunning ? "var(--border)" : "var(--green)"} disabled={isRunning} onClick={!isRunning ? handleRun : undefined}>{isRunning ? '⏳ Running...' : '▶ Run'}</Btn>
+          <Btn color={isRunning ? "var(--red)" : undefined} disabled={!isRunning} onClick={isRunning ? handleStop : undefined}>⏹ Stop</Btn>
+
+          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
+          <Btn onClick={undo} disabled={history.past.length === 0 || isRunning} title="Undo">↩ Undo</Btn>
+          <Btn onClick={redo} disabled={history.future.length === 0 || isRunning} title="Redo">↪ Redo</Btn>
+          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
+
+          <Btn color={selected ? "var(--red)" : undefined} disabled={!selected || isRunning} onClick={() => {
+            if (!selected || isRunning) return;
+            saveHistory();
+            if (selected.startsWith('w')) {
+              setWires(prev => prev.filter(w => w.id !== selected));
+            } else {
               setComponents(prev => prev.filter(c => c.id !== selected))
               setWires(prev => prev.filter(w => !w.from.startsWith(selected) && !w.to.startsWith(selected)))
-              setSelected(null)
-            }}>🗑 Delete</Btn>
-          )}
-          <Btn onClick={() => { if (!isRunning) { setComponents([]); setWires([]); setSelected(null); } }}>↺ Clear All</Btn>
+            }
+            setSelected(null)
+          }}>🗑 Delete</Btn>
+          <Btn onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } }}>↺ Clear All</Btn>
 
           {/* THEME TOGGLE BUTTON */}
           <Btn onClick={toggleTheme} title="Toggle Dark/Light Mode">
@@ -606,18 +557,21 @@ export default function SimulatorPage() {
       </header>
 
       {/* GUEST BANNER */}
-      {!isAuthenticated && (
+      {(!isAuthenticated && showGuestBanner) && (
         <div style={S.guestBanner}>
-          ⚠️ <strong>Guest Mode</strong> — No cloud save or progress tracking.
-          <button style={S.bannerBtn} onClick={() => navigate('/login')}>Sign in →</button>
+          <div style={{ flex: 1 }}>
+            ⚠️ <strong>Guest Mode</strong> — No cloud save or progress tracking.
+            <button style={{ ...S.bannerBtn, marginLeft: 10 }} onClick={() => navigate('/login')}>Sign in →</button>
+          </div>
+          <button style={S.bannerCloseBtn} onClick={() => setShowGuestBanner(false)} title="Dismiss">✕</button>
         </div>
       )}
 
       {/* WIRING MODE HINT */}
-      {wiringMode && (
+      {wireStart && (
         <div style={{ ...S.guestBanner, background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
-          〰 <strong>Wiring Mode ON</strong> — Click a pin to start a wire, click another pin to connect. Press Esc to cancel.
-          {wireStart && <span style={{ marginLeft: 12 }}>🔵 Started from <strong>{wireStart.compId} [{wireStart.pinLabel}]</strong> — click a destination pin</span>}
+          〰 <strong>Wiring in progress</strong> — Click another pin to connect. Press Esc to cancel.
+          <span style={{ marginLeft: 12 }}>🔵 Started from <strong>{wireStart.compId} [{wireStart.pinLabel}]</strong></span>
         </div>
       )}
 
@@ -653,11 +607,19 @@ export default function SimulatorPage() {
 
         {/* CANVAS + SVG WIRE LAYER */}
         <main
-          style={{ ...S.canvas, cursor: wiringMode ? 'crosshair' : 'default' }}
+          style={{ ...S.canvas, cursor: wireStart ? 'crosshair' : 'default' }}
           ref={canvasRef}
           onDrop={onCanvasDrop}
           onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
-          onClick={() => { if (!wiringMode) setSelected(null) }}
+          onClick={(e) => {
+            if (wireStart) {
+              const r = canvasRef.current.getBoundingClientRect();
+              const newPt = { x: e.clientX - r.left, y: e.clientY - r.top };
+              setWireStart(prev => ({ ...prev, waypoints: [...(prev.waypoints || []), newPt] }));
+            } else {
+              setSelected(null)
+            }
+          }}
           onMouseMove={e => {
             if (wireStart && canvasRef.current) {
               const r = canvasRef.current.getBoundingClientRect()
@@ -683,24 +645,63 @@ export default function SimulatorPage() {
               const p1 = getPinPos(fromParts[0], fromParts[1])
               const p2 = getPinPos(toParts[0], toParts[1])
               if (!p1 || !p2) return null
+              const isSelectedWire = selected === w.id;
+              // Approximate midpoint for context menu
+              const pts = [p1, ...(w.waypoints || []), p2];
+              const midIdx = Math.floor(pts.length / 2);
+              const midPt = pts[midIdx];
+
               return (
-                <g key={w.id} style={{ pointerEvents: 'all', cursor: 'pointer' }} onClick={() => deleteWire(w.id)}>
+                <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }}>
                   {/* Shadow for click hitbox */}
                   <path
-                    d={bezierPath(p1.x, p1.y, p2.x, p2.y)}
-                    stroke="transparent" strokeWidth={12} fill="none"
+                    d={multiRoutePath(p1, p2, w.waypoints)}
+                    stroke="transparent" strokeWidth={16} fill="none"
+                    style={{ pointerEvents: 'stroke' }}
                   />
                   <path
-                    d={bezierPath(p1.x, p1.y, p2.x, p2.y)}
-                    stroke={w.color}
-                    strokeWidth={2.5}
+                    d={multiRoutePath(p1, p2, w.waypoints)}
+                    stroke={isSelectedWire ? 'var(--orange)' : w.color}
+                    strokeWidth={isSelectedWire ? 3.5 : 2.5}
                     fill="none"
+                    strokeDasharray={isSelectedWire ? "6 4" : "none"}
                     strokeLinecap="round"
                     opacity={0.9}
                   />
-                  {/* Dots at ends */}
-                  <circle cx={p1.x} cy={p1.y} r={4} fill={w.color} />
-                  <circle cx={p2.x} cy={p2.y} r={4} fill={w.color} />
+                  {/* Dots at waypoints & ends */}
+                  <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+                  {(w.waypoints || []).map((pt, i) => (
+                    <circle key={i} cx={pt.x} cy={pt.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
+                  ))}
+                  <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+
+                  {/* Small Context Menu for Selected Wire */}
+                  {isSelectedWire && !isRunning && (
+                    <foreignObject x={midPt.x - 45} y={midPt.y - 50} width="90" height="42" style={{ overflow: 'visible', pointerEvents: 'none' }}>
+                      <div style={{
+                        position: 'relative',
+                        background: 'var(--bg2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '6px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
+                        pointerEvents: 'all'
+                      }}
+                        onPointerDown={e => e.stopPropagation()}
+                        onClick={e => e.stopPropagation()}>
+                        <input
+                          type="color" value={w.color}
+                          onChange={e => updateWireColor(w.id, e.target.value)}
+                          style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }}
+                          title="Change Color"
+                        />
+                        <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+                        <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={() => deleteWire(w.id)} onClick={() => deleteWire(w.id)} title="Delete Wire">
+                          ✕
+                        </button>
+                        {/* Downward pointing triangle arrow */}
+                        <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
+                        <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                      </div>
+                    </foreignObject>
+                  )}
                 </g>
               )
             })}
@@ -708,7 +709,7 @@ export default function SimulatorPage() {
             {/* Preview wire while drawing */}
             {wireStart && (
               <path
-                d={bezierPath(wireStart.x, wireStart.y, mousePos.x, mousePos.y)}
+                d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
                 stroke="var(--orange)"
                 strokeWidth={2}
                 strokeDasharray="6 4"
@@ -742,14 +743,16 @@ export default function SimulatorPage() {
                   position: 'absolute',
                   left: comp.x, top: comp.y,
                   width: comp.w, height: comp.h,
-                  cursor: wiringMode ? 'crosshair' : 'move',
+                  cursor: wireStart ? 'crosshair' : 'move',
                   zIndex: isSelected ? 5 : 2,
                   userSelect: 'none',
+                  pointerEvents: 'all'
                 }}
                 onMouseDown={e => onCompMouseDown(e, comp.id)}
+                onClick={e => onCompClick(e, comp.id)}
               >
                 {/* Selection ring */}
-                {isSelected && !wiringMode && (
+                {isSelected && (
                   <div style={{
                     position: 'absolute', inset: -6, borderRadius: 8,
                     border: '2px solid var(--accent)',
@@ -768,18 +771,27 @@ export default function SimulatorPage() {
                   }} />
                 )}
 
-                {/* Wokwi element */}
-                <div
-                  style={{ width: '100%', height: '100%', pointerEvents: 'none' }}
-                  ref={el => {
-                    if ((comp.type.startsWith('wokwi-neopixel-matrix') || comp.type.startsWith('wokwi-led-ring')) && el) {
-                      neopixelRefs.current[comp.id] = el;
-                    }
-                  }}
-                  dangerouslySetInnerHTML={{
-                    __html: `<${comp.type.replace(/-\d+$/, '')} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type.replace(/-\d+$/, '')}>`,
-                  }}
-                />
+                {/* Component Render */}
+                {COMPONENT_REGISTRY[comp.type] ? (
+                  // Local UI component rendering SVG
+                  React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+                    state: oopStates[comp.id] || {},
+                    attrs: getComponentStateAttrs(comp)
+                  })
+                ) : (
+                  // Fallback for unsupported components (if any left)
+                  <div
+                    style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+                    ref={el => {
+                      if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                        neopixelRefs.current[comp.id] = el;
+                      }
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
+                    }}
+                  />
+                )}
 
                 {/* Pins */}
                 {pins.map(pin => {
@@ -788,38 +800,36 @@ export default function SimulatorPage() {
                   return (
                     <div
                       key={pin.id}
-                      title={`${pin.label} — click to wire`}
+                      title={`${pin.description || pin.id} — click to wire`}
                       style={{
                         position: 'absolute',
-                        left: pin.x - 6, top: pin.y - 6,
-                        width: 12, height: 12,
-                        borderRadius: '50%',
-                        background: isWireStartPin ? 'var(--orange)'
-                          : isHovered ? 'var(--accent)'
-                            : 'var(--card)',
-                        border: `2px solid ${isWireStartPin ? 'var(--orange)' : isHovered ? 'var(--accent)' : 'var(--border)'}`,
-                        cursor: wiringMode ? 'crosshair' : 'default',
-                        zIndex: 20,
-                        opacity: wiringMode ? 1 : 0.5,
-                        transition: 'all .1s',
-                        boxShadow: isHovered || isWireStartPin ? '0 0 8px var(--glow)' : 'none',
+                        left: pin.x, top: pin.y,
+                        width: 5, height: 5,
+                        background: isWireStartPin ? '#f1c40f' : isHovered ? '#f1c40f' : 'rgba(255,255,255,0.2)',
+                        border: `1px solid ${isHovered || isWireStartPin ? '#fff' : 'rgba(255,255,255,0.8)'}`,
+                        borderRadius: '0%', /* matching task3.html */
+                        cursor: 'crosshair',
+                        zIndex: isHovered ? 30 : 20, /* matching task3.html hover and port z-index */
+                        transform: `translate(-50%, -50%)${isHovered ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                        transition: '0.2s', /* matching task3.html transition */
+                        pointerEvents: 'all', /* Fix hit detection */
                       }}
                       onMouseEnter={() => setHoveredPin(`${comp.id}:${pin.id}`)}
                       onMouseLeave={() => setHoveredPin(null)}
-                      onClick={e => onPinClick(e, comp.id, pin.id, pin.label)}
+                      onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
                     >
                       {/* Pin label tooltip */}
                       {isHovered && (
                         <div style={{
-                          position: 'absolute', bottom: 14, left: '50%',
+                          position: 'absolute', bottom: 18, left: '50%',
                           transform: 'translateX(-50%)',
-                          background: 'var(--bg2)', border: '1px solid var(--border)',
-                          color: 'var(--accent)', padding: '2px 6px', borderRadius: 4,
-                          fontSize: 10, whiteSpace: 'nowrap', zIndex: 100,
-                          fontFamily: 'JetBrains Mono, monospace',
-                          pointerEvents: 'none',
+                          background: '#111', color: '#fff',
+                          padding: '4px 8px', borderRadius: 4,
+                          fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                          pointerEvents: 'none', border: '1px solid #444',
+                          boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
                         }}>
-                          {pin.label}
+                          {pin.description || pin.id}
                         </div>
                       )}
                     </div>
@@ -842,85 +852,211 @@ export default function SimulatorPage() {
         </main>
 
         {/* RIGHT PANEL */}
-        <aside style={S.rightPanel}>
-          {/* Validation panel */}
-          {validationErrors.length > 0 && showValidation && (
-            <div style={S.validationPanel}>
-              <div style={S.validationHeader}>
-                <span>⚠ Validation ({validationErrors.length})</span>
-                <button style={S.closeBtn} onClick={() => setShowValidation(false)}>✕</button>
-              </div>
-              {validationErrors.map((err, i) => (
-                <div key={i} style={{
-                  ...S.validationItem,
-                  borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
-                }}>
-                  <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
-                    {err.type === 'error' ? '🔴' : '🟡'} {err.message}
-                  </span>
-                </div>
-              ))}
-            </div>
+        <aside style={{ ...S.rightPanel, width: isPanelOpen ? panelWidth : 40, transition: isDragging ? 'none' : 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+          {/* Drag Handle */}
+          {isPanelOpen && (
+            <div
+              onMouseDown={onMouseDownResize}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 5,
+                cursor: 'col-resize',
+                zIndex: 10,
+                background: 'transparent'
+              }}
+            />
           )}
 
-          {/* Wires list */}
-          {wires.length > 0 && (
-            <div style={S.wiresList}>
-              <div style={S.wiresHeader}>Connections ({wires.length})</div>
-              {wires.map(w => (
-                <div key={w.id} style={S.wireItem}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: w.color, flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontSize: 10, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {w.from} → {w.to}
-                  </span>
-                  <button style={S.wireDelete} onClick={() => deleteWire(w.id)}>✕</button>
+          {/* Toggle Button */}
+          <button
+            onClick={() => setIsPanelOpen(!isPanelOpen)}
+            style={{
+              position: 'absolute',
+              left: isPanelOpen ? 5 : 0,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              height: 48,
+              width: 20,
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderLeft: 'none',
+              borderRadius: '0 8px 8px 0',
+              color: 'var(--text3)',
+              cursor: 'pointer',
+              zIndex: 11,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '2px 0 8px rgba(0,0,0,0.2)'
+            }}
+          >
+            {isPanelOpen ? '▶' : '◀'}
+          </button>
+
+          {isPanelOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', paddingLeft: 12 }}>
+              {/* Validation panel */}
+              {validationErrors.length > 0 && showValidation && (
+                <div style={S.validationPanel}>
+                  <div style={S.validationHeader}>
+                    <span>⚠ Validation ({validationErrors.length})</span>
+                    <button style={S.closeBtn} onClick={() => setShowValidation(false)}>✕</button>
+                  </div>
+                  {validationErrors.map((err, i) => (
+                    <div key={i} style={{
+                      ...S.validationItem,
+                      borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
+                    }}>
+                      <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
+                        {err.type === 'error' ? '🔴' : '🟡'} {err.message}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              {/* Wires list */}
+              <div style={S.wiresList}>
+                <div style={S.wiresHeader}>Connections ({wires.length})</div>
+                {wires.length === 0 ? (
+                  <div style={{ padding: '12px 12px 16px', fontSize: 12, color: 'var(--text3)' }}>
+                    No wires connected.
+                  </div>
+                ) : (
+                  wires.map(w => (
+                    <div key={w.id} style={S.wireItem}>
+                      <input
+                        type="color"
+                        value={w.color}
+                        onChange={e => updateWireColor(w.id, e.target.value)}
+                        style={{ width: 14, height: 14, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent' }}
+                        title="Change wire color"
+                      />
+                      <span style={{ flex: 1, fontSize: 10, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {w.from} → {w.to}
+                      </span>
+                      <button style={S.wireDelete} onClick={() => deleteWire(w.id)}>✕</button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Code editor */}
+              <div style={S.codePanel}>
+                <div style={S.codeTabs}>
+                  {['code', 'libraries', 'serial'].map(t => (
+                    <button
+                      key={t}
+                      style={{ ...S.codeTab, ...(codeTab === t ? S.codeTabActive : {}) }}
+                      onClick={() => setCodeTab(t)}
+                    >
+                      {t === 'code' ? '{ } Code' : t === 'libraries' ? '📚 Libraries' : '📟 Serial'}
+                    </button>
+                  ))}
+                </div>
+                {codeTab === 'code' && (
+                  <div style={{ flex: 1, overflow: 'auto', background: '#070b14' }}>
+                    <Editor
+                      value={code}
+                      onValueChange={code => setCode(code)}
+                      highlight={code => Prism.highlight(code, Prism.languages.cpp, 'cpp')}
+                      padding={14}
+                      style={{
+                        fontFamily: "'JetBrains Mono',monospace",
+                        fontSize: 12,
+                        lineHeight: 1.7,
+                        minHeight: '100%',
+                        color: '#e8edf5',
+                        border: 'none',
+                        outline: 'none',
+                        resize: 'none'
+                      }}
+                      textareaClassName="editor-textarea"
+                    />
+                  </div>
+                )}
+                {codeTab === 'libraries' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', padding: 12, background: 'var(--bg)' }}>
+                    <form onSubmit={searchLibraries} style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                      <input
+                        style={S.serialInput}
+                        placeholder="Search for an Arduino library..."
+                        value={libQuery}
+                        onChange={e => setLibQuery(e.target.value)}
+                      />
+                      <Btn color="var(--accent)" disabled={isSearchingLib}>
+                        {isSearchingLib ? '...' : 'Search'}
+                      </Btn>
+                    </form>
+
+                    {libMessage && (
+                      <div style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 13, background: libMessage.type === 'error' ? 'rgba(255,68,68,0.1)' : 'rgba(0,230,118,0.1)', color: libMessage.type === 'error' ? 'var(--red)' : 'var(--green)', border: `1px solid ${libMessage.type === 'error' ? 'rgba(255,68,68,0.3)' : 'rgba(0,230,118,0.3)'}` }}>
+                        {libMessage.text}
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>
+                      {libResults.length > 0 && <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 8 }}>Search Results</div>}
+                      {libResults.map((lib, idx) => (
+                        <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>{lib.name}</div>
+                            <Btn
+                              color="var(--green)"
+                              disabled={installingLib === lib.name}
+                              onClick={() => installLibrary(lib.name)}
+                            >
+                              {installingLib === lib.name ? 'Installing...' : 'Install'}
+                            </Btn>
+                          </div>
+                          <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.4 }}>{lib.sentence}</div>
+                          <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                            <span>v{lib.version}</span>
+                            <span>{lib.author}</span>
+                          </div>
+                        </div>
+                      ))}
+
+                      {libResults.length === 0 && (
+                        <>
+                          <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 8 }}>Installed on Host Server</div>
+                          {libInstalled.length === 0 ? (
+                            <div style={{ fontSize: 13, color: 'var(--text3)' }}>No external libraries installed.</div>
+                          ) : (
+                            libInstalled.map((lib, idx) => (
+                              <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, opacity: 0.85 }}>
+                                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{lib.library.name}</div>
+                                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace', marginTop: 6 }}>
+                                  <span>v{lib.library.version}</span>
+                                  <span>Installed</span>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {codeTab === 'serial' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                    <div style={S.serialOutput}>
+                      <span style={{ color: 'var(--green)', display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>
+                        [Serial Monitor Ready]
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, padding: 8, borderTop: '1px solid var(--border)' }}>
+                      <input style={S.serialInput} placeholder="Send message..." />
+                      <Btn color="var(--accent)">Send</Btn>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
-
-          {/* Code editor */}
-          <div style={S.codePanel}>
-            <div style={S.codeTabs}>
-              {['code', 'blocks', 'serial'].map(t => (
-                <button
-                  key={t}
-                  style={{ ...S.codeTab, ...(codeTab === t ? S.codeTabActive : {}) }}
-                  onClick={() => setCodeTab(t)}
-                >
-                  {t === 'code' ? '{ } Code' : t === 'blocks' ? '🧩 Blocks' : '📟 Serial'}
-                </button>
-              ))}
-            </div>
-            {codeTab === 'code' && (
-              <textarea
-                style={S.codeEditor}
-                value={code}
-                onChange={e => setCode(e.target.value)}
-                spellCheck={false}
-              />
-            )}
-            {codeTab === 'blocks' && (
-              <div style={S.codePlaceholder}>
-                <div style={{ fontSize: 32 }}>🧩</div>
-                <p>Blockly editor</p>
-                <p style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'monospace' }}>Integrate Blockly.js here</p>
-              </div>
-            )}
-            {codeTab === 'serial' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                <div style={S.serialOutput}>
-                  <span style={{ color: 'var(--green)', display: 'block', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>
-                    [Serial Monitor Ready]
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: 6, padding: 8, borderTop: '1px solid var(--border)' }}>
-                  <input style={S.serialInput} placeholder="Send message..." />
-                  <Btn color="var(--accent)">Send</Btn>
-                </div>
-              </div>
-            )}
-          </div>
         </aside>
       </div>
     </div>
@@ -928,22 +1064,24 @@ export default function SimulatorPage() {
 }
 
 // ─── Tiny button component (Updated to support CSS Variables) ───────────────
-function Btn({ children, onClick, color, title }) {
+function Btn({ children, onClick, color, title, disabled }) {
   const [hov, setHov] = useState(false)
+  const isInteractive = !disabled && hov;
   return (
     <button
       title={title}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        background: color ? (hov ? color : 'transparent') : hov ? 'var(--border)' : 'var(--card)',
+        background: disabled ? 'transparent' : (color ? (isInteractive ? color : 'transparent') : isInteractive ? 'var(--border)' : 'var(--card)'),
         border: `1px solid ${color || 'var(--border)'}`,
-        color: color ? (hov ? '#fff' : color) : 'var(--text)',
+        color: disabled ? 'var(--text3)' : (color ? (isInteractive ? '#fff' : color) : 'var(--text)'),
         padding: '7px 14px', borderRadius: 8,
         fontFamily: 'Space Grotesk, sans-serif', fontSize: 13,
-        cursor: 'pointer', transition: 'all .15s', whiteSpace: 'nowrap',
+        cursor: disabled ? 'not-allowed' : 'pointer', transition: 'all .15s', whiteSpace: 'nowrap',
         fontWeight: color ? 700 : 500,
+        opacity: disabled ? 0.5 : 1,
       }}
     >
       {children}
@@ -959,8 +1097,9 @@ const S = {
   barCenter: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' },
   sel: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 12px', borderRadius: 8, fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' },
   userChip: { background: 'var(--card)', border: '1px solid var(--border)', padding: '7px 12px', borderRadius: 8, fontSize: 13, color: 'var(--text2)' },
-  guestBanner: { background: 'rgba(255,145,0,.1)', borderBottom: '1px solid rgba(255,145,0,.25)', color: 'var(--orange)', padding: '8px 20px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 },
-  bannerBtn: { background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit' },
+  guestBanner: { background: 'rgba(255,145,0,.1)', borderBottom: '1px solid rgba(255,145,0,.25)', color: 'var(--orange)', padding: '8px 20px', fontSize: 13, display: 'flex', alignItems: 'center', flexShrink: 0 },
+  bannerBtn: { background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit', padding: 0 },
+  bannerCloseBtn: { background: 'none', border: 'none', color: 'var(--orange)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', opacity: 0.7, padding: '4px 8px' },
   workspace: { display: 'flex', flex: 1, overflow: 'hidden' },
 
   palette: { width: 182, background: 'var(--bg2)', borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 },
@@ -978,7 +1117,7 @@ const S = {
   },
   emptyState: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', textAlign: 'center', pointerEvents: 'none' },
 
-  rightPanel: { width: 280, background: 'var(--bg2)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' },
+  rightPanel: { position: 'relative', background: 'var(--bg2)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)' },
 
   validationPanel: { background: 'var(--bg3)', borderBottom: '1px solid var(--border)', flexShrink: 0 },
   validationHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', fontSize: 12, fontWeight: 700, color: 'var(--orange)' },
@@ -994,7 +1133,7 @@ const S = {
   codeTabs: { display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 },
   codeTab: { flex: 1, padding: '10px 4px', background: 'none', border: 'none', color: 'var(--text3)', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', borderBottom: '2px solid transparent', transition: 'all .15s' },
   codeTabActive: { color: 'var(--accent)', borderBottomColor: 'var(--accent)' },
-  codeEditor: { flex: 1, background: 'var(--bg)', color: 'var(--text)', border: 'none', outline: 'none', padding: 14, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, lineHeight: 1.7, resize: 'none' },
+  codeEditor: { flex: 1, color: 'var(--text)', border: 'none', outline: 'none', resize: 'none' },
   codePlaceholder: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', gap: 8 },
   serialOutput: { flex: 1, background: 'var(--bg)', padding: 12, overflowY: 'auto' },
   serialInput: { flex: 1, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, outline: 'none' },

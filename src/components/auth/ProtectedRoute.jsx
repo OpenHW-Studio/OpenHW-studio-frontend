@@ -1,30 +1,16 @@
-import { Navigate } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
-/**
- * Wraps routes that require authentication.
- * Redirects to /login if not authenticated.
- * Redirects to / if wrong role.
- */
-export default function ProtectedRoute({ children, allowedRole }) {
-  const { isAuthenticated, role, loading } = useAuth()
+export default function ProtectedRoute({ children }) {
+    const { isAuthenticated, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0e1a' }}>
-        <div className="loader" />
-      </div>
-    )
-  }
+    if (loading) {
+        return <div>Loading...</div>;
+    }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
-  }
+    if (!isAuthenticated) {
+        return <Navigate to="/login" replace />;
+    }
 
-  if (allowedRole && role !== allowedRole) {
-    // Redirect to correct dashboard
-    return <Navigate to={`/${role}/dashboard`} replace />
-  }
-
-  return children
+    return children;
 }
