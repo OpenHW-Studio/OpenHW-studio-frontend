@@ -1,27 +1,16 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 
 export const SlidePotUI = ({ state, attrs }: { state: any, attrs: any }) => {
-    const elRef = useRef<HTMLElement>(null);
-
-    useEffect(() => {
-        const el = elRef.current;
-        if (!el) return;
-
-        const handleInput = (e: Event) => {
-            const target = e.target as any;
-            if (attrs.onInteract) {
-                attrs.onInteract({ type: 'input', value: target.value });
-            }
-        };
-
-        el.addEventListener('input', handleInput);
-        return () => el.removeEventListener('input', handleInput);
-    }, [attrs.onInteract]);
-
     return (
-        <div style={{ pointerEvents: 'auto' }}>
+        <div
+            style={{ pointerEvents: 'auto' }}
+            onInput={(e: any) => {
+                if (attrs.onInteract) {
+                    attrs.onInteract({ type: 'input', value: e.target.value });
+                }
+            }}
+        >
             {React.createElement('wokwi-slide-potentiometer', {
-                ref: elRef,
                 value: state?.value ?? attrs?.value ?? 50,
                 ...attrs,
                 style: { ...attrs.style, pointerEvents: 'auto' }

@@ -27,6 +27,8 @@ The Universal Emulator is the **simulation engine** of OpenHW Studio. It:
 - Monitors AVR hardware memory registers to track the live voltage of every I/O pin
 - Broadcasts the pin state as JSON to the frontend at **~60 FPS**
 - Decodes **WS2812B NeoPixel** bit-bang signals and streams per-pixel RGB color data
+- Routes **I2C (TWI)** and **SPI** datagrams faithfully to `BaseComponent` event interfaces.
+- Integrates native **Hardware Interrupts (EXTI/PCINT)** and **Internal Pull-Up Resistors** via `AVRIOPort`
 - Provides a shared **component definitions library** (`src/components/`) consumed by the frontend
 
 The server runs on **ws://localhost:8085**.
@@ -122,9 +124,12 @@ import { wokwiLed, wokwiArduinoUno, wokwiResistor, ... } from "@openhw/emulator/
 - Executes AVR instructions via `avr8js` CPU core
 - Clock-accurate execution: **16,000 cycles per real millisecond** (16 MHz)
 
-### 🔌 Hardware Register Pin Tracking
+### 🔌 Hardware Register Pin Tracking & Interrupts
 
-Direct memory write hooks intercept I/O register changes:
+We leverage the `avr8js` native `AVRIOPort` definitions (instead of unsafe raw memory hooks) ensuring complete internal logic handling. This enables seamless support for:
+- `pinMode(INPUT_PULLUP)` (internal MCU resistors)
+- `attachInterrupt(0, ...)` (INT0 / INT1 External Interrupts)
+- **PCINT** boundaries seamlessly synced via `updatePhysics()`.
 
 | Register | Address | Arduino Pins |
 |---|---|---|
@@ -132,7 +137,7 @@ Direct memory write hooks intercept I/O register changes:
 | `PORTC` | `0x28` | A0 – A5 |
 | `PORTD` | `0x2B` | D0 – D7 |
 
-Each bit in the register maps to an individual pin. For example, PORTB bit 5 → Pin D13 (built-in LED).
+Each bit in the register maps to an individual pin natively triggering the MCU's internal event loop payload.
 
 ### ⏱️ Hardware Timer Support
 

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 export const UnoUI = ({ state, attrs }: { state: any, attrs: any }) => {
     // Assuming a global stylesheet provides the CSS classes from task3.html
@@ -6,6 +6,7 @@ export const UnoUI = ({ state, attrs }: { state: any, attrs: any }) => {
     // but to match standard React convention, we use standard style props overriding where necessary.
 
     const ledOn = state?.illuminated ? true : false; // Using state.illuminated or equivalent
+    const [hoverReset, setHoverReset] = useState(false);
 
     return (
         <div style={{ position: 'relative', width: 311, height: 228 }}>
@@ -27,10 +28,33 @@ export const UnoUI = ({ state, attrs }: { state: any, attrs: any }) => {
                     backgroundColor: ledOn ? '#00ff00' : '#061306',
                     borderRadius: '50%',
                     pointerEvents: 'none',
-                    zIndex: 15,
-                    transition: '0.3s',
-                    boxShadow: ledOn ? '0 0 6px #00ff00, 0 0 10px #00ff00' : 'inset 0 0 1px #000'
                 }}
+            />
+
+            {/* Custom Reset Button overlay */}
+            <div
+                className="uno-reset-btn"
+                onMouseEnter={() => setHoverReset(true)}
+                onMouseLeave={() => setHoverReset(false)}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    attrs.onInteract?.('RESET');
+                }}
+                style={{
+                    position: 'absolute',
+                    top: 10,
+                    left: 30,
+                    width: 18,
+                    height: 18,
+                    cursor: 'pointer',
+                    zIndex: 20,
+                    borderRadius: '50%',
+                    border: '2px solid rgba(255, 68, 68, 0.8)', // Made visible!
+                    backgroundColor: hoverReset ? 'rgba(255, 68, 68, 0.4)' : 'rgba(255, 68, 68, 0.15)',
+                    transition: 'all 0.2s',
+                    boxShadow: hoverReset ? '0 0 8px rgba(255, 68, 68, 0.8)' : 'none'
+                }}
+                title="Reset Arduino"
             />
         </div>
     );
