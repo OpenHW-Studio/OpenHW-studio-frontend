@@ -1,101 +1,53 @@
 import { BaseComponent } from '../BaseComponent';
 
 export class NeopixelLogic extends BaseComponent {
-    private numPixels: number;
-
-    // WS2812 decoding state machine
-    private lastEdgeTime: number = 0;
-    private isHigh: boolean = false;
-    private bitCount: number = 0;
-    private currentByte: number = 0;
-    private colors: number[] = [];
-    private _pixels: number[] = [];
+    private lastCycle = 0;
+    private buffer: number[] = [];
+    private currentBit = 0;
+    private currentByte = 0;
 
     constructor(id: string, manifest: any) {
         super(id, manifest);
-
-        let cols = parseInt(manifest.attrs?.cols || '8', 10);
-        let rows = parseInt(manifest.attrs?.rows || '8', 10);
-        this.numPixels = cols * rows;
-
-        // Initialize empty black pixels
-        const initialPixels = new Array(this.numPixels).fill(0);
-        this.state = { pixels: initialPixels };
-        this._pixels = initialPixels;
+        this.state = { pixels: [] };
     }
 
-    setPinVoltage(pinId: string, voltage: number, cpuCycles?: number) {
-        super.setPinVoltage(pinId, voltage, cpuCycles);
+    onPinStateChange(pinId: string, isHigh: boolean, cpuCycles: number) {
+        if (pinId === 'DIN') {
+            const elapsed = cpuCycles - this.lastCycle;
+            this.lastCycle = cpuCycles;
 
-        if (pinId === 'DIN' && cpuCycles !== undefined) {
-            const currentHigh = voltage > 2.5;
-
-            if (currentHigh !== this.isHigh) {
-                const timeDiff = cpuCycles - this.lastEdgeTime;
-
-                if (!currentHigh) {
-                    // Falling edge: analyze the HIGH pulse width
-                    const bit = timeDiff > 9 ? 1 : 0;
-                    this.currentByte = (this.currentByte << 1) | bit;
-                    this.bitCount++;
-
-                    if (this.bitCount === 8) {
-                        this.colors.push(this.currentByte);
-                        this.currentByte = 0;
-                        this.bitCount = 0;
+            if (isHigh) {
+                // Rising edge. The time spent LOW is `elapsed`.
+                if (elapsed > 400) {
+                    // Reset > 25us (400 cycles @ 16mhz)
+                    if (this.buffer.length > 0) {
+                        const pixels = [];
+                        for (let i = 0; i < this.buffer.length; i += 3) {
+                            const g = this.buffer[i] || 0;
+                            const r = this.buffer[i + 1] || 0;
+                            const b = this.buffer[i + 2] || 0;
+                            pixels.push((r << 16) | (g << 8) | b);
+                        }
+                        this.state.pixels = pixels;
+                        this.stateChanged = true;
+                        this.buffer = [];
                     }
-                } else {
-                    // Rising edge: analyze the LOW pulse width (latch check)
-                    if (timeDiff > 800 && this.colors.length > 0) {
-                        this.latchPixels();
-                    }
+                    this.currentBit = 0;
+                    this.currentByte = 0;
                 }
+            } else {
+                // Falling edge. The time spent HIGH is `elapsed`.
+                // A 0-bit is ~0.4us (6.4 cycles). A 1-bit is ~0.8us (12.8 cycles). Threshold 9:
+                const bit = elapsed >= 9 ? 1 : 0;
+                this.currentByte = (this.currentByte << 1) | bit;
+                this.currentBit++;
 
-                this.isHigh = currentHigh;
-                this.lastEdgeTime = cpuCycles;
+                if (this.currentBit === 8) {
+                    this.buffer.push(this.currentByte);
+                    this.currentByte = 0;
+                    this.currentBit = 0;
+                }
             }
         }
-    }
-
-    update(cpuCycles: number, currentWires: any[], allComponents: BaseComponent[]) {
-        super.update(cpuCycles, currentWires, allComponents);
-
-        // Latch if line has been kept low for > 50us without a new edge
-        if (!this.isHigh && (cpuCycles - this.lastEdgeTime) > 800 && this.colors.length > 0) {
-            this.latchPixels();
-            this.lastEdgeTime = cpuCycles; // Prevent continuous latching
-        }
-    }
-
-    private latchPixels() {
-        let newPixels = [...this._pixels];
-        let dirty = false;
-
-        const maxLamps = Math.min(this.numPixels, Math.floor(this.colors.length / 3));
-
-        for (let i = 0; i < maxLamps; i++) {
-            // WS2812 protocol is GRB
-            const g = this.colors[i * 3];
-            const r = this.colors[i * 3 + 1];
-            const b = this.colors[i * 3 + 2];
-
-            const hexColor = (r << 16) | (g << 8) | b;
-
-            if (newPixels[i] !== hexColor) {
-                newPixels[i] = hexColor;
-                dirty = true;
-            }
-        }
-
-        if (dirty) {
-            this._pixels = newPixels;
-            this.state = { ...this.state, pixels: Object.values(newPixels) };
-            this.stateChanged = true;
-        }
-
-        // Reset buffer for next frame
-        this.colors = [];
-        this.bitCount = 0;
-        this.currentByte = 0;
     }
 }

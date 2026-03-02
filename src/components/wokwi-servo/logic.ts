@@ -1,37 +1,35 @@
-import { BaseComponent } from "../BaseComponent";
+import { BaseComponent } from '../BaseComponent';
+
 export class ServoLogic extends BaseComponent {
-    private lastEdgeTime: number = 0;
-    private isHigh: boolean = false;
+    private lastHighCycle = 0;
+
     constructor(id: string, manifest: any) {
         super(id, manifest);
-        this.state = { angle: 90 };
-        ["PWM", "V+", "GND"].forEach(p => {
-            if (!this.pins[p]) this.pins[p] = { voltage: 0, mode: "INPUT" };
-        });
+        this.state = { angle: 0 };
     }
-    setPinVoltage(pinId: string, voltage: number, cpuCycles?: number) {
-        super.setPinVoltage(pinId, voltage, cpuCycles);
-        if (pinId === "PWM" && cpuCycles !== undefined) {
-            const currentHigh = voltage > 2.5;
-            if (currentHigh !== this.isHigh) {
-                if (currentHigh) {
-                    this.lastEdgeTime = cpuCycles;
-                } else {
-                    const pulseLengthTicks = cpuCycles - this.lastEdgeTime;
-                    const minPulse = 8704;
-                    const maxPulse = 38400;
-                    if (pulseLengthTicks >= 5000 && pulseLengthTicks <= 45000) {
-                        const clamped = Math.max(minPulse, Math.min(pulseLengthTicks, maxPulse));
-                        const percent = (clamped - minPulse) / (maxPulse - minPulse);
-                        const angle = Math.round(percent * 180);
-                        if (this.state.angle !== angle) {
-                            this.state.angle = angle;
-                            this.stateChanged = true;
-                        }
+
+    onPinStateChange(pinId: string, isHigh: boolean, cpuCycles: number) {
+        if (pinId === 'PWM') {
+            if (isHigh) {
+                this.lastHighCycle = cpuCycles;
+            } else {
+                if (this.lastHighCycle > 0) {
+                    const elapsedCycles = cpuCycles - this.lastHighCycle;
+                    const us = elapsedCycles / 16;
+
+                    let angle = (us - 544) * 180 / (2400 - 544);
+                    angle = Math.max(0, Math.min(180, angle));
+
+                    if (Math.abs(this.state.angle - angle) > 1) {
+                        this.state.angle = angle;
+                        this.stateChanged = true;
                     }
                 }
-                this.isHigh = currentHigh;
             }
         }
+    }
+
+    update(time: number, wires: any[], instances: BaseComponent[]) {
+        super.update(time, wires, instances);
     }
 }

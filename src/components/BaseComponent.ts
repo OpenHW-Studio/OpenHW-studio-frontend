@@ -24,7 +24,7 @@ export class BaseComponent {
         this.stateChanged = true;
     }
 
-    setPinVoltage(pinId: string, voltage: number, cpuCycles?: number) {
+    setPinVoltage(pinId: string, voltage: number) {
         if (this.pins[pinId] && this.pins[pinId].voltage !== voltage) {
             this.pins[pinId].voltage = voltage;
             this.stateChanged = true;
@@ -42,6 +42,16 @@ export class BaseComponent {
     onEvent(event: any) {
         // Override in subclasses to handle UI interactions
     }
+
+    onPinStateChange(pinId: string, isHigh: boolean, cpuCycles: number) {
+        // Override in subclasses
+    }
+
+    onI2CStart?(address: number, read: boolean): boolean;
+    onI2CByte?(address: number, data: number): boolean;
+    onI2CStop?(): void;
+
+    onSPIByte?(data: number): number | void;
 
     setState(newState: any) {
         let changed = false;
