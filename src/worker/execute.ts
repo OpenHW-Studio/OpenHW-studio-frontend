@@ -1,4 +1,4 @@
-import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction } from 'avr8js';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portBConfig, portCConfig, portDConfig, PinState } from 'avr8js';
 
 import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
 import { LEDLogic } from '@openhw/emulator/src/components/wokwi-led/logic.ts';
@@ -58,6 +58,14 @@ const LOGIC_REGISTRY: Record<string, any> = {
 
 export class AVRRunner {
     cpu: CPU | null = null;
+    adc: AVRADC | null = null;
+    usart: AVRUSART | null = null;
+    twi: AVRTWI | null = null;
+    spi: AVRSPI | null = null;
+    portB: AVRIOPort | null = null;
+    portC: AVRIOPort | null = null;
+    portD: AVRIOPort | null = null;
+    updatePhysics: (() => void) | null = null;
     timers: AVRTimer[] = [];
     running: boolean = false;
     pinStates: Record<string, boolean> = {};
@@ -84,18 +92,119 @@ export class AVRRunner {
             new AVRTimer(this.cpu, timer2Config)
         ];
 
+        this.adc = new AVRADC(this.cpu, adcConfig);
+
+        this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
+        this.usart.onByteTransmit = (value) => {
+            const char = String.fromCharCode(value);
+            onStateUpdate({ type: 'serial', data: char });
+        };
+
+        this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
+        this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
+
+        this.portB = new AVRIOPort(this.cpu, portBConfig);
+        this.portC = new AVRIOPort(this.cpu, portCConfig);
+        this.portD = new AVRIOPort(this.cpu, portDConfig);
+
+        // Per-type pin lists so every component's pins are registered correctly
+        const COMPONENT_PINS: Record<string, { id: string }[]> = {
+            'wokwi-led': [{ id: 'A' }, { id: 'K' }],
+            'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
+            'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],
+            'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
+            'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+            'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
+            'wokwi-motor': [{ id: 'A' }, { id: 'B' }],
+            'wokwi-motor-driver': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'GND' }, { id: 'VCC' }],
+            'wokwi-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+            'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+            'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
+        };
+
         // Instantiate components
         (componentsDef || []).forEach(cDef => {
             const LogicClass = LOGIC_REGISTRY[cDef.type];
             if (LogicClass) {
-                // Mock manifest lookup since we don't have full fs reads in worker
-                // But we must tell the base component what pins are valid!
-                const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins: [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }] };
+                const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
+                const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
                 this.instances.set(cDef.id, inst);
             }
         });
+
+        // Setup I2C Hooks bridging AVRTWI events to BaseComponents
+        class TWIAdapter {
+            constructor(private twi: AVRTWI, private instances: Map<string, BaseComponent>) { }
+
+            start(repeated: boolean) {
+                this.twi.completeStart();
+            }
+
+            stop() {
+                const instArray = Array.from(this.instances.values());
+                for (const inst of instArray) {
+                    if (inst.onI2CStop) {
+                        inst.onI2CStop();
+                    }
+                }
+                this.twi.completeStop();
+            }
+
+            connectToSlave(addr: number, write: boolean) {
+                const instArray = Array.from(this.instances.values());
+                let ack = false;
+                for (const inst of instArray) {
+                    if (inst.onI2CStart) {
+                        if (inst.onI2CStart(addr, !write)) { // write here in avr8js is actually the exact R/W bit. "write" true means bit is 0
+                            ack = true;
+                        }
+                    }
+                }
+                this.twi.completeConnect(ack);
+            }
+
+            writeByte(value: number) {
+                const instArray = Array.from(this.instances.values());
+                let handled = false;
+                for (const inst of instArray) {
+                    if (inst.onI2CByte) {
+                        if (inst.onI2CByte(-1, value)) {
+                            handled = true;
+                        }
+                    }
+                }
+                this.twi.completeWrite(handled);
+            }
+
+            readByte(ack: boolean) {
+                // Not heavily used without a specific target, return 0xFF dummy
+                this.twi.completeRead(0xFF);
+            }
+        }
+
+        this.twi.eventHandler = new TWIAdapter(this.twi, this.instances);
+
+        // Setup SPI Hooks bridging AVRSPI to BaseComponents
+        this.spi.onByte = (value: number) => {
+            const instArray = Array.from(this.instances.values());
+            let returnByte = 0xFF; // Default MISO if nothing responds
+            for (const inst of instArray) {
+                if (inst.onSPIByte) {
+                    const res = inst.onSPIByte(value);
+                    if (res !== undefined) {
+                        returnByte = res;
+                    }
+                }
+            }
+
+            // The SPI peripheral needs to be told when the transfer is physically complete 
+            // based on the clock divider speed.
+            this.cpu!.addClockEvent(() => {
+                this.spi!.completeTransfer(returnByte);
+            }, this.spi!.transferCycles);
+        };
 
         // Setup IO Hooks
         this.setupHooks();
@@ -112,6 +221,10 @@ export class AVRRunner {
                 if (this.pinsChanged) {
                     msg.pins = this.pinStates;
                     this.pinsChanged = false;
+                }
+
+                if (this.adc) {
+                    msg.analog = Array.from(this.adc.channelValues);
                 }
 
                 const compStates = Array.from(this.instances.values())
@@ -135,6 +248,10 @@ export class AVRRunner {
     private setupHooks() {
         if (!this.cpu) return;
 
+        // All three GND pins on the Uno (gnd_1, gnd_2, gnd_3) are treated as the same ground net.
+        const isArduinoGndPin = (compPin: string) =>
+            compPin === 'GND' || /^gnd(_\d+)?$/i.test(compPin);
+
         const isArduinoPin = (wireCoord: string, targetPin: string) => {
             const [compId, compPin] = wireCoord.split(':');
             const inst = this.instances.get(compId);
@@ -153,6 +270,10 @@ export class AVRRunner {
                 if (inst) {
                     if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
                     inst.setPinVoltage(compPin, v);
+
+                    if (this.cpu) {
+                        inst.onPinStateChange(compPin, isHigh, this.cpu.cycles);
+                    }
 
                     // Traverse THROUGH passive components like resistors
                     if (inst.type === 'wokwi-resistor') {
@@ -184,6 +305,23 @@ export class AVRRunner {
                 }
             });
 
+            // Propagate ground through any wire connected to any Arduino GND pin (gnd_1, gnd_2, gnd_3)
+            this.currentWires.forEach(w => {
+                const [fromComp, fromPin] = w.from.split(':');
+                const [toComp, toPin] = w.to.split(':');
+                const fromInst = this.instances.get(fromComp);
+                const toInst = this.instances.get(toComp);
+
+                const fromIsArduinoGnd = fromInst && fromInst.type.includes('arduino') && isArduinoGndPin(fromPin);
+                const toIsArduinoGnd = toInst && toInst.type.includes('arduino') && isArduinoGndPin(toPin);
+
+                if (fromIsArduinoGnd && toInst) {
+                    toInst.setPinVoltage(toPin, 0.0);
+                } else if (toIsArduinoGnd && fromInst) {
+                    fromInst.setPinVoltage(fromPin, 0.0);
+                }
+            });
+
             this.instances.forEach(inst => {
                 Object.keys(inst.pins).forEach(pinKey => {
                     const pk = pinKey.toLowerCase();
@@ -197,27 +335,9 @@ export class AVRRunner {
 
 
 
-        const attachPortHook = (pinReg: number, ddrReg: number, portReg: number, pins: string[]) => {
-            this.cpu!.writeHooks[ddrReg] = () => false;
-            this.cpu!.writeHooks[portReg] = (val: number) => {
-                pins.forEach((pin, i) => {
-                    const isHigh = (val & (1 << i)) !== 0;
-                    if (this.pinStates[pin] !== isHigh) {
-                        this.pinStates[pin] = isHigh;
-                        this.pinsChanged = true;
-                        updateOopPin(pin, isHigh);
-                    }
-                });
-                return false;
-            };
-
-            this.cpu!.readHooks[pinReg] = () => {
-                let pinValue = 0;
-                pins.forEach((pin, i) => {
-                    // Start by assuming the pin matches whatever the AVR PORTx latch is outputting (pullups etc)
-                    let bitIsHigh = this.pinStates[pin];
-
-                    // Check if an external component is forcing this line low (e.g. Button to GND)
+        this.updatePhysics = () => {
+            const checkPort = (port: AVRIOPort, pinNames: string[]) => {
+                pinNames.forEach((pin, i) => {
                     let forcedLow = false;
                     const arduinoPinStr = pin;
                     const visitedWires = new Set();
@@ -226,17 +346,12 @@ export class AVRRunner {
                         const [compId, compPin] = targetStr.split(':');
                         const inst = this.instances.get(compId);
                         if (inst) {
-                            // First, check if THIS exact pin is hard-tied to GND logic levels
                             const pk = compPin.toLowerCase();
                             const isGndNode = pk.startsWith('gnd') || pk === 'vss' || pk === 'k';
                             if (inst.getPinVoltage(compPin) === 0 && isGndNode) {
-                                console.log(`[AVR trace ] Hit hard GND on ${compId}:${compPin}`);
                                 forcedLow = true;
                             }
-
-                            // Traverse THROUGH active pushbutton if it is pressed
                             if (inst.type === 'wokwi-pushbutton' && inst.state.pressed && !forcedLow) {
-                                console.log(`[AVR trace ] Traversing active pushbutton ${compId}`);
                                 const otherPin = compPin === '1' ? '2' : '1';
                                 const forwardStr = `${compId}:${otherPin}`;
                                 this.currentWires.forEach(w => {
@@ -246,10 +361,7 @@ export class AVRRunner {
                                     }
                                 });
                             }
-
-                            // Traverse THROUGH passive components like resistors
                             if (inst.type === 'wokwi-resistor' && !forcedLow) {
-                                console.log(`[AVR trace ] Traversing resistor ${compId}`);
                                 const otherPin = compPin === 'p1' ? 'p2' : 'p1';
                                 const forwardStr = `${compId}:${otherPin}`;
                                 this.currentWires.forEach(w => {
@@ -265,37 +377,41 @@ export class AVRRunner {
                     this.currentWires.forEach(w => {
                         const isFromArduino = isArduinoPin(w.from, arduinoPinStr);
                         const isToArduino = isArduinoPin(w.to, arduinoPinStr);
-
                         if (isFromArduino || isToArduino) {
                             visitedWires.add(w);
-                            // Only log the first jump down the wire tree
-                            const targetStr = isFromArduino ? w.to : w.from;
-                            if (visitedWires.size === 1) {
-                                // console.log(`[AVR trace ] Pin ${arduinoPinStr} jump to ${targetStr}...`);
-                            }
-                            checkForGnd(targetStr);
+                            checkForGnd(isFromArduino ? w.to : w.from);
                         }
                     });
 
-                    if (forcedLow) {
-                        bitIsHigh = false; // The external button pulled it low
-                    }
-
-                    if (bitIsHigh) {
-                        pinValue |= (1 << i);
-                    }
+                    // Set native input bit. If forced to GND by external circuit, it's false
+                    if (port) port.setPin(i, !forcedLow);
                 });
-                return pinValue;
             };
+
+            if (this.portB) checkPort(this.portB, ['8', '9', '10', '11', '12', '13']);
+            if (this.portD) checkPort(this.portD, ['0', '1', '2', '3', '4', '5', '6', '7']);
+            if (this.portC) checkPort(this.portC, ['A0', 'A1', 'A2', 'A3', 'A4', 'A5']);
         };
 
-        // attachPortHook signature: PIN, DDR, PORT, pin names array
-        attachPortHook(0x23, 0x24, 0x25, ['8', '9', '10', '11', '12', '13']); // PORTB
-        attachPortHook(0x29, 0x2A, 0x2B, ['0', '1', '2', '3', '4', '5', '6', '7']); // PORTD
-        attachPortHook(0x26, 0x27, 0x28, ['A0', 'A1', 'A2', 'A3', 'A4', 'A5']); // PORTC
+        const attachPort = (port: AVRIOPort, pinNames: string[]) => {
+            port.addListener((value) => {
+                pinNames.forEach((pin, i) => {
+                    const isHigh = (value & (1 << i)) !== 0;
+                    if (this.pinStates[pin] !== isHigh) {
+                        this.pinStates[pin] = isHigh;
+                        this.pinsChanged = true;
+                        updateOopPin(pin, isHigh);
+                    }
+                });
+            });
+        };
+
+        if (this.portB) attachPort(this.portB, ['8', '9', '10', '11', '12', '13']); // PORTB
+        if (this.portD) attachPort(this.portD, ['0', '1', '2', '3', '4', '5', '6', '7']); // PORTD
+        if (this.portC) attachPort(this.portC, ['A0', 'A1', 'A2', 'A3', 'A4', 'A5']); // PORTC
 
         // Initialize all hooked pins to LOW on startup so LED components aren't stuck waiting for a toggle
-        ['8', '9', '10', '11', '12', '13', '0', '1', '2', '3', '4', '5', '6', '7'].forEach(pin => {
+        ['8', '9', '10', '11', '12', '13', '0', '1', '2', '3', '4', '5', '6', '7', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'].forEach(pin => {
             this.pinStates[pin] = false;
             updateOopPin(pin, false);
         });
@@ -311,6 +427,8 @@ export class AVRRunner {
             const cyclesToRun = deltaTime * 16000;
             const targetObj = this.cpu.cycles + Math.min(cyclesToRun, 1600000);
 
+            if (this.updatePhysics) this.updatePhysics();
+
             while (this.cpu.cycles < targetObj && this.running) {
                 avrInstruction(this.cpu);
                 this.cpu.tick();
@@ -319,9 +437,52 @@ export class AVRRunner {
 
             const instArray = Array.from(this.instances.values());
             instArray.forEach(inst => inst.update(this.cpu!.cycles, this.currentWires, instArray));
+
+            if (this.adc && this.cpu) {
+                // Poll analog voltages at ~60Hz or however often runLoop breaks, 
+                // but actually runLoop is very frequent (every 1ms)
+                for (let i = 0; i < 6; i++) {
+                    const arduinoPin = `A${i}`;
+                    let voltage = 0;
+                    for (const w of this.currentWires) {
+                        const [fromComp, fromPin] = w.from.split(':');
+                        const [toComp, toPin] = w.to.split(':');
+
+                        let isConnectedToPin = false;
+                        let otherCompId = '';
+                        let otherCompPin = '';
+
+                        if (fromComp.includes('arduino') && fromPin === arduinoPin) {
+                            isConnectedToPin = true;
+                            otherCompId = toComp;
+                            otherCompPin = toPin;
+                        } else if (toComp.includes('arduino') && toPin === arduinoPin) {
+                            isConnectedToPin = true;
+                            otherCompId = fromComp;
+                            otherCompPin = fromPin;
+                        }
+
+                        if (isConnectedToPin) {
+                            const inst = this.instances.get(otherCompId);
+                            if (inst) {
+                                voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin));
+                            }
+                        }
+                    }
+                    this.adc.channelValues[i] = voltage;
+                }
+            }
         }
 
         setTimeout(this.runLoop, 1);
+    }
+
+    serialRx(data: string) {
+        if (this.usart) {
+            for (let i = 0; i < data.length; i++) {
+                this.usart.writeByte(data.charCodeAt(i));
+            }
+        }
     }
 
     stop() {

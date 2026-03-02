@@ -13,6 +13,7 @@
     "@react-oauth/google": "^0.12.1",
     "avr8js": "^0.21.0",
     "axios": "^1.6.7",
+    "html2canvas": "^1.4.1",
     "intel-hex": "^0.2.0",
     "jwt-decode": "^4.0.0",
     "prismjs": "^1.30.0",

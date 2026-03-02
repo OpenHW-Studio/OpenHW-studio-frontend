@@ -41,5 +41,13 @@ self.onmessage = async (e) => {
                 inst.onEvent(data.event);
             }
         }
+    } else if (data.type === 'SERIAL_INPUT') {
+        if (runner) {
+            runner.serialRx(data.data);
+        }
+    } else if (data.type === 'RESET') {
+        if (runner && runner.cpu) {
+            runner.cpu.reset();
+        }
     }
 };

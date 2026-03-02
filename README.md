@@ -116,6 +116,16 @@ The frontend opens a WebSocket to the emulator (`ws://localhost:8085`). Every fr
 - Sends matrix topology (component ID, Arduino pin, size) in the WebSocket `START` message
 - Calls `element.setPixel(row, col, {r, g, b})` directly on the Wokwi DOM element
 
+### 📊 Analog Plotter / Logic Graph
+- The Code Editor pane now includes a native high-performance **`<canvas>` rendering engine** tab to trace simulated logic and analog signals.
+- Users can dynamically specify which pins to track out of the simulation data stream.
+
+### 💬 Serial Monitor Integration
+- A built-in terminal stream handles natively piping `AVRUSART` traffic backwards and forwards into the `.hex` loop.
+
+### 🔄 Physical Workspace Controls
+- The **Arduino Uno Reset Button** is fully interactive inside the workspace SVG visualizer, triggering a targeted web-worker core `runner.cpu.reset()` reboot.
+
 ### 💡 Wokwi LED Fix
 Wokwi LEDs incorrectly treat `value="0"` as truthy. The frontend's `getComponentStateAttrs` engine **injects or deletes** the `value` DOM property based on actual voltage rather than setting it to `"0"`.
 
