@@ -629,8 +629,15 @@ export default function SimulatorPage() {
           const now = new Date();
           const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
           setSerialHistory(prev => {
-            if (prev.length > 2000) prev = prev.slice(prev.length - 1800);
-            return [...prev, { dir: 'rx', text: msg.data, ts }];
+            let next = prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
+            if (next.length > 0) {
+              const last = next[next.length - 1];
+              if (last.dir === 'rx' && !last.text.endsWith('\n')) {
+                next[next.length - 1] = { ...last, text: last.text + msg.data };
+                return next;
+              }
+            }
+            return [...next, { dir: 'rx', text: msg.data, ts }];
           });
         }
       };

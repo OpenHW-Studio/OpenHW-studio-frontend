@@ -435,6 +435,11 @@ export class AVRRunner {
             }
             this.lastTime = now;
 
+            // Transmit one buffered serial byte per roughly 1ms chunk (simulates ~9600 baud)
+            if (this.serialBuffer.length > 0 && this.usart) {
+                this.usart.writeByte(this.serialBuffer.shift()!);
+            }
+
             const instArray = Array.from(this.instances.values());
             instArray.forEach(inst => inst.update(this.cpu!.cycles, this.currentWires, instArray));
 
@@ -477,11 +482,11 @@ export class AVRRunner {
         setTimeout(this.runLoop, 1);
     }
 
+    private serialBuffer: number[] = [];
+
     serialRx(data: string) {
-        if (this.usart) {
-            for (let i = 0; i < data.length; i++) {
-                this.usart.writeByte(data.charCodeAt(i));
-            }
+        for (let i = 0; i < data.length; i++) {
+            this.serialBuffer.push(data.charCodeAt(i));
         }
     }
 
