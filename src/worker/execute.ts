@@ -238,9 +238,9 @@ export class AVRRunner {
                     msg.components = compStates;
                 }
 
-                if (msg.pins || msg.components) {
-                    onStateUpdate(msg);
-                }
+                // Always send state to ensure continuous plotter timing and analog tracking
+                if (!msg.pins) msg.pins = this.pinStates; // Ensure plotData has pins object
+                onStateUpdate(msg);
             }
         }, 1000 / 60);
     }

@@ -177,6 +177,10 @@ export default function SimulatorPage() {
   const workerRef = useRef(null)
   const neopixelRefs = useRef({})
 
+  const serialPlotBufferRef = useRef('');
+  const serialPlotLabelsRef = useRef([]);
+  const latestParsedSerialRef = useRef([]);
+
   const canvasRef = useRef(null)
   const svgRef = useRef(null)
   const dragPayload = useRef(null)
@@ -316,22 +320,115 @@ export default function SimulatorPage() {
 
     ctx.clearRect(0, 0, width, height);
 
-    const trackHeight = height / selectedPlotPins.length;
-    const Y_LABEL_W = 30;
+    const Y_LABEL_W = 35;
 
-    selectedPlotPins.forEach((pinStr, trackIdx) => {
-      const trackBaseY = trackHeight * (trackIdx + 1) - 10;
-      const trackTopY = trackHeight * trackIdx + 10;
+    // Separate selected pins into serial vs logic
+    const logicPins = selectedPlotPins.filter(p => !isNaN(parseInt(p)) || p.startsWith('A'));
+    const serialVars = selectedPlotPins.filter(p => isNaN(parseInt(p)) && !p.startsWith('A'));
+
+    const hasSerial = serialVars.length > 0;
+    const logicTrackCount = logicPins.length;
+    // Serial track takes up half the height if logic pins exist, otherwise full height
+    const serialHeight = hasSerial ? (logicTrackCount > 0 ? height * 0.6 : height) : 0;
+    const logicAreaHeight = height - serialHeight;
+    const logicTrackHeight = logicTrackCount > 0 ? logicAreaHeight / logicTrackCount : 0;
+
+    // --- Draw Serial Track ---
+    if (hasSerial) {
+      const trackBaseY = serialHeight - 20;
+      const trackTopY = 20;
+
+      // Calculate global min/max for serial vars
+      let sMin = Infinity, sMax = -Infinity;
+      plotData.forEach(pt => {
+        if (!pt.serialVars) return;
+        serialVars.forEach(sv => {
+          const v = pt.serialVars[sv];
+          if (v !== undefined) {
+            if (v < sMin) sMin = v;
+            if (v > sMax) sMax = v;
+          }
+        });
+      });
+      if (sMin === Infinity) { sMin = 0; sMax = 1; }
+      if (sMin === sMax) { sMin -= 1; sMax += 1; }
+
+      // Draw grid/guides
+      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      // zero line
+      const zeroY = trackBaseY - ((0 - sMin) / (sMax - sMin) * (trackBaseY - trackTopY));
+      if (zeroY >= trackTopY && zeroY <= trackBaseY) {
+        ctx.moveTo(Y_LABEL_W, zeroY); ctx.lineTo(width, zeroY);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Axis labels
+      ctx.font = '9px JetBrains Mono';
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.textAlign = 'right';
+      ctx.fillText(sMax.toFixed(2), Y_LABEL_W - 2, trackTopY + 4);
+      ctx.fillText(sMin.toFixed(2), Y_LABEL_W - 2, trackBaseY);
+      ctx.textAlign = 'left';
+
+      // Draw traces
+      const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
+      serialVars.forEach((sv, i) => {
+        const color = colors[i % colors.length];
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        const maxPts = width - Y_LABEL_W;
+        const pts = plotData.slice(-maxPts);
+        const xStep = maxPts / Math.max(pts.length, 1);
+
+        let hasStarted = false;
+        pts.forEach((pt, idx) => {
+          const x = Y_LABEL_W + (maxPts - ((pts.length - 1 - idx) * xStep));
+          const v = pt.serialVars?.[sv];
+          if (v !== undefined) {
+            const y = trackBaseY - ((v - sMin) / (sMax - sMin)) * (trackBaseY - trackTopY);
+            if (!hasStarted) { ctx.moveTo(x, y); hasStarted = true; }
+            else { ctx.lineTo(x, y); }
+          }
+        });
+        ctx.stroke();
+
+        // Custom Label on graph
+        ctx.fillStyle = color;
+        ctx.font = 'bold 10px JetBrains Mono';
+        ctx.fillText(sv, Y_LABEL_W + 4 + (i * 60), trackTopY - 5);
+      });
+
+      // Separator
+      if (logicTrackCount > 0) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, serialHeight);
+        ctx.lineTo(width, serialHeight);
+        ctx.stroke();
+      }
+    }
+
+    // --- Draw Logic Tracks ---
+    logicPins.forEach((pinStr, logicIdx) => {
+      const trackBaseY = serialHeight + logicTrackHeight * (logicIdx + 1) - 10;
+      const trackTopY = serialHeight + logicTrackHeight * logicIdx + 10;
       const isAnalog = pinStr.startsWith('A');
       const color = isAnalog ? '#3498db' : '#2ecc71';
 
       // Track separator
-      if (trackIdx < selectedPlotPins.length - 1) {
+      if (logicIdx < logicPins.length - 1) {
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(0, trackHeight * (trackIdx + 1));
-        ctx.lineTo(width, trackHeight * (trackIdx + 1));
+        ctx.moveTo(0, serialHeight + logicTrackHeight * (logicIdx + 1));
+        ctx.lineTo(width, serialHeight + logicTrackHeight * (logicIdx + 1));
         ctx.stroke();
       }
 
@@ -607,7 +704,12 @@ export default function SimulatorPage() {
           setPinStates(msg.pins);
           // Push to plotData history
           setPlotData(prev => {
-            const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [] };
+            const serialVars = {};
+            latestParsedSerialRef.current.forEach((val, idx) => {
+              const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
+              serialVars[lbl] = val;
+            });
+            const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars };
             const next = [...prev, newPt];
             if (next.length > 800) return next.slice(next.length - 800);
             return next;
@@ -626,6 +728,45 @@ export default function SimulatorPage() {
           });
         }
         if (msg.type === 'serial') {
+          // --- BEGIN SERIAL PLOTTER PARSER ---
+          serialPlotBufferRef.current += msg.data;
+          const lines = serialPlotBufferRef.current.split('\n');
+          if (lines.length > 1) {
+            const completeLines = lines.slice(0, -1);
+            serialPlotBufferRef.current = lines[lines.length - 1];
+
+            completeLines.forEach(line => {
+              const parts = line.split(/[,\s\t]+/).filter(Boolean);
+              if (parts.length > 0) {
+                const isNumeric = parts.every(p => !isNaN(parseFloat(p)));
+                if (!isNumeric) {
+                  serialPlotLabelsRef.current = parts;
+                  setSelectedPlotPins(prev => {
+                    const newPins = [...prev];
+                    parts.forEach(l => { if (!newPins.includes(l)) newPins.push(l); });
+                    return newPins;
+                  });
+                } else {
+                  latestParsedSerialRef.current = parts.map(p => parseFloat(p));
+                  if (serialPlotLabelsRef.current.length < parts.length) {
+                    for (let i = serialPlotLabelsRef.current.length; i < parts.length; i++) {
+                      serialPlotLabelsRef.current.push(`SVar${i}`);
+                    }
+                  }
+                  setSelectedPlotPins(prev => {
+                    let changed = false;
+                    const newPins = [...prev];
+                    serialPlotLabelsRef.current.slice(0, parts.length).forEach(lbl => {
+                      if (!newPins.includes(lbl)) { newPins.push(lbl); changed = true; }
+                    });
+                    return changed ? newPins : prev;
+                  });
+                }
+              }
+            });
+          }
+          // --- END SERIAL PLOTTER PARSER ---
+
           const now = new Date();
           const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
           setSerialHistory(prev => {
@@ -684,6 +825,9 @@ export default function SimulatorPage() {
     setPlotData([]);
     setSerialPaused(false);
     setPlotterPaused(false);
+    serialPlotBufferRef.current = '';
+    serialPlotLabelsRef.current = [];
+    latestParsedSerialRef.current = [];
   };
 
   const handleReset = () => {
@@ -1721,21 +1865,29 @@ export default function SimulatorPage() {
                     {/* Pin Selector */}
                     <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>Pins:</span>
-                      {['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'].map(pin => {
+                      {['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5', ...serialPlotLabelsRef.current.filter(l => !['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'].includes(l))].map((pin, i) => {
                         const isSel = selectedPlotPins.includes(pin);
                         const isAna = pin.startsWith('A');
+                        const isLogic = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'].includes(pin);
+                        let bg = isAna ? 'rgba(52,152,219,0.2)' : 'rgba(46,204,113,0.2)';
+                        let br = isAna ? '#3498db' : '#2ecc71';
+                        if (!isLogic) {
+                          const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
+                          const c = colors[i % colors.length];
+                          bg = `${c}33`; br = c;
+                        }
                         return (
                           <button
                             key={pin}
                             onClick={() => setSelectedPlotPins(prev => {
                               if (prev.includes(pin)) return prev.filter(p => p !== pin);
-                              if (prev.length >= 4) return [...prev.slice(1), pin];
+                              if (prev.length >= 8) return [...prev.slice(1), pin];
                               return [...prev, pin];
                             })}
                             style={{
-                              background: isSel ? (isAna ? 'rgba(52,152,219,0.2)' : 'rgba(46,204,113,0.2)') : 'transparent',
-                              border: `1px solid ${isSel ? (isAna ? '#3498db' : '#2ecc71') : 'var(--border)'}`,
-                              color: isSel ? (isAna ? '#3498db' : '#2ecc71') : 'var(--text3)',
+                              background: isSel ? bg : 'transparent',
+                              border: `1px solid ${isSel ? br : 'var(--border)'}`,
+                              color: isSel ? br : 'var(--text3)',
                               borderRadius: 4, padding: '1px 5px', fontSize: 10, cursor: 'pointer'
                             }}
                           >{pin}</button>
@@ -1746,12 +1898,24 @@ export default function SimulatorPage() {
                     {/* Legend */}
                     {selectedPlotPins.length > 0 && (
                       <div style={S.plotterLegend}>
-                        {selectedPlotPins.map(pin => (
-                          <span key={pin} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
-                            <span style={{ width: 10, height: 10, borderRadius: 2, background: pin.startsWith('A') ? '#3498db' : '#2ecc71', flexShrink: 0 }} />
-                            <span style={{ color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace' }}>Pin {pin}</span>
-                          </span>
-                        ))}
+                        {selectedPlotPins.map((pin, i) => {
+                          let bg = pin.startsWith('A') ? '#3498db' : '#2ecc71';
+                          let lbl = `Pin ${pin}`;
+                          if (isNaN(parseInt(pin)) && !pin.startsWith('A')) {
+                            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
+                            const serialVars = selectedPlotPins.filter(p => isNaN(parseInt(p)) && !p.startsWith('A'));
+                            bg = colors[serialVars.indexOf(pin) % colors.length];
+                            lbl = pin;
+                          }
+                          return (
+                            <span key={pin} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer' }}
+                              onClick={() => setSelectedPlotPins(prev => prev.filter(p => p !== pin))}
+                              title="Click to remove" >
+                              <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, flexShrink: 0 }} />
+                              <span style={{ color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace' }}>{lbl}</span>
+                            </span>
+                          );
+                        })}
                       </div>
                     )}
 
