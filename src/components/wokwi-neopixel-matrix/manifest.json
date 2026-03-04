@@ -12,21 +12,21 @@
         {
             "id": "DIN",
             "x": 0,
-            "y": 15,
+            "y": 9.5,
             "type": "digital",
             "description": "Data In"
         },
         {
             "id": "VCC",
-            "x": 15,
-            "y": 0,
+            "x": 0,
+            "y": 4,
             "type": "power",
             "description": "5V Power"
         },
         {
             "id": "GND",
-            "x": 15,
-            "y": 30,
+            "x": 0,
+            "y": 15,
             "type": "power",
             "description": "Ground"
         }

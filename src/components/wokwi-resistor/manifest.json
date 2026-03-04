@@ -11,14 +11,14 @@
         {
             "id": "p1",
             "x": 0,
-            "y": 11.5,
+            "y": 10,
             "type": "passive",
             "description": "Terminal 1"
         },
         {
             "id": "p2",
             "x": 60,
-            "y": 11.5,
+            "y": 10,
             "type": "passive",
             "description": "Terminal 2"
         }

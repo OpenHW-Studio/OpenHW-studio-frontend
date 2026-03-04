@@ -41,14 +41,34 @@ export class MotorLogic extends BaseComponent {
         return dutyCycle * 5.0; // Assume 5V
     }
 
+    private getConnectedVoltage(pinId: string, currentWires: any[], instances: BaseComponent[], fallback: number): number {
+        let maxV = fallback;
+        const myPinStr = `${this.id}:${pinId}`;
+        for (const w of currentWires) {
+            if (w.from === myPinStr) {
+                const [targetComp, targetPin] = w.to.split(':');
+                const inst = instances.find(i => i.id === targetComp);
+                if (inst && inst.pins[targetPin]) maxV = Math.max(maxV, inst.pins[targetPin].voltage || 0);
+            } else if (w.to === myPinStr) {
+                const [targetComp, targetPin] = w.from.split(':');
+                const inst = instances.find(i => i.id === targetComp);
+                if (inst && inst.pins[targetPin]) maxV = Math.max(maxV, inst.pins[targetPin].voltage || 0);
+            }
+        }
+        return maxV;
+    }
+
     update(time: number, wires: any[], instances: BaseComponent[]) {
         super.update(time, wires, instances);
 
         const elapsedCycles = time - this.lastUpdateCycle;
         this.lastUpdateCycle = time;
 
-        const v1 = this.getAverageVoltage('1', time, elapsedCycles);
-        const v2 = this.getAverageVoltage('2', time, elapsedCycles);
+        let v1 = this.getAverageVoltage('1', time, elapsedCycles);
+        v1 = this.getConnectedVoltage('1', wires, instances, v1);
+
+        let v2 = this.getAverageVoltage('2', time, elapsedCycles);
+        v2 = this.getConnectedVoltage('2', wires, instances, v2);
 
         let speed = 0;
         if (v1 > v2 + 0.5) {

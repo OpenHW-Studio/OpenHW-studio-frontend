@@ -10,15 +10,15 @@
     "pins": [
         {
             "id": "5V",
-            "x": 65,
-            "y": 15,
+            "x": 60,
+            "y": 16.5,
             "type": "power",
-            "description": "5V Power"
+            "description": "Power"
         },
         {
             "id": "GND",
-            "x": 65,
-            "y": 45,
+            "x": 60,
+            "y": 46.5,
             "type": "power",
             "description": "Ground"
         }
