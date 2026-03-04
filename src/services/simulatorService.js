@@ -21,3 +21,27 @@ export async function compileCode(code) {
         throw error;
     }
 }
+
+/**
+ * Fetches the list of installed libraries from the backend.
+ */
+export async function fetchInstalledLibraries() {
+    const response = await axios.get(`${COMPILER_URL}/lib-list`);
+    return response.data.libraries || [];
+}
+
+/**
+ * Searches for libraries in the Arduino registry.
+ */
+export async function searchLibraries(query) {
+    const response = await axios.get(`${COMPILER_URL}/lib-search?q=${encodeURIComponent(query)}`);
+    return response.data.libraries || [];
+}
+
+/**
+ * Installs a library on the backend.
+ */
+export async function installLibrary(name) {
+    const response = await axios.post(`${COMPILER_URL}/lib-install`, { name });
+    return response.data;
+}

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext.jsx'
-import { compileCode } from '../services/simulatorService.js'
+import { compileCode, fetchInstalledLibraries, searchLibraries, installLibrary } from '../services/simulatorService.js'
 import html2canvas from 'html2canvas'
 
 import { wokwiLed as ledIndex, wokwiArduinoUno as unoIndex, wokwiResistor as resistorIndex, wokwiPushbutton as pushbuttonIndex, wokwiPowerSupply as powerSupplyIndex, wokwiNeopixelMatrix as neopixelIndex, wokwiBuzzer as buzzerIndex, wokwiMotor as motorIndex, wokwiServo as servoIndex, wokwiMotorDriver as motorDriverIndex, wokwiSlidePotentiometer as slidePotIndex, wokwiPotentiometer as potIndex } from '@openhw/emulator/src/components/index.ts';
@@ -196,28 +196,28 @@ export default function SimulatorPage() {
   const [installingLib, setInstallingLib] = useState(null)
   const [libMessage, setLibMessage] = useState(null)
 
-  const fetchInstalledLibraries = async () => {
+  const loadLibraries = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/lib-list');
-      setLibInstalled(res.data.libraries || []);
+      const libraries = await fetchInstalledLibraries();
+      setLibInstalled(libraries);
     } catch (err) {
       console.error('Failed to fetch installed libraries', err);
     }
   };
 
   useEffect(() => {
-    fetchInstalledLibraries();
+    loadLibraries();
   }, []);
 
-  const searchLibraries = async (e) => {
+  const handleSearchLibraries = async (e) => {
     e.preventDefault();
     if (!libQuery.trim()) return;
     setIsSearchingLib(true);
     setLibMessage(null);
     try {
-      const res = await axios.get(`http://localhost:5000/api/lib-search?q=${encodeURIComponent(libQuery)}`);
-      setLibResults(res.data.libraries || []);
-      if (res.data.libraries?.length === 0) setLibMessage({ type: 'error', text: 'No libraries found.' });
+      const libraries = await searchLibraries(libQuery);
+      setLibResults(libraries);
+      if (libraries.length === 0) setLibMessage({ type: 'error', text: 'No libraries found.' });
     } catch (err) {
       setLibMessage({ type: 'error', text: 'Failed to search libraries.' });
     } finally {
@@ -225,14 +225,14 @@ export default function SimulatorPage() {
     }
   };
 
-  const installLibrary = async (libName) => {
+  const handleInstallLibrary = async (libName) => {
     setInstallingLib(libName);
     setLibMessage(null);
     try {
-      const res = await axios.post('http://localhost:5000/api/lib-install', { name: libName });
-      setLibMessage({ type: 'success', text: res.data.message });
-      fetchInstalledLibraries(); // Refresh the installed list!
-      lastCompiledRef.current = null; // Force recompile on new library
+      const res = await installLibrary(libName);
+      setLibMessage({ type: 'success', text: res.message });
+      loadLibraries();
+      lastCompiledRef.current = null;
     } catch (err) {
       setLibMessage({ type: 'error', text: 'Failed to install library.' });
     } finally {
@@ -1697,7 +1697,7 @@ export default function SimulatorPage() {
                 )}
                 {codeTab === 'libraries' && (
                   <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', padding: 12, background: 'var(--bg)' }}>
-                    <form onSubmit={searchLibraries} style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                    <form onSubmit={handleSearchLibraries} style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
                       <input
                         style={S.serialInput}
                         placeholder="Search for an Arduino library..."
@@ -1724,7 +1724,7 @@ export default function SimulatorPage() {
                             <Btn
                               color="var(--green)"
                               disabled={installingLib === lib.name}
-                              onClick={() => installLibrary(lib.name)}
+                              onClick={() => handleInstallLibrary(lib.name)}
                             >
                               {installingLib === lib.name ? 'Installing...' : 'Install'}
                             </Btn>
