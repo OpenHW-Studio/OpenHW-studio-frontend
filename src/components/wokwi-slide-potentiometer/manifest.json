@@ -2,8 +2,8 @@
     "type": "wokwi-slide-potentiometer",
     "label": "Linear Potentiometer",
     "group": "Sensors",
-    "w": 90,
-    "h": 30,
+    "w": 205,
+    "h": 60,
     "attrs": {
         "value": "50"
     },

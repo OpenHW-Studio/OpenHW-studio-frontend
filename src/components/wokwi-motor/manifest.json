@@ -8,15 +8,15 @@
     "pins": [
         {
             "id": "1",
-            "x": 0,
-            "y": 20,
+            "x": -1,
+            "y": 21,
             "type": "power",
             "description": "Terminal 1"
         },
         {
             "id": "2",
-            "x": 0,
-            "y": 40,
+            "x": -1,
+            "y": 41,
             "type": "power",
             "description": "Terminal 2"
         }

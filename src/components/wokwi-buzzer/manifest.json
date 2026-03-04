@@ -2,21 +2,21 @@
     "type": "wokwi-buzzer",
     "label": "Buzzer",
     "group": "Outputs",
-    "w": 30,
-    "h": 30,
+    "w": 0,
+    "h": -10,
     "attrs": {},
     "pins": [
         {
             "id": "1",
-            "x": 10,
-            "y": 30,
+            "x": 28,
+            "y": 85,
             "type": "digital",
             "description": "Positive"
         },
         {
             "id": "2",
-            "x": 20,
-            "y": 30,
+            "x": 40,
+            "y": 85,
             "type": "power",
             "description": "Negative"
         }

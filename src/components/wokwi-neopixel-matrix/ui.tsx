@@ -10,23 +10,28 @@ export const NeopixelUI = ({ state, attrs }: { state: any, attrs: any }) => {
         if (state?.pixels && Array.isArray(state.pixels) && elRef.current) {
             const el = elRef.current as any;
             if (typeof el.setPixel === 'function') {
-                const cols = attrs?.cols || 1;
+                const cols = parseInt(attrs?.cols || '1', 10);
                 state.pixels.forEach((rgb: number, index: number) => {
                     const row = Math.floor(index / cols);
                     const col = index % cols;
-                    el.setPixel(row, col, rgb);
+                    const r = ((rgb >> 16) & 0xff) / 255;
+                    const g = ((rgb >> 8) & 0xff) / 255;
+                    const b = (rgb & 0xff) / 255;
+                    el.setPixel(row, col, { r, g, b });
                 });
             }
         }
     }, [state?.pixels, attrs?.cols]);
 
+    const props = { ...attrs };
+    if (props.rows) props.rows = parseInt(props.rows, 10);
+    if (props.cols) props.cols = parseInt(props.cols, 10);
+
     return (
         <div style={{ pointerEvents: 'none' }}>
             {React.createElement('wokwi-neopixel-matrix', {
                 ref: elRef,
-                rows: attrs?.rows || 1,
-                cols: attrs?.cols || 1,
-                ...attrs
+                ...props
             })}
         </div>
     );

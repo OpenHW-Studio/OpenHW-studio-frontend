@@ -1,0 +1,122 @@
+{
+    "type": "shift_register",
+    "label": "74HC595 Shift Register",
+    "group": "Logic",
+    "w": 60,
+    "h": 160,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "vcc",
+            "x": 0,
+            "y": 0,
+            "type": "power",
+            "description": "Power (VCC)"
+        },
+        {
+            "id": "gnd",
+            "x": 0,
+            "y": 140,
+            "type": "power",
+            "description": "Ground (GND)"
+        },
+        {
+            "id": "ser",
+            "x": 0,
+            "y": 20,
+            "type": "digital",
+            "description": "Serial Input (DS)"
+        },
+        {
+            "id": "srclk",
+            "x": 0,
+            "y": 40,
+            "type": "digital",
+            "description": "Shift Register Clock (SHCP)"
+        },
+        {
+            "id": "rclk",
+            "x": 0,
+            "y": 60,
+            "type": "digital",
+            "description": "Storage Register Clock (STCP)"
+        },
+        {
+            "id": "oe",
+            "x": 0,
+            "y": 80,
+            "type": "digital",
+            "description": "Output Enable (Active Low)"
+        },
+        {
+            "id": "srclr",
+            "x": 0,
+            "y": 100,
+            "type": "digital",
+            "description": "Shift Register Clear (Active Low)"
+        },
+        {
+            "id": "q0",
+            "x": 60,
+            "y": 0,
+            "type": "digital",
+            "description": "Output 0 (Q0)"
+        },
+        {
+            "id": "q1",
+            "x": 60,
+            "y": 20,
+            "type": "digital",
+            "description": "Output 1 (Q1)"
+        },
+        {
+            "id": "q2",
+            "x": 60,
+            "y": 40,
+            "type": "digital",
+            "description": "Output 2 (Q2)"
+        },
+        {
+            "id": "q3",
+            "x": 60,
+            "y": 60,
+            "type": "digital",
+            "description": "Output 3 (Q3)"
+        },
+        {
+            "id": "q4",
+            "x": 60,
+            "y": 80,
+            "type": "digital",
+            "description": "Output 4 (Q4)"
+        },
+        {
+            "id": "q5",
+            "x": 60,
+            "y": 100,
+            "type": "digital",
+            "description": "Output 5 (Q5)"
+        },
+        {
+            "id": "q6",
+            "x": 60,
+            "y": 120,
+            "type": "digital",
+            "description": "Output 6 (Q6)"
+        },
+        {
+            "id": "q7",
+            "x": 60,
+            "y": 140,
+            "type": "digital",
+            "description": "Output 7 (Q7)"
+        },
+        {
+            "id": "q7s",
+            "x": 60,
+            "y": 160,
+            "type": "digital",
+            "description": "Serial Output (Q7')"
+        }
+    ]
+}
