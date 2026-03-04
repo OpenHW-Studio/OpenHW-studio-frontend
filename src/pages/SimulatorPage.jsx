@@ -157,6 +157,7 @@ export default function SimulatorPage() {
   const [validationErrors, setValidationErrors] = useState([])
   const [showValidation, setShowValidation] = useState(true)
   const [isRunning, setIsRunning] = useState(false)
+  const [isCompiling, setIsCompiling] = useState(false)
   const [pinStates, setPinStates] = useState({})
   const [neopixelData, setNeopixelData] = useState({})
   const [oopStates, setOopStates] = useState({});
@@ -175,6 +176,7 @@ export default function SimulatorPage() {
   const [isExporting, setIsExporting] = useState(false);
 
   const workerRef = useRef(null)
+  const lastCompiledRef = useRef(null)
   const neopixelRefs = useRef({})
 
   const serialPlotBufferRef = useRef('');
@@ -230,6 +232,7 @@ export default function SimulatorPage() {
       const res = await axios.post('http://localhost:5000/api/lib-install', { name: libName });
       setLibMessage({ type: 'success', text: res.data.message });
       fetchInstalledLibraries(); // Refresh the installed list!
+      lastCompiledRef.current = null; // Force recompile on new library
     } catch (err) {
       setLibMessage({ type: 'error', text: 'Failed to install library.' });
     } finally {
@@ -690,8 +693,19 @@ export default function SimulatorPage() {
   const handleRun = async () => {
     try {
       setIsRunning(true);
-      logSerial('Compiling...');
-      const result = await compileCode(code);
+      setIsCompiling(true);
+
+      let result;
+      if (lastCompiledRef.current && lastCompiledRef.current.code === code && lastCompiledRef.current.board === board) {
+        logSerial('Using cached compilation...');
+        result = lastCompiledRef.current.result;
+      } else {
+        logSerial('Compiling...');
+        result = await compileCode(code);
+        lastCompiledRef.current = { code, board, result };
+      }
+
+      setIsCompiling(false);
       logSerial('Compiled! Connecting to emulator...');
 
       // Load Web Worker
@@ -806,6 +820,7 @@ export default function SimulatorPage() {
       });
     } catch (err) {
       setIsRunning(false);
+      setIsCompiling(false);
       console.error(err);
       alert(err.message);
     }
@@ -818,6 +833,7 @@ export default function SimulatorPage() {
       workerRef.current = null;
     }
     setIsRunning(false);
+    setIsCompiling(false);
     setPinStates({});
     setNeopixelData({});
     setOopStates({});
@@ -1139,7 +1155,7 @@ export default function SimulatorPage() {
             <option value="pico">Raspberry Pi Pico</option>
             <option value="esp32">ESP32</option>
           </select>
-          <Btn color={isRunning ? "var(--border)" : "var(--green)"} disabled={isRunning} onClick={!isRunning ? handleRun : undefined}>{isRunning ? '⏳ Running...' : '▶ Run'}</Btn>
+          <Btn color={isRunning ? "var(--border)" : "var(--green)"} disabled={isRunning} onClick={!isRunning ? handleRun : undefined}>{isRunning ? (isCompiling ? '⏳ Compiling...' : '⏳ Running...') : '▶ Run'}</Btn>
           <Btn color={isRunning ? "var(--red)" : undefined} disabled={!isRunning} onClick={isRunning ? handleStop : undefined}>⏹ Stop</Btn>
 
           <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />

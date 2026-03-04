@@ -150,14 +150,28 @@ AVR simulation can also run in-browser via `src/worker/execute.ts` inside a Web 
 ### Installation
 
 ```bash
-# From the monorepo root (recommended)
-cd c:\Users\Danish\Documents\simulator
-npm install
-
-# Or from this folder directly
+# Install Frontend Dependencies
 cd OpenHW-studio-frontend-danish
 npm install
 ```
+### Local Development & NPM Linking
+During local development, you will want the frontend to immediately see changes you make to the emulator source code, without having to push those changes to GitHub first.
+
+We achieve this using **NPM Symlinks**, which tell the frontend to use the local `openhw-studio-emulator-danish` folder instead of downloading the cached version from GitHub.
+
+To set up your local development links:
+```bash
+# 1. Register the emulator as a linkable global package
+cd openhw-studio-emulator-danish
+npm link
+cd ..
+
+# 2. Tell the frontend to use the linked local emulator
+cd OpenHW-studio-frontend-danish
+npm link @openhw/emulator
+cd ..
+```
+*Note: Once deployed to Vercel/Netlify, these local symlinks will be ignored and the remote server will correctly fetch the package directly from GitHub.*
 
 ### Start Development Server
 

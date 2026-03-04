@@ -103,6 +103,8 @@ export class AVRRunner {
         this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
         this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
 
+        this.buildNetlist();
+
         this.portB = new AVRIOPort(this.cpu, portBConfig);
         this.portC = new AVRIOPort(this.cpu, portCConfig);
         this.portD = new AVRIOPort(this.cpu, portDConfig);
@@ -115,9 +117,9 @@ export class AVRRunner {
             'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
             'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
             'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
-            'wokwi-motor': [{ id: 'A' }, { id: 'B' }],
-            'wokwi-motor-driver': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'GND' }, { id: 'VCC' }],
-            'wokwi-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+            'wokwi-motor': [{ id: '1' }, { id: '2' }],
+            'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
+            'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
             'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
             'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
         };
@@ -190,6 +192,44 @@ export class AVRRunner {
         this.spi.onByte = (value: number) => {
             const instArray = Array.from(this.instances.values());
             let returnByte = 0xFF; // Default MISO if nothing responds
+
+            let unoId = '';
+            for (const [id, inst] of this.instances) {
+                if (inst.type === 'wokwi-arduino-uno') {
+                    unoId = id;
+                    break;
+                }
+            }
+
+            if (unoId) {
+                const misoNet = this.pinToNet.get(`${unoId}:12`);
+                if (misoNet !== undefined) {
+                    // 1. Direct Loopback (MISO connected to MOSI)
+                    if (misoNet === this.pinToNet.get(`${unoId}:11`)) {
+                        returnByte = value;
+                    }
+                    // 2. MISO connected to SCK (Clock pulses)
+                    else if (misoNet === this.pinToNet.get(`${unoId}:13`)) {
+                        returnByte = 0xAA; // Arbitrary pattern to show clock signal picked up
+                    }
+                    // 3. MISO connected to any other driven Pin (like 10/SS)
+                    else {
+                        // Check if the net is currently driven HIGH by another pin
+                        let drivenHigh = false;
+                        for (const [p, net] of this.pinToNet) {
+                            if (net === misoNet && !p.endsWith(':12')) {
+                                const [compId, pinId] = p.split(':');
+                                if (compId === unoId && this.pinStates[pinId]) {
+                                    drivenHigh = true;
+                                    break;
+                                }
+                            }
+                        }
+                        returnByte = drivenHigh ? 0xFF : 0x00;
+                    }
+                }
+            }
+
             for (const inst of instArray) {
                 if (inst.onSPIByte) {
                     const res = inst.onSPIByte(value);
@@ -251,6 +291,9 @@ export class AVRRunner {
         // All three GND pins on the Uno (gnd_1, gnd_2, gnd_3) are treated as the same ground net.
         const isArduinoGndPin = (compPin: string) =>
             compPin === 'GND' || /^gnd(_\d+)?$/i.test(compPin);
+
+        const isArduino5VPin = (compPin: string) =>
+            compPin === '5V' || compPin === 'VCC';
 
         const isArduinoPin = (wireCoord: string, targetPin: string) => {
             const [compId, compPin] = wireCoord.split(':');
@@ -319,6 +362,15 @@ export class AVRRunner {
                     toInst.setPinVoltage(toPin, 0.0);
                 } else if (toIsArduinoGnd && fromInst) {
                     fromInst.setPinVoltage(fromPin, 0.0);
+                }
+
+                const fromIsArduino5V = fromInst && fromInst.type.includes('arduino') && isArduino5VPin(fromPin);
+                const toIsArduino5V = toInst && toInst.type.includes('arduino') && isArduino5VPin(toPin);
+
+                if (fromIsArduino5V && toInst) {
+                    toInst.setPinVoltage(toPin, 5.0);
+                } else if (toIsArduino5V && fromInst) {
+                    fromInst.setPinVoltage(fromPin, 5.0);
                 }
             });
 
@@ -493,5 +545,71 @@ export class AVRRunner {
     stop() {
         this.running = false;
         clearInterval(this.statusInterval);
+    }
+
+    private pinToNet = new Map<string, number>();
+
+    private buildNetlist() {
+        const adj = new Map<string, string[]>();
+
+        // Add wires to adjacency list
+        for (const wire of this.currentWires) {
+            if (!adj.has(wire.from)) adj.set(wire.from, []);
+            if (!adj.has(wire.to)) adj.set(wire.to, []);
+            adj.get(wire.from)!.push(wire.to);
+            adj.get(wire.to)!.push(wire.from);
+        }
+
+        // Add resistor bridges to adjacency list
+        for (const [id, inst] of this.instances) {
+            if (inst.type === 'wokwi-resistor') {
+                const p1 = `${id}:p1`;
+                const p2 = `${id}:p2`;
+                if (!adj.has(p1)) adj.set(p1, []);
+                if (!adj.has(p2)) adj.set(p2, []);
+                adj.get(p1)!.push(p2);
+                adj.get(p2)!.push(p1);
+            }
+        }
+
+        const visited = new Set<string>();
+        let currentNet = 0;
+
+        for (const startNode of adj.keys()) {
+            if (!visited.has(startNode)) {
+                const queue = [startNode];
+                visited.add(startNode);
+                while (queue.length > 0) {
+                    const node = queue.shift()!;
+                    this.pinToNet.set(node, currentNet);
+
+                    // Also set aliases (D11, 11 etc)
+                    const parts = node.split(':');
+                    if (parts.length === 2) {
+                        const compId = parts[0];
+                        const pinId = parts[1];
+                        if (!pinId.startsWith('D') && !pinId.startsWith('A') && /^\d+$/.test(pinId)) {
+                            this.pinToNet.set(`${compId}:D${pinId}`, currentNet);
+                        } else if (pinId.startsWith('D')) {
+                            this.pinToNet.set(`${compId}:${pinId.substring(1)}`, currentNet);
+                        }
+                    }
+
+                    for (const neighbor of adj.get(node) || []) {
+                        if (!visited.has(neighbor)) {
+                            visited.add(neighbor);
+                            queue.push(neighbor);
+                        }
+                    }
+                }
+                currentNet++;
+            }
+        }
+    }
+
+    private arePinsConnected(pinA: string, pinB: string): boolean {
+        const netA = this.pinToNet.get(pinA);
+        const netB = this.pinToNet.get(pinB);
+        return netA !== undefined && netA === netB;
     }
 }
