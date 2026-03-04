@@ -4,8 +4,11 @@ import axios from 'axios'
 import { useAuth } from '../context/AuthContext.jsx'
 import { compileCode, fetchInstalledLibraries, searchLibraries, installLibrary } from '../services/simulatorService.js'
 import html2canvas from 'html2canvas'
+import JSZip from 'jszip';
+import * as Babel from '@babel/standalone';
+import { submitCustomComponent } from '../services/simulatorService.js'
 
-import { wokwiLed as ledIndex, wokwiArduinoUno as unoIndex, wokwiResistor as resistorIndex, wokwiPushbutton as pushbuttonIndex, wokwiPowerSupply as powerSupplyIndex, wokwiNeopixelMatrix as neopixelIndex, wokwiBuzzer as buzzerIndex, wokwiMotor as motorIndex, wokwiServo as servoIndex, wokwiMotorDriver as motorDriverIndex, wokwiSlidePotentiometer as slidePotIndex, wokwiPotentiometer as potIndex } from '@openhw/emulator/src/components/index.ts';
+import { wokwiLed as ledIndex, wokwiArduinoUno as unoIndex, wokwiResistor as resistorIndex, wokwiPushbutton as pushbuttonIndex, wokwiPowerSupply as powerSupplyIndex, wokwiNeopixelMatrix as neopixelIndex, wokwiBuzzer as buzzerIndex, wokwiMotor as motorIndex, wokwiServo as servoIndex, wokwiMotorDriver as motorDriverIndex, wokwiSlidePotentiometer as slidePotIndex, wokwiPotentiometer as potIndex, shiftRegister as shiftRegisterIndex } from '@openhw/emulator/src/components/index.ts';
 
 // Web Editor features
 import Editor from 'react-simple-code-editor';
@@ -29,7 +32,8 @@ const COMPONENT_REGISTRY = {
   'wokwi-servo': servoIndex,
   'wokwi-motor-driver': motorDriverIndex,
   'wokwi-slide-potentiometer': slidePotIndex,
-  'wokwi-potentiometer': potIndex
+  'wokwi-potentiometer': potIndex,
+  'shift_register': shiftRegisterIndex
 };
 
 const LOCAL_CATALOG = [];
@@ -139,8 +143,10 @@ export default function SimulatorPage() {
     document.documentElement.setAttribute('data-theme', newTheme)
   }
 
+  const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection
   const [components, setComponents] = useState([])
   const [wires, setWires] = useState([])
+  const [paletteSearch, setPaletteSearch] = useState('')
   const [showGuestBanner, setShowGuestBanner] = useState(true)
   const [history, setHistory] = useState({ past: [], future: [] })
   const [selected, setSelected] = useState(null)   // comp or wire id
@@ -187,6 +193,69 @@ export default function SimulatorPage() {
   const svgRef = useRef(null)
   const dragPayload = useRef(null)
   const movingComp = useRef(null)
+  const componentZipInputRef = useRef(null);
+
+  const handleUploadZip = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      const zip = await JSZip.loadAsync(file);
+      let manifestStr = null, uiStr = null, logicStr = null, validationStr = null, indexStr = null;
+      for (const relativePath of Object.keys(zip.files)) {
+        if (relativePath.endsWith('manifest.json')) manifestStr = await zip.files[relativePath].async('string');
+        if (relativePath.endsWith('ui.tsx') || relativePath.endsWith('ui.jsx')) uiStr = await zip.files[relativePath].async('string');
+        if (relativePath.endsWith('logic.ts') || relativePath.endsWith('logic.js')) logicStr = await zip.files[relativePath].async('string');
+        if (relativePath.endsWith('validation.ts') || relativePath.endsWith('validation.js')) validationStr = await zip.files[relativePath].async('string');
+        if (relativePath.endsWith('index.ts') || relativePath.endsWith('index.js')) indexStr = await zip.files[relativePath].async('string');
+      }
+      if (!manifestStr || !uiStr || !logicStr || !validationStr || !indexStr) {
+        alert('Error: Zip must contain manifest.json, ui.tsx, logic.ts, validation.ts, and index.ts');
+        return;
+      }
+      const manifest = JSON.parse(manifestStr);
+      await submitCustomComponent({
+        id: manifest.type, manifest, ui: uiStr, logic: logicStr, validation: validationStr, index: indexStr
+      });
+
+      // --- ZERO-TOUCH SANDBOX INJECTION ---
+      const transpileUI = Babel.transform(uiStr, { presets: ['react', 'typescript', 'env'] }).code;
+      const transpileLogic = Babel.transform(logicStr, { presets: ['typescript', 'env'] }).code;
+
+      const exportsUI = {};
+      const evalUI = new Function('exports', 'require', 'React', transpileUI);
+      evalUI(exportsUI, (mod) => {
+        if (mod === 'react') return React;
+        return null;
+      }, React);
+
+      const uiComponent = exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
+
+      if (uiComponent) {
+        const newCatItem = { ...manifest };
+        delete newCatItem.pins;
+        delete newCatItem.group;
+
+        let group = LOCAL_CATALOG.find(g => g.group === manifest.group);
+        if (!group) {
+          group = { group: manifest.group, items: [] };
+          LOCAL_CATALOG.push(group);
+        }
+        group.items = group.items.filter(i => i.type !== manifest.type);
+        group.items.push(newCatItem);
+
+        COMPONENT_REGISTRY[manifest.type] = {
+          manifest,
+          UI: uiComponent,
+          logicCode: transpileLogic
+        };
+        setCustomCatalogCounter(c => c + 1);
+        alert(`Successfully submitted to admin AND injected ${manifest.label} into your local Sandbox Memory!`);
+      }
+    } catch (e) {
+      alert(`Error processing ZIP: ${e.message}`);
+    }
+    event.target.value = '';
+  };
 
   // ── Library Manager State ───────────────────────────────────────────────────
   const [libQuery, setLibQuery] = useState('')
@@ -811,12 +880,24 @@ export default function SimulatorPage() {
           return null; // Handle Neopixels later
         }).filter(n => n);
 
+      const customLogics = [];
+      components.forEach((c) => {
+        if (COMPONENT_REGISTRY[c.type]?.logicCode) {
+          customLogics.push({
+            type: c.type,
+            code: COMPONENT_REGISTRY[c.type].logicCode,
+            pins: COMPONENT_REGISTRY[c.type].manifest.pins
+          });
+        }
+      });
+
       worker.postMessage({
         type: 'START',
         hex: result.hex,
         neopixels: neopixelWiring,
         wires: wires,
-        components: components
+        components: components,
+        customLogics: customLogics
       });
     } catch (err) {
       setIsRunning(false);
@@ -1227,24 +1308,44 @@ export default function SimulatorPage() {
         {/* PALETTE */}
         <aside style={S.palette}>
           <div style={S.paletteHeader}>Components</div>
-          <input style={S.paletteSearch} placeholder="🔍 Search..." />
-          {CATALOG.map(group => (
-            <div key={group.group}>
-              <div style={S.groupName}>{group.group}</div>
-              {group.items.map(item => (
-                <div
-                  key={item.type}
-                  style={S.paletteItem}
-                  draggable
-                  onDragStart={e => onPaletteDragStart(e, item)}
-                  title={`Drag to canvas to add ${item.label}`}
-                >
-                  <span style={{ fontSize: 16 }}>{item.icon}</span>
-                  <span style={{ fontSize: 13, color: 'var(--text2)' }}>{item.label}</span>
-                </div>
-              ))}
-            </div>
-          ))}
+          <input
+            style={S.paletteSearch}
+            placeholder="🔍 Search..."
+            value={paletteSearch}
+            onChange={(e) => setPaletteSearch(e.target.value)}
+          />
+          <div style={{ marginBottom: 12 }}>
+            <input type="file" ref={componentZipInputRef} onChange={handleUploadZip} accept=".zip" style={{ display: 'none' }} />
+            <button
+              onClick={() => componentZipInputRef.current.click()}
+              style={{ width: '100%', padding: '8px', borderRadius: 4, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>
+              ☁ Upload ZIP to Test
+            </button>
+          </div>
+          {CATALOG.map(group => {
+            const filteredItems = group.items.filter(item =>
+              item.label.toLowerCase().includes(paletteSearch.toLowerCase()) ||
+              item.type.toLowerCase().includes(paletteSearch.toLowerCase())
+            );
+            if (filteredItems.length === 0) return null;
+            return (
+              <div key={group.group}>
+                <div style={S.groupName}>{group.group}</div>
+                {filteredItems.map(item => (
+                  <div
+                    key={item.type}
+                    style={S.paletteItem}
+                    draggable
+                    onDragStart={e => onPaletteDragStart(e, item)}
+                    title={`Drag to canvas to add ${item.label}`}
+                  >
+                    <span style={{ fontSize: 16 }}>{item.icon}</span>
+                    <span style={{ fontSize: 13, color: 'var(--text2)' }}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
           <div style={S.paletteTip}>
             Drag → drop to place<br />
             Click <em>Wire Mode</em> then click pins to connect<br />

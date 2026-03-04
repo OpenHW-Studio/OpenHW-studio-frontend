@@ -28,6 +28,7 @@ export default function LandingPage() {
           <span className="brand-name">OpenHW<span className="brand-accent">-Studio</span></span>
         </div>
         <div className="nav-actions">
+          <button className="btn btn-outline" style={{ marginRight: 10 }} onClick={() => navigate('/admin')}>⚙ Admin</button>
           {isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>Dashboard →</button>
           ) : (
@@ -47,7 +48,7 @@ export default function LandingPage() {
           <span className="gradient-text">Learn Electronics.</span>
         </h1>
         <p className="hero-subtitle">
-          A browser-based embedded systems simulator with gamified learning, 
+          A browser-based embedded systems simulator with gamified learning,
           classroom tools, and real hardware emulation. No hardware needed.
         </p>
         <div className="hero-actions">

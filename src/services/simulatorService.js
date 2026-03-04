@@ -45,3 +45,35 @@ export async function installLibrary(name) {
     const response = await axios.post(`${COMPILER_URL}/lib-install`, { name });
     return response.data;
 }
+
+/**
+ * Uninstalls a library from the backend.
+ */
+export async function uninstallLibrary(name) {
+    const response = await axios.post(`${COMPILER_URL}/lib-uninstall`, { name });
+    return response.data;
+}
+
+/**
+ * Sends a custom component to the backend to be permanently installed.
+ */
+export async function approveCustomComponent(componentPayload) {
+    const response = await axios.post(`${COMPILER_URL}/admin/components/approve`, componentPayload);
+    return response.data;
+}
+
+/**
+ * Admins fetching the pending components
+ */
+export async function fetchPendingComponents() {
+    const response = await axios.get(`${COMPILER_URL}/admin/components/pending`);
+    return response.data.components || [];
+}
+
+/**
+ * Users submitting a component for admin review
+ */
+export async function submitCustomComponent(payload) {
+    const response = await axios.post(`${COMPILER_URL}/components/submit`, payload);
+    return response.data;
+}

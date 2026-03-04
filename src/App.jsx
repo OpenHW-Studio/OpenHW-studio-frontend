@@ -9,6 +9,7 @@ import RoleSelectPage from './pages/RoleSelectPage.jsx'
 import StudentDashboard from './pages/StudentDashboard.jsx'
 import TeacherDashboard from './pages/TeacherDashboard.jsx'
 import SimulatorPage from './pages/SimulatorPage.jsx'
+import AdminPage from './pages/admin/AdminPage.jsx'
 
 export default function App() {
   return (
@@ -19,7 +20,7 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/select-role" element={<RoleSelectPage />} />
-          
+
           {/* Guest accessible simulator */}
           <Route path="/simulator" element={<SimulatorPage />} />
 
@@ -42,6 +43,13 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Protected: Admin Workflow */}
+          <Route path="/admin" element={
+            <ProtectedRoute>
+              <AdminPage />
+            </ProtectedRoute>
+          } />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -1,5 +1,5 @@
-import { AVRRunner } from './execute';
-// We will create execute.ts to manage avr8js.
+import { AVRRunner, LOGIC_REGISTRY, COMPONENT_PINS } from './execute';
+import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
 
 let runner: AVRRunner | null = null;
 let components: any[] = [];
@@ -10,19 +10,37 @@ self.onmessage = async (e) => {
     const data = e.data;
 
     if (data.type === 'START') {
-        const { hex, components, wires } = data;
+        const { hex, components, wires, customLogics } = data;
 
         if (runner) {
             runner.stop();
         }
 
-        // Instantiate OOP logics
-        oopInstances.clear();
-        for (const c of components) {
-            // Dynamic import logic.ts works in some bundlers for workers, but Vite has specific rules.
-            // A safer approach for Vite workers is to map them statically or let the main thread pass the behavior.
-            // Since we know the types, we can use a factory here or import them up top.
+        // --- INJECT TEMPORARY SANDBOX LOGIC ---
+        if (customLogics && Array.isArray(customLogics)) {
+            customLogics.forEach((cl: any) => {
+                try {
+                    const exportsObj: any = {};
+                    const requireFn = (mod: string) => {
+                        if (mod.includes('BaseComponent')) return { BaseComponent };
+                        return {};
+                    };
+                    const evalFn = new Function('exports', 'require', cl.code);
+                    evalFn(exportsObj, requireFn);
+
+                    const LogicClass = exportsObj[Object.keys(exportsObj)[0]] || exportsObj.default;
+                    if (LogicClass) {
+                        LOGIC_REGISTRY[cl.type] = LogicClass;
+                        COMPONENT_PINS[cl.type] = cl.pins;
+                        console.log(`[Worker] Sandbox injected component logic for: ${cl.type}`);
+                    }
+                } catch (e) {
+                    console.error(`[Worker] Failed to inject sandbox logic for ${cl.type}:`, e);
+                }
+            });
         }
+
+        // Instantiate OOP logics
 
         runner = new AVRRunner(hex, components, wires, (stateObj) => {
             postMessage(stateObj);

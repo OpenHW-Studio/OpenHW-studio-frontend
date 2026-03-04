@@ -13,6 +13,7 @@ import { ServoLogic } from '@openhw/emulator/src/components/wokwi-servo/logic.ts
 import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-driver/logic.ts';
 import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
+import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
 
 export function parse(data: string) {
     const lines = data.split('\n');
@@ -41,7 +42,7 @@ export function parse(data: string) {
     return { data: result };
 }
 
-const LOGIC_REGISTRY: Record<string, any> = {
+export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
     'wokwi-resistor': ResistorLogic,
@@ -53,7 +54,24 @@ const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-servo': ServoLogic,
     'wokwi-motor-driver': MotorDriverLogic,
     'wokwi-slide-potentiometer': SlidePotLogic,
-    'wokwi-potentiometer': PotentiometerLogic
+    'wokwi-potentiometer': PotentiometerLogic,
+    'shift_register': ShiftRegisterLogic
+};
+
+// Per-type pin lists so every component's pins are registered correctly
+export const COMPONENT_PINS: Record<string, { id: string }[]> = {
+    'wokwi-led': [{ id: 'A' }, { id: 'K' }],
+    'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
+    'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],
+    'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
+    'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
+    'wokwi-motor': [{ id: '1' }, { id: '2' }],
+    'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
+    'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
+    'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+    'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
+    'shift_register': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'OE' }, { id: 'RCLK' }, { id: 'SRCLK' }, { id: 'SRCLR' }, { id: 'QA' }, { id: 'QB' }, { id: 'QC' }, { id: 'QD' }, { id: 'QE' }, { id: 'QF' }, { id: 'QG' }, { id: 'QH' }, { id: 'QH\'' }],
 };
 
 export class AVRRunner {
@@ -108,21 +126,6 @@ export class AVRRunner {
         this.portB = new AVRIOPort(this.cpu, portBConfig);
         this.portC = new AVRIOPort(this.cpu, portCConfig);
         this.portD = new AVRIOPort(this.cpu, portDConfig);
-
-        // Per-type pin lists so every component's pins are registered correctly
-        const COMPONENT_PINS: Record<string, { id: string }[]> = {
-            'wokwi-led': [{ id: 'A' }, { id: 'K' }],
-            'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
-            'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],
-            'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
-            'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
-            'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
-            'wokwi-motor': [{ id: '1' }, { id: '2' }],
-            'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
-            'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
-            'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
-            'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
-        };
 
         // Instantiate components
         (componentsDef || []).forEach(cDef => {
