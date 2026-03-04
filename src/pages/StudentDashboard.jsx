@@ -1,22 +1,31 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function StudentDashboard() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(newTheme)
+    document.documentElement.setAttribute('data-theme', newTheme)
+  }
 
   const handleLogout = () => {
     logout()
     navigate('/')
   }
 
+  const S = {logo: { background: 'none', border: 'none', color: 'var(--accent)', fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 }}
+
   return (
     <div className="dashboard">
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <span className="brand-icon">⚡</span>
-          <span>OpenHW-Studio</span>
+          <button style={S.logo} onClick={() => navigate('/')}>⚡ OpenHW-Studio</button>
         </div>
         <nav className="sidebar-nav">
           <a className="sidebar-link active">🏠 Dashboard</a>
@@ -37,11 +46,16 @@ export default function StudentDashboard() {
             <h1>Welcome back, {user?.name?.split(' ')[0]} 👋</h1>
             <p>Level {user?.level} Student · {user?.email}</p>
           </div>
-          <div className="user-avatar">
-            {user?.picture
-              ? <img src={user.picture} alt="avatar" />
-              : <div className="avatar-placeholder">{user?.name?.[0]}</div>
-            }
+          <div className="dash-header-actions">
+            <button className="btn btn-ghost" onClick={toggleTheme} title="Toggle Dark/Light Mode">
+              {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+            </button>
+            <div className="user-avatar">
+              {user?.picture
+                ? <img src={user.picture} alt="avatar" />
+                : <div className="avatar-placeholder">{user?.name?.[0]}</div>
+              }
+            </div>
           </div>
         </div>
 

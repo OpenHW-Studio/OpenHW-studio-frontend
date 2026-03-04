@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext.jsx'
 import { compileCode } from '../services/simulatorService.js'
@@ -14,6 +14,8 @@ import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
 // Import a Prism theme (or we can inject our own CSS wrapper)
 import 'prismjs/themes/prism-tomorrow.css';
+
+const EXAMPLES_BASE_URL = 'http://localhost:5000/examples'
 
 // Build Catalog & UI Registry from local imports
 const COMPONENT_REGISTRY = {
@@ -53,19 +55,136 @@ Object.values(COMPONENT_REGISTRY).forEach(module => {
 let nextId = 1
 let nextWireId = 1
 
+function isWireId(id) {
+  return typeof id === 'string' && /^w\d+$/.test(id)
+}
+
+function wireTouchesComponent(wire, componentId) {
+  const fromCompId = String(wire.from || '').split(':')[0]
+  const toCompId = String(wire.to || '').split(':')[0]
+  return fromCompId === componentId || toCompId === componentId
+}
+
 // ─── MULTI-SEGMENT ORTHOGONAL PATH ──────────────────────────────────────────
-function multiRoutePath(p1, p2, waypoints = []) {
-  if (!p1 || !p2) return '';
-  const pts = [p1, ...waypoints, p2];
-  let d = '';
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    const midX = (a.x + b.x) / 2;
-    if (i === 0) d += `M ${a.x} ${a.y} `;
-    d += `L ${midX} ${a.y} L ${midX} ${b.y} L ${b.x} ${b.y} `;
+const ROUTE_PADDING = 10;
+const DETOUR_OFFSETS = [24, -24, 40, -40, 56, -56, 72, -72];
+
+function dedupeConsecutive(points) {
+  if (!points.length) return points;
+  const out = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i];
+    const prev = out[out.length - 1];
+    if (p.x !== prev.x || p.y !== prev.y) out.push(p);
   }
+  return out;
+}
+
+function simplifyOrthogonal(points) {
+  if (points.length <= 2) return points;
+  const out = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const a = out[out.length - 1];
+    const b = points[i];
+    const c = points[i + 1];
+    const collinear = (a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y);
+    if (!collinear) out.push(b);
+  }
+  out.push(points[points.length - 1]);
+  return out;
+}
+
+function buildPathD(points) {
+  if (!points.length) return '';
+  let d = `M ${points[0].x} ${points[0].y} `;
+  for (let i = 1; i < points.length; i++) d += `L ${points[i].x} ${points[i].y} `;
   return d;
+}
+
+function pointInRect(p, r) {
+  return p.x >= r.x1 && p.x <= r.x2 && p.y >= r.y1 && p.y <= r.y2;
+}
+
+function rangesOverlap(a1, a2, b1, b2) {
+  const minA = Math.min(a1, a2);
+  const maxA = Math.max(a1, a2);
+  const minB = Math.min(b1, b2);
+  const maxB = Math.max(b1, b2);
+  return Math.max(minA, minB) <= Math.min(maxA, maxB);
+}
+
+function segmentHitsObstacle(a, b, r) {
+  if (a.x === b.x) {
+    return a.x >= r.x1 && a.x <= r.x2 && rangesOverlap(a.y, b.y, r.y1, r.y2);
+  }
+  if (a.y === b.y) {
+    return a.y >= r.y1 && a.y <= r.y2 && rangesOverlap(a.x, b.x, r.x1, r.x2);
+  }
+  return true;
+}
+
+function segmentOverlapsExisting(a, b, occupiedSegments) {
+  for (const s of occupiedSegments) {
+    if (a.x === b.x && s.x1 === s.x2 && a.x === s.x1 && rangesOverlap(a.y, b.y, s.y1, s.y2)) return true;
+    if (a.y === b.y && s.y1 === s.y2 && a.y === s.y1 && rangesOverlap(a.x, b.x, s.x1, s.x2)) return true;
+  }
+  return false;
+}
+
+function segmentBlocked(a, b, obstacleRects, occupiedSegments) {
+  if (!(a.x === b.x || a.y === b.y)) return true;
+  if (obstacleRects.some(r => segmentHitsObstacle(a, b, r))) return true;
+  if (segmentOverlapsExisting(a, b, occupiedSegments)) return true;
+  return false;
+}
+
+function pathBlocked(points, obstacleRects, occupiedSegments) {
+  for (let i = 0; i < points.length - 1; i++) {
+    if (segmentBlocked(points[i], points[i + 1], obstacleRects, occupiedSegments)) return true;
+  }
+  return false;
+}
+
+function addPathToOccupied(points, occupiedSegments) {
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    occupiedSegments.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+  }
+}
+
+function routeSegment(a, b, obstacleRects, occupiedSegments) {
+  const candidates = [
+    [a, { x: b.x, y: a.y }, b],
+    [a, { x: a.x, y: b.y }, b]
+  ];
+
+  for (const off of DETOUR_OFFSETS) {
+    candidates.push([a, { x: a.x + off, y: a.y }, { x: a.x + off, y: b.y }, b]);
+    candidates.push([a, { x: a.x, y: a.y + off }, { x: b.x, y: a.y + off }, b]);
+    candidates.push([a, { x: b.x + off, y: a.y }, { x: b.x + off, y: b.y }, b]);
+    candidates.push([a, { x: a.x, y: b.y + off }, { x: b.x, y: b.y + off }, b]);
+  }
+
+  for (const c of candidates) {
+    const clean = simplifyOrthogonal(dedupeConsecutive(c));
+    if (!pathBlocked(clean, obstacleRects, occupiedSegments)) return clean;
+  }
+
+  return simplifyOrthogonal(dedupeConsecutive([a, { x: b.x, y: a.y }, b]));
+}
+
+function routeWirePoints(p1, p2, waypoints = [], obstacleRects = [], occupiedSegments = []) {
+  if (!p1 || !p2) return [];
+  const anchors = [p1, ...waypoints, p2];
+  const out = [];
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const segment = routeSegment(anchors[i], anchors[i + 1], obstacleRects, occupiedSegments);
+    if (i === 0) out.push(...segment);
+    else out.push(...segment.slice(1));
+    addPathToOccupied(segment, occupiedSegments);
+  }
+  return simplifyOrthogonal(dedupeConsecutive(out));
 }
 
 function wireColor(pinLabel) {
@@ -79,6 +198,7 @@ function wireColor(pinLabel) {
 export default function SimulatorPage() {
   const { isAuthenticated, user } = useAuth()
   const navigate = useNavigate()
+  const { projectName } = useParams()
 
   // Theme Logic
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
@@ -117,6 +237,7 @@ export default function SimulatorPage() {
   const svgRef = useRef(null)
   const dragPayload = useRef(null)
   const movingComp = useRef(null)
+  const loadedDemoRef = useRef(null)
 
   // ── Library Manager State ───────────────────────────────────────────────────
   const [libQuery, setLibQuery] = useState('')
@@ -213,6 +334,115 @@ export default function SimulatorPage() {
   const CATALOG = LOCAL_CATALOG;
   const PIN_DEFS = LOCAL_PIN_DEFS;
 
+
+  useEffect(() => {
+    if (!projectName) {
+      loadedDemoRef.current = null
+      return
+    }
+    if (loadedDemoRef.current === projectName) return
+
+    let cancelled = false
+
+    const normalizePinId = (type, pinId) => {
+      if (!pinId) return pinId
+      if (type === 'wokwi-resistor') {
+        if (pinId === '1') return 'p1'
+        if (pinId === '2') return 'p2'
+      }
+      if (type === 'wokwi-led' && pinId === 'C') return 'K'
+      if (type === 'wokwi-arduino-uno') {
+        const gndMatch = /^GND\.(\d)$/i.exec(pinId)
+        if (gndMatch) return `gnd_${gndMatch[1]}`
+      }
+      return pinId
+    }
+
+    const normalizeWireColor = (color) => {
+      const c = String(color || '').toLowerCase()
+      if (c === 'red') return '#e74c3c'
+      if (c === 'green') return '#2ecc71'
+      if (c === 'blue') return '#3498db'
+      if (c === 'black') return '#000000'
+      return '#2ecc71'
+    }
+
+    const loadDemo = async () => {
+      try {
+        const [diagramRes, sketchRes] = await Promise.all([
+          fetch(`${EXAMPLES_BASE_URL}/${projectName}/diagram.json`),
+          fetch(`${EXAMPLES_BASE_URL}/${projectName}/sketch.ino`)
+        ])
+
+        if (!diagramRes.ok || !sketchRes.ok) return
+
+        const diagram = await diagramRes.json()
+        const sketch = await sketchRes.text()
+        if (cancelled) return
+
+        const parts = Array.isArray(diagram.parts) ? diagram.parts : []
+        const connections = Array.isArray(diagram.connections) ? diagram.connections : []
+        const partTypeById = Object.fromEntries(parts.map((part, i) => [part.id || `part_${i + 1}`, part.type]))
+
+        const loadedComponents = parts.map((part, index) => {
+          const id = part.id || `${part.type}_${index + 1}`
+          const manifest = COMPONENT_REGISTRY[part.type]?.manifest || {}
+          return {
+            id,
+            type: part.type,
+            label: manifest.label || part.type,
+            x: (Number(part.left) || 0) + 120,
+            y: (Number(part.top) || 0) + 120,
+            w: manifest.w || 60,
+            h: manifest.h || 60,
+            attrs: part.attrs || {}
+          }
+        })
+
+        const pinDescription = (componentType, pinId) => {
+          const pins = PIN_DEFS[componentType] || []
+          return pins.find(pn => pn.id === pinId)?.description || pinId
+        }
+
+        const loadedWires = connections
+          .filter(conn => Array.isArray(conn) && conn.length >= 2)
+          .map((conn, index) => {
+            const [fromRaw, toRaw, colorRaw] = conn
+            const [fromCompId, fromPinRaw] = String(fromRaw).split(':')
+            const [toCompId, toPinRaw] = String(toRaw).split(':')
+            const fromType = partTypeById[fromCompId]
+            const toType = partTypeById[toCompId]
+            const fromPinId = normalizePinId(fromType, fromPinRaw)
+            const toPinId = normalizePinId(toType, toPinRaw)
+            return {
+              id: `w${index + 1}`,
+              from: `${fromCompId}:${fromPinId}`,
+              to: `${toCompId}:${toPinId}`,
+              fromLabel: pinDescription(fromType, fromPinId),
+              toLabel: pinDescription(toType, toPinId),
+              color: normalizeWireColor(colorRaw),
+              waypoints: []
+            }
+          })
+
+        setComponents(loadedComponents)
+        setWires(loadedWires)
+        setCode(sketch)
+        setBoard('arduino_uno')
+        setSelected(null)
+        setWireStart(null)
+        setHistory({ past: [], future: [] })
+        nextWireId = loadedWires.length + 1
+        loadedDemoRef.current = projectName
+      } catch (err) {
+        console.error('Failed to load demo project files', err)
+      }
+    }
+
+    loadDemo()
+    return () => { cancelled = true }
+  }, [projectName, PIN_DEFS])
+
   // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
   useEffect(() => {
     if (!neopixelData || Object.keys(neopixelData).length === 0) return;
@@ -242,6 +472,43 @@ export default function SimulatorPage() {
     if (!pin) return null
     return { x: comp.x + pin.x, y: comp.y + pin.y }
   }, [components, PIN_DEFS])
+
+  const routeObstacles = useMemo(() => (
+    components.map(c => ({
+      id: c.id,
+      x1: c.x - ROUTE_PADDING,
+      y1: c.y - ROUTE_PADDING,
+      x2: c.x + c.w + ROUTE_PADDING,
+      y2: c.y + c.h + ROUTE_PADDING
+    }))
+  ), [components])
+
+  const getRoutingObstacles = useCallback((start, end, ignoreCompIds = []) => {
+    const ignore = new Set(ignoreCompIds)
+    return routeObstacles.filter(r => {
+      if (ignore.has(r.id)) return false
+      if (pointInRect(start, r) || pointInRect(end, r)) return false
+      return true
+    })
+  }, [routeObstacles])
+
+  const routedWirePointsById = useMemo(() => {
+    const routed = {}
+    const occupied = []
+    for (const w of wires) {
+      const fromParts = w.from.split(':')
+      const toParts = w.to.split(':')
+      const p1 = getPinPos(fromParts[0], fromParts[1])
+      const p2 = getPinPos(toParts[0], toParts[1])
+      if (!p1 || !p2) {
+        routed[w.id] = []
+        continue
+      }
+      const obstacles = getRoutingObstacles(p1, p2, [fromParts[0], toParts[0]])
+      routed[w.id] = routeWirePoints(p1, p2, w.waypoints, obstacles, occupied)
+    }
+    return routed
+  }, [wires, getPinPos, getRoutingObstacles])
 
   // ── Palette drag start ──────────────────────────────────────────────────────
   const onPaletteDragStart = (e, item) => {
@@ -379,11 +646,11 @@ export default function SimulatorPage() {
       if (e.key === 'Escape') { setWireStart(null); setSelected(null); }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning) {
         saveHistory();
-        if (selected.startsWith('w')) {
+        if (isWireId(selected)) {
           setWires(prev => prev.filter(w => w.id !== selected))
         } else {
           setComponents(prev => prev.filter(c => c.id !== selected))
-          setWires(prev => prev.filter(w => !w.from.startsWith(selected) && !w.to.startsWith(selected)))
+          setWires(prev => prev.filter(w => !wireTouchesComponent(w, selected)))
         }
         setSelected(null)
       }
@@ -533,11 +800,11 @@ export default function SimulatorPage() {
           <Btn color={selected ? "var(--red)" : undefined} disabled={!selected || isRunning} onClick={() => {
             if (!selected || isRunning) return;
             saveHistory();
-            if (selected.startsWith('w')) {
+            if (isWireId(selected)) {
               setWires(prev => prev.filter(w => w.id !== selected));
             } else {
               setComponents(prev => prev.filter(c => c.id !== selected))
-              setWires(prev => prev.filter(w => !w.from.startsWith(selected) && !w.to.startsWith(selected)))
+              setWires(prev => prev.filter(w => !wireTouchesComponent(w, selected)))
             }
             setSelected(null)
           }}>🗑 Delete</Btn>
@@ -646,8 +913,10 @@ export default function SimulatorPage() {
               const p2 = getPinPos(toParts[0], toParts[1])
               if (!p1 || !p2) return null
               const isSelectedWire = selected === w.id;
+              const routed = routedWirePointsById[w.id] || []
+              const wirePath = buildPathD(routed)
               // Approximate midpoint for context menu
-              const pts = [p1, ...(w.waypoints || []), p2];
+              const pts = routed.length ? routed : [p1, ...(w.waypoints || []), p2];
               const midIdx = Math.floor(pts.length / 2);
               const midPt = pts[midIdx];
 
@@ -655,12 +924,12 @@ export default function SimulatorPage() {
                 <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }}>
                   {/* Shadow for click hitbox */}
                   <path
-                    d={multiRoutePath(p1, p2, w.waypoints)}
+                    d={wirePath}
                     stroke="transparent" strokeWidth={16} fill="none"
                     style={{ pointerEvents: 'stroke' }}
                   />
                   <path
-                    d={multiRoutePath(p1, p2, w.waypoints)}
+                    d={wirePath}
                     stroke={isSelectedWire ? 'var(--orange)' : w.color}
                     strokeWidth={isSelectedWire ? 3.5 : 2.5}
                     fill="none"
@@ -709,7 +978,12 @@ export default function SimulatorPage() {
             {/* Preview wire while drawing */}
             {wireStart && (
               <path
-                d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
+                d={buildPathD(routeWirePoints(
+                  { x: wireStart.x, y: wireStart.y },
+                  mousePos,
+                  wireStart.waypoints,
+                  getRoutingObstacles({ x: wireStart.x, y: wireStart.y }, mousePos, [wireStart.compId])
+                ))}
                 stroke="var(--orange)"
                 strokeWidth={2}
                 strokeDasharray="6 4"

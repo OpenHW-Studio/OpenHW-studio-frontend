@@ -1,18 +1,26 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 
 const exampleProjects = [
-  { title: 'LED Blink', board: 'Arduino Uno', difficulty: 'Beginner', icon: '💡', points: 50 },
-  { title: 'RGB LED', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎨', points: 80 },
-  { title: 'Servo Motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '⚙️', points: 120 },
-  { title: 'Temperature Sensor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', points: 150 },
-  { title: 'Wi-Fi LED Control', board: 'ESP32', difficulty: 'Advanced', icon: '📶', points: 200 },
-  { title: 'DC Motor PWM', board: 'ESP32', difficulty: 'Advanced', icon: '🔄', points: 220 },
+  { title: 'LED Blink', slug: 'led-blink', board: 'Arduino Uno', difficulty: 'Beginner', icon: '💡', points: 50 },
+  { title: 'RGB LED', slug: 'rgb-led', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎨', points: 80 },
+  { title: 'Servo Motor', slug: 'servo-motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '⚙️', points: 120 },
+  { title: 'Temperature Sensor', slug: 'temperature-sensor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', points: 150 },
+  { title: 'Wi-Fi LED Control', slug: 'wifi-led-control', board: 'ESP32', difficulty: 'Advanced', icon: '📶', points: 200 },
+  { title: 'DC Motor PWM', slug: 'dc-motor-pwm', board: 'ESP32', difficulty: 'Advanced', icon: '🔄', points: 220 },
 ]
 
 export default function LandingPage() {
   const navigate = useNavigate()
   const { isAuthenticated, role } = useAuth()
+  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(newTheme)
+    document.documentElement.setAttribute('data-theme', newTheme)
+  }
 
   const handleDashboard = () => {
     if (role === 'teacher') navigate('/teacher/dashboard')
@@ -28,6 +36,9 @@ export default function LandingPage() {
           <span className="brand-name">OpenHW<span className="brand-accent">-Studio</span></span>
         </div>
         <div className="nav-actions">
+          <button className="btn btn-ghost" onClick={toggleTheme} title="Toggle Dark/Light Mode">
+            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+          </button>
           {isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>Dashboard →</button>
           ) : (
@@ -98,7 +109,7 @@ export default function LandingPage() {
         <p className="section-sub">Complete projects to earn XP and unlock advanced components</p>
         <div className="projects-grid">
           {exampleProjects.map((p) => (
-            <div className="project-card" key={p.title} onClick={() => navigate('/simulator')}>
+            <div className="project-card" key={p.title} onClick={() => navigate(`/${p.slug}/guide`)}>
               <div className="project-icon">{p.icon}</div>
               <div className="project-info">
                 <h4>{p.title}</h4>

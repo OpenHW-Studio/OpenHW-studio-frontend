@@ -341,6 +341,7 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 32px;
 }
+.dash-header-actions { display: flex; align-items: center; gap: 12px; }
 .dash-header h1 { font-size: 26px; font-weight: 800; margin-bottom: 4px; }
 .dash-header p { color: var(--text2); font-size: 14px; }
 .user-avatar img, .avatar-placeholder {
