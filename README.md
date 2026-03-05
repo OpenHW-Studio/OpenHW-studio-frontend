@@ -55,6 +55,9 @@ openhw-studio-emulator-danish/
 ├── src/
 │   ├── server.js               # WebSocket server entry point
 │   ├── connectDB.js            # MongoDB connection (optional)
+│   ├── circuit-validation/     # Physics & Wiring Validation Engine
+│   │   ├── engine.js           # Graph-based validation logic
+│   │   └── rules/              # Modular safety check definitions
 │   └── components/             # Shared component definitions library
 │       ├── index.ts            # Exports all component definitions
 │       ├── BaseComponent.ts    # Base class/interface for components
@@ -112,6 +115,24 @@ import { wokwiLed, wokwiArduinoUno, wokwiResistor, ... } from "@openhw/emulator/
 | `wokwi-potentiometer` | Rotary analog potentiometer (ADC input) |
 | `wokwi-slide-potentiometer` | Slide analog potentiometer (ADC input) |
 | `wokwi-neopixel-matrix` | WS2812B addressable RGB LED matrix |
+
+### 🛠️ Dynamic Component Management
+
+The emulator now supports runtime injection of custom components.
+- **Backend Sync**: The frontend polls for newly approved components and injects them into the browser-side registry.
+- **FS Integration**: When an admin approves a component, the backend writes the component files directly into `src/components/`, making them permanent parts of the library on server restart.
+- **Zero-Touch Pipeline**: Allows community-contributed Wokwi components to be integrated without manual code changes or redeployments.
+
+### 🛡️ Modular Circuit Validation Engine
+
+Before a simulation begins, the emulator runs the **FullCircuitValidator** to ensure students haven't made critical electronics errors.
+- **Graph-Based Adjacency**: Builds a complex map of every connected pin across the entire canvas.
+- **Physics Propagation**: Traces paths back to power sources (5V, VCC) through passive components like resistors.
+- **Smart Safety Rules**:
+    - **Current Limiting**: Detects if an LED is connected directly to a power source without a current-limiting resistor.
+    - **Short Circuit Detection**: Identifies direct GND-to-VCC paths that would cause "virtual smoke".
+    - **Pin Conflict**: Warns if multiple outputs are driving the same node.
+- **Halt on Error**: If validation fails, the engine returns a list of specific errors that are displayed in the UI, and the simulation is prevented from starting until fixed.
 
 ---
 
