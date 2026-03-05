@@ -1,10 +1,2 @@
 export { validateShortCircuits } from './shortCircuits.js';
-export { validateMcuPower } from './mcuPower.js';
-export { validateComponentLimits } from './componentLimits.js';
-export { validatePowerDissipation } from './powerDissipation.js';
-export { validateReversePolarity } from './reversePolarity.js';
-export { validateFloatingPins } from './floatingPins.js';
-export { validateFlybackDiodes } from './flybackDiodes.js';
-export { validateLogicLevels } from './logicLevels.js';
-export { validateI2CPullups } from './i2cPullups.js';
 export * as emulatorComponents from '../../components/index.js';

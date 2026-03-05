@@ -94,7 +94,7 @@ export class FullCircuitValidator {
                 if (EmulatorComp && EmulatorComp.manifest && EmulatorComp.manifest.type === comp.type) {
                     if (EmulatorComp.validation && EmulatorComp.validation.rules) {
                         EmulatorComp.validation.rules.forEach(rule => {
-                            const err = rule.check(comp, this.graph);
+                            const err = rule.check(comp, this.graph, this);
                             if (err) this.errors.push(err);
                         });
                     }
