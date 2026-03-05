@@ -28,7 +28,6 @@ export default function LandingPage() {
           <span className="brand-name">OpenHW<span className="brand-accent">-Studio</span></span>
         </div>
         <div className="nav-actions">
-          <button className="btn btn-outline" style={{ marginRight: 10 }} onClick={() => navigate('/admin')}>⚙ Admin</button>
           {isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>Dashboard →</button>
           ) : (

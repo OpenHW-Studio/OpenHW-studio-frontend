@@ -66,6 +66,7 @@ OpenHW-studio-frontend-danish/
     │   ├── LoginPage.jsx       # Google OAuth login
     │   ├── RoleSelectPage.jsx  # Student / Teacher role selection
     │   ├── SimulatorPage.jsx   # Main circuit editor + simulation runner
+    │   ├── admin/              # Admin Portal (Login, Landing, & Dashboard)
     │   ├── StudentDashboard.jsx
     │   └── TeacherDashboard.jsx
     ├── context/
@@ -93,6 +94,13 @@ The core of the application. Responsibilities include:
 
 ### `LoginPage.jsx`
 Google OAuth 2.0 login page. Decodes JWT and stores user info in `AuthContext`.
+
+### `AdminPage.jsx`
+A powerful administrative hub for platform maintenance:
+- **3-Column Management**: Independent scrollable panels for Libraries, Pending Submissions, and Installed Components.
+- **Review Workflow**: Admins can check submissions with live Transpile feedback, download source ZIPs, or open them in a live Simulator "Test" tab.
+- **Real-time Actions**: Approval instantly moves components to the backend; rejection removes specific submissions (unique per upload).
+- **Library Manager**: Search and uninstall system-level C++ libraries for the Arduino compiler.
 
 ### `LandingPage.jsx`
 Public-facing landing page describing the platform.
@@ -132,10 +140,16 @@ Wokwi LEDs incorrectly treat `value="0"` as truthy. The frontend's `getComponent
 ### ⚙️ Web Worker Simulation
 AVR simulation can also run in-browser via `src/worker/execute.ts` inside a Web Worker, keeping the UI thread unblocked.
 
+### 🔄 Zero-Touch Component Sync
+The simulator polls the backend every 12 seconds for newly approved community components.
+- **Dynamic Injection**: New components are transpiled and injected into the registry and palette without a page refresh.
+- **Live Deletion**: If a component is uninstalled from the admin panel, it is purged from all active simulator sessions automatically.
+- **Admin "Test" Mode**: An isolated preview mechanism allows testing pending components via `sessionStorage` with an identification banner before approval.
+
 ### 🔒 Auth Flow
 - Google OAuth → JWT stored in context
-- Role selection (Student / Teacher) → role-specific dashboard
-- Protected routes via `AuthContext`
+- Role selection (Student / Teacher / Admin) → role-specific entry points
+- Protected routes via `AuthContext` and `ProtectedRoute` components
 
 ---
 

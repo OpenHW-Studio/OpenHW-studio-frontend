@@ -10,6 +10,8 @@ import StudentDashboard from './pages/StudentDashboard.jsx'
 import TeacherDashboard from './pages/TeacherDashboard.jsx'
 import SimulatorPage from './pages/SimulatorPage.jsx'
 import AdminPage from './pages/admin/AdminPage.jsx'
+import AdminLoginPage from './pages/admin/AdminLoginPage.jsx'
+import AdminLandingPage from './pages/admin/AdminLandingPage.jsx'
 
 export default function App() {
   return (
@@ -44,9 +46,11 @@ export default function App() {
             }
           />
 
-          {/* Protected: Admin Workflow */}
-          <Route path="/admin" element={
-            <ProtectedRoute>
+          {/* Admin Workflow */}
+          <Route path="/admin" element={<AdminLandingPage />} />
+          <Route path="/admin/login" element={<AdminLoginPage />} />
+          <Route path="/admin/dashboard" element={
+            <ProtectedRoute allowedRole="admin">
               <AdminPage />
             </ProtectedRoute>
           } />

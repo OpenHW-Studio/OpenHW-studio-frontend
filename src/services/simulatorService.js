@@ -63,6 +63,15 @@ export async function approveCustomComponent(componentPayload) {
 }
 
 /**
+ * Rejects a specific component submission by its unique submissionId.
+ * Uses submissionId (not component id) so only that one upload is removed.
+ */
+export async function rejectCustomComponent(submissionId) {
+    const response = await axios.delete(`${COMPILER_URL}/admin/components/reject/${submissionId}`);
+    return response.data;
+}
+
+/**
  * Admins fetching the pending components
  */
 export async function fetchPendingComponents() {
@@ -76,4 +85,28 @@ export async function fetchPendingComponents() {
 export async function submitCustomComponent(payload) {
     const response = await axios.post(`${COMPILER_URL}/components/submit`, payload);
     return response.data;
+}
+
+export async function getInstalledComponents() {
+    const response = await axios.get(`${COMPILER_URL}/admin/components/installed`);
+    return response.data.components || [];
+}
+
+export async function deleteInstalledComponent(id) {
+    const response = await axios.delete(`${COMPILER_URL}/admin/components/installed/${id}`);
+    return response.data;
+}
+
+export async function backupInstalledComponents() {
+    const response = await axios.get(`${COMPILER_URL}/admin/components/backup`);
+    return response.data.components || [];
+}
+
+/**
+ * Fetches all installed (approved) components with their full source file contents.
+ * Used by SimulatorPage to inject approved components into the local runtime registry.
+ */
+export async function fetchInstalledComponentsWithFiles() {
+    const response = await axios.get(`${COMPILER_URL}/admin/components/backup`);
+    return response.data.components || [];
 }
