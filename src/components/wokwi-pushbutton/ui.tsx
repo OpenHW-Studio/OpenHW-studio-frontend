@@ -1,5 +1,32 @@
 import React, { useState } from 'react';
 
+const BTN_COLORS = [
+    { label: 'Green',  value: 'green',  hex: '#22c55e' },
+    { label: 'Red',    value: 'red',    hex: '#ef4444' },
+    { label: 'Blue',   value: 'blue',   hex: '#3b82f6' },
+    { label: 'Yellow', value: 'yellow', hex: '#eab308' },
+    { label: 'White',  value: 'white',  hex: '#f1f5f9' },
+    { label: 'Black',  value: 'black',  hex: '#1e293b' },
+];
+
+export const PushbuttonContextMenu = ({ attrs, onUpdate }: { attrs: any, onUpdate: (key: string, value: any) => void }) => {
+    const current = attrs?.color ?? 'green';
+    return (
+        <>
+            <span style={{ fontSize: 12, color: 'var(--text2)' }}>Color:</span>
+            <select
+                value={current}
+                onChange={e => onUpdate('color', e.target.value)}
+                style={{ background: 'var(--card)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 4, padding: 2, outline: 'none' }}
+            >
+                {BTN_COLORS.map(c => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+            </select>
+        </>
+    );
+};
+
 export const PushbuttonUI = ({ state, attrs }: { state: any, attrs: any }) => {
     // Local animation state for immediate feedback
     const [isPressed, setIsPressed] = useState(false);

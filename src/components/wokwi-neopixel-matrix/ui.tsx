@@ -1,5 +1,69 @@
 import React, { useRef, useEffect } from 'react';
 
+const numberInput: React.CSSProperties = {
+    width: 64,
+    background: 'var(--card)',
+    color: 'var(--text)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    padding: '3px 4px 3px 8px',
+    fontSize: 13,
+    fontFamily: 'JetBrains Mono, monospace',
+    fontWeight: 600,
+    outline: 'none',
+    textAlign: 'center',
+    appearance: 'auto',
+    WebkitAppearance: 'auto',
+    cursor: 'default',
+};
+
+const rowStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: 8,
+};
+
+const label: React.CSSProperties = {
+    fontSize: 11, color: 'var(--text2)', width: 30, flexShrink: 0, fontWeight: 600,
+};
+
+export const NeopixelContextMenu = ({ attrs, onUpdate }: { attrs: any, onUpdate: (key: string, value: any) => void }) => {
+    const cols = Math.max(1, Math.min(16, parseInt(attrs?.cols ?? '8', 10)));
+    const rows = Math.max(1, Math.min(16, parseInt(attrs?.rows ?? '8', 10)));
+
+    const handleChange = (key: string, raw: string, min: number, max: number) => {
+        const v = Math.max(min, Math.min(max, parseInt(raw, 10) || min));
+        onUpdate(key, v);
+    };
+
+    return (
+        <>
+            <div style={rowStyle}>
+                <span style={label}>Cols</span>
+                <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={cols}
+                    onChange={e => handleChange('cols', e.target.value, 1, 16)}
+                    onDoubleClick={e => e.stopPropagation()}
+                    style={numberInput}
+                />
+            </div>
+            <div style={rowStyle}>
+                <span style={label}>Rows</span>
+                <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={rows}
+                    onChange={e => handleChange('rows', e.target.value, 1, 16)}
+                    onDoubleClick={e => e.stopPropagation()}
+                    style={numberInput}
+                />
+            </div>
+        </>
+    );
+};
+
 // For Neopixels, we really just render the wokwi-neopixel-matrix element.
 // In the frontend, the setPixel function is called directly on the DOM element if there's state changes.
 export const NeopixelUI = ({ state, attrs }: { state: any, attrs: any }) => {
