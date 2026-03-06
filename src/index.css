@@ -408,3 +408,108 @@ body {
   .code-panel { width: 250px; }
   .component-palette { width: 160px; }
 }
+
+/* ─── PALETTE SCROLLBAR ───────────────────────────────────────────────────── */
+.palette-scroll::-webkit-scrollbar { width: 4px; }
+.palette-scroll::-webkit-scrollbar-track { background: transparent; }
+.palette-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+.palette-scroll::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+.palette-scroll { scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+
+/* ─── PANEL SCROLLBAR (serial, code, library, wires, admin panels) ───────── */
+.panel-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.panel-scroll::-webkit-scrollbar-track { background: transparent; border-radius: 4px; }
+.panel-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+.panel-scroll::-webkit-scrollbar-thumb:hover { background: var(--text2); }
+.panel-scroll { scrollbar-width: thin; scrollbar-color: var(--border2) transparent; }
+
+/* ─── ADMIN DASHBOARD SCROLLBAR ──────────────────────────────────────────── */
+.dashboard-main::-webkit-scrollbar { width: 6px; }
+.dashboard-main::-webkit-scrollbar-track { background: transparent; }
+.dashboard-main::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+.dashboard-main::-webkit-scrollbar-thumb:hover { background: #475569; }
+.dashboard-main { scrollbar-width: thin; scrollbar-color: #334155 transparent; }
+
+/* ─── LIGHT MODE: PRISM SYNTAX HIGHLIGHTING OVERRIDES ───────────────────── */
+/* Override prism-tomorrow.css dark background with theme-aware backgrounds */
+[data-theme="light"] code[class*="language-"],
+[data-theme="light"] pre[class*="language-"] {
+  background: var(--bg);
+  color: #24292e;
+  text-shadow: none;
+}
+
+/* Comments */
+[data-theme="light"] .token.comment,
+[data-theme="light"] .token.block-comment,
+[data-theme="light"] .token.prolog,
+[data-theme="light"] .token.doctype,
+[data-theme="light"] .token.cdata {
+  color: #6a737d;
+}
+
+/* Punctuation */
+[data-theme="light"] .token.punctuation {
+  color: #586069;
+}
+
+/* Keywords, builtin, atrule, selector, important */
+[data-theme="light"] .token.keyword,
+[data-theme="light"] .token.builtin,
+[data-theme="light"] .token.atrule,
+[data-theme="light"] .token.attr-name,
+[data-theme="light"] .token.selector,
+[data-theme="light"] .token.important {
+  color: #d73a49;
+}
+
+/* Strings, chars, attr-value, regex, template-string */
+[data-theme="light"] .token.string,
+[data-theme="light"] .token.char,
+[data-theme="light"] .token.attr-value,
+[data-theme="light"] .token.regex,
+[data-theme="light"] .token.variable,
+[data-theme="light"] .token.template-string {
+  color: #032f62;
+}
+
+/* Numbers, booleans, constants */
+[data-theme="light"] .token.boolean,
+[data-theme="light"] .token.number,
+[data-theme="light"] .token.constant,
+[data-theme="light"] .token.symbol,
+[data-theme="light"] .token.deleted {
+  color: #005cc5;
+}
+
+/* Functions, function-name */
+[data-theme="light"] .token.function,
+[data-theme="light"] .token.function-name {
+  color: #6f42c1;
+}
+
+/* Classes, properties, tags */
+[data-theme="light"] .token.class-name,
+[data-theme="light"] .token.tag,
+[data-theme="light"] .token.namespace {
+  color: #22863a;
+}
+
+/* Operators, entity, url */
+[data-theme="light"] .token.operator,
+[data-theme="light"] .token.entity,
+[data-theme="light"] .token.url {
+  color: #d73a49;
+  background: none;
+}
+
+/* Inserted (diff highlight) */
+[data-theme="light"] .token.inserted {
+  color: #22863a;
+  background: rgba(34,134,58,0.1);
+}
+
+/* Property, class-name color variant */
+[data-theme="light"] .token.property {
+  color: #005cc5;
+}

@@ -44,8 +44,13 @@ export default function AdminLoginPage() {
                 })
                 const googleUser = await res.json()
 
-                // Strictly restrict to this email for admin access
-                if (googleUser.email !== '9661346164h@gmail.com') {
+                // Read allowed emails from env (comma-separated), fallback to empty list
+                const allowedEmails = (import.meta.env.VITE_ADMIN_EMAILS || '')
+                    .split(',')
+                    .map(e => e.trim())
+                    .filter(Boolean);
+
+                if (!allowedEmails.includes(googleUser.email)) {
                     setError('Access denied. You are not authorized as an admin.')
                     setLoading(false)
                     return

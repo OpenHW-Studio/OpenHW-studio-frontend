@@ -331,7 +331,7 @@ export default function AdminPage() {
                         <input placeholder="Search Arduino libraries..." style={{ flex: 1, padding: '7px 10px', borderRadius: 6, border: 'none', background: '#334155', color: '#fff', fontSize: 13 }} />
                         <button style={{ padding: '7px 14px', borderRadius: 6, border: 'none', background: '#3b82f6', color: '#fff', cursor: 'pointer', fontSize: 13 }}>Search</button>
                     </div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+                    <div className="panel-scroll" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
                         {libraries.length === 0 && <div style={{ color: '#64748b', fontSize: 13, textAlign: 'center', padding: 20 }}>No libraries installed.</div>}
                         {libraries.map(lib => (
                             <div key={lib.library.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', padding: '10px 12px', borderRadius: 6 }}>
@@ -355,7 +355,7 @@ export default function AdminPage() {
                             </span>
                         )}
                     </div>
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 480, overflowY: 'auto', paddingRight: 4 }}>
+                    <div className="panel-scroll" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 480, overflowY: 'auto', paddingRight: 4 }}>
                         {pendingComponents.length === 0 && (
                             <div style={{ color: '#64748b', fontSize: 13, textAlign: 'center', padding: 20 }}>No pending submissions.</div>
                         )}
@@ -405,7 +405,7 @@ export default function AdminPage() {
                         <button onClick={handleBackupComponents} style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: '#8b5cf6', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Backup All Installed</button>
                     </div>
 
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+                    <div className="panel-scroll" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
                         {installedComponents.length === 0 && (
                             <div style={{ color: '#64748b', fontSize: 13, textAlign: 'center', padding: 20 }}>No installed custom components.</div>
                         )}
@@ -424,7 +424,7 @@ export default function AdminPage() {
                 </section>
 
                 {/* ── Admin Logs (full width) ──────────────────────────────────── */}
-                <section style={{ gridColumn: '1 / -1', background: '#0f172a', border: '1px solid #1e293b', padding: 16, borderRadius: 8, fontFamily: 'monospace', height: 200, overflowY: 'auto' }}>
+                <section className="panel-scroll" style={{ gridColumn: '1 / -1', background: '#0f172a', border: '1px solid #1e293b', padding: 16, borderRadius: 8, fontFamily: 'monospace', height: 200, overflowY: 'auto' }}>
                     <div style={{ color: '#64748b', marginBottom: 10 }}>-- System Event Logs --</div>
                     {logs.map((L, i) => (
                         <div key={i} style={{ color: L.type === 'error' ? '#ef4444' : L.type === 'success' ? '#10b981' : '#cbd5e1', marginBottom: 4, fontSize: 13 }}>

@@ -159,6 +159,24 @@ export default function SimulatorPage() {
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [panelWidth, setPanelWidth] = useState(400)
   const [isDragging, setIsDragging] = useState(false)
+  const [isPaletteHovered, setIsPaletteHovered] = useState(false)
+  const [canvasZoom, setCanvasZoom] = useState(1)
+  const [showCanvasMenu, setShowCanvasMenu] = useState(false)
+  const canvasZoomRef = useRef(1)
+  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
+  const canvasOffsetRef = useRef({ x: 0, y: 0 })
+  const [isCanvasLocked, setIsCanvasLocked] = useState(false)
+  const isCanvasLockedRef = useRef(false)
+  const [showGrid, setShowGrid] = useState(true)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [quickAdd, setQuickAdd] = useState(null)   // { screenX, screenY, canvasX, canvasY }
+  const [quickAddSearch, setQuickAddSearch] = useState('')
+  const [quickAddIdx, setQuickAddIdx] = useState(0)
+  const quickAddInputRef = useRef(null)
+  const pageRef = useRef(null)
+  const isPanningRef = useRef(false)
+  const panStartRef = useRef({ x: 0, y: 0, ox: 0, oy: 0 })
+  const didPanRef = useRef(false)
 
   const [validationErrors, setValidationErrors] = useState([])
   const [showValidation, setShowValidation] = useState(true)
@@ -280,6 +298,42 @@ export default function SimulatorPage() {
   useEffect(() => {
     loadLibraries();
   }, []);
+
+  useEffect(() => { canvasZoomRef.current = canvasZoom; }, [canvasZoom]);
+  useEffect(() => { canvasOffsetRef.current = canvasOffset; }, [canvasOffset]);
+  useEffect(() => { isCanvasLockedRef.current = isCanvasLocked; }, [isCanvasLocked]);
+
+  // Quick-add menu: auto-focus input when menu opens
+  useEffect(() => {
+    if (quickAdd && quickAddInputRef.current) {
+      quickAddInputRef.current.focus();
+    }
+  }, [quickAdd]);
+
+  // Quick-add menu: close when clicking outside
+  useEffect(() => {
+    if (!quickAdd) return;
+    const handler = (e) => {
+      if (!e.target.closest('[data-quickadd]')) setQuickAdd(null);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [quickAdd]);
+
+  // Fullscreen sync
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!isFullscreen) {
+      pageRef.current?.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  };
 
   // ── Admin Preview: inject a pending component passed via sessionStorage ──────
   // When admin clicks "Test in Simulator", AdminPage stores the component in
@@ -777,8 +831,8 @@ export default function SimulatorPage() {
     if (!item) return
     saveHistory();
     const rect = canvasRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left - (item.w || 60) / 2
-    const y = e.clientY - rect.top - (item.h || 60) / 2
+    const x = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current - (item.w || 60) / 2
+    const y = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current - (item.h || 60) / 2
     setComponents(prev => [...prev, {
       id: `${item.type}_${nextId++}`,
       type: item.type, label: item.label,
@@ -787,6 +841,20 @@ export default function SimulatorPage() {
       attrs: item.attrs || {},
     }])
     dragPayload.current = null
+  }, [saveHistory])
+
+  // ── Quick-add: place component at explicit canvas coordinates ──────────────
+  const addComponentAt = useCallback((item, canvasX, canvasY) => {
+    saveHistory()
+    const x = canvasX - (item.w || 60) / 2
+    const y = canvasY - (item.h || 60) / 2
+    setComponents(prev => [...prev, {
+      id: `${item.type}_${nextId++}`,
+      type: item.type, label: item.label,
+      x: Math.max(8, x), y: Math.max(8, y),
+      w: item.w || 60, h: item.h || 60,
+      attrs: item.attrs || {},
+    }])
   }, [saveHistory])
 
   // ── Move and Select component ──────────────────────────────────────────────
@@ -808,13 +876,26 @@ export default function SimulatorPage() {
         movingComp.current.moved = true
         const { id, sx, sy, cx, cy } = movingComp.current
         setComponents(prev => prev.map(c =>
-          c.id === id ? { ...c, x: Math.max(0, cx + e.clientX - sx), y: Math.max(0, cy + e.clientY - sy) } : c
+          c.id === id ? { ...c, x: Math.max(0, cx + (e.clientX - sx) / canvasZoomRef.current), y: Math.max(0, cy + (e.clientY - sy) / canvasZoomRef.current) } : c
         ))
+      }
+      // Canvas panning
+      if (isPanningRef.current && !isCanvasLockedRef.current) {
+        const dx = e.clientX - panStartRef.current.x;
+        const dy = e.clientY - panStartRef.current.y;
+        if (!didPanRef.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+          didPanRef.current = true;
+        }
+        if (didPanRef.current) {
+          const newOffset = { x: panStartRef.current.ox + dx, y: panStartRef.current.oy + dy };
+          setCanvasOffset(newOffset);
+          canvasOffsetRef.current = newOffset;
+        }
       }
       // Track mouse for wire preview
       if (wireStart && canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect()
-        setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+        setMousePos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current })
       }
     }
     const onUp = () => {
@@ -823,6 +904,7 @@ export default function SimulatorPage() {
         setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
       }
       movingComp.current = null;
+      isPanningRef.current = false;
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -1389,7 +1471,7 @@ export default function SimulatorPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={S.page}>
+    <div style={S.page} ref={pageRef}>
 
       {/* ADMIN PREVIEW BANNER — shown when opened via "Test in Simulator" from admin dashboard */}
       {previewBanner && (
@@ -1440,8 +1522,7 @@ export default function SimulatorPage() {
               setWires(prev => prev.filter(w => !w.from.startsWith(selected + ':') && !w.to.startsWith(selected + ':')))
             }
             setSelected(null)
-          }}>🗑 Delete</Btn>
-          <Btn onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } }}>↺ Clear All</Btn>
+          }}>Delete</Btn>
 
           {/* THEME TOGGLE BUTTON */}
           <Btn onClick={toggleTheme} title="Toggle Dark/Light Mode">
@@ -1491,64 +1572,114 @@ export default function SimulatorPage() {
 
       <div style={S.workspace}>
 
-        {/* PALETTE */}
-        <aside style={S.palette}>
-          <div style={S.paletteHeader}>Components</div>
-          <input
-            style={S.paletteSearch}
-            placeholder="🔍 Search..."
-            value={paletteSearch}
-            onChange={(e) => setPaletteSearch(e.target.value)}
-          />
-          <div style={{ marginBottom: 12 }}>
-            <input type="file" ref={componentZipInputRef} onChange={handleUploadZip} accept=".zip" style={{ display: 'none' }} />
-            <button
-              onClick={() => componentZipInputRef.current.click()}
-              style={{ width: '100%', padding: '8px', borderRadius: 4, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>
-              ☁ Upload ZIP to Test
-            </button>
+        {/* PALETTE — hover to expand, collapses when mouse leaves */}
+        <aside
+          style={{
+            ...S.palette,
+            width: isPaletteHovered ? 182 : 38,
+            overflow: 'hidden',
+            transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+            position: 'relative',
+            padding: 0,
+          }}
+          onMouseEnter={() => setIsPaletteHovered(true)}
+          onMouseLeave={() => setIsPaletteHovered(false)}
+        >
+          {/* Collapsed indicator — visible only when closed */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
+            opacity: isPaletteHovered ? 0 : 1, transition: 'opacity 0.15s', pointerEvents: 'none',
+          }}>
+            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', writingMode: 'vertical-rl', letterSpacing: '0.1em' }}>Components</span>
           </div>
-          {CATALOG.map(group => {
-            const filteredItems = group.items.filter(item =>
-              item.label.toLowerCase().includes(paletteSearch.toLowerCase()) ||
-              item.type.toLowerCase().includes(paletteSearch.toLowerCase())
-            );
-            if (filteredItems.length === 0) return null;
-            return (
-              <div key={group.group}>
-                <div style={S.groupName}>{group.group}</div>
-                {filteredItems.map(item => (
-                  <div
-                    key={item.type}
-                    style={S.paletteItem}
-                    draggable
-                    onDragStart={e => onPaletteDragStart(e, item)}
-                    title={`Drag to canvas to add ${item.label}`}
-                  >
-                    <span style={{ fontSize: 16 }}>{item.icon}</span>
-                    <span style={{ fontSize: 13, color: 'var(--text2)' }}>{item.label}</span>
-                  </div>
-                ))}
+
+          {/* Full palette content — fades in when expanded */}
+          <div style={{
+            width: 182, opacity: isPaletteHovered ? 1 : 0, transition: 'opacity 0.2s',
+            pointerEvents: isPaletteHovered ? 'auto' : 'none',
+            display: 'flex', flexDirection: 'column', height: '100%',
+          }}>
+            {/* Sticky top — header, search, upload always visible */}
+            <div style={{ flexShrink: 0, padding: '10px 8px 0', background: 'var(--bg2)' }}>
+              <div style={S.paletteHeader}>Components</div>
+              <input
+                style={S.paletteSearch}
+                placeholder="Search..."
+                value={paletteSearch}
+                onChange={(e) => setPaletteSearch(e.target.value)}
+              />
+              <div style={{ marginBottom: 8 }}>
+                <input type="file" ref={componentZipInputRef} onChange={handleUploadZip} accept=".zip" style={{ display: 'none' }} />
+                <button
+                  onClick={() => componentZipInputRef.current.click()}
+                  style={{ width: '100%', padding: '8px', borderRadius: 4, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>
+                  Upload ZIP to Test
+                </button>
               </div>
-            );
-          })}
-          <div style={S.paletteTip}>
-            Drag → drop to place<br />
-            Click <em>Wire Mode</em> then click pins to connect<br />
-            Del key removes selected
+            </div>
+            {/* Scrollable component list */}
+            <div className="palette-scroll" style={{
+              flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2,
+              padding: '4px 8px 8px',
+            }}>
+              {CATALOG.map(group => {
+                const filteredItems = group.items.filter(item =>
+                  item.label.toLowerCase().includes(paletteSearch.toLowerCase()) ||
+                  item.type.toLowerCase().includes(paletteSearch.toLowerCase())
+                );
+                if (filteredItems.length === 0) return null;
+                return (
+                  <div key={group.group}>
+                    <div style={S.groupName}>{group.group}</div>
+                    {filteredItems.map(item => (
+                      <div
+                        key={item.type}
+                        style={S.paletteItem}
+                        draggable
+                        onDragStart={e => onPaletteDragStart(e, item)}
+                        title={`Drag to canvas to add ${item.label}`}
+                      >
+                        <span style={{ fontSize: 13, color: 'var(--text2)' }}>{item.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              <div style={S.paletteTip}>
+                Drag → drop to place<br />
+                Click <em>Wire Mode</em> then click pins to connect<br />
+                Del key removes selected
+              </div>
+            </div>
           </div>
         </aside>
 
         {/* CANVAS + SVG WIRE LAYER */}
         <main
-          style={{ ...S.canvas, cursor: wireStart ? 'crosshair' : 'default' }}
+          style={{
+            ...S.canvas,
+            cursor: wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
+            backgroundImage: showGrid
+              ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
+              : 'none',
+          }}
           ref={canvasRef}
           onDrop={onCanvasDrop}
           onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+          onMouseDown={e => {
+            if (isCanvasLocked || wireStart || movingComp.current) return;
+            if (e.button !== 0 && e.button !== 1) return;
+            e.preventDefault();
+            didPanRef.current = false;
+            isPanningRef.current = true;
+            panStartRef.current = { x: e.clientX, y: e.clientY, ox: canvasOffsetRef.current.x, oy: canvasOffsetRef.current.y };
+          }}
           onClick={(e) => {
+            if (didPanRef.current) return;
             if (wireStart) {
               const r = canvasRef.current.getBoundingClientRect();
-              const newPt = { x: e.clientX - r.left, y: e.clientY - r.top };
+              const newPt = { x: (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom, y: (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom };
               setWireStart(prev => ({ ...prev, waypoints: [...(prev.waypoints || []), newPt] }));
             } else {
               setSelected(null)
@@ -1557,302 +1688,445 @@ export default function SimulatorPage() {
           onMouseMove={e => {
             if (wireStart && canvasRef.current) {
               const r = canvasRef.current.getBoundingClientRect()
-              setMousePos({ x: e.clientX - r.left, y: e.clientY - r.top })
+              setMousePos({ x: (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom, y: (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom })
             }
           }}
+          onDoubleClick={e => {
+            if (wireStart || isRunning) return;
+            // Don't open search if clicking on an input, button, select, textarea, or inside a context menu
+            const tag = e.target.tagName.toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || tag === 'button' || tag === 'select') return;
+            if (e.target.closest('[data-contextmenu]')) return;
+            const rect = canvasRef.current.getBoundingClientRect();
+            const canvasX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+            const canvasY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+            setQuickAdd({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
+            setQuickAddSearch('');
+            setQuickAddIdx(0);
+          }}
         >
-          {/* BOTTOM SVG layer for wires (Below Components) */}
-          <svg
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}
-          >
-            {wires.filter(w => w.isBelow === true).map(w => {
-              const fromParts = w.from.split(':')
-              const toParts = w.to.split(':')
-              const p1 = getPinPos(fromParts[0], fromParts[1])
-              const p2 = getPinPos(toParts[0], toParts[1])
-              if (!p1 || !p2) return null
-              const isSelectedWire = selected === w.id;
+          {/* Zoom Wrapper — scales all circuit content */}
+          <div style={{
+            position: 'absolute', top: 0, left: 0,
+            width: `${100 / canvasZoom}%`, height: `${100 / canvasZoom}%`,
+            transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
+          }}>
+            {/* BOTTOM SVG layer for wires (Below Components) */}
+            <svg
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}
+            >
+              {wires.filter(w => w.isBelow === true).map(w => {
+                const fromParts = w.from.split(':')
+                const toParts = w.to.split(':')
+                const p1 = getPinPos(fromParts[0], fromParts[1])
+                const p2 = getPinPos(toParts[0], toParts[1])
+                if (!p1 || !p2) return null
+                const isSelectedWire = selected === w.id;
 
+                return (
+                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }} onDoubleClick={e => e.stopPropagation()}>
+                    <path d={multiRoutePath(p1, p2, w.waypoints)} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
+                    <path d={multiRoutePath(p1, p2, w.waypoints)} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 3.5 : 2.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.6} />
+                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
+                    {(w.waypoints || []).map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.4} />)}
+                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
+                  </g>
+                )
+              })}
+            </svg>
+
+            {/* TOP SVG layer for wires (Above Components) & Context Menu */}
+            <svg
+              ref={svgRef}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+            >
+              {/* Placed wires (Top layer) */}
+              {wires.filter(w => w.isBelow !== true).map(w => {
+                const fromParts = w.from.split(':')
+                const toParts = w.to.split(':')
+                const p1 = getPinPos(fromParts[0], fromParts[1])
+                const p2 = getPinPos(toParts[0], toParts[1])
+                if (!p1 || !p2) return null
+                const isSelectedWire = selected === w.id;
+
+                return (
+                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }} onDoubleClick={e => e.stopPropagation()}>
+                    <path d={multiRoutePath(p1, p2, w.waypoints)} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
+                    <path d={multiRoutePath(p1, p2, w.waypoints)} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 3.5 : 2.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.9} />
+                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+                    {(w.waypoints || []).map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />)}
+                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+                  </g>
+                )
+              })}
+
+              {/* Preview wire while drawing */}
+              {wireStart && (
+                <path
+                  d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
+                  stroke="var(--orange)"
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  fill="none"
+                  strokeLinecap="round"
+                  opacity={0.8}
+                />
+              )}
+            </svg>
+
+            {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
+            {(() => {
+              const comp = components.find(c => c.id === selected);
+              if (!comp) return null;
+              const reg = COMPONENT_REGISTRY[comp.type];
+              if (!reg?.ContextMenu) return null;
+              const showDuringRun = !!reg.contextMenuDuringRun;
+              if (isRunning && !showDuringRun) return null;
               return (
-                <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }}>
-                  <path d={multiRoutePath(p1, p2, w.waypoints)} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-                  <path d={multiRoutePath(p1, p2, w.waypoints)} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 3.5 : 2.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.6} />
-                  <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
-                  {(w.waypoints || []).map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.4} />)}
-                  <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
-                </g>
-              )
-            })}
-          </svg>
-
-          {/* TOP SVG layer for wires (Above Components) & Context Menu */}
-          <svg
-            ref={svgRef}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
-          >
-            {/* Placed wires (Top layer) */}
-            {wires.filter(w => w.isBelow !== true).map(w => {
-              const fromParts = w.from.split(':')
-              const toParts = w.to.split(':')
-              const p1 = getPinPos(fromParts[0], fromParts[1])
-              const p2 = getPinPos(toParts[0], toParts[1])
-              if (!p1 || !p2) return null
-              const isSelectedWire = selected === w.id;
-
-              return (
-                <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }}>
-                  <path d={multiRoutePath(p1, p2, w.waypoints)} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-                  <path d={multiRoutePath(p1, p2, w.waypoints)} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 3.5 : 2.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.9} />
-                  <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
-                  {(w.waypoints || []).map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />)}
-                  <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
-                </g>
-              )
-            })}
-
-            {/* Preview wire while drawing */}
-            {wireStart && (
-              <path
-                d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
-                stroke="var(--orange)"
-                strokeWidth={2}
-                strokeDasharray="6 4"
-                fill="none"
-                strokeLinecap="round"
-                opacity={0.8}
-              />
-            )}
-          </svg>
-
-          {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
-          {(() => {
-            const w = wires.find(w => w.id === selected);
-            if (!w || isRunning) return null;
-
-            const fromParts = w.from.split(':')
-            const toParts = w.to.split(':')
-            const p1 = getPinPos(fromParts[0], fromParts[1])
-            const p2 = getPinPos(toParts[0], toParts[1])
-            if (!p1 || !p2) return null
-            const pts = [p1, ...(w.waypoints || []), p2];
-            const midPt = pts[Math.floor(pts.length / 2)];
-
-            return (
-              <div key={`menu-${w.id}`} style={{
-                position: 'absolute',
-                left: midPt.x - 65,
-                top: midPt.y - 50,
-                zIndex: 50,
-                background: 'var(--bg2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8,
-                padding: '6px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default'
-              }}
-                onPointerDown={e => e.stopPropagation()}
-                onClick={e => e.stopPropagation()}>
-                <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
-                <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-                <button
-                  style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 6px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                  onClick={(e) => { e.stopPropagation(); toggleWireLayer(w.id); }}
-                  onPointerDown={(e) => { e.stopPropagation(); }}
-                  title={w.isBelow ? "Bring to Front" : "Send to Back"}
+                <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
+                  position: 'absolute',
+                  left: comp.x + comp.w / 2,
+                  top: comp.y - 14,
+                  transform: 'translateX(-50%) translateY(-100%)',
+                  background: 'var(--bg2)', border: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 10px', borderRadius: '10px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
+                  pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
+                }}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}
+                  onDoubleClick={e => e.stopPropagation()}
                 >
-                  {w.isBelow ? '↑' : '↓'}
-                </button>
-                <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={(e) => { e.stopPropagation(); deleteWire(w.id); }} onClick={(e) => { e.stopPropagation(); deleteWire(w.id); }} title="Delete Wire">✕</button>
-                <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                  {React.createElement(reg.ContextMenu, {
+                    attrs: comp.attrs,
+                    onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
+                  })}
+                  <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
+                  <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                </div>
+              );
+            })()}
+
+            {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
+            {(() => {
+              const w = wires.find(w => w.id === selected);
+              if (!w || isRunning) return null;
+
+              const fromParts = w.from.split(':')
+              const toParts = w.to.split(':')
+              const p1 = getPinPos(fromParts[0], fromParts[1])
+              const p2 = getPinPos(toParts[0], toParts[1])
+              if (!p1 || !p2) return null
+              const pts = [p1, ...(w.waypoints || []), p2];
+              const midPt = pts[Math.floor(pts.length / 2)];
+
+              return (
+                <div key={`menu-${w.id}`} style={{
+                  position: 'absolute',
+                  left: midPt.x - 65,
+                  top: midPt.y - 50,
+                  zIndex: 50,
+                  background: 'var(--bg2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default'
+                }}
+                  onPointerDown={e => e.stopPropagation()}
+                  onClick={e => e.stopPropagation()}>
+                  <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
+                  <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+                  <button
+                    style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 6px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
+                    onClick={(e) => { e.stopPropagation(); toggleWireLayer(w.id); }}
+                    onPointerDown={(e) => { e.stopPropagation(); }}
+                    title={w.isBelow ? "Bring to Front" : "Send to Back"}
+                  >
+                    {w.isBelow ? '↑' : '↓'}
+                  </button>
+                  <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={(e) => { e.stopPropagation(); deleteWire(w.id); }} onClick={(e) => { e.stopPropagation(); deleteWire(w.id); }} title="Delete Wire">✕</button>
+                  <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
+                  <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                </div>
+              )
+            })()}
+
+            {/* Empty state */}
+            {components.length === 0 && (
+              <div style={S.emptyState}>
+                <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
+                <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
+                <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                  Arduino Uno · LED · Resistor · Button · Servo · LCD
+                </p>
               </div>
-            )
-          })()}
+            )}
 
-          {/* Empty state */}
-          {components.length === 0 && (
-            <div style={S.emptyState}>
-              <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
-              <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
-              <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                Arduino Uno · LED · Resistor · Button · Servo · LCD
-              </p>
+            {/* Components */}
+            {components.map(comp => {
+              const pins = PIN_DEFS[comp.type] || []
+              const hasError = errorCompIds.has(comp.id)
+              const isSelected = selected === comp.id
+              return (
+                <div
+                  key={comp.id}
+                  style={{
+                    position: 'absolute',
+                    left: comp.x, top: comp.y,
+                    width: comp.w, height: comp.h,
+                    cursor: wireStart ? 'crosshair' : 'move',
+                    zIndex: isSelected ? 5 : 2,
+                    userSelect: 'none',
+                    pointerEvents: 'all'
+                  }}
+                  onMouseDown={e => onCompMouseDown(e, comp.id)}
+                  onClick={e => onCompClick(e, comp.id)}
+                  onDoubleClick={e => e.stopPropagation()}
+                >
+                  {/* Selection ring */}
+                  {isSelected && (
+                    <div style={{
+                      position: 'absolute', inset: -6, borderRadius: 8,
+                      border: '2px solid var(--accent)',
+                      boxShadow: '0 0 16px var(--glow)',
+                      pointerEvents: 'none', zIndex: 10,
+                      animation: 'none',
+                    }} />
+                  )}
+                  {/* Error ring */}
+                  {hasError && (
+                    <div style={{
+                      position: 'absolute', inset: -6, borderRadius: 8,
+                      border: '2px solid var(--red)',
+                      boxShadow: '0 0 16px rgba(255,68,68,.4)',
+                      pointerEvents: 'none', zIndex: 10,
+                    }} />
+                  )}
+
+                  {/* Component Render */}
+                  {COMPONENT_REGISTRY[comp.type] ? (
+                    // Local UI component rendering SVG
+                    React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+                      state: oopStates[comp.id] || {},
+                      attrs: getComponentStateAttrs(comp)
+                    })
+                  ) : (
+                    // Fallback for unsupported components (if any left)
+                    <div
+                      style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+                      ref={el => {
+                        if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                          neopixelRefs.current[comp.id] = el;
+                        }
+                      }}
+                      dangerouslySetInnerHTML={{
+                        __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
+                      }}
+                    />
+                  )}
+
+                  {/* Pins */}
+                  {pins.map(pin => {
+                    const pinStrRef = `${comp.id}:${pin.id}`;
+                    const isHovered = hoveredPin === pinStrRef;
+                    const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
+
+                    // Check if a wire is connected to this pin
+                    const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+                    const pinColor = connectedWire ? connectedWire.color : (isWireStartPin || isHovered ? '#f1c40f' : 'rgba(255,255,255,0.2)');
+                    const pinBorder = connectedWire ? connectedWire.color : (isHovered || isWireStartPin ? '#fff' : 'rgba(255,255,255,0.8)');
+
+                    return (
+                      <div
+                        key={pin.id}
+                        title={`${pin.description || pin.id} — click to wire`}
+                        style={{
+                          position: 'absolute',
+                          left: pin.x, top: pin.y,
+                          width: 5, height: 5,
+                          background: pinColor,
+                          border: `1px solid ${pinBorder}`,
+                          borderRadius: '0%', /* matching task3.html */
+                          cursor: 'crosshair',
+                          zIndex: isHovered ? 30 : 20, /* matching task3.html hover and port z-index */
+                          transform: `translate(-50%, -50%)${isHovered ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                          transition: '0.2s', /* matching task3.html transition */
+                          pointerEvents: 'all', /* Fix hit detection */
+                        }}
+                        onMouseEnter={() => setHoveredPin(pinStrRef)}
+                        onMouseLeave={() => setHoveredPin(null)}
+                        onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
+                      >
+                        {/* Pin label tooltip */}
+                        {isHovered && (
+                          <div style={{
+                            position: 'absolute', bottom: 18, left: '50%',
+                            transform: 'translateX(-50%)',
+                            background: '#111', color: '#fff',
+                            padding: '4px 8px', borderRadius: 4,
+                            fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                            pointerEvents: 'none', border: '1px solid #444',
+                            boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                          }}>
+                            {pin.description || pin.id}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+
+                  {/* Component label */}
+                  <div style={{
+                    position: 'absolute', bottom: -18, left: '50%',
+                    transform: 'translateX(-50%)',
+                    fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
+                    whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
+                    pointerEvents: 'none',
+                  }}>
+                    {comp.label}
+                  </div>
+
+                </div>
+              )
+            })}
+          </div>{/* end zoom wrapper */}
+
+          {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
+          <div
+            style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '4px 6px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setCanvasZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
+              style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '2px 7px', borderRadius: 6 }}
+              title="Zoom Out"
+            >−</button>
+            <button
+              onClick={() => setCanvasZoom(1)}
+              style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 6, minWidth: 40, fontFamily: 'JetBrains Mono, monospace' }}
+              title="Reset Zoom"
+            >{Math.round(canvasZoom * 100)}%</button>
+            <button
+              onClick={() => setCanvasZoom(z => Math.min(2, parseFloat((z + 0.25).toFixed(2))))}
+              style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: '2px 7px', borderRadius: 6 }}
+              title="Zoom In"
+            >+</button>
+            <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowCanvasMenu(m => !m)}
+                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 7px', borderRadius: 6 }}
+                title="Canvas Menu"
+              >⋮</button>
+              {showCanvasMenu && (
+                <div
+                  style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', minWidth: 190, zIndex: 200 }}
+                  onMouseLeave={() => setShowCanvasMenu(false)}
+                >
+                  <button onClick={() => { setCanvasZoom(1); setCanvasOffset({ x: 0, y: 0 }); setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Fit</button>
+                  <button onClick={() => { undo(); setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: history.past.length === 0 || isRunning ? 'var(--text3)' : 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: history.past.length === 0 || isRunning ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>Undo</button>
+                  <button onClick={() => { redo(); setShowCanvasMenu(false); }} disabled={history.future.length === 0 || isRunning} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: history.future.length === 0 || isRunning ? 'var(--text3)' : 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: history.future.length === 0 || isRunning ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>Redo</button>
+                  <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                  <button onClick={() => { setShowGrid(g => !g); setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
+                  <button onClick={() => { setIsCanvasLocked(l => !l); setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
+                  <button onClick={() => { toggleFullscreen(); setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</button>
+                  <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                  <button onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--red)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Clear Canvas</button>
+                </div>
+              )}
             </div>
-          )}
+          </div>
 
-          {/* Components */}
-          {components.map(comp => {
-            const pins = PIN_DEFS[comp.type] || []
-            const hasError = errorCompIds.has(comp.id)
-            const isSelected = selected === comp.id
+          {/* ── Quick-Add Popup (double-click on canvas) ── */}
+          {quickAdd && (() => {
+            const q = quickAddSearch.trim().toLowerCase();
+            const results = [];
+            if (q) {
+              outer: for (const group of LOCAL_CATALOG) {
+                for (const item of group.items) {
+                  if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
+                    results.push(item);
+                    if (results.length >= 4) break outer;
+                  }
+                }
+              }
+            }
+            const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
+            const VW = window.innerWidth, VH = window.innerHeight;
+            const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
+            const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
+            const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
             return (
               <div
-                key={comp.id}
+                data-quickadd="true"
+                onMouseDown={e => e.stopPropagation()}
                 style={{
-                  position: 'absolute',
-                  left: comp.x, top: comp.y,
-                  width: comp.w, height: comp.h,
-                  cursor: wireStart ? 'crosshair' : 'move',
-                  zIndex: isSelected ? 5 : 2,
-                  userSelect: 'none',
-                  pointerEvents: 'all'
+                  position: 'fixed', left, top, zIndex: 9999,
+                  width: menuW,
+                  background: 'var(--bg2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+                  overflow: 'hidden',
+                  fontFamily: "'Space Grotesk', sans-serif",
                 }}
-                onMouseDown={e => onCompMouseDown(e, comp.id)}
-                onClick={e => onCompClick(e, comp.id)}
               >
-                {/* Selection ring */}
-                {isSelected && (
-                  <div style={{
-                    position: 'absolute', inset: -6, borderRadius: 8,
-                    border: '2px solid var(--accent)',
-                    boxShadow: '0 0 16px var(--glow)',
-                    pointerEvents: 'none', zIndex: 10,
-                    animation: 'none',
-                  }} />
-                )}
-                {/* Error ring */}
-                {hasError && (
-                  <div style={{
-                    position: 'absolute', inset: -6, borderRadius: 8,
-                    border: '2px solid var(--red)',
-                    boxShadow: '0 0 16px rgba(255,68,68,.4)',
-                    pointerEvents: 'none', zIndex: 10,
-                  }} />
-                )}
-
-                {/* Component Render */}
-                {COMPONENT_REGISTRY[comp.type] ? (
-                  // Local UI component rendering SVG
-                  React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                    state: oopStates[comp.id] || {},
-                    attrs: getComponentStateAttrs(comp)
-                  })
-                ) : (
-                  // Fallback for unsupported components (if any left)
-                  <div
-                    style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                    ref={el => {
-                      if (comp.type === 'wokwi-neopixel-matrix' && el) {
-                        neopixelRefs.current[comp.id] = el;
+                {/* Search input */}
+                <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
+                  <input
+                    ref={quickAddInputRef}
+                    data-quickadd="true"
+                    value={quickAddSearch}
+                    onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
+                      else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
+                      else if (e.key === 'Enter' && results.length > 0) {
+                        e.preventDefault();
+                        addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
+                        setQuickAdd(null);
                       }
                     }}
-                    dangerouslySetInnerHTML={{
-                      __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
+                    placeholder="Search component..."
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: 'var(--bg3)', border: '1px solid var(--border2)',
+                      color: 'var(--text)', padding: '7px 10px',
+                      borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
                     }}
                   />
-                )}
-
-                {/* Pins */}
-                {pins.map(pin => {
-                  const pinStrRef = `${comp.id}:${pin.id}`;
-                  const isHovered = hoveredPin === pinStrRef;
-                  const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-
-                  // Check if a wire is connected to this pin
-                  const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                  const pinColor = connectedWire ? connectedWire.color : (isWireStartPin || isHovered ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                  const pinBorder = connectedWire ? connectedWire.color : (isHovered || isWireStartPin ? '#fff' : 'rgba(255,255,255,0.8)');
-
-                  return (
-                    <div
-                      key={pin.id}
-                      title={`${pin.description || pin.id} — click to wire`}
-                      style={{
-                        position: 'absolute',
-                        left: pin.x, top: pin.y,
-                        width: 5, height: 5,
-                        background: pinColor,
-                        border: `1px solid ${pinBorder}`,
-                        borderRadius: '0%', /* matching task3.html */
-                        cursor: 'crosshair',
-                        zIndex: isHovered ? 30 : 20, /* matching task3.html hover and port z-index */
-                        transform: `translate(-50%, -50%)${isHovered ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                        transition: '0.2s', /* matching task3.html transition */
-                        pointerEvents: 'all', /* Fix hit detection */
-                      }}
-                      onMouseEnter={() => setHoveredPin(pinStrRef)}
-                      onMouseLeave={() => setHoveredPin(null)}
-                      onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                    >
-                      {/* Pin label tooltip */}
-                      {isHovered && (
-                        <div style={{
-                          position: 'absolute', bottom: 18, left: '50%',
-                          transform: 'translateX(-50%)',
-                          background: '#111', color: '#fff',
-                          padding: '4px 8px', borderRadius: 4,
-                          fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                          pointerEvents: 'none', border: '1px solid #444',
-                          boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                        }}>
-                          {pin.description || pin.id}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-
-                {/* Component label */}
-                <div style={{
-                  position: 'absolute', bottom: -18, left: '50%',
-                  transform: 'translateX(-50%)',
-                  fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                  whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                  pointerEvents: 'none',
-                }}>
-                  {comp.label}
                 </div>
-
-                {/* Component Context Menu */}
-                {isSelected && !isRunning && (
-                  <div style={{
-                    position: 'absolute', top: -50, left: '50%', transform: 'translateX(-50%)',
-                    background: 'var(--bg2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                    pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 100
-                  }}
-                    onMouseDown={e => e.stopPropagation()}
-                    onClick={e => e.stopPropagation()}
+                {/* Result list */}
+                {results.map((item, i) => (
+                  <div
+                    key={item.type}
+                    data-quickadd="true"
+                    onMouseEnter={() => setQuickAddIdx(i)}
+                    onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
+                    style={{
+                      padding: '8px 12px',
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      background: i === selIdx ? 'var(--accent)' : 'transparent',
+                      color: i === selIdx ? '#fff' : 'var(--text)',
+                      userSelect: 'none',
+                    }}
                   >
-                    {comp.type === 'wokwi-led' && (
-                      <>
-                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>Color:</span>
-                        <select value={comp.attrs.color || 'red'} onChange={e => updateComponentAttr(comp.id, 'color', e.target.value)} style={{ background: 'var(--bg)', color: 'white', border: '1px solid var(--border)', borderRadius: 4, padding: 2, outline: 'none' }}>
-                          <option value="red">Red</option>
-                          <option value="green">Green</option>
-                          <option value="blue">Blue</option>
-                          <option value="yellow">Yellow</option>
-                          <option value="orange">Orange</option>
-                          <option value="white">White</option>
-                        </select>
-                      </>
-                    )}
-                    {comp.type === 'wokwi-resistor' && (
-                      <>
-                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>Res (Ω):</span>
-                        <input type="text" value={comp.attrs.value ?? '1000'} onChange={e => updateComponentAttr(comp.id, 'value', e.target.value)} style={{ width: 60, background: 'var(--bg)', color: 'white', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', outline: 'none' }} />
-                      </>
-                    )}
-                    {comp.type === 'wokwi-power-supply' && (
-                      <>
-                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>Voltage:</span>
-                        <input type="number" step="0.1" value={comp.attrs.voltage ?? '5.0'} onChange={e => updateComponentAttr(comp.id, 'voltage', e.target.value)} style={{ width: 50, background: 'var(--bg)', color: 'white', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', outline: 'none' }} />
-                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>V</span>
-                      </>
-                    )}
-                    {comp.type === 'wokwi-neopixel-matrix' && (
-                      <>
-                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>Cols:</span>
-                        <input type="number" min="1" max="16" value={comp.attrs.cols ?? '8'} onChange={e => updateComponentAttr(comp.id, 'cols', e.target.value)} style={{ width: 40, background: 'var(--bg)', color: 'white', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', outline: 'none' }} />
-                        <span style={{ fontSize: 12, color: 'var(--text2)' }}>Rows:</span>
-                        <input type="number" min="1" max="16" value={comp.attrs.rows ?? '8'} onChange={e => updateComponentAttr(comp.id, 'rows', e.target.value)} style={{ width: 40, background: 'var(--bg)', color: 'white', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 4px', outline: 'none' }} />
-                      </>
-                    )}
-
-
-                    <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                    <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                    <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
+                    {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
                   </div>
+                ))}
+                {/* Empty state */}
+                {q && results.length === 0 && (
+                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
+                )}
+                {!q && (
+                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
                 )}
               </div>
-            )
-          })}
+            );
+          })()}
         </main>
 
         {/* RIGHT PANEL */}
@@ -1923,7 +2197,7 @@ export default function SimulatorPage() {
               )}
 
               {/* Wires list */}
-              <div style={S.wiresList}>
+              <div className="panel-scroll" style={S.wiresList}>
                 <div style={S.wiresHeader}>Connections ({wires.length})</div>
                 {wires.length === 0 ? (
                   <div style={{ padding: '12px 12px 16px', fontSize: 12, color: 'var(--text3)' }}>
@@ -1962,7 +2236,7 @@ export default function SimulatorPage() {
                   ))}
                 </div>
                 {codeTab === 'code' && (
-                  <div style={{ flex: 1, overflow: 'auto', background: '#070b14' }}>
+                  <div className="panel-scroll" style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
                     <Editor
                       value={code}
                       onValueChange={code => setCode(code)}
@@ -1973,7 +2247,7 @@ export default function SimulatorPage() {
                         fontSize: 12,
                         lineHeight: 1.7,
                         minHeight: '100%',
-                        color: '#e8edf5',
+                        color: 'var(--text)',
                         border: 'none',
                         outline: 'none',
                         resize: 'none'
@@ -2002,7 +2276,7 @@ export default function SimulatorPage() {
                       </div>
                     )}
 
-                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>
+                    <div className="panel-scroll" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>
                       {libResults.length > 0 && <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 8 }}>Search Results</div>}
                       {libResults.map((lib, idx) => (
                         <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
@@ -2046,7 +2320,7 @@ export default function SimulatorPage() {
                   </div>
                 )}
                 {codeTab === 'serial' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: '#070b14', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden' }}>
                     {/* Serial Toolbar */}
                     <div style={S.serialToolbar}>
                       <span style={{
@@ -2083,7 +2357,7 @@ export default function SimulatorPage() {
                     </div>
 
                     {/* Output Area */}
-                    <div ref={serialOutputRef} style={S.serialOutput}>
+                    <div ref={serialOutputRef} className="panel-scroll" style={S.serialOutput}>
                       {serialHistory.length === 0 ? (
                         <div style={{ color: 'var(--text3)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
                           {isRunning ? 'Waiting for serial output...' : 'Run the simulator to see serial output.'}
@@ -2098,7 +2372,7 @@ export default function SimulatorPage() {
                               <span style={{ ...S.serialBadge, color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}40` }}>
                                 {entry.dir?.toUpperCase() || 'RX'}
                               </span>
-                              <span style={{ flex: 1, color: entry.dir === 'tx' ? '#3498db' : entry.dir === 'sys' ? '#888' : 'var(--green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                              <span style={{ flex: 1, color: entry.dir === 'tx' ? '#3498db' : entry.dir === 'sys' ? 'var(--text3)' : 'var(--green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                                 {entry.text}
                               </span>
                             </div>
@@ -2108,7 +2382,7 @@ export default function SimulatorPage() {
                     </div>
 
                     {/* TX Input Row */}
-                    <div style={{ display: 'flex', gap: 6, padding: '8px 10px', borderTop: '1px solid rgba(255,255,255,0.07)', flexShrink: 0, background: '#0d1220' }}>
+                    <div style={{ display: 'flex', gap: 6, padding: '8px 10px', borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg2)' }}>
                       <input
                         style={{ ...S.serialInput, flex: 1, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
                         placeholder="Send message to Arduino..."
@@ -2298,7 +2572,6 @@ const S = {
   canvas: {
     flex: 1, position: 'relative', overflow: 'hidden',
     backgroundColor: 'var(--canvas-bg)',
-    backgroundImage: 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
     backgroundSize: '24px 24px',
   },
   emptyState: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', textAlign: 'center', pointerEvents: 'none' },
@@ -2323,10 +2596,10 @@ const S = {
   codePlaceholder: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', gap: 8 },
   serialOutput: { flex: 1, overflowY: 'auto', padding: '6px 0', display: 'flex', flexDirection: 'column' },
   serialInput: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, outline: 'none' },
-  serialToolbar: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.07)', background: '#0d1220', flexShrink: 0 },
+  serialToolbar: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 },
   serialCtrlBtn: { background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
-  serialLine: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '2px 12px', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', borderBottom: '1px solid rgba(255,255,255,0.03)' },
-  serialTs: { color: 'rgba(255,255,255,0.25)', fontSize: 10, minWidth: 84, flexShrink: 0, paddingTop: 1 },
+  serialLine: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '2px 12px', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', borderBottom: '1px solid var(--border)' },
+  serialTs: { color: 'var(--text3)', fontSize: 10, minWidth: 84, flexShrink: 0, paddingTop: 1 },
   serialBadge: { display: 'inline-block', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 4px', flexShrink: 0, marginTop: 1 },
   plotterToolbar: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
   plotterLegend: { display: 'flex', flexWrap: 'wrap', gap: '4px 16px', padding: '4px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
