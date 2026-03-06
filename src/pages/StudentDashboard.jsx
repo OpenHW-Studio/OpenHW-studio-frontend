@@ -16,7 +16,7 @@ export default function StudentDashboard() {
       <aside className="sidebar">
         <div className="sidebar-logo">
           <span className="brand-icon">⚡</span>
-          <span>OpenHW-Studio</span>
+          <span className="brand-name">OpenHW-Studio</span>
         </div>
         <nav className="sidebar-nav">
           <a className="sidebar-link active">🏠 Dashboard</a>
@@ -35,14 +35,26 @@ export default function StudentDashboard() {
         <div className="dash-header">
           <div>
             <h1>Welcome back, {user?.name?.split(' ')[0]} 👋</h1>
-            <p>Level {user?.level} Student · {user?.email}</p>
+            <p>Level {user?.level || 1} Student · {user?.email}</p>
           </div>
-          <div className="user-avatar">
-            {user?.picture
-              ? <img src={user.picture} alt="avatar" />
-              : <div className="avatar-placeholder">{user?.name?.[0]}</div>
-            }
+          
+          {/* --- AVATAR FIX APPLIED HERE --- */}
+          <div className="user-avatar" style={{ width: '50px', height: '50px', borderRadius: '50%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#38bdf8', color: '#0f172a', fontWeight: 'bold', fontSize: '1.2rem' }}>
+            {user?.picture ? (
+              <img 
+                src={user.picture} 
+                alt="Profile" 
+                referrerPolicy="no-referrer" 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+            ) : (
+              <div className="avatar-placeholder">
+                {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+            )}
           </div>
+          {/* ------------------------------- */}
+
         </div>
 
         {/* Stats */}

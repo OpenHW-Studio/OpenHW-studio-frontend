@@ -9,7 +9,7 @@ import RoleSelectPage from './pages/RoleSelectPage.jsx'
 import StudentDashboard from './pages/StudentDashboard.jsx'
 import TeacherDashboard from './pages/TeacherDashboard.jsx'
 import SimulatorPage from './pages/SimulatorPage.jsx'
-
+import SignupPage from './pages/signupPage.jsx';
 export default function App() {
   return (
     <BrowserRouter>
@@ -19,7 +19,7 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/select-role" element={<RoleSelectPage />} />
-          
+          <Route path="/signup" element={<SignupPage />} />
           {/* Guest accessible simulator */}
           <Route path="/simulator" element={<SimulatorPage />} />
 
