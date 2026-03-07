@@ -1,6 +1,11 @@
 import React, { useRef, useLayoutEffect } from 'react';
 
-export const SlidePotUI = ({ state, attrs }: { state: any, attrs: any }) => {
+// Bounding box for the blue selection ring.
+// x, y: offset from comp.x/comp.y (top-left corner of the visual area)
+// w, h: width and height of the visual area
+export const BOUNDS = { x: 0, y: 20, w: 205, h: 70 };
+
+export const SlidePotUI = ({ state, attrs, isRunning }: { state: any, attrs: any, isRunning: boolean }) => {
     const elRef = useRef<any>(null);
 
     useLayoutEffect(() => {
@@ -30,12 +35,15 @@ export const SlidePotUI = ({ state, attrs }: { state: any, attrs: any }) => {
     }, [attrs.onInteract]);
 
     return (
-        <div style={{ pointerEvents: 'auto' }}>
+        <div style={{ pointerEvents: 'none' }}>
             {React.createElement('wokwi-slide-potentiometer', {
                 ref: elRef,
                 value: state?.value ?? attrs?.value ?? 50,
                 ...attrs,
-                style: { ...attrs.style, pointerEvents: 'auto' }
+                style: { ...attrs.style, pointerEvents: isRunning ? 'auto' : 'none' },
+                onMouseDown: (e: any) => e.stopPropagation(),
+                onPointerDown: (e: any) => e.stopPropagation(),
+                onDoubleClick: (e: any) => e.stopPropagation(),
             })}
         </div>
     );

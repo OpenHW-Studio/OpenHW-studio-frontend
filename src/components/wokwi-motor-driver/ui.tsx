@@ -1,5 +1,10 @@
 import React from 'react';
 
+// Bounding box for the blue selection ring.
+// x, y: offset from comp.x/comp.y (top-left corner of the visual area)
+// w, h: width and height of the visual area
+export const BOUNDS = { x: 0, y: 0, w: 80, h: 80 };
+
 export const MotorDriverUI = ({ state, attrs }: { state: any, attrs: any }) => {
     return (
         <div style={{ position: 'relative', width: 80, height: 80, background: '#c0392b', borderRadius: 4, border: '2px solid #a93226', color: 'white', fontFamily: 'monospace', fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', pointerEvents: 'none' }}>

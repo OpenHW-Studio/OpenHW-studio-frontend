@@ -31,6 +31,11 @@ export const PowerSupplyContextMenu = ({ attrs, onUpdate }: { attrs: any, onUpda
     );
 };
 
+// Bounding box for the blue selection ring.
+// x, y: offset from comp.x/comp.y (top-left corner of the visual area)
+// w, h: width and height of the visual area
+export const BOUNDS = { x: 0, y: 0, w: 60, h: 60 };
+
 export const PowerSupplyUI = ({ state, attrs }: { state: any, attrs: any }) => {
     const voltage = attrs?.voltage || '5.0';
     return (

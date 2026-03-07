@@ -1,6 +1,11 @@
 // Shift Register UI Placeholder
 import * as React from 'react';
 
+// Bounding box for the blue selection ring.
+// x, y: offset from comp.x/comp.y (top-left corner of the visual area)
+// w, h: width and height of the visual area
+export const BOUNDS = { x: 0, y: 0, w: 60, h: 180 };
+
 export const ShiftRegisterUI = (props: any) => {
     const { id, x, y, rotation, attrs } = props;
 
