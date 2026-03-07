@@ -3,7 +3,7 @@
     "label": "74HC595 Shift Register",
     "group": "Logic",
     "w": 60,
-    "h": 160,
+    "h": 180,
     "attrs": {},
     "pins": [
         {

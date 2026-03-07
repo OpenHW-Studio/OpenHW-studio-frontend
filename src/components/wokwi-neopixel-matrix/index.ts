@@ -1,7 +1,7 @@
 import { validation } from './validation';
 import manifest from './manifest.json';
 import { NeopixelLogic } from './logic';
-import { NeopixelUI, NeopixelContextMenu } from './ui';
+import { NeopixelUI, NeopixelContextMenu, BOUNDS } from './ui';
 
 export default {
     manifest,
@@ -9,5 +9,6 @@ export default {
     UI: NeopixelUI,
     ContextMenu: NeopixelContextMenu,
     contextMenuDuringRun: false,
+    BOUNDS,
     validation
 };

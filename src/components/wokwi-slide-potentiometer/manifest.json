@@ -10,22 +10,22 @@
     "pins": [
         {
             "id": "GND",
-            "x": 0,
-            "y": 30,
+            "x": 206,
+            "y": 43,
             "type": "power",
             "description": "Ground"
         },
         {
             "id": "SIG",
-            "x": 45,
-            "y": 30,
+            "x": 3,
+            "y": 66.5,
             "type": "analog",
             "description": "Signal Output"
         },
         {
             "id": "VCC",
-            "x": 90,
-            "y": 30,
+            "x": 3,
+            "y": 43,
             "type": "power",
             "description": "5V Power"
         }

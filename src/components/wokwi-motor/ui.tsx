@@ -1,5 +1,10 @@
 import React from 'react';
 
+// Bounding box for the blue selection ring.
+// x, y: offset from comp.x/comp.y (top-left corner of the visual area)
+// w, h: width and height of the visual area
+export const BOUNDS = { x: 0, y: 0, w: 60, h: 60 };
+
 export const MotorUI = ({ state, attrs }: { state: any, attrs: any }) => {
     // state.speed gives rotations per second or just a speed factor (-1 to 1)
     const speed = state?.speed || 0;

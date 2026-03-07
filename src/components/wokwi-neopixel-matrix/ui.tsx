@@ -25,6 +25,20 @@ const label: React.CSSProperties = {
     fontSize: 11, color: 'var(--text2)', width: 30, flexShrink: 0, fontWeight: 600,
 };
 
+// Bounding box for the blue selection ring.
+// x, y: offset from comp.x/comp.y (top-left corner of the visual area)
+// w, h: width and height of the visual area — matches manifest default (1x1 pixel cell)
+export const BOUNDS = (attrs: any) => {
+    const cols = parseInt(attrs?.cols || '1', 10);
+    const rows = parseInt(attrs?.rows || '1', 10);
+    return {
+        x: 0,
+        y: 0,
+        w: Math.max(20, cols * 25),
+        h: Math.max(20, rows * 25)
+    };
+};
+
 export const NeopixelContextMenu = ({ attrs, onUpdate }: { attrs: any, onUpdate: (key: string, value: any) => void }) => {
     const cols = Math.max(1, Math.min(16, parseInt(attrs?.cols ?? '8', 10)));
     const rows = Math.max(1, Math.min(16, parseInt(attrs?.rows ?? '8', 10)));

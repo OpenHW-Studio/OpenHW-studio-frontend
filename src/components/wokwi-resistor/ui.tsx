@@ -36,6 +36,11 @@ export const ResistorContextMenu = ({ attrs, onUpdate }: { attrs: any, onUpdate:
     );
 };
 
+// Bounding box for the blue selection ring.
+// x, y: offset from comp.x/comp.y (top-left corner of the visual area)
+// w, h: width and height of the visual area
+export const BOUNDS = { x: 0, y: 5, w: 60, h: 12 };
+
 export const ResistorUI = ({ state, attrs }: { state: any, attrs: any }) => {
     const value = attrs?.value || '220';
 
