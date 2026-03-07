@@ -455,6 +455,14 @@ export class AVRRunner {
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
+
+                        // Notify the board itself
+                        this.instances.forEach(inst => {
+                            if (inst.type.includes('arduino')) {
+                                inst.onPinStateChange(pin, isHigh, this.cpu!.cycles);
+                            }
+                        });
+
                         updateOopPin(pin, isHigh);
                     }
                 });

@@ -57,74 +57,133 @@ const BACKEND_INJECTED_TYPES = new Set();
 let nextId = 1
 let nextWireId = 1
 
-// ─── ROUNDED ORTHOGONAL PATH ───────────────────────────────────────────────
-function multiRoutePath(p1, p2, waypoints = []) {
-  if (!p1 || !p2) return '';
-  const pts = [p1, ...waypoints, p2];
-  let orthPts = [];
-
-  // 1. Generate purely orthogonal points
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i];
-    const b = pts[i + 1];
-    if (i === 0) orthPts.push(a);
-
-    // Midpoint dog-leg logic (same as before but extracting the coordinates)
-    const midX = (a.x + b.x) / 2;
-    orthPts.push({ x: midX, y: a.y });
-    orthPts.push({ x: midX, y: b.y });
-    orthPts.push(b);
-  }
-
-  // Deduplicate consecutive identical points
-  orthPts = orthPts.filter((pt, i, arr) => {
-    if (i === 0) return true;
-    return pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y;
-  });
-
-  if (orthPts.length < 2) return '';
-
-  const r = 10; // Corner radius (adjust as desired for curvature)
-  let d = `M ${orthPts[0].x} ${orthPts[0].y}`;
-
-  // 2. Add arcs at corners
-  for (let i = 1; i < orthPts.length - 1; i++) {
-    const prev = orthPts[i - 1];
-    const curr = orthPts[i];
-    const next = orthPts[i + 1];
-
-    // Distance to neighbors
+// ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
+function renderRoundedPath(pts) {
+  if (!pts || pts.length < 2) return '';
+  const r = 10;
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const prev = pts[i - 1], curr = pts[i], next = pts[i + 1];
     const distPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
     const distNext = Math.hypot(next.x - curr.x, next.y - curr.y);
-
-    // Limit radius if segment is too short
     const cornerR = Math.min(r, distPrev / 2, distNext / 2);
+    if (cornerR < 0.5) { d += ` L ${curr.x} ${curr.y}`; continue; }
+    const ps = { x: curr.x + (prev.x - curr.x) * (cornerR / distPrev), y: curr.y + (prev.y - curr.y) * (cornerR / distPrev) };
+    const pe = { x: curr.x + (next.x - curr.x) * (cornerR / distNext), y: curr.y + (next.y - curr.y) * (cornerR / distNext) };
+    d += ` L ${ps.x} ${ps.y} Q ${curr.x} ${curr.y} ${pe.x} ${pe.y}`;
+  }
+  d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
+  return d;
+}
 
-    // Calculate start and end points of the curve along the segments
-    const pStartPoint = {
-      x: curr.x + (prev.x - curr.x) * (cornerR / distPrev) || curr.x,
-      y: curr.y + (prev.y - curr.y) * (cornerR / distPrev) || curr.y,
-    };
-    const pEndPoint = {
-      x: curr.x + (next.x - curr.x) * (cornerR / distNext) || curr.x,
-      y: curr.y + (next.y - curr.y) * (cornerR / distNext) || curr.y,
-    };
-
-    // Draw line to the start of the curve, then the quadratic curve to the end
-    d += ` L ${pStartPoint.x} ${pStartPoint.y}`;
-    d += ` Q ${curr.x} ${curr.y} ${pEndPoint.x} ${pEndPoint.y}`;
+// ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
+// Returns [p1, exitStub1, ...midCorners, exitStub2, p2].
+// If waypoints[0]._corner is true, uses those as explicit corners directly.
+// Otherwise applies smart-exit routing: flips the stub if it points AWAY from
+// the target, so the wire goes toward the destination instead of U-turning.
+function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = []) {
+  // Explicit corner mode — stored by segment dragging
+  if (waypoints.length > 0 && waypoints[0]._corner) {
+    const pts = [p1, ...waypoints, p2];
+    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
   }
 
-  // Draw final line to the last point
-  const last = orthPts[orthPts.length - 1];
-  d += ` L ${last.x} ${last.y}`;
-  return d;
+  // Smart exit: flip stub when it points away from the other endpoint
+  const dx1 = e1.x - p1.x, dy1 = e1.y - p1.y;
+  const dx2 = e2.x - p2.x, dy2 = e2.y - p2.y;
+  const e1IsVert = Math.abs(dy1) > Math.abs(dx1);
+  const e2IsVert = Math.abs(dy2) > Math.abs(dx2);
+
+  let se1 = e1, se2 = e2;
+  if (e1IsVert) {
+    if (dy1 !== 0 && (p2.y - p1.y) * dy1 < 0) se1 = { x: p1.x, y: p1.y - dy1 };
+  } else {
+    if (dx1 !== 0 && (p2.x - p1.x) * dx1 < 0) se1 = { x: p1.x - dx1, y: p1.y };
+  }
+  if (e2IsVert) {
+    if (dy2 !== 0 && (p1.y - p2.y) * dy2 < 0) se2 = { x: p2.x, y: p2.y - dy2 };
+  } else {
+    if (dx2 !== 0 && (p1.x - p2.x) * dx2 < 0) se2 = { x: p2.x - dx2, y: p2.y };
+  }
+
+  const sdx1 = se1.x - p1.x, sdy1 = se1.y - p1.y;
+  const sdx2 = se2.x - p2.x, sdy2 = se2.y - p2.y;
+  const e1Horiz = Math.abs(sdx1) >= Math.abs(sdy1);
+  const e2Horiz = Math.abs(sdx2) >= Math.abs(sdy2);
+
+  let midPts;
+  if (e1Horiz && e2Horiz) {
+    const midX = (se1.x + se2.x) / 2;
+    midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
+  } else if (!e1Horiz && !e2Horiz) {
+    const midY = (se1.y + se2.y) / 2;
+    midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
+  } else if (e1Horiz && !e2Horiz) {
+    midPts = [{ x: se2.x, y: se1.y }];
+  } else {
+    midPts = [{ x: se1.x, y: se2.y }];
+  }
+
+  let pts = [p1, se1, ...midPts, se2, p2];
+  return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+}
+
+// ─── SINGLE SOURCE OF TRUTH: full orthogonal point list for any wire mode ──
+// Mode 1 – explicit corners (_corner:true, from segment dragging): use points as-is.
+// Mode 2 – route-hint waypoints (clicked mid-draw, no _corner): midX dog-leg.
+// Mode 3 – no waypoints: smart-exit auto-routing.
+function getWirePoints(p1, e1, e2, p2, waypoints = []) {
+  // Mode 1: explicit corners stored by segment dragging
+  if (waypoints.length > 0 && waypoints[0]._corner) {
+    let pts = [p1, ...waypoints, p2];
+    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+  }
+
+  // Mode 2: route-hint waypoints – midX dog-leg between each successive hint
+  if (waypoints.length > 0) {
+    const hints = [e1, ...waypoints, e2];
+    let pts = [p1];
+    for (let i = 0; i < hints.length - 1; i++) {
+      const a = hints[i], b = hints[i + 1];
+      pts.push(a);
+      const midX = (a.x + b.x) / 2;
+      pts.push({ x: midX, y: a.y });
+      pts.push({ x: midX, y: b.y });
+    }
+    pts.push(e2, p2);
+    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+  }
+
+  // Mode 3: no waypoints – smart-exit routing
+  return computeWireOrthoPoints(p1, e1, e2, p2, []);
+}
+
+// Preview wire while drawing (start→cursor with optional in-progress hints)
+function multiRoutePath(p1, p2, waypoints = []) {
+  if (!p1 || !p2) return '';
+  const hints = [p1, ...waypoints, p2];
+  let pts = [];
+  for (let i = 0; i < hints.length - 1; i++) {
+    const a = hints[i], b = hints[i + 1];
+    if (i === 0) pts.push(a);
+    const midX = (a.x + b.x) / 2;
+    pts.push({ x: midX, y: a.y });
+    pts.push({ x: midX, y: b.y });
+    pts.push(b);
+  }
+  pts = pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+  return renderRoundedPath(pts);
+}
+
+// Builds the SVG path string for a placed wire.
+function buildWirePath(p1, e1, e2, p2, waypoints = []) {
+  return renderRoundedPath(getWirePoints(p1, e1, e2, p2, waypoints));
 }
 
 function wireColor(pinLabel) {
   if (!pinLabel) return '#2ecc71';
   const l = pinLabel.toUpperCase();
-  if (l.includes('GND') || l === 'CATHODE') return '#000000'; // black
+  if (l.includes('GND') || l === 'CATHODE') return '#808080'; // gray
   if (l.includes('5V') || l.includes('3.3V') || l === 'VCC' || l === 'ANODE') return '#e74c3c'; // red
   return '#2ecc71'; // green default
 }
@@ -151,7 +210,12 @@ export default function SimulatorPage() {
   const [history, setHistory] = useState({ past: [], future: [] })
   const [selected, setSelected] = useState(null)   // comp or wire id
   const [wireStart, setWireStart] = useState(null)   // { compId, pinId, pinLabel, x, y }
+  const [wireClickPos, setWireClickPos] = useState(null) // canvas-space position where wire was clicked
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  // Segment-drag: tracks which wire segment handle is being dragged
+  // { wireId, segIdx, isHoriz, startMouseCanvas: {x,y}, startPts: [...] }
+  const [segDrag, setSegDrag] = useState(null)
+  const segDragRef = useRef(null)
   const [hoveredPin, setHoveredPin] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
@@ -162,6 +226,7 @@ export default function SimulatorPage() {
   const [isPaletteHovered, setIsPaletteHovered] = useState(false)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [showCanvasMenu, setShowCanvasMenu] = useState(false)
+  const [wirepointsEnabled, setWirepointsEnabled] = useState(false)
   const canvasZoomRef = useRef(1)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
   const canvasOffsetRef = useRef({ x: 0, y: 0 })
@@ -212,6 +277,10 @@ export default function SimulatorPage() {
   const dragPayload = useRef(null)
   const movingComp = useRef(null)
   const componentZipInputRef = useRef(null);
+  // Reactive refs — kept current every render so async effects get fresh values
+  const getPinPosRef = useRef(null);
+  const componentsRef = useRef([]);
+  const pinDefsRef = useRef({});
 
   const handleUploadZip = async (event) => {
     const file = event.target.files[0];
@@ -246,7 +315,8 @@ export default function SimulatorPage() {
         return null;
       }, React);
 
-      const uiComponent = exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
+      const uiComponent = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().endsWith('ui'))] || exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
+      const contextMenu = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))];
 
       if (uiComponent) {
         const newCatItem = { ...manifest };
@@ -264,6 +334,9 @@ export default function SimulatorPage() {
         COMPONENT_REGISTRY[manifest.type] = {
           manifest,
           UI: uiComponent,
+          ContextMenu: contextMenu,
+          contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+          contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
           logicCode: transpileLogic
         };
         if (manifest.pins) {
@@ -302,6 +375,7 @@ export default function SimulatorPage() {
   useEffect(() => { canvasZoomRef.current = canvasZoom; }, [canvasZoom]);
   useEffect(() => { canvasOffsetRef.current = canvasOffset; }, [canvasOffset]);
   useEffect(() => { isCanvasLockedRef.current = isCanvasLocked; }, [isCanvasLocked]);
+  useEffect(() => { segDragRef.current = segDrag; }, [segDrag]);
 
   // Quick-add menu: auto-focus input when menu opens
   useEffect(() => {
@@ -450,7 +524,14 @@ export default function SimulatorPage() {
             group.items = group.items.filter(i => i.type !== compType);
             group.items.push(newCatItem);
 
-            COMPONENT_REGISTRY[compType] = { manifest, UI: uiComponent, logicCode: transpileLogic };
+            COMPONENT_REGISTRY[compType] = {
+              manifest,
+              UI: uiComponent,
+              ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))],
+              contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+              contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+              logicCode: transpileLogic
+            };
             if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
 
             BACKEND_INJECTED_TYPES.add(compType); // track so we can detect future deletions
@@ -784,8 +865,52 @@ export default function SimulatorPage() {
     const pins = PIN_DEFS[comp.type] || []
     const pin = pins.find(p => p.id === pinId)
     if (!pin) return null
-    return { x: comp.x + pin.x, y: comp.y + pin.y }
+    const rotation = comp.rotation || 0;
+    if (rotation === 0) return { x: comp.x + pin.x, y: comp.y + pin.y }
+    // Rotate pin coordinate around component center
+    const cx = comp.w / 2, cy = comp.h / 2;
+    const rad = rotation * Math.PI / 180;
+    const dx = pin.x - cx, dy = pin.y - cy;
+    return {
+      x: comp.x + cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+      y: comp.y + cy + dx * Math.sin(rad) + dy * Math.cos(rad)
+    }
   }, [components, PIN_DEFS])
+
+  // ── Get the point a wire should exit/enter at 90° from a pin ───────────────
+  const getPinExitPoint = useCallback((compId, pinId) => {
+    const comp = components.find(c => c.id === compId)
+    if (!comp) return null
+    const pins = PIN_DEFS[comp.type] || []
+    const pin = pins.find(p => p.id === pinId)
+    if (!pin) return null
+    const stub = 20;
+    // Determine dominant exit direction from unrotated pin position relative to component center
+    const cx = comp.w / 2, cy = comp.h / 2;
+    const dx = pin.x - cx, dy = pin.y - cy;
+    let exitDx = 0, exitDy = 0;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      exitDx = dx >= 0 ? stub : -stub;
+    } else {
+      exitDy = dy >= 0 ? stub : -stub;
+    }
+    // Rotate exit direction with the component
+    const rotation = comp.rotation || 0;
+    if (rotation !== 0) {
+      const rad = rotation * Math.PI / 180;
+      const rdx = exitDx * Math.cos(rad) - exitDy * Math.sin(rad);
+      const rdy = exitDx * Math.sin(rad) + exitDy * Math.cos(rad);
+      exitDx = rdx; exitDy = rdy;
+    }
+    const pinPos = getPinPos(compId, pinId);
+    if (!pinPos) return null;
+    return { x: pinPos.x + exitDx, y: pinPos.y + exitDy };
+  }, [components, PIN_DEFS, getPinPos])
+
+  // Keep reactive refs current so async effects always use latest values
+  getPinPosRef.current = getPinPos;
+  componentsRef.current = components;
+  pinDefsRef.current = PIN_DEFS;
 
   // ── Palette drag start ──────────────────────────────────────────────────────
   const onPaletteDragStart = (e, item) => {
@@ -868,6 +993,7 @@ export default function SimulatorPage() {
   const onCompClick = useCallback((e, id) => {
     e.stopPropagation()
     setSelected(id)
+    setWireClickPos(null)
   }, [])
 
   useEffect(() => {
@@ -876,8 +1002,32 @@ export default function SimulatorPage() {
         movingComp.current.moved = true
         const { id, sx, sy, cx, cy } = movingComp.current
         setComponents(prev => prev.map(c =>
-          c.id === id ? { ...c, x: Math.max(0, cx + (e.clientX - sx) / canvasZoomRef.current), y: Math.max(0, cy + (e.clientY - sy) / canvasZoomRef.current) } : c
+          c.id === id ? { ...c, x: cx + (e.clientX - sx) / canvasZoomRef.current, y: cy + (e.clientY - sy) / canvasZoomRef.current } : c
         ))
+      }
+      // Segment handle drag
+      const sd = segDragRef.current;
+      if (sd && canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+        const my = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+        const ddx = mx - sd.startMouseCanvas.x;
+        const ddy = my - sd.startMouseCanvas.y;
+        if (Math.abs(ddx) < 1 && Math.abs(ddy) < 1) return; // ignore tiny jitter
+        sd.hasMoved = true;
+        const newPts = sd.startPts.map(pt => ({ ...pt }));
+        const { segIdx, isHoriz } = sd;
+        if (isHoriz) {
+          newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
+          newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+        } else {
+          newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
+          newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+        }
+        // Store internal corners (skip p1 and p2) as explicit corner waypoints
+        const cornerWaypoints = newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true }));
+        setWires(prev => prev.map(w => w.id === sd.wireId ? { ...w, waypoints: cornerWaypoints } : w));
+        return; // don't pan while segment-dragging
       }
       // Canvas panning
       if (isPanningRef.current && !isCanvasLockedRef.current) {
@@ -892,19 +1042,57 @@ export default function SimulatorPage() {
           canvasOffsetRef.current = newOffset;
         }
       }
-      // Track mouse for wire preview
+      // Track mouse for wire preview (with pin snapping)
       if (wireStart && canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect()
-        setMousePos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current })
+        const rawX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+        const rawY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+        const snapRadius = 15;
+        let snapped = null;
+        const allComps = componentsRef.current;
+        const pinDefs = pinDefsRef.current;
+        const getPos = getPinPosRef.current;
+        if (getPos) {
+          for (let ci = 0; ci < allComps.length && !snapped; ci++) {
+            const c = allComps[ci];
+            if (c.id === wireStart.compId) continue;
+            const pins = pinDefs[c.type] || [];
+            for (let pi = 0; pi < pins.length && !snapped; pi++) {
+              const pp = getPos(c.id, pins[pi].id);
+              if (pp && Math.hypot(pp.x - rawX, pp.y - rawY) < snapRadius) snapped = pp;
+            }
+          }
+        }
+        setMousePos(snapped || { x: rawX, y: rawY });
       }
     }
     const onUp = () => {
       if (movingComp.current?.moved) {
         const origComps = movingComp.current.originalComps;
+        const movedId = movingComp.current.id;
         setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
+        // Clear _corner waypoints on wires connected to the moved component so
+        // they re-route cleanly from the new pin positions.
+        setWires(prev => prev.map(w => {
+          if (w.from.startsWith(movedId + ':') || w.to.startsWith(movedId + ':')) {
+            if (w.waypoints?.length && w.waypoints[0]._corner) return { ...w, waypoints: [] };
+          }
+          return w;
+        }));
       }
       movingComp.current = null;
       isPanningRef.current = false;
+      if (segDragRef.current) {
+        if (segDragRef.current.hasMoved) {
+          // Save undo snapshot using pre-drag wires captured at drag start
+          const pre = segDragRef.current.preWires;
+          setHistory(h => ({ past: [...h.past.slice(-20), { components: JSON.parse(JSON.stringify(componentsRef.current)), wires: JSON.parse(JSON.stringify(pre)) }], future: [] }));
+          // Prevent the subsequent click event from deselecting the wire
+          didPanRef.current = true;
+        }
+        segDragRef.current = null;
+        setSegDrag(null);
+      }
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -976,7 +1164,7 @@ export default function SimulatorPage() {
     const onKey = (e) => {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
-      if (e.key === 'Escape') { setWireStart(null); setSelected(null); }
+      if (e.key === 'Escape') { setWireStart(null); setSelected(null); setWireClickPos(null); }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning) {
         saveHistory();
         if (selected.match(/^w\d+$/)) {
@@ -998,6 +1186,12 @@ export default function SimulatorPage() {
     setWires(prev => prev.filter(w => w.id !== id))
     if (selected === id) setSelected(null);
   }
+
+  const rotateComponent = (id) => {
+    if (isRunning) return;
+    saveHistory();
+    setComponents(prev => prev.map(c => c.id === id ? { ...c, rotation: ((c.rotation || 0) + 90) % 360 } : c));
+  };
 
   // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
   const logSerial = (msg, color = 'var(--text)') => {
@@ -1497,14 +1691,14 @@ export default function SimulatorPage() {
 
       {/* TOP BAR */}
       <header style={S.bar}>
-        <button style={S.logo} onClick={() => navigate('/')}>⚡ OpenHW-Studio</button>
+        <button style={S.logo} onClick={() => navigate('/')}> OpenHW-Studio</button>
         <div style={S.barCenter}>
           <select style={S.sel} value={board} onChange={e => setBoard(e.target.value)}>
             <option value="arduino_uno">Arduino Uno</option>
             <option value="pico">Raspberry Pi Pico</option>
             <option value="esp32">ESP32</option>
           </select>
-          <Btn color={isRunning ? "var(--border)" : "var(--green)"} disabled={isRunning} onClick={!isRunning ? handleRun : undefined}>{isRunning ? (isCompiling ? '⏳ Compiling...' : '⏳ Running...') : '▶ Run'}</Btn>
+          <Btn color={isRunning ? "var(--border)" : "var(--green)"} disabled={isRunning} onClick={!isRunning ? handleRun : undefined}>{isRunning ? (isCompiling ? ' Compiling...' : ' Running...') : '▶ Run'}</Btn>
           <Btn color={isRunning ? "var(--red)" : undefined} disabled={!isRunning} onClick={isRunning ? handleStop : undefined}>⏹ Stop</Btn>
 
           <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
@@ -1524,9 +1718,14 @@ export default function SimulatorPage() {
             setSelected(null)
           }}>Delete</Btn>
 
+          {/* ROTATE BUTTON — only when a component (not a wire) is selected */}
+          {selected && components.find(c => c.id === selected) && (
+            <Btn onClick={() => rotateComponent(selected)} disabled={isRunning} title="Rotate selected component 90°">↻ Rotate</Btn>
+          )}
+
           {/* THEME TOGGLE BUTTON */}
           <Btn onClick={toggleTheme} title="Toggle Dark/Light Mode">
-            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+            {theme === 'dark' ? ' Light' : ' Dark'}
           </Btn>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1539,13 +1738,13 @@ export default function SimulatorPage() {
             onChange={e => { if (e.target.files?.[0]) importPng(e.target.files[0]); }}
           />
           <Btn color="var(--orange)" onClick={() => importFileRef.current?.click()} title="Import a previously exported OpenHW-Studio PNG to restore the circuit">
-            📂 Import PNG
+             Import PNG
           </Btn>
           <Btn color="var(--purple)" onClick={downloadPng} disabled={isExporting} title="Download circuit as PNG with embedded metadata">
-            {isExporting ? '⏳ Exporting...' : '⬇ Export PNG'}
+            {isExporting ? ' Exporting...' : ' Export PNG'}
           </Btn>
           {isAuthenticated
-            ? <><span style={S.userChip}>👤 {user?.name?.split(' ')[0]}</span><Btn>☁ Save</Btn></>
+            ? <><span style={S.userChip}> {user?.name?.split(' ')[0]}</span><Btn> Save</Btn></>
             : <Btn color="var(--accent)" onClick={() => navigate('/login')}>Sign In to Save</Btn>
           }
         </div>
@@ -1555,7 +1754,7 @@ export default function SimulatorPage() {
       {(!isAuthenticated && showGuestBanner) && (
         <div style={S.guestBanner}>
           <div style={{ flex: 1 }}>
-            ⚠️ <strong>Guest Mode</strong> — No cloud save or progress tracking.
+             <strong>Guest Mode</strong> — No cloud save or progress tracking.
             <button style={{ ...S.bannerBtn, marginLeft: 10 }} onClick={() => navigate('/login')}>Sign in →</button>
           </div>
           <button style={S.bannerCloseBtn} onClick={() => setShowGuestBanner(false)} title="Dismiss">✕</button>
@@ -1617,20 +1816,21 @@ export default function SimulatorPage() {
                   Upload ZIP to Test
                 </button>
               </div>
+
             </div>
             {/* Scrollable component list */}
             <div className="palette-scroll" style={{
               flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2,
               padding: '4px 8px 8px',
             }}>
-              {CATALOG.map(group => {
+              {CATALOG.map((group, index) => {
                 const filteredItems = group.items.filter(item =>
                   item.label.toLowerCase().includes(paletteSearch.toLowerCase()) ||
                   item.type.toLowerCase().includes(paletteSearch.toLowerCase())
                 );
                 if (filteredItems.length === 0) return null;
                 return (
-                  <div key={group.group}>
+                  <div key={group.group || `group-${index}`}>
                     <div style={S.groupName}>{group.group}</div>
                     {filteredItems.map(item => (
                       <div
@@ -1646,7 +1846,7 @@ export default function SimulatorPage() {
                   </div>
                 );
               })}
-              <div style={S.paletteTip}>
+              <div key="palette-tip" style={S.paletteTip}>
                 Drag → drop to place<br />
                 Click <em>Wire Mode</em> then click pins to connect<br />
                 Del key removes selected
@@ -1659,7 +1859,7 @@ export default function SimulatorPage() {
         <main
           style={{
             ...S.canvas,
-            cursor: wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
+            cursor: segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
             backgroundImage: showGrid
               ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
               : 'none',
@@ -1683,12 +1883,26 @@ export default function SimulatorPage() {
               setWireStart(prev => ({ ...prev, waypoints: [...(prev.waypoints || []), newPt] }));
             } else {
               setSelected(null)
+              setWireClickPos(null)
             }
           }}
           onMouseMove={e => {
             if (wireStart && canvasRef.current) {
               const r = canvasRef.current.getBoundingClientRect()
-              setMousePos({ x: (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom, y: (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom })
+              const rawX = (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom;
+              const rawY = (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom;
+              const snapRadius = 15;
+              let snapped = null;
+              outer: for (const c of components) {
+                if (c.id === wireStart.compId) continue;
+                for (const pin of (PIN_DEFS[c.type] || [])) {
+                  const pp = getPinPos(c.id, pin.id);
+                  if (pp && Math.hypot(pp.x - rawX, pp.y - rawY) < snapRadius) {
+                    snapped = pp; break outer;
+                  }
+                }
+              }
+              setMousePos(snapped || { x: rawX, y: rawY });
             }
           }}
           onDoubleClick={e => {
@@ -1721,15 +1935,60 @@ export default function SimulatorPage() {
                 const p1 = getPinPos(fromParts[0], fromParts[1])
                 const p2 = getPinPos(toParts[0], toParts[1])
                 if (!p1 || !p2) return null
+                const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
                 const isSelectedWire = selected === w.id;
+                const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
 
                 return (
-                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }} onDoubleClick={e => e.stopPropagation()}>
-                    <path d={multiRoutePath(p1, p2, w.waypoints)} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-                    <path d={multiRoutePath(p1, p2, w.waypoints)} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 3.5 : 2.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.6} />
-                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
-                    {(w.waypoints || []).map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.4} />)}
-                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
+                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => {
+                    e.stopPropagation();
+                    setSelected(w.id);
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                  }} onDoubleClick={e => e.stopPropagation()}>
+                    <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
+                    <path d={wirePath} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 2.5 : 1.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.6} />
+                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
+                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
+                    {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, w.waypoints).reduce((acc, _, i, arr) => {
+                      // Skip pin-stub segments (first: p1→e1, last: e2→p2) — only show on routing segments
+                      if (i < 1 || i >= arr.length - 2) return acc;
+                      const a = arr[i], b = arr[i + 1];
+                      const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+                      if (segLen < 20) return acc;
+                      const isHoriz = Math.abs(b.y - a.y) < 1;
+                      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+                      acc.push(
+                        <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelectedWire ? 6 : 4}
+                          fill={isSelectedWire ? '#fff' : 'rgba(255,255,255,0.35)'}
+                          stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={1.5}
+                          opacity={isSelectedWire ? 1 : 0.55}
+                          style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
+                          title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
+                          onMouseDown={ev => {
+                            ev.stopPropagation(); ev.preventDefault();
+                            if (!isSelectedWire) { setSelected(w.id); return; }
+                            const rect = canvasRef.current.getBoundingClientRect();
+                            const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                            const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                            const dragData = { wireId: w.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                            segDragRef.current = dragData;
+                            setSegDrag(dragData);
+                          }}
+                          onClick={ev => ev.stopPropagation()}
+                          onDoubleClick={ev => {
+                            ev.stopPropagation(); ev.preventDefault();
+                            const newCorners = arr.slice(1, -1)
+                              .filter((_, ci) => ci !== i - 1 && ci !== i)
+                              .map(pt => ({ x: pt.x, y: pt.y, _corner: true }));
+                            saveHistory();
+                            setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: newCorners } : ww));
+                          }}
+                        />
+                      );
+                      return acc;
+                    }, [])}
                   </g>
                 )
               })}
@@ -1747,15 +2006,60 @@ export default function SimulatorPage() {
                 const p1 = getPinPos(fromParts[0], fromParts[1])
                 const p2 = getPinPos(toParts[0], toParts[1])
                 if (!p1 || !p2) return null
+                const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
                 const isSelectedWire = selected === w.id;
+                const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
 
                 return (
-                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }} onDoubleClick={e => e.stopPropagation()}>
-                    <path d={multiRoutePath(p1, p2, w.waypoints)} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-                    <path d={multiRoutePath(p1, p2, w.waypoints)} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 3.5 : 2.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.9} />
-                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
-                    {(w.waypoints || []).map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />)}
-                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => {
+                    e.stopPropagation();
+                    setSelected(w.id);
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                  }} onDoubleClick={e => e.stopPropagation()}>
+                    <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
+                    <path d={wirePath} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 2.3 : 1.3} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.9} />
+                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 3 : 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 3 : 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+                    {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, w.waypoints).reduce((acc, _, i, arr) => {
+                      // Skip pin-stub segments (first: p1→e1, last: e2→p2) — only show on routing segments
+                      if (i < 1 || i >= arr.length - 2) return acc;
+                      const a = arr[i], b = arr[i + 1];
+                      const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+                      if (segLen < 20) return acc;
+                      const isHoriz = Math.abs(b.y - a.y) < 1;
+                      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+                      acc.push(
+                        <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelectedWire ? 6 : 4}
+                          fill={isSelectedWire ? '#fff' : 'rgba(255,255,255,0.35)'}
+                          stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={1.5}
+                          opacity={isSelectedWire ? 1 : 0.55}
+                          style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
+                          title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
+                          onMouseDown={ev => {
+                            ev.stopPropagation(); ev.preventDefault();
+                            if (!isSelectedWire) { setSelected(w.id); return; }
+                            const rect = canvasRef.current.getBoundingClientRect();
+                            const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                            const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                            const dragData = { wireId: w.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                            segDragRef.current = dragData;
+                            setSegDrag(dragData);
+                          }}
+                          onClick={ev => ev.stopPropagation()}
+                          onDoubleClick={ev => {
+                            ev.stopPropagation(); ev.preventDefault();
+                            const newCorners = arr.slice(1, -1)
+                              .filter((_, ci) => ci !== i - 1 && ci !== i)
+                              .map(pt => ({ x: pt.x, y: pt.y, _corner: true }));
+                            saveHistory();
+                            setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: newCorners } : ww));
+                          }}
+                        />
+                      );
+                      return acc;
+                    }, [])}
                   </g>
                 )
               })}
@@ -1780,8 +2084,9 @@ export default function SimulatorPage() {
               if (!comp) return null;
               const reg = COMPONENT_REGISTRY[comp.type];
               if (!reg?.ContextMenu) return null;
-              const showDuringRun = !!reg.contextMenuDuringRun;
+              const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
               if (isRunning && !showDuringRun) return null;
+              if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
               return (
                 <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
                   position: 'absolute',
@@ -1799,7 +2104,7 @@ export default function SimulatorPage() {
                   onDoubleClick={e => e.stopPropagation()}
                 >
                   {React.createElement(reg.ContextMenu, {
-                    attrs: comp.attrs,
+                    attrs: getComponentStateAttrs(comp),
                     onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
                   })}
                   <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
@@ -1818,31 +2123,62 @@ export default function SimulatorPage() {
               const p1 = getPinPos(fromParts[0], fromParts[1])
               const p2 = getPinPos(toParts[0], toParts[1])
               if (!p1 || !p2) return null
+
+              // Use click position, fall back to wire midpoint
               const pts = [p1, ...(w.waypoints || []), p2];
               const midPt = pts[Math.floor(pts.length / 2)];
+              const menuPos = wireClickPos || midPt;
+
+              // Build connection label — "LED [anode]" style, no instance number
+              const fromComp = components.find(c => c.id === fromParts[0]);
+              const toComp = components.find(c => c.id === toParts[0]);
+              const fromLabel = `${fromComp?.label || fromParts[0]} [${w.fromLabel || fromParts[1]}]`;
+              const toLabel = `${toComp?.label || toParts[0]} [${w.toLabel || toParts[1]}]`;
 
               return (
                 <div key={`menu-${w.id}`} style={{
                   position: 'absolute',
-                  left: midPt.x - 65,
-                  top: midPt.y - 50,
+                  left: menuPos.x,
+                  top: menuPos.y - 8,
+                  transform: 'translateX(-50%) translateY(-100%)',
                   zIndex: 50,
-                  background: 'var(--bg2)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '6px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default'
+                  background: 'var(--bg2)', border: '1px solid var(--border)',
+                  display: 'flex', flexDirection: 'column', gap: 6,
+                  padding: '8px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
+                  minWidth: 180,
                 }}
                   onPointerDown={e => e.stopPropagation()}
                   onClick={e => e.stopPropagation()}>
-                  <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
-                  <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-                  <button
-                    style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 6px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                    onClick={(e) => { e.stopPropagation(); toggleWireLayer(w.id); }}
-                    onPointerDown={(e) => { e.stopPropagation(); }}
-                    title={w.isBelow ? "Bring to Front" : "Send to Back"}
-                  >
-                    {w.isBelow ? '↑' : '↓'}
-                  </button>
-                  <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={(e) => { e.stopPropagation(); deleteWire(w.id); }} onClick={(e) => { e.stopPropagation(); deleteWire(w.id); }} title="Delete Wire">✕</button>
+                  {/* Row 1: connection info — two lines, centered */}
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5, textAlign: 'center' }}
+                    title={`${fromLabel} → ${toLabel}`}>
+                    <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{fromLabel}</div>
+                    <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{toLabel}</div>
+                  </div>
+                  {/* Row 2: controls — centered */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
+                    <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
+                    <button
+                      style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 6px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
+                      onClick={(e) => { e.stopPropagation(); toggleWireLayer(w.id); }}
+                      onPointerDown={(e) => { e.stopPropagation(); }}
+                      title={w.isBelow ? "Bring to Front" : "Send to Back"}
+                    >
+                      {w.isBelow ? '↑' : '↓'}
+                    </button>
+                    <button
+                      style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
+                      title="Reset route to auto"
+                      onPointerDown={e => e.stopPropagation()}
+                      onClick={e => {
+                        e.stopPropagation();
+                        saveHistory();
+                        setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: [] } : ww));
+                      }}
+                    >↺</button>
+                    <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={(e) => { e.stopPropagation(); deleteWire(w.id); }} onClick={(e) => { e.stopPropagation(); deleteWire(w.id); }} title="Delete Wire">✕</button>
+                  </div>
                   <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
                   <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
                 </div>
@@ -1872,56 +2208,106 @@ export default function SimulatorPage() {
                     position: 'absolute',
                     left: comp.x, top: comp.y,
                     width: comp.w, height: comp.h,
-                    cursor: wireStart ? 'crosshair' : 'move',
                     zIndex: isSelected ? 5 : 2,
                     userSelect: 'none',
-                    pointerEvents: 'all'
+                    pointerEvents: 'none', // Clicks pass through the manifest wrapper
+                    transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
+                    transformOrigin: 'center center',
                   }}
-                  onMouseDown={e => onCompMouseDown(e, comp.id)}
-                  onClick={e => onCompClick(e, comp.id)}
-                  onDoubleClick={e => e.stopPropagation()}
                 >
-                  {/* Selection ring */}
-                  {isSelected && (
-                    <div style={{
-                      position: 'absolute', inset: -6, borderRadius: 8,
-                      border: '2px solid var(--accent)',
-                      boxShadow: '0 0 16px var(--glow)',
-                      pointerEvents: 'none', zIndex: 10,
-                      animation: 'none',
-                    }} />
-                  )}
-                  {/* Error ring */}
-                  {hasError && (
-                    <div style={{
-                      position: 'absolute', inset: -6, borderRadius: 8,
-                      border: '2px solid var(--red)',
-                      boxShadow: '0 0 16px rgba(255,68,68,.4)',
-                      pointerEvents: 'none', zIndex: 10,
-                    }} />
-                  )}
+                  {/* Hit Box — captures selection and drag only within BOUNDS */}
+                  {(() => {
+                    const getBounds = () => {
+                      const reg = COMPONENT_REGISTRY[comp.type];
+                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                    };
+                    const b = getBounds();
+                    return (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: b.x, top: b.y,
+                          width: b.w, height: b.h,
+                          cursor: wireStart ? 'crosshair' : 'move',
+                          pointerEvents: 'auto',
+                          zIndex: 0, // Below pins and interactive UI elements
+                        }}
+                        onMouseDown={e => onCompMouseDown(e, comp.id)}
+                        onClick={e => onCompClick(e, comp.id)}
+                        onDoubleClick={e => e.stopPropagation()}
+                      />
+                    );
+                  })()}
 
-                  {/* Component Render */}
-                  {COMPONENT_REGISTRY[comp.type] ? (
-                    // Local UI component rendering SVG
-                    React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                      state: oopStates[comp.id] || {},
-                      attrs: getComponentStateAttrs(comp)
-                    })
-                  ) : (
-                    // Fallback for unsupported components (if any left)
-                    <div
-                      style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                      ref={el => {
-                        if (comp.type === 'wokwi-neopixel-matrix' && el) {
-                          neopixelRefs.current[comp.id] = el;
-                        }
-                      }}
-                      dangerouslySetInnerHTML={{
-                        __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
-                      }}
-                    />
-                  )}
+                  {/* Selection ring — uses BOUNDS from ui.tsx for precise sizing */}
+                  {isSelected && (() => {
+                    const getBounds = () => {
+                      const reg = COMPONENT_REGISTRY[comp.type];
+                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                    };
+                    const b = getBounds();
+                    return (
+                      <div style={{
+                        position: 'absolute',
+                        left: b.x - 6, top: b.y - 6,
+                        width: b.w + 12, height: b.h + 12,
+                        borderRadius: 8,
+                        border: '2px solid var(--accent)',
+                        boxShadow: '0 0 16px var(--glow)',
+                        pointerEvents: 'none', zIndex: 10,
+                      }} />
+                    );
+                  })()}
+                  {/* Error ring — uses BOUNDS from ui.tsx for precise sizing */}
+                  {hasError && (() => {
+                    const getBounds = () => {
+                      const reg = COMPONENT_REGISTRY[comp.type];
+                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                    };
+                    const b = getBounds();
+                    return (
+                      <div style={{
+                        position: 'absolute',
+                        left: b.x - 6, top: b.y - 6,
+                        width: b.w + 12, height: b.h + 12,
+                        borderRadius: 8,
+                        border: '2px solid var(--red)',
+                        boxShadow: '0 0 16px rgba(255,68,68,.4)',
+                        pointerEvents: 'none', zIndex: 10,
+                      }} />
+                    );
+                  })()}
+
+                  {/* Component Render — wrapped to allow pass-through to Hit Box */}
+                  <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
+                    {COMPONENT_REGISTRY[comp.type] ? (
+                      // Local UI component rendering SVG
+                      React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+                        state: oopStates[comp.id] || {},
+                        attrs: getComponentStateAttrs(comp),
+                        isRunning: isRunning
+                      })
+                    ) : (
+                      // Fallback for unsupported components (if any left)
+                      <div
+                        style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+                        ref={el => {
+                          if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                            neopixelRefs.current[comp.id] = el;
+                          }
+                        }}
+                        dangerouslySetInnerHTML={{
+                          __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
+                        }}
+                      />
+                    )}
+                  </div>
 
                   {/* Pins */}
                   {pins.map(pin => {
@@ -1975,7 +2361,21 @@ export default function SimulatorPage() {
 
                   {/* Component label */}
                   <div style={{
-                    position: 'absolute', bottom: -18, left: '50%',
+                    position: 'absolute',
+                    top: (() => {
+                      const reg = COMPONENT_REGISTRY[comp.type];
+                      const b = typeof reg?.BOUNDS === 'function'
+                        ? reg.BOUNDS(getComponentStateAttrs(comp))
+                        : (reg?.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h });
+                      return b.y + b.h + 4;
+                    })(),
+                    left: (() => {
+                      const reg = COMPONENT_REGISTRY[comp.type];
+                      const b = typeof reg?.BOUNDS === 'function'
+                        ? reg.BOUNDS(getComponentStateAttrs(comp))
+                        : (reg?.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h });
+                      return b.x + b.w / 2;
+                    })(),
                     transform: 'translateX(-50%)',
                     fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
                     whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
@@ -2029,6 +2429,12 @@ export default function SimulatorPage() {
                   <button onClick={() => { setShowGrid(g => !g); setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
                   <button onClick={() => { setIsCanvasLocked(l => !l); setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
                   <button onClick={() => { toggleFullscreen(); setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</button>
+                  <button onClick={() => {
+                    const enabling = !wirepointsEnabled;
+                    // toggling does NOT clear waypoints — use ↺ in wire menu to reset individual wires
+                    setWirepointsEnabled(enabling);
+                    setShowCanvasMenu(false);
+                  }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--text)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>{wirepointsEnabled ? 'Disable Wire Waypoints' : 'Enable Wire Waypoints'}</button>
                   <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
                   <button onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } setShowCanvasMenu(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', color: 'var(--red)', padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Clear Canvas</button>
                 </div>
@@ -2099,7 +2505,7 @@ export default function SimulatorPage() {
                 {/* Result list */}
                 {results.map((item, i) => (
                   <div
-                    key={item.type}
+                    key={`${item.type}-${i}`}
                     data-quickadd="true"
                     onMouseEnter={() => setQuickAddIdx(i)}
                     onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
@@ -2231,7 +2637,7 @@ export default function SimulatorPage() {
                       style={{ ...S.codeTab, ...(codeTab === t ? S.codeTabActive : {}) }}
                       onClick={() => setCodeTab(t)}
                     >
-                      {t === 'code' ? '{ } Code' : t === 'libraries' ? '📚 Libraries' : t === 'serial' ? '📟 Serial' : '📈 Plotter'}
+                      {t === 'code' ? '{ } Code' : t === 'libraries' ? ' Libraries' : t === 'serial' ? ' Serial' : ' Plotter'}
                     </button>
                   ))}
                 </div>
