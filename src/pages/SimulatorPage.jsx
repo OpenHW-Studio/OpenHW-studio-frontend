@@ -125,8 +125,18 @@ function segmentHitsObstacle(a, b, r) {
 
 function segmentOverlapsExisting(a, b, occupiedSegments) {
   for (const s of occupiedSegments) {
-    if (a.x === b.x && s.x1 === s.x2 && a.x === s.x1 && rangesOverlap(a.y, b.y, s.y1, s.y2)) return true;
-    if (a.y === b.y && s.y1 === s.y2 && a.y === s.y1 && rangesOverlap(a.x, b.x, s.x1, s.x2)) return true;
+    const sharesEndpoint =
+      (a.x === s.x1 && a.y === s.y1) ||
+      (a.x === s.x2 && a.y === s.y2) ||
+      (b.x === s.x1 && b.y === s.y1) ||
+      (b.x === s.x2 && b.y === s.y2);
+
+    if (a.x === b.x && s.x1 === s.x2 && a.x === s.x1 && rangesOverlap(a.y, b.y, s.y1, s.y2)) {
+      if (!sharesEndpoint) return true;
+    }
+    if (a.y === b.y && s.y1 === s.y2 && a.y === s.y1 && rangesOverlap(a.x, b.x, s.x1, s.x2)) {
+      if (!sharesEndpoint) return true;
+    }
   }
   return false;
 }
@@ -217,6 +227,7 @@ export default function SimulatorPage() {
   const [wireStart, setWireStart] = useState(null)   // { compId, pinId, pinLabel, x, y }
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const [hoveredPin, setHoveredPin] = useState(null)
+  const [hoveredWire, setHoveredWire] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
   const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
@@ -387,12 +398,14 @@ export default function SimulatorPage() {
         const loadedComponents = parts.map((part, index) => {
           const id = part.id || `${part.type}_${index + 1}`
           const manifest = COMPONENT_REGISTRY[part.type]?.manifest || {}
+          const diagramX = Number(part.x ?? part.left) || 0
+          const diagramY = Number(part.y ?? part.top) || 0
           return {
             id,
             type: part.type,
             label: manifest.label || part.type,
-            x: (Number(part.left) || 0) + 120,
-            y: (Number(part.top) || 0) + 120,
+            x: diagramX,
+            y: diagramY,
             w: manifest.w || 60,
             h: manifest.h || 60,
             attrs: part.attrs || {}
@@ -510,6 +523,7 @@ export default function SimulatorPage() {
     return routed
   }, [wires, getPinPos, getRoutingObstacles])
 
+
   // ── Palette drag start ──────────────────────────────────────────────────────
   const onPaletteDragStart = (e, item) => {
     dragPayload.current = item
@@ -606,6 +620,27 @@ export default function SimulatorPage() {
   }, [wireStart, wires])
 
   // ── Pin click — start or complete wire ─────────────────────────────────────
+  const completeWireToPin = useCallback((compId, pinId, pinLabel, extraWaypoints = [], forcedColor = null) => {
+    if (!wireStart) return
+    if (wireStart.compId === compId && wireStart.pinId === pinId) {
+      setWireStart(null)
+      return
+    }
+
+    saveHistory();
+    const newWire = {
+      id: `w${nextWireId++}`,
+      from: `${wireStart.compId}:${wireStart.pinId}`,
+      to: `${compId}:${pinId}`,
+      fromLabel: wireStart.pinLabel,
+      toLabel: pinLabel,
+      color: forcedColor || wireColor(wireStart.pinLabel),
+      waypoints: [...(wireStart.waypoints || []), ...extraWaypoints],
+    }
+    setWires(prev => [...prev, newWire])
+    setWireStart(null)
+  }, [wireStart, saveHistory])
+
   const onPinClick = useCallback((e, compId, pinId, pinLabel) => {
     e.stopPropagation()
 
@@ -617,24 +652,9 @@ export default function SimulatorPage() {
       setWireStart({ compId, pinId, pinLabel, ...pos })
     } else {
       // Complete wire — prevent self-loop
-      if (wireStart.compId === compId && wireStart.pinId === pinId) {
-        setWireStart(null)
-        return
-      }
-      saveHistory();
-      const newWire = {
-        id: `w${nextWireId++}`,
-        from: `${wireStart.compId}:${wireStart.pinId}`,
-        to: `${compId}:${pinId}`,
-        fromLabel: wireStart.pinLabel,
-        toLabel: pinLabel,
-        color: wireColor(wireStart.pinLabel),
-        waypoints: wireStart.waypoints || [],
-      }
-      setWires(prev => [...prev, newWire])
-      setWireStart(null)
+      completeWireToPin(compId, pinId, pinLabel)
     }
-  }, [wireStart, getPinPos, saveHistory])
+  }, [wireStart, getPinPos, completeWireToPin])
 
   const updateWireColor = (id, color) => {
     setWires(prev => prev.map(w => w.id === id ? { ...w, color } : w));
@@ -776,6 +796,11 @@ export default function SimulatorPage() {
     return attrs;
   };
 
+  const selectedComponent = useMemo(
+    () => (selected && !isWireId(selected) ? components.find(c => c.id === selected) || null : null),
+    [components, selected]
+  );
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
@@ -814,6 +839,11 @@ export default function SimulatorPage() {
           <Btn onClick={toggleTheme} title="Toggle Dark/Light Mode">
             {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
           </Btn>
+          {selectedComponent && (
+            <span style={{ ...S.userChip, fontFamily: 'JetBrains Mono, monospace' }}>
+              {selectedComponent.id}: x={Math.round(selectedComponent.x)}, y={Math.round(selectedComponent.y)}
+            </span>
+          )}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {isAuthenticated
@@ -837,7 +867,7 @@ export default function SimulatorPage() {
       {/* WIRING MODE HINT */}
       {wireStart && (
         <div style={{ ...S.guestBanner, background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
-          〰 <strong>Wiring in progress</strong> — Click another pin to connect. Press Esc to cancel.
+          〰 <strong>Wiring in progress</strong> — Click another pin or click a wire to connect to its Arduino pin. Press Esc to cancel.
           <span style={{ marginLeft: 12 }}>🔵 Started from <strong>{wireStart.compId} [{wireStart.pinLabel}]</strong></span>
         </div>
       )}
@@ -868,6 +898,7 @@ export default function SimulatorPage() {
           <div style={S.paletteTip}>
             Drag → drop to place<br />
             Click <em>Wire Mode</em> then click pins to connect<br />
+            While wiring, click a wire to connect to its Arduino pin<br />
             Del key removes selected
           </div>
         </aside>
@@ -913,6 +944,7 @@ export default function SimulatorPage() {
               const p2 = getPinPos(toParts[0], toParts[1])
               if (!p1 || !p2) return null
               const isSelectedWire = selected === w.id;
+              const isHoveredWire = hoveredWire === w.id;
               const routed = routedWirePointsById[w.id] || []
               const wirePath = buildPathD(routed)
               // Approximate midpoint for context menu
@@ -921,21 +953,51 @@ export default function SimulatorPage() {
               const midPt = pts[midIdx];
 
               return (
-                <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setSelected(w.id); }}>
+                <g
+                  key={w.id}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (wireStart && canvasRef.current) {
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const clickPt = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+                      const fromComp = components.find(c => c.id === fromParts[0]);
+                      const toComp = components.find(c => c.id === toParts[0]);
+                      const fromIsArduino = String(fromComp?.type || '').includes('arduino');
+                      const toIsArduino = String(toComp?.type || '').includes('arduino');
+                      if (!fromIsArduino && !toIsArduino) return;
+                      const d1 = Math.hypot(clickPt.x - p1.x, clickPt.y - p1.y);
+                      const d2 = Math.hypot(clickPt.x - p2.x, clickPt.y - p2.y);
+                      if (fromIsArduino && !toIsArduino) {
+                        completeWireToPin(fromParts[0], fromParts[1], w.fromLabel || fromParts[1], [], w.color || null);
+                      } else if (toIsArduino && !fromIsArduino) {
+                        completeWireToPin(toParts[0], toParts[1], w.toLabel || toParts[1], [], w.color || null);
+                      } else if (d1 <= d2) {
+                        completeWireToPin(fromParts[0], fromParts[1], w.fromLabel || fromParts[1], [], w.color || null);
+                      } else {
+                        completeWireToPin(toParts[0], toParts[1], w.toLabel || toParts[1], [], w.color || null);
+                      }
+                      return;
+                    }
+                    setSelected(w.id);
+                  }}
+                >
                   {/* Shadow for click hitbox */}
                   <path
                     d={wirePath}
                     stroke="transparent" strokeWidth={16} fill="none"
                     style={{ pointerEvents: 'stroke' }}
+                    onMouseEnter={() => setHoveredWire(w.id)}
+                    onMouseLeave={() => setHoveredWire(prev => (prev === w.id ? null : prev))}
                   />
                   <path
                     d={wirePath}
-                    stroke={isSelectedWire ? 'var(--orange)' : w.color}
-                    strokeWidth={isSelectedWire ? 3.5 : 2.5}
+                    stroke={isSelectedWire ? 'var(--orange)' : isHoveredWire ? '#f1c40f' : w.color}
+                    strokeWidth={isSelectedWire ? 3.5 : isHoveredWire ? 3.2 : 2.5}
                     fill="none"
                     strokeDasharray={isSelectedWire ? "6 4" : "none"}
                     strokeLinecap="round"
-                    opacity={0.9}
+                    opacity={isHoveredWire ? 1 : 0.9}
                   />
                   {/* Dots at waypoints & ends */}
                   <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 5 : 4} fill={isSelectedWire ? 'var(--orange)' : w.color} />
@@ -1118,7 +1180,7 @@ export default function SimulatorPage() {
                   whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
                   pointerEvents: 'none',
                 }}>
-                  {comp.label}
+                  {comp.label}{isSelected ? `  x:${Math.round(comp.x)} y:${Math.round(comp.y)}` : ''}
                 </div>
               </div>
             )
