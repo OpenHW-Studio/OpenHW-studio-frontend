@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 import { useAuthStore } from "../store/authStore.js";
 import { compileCode, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../services/simulatorService.js'
@@ -127,9 +127,43 @@ function wireColor(pinLabel) {
   return '#2ecc71'; // green default
 }
 
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5000/examples';
+
+function normalizeDemoDiagram(diagram) {
+  const parts = Array.isArray(diagram?.parts) ? diagram.parts : [];
+  const connections = Array.isArray(diagram?.connections) ? diagram.connections : [];
+
+  const components = parts.map((part, idx) => ({
+    id: part?.id || `part-${idx + 1}`,
+    type: part?.type || '',
+    x: Number(part?.x) || 0,
+    y: Number(part?.y) || 0,
+    w: COMPONENT_REGISTRY[part?.type || '']?.manifest?.w || 60,
+    h: COMPONENT_REGISTRY[part?.type || '']?.manifest?.h || 60,
+    attrs: (part?.attrs && typeof part.attrs === 'object') ? part.attrs : {},
+  }));
+
+  const wires = connections
+    .map((conn, idx) => {
+      if (!Array.isArray(conn) || conn.length < 2) return null;
+      return {
+        id: `w${idx + 1}`,
+        from: conn[0],
+        to: conn[1],
+        color: conn[2] || '#2ecc71',
+        waypoints: [],
+        isBelow: false,
+      };
+    })
+    .filter(Boolean);
+
+  return { components, wires };
+}
+
 export default function SimulatorPage() {
   const { isAuthenticated, user } = useAuthStore() 
   const navigate = useNavigate()
+  const { projectName = '' } = useParams()
 
   // Theme Logic
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
@@ -210,6 +244,19 @@ export default function SimulatorPage() {
   const dragPayload = useRef(null)
   const movingComp = useRef(null)
   const componentZipInputRef = useRef(null);
+
+  function applyLoadedCircuit({ board: nextBoard, code: nextCode, components: nextComponents, connections: nextConnections, resetHistory = false }) {
+    if (nextBoard) setBoard(nextBoard);
+    if (typeof nextCode === 'string') setCode(nextCode);
+    if (Array.isArray(nextComponents)) setComponents(nextComponents);
+    if (Array.isArray(nextConnections)) {
+      setWires(nextConnections);
+      nextWireId = Math.max(1, nextConnections.length + 1);
+    }
+    setSelected(null);
+    setWireStart(null);
+    if (resetHistory) setHistory({ past: [], future: [] });
+  }
 
   const handleUploadZip = async (event) => {
     const file = event.target.files[0];
@@ -296,6 +343,41 @@ export default function SimulatorPage() {
   useEffect(() => {
     loadLibraries();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDemoProject = async () => {
+      if (!projectName) return;
+
+      try {
+        const [diagramRes, codeRes] = await Promise.all([
+          fetch(`${EXAMPLES_BASE_URL}/${projectName}/diagram.json`),
+          fetch(`${EXAMPLES_BASE_URL}/${projectName}/sketch.ino`),
+        ]);
+
+        if (!diagramRes.ok || !codeRes.ok) return;
+
+        const diagram = await diagramRes.json();
+        const sketch = await codeRes.text();
+        if (cancelled) return;
+
+        const { components: demoComponents, wires: demoWires } = normalizeDemoDiagram(diagram);
+        applyLoadedCircuit({
+          board: 'arduino_uno',
+          code: sketch,
+          components: demoComponents,
+          connections: demoWires,
+          resetHistory: true,
+        });
+      } catch (err) {
+        console.error(`Failed to load demo project "${projectName}"`, err);
+      }
+    };
+
+    loadDemoProject();
+    return () => { cancelled = true; };
+  }, [projectName]);
 
   useEffect(() => { canvasZoomRef.current = canvasZoom; }, [canvasZoom]);
   useEffect(() => { canvasOffsetRef.current = canvasOffset; }, [canvasOffset]);
@@ -1410,12 +1492,7 @@ export default function SimulatorPage() {
 
         // Restore state
         saveHistory();
-        if (meta.board) setBoard(meta.board);
-        if (meta.code) setCode(meta.code);
-        if (Array.isArray(meta.components)) setComponents(meta.components);
-        if (Array.isArray(meta.connections)) setWires(meta.connections);
-        setSelected(null);
-        setWireStart(null);
+        applyLoadedCircuit(meta);
       } catch (err) {
         console.error('[PNG Import] Parse error:', err);
         alert('Failed to parse circuit data from PNG: ' + err.message);
