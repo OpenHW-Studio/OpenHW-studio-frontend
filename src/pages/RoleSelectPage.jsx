@@ -1,5 +1,4 @@
-// This page is used if a user logs in via Google but hasn't selected a role yet.
-// Backend can redirect here if role is not set.
+
 import { useNavigate } from 'react-router-dom'
 
 export default function RoleSelectPage() {
