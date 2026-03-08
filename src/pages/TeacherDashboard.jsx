@@ -1,17 +1,9 @@
-import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore.js'
 
 export default function TeacherDashboard() {
   const { user, logout } = useAuthStore() 
   const navigate = useNavigate()
-  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark'
-    setTheme(newTheme)
-    document.documentElement.setAttribute('data-theme', newTheme)
-  }
 
   return (
     <div className="dashboard">
@@ -37,16 +29,11 @@ export default function TeacherDashboard() {
             <h1>Teacher Dashboard 👨‍🏫</h1>
             <p>{user?.name} · {user?.email}</p>
           </div>
-          <div className="dash-header-actions">
-            <button className="btn btn-ghost" onClick={toggleTheme} title="Toggle Dark/Light Mode">
-              {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-            </button>
-            <div className="user-avatar">
-              {user?.picture
-                ? <img src={user.picture} alt="avatar" />
-                : <div className="avatar-placeholder">{user?.name?.[0]}</div>
-              }
-            </div>
+          <div className="user-avatar">
+            {user?.picture
+              ? <img src={user.picture} alt="avatar" />
+              : <div className="avatar-placeholder">{user?.name?.[0]}</div>
+            }
           </div>
         </div>
 
