@@ -1,15 +1,18 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useAuthStore } from '../../store/authStore.js';
 
-export default function ProtectedRoute({ children }) {
-    const { isAuthenticated, loading } = useAuth();
+export default function ProtectedRoute({ children, allowedRole }) {
+  
+    const { isAuthenticated, role } = useAuthStore();
 
-    if (loading) {
-        return <div>Loading...</div>;
+  
+    if (!isAuthenticated) {
+        return <Navigate to="/signin" replace />;
     }
 
-    if (!isAuthenticated) {
-        return <Navigate to="/login" replace />;
+    // Ensures students can't access teacher routes and vice-versa
+    if (allowedRole && role !== allowedRole) {
+        return <Navigate to={role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard'} replace />;
     }
 
     return children;
