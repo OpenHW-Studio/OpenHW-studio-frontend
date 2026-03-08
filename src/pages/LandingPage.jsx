@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext.jsx'
+import { useAuthStore } from '../store/authStore.js' 
 
 const exampleProjects = [
   { title: 'LED Blink', board: 'Arduino Uno', difficulty: 'Beginner', icon: '💡', points: 50 },
@@ -12,7 +12,7 @@ const exampleProjects = [
 
 export default function LandingPage() {
   const navigate = useNavigate()
-  const { isAuthenticated, role } = useAuth()
+  const { isAuthenticated, role } = useAuthStore()
 
   const handleDashboard = () => {
     if (role === 'teacher') navigate('/teacher/dashboard')
@@ -32,8 +32,9 @@ export default function LandingPage() {
             <button className="btn btn-primary" onClick={handleDashboard}>Dashboard →</button>
           ) : (
             <>
-              <button className="btn btn-ghost" onClick={() => navigate('/login')}>Sign In</button>
-              <button className="btn btn-primary" onClick={() => navigate('/login')}>Get Started</button>
+            
+              <button className="btn btn-ghost" onClick={() => navigate('/signin')}>Sign In</button>
+              <button className="btn btn-primary" onClick={() => navigate('/signup')}>Get Started</button>
             </>
           )}
         </div>
@@ -54,7 +55,8 @@ export default function LandingPage() {
           <button className="btn btn-primary btn-lg" onClick={() => navigate('/simulator')}>
             ▶ Try Simulator — No Login Required
           </button>
-          <button className="btn btn-outline btn-lg" onClick={() => navigate('/login')}>
+          {/* Updated to /signup */}
+          <button className="btn btn-outline btn-lg" onClick={() => navigate('/signup')}>
             Join as Student / Teacher
           </button>
         </div>
@@ -118,13 +120,15 @@ export default function LandingPage() {
         <h2>Ready to start building?</h2>
         <p>Join as a student to track progress, or as a teacher to manage your class.</p>
         <div className="cta-cards">
-          <div className="cta-card student-card" onClick={() => navigate('/login?role=student')}>
+  
+          <div className="cta-card student-card" onClick={() => navigate('/signup?role=student')}>
             <div className="cta-icon">🎓</div>
             <h3>I'm a Student</h3>
             <p>Join classes, submit assignments, earn rewards</p>
             <button className="btn btn-primary">Join as Student →</button>
           </div>
-          <div className="cta-card teacher-card" onClick={() => navigate('/login?role=teacher')}>
+      
+          <div className="cta-card teacher-card" onClick={() => navigate('/signup?role=teacher')}>
             <div className="cta-icon">👨‍🏫</div>
             <h3>I'm a Teacher</h3>
             <p>Create classes, assign projects, monitor students</p>

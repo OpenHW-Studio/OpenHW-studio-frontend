@@ -28,7 +28,7 @@ export const removeUser = () => localStorage.removeItem('openhw_user');
  * Connects to 'signupUser' in userController.js
  */
 export const signupUser = async (userData) => {
-  const response = await fetch(`${BASE_URL}/users/signup`, {
+  const response = await fetch(`${BASE_URL}/user/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -62,7 +62,7 @@ export const signupUser = async (userData) => {
  * Matches 'signinUser' in userController.js
  */
 export const loginUser = async (credentials) => {
-  const response = await fetch(`${BASE_URL}/users/signin`, {
+  const response = await fetch(`${BASE_URL}/user/signin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -89,7 +89,7 @@ export const loginUser = async (credentials) => {
  * Sends the access token to the backend for verification.
  */
 export const googleLogin = async (accessToken, role) => {
-  const response = await fetch(`${BASE_URL}/users/google`, {
+  const response = await fetch(`${BASE_URL}/user/google`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ access_token: accessToken, role }),
@@ -115,7 +115,7 @@ export const logout = async () => {
   try {
     const token = getToken();
     // Calls logoutController in userController.js
-    await fetch(`${BASE_URL}/users/logout`, { 
+    await fetch(`${BASE_URL}/user/logout`, { 
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -135,7 +135,7 @@ export const fetchProfile = async () => {
   const token = getToken();
   if (!token) throw new Error('No token found');
 
-  const response = await fetch(`${BASE_URL}/users/profile`, {
+  const response = await fetch(`${BASE_URL}/user/profile`, {
     headers: { 
       'Authorization': `Bearer ${token}` // Handled by protectRoute in backend
     },

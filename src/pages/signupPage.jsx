@@ -73,35 +73,35 @@ export default function SignupPage() {
         {error && <div className="auth-error">⚠️ {error}</div>}
 
    
-        <form className="flex flex-col gap-5 mt-4" onSubmit={handleSignup}>
+        <form className="flex flex-col gap-4 mt-4 w-full" onSubmit={handleSignup}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
-            <div className="flex flex-col gap-2 text-left w-full">
+            <div className="flex flex-col gap-1.5 text-left w-full">
               <label className="text-sm font-medium text-slate-300">Full Name</label>
-              <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="text" name="name" placeholder="John Doe" value={formData.name} onChange={handleInputChange} required />
+              <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="text" name="name" placeholder="John Doe" value={formData.name} onChange={handleInputChange} required />
             </div>
-            <div className="flex flex-col gap-2 text-left w-full">
+            <div className="flex flex-col gap-1.5 text-left w-full">
               <label className="text-sm font-medium text-slate-300">Email Address</label>
-              <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="email" name="email" placeholder="name@college.edu" value={formData.email} onChange={handleInputChange} required />
+              <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="email" name="email" placeholder="name@college.edu" value={formData.email} onChange={handleInputChange} required />
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 text-left w-full">
+          <div className="flex flex-col gap-1.5 text-left w-full">
             <label className="text-sm font-medium text-slate-300">Password (Min 8 chars)</label>
-            <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="password" name="password" placeholder="••••••••" minLength="8" value={formData.password} onChange={handleInputChange} required />
+            <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="password" name="password" placeholder="••••••••" minLength="8" value={formData.password} onChange={handleInputChange} required />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
-            <div className="flex flex-col gap-2 text-left w-full">
+            <div className="flex flex-col gap-1.5 text-left w-full">
               <label className="text-sm font-medium text-slate-300">College (Optional)</label>
-              <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="text" name="college" placeholder="IIT Bombay" value={formData.college} onChange={handleInputChange} />
+              <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="text" name="college" placeholder="IIT Bombay" value={formData.college} onChange={handleInputChange} />
             </div>
-            <div className="flex flex-col gap-2 text-left w-full">
+            <div className="flex flex-col gap-1.5 text-left w-full">
               <label className="text-sm font-medium text-slate-300">Semester (Optional)</label>
-              <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="number" name="semester" min="1" max="12" placeholder="1" value={formData.semester} onChange={handleInputChange} />
+              <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="number" name="semester" min="1" max="12" placeholder="1" value={formData.semester} onChange={handleInputChange} />
             </div>
           </div>
 
-          <button type="submit" className="w-full bg-sky-400 text-slate-900 font-bold p-3 rounded-lg border-none cursor-pointer text-base transition-all duration-200 mt-2 hover:bg-sky-300 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>
+          <button type="submit" className="w-full bg-sky-400 text-slate-900 font-bold px-4 py-3 rounded-lg border-none cursor-pointer text-base transition-all duration-200 mt-2 hover:bg-sky-300 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>
             {loading ? 'Creating Account...' : 'Sign Up'}
           </button>
         </form>

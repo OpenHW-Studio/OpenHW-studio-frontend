@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { useAuth } from '../context/AuthContext.jsx'
+import { useAuthStore } from "../store/authStore.js";
 import { compileCode, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../services/simulatorService.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
@@ -15,10 +15,10 @@ import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
-// Import a Prism theme (or we can inject our own CSS wrapper)
+
 import 'prismjs/themes/prism-tomorrow.css';
 
-// Build Catalog & UI Registry dynamically from local backend imports
+
 const COMPONENT_REGISTRY = {};
 
 Object.entries(EmulatorComponents).forEach(([key, module]) => {
@@ -50,8 +50,6 @@ Object.values(COMPONENT_REGISTRY).forEach(module => {
   }
 });
 
-// Tracks component types that were dynamically injected from the backend (not built-in).
-// Used by the polling loop to detect deletions and purge them from the registry.
 const BACKEND_INJECTED_TYPES = new Set();
 
 let nextId = 1
@@ -84,7 +82,7 @@ function multiRoutePath(p1, p2, waypoints = []) {
 
   if (orthPts.length < 2) return '';
 
-  const r = 10; // Corner radius (adjust as desired for curvature)
+  const r = 10; 
   let d = `M ${orthPts[0].x} ${orthPts[0].y}`;
 
   // 2. Add arcs at corners
@@ -130,7 +128,7 @@ function wireColor(pinLabel) {
 }
 
 export default function SimulatorPage() {
-  const { isAuthenticated, user } = useAuth()
+  const { isAuthenticated, user } = useAuthStore() 
   const navigate = useNavigate()
 
   // Theme Logic
