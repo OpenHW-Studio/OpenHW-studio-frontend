@@ -5,10 +5,14 @@ import { useAuth } from '../context/AuthContext.jsx'
 const exampleProjects = [
   { title: 'LED Blink', slug: 'led-blink', board: 'Arduino Uno', difficulty: 'Beginner', icon: '💡', points: 50 },
   { title: 'RGB LED', slug: 'rgb-led', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎨', points: 80 },
+  { title: 'Buzzer', slug: 'buzzer', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🔔', points: 70 },
+  { title: 'LED Strip', slug: 'led-strip', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🌈', points: 90 },
+  { title: 'Potentiometer', slug: 'potentiometer', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎚️', points: 100 },
+  { title: 'Button & Debounce', slug: 'button-debounce', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🕹️', points: 110 },
+  { title: 'LDR', slug: 'ldr', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '☀️', points: 130 },
+  { title: 'DC Motor', slug: 'dc-motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🔄', points: 140 },
   { title: 'Servo Motor', slug: 'servo-motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '⚙️', points: 120 },
   { title: 'Temperature Sensor', slug: 'temperature-sensor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', points: 150 },
-  { title: 'Wi-Fi LED Control', slug: 'wifi-led-control', board: 'ESP32', difficulty: 'Advanced', icon: '📶', points: 200 },
-  { title: 'DC Motor PWM', slug: 'dc-motor-pwm', board: 'ESP32', difficulty: 'Advanced', icon: '🔄', points: 220 },
 ]
 
 export default function LandingPage() {
