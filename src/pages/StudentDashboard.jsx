@@ -38,7 +38,7 @@ export default function StudentDashboard() {
             <p>Level {user?.level || 1} Student · {user?.email}</p>
           </div>
           
-          {/* --- AVATAR FIX APPLIED HERE --- */}
+   
           <div className="user-avatar" style={{ width: '50px', height: '50px', borderRadius: '50%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#38bdf8', color: '#0f172a', fontWeight: 'bold', fontSize: '1.2rem' }}>
             {user?.picture ? (
               <img 
@@ -53,7 +53,7 @@ export default function StudentDashboard() {
               </div>
             )}
           </div>
-          {/* ------------------------------- */}
+      
 
         </div>
 

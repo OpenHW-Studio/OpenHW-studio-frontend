@@ -4,7 +4,7 @@ import ProtectedRoute from './components/auth/ProtectedRoute.jsx'
 
 // Pages
 import LandingPage from './pages/LandingPage.jsx'
-import LoginPage from './pages/LoginPage.jsx'
+import SigninPage from './pages/SigninPage.jsx';
 import RoleSelectPage from './pages/RoleSelectPage.jsx'
 import StudentDashboard from './pages/StudentDashboard.jsx'
 import TeacherDashboard from './pages/TeacherDashboard.jsx'
@@ -17,7 +17,7 @@ export default function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signin" element={<SigninPage />} />
           <Route path="/select-role" element={<RoleSelectPage />} />
           <Route path="/signup" element={<SignupPage />} />
           {/* Guest accessible simulator */}
@@ -43,7 +43,6 @@ export default function App() {
             }
           />
 
-          {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>

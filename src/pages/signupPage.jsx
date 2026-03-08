@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext.jsx'
+import { useAuthStore } from '../store/authStore.js'
 import { signupUser } from '../services/authService.js'
 
 export default function SignupPage() {
   const navigate = useNavigate()
-  const { login, isAuthenticated, role } = useAuth()
+ 
+  const { login, isAuthenticated, role } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   
@@ -13,12 +14,11 @@ export default function SignupPage() {
     name: '',
     email: '',
     password: '',
-    role: 'student', // default role
+    role: 'student', 
     college: '',
     semester: ''
   })
 
-  // Redirect if already logged in
   useEffect(() => {
     if (isAuthenticated) {
       navigate(role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
@@ -36,9 +36,7 @@ export default function SignupPage() {
     setError('')
 
     try {
-      // Call backend signup service
       const data = await signupUser(formData)
-      // Log the user in with returned token
       login(data.token, data.user)
       navigate(data.user.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
     } catch (err) {
@@ -50,42 +48,8 @@ export default function SignupPage() {
 
   return (
     <div className="auth-page">
-      <style>{`
-        .auth-form { display: flex; flex-direction: column; gap: 1.25rem; margin-top: 1rem; }
-        
-        /* Grid Layout */
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: 100%; }
-        
-        /* Stack grid on smaller screens */
-        @media (max-width: 480px) {
-          .form-grid { grid-template-columns: 1fr; }
-        }
-
-        .form-group { display: flex; flex-direction: column; gap: 0.5rem; text-align: left; width: 100%; }
-        .form-group label { font-size: 0.875rem; font-weight: 500; color: #cbd5e1; }
-        
-        /* FIXED: Added width 100% and box-sizing */
-        .form-group input { 
-          width: 100%; 
-          box-sizing: border-box; 
-          background: #0f172a; 
-          border: 1px solid #334155; 
-          padding: 0.75rem 1rem; 
-          border-radius: 0.5rem; 
-          color: white; 
-          font-size: 1rem; 
-          transition: border-color 0.2s, box-shadow 0.2s; 
-        }
-        
-        .form-group input:focus { outline: none; border-color: #38bdf8; box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2); }
-        .login-submit-btn { background: #38bdf8; color: #0f172a; font-weight: 700; padding: 0.75rem; border-radius: 0.5rem; border: none; cursor: pointer; font-size: 1rem; transition: transform 0.1s, background 0.2s; margin-top: 0.5rem; width: 100%; box-sizing: border-box; }
-        .login-submit-btn:hover:not(:disabled) { background: #7dd3fc; }
-        .login-submit-btn:active:not(:disabled) { transform: scale(0.98); }
-        .login-submit-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-        .auth-card.signup-card { max-width: 500px; width: 100%; box-sizing: border-box; }
-      `}</style>
-
-      <div className="auth-card signup-card">
+ 
+      <div className="auth-card max-w-[500px] w-full box-border">
         <div className="auth-logo">
           <span className="brand-icon">⚡</span>
           <span className="brand-name">OpenHW<span className="brand-accent">-Studio</span></span>
@@ -108,41 +72,42 @@ export default function SignupPage() {
 
         {error && <div className="auth-error">⚠️ {error}</div>}
 
-        <form className="auth-form" onSubmit={handleSignup}>
-          <div className="form-grid">
-            <div className="form-group">
-              <label>Full Name</label>
-              <input type="text" name="name" placeholder="John Doe" value={formData.name} onChange={handleInputChange} required />
+   
+        <form className="flex flex-col gap-5 mt-4" onSubmit={handleSignup}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+            <div className="flex flex-col gap-2 text-left w-full">
+              <label className="text-sm font-medium text-slate-300">Full Name</label>
+              <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="text" name="name" placeholder="John Doe" value={formData.name} onChange={handleInputChange} required />
             </div>
-            <div className="form-group">
-              <label>Email Address</label>
-              <input type="email" name="email" placeholder="name@college.edu" value={formData.email} onChange={handleInputChange} required />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label>Password (Min 8 chars)</label>
-            <input type="password" name="password" placeholder="••••••••" minLength="8" value={formData.password} onChange={handleInputChange} required />
-          </div>
-
-          <div className="form-grid">
-            <div className="form-group">
-              <label>College (Optional)</label>
-              <input type="text" name="college" placeholder="IIT Bombay" value={formData.college} onChange={handleInputChange} />
-            </div>
-            <div className="form-group">
-              <label>Semester (Optional)</label>
-              <input type="number" name="semester" min="1" max="12" placeholder="1" value={formData.semester} onChange={handleInputChange} />
+            <div className="flex flex-col gap-2 text-left w-full">
+              <label className="text-sm font-medium text-slate-300">Email Address</label>
+              <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="email" name="email" placeholder="name@college.edu" value={formData.email} onChange={handleInputChange} required />
             </div>
           </div>
 
-          <button type="submit" className="login-submit-btn" disabled={loading}>
+          <div className="flex flex-col gap-2 text-left w-full">
+            <label className="text-sm font-medium text-slate-300">Password (Min 8 chars)</label>
+            <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="password" name="password" placeholder="••••••••" minLength="8" value={formData.password} onChange={handleInputChange} required />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+            <div className="flex flex-col gap-2 text-left w-full">
+              <label className="text-sm font-medium text-slate-300">College (Optional)</label>
+              <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="text" name="college" placeholder="IIT Bombay" value={formData.college} onChange={handleInputChange} />
+            </div>
+            <div className="flex flex-col gap-2 text-left w-full">
+              <label className="text-sm font-medium text-slate-300">Semester (Optional)</label>
+              <input className="w-full box-border bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20" type="number" name="semester" min="1" max="12" placeholder="1" value={formData.semester} onChange={handleInputChange} />
+            </div>
+          </div>
+
+          <button type="submit" className="w-full bg-sky-400 text-slate-900 font-bold p-3 rounded-lg border-none cursor-pointer text-base transition-all duration-200 mt-2 hover:bg-sky-300 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>
             {loading ? 'Creating Account...' : 'Sign Up'}
           </button>
         </form>
 
-        <p className="auth-footer-text" style={{ marginTop: '1.5rem', textAlign: 'center' }}>
-          Already have an account? <Link to="/login" style={{ color: '#38bdf8', textDecoration: 'none', fontWeight: 'bold' }}>Sign In</Link>
+        <p className="mt-6 text-center text-slate-400">
+          Already have an account? <Link to="/signin" className="text-sky-400 font-bold no-underline ml-1">Sign In</Link>
         </p>
       </div>
       <div className="auth-bg"><div className="auth-bg-circuit" /></div>
