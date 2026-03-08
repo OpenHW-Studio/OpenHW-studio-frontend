@@ -8,7 +8,9 @@ import RoleSelectPage from './pages/RoleSelectPage.jsx'
 import StudentDashboard from './pages/StudentDashboard.jsx'
 import TeacherDashboard from './pages/TeacherDashboard.jsx'
 import SimulatorPage from './pages/SimulatorPage.jsx'
-import SignupPage from './pages/SignupPage.jsx' 
+import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
+import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx'
+import SignupPage from './pages/signupPage.jsx'
 
 export default function App() {
   return (
@@ -19,9 +21,12 @@ export default function App() {
         <Route path="/signin" element={<SigninPage />} />
         <Route path="/select-role" element={<RoleSelectPage />} />
         <Route path="/signup" element={<SignupPage />} />
-        
+
         {/* Guest accessible simulator */}
         <Route path="/simulator" element={<SimulatorPage />} />
+        <Route path="/:projectName/demo" element={<SimulatorPage />} />
+        <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
+        <Route path="/:projectName/assessment" element={<ProjectAssessmentPage />} />
 
         {/* Protected: Student */}
         <Route
