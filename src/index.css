@@ -29,22 +29,22 @@
 [data-theme="light"] {
   /* Light Mode Overrides */
   --bg: #f8fafc;
-  --bg2: #ffffff;
-  --bg3: #f1f5f9;
+  --bg2: #e6e7eb;
+  --bg3: #dfe0e5;
   --canvas-bg: #e2e8f0;
   --border: #cbd5e1;
   --border2: #94a3b8;
   --text: #0f172a;
   --text2: #475569;
   --text3: #64748b;
-  --accent: #0284c7; 
+  --accent: #0284c7;
   --accent2: #0369a1;
   --green: #059669;
   --orange: #ea580c;
   --red: #dc2626;
   --purple: #7c3aed;
-  --card: #ffffff;
-  --card2: #f1f5f9;
+  --card: #f1f1f1;
+  --card2: #e6e7eb;
   --shadow: 0 4px 24px rgba(0,0,0,0.08);
   --glow: 0 0 20px rgba(2,132,199,0.15);
 }
@@ -512,4 +512,66 @@ body {
 /* Property, class-name color variant */
 [data-theme="light"] .token.property {
   color: #005cc5;
+}
+
+/* ─── TOOLBAR BUTTON ANIMATIONS ────────────────────────────────────────────── */
+@keyframes toolbtn-pop {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(0.82); }
+  65%  { transform: scale(1.12); }
+  85%  { transform: scale(0.96); }
+  100% { transform: scale(1); }
+}
+
+@keyframes toolbar-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Zoom buttons: scale-down on :active for instant click feedback */
+.zoom-btn {
+  transition: transform 0.1s ease, background 0.12s ease !important;
+}
+.zoom-btn:active {
+  transform: scale(0.78) !important;
+}
+.zoom-btn:hover {
+  background: var(--border) !important;
+  border-radius: 6px;
+}
+
+/* ─── CANVAS MENU ITEM ──────────────────────────────────────────────────────── */
+.canvas-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: 'Space Grotesk', sans-serif;
+  border-radius: 6px;
+  transition: background 0.13s ease, color 0.1s ease, transform 0.1s ease;
+  outline: none;
+}
+.canvas-menu-item:hover:not([disabled]):not(.canvas-menu-item--disabled) {
+  background: var(--border);
+  color: var(--text);
+  transform: translateX(3px);
+}
+.canvas-menu-item:active:not([disabled]):not(.canvas-menu-item--disabled) {
+  background: var(--border2);
+  transform: translateX(3px) scale(0.98);
+}
+.canvas-menu-item--disabled {
+  color: var(--text3);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.canvas-menu-item--danger { color: var(--red) !important; }
+.canvas-menu-item--danger:hover:not([disabled]) {
+  background: rgba(255, 68, 68, 0.12) !important;
+  color: var(--red) !important;
 }

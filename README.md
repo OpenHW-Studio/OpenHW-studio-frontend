@@ -11,6 +11,7 @@
 - [Project Structure](#project-structure)
 - [Pages](#pages)
 - [Key Features](#key-features)
+- [Offline & Storage Features](#offline--storage-features)
 - [Setup & Running Locally](#setup--running-locally)
 - [Environment & Dependencies](#environment--dependencies)
 - [How It Works](#how-it-works)
@@ -23,12 +24,14 @@ OpenHW Studio Frontend is the **visual client** of the simulator platform. It al
 
 - Design circuits by placing and wiring components on a canvas
 - Write and edit Arduino C++ code in a built-in syntax-highlighted editor
-- Compile and run simulations powered by the backend compiler and emulator
+- Compile and run simulations powered by the backend compiler and the in-browser Web Worker emulator
 - Watch simulation output in real time (LEDs blinking, NeoPixels lighting up, servo movement, etc.)
+- Save and load projects locally — **guests included** — using IndexedDB
 
-It connects to two separate backend services:
+It connects to one backend service:
 - **Compiler Backend** (`http://localhost:5000`) — compiles C++ code to `.hex`
-- **Emulator WebSocket** (`ws://localhost:8085`) — streams live CPU/pin state at ~60 FPS
+
+The simulation itself runs entirely **in the browser** via a Web Worker powered by `avr8js`.
 
 ---
 
@@ -47,6 +50,10 @@ It connects to two separate backend services:
 | @react-oauth/google | Google OAuth login |
 | jwt-decode | Decoding JWT auth tokens |
 | @openhw/emulator | Shared component definitions (workspace package) |
+| JSZip | Client-side ZIP extraction for custom components |
+| @babel/standalone | In-browser transpilation of custom component TypeScript/JSX |
+| IndexedDB (native) | Project persistence, hex cache, offline upload queue |
+| Service Worker (native) | App shell caching for offline support |
 
 ---
 
@@ -58,7 +65,7 @@ OpenHW-studio-frontend-danish/
 ├── vite.config.js              # Vite configuration
 ├── package.json
 └── src/
-    ├── main.jsx                # React app bootstrap
+    ├── main.jsx                # React app bootstrap + Service Worker registration
     ├── App.jsx                 # Route definitions
     ├── index.css               # Global styles
     ├── pages/
@@ -72,12 +79,21 @@ OpenHW-studio-frontend-danish/
     ├── context/
     │   └── AuthContext.jsx     # Global authentication state
     ├── services/
-    │   ├── authService.js      # Login, logout, token management
-    │   └── simulatorService.js # POST /api/compile to backend
+    │   ├── authService.js      # Login, logout, token management (localStorage)
+    │   ├── simulatorService.js # POST /api/compile and component API calls
+    │   ├── offlineCache.js     # IndexedDB: compiled hex cache + ZIP upload queue
+    │   └── projectStore.js     # IndexedDB: full project CRUD (save/load/list/delete)
     ├── worker/
     │   ├── simulation.worker.ts   # Web Worker entry point
     │   └── execute.ts             # AVR CPU execution loop inside worker
     └── components/             # Shared UI components
+```
+
+**Static files:**
+```
+public/
+├── sw.js                       # Service Worker (app shell caching, offline routing)
+└── _redirects                  # Deployment redirect rules
 ```
 
 ---
@@ -88,9 +104,11 @@ OpenHW-studio-frontend-danish/
 The core of the application. Responsibilities include:
 - **Circuit Canvas** — drag, drop, and wire Wokwi components
 - **Code Editor** — write Arduino sketches with syntax highlighting
-- **Run/Stop** — triggers compilation → `.hex` delivery → WebSocket START to emulator
-- **Live State Rendering** — receives `{ type: "state", pins: {...} }` JSON at 60 FPS and updates component visual attributes (e.g., LED on/off, NeoPixel colors)
+- **Run/Stop** — triggers compilation → `.hex` delivery → Web Worker `START` message
+- **Live State Rendering** — receives `{ type: "state", pins: {...} }` at 60 FPS and updates component visual attributes (LEDs, NeoPixels, etc.)
 - **Component Registry** — maps component type names to their imported index definitions from `@openhw/emulator`
+- **Project Save/Load** — auto-saves to IndexedDB every 2.5 s; "My Projects" modal for named saves; auto-loads last project on mount
+- **Offline resilience** — hex cache survives page refresh; ZIP uploads queue while offline
 
 ### `LoginPage.jsx`
 Google OAuth 2.0 login page. Decodes JWT and stores user info in `AuthContext`.
@@ -112,44 +130,93 @@ Role-specific dashboards shown after login.
 
 ## Key Features
 
-### 🔴 Real-time Simulation Rendering (60 FPS)
-The frontend opens a WebSocket to the emulator (`ws://localhost:8085`). Every frame, the emulator sends a JSON state payload describing pin voltages and NeoPixel colors. The frontend maps this to DOM attribute changes on Wokwi custom HTML elements.
+### Real-time Simulation Rendering (60 FPS)
+The Web Worker runs the AVR CPU and posts state messages back to the main thread every frame. The frontend maps pin voltages to DOM attribute changes on Wokwi custom HTML elements.
 
 ```json
 { "type": "state", "pins": { "D13": true, "D6": false }, "neopixels": [...] }
 ```
 
-### 🌈 NeoPixel Matrix Support
+### NeoPixel Matrix Support
 - Wires NeoPixel components with `GND`, `VCC`, `DIN`, `DOUT` pins
-- Sends matrix topology (component ID, Arduino pin, size) in the WebSocket `START` message
+- Sends matrix topology (component ID, Arduino pin, size) in the Web Worker `START` message
 - Calls `element.setPixel(row, col, {r, g, b})` directly on the Wokwi DOM element
 
-### 📊 Analog Plotter / Logic Graph
-- The Code Editor pane now includes a native high-performance **`<canvas>` rendering engine** tab to trace simulated logic and analog signals.
-- Users can dynamically specify which pins to track out of the simulation data stream.
+### Analog Plotter / Logic Graph
+A native high-performance `<canvas>` rendering engine tab traces simulated logic and analog signals. Users can dynamically specify which pins to track.
 
-### 💬 Serial Monitor Integration
-- A built-in terminal stream handles natively piping `AVRUSART` traffic backwards and forwards into the `.hex` loop.
+### Serial Monitor Integration
+A built-in terminal streams `AVRUSART` traffic bidirectionally into the `.hex` loop.
 
-### 🔄 Physical Workspace Controls
-- The **Arduino Uno Reset Button** is fully interactive inside the workspace SVG visualizer, triggering a targeted web-worker core `runner.cpu.reset()` reboot.
+### Physical Workspace Controls
+The **Arduino Uno Reset Button** is fully interactive inside the workspace SVG visualizer, triggering a targeted `runner.cpu.reset()` reboot in the Web Worker.
 
-### 💡 Wokwi LED Fix
-Wokwi LEDs incorrectly treat `value="0"` as truthy. The frontend's `getComponentStateAttrs` engine **injects or deletes** the `value` DOM property based on actual voltage rather than setting it to `"0"`.
+### Web Worker Simulation
+AVR simulation runs entirely in-browser via `src/worker/execute.ts` inside a Web Worker, keeping the UI thread completely unblocked.
 
-### ⚙️ Web Worker Simulation
-AVR simulation can also run in-browser via `src/worker/execute.ts` inside a Web Worker, keeping the UI thread unblocked.
-
-### 🔄 Zero-Touch Component Sync
-The simulator polls the backend every 12 seconds for newly approved community components.
+### Zero-Touch Component Sync
+The simulator polls the backend every 12 seconds for newly approved community components:
 - **Dynamic Injection**: New components are transpiled and injected into the registry and palette without a page refresh.
 - **Live Deletion**: If a component is uninstalled from the admin panel, it is purged from all active simulator sessions automatically.
-- **Admin "Test" Mode**: An isolated preview mechanism allows testing pending components via `sessionStorage` with an identification banner before approval.
+- **Admin "Test" Mode**: An isolated preview mechanism uses `sessionStorage` to test pending components before approval.
 
-### 🔒 Auth Flow
+### Auth Flow
 - Google OAuth → JWT stored in context
 - Role selection (Student / Teacher / Admin) → role-specific entry points
 - Protected routes via `AuthContext` and `ProtectedRoute` components
+
+---
+
+## Offline & Storage Features
+
+All storage features use the browser-native **IndexedDB API** and **Service Worker API**. No extra npm packages are required, and no backend changes are needed.
+
+### Project Persistence (IndexedDB — `openhw-projects`)
+
+Every circuit is automatically saved to a local IndexedDB database every **2.5 seconds** after any change. This works for both authenticated users and **guest users** with no login required.
+
+| User type | Owner key | What happens |
+|---|---|---|
+| Guest (no login) | `'guest'` | Projects saved locally, visible under "My Projects" on every visit |
+| Authenticated user | `user.email` | Projects saved locally, scoped to that email |
+
+**Buttons added to the header:**
+- **Save** — opens a name dialog; pressing Enter or clicking Save commits the name
+- **My Projects** — opens a modal listing all saved projects (name, board, components count, last-saved time) with Load and Delete actions
+- **New** — starts a blank canvas (current project is preserved in IDB)
+- **Project name chip** — shows the current project name in the header; click to rename
+
+**On page load**, the most-recently saved project for the current user (or guest) is automatically restored.
+
+### Compiled Hex Cache (IndexedDB — `openhw-offline`)
+
+Compiled `.hex` results are saved to IndexedDB after every successful compile. On subsequent runs:
+
+1. Check in-memory `lastCompiledRef` (fastest — same session)
+2. Check IndexedDB cache (survives page refresh and offline)
+3. Compile via `POST /api/compile` (requires network)
+
+This means: **run your simulation offline after compiling at least once while online**.
+
+### Offline ZIP Component Upload Queue (IndexedDB — `openhw-offline`)
+
+If you upload a custom component ZIP while offline:
+- The component is injected into the local registry immediately (usable right away)
+- The backend submission is queued in IndexedDB
+- When the internet is restored, the queue is automatically drained
+
+### Service Worker (`public/sw.js`)
+
+Cached on first load. Strategies:
+
+| Request | Strategy |
+|---|---|
+| Navigation (`/`, any route) | Network-first → fallback to cached `index.html` |
+| JS / CSS / images | Stale-while-revalidate (instant load + background update) |
+| CDN scripts (wokwi-elements) | Stale-while-revalidate |
+| `/api/*` | Network-only (never cached — hex caching is at the app layer) |
+
+See **[OFFLINE_AND_STORAGE.md](../OFFLINE_AND_STORAGE.md)** for full technical details.
 
 ---
 
@@ -159,15 +226,14 @@ The simulator polls the backend every 12 seconds for newly approved community co
 - Node.js 18+
 - npm 9+
 - The **Compiler Backend** running at `http://localhost:5000`
-- The **Emulator** running at `ws://localhost:8085`
 
 ### Installation
 
 ```bash
-# Install Frontend Dependencies
 cd OpenHW-studio-frontend-danish
 npm install
 ```
+
 ### Local Development & NPM Linking
 During local development, you will want the frontend to immediately see changes you make to the emulator source code, without having to push those changes to GitHub first.
 
@@ -213,6 +279,8 @@ npm run preview
 
 The frontend relies on the shared `@openhw/emulator` workspace package for component type definitions. This is resolved automatically by the npm workspace at the monorepo root. Make sure you run `npm install` from the root (`simulator/`) directory.
 
+The `vite.config.js` aliases `@openhw/emulator` to the local `openhw-studio-emulator-danish/` directory during development, so changes to component source are immediately reflected without reinstalling.
+
 ---
 
 ## How It Works
@@ -224,14 +292,13 @@ User writes C++ code
 POST /api/compile  ──►  Compiler Backend (port 5000)
                                 │
                          Returns .hex file
-                                │
+                                │ also cached to IndexedDB
                                 ▼
         Frontend sends START + .hex + wiring topology
                                 │
-                         ws://localhost:8085
+                         Web Worker (browser)
                                 │
-                         Emulator Backend
-                                │
+                    Runs AVR CPU at 16 MHz in-browser
                     Streams pin states at 60 FPS
                                 │
                                 ▼

@@ -55,7 +55,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-motor-driver': MotorDriverLogic,
     'wokwi-slide-potentiometer': SlidePotLogic,
     'wokwi-potentiometer': PotentiometerLogic,
-    'shift_register': ShiftRegisterLogic
+    'shift_register': ShiftRegisterLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -71,7 +71,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
     'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
     'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
-    'shift_register': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'OE' }, { id: 'RCLK' }, { id: 'SRCLK' }, { id: 'SRCLR' }, { id: 'QA' }, { id: 'QB' }, { id: 'QC' }, { id: 'QD' }, { id: 'QE' }, { id: 'QF' }, { id: 'QG' }, { id: 'QH' }, { id: 'QH\'' }],
+    'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
 };
 
 export class AVRRunner {
@@ -92,6 +92,7 @@ export class AVRRunner {
     lastTime: number = 0;
     statusInterval: any;
     pinsChanged: boolean = true;
+    private i2sState = new Map<string, { bclkLast: boolean; wsLast: boolean; shiftBuf: number; bitCount: number }>();
 
     constructor(hexData: string, componentsDef: any[], wiresDef: any[], onStateUpdate: (state: any) => void) {
         this.currentWires = wiresDef || [];
@@ -141,6 +142,9 @@ export class AVRRunner {
 
         // Setup I2C Hooks bridging AVRTWI events to BaseComponents
         class TWIAdapter {
+            // Track the addressed slave across the read transaction
+            private activeSlave: BaseComponent | null = null;
+
             constructor(private twi: AVRTWI, private instances: Map<string, BaseComponent>) { }
 
             start(repeated: boolean) {
@@ -154,16 +158,19 @@ export class AVRRunner {
                         inst.onI2CStop();
                     }
                 }
+                this.activeSlave = null;
                 this.twi.completeStop();
             }
 
             connectToSlave(addr: number, write: boolean) {
                 const instArray = Array.from(this.instances.values());
                 let ack = false;
+                this.activeSlave = null;
                 for (const inst of instArray) {
                     if (inst.onI2CStart) {
                         if (inst.onI2CStart(addr, !write)) { // write here in avr8js is actually the exact R/W bit. "write" true means bit is 0
                             ack = true;
+                            if (!this.activeSlave) this.activeSlave = inst; // remember first ACKing slave
                         }
                     }
                 }
@@ -184,8 +191,18 @@ export class AVRRunner {
             }
 
             readByte(ack: boolean) {
-                // Not heavily used without a specific target, return 0xFF dummy
-                this.twi.completeRead(0xFF);
+                // Ask the currently addressed slave for the next byte.
+                // Components expose this via onI2CReadByte() or readByte().
+                let byte = 0xFF;
+                if (this.activeSlave) {
+                    const slave = this.activeSlave as any;
+                    if (typeof slave.onI2CReadByte === 'function') {
+                        byte = slave.onI2CReadByte() & 0xFF;
+                    } else if (typeof slave.readByte === 'function') {
+                        byte = slave.readByte() & 0xFF;
+                    }
+                }
+                this.twi.completeRead(byte);
             }
         }
 
@@ -234,7 +251,7 @@ export class AVRRunner {
             }
 
             for (const inst of instArray) {
-                if (inst.onSPIByte) {
+                if (inst.onSPIByte && this.isSPISelected(inst)) {
                     const res = inst.onSPIByte(value);
                     if (res !== undefined) {
                         returnByte = res;
@@ -320,6 +337,9 @@ export class AVRRunner {
                     if (this.cpu) {
                         inst.onPinStateChange(compPin, isHigh, this.cpu.cycles);
                     }
+
+                    // Dispatch I2S frame events when BCLK/WS pins change
+                    this.tickI2S(inst, compId, compPin, isHigh);
 
                     // Traverse THROUGH passive components like resistors
                     if (inst.type === 'wokwi-resistor') {
@@ -556,6 +576,98 @@ export class AVRRunner {
     stop() {
         this.running = false;
         clearInterval(this.statusInterval);
+    }
+
+    // ─── SPI: chip-select awareness ───────────────────────────────────────────
+    /**
+     * Returns true if the component should receive the current SPI byte.
+     * A component is selected when:
+     *   • It has no CS/SS pin  (single-slave wiring → always selected), OR
+     *   • Its CS/SS pin voltage is < 0.5 V  (active-LOW chip select)
+     */
+    private isSPISelected(inst: BaseComponent): boolean {
+        const csNames = ['cs', 'ce', 'ss', 'ssel', 'nss', 'csn', 'cs_n', 'nce'];
+        for (const name of csNames) {
+            if (inst.pins[name])             return inst.getPinVoltage(name) < 0.5;
+            if (inst.pins[name.toUpperCase()]) return inst.getPinVoltage(name.toUpperCase()) < 0.5;
+        }
+        return true; // no CS pin → always selected
+    }
+
+    // ─── I2S: bit-bang frame assembler ────────────────────────────────────────
+    /**
+     * Called from the pin-change traversal whenever any component has a pin
+     * voltage updated.  If the changed pin is the component's BCLK or WS line
+     * (matched by common I2S naming conventions), the assembler clocks one bit
+     * into a shift buffer.  Once bitsPerFrame bits have been collected for one
+     * channel, onI2SFrame() is called.
+     *
+     * Left-justified format (no WS-delay):
+     *   WS=LOW  → left  channel (channel 0)
+     *   WS=HIGH → right channel (channel 1)
+     * Data is sampled on the BCLK **rising** edge, MSB first.
+     */
+    private tickI2S(inst: BaseComponent, compId: string, changedPin: string, isHigh: boolean): void {
+        if (!inst.onI2SFrame) return;
+
+        const pin    = changedPin.toLowerCase();
+        const isBclk = pin === 'bclk' || pin === 'sck' || pin === 'bit_clk' || pin === 'blck';
+        const isWs   = pin === 'ws'   || pin === 'lrck' || pin === 'wsel'   || pin === 'lrc';
+
+        if (!isBclk && !isWs) return;
+
+        if (!this.i2sState.has(compId)) {
+            this.i2sState.set(compId, { bclkLast: false, wsLast: false, shiftBuf: 0, bitCount: 0 });
+        }
+        const state = this.i2sState.get(compId)!;
+
+        if (isWs) {
+            if (state.wsLast !== isHigh) {
+                // WS edge → end of the current-channel frame
+                const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
+                if (state.bitCount >= bpf) {
+                    const channel = state.wsLast ? 1 : 0;
+                    const sample  = (state.shiftBuf << (32 - bpf)) | 0; // sign-extend
+                    inst.onI2SFrame(channel, sample, bpf);
+                }
+                state.wsLast   = isHigh;
+                state.shiftBuf = 0;
+                state.bitCount = 0;
+            }
+            return;
+        }
+
+        // BCLK edge
+        const rising = isHigh && !state.bclkLast;
+        state.bclkLast = isHigh;
+
+        if (rising) {
+            // Sample SDATA (accept several common pin names)
+            const sdPin = this.findI2SPinName(inst, ['sdata', 'sdin', 'din', 'sd', 'dout', 'data']);
+            const bit   = sdPin !== null ? (inst.getPinVoltage(sdPin) > 0.5 ? 1 : 0) : 0;
+
+            const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
+            state.shiftBuf = ((state.shiftBuf << 1) | bit) >>> 0;
+            state.bitCount++;
+
+            if (state.bitCount >= bpf) {
+                const channel = state.wsLast ? 1 : 0;
+                const sample  = (state.shiftBuf << (32 - bpf)) | 0;
+                inst.onI2SFrame(channel, sample, bpf);
+                state.shiftBuf = 0;
+                state.bitCount = 0;
+            }
+        }
+    }
+
+    /** Finds the first existing pin on `inst` from a list of candidate names
+     *  (case-insensitive, lower then UPPER checked). */
+    private findI2SPinName(inst: BaseComponent, candidates: string[]): string | null {
+        for (const name of candidates) {
+            if (inst.pins[name])               return name;
+            if (inst.pins[name.toUpperCase()]) return name.toUpperCase();
+        }
+        return null;
     }
 
     private pinToNet = new Map<string, number>();
