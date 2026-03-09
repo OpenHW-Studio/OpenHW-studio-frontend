@@ -1,6 +1,7 @@
 {
     "type": "wokwi-motor-driver",
     "label": "L298N Motor Driver",
+    "description": "Dual H-bridge motor driver IC (L298N). Controls the speed and direction of two independent DC motors. Supports up to 2 A per channel and up to 46 V supply.",
     "group": "Actuators",
     "w": 80,
     "h": 80,

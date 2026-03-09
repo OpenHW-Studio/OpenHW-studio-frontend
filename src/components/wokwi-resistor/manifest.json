@@ -1,6 +1,7 @@
 {
     "type": "wokwi-resistor",
     "label": "Resistor",
+    "description": "Passive two-terminal component that limits current flow. Configurable resistance (Ω). Essential for current-limiting LEDs and voltage dividers.",
     "group": "Basic",
     "w": 60,
     "h": 12,

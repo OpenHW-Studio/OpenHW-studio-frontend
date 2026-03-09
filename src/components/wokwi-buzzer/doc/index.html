@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Buzzer – OpenHW Studio Docs</title>
+<style>
+  :root{--accent:#22c55e;--bg:#0f172a;--bg2:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--border:#334155;--radius:8px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:760px;margin:0 auto;line-height:1.6}
+  h1{color:var(--accent);font-size:1.6rem;margin-bottom:4px}
+  .badge{display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;margin-bottom:16px}
+  p{color:var(--text2);margin-bottom:16px}
+  h2{font-size:1rem;color:var(--text);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+  th{background:var(--bg2);color:var(--text2);text-align:left;padding:8px 10px;border:1px solid var(--border)}
+  td{padding:8px 10px;border:1px solid var(--border);color:var(--text)}
+  pre{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;overflow-x:auto;margin-bottom:16px}
+  code{color:#7dd3fc}
+  .tip{background:#22c55e11;border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 var(--radius) var(--radius) 0;font-size:13px;color:var(--text2);margin-bottom:16px}
+</style>
+</head>
+<body>
+<h1>Buzzer</h1>
+<span class="badge">Outputs</span>
+<p>A piezoelectric buzzer that generates audio tones when driven by a digital or PWM signal. The tone frequency (pitch) is determined by the frequency of the signal applied. Use the Arduino <code>tone()</code> function for easy frequency control.</p>
+
+<h2>Pins</h2>
+<table>
+  <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+  <tr><td>1</td><td>Digital</td><td>Positive terminal — connect to Arduino digital/PWM pin</td></tr>
+  <tr><td>2</td><td>Power</td><td>Negative terminal — connect to GND</td></tr>
+</table>
+
+<h2>Wiring</h2>
+<pre><code>Arduino D8 ── Pin 1 (Buzzer) Pin 2 ── GND</code></pre>
+
+<h2>Example Code — tone()</h2>
+<pre><code>#define BUZZER_PIN 8
+
+void setup() {}
+
+void loop() {
+  tone(BUZZER_PIN, 440);   // Play A4 (440 Hz)
+  delay(500);
+  tone(BUZZER_PIN, 880);   // Play A5 (880 Hz)
+  delay(500);
+  noTone(BUZZER_PIN);      // Silence
+  delay(500);
+}</code></pre>
+
+<h2>Musical Note Frequencies</h2>
+<table>
+  <tr><th>Note</th><th>Frequency</th></tr>
+  <tr><td>C4 (Middle C)</td><td>262 Hz</td></tr>
+  <tr><td>A4</td><td>440 Hz</td></tr>
+  <tr><td>C5</td><td>523 Hz</td></tr>
+  <tr><td>A5</td><td>880 Hz</td></tr>
+</table>
+
+<div class="tip">Tip: tone() uses Timer 2 on the ATmega328P, which conflicts with PWM on pins 3 and 11 while active.</div>
+</body></html>

@@ -1,6 +1,7 @@
 {
     "type": "wokwi-potentiometer",
     "label": "Rotary Potentiometer",
+    "description": "Rotary potentiometer (variable resistor). Outputs an analog voltage proportional to the knob's rotation angle. Use with analogRead() on an Arduino analog pin.",
     "group": "Sensors",
     "w": 75,
     "h": 75,

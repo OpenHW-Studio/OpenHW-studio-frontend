@@ -1,6 +1,7 @@
 {
     "type": "wokwi-led",
     "label": "LED",
+    "description": "Light-emitting diode. Emits light when current flows through it. Supports multiple colors via the color attribute.",
     "group": "Outputs",
     "w": 38,
     "h": 38,

@@ -1,6 +1,7 @@
 {
     "type": "shift_register",
     "label": "74HC595 Shift Register",
+    "description": "74HC595 8-bit serial-in, parallel-out shift register. Expands the number of digital outputs using only 3 Arduino pins (SER, SRCLK, RCLK). Cascadeable.",
     "group": "Logic",
     "w": 60,
     "h": 180,
