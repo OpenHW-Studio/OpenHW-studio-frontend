@@ -1,6 +1,7 @@
 {
     "type": "wokwi-buzzer",
     "label": "Buzzer",
+    "description": "Piezoelectric buzzer that generates audio tones when driven by PWM or toggled digital signals. Frequency determines pitch; use tone() in Arduino.",
     "group": "Outputs",
     "w": 68,
     "h": 90,

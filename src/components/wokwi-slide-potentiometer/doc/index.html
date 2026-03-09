@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Linear Potentiometer – OpenHW Studio Docs</title>
+<style>
+  :root{--accent:#14b8a6;--bg:#0f172a;--bg2:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--border:#334155;--radius:8px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:760px;margin:0 auto;line-height:1.6}
+  h1{color:var(--accent);font-size:1.6rem;margin-bottom:4px}
+  .badge{display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;margin-bottom:16px}
+  p{color:var(--text2);margin-bottom:16px}
+  h2{font-size:1rem;color:var(--text);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+  th{background:var(--bg2);color:var(--text2);text-align:left;padding:8px 10px;border:1px solid var(--border)}
+  td{padding:8px 10px;border:1px solid var(--border);color:var(--text)}
+  pre{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;overflow-x:auto;margin-bottom:16px}
+  code{color:#7dd3fc}
+  .tip{background:#14b8a611;border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 var(--radius) var(--radius) 0;font-size:13px;color:var(--text2);margin-bottom:16px}
+</style>
+</head>
+<body>
+<h1>Linear (Slide) Potentiometer</h1>
+<span class="badge">Sensors</span>
+<p>A linear slide potentiometer outputs a variable analog voltage as the slider moves along a linear track from one end (GND) to the other (VCC). Read with <code>analogRead()</code>. Commonly used for volume faders, position sensing, and HMI controls.</p>
+
+<h2>Pins</h2>
+<table>
+  <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+  <tr><td>VCC</td><td>Power</td><td>5 V supply</td></tr>
+  <tr><td>GND</td><td>Power</td><td>Ground</td></tr>
+  <tr><td>SIG</td><td>Analog</td><td>Wiper — analog output proportional to slider position</td></tr>
+</table>
+
+<h2>Attributes</h2>
+<table>
+  <tr><th>Attribute</th><th>Default</th><th>Description</th></tr>
+  <tr><td>value</td><td>50</td><td>Slider position as a percentage (0 = GND end, 100 = VCC end)</td></tr>
+</table>
+
+<h2>Example Code</h2>
+<pre><code>void setup() { Serial.begin(9600); }
+
+void loop() {
+  int raw = analogRead(A0);
+  float pos = raw * 100.0 / 1023.0;  // 0–100%
+  Serial.print("Position: ");
+  Serial.print(pos, 1);
+  Serial.println("%");
+  delay(100);
+}</code></pre>
+
+<div class="tip">Tip: During simulation, drag the slider handle left/right on the canvas (while running) or use the context menu to set the position numerically.</div>
+</body></html>

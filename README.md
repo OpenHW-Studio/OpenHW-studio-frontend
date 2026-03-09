@@ -1,6 +1,6 @@
 # OpenHW Studio — Universal Emulator
 
-> A high-performance Node.js WebSocket server that runs a virtual ATmega328P (Arduino Uno) CPU in software, streams live pin state at ~60 FPS, and decodes WS2812B NeoPixel signals in real time.
+> A high-performance component definitions library and in-browser AVR simulation engine. Runs a virtual ATmega328P (Arduino Uno) CPU inside a Web Worker, streams live pin state at ~60 FPS, and decodes WS2812B NeoPixel signals in real time.
 
 ---
 
@@ -11,7 +11,7 @@
 - [Project Structure](#project-structure)
 - [Components Library](#components-library)
 - [Key Features](#key-features)
-- [WebSocket Protocol](#websocket-protocol)
+- [WebSocket Protocol (Legacy)](#websocket-protocol-legacy)
 - [Setup & Running Locally](#setup--running-locally)
 - [How the CPU Simulation Works](#how-the-cpu-simulation-works)
 
@@ -19,19 +19,16 @@
 
 ## Overview
 
-The Universal Emulator is the **simulation engine** of OpenHW Studio. It:
+The Emulator package serves two roles in OpenHW Studio:
 
-- Accepts a compiled `.hex` file and circuit wiring topology over WebSocket from the frontend
-- Instantiates a virtual **ATmega328P** CPU (the chip inside an Arduino Uno) using `avr8js`
-- Executes firmware instructions at a simulated **16 MHz clock speed**
-- Monitors AVR hardware memory registers to track the live voltage of every I/O pin
-- Broadcasts the pin state as JSON to the frontend at **~60 FPS**
-- Decodes **WS2812B NeoPixel** bit-bang signals and streams per-pixel RGB color data
-- Routes **I2C (TWI)** and **SPI** datagrams faithfully to `BaseComponent` event interfaces.
-- Integrates native **Hardware Interrupts (EXTI/PCINT)** and **Internal Pull-Up Resistors** via `AVRIOPort`
-- Provides a shared **component definitions library** (`src/components/`) consumed by the frontend
+1. **Shared Component Definitions Library** (`src/components/`) — exports manifests, SVG/React UI renderers, and simulation logic classes for every built-in component. Consumed by the frontend via the `@openhw/emulator` npm workspace alias.
 
-The server runs on **ws://localhost:8085**.
+2. **AVR Simulation Engine** (`src/worker/execute.ts` in the frontend) — instantiates a virtual **ATmega328P** CPU using `avr8js`, runs firmware instructions at a simulated 16 MHz clock, and streams pin/component state at ~60 FPS. The simulation runs entirely **inside the browser** as a Web Worker — no separate server process is needed.
+
+The package also includes:
+- **Circuit Validation Engine** — graph-based wiring safety checks before simulation starts
+- **BaseComponent** abstract class — defines the interface all component logic classes implement
+- Support for **I2C (TWI)**, **SPI**, **ADC**, **USART**, and **WS2812B NeoPixel** protocols
 
 ---
 
@@ -39,12 +36,11 @@ The server runs on **ws://localhost:8085**.
 
 | Technology | Purpose |
 |---|---|
-| Node.js | Runtime |
-| `ws` | WebSocket server |
+| TypeScript | Component library type safety |
 | `avr8js` | ATmega328P CPU emulation |
 | `intel-hex` | Parsing Intel HEX firmware format |
-| TypeScript | Component library type safety |
-| MongoDB (via `connectDB.js`) | Optional persistence layer |
+| React | Component UI renderers (consumed by frontend) |
+| Node.js | Optional standalone server (legacy WebSocket mode) |
 
 ---
 
@@ -53,27 +49,27 @@ The server runs on **ws://localhost:8085**.
 ```
 openhw-studio-emulator-danish/
 ├── src/
-│   ├── server.js               # WebSocket server entry point
+│   ├── server.js               # Legacy WebSocket server entry point (not used in main flow)
 │   ├── connectDB.js            # MongoDB connection (optional)
 │   ├── circuit-validation/     # Physics & Wiring Validation Engine
 │   │   ├── engine.js           # Graph-based validation logic
 │   │   └── rules/              # Modular safety check definitions
 │   └── components/             # Shared component definitions library
 │       ├── index.ts            # Exports all component definitions
-│       ├── BaseComponent.ts    # Base class/interface for components
-│       ├── auth/               # Auth-related component helpers
+│       ├── BaseComponent.ts    # Base class/interface for all component logic
 │       ├── wokwi-arduino-uno/  # Arduino Uno board definition
 │       ├── wokwi-led/          # LED component
 │       ├── wokwi-resistor/     # Resistor component
 │       ├── wokwi-pushbutton/   # Push button component
 │       ├── wokwi-power-supply/ # Power supply component
 │       ├── wokwi-buzzer/       # Buzzer component
-│       ├── wokwi-motor/        # DC Motor component
+│       ├── wokwi-motor/        # DC motor component
 │       ├── wokwi-motor-driver/ # L298N Motor Driver component
 │       ├── wokwi-servo/        # Servo motor component
 │       ├── wokwi-potentiometer/         # Rotary potentiometer
 │       ├── wokwi-slide-potentiometer/   # Slide potentiometer
-│       └── wokwi-neopixel-matrix/       # WS2812B NeoPixel matrix
+│       ├── wokwi-neopixel-matrix/       # WS2812B NeoPixel matrix
+│       └── shift_register/     # 74HC595 shift register
 ├── test_pins.js                # Standalone pin testing script
 ├── test_ws.js                  # WebSocket connection test script
 ├── package.json
@@ -88,15 +84,16 @@ Each component lives in its own folder under `src/components/` and exports four 
 
 | File | Purpose |
 |---|---|
-| `manifest.json` | Pin definitions, display name, default dimensions |
-| `ui.ts` | SVG/HTML rendering of the component on the canvas |
-| `logic.ts` | Simulation behavior (how pins react to state) |
-| `index.ts` | Barrel export combining manifest + ui + logic |
+| `manifest.json` | Pin definitions, display name, group, default dimensions |
+| `ui.tsx` | React/SVG rendering of the component on the canvas |
+| `logic.ts` | Simulation behaviour (how pins react to state, I2C/SPI callbacks) |
+| `validation.ts` | Circuit safety rules checked before simulation starts |
+| `index.ts` | Barrel export combining manifest + ui + logic + validation |
 
 The `src/components/index.ts` file re-exports all components and is consumed by the frontend via the `@openhw/emulator` npm workspace package:
 
 ```ts
-import { wokwiLed, wokwiArduinoUno, wokwiResistor, ... } from "@openhw/emulator/src/components/index.ts";
+import * as EmulatorComponents from '@openhw/emulator/src/components/index.ts';
 ```
 
 ### Supported Components
@@ -115,42 +112,44 @@ import { wokwiLed, wokwiArduinoUno, wokwiResistor, ... } from "@openhw/emulator/
 | `wokwi-potentiometer` | Rotary analog potentiometer (ADC input) |
 | `wokwi-slide-potentiometer` | Slide analog potentiometer (ADC input) |
 | `wokwi-neopixel-matrix` | WS2812B addressable RGB LED matrix |
+| `shift_register` | 74HC595 8-bit serial-in parallel-out shift register |
 
-### 🛠️ Dynamic Component Management
+### Dynamic Component Management
 
-The emulator now supports runtime injection of custom components.
-- **Backend Sync**: The frontend polls for newly approved components and injects them into the browser-side registry.
-- **FS Integration**: When an admin approves a component, the backend writes the component files directly into `src/components/`, making them permanent parts of the library on server restart.
-- **Zero-Touch Pipeline**: Allows community-contributed Wokwi components to be integrated without manual code changes or redeployments.
+The emulator supports runtime injection of custom components:
+- **Backend Sync**: The frontend polls every 12 seconds for newly approved components and injects them into the browser-side registry without a page refresh.
+- **FS Integration**: Admin approval writes component files directly into `src/components/`, making them permanent on the next server restart.
+- **Zero-Touch Pipeline**: Community-contributed Wokwi-compatible components can be integrated without manual code changes.
+- **Offline ZIP Queue**: Components uploaded while offline are queued in IndexedDB and submitted automatically when connectivity is restored.
 
-### 🛡️ Modular Circuit Validation Engine
+### Modular Circuit Validation Engine
 
-Before a simulation begins, the emulator runs the **FullCircuitValidator** to ensure students haven't made critical electronics errors.
-- **Graph-Based Adjacency**: Builds a complex map of every connected pin across the entire canvas.
-- **Physics Propagation**: Traces paths back to power sources (5V, VCC) through passive components like resistors.
+Before simulation begins, the **FullCircuitValidator** runs safety checks:
+- **Graph-Based Adjacency**: Builds a complete map of every connected pin.
+- **Physics Propagation**: Traces paths back to power sources through passive components.
 - **Smart Safety Rules**:
-    - **Current Limiting**: Detects if an LED is connected directly to a power source without a current-limiting resistor.
-    - **Short Circuit Detection**: Identifies direct GND-to-VCC paths that would cause "virtual smoke".
-    - **Pin Conflict**: Warns if multiple outputs are driving the same node.
-- **Halt on Error**: If validation fails, the engine returns a list of specific errors that are displayed in the UI, and the simulation is prevented from starting until fixed.
+  - **Current Limiting**: Detects LEDs connected directly to power without a current-limiting resistor.
+  - **Short Circuit Detection**: Identifies direct GND-to-VCC paths.
+  - **Pin Conflict**: Warns when multiple outputs drive the same node.
+- **Halt on Error**: Returns a list of specific errors displayed in the UI; simulation is blocked until resolved.
 
 ---
 
 ## Key Features
 
-### ⚡ Real ATmega328P Emulation
+### Real ATmega328P Emulation
 
 - Loads `.hex` firmware using `intel-hex` parser
 - Injects machine code directly into a virtual CPU memory buffer
 - Executes AVR instructions via `avr8js` CPU core
 - Clock-accurate execution: **16,000 cycles per real millisecond** (16 MHz)
 
-### 🔌 Hardware Register Pin Tracking & Interrupts
+### Hardware Register Pin Tracking & Interrupts
 
-We leverage the `avr8js` native `AVRIOPort` definitions (instead of unsafe raw memory hooks) ensuring complete internal logic handling. This enables seamless support for:
+Uses `avr8js` native `AVRIOPort` definitions (not raw memory hooks), enabling:
 - `pinMode(INPUT_PULLUP)` (internal MCU resistors)
 - `attachInterrupt(0, ...)` (INT0 / INT1 External Interrupts)
-- **PCINT** boundaries seamlessly synced via `updatePhysics()`.
+- **PCINT** boundaries via `updatePhysics()`
 
 | Register | Address | Arduino Pins |
 |---|---|---|
@@ -158,34 +157,26 @@ We leverage the `avr8js` native `AVRIOPort` definitions (instead of unsafe raw m
 | `PORTC` | `0x28` | A0 – A5 |
 | `PORTD` | `0x2B` | D0 – D7 |
 
-Each bit in the register maps to an individual pin natively triggering the MCU's internal event loop payload.
+### Hardware Timer Support
 
-### ⏱️ Hardware Timer Support
-
-`delay()` and `millis()` depend on hardware timers. The emulator instantiates all three AVR timer peripherals:
-
+`delay()` and `millis()` depend on hardware timers. All three AVR timer peripherals are instantiated:
 ```js
 new AVRTimer(cpu, timer0Config);
 new AVRTimer(cpu, timer1Config);
 new AVRTimer(cpu, timer2Config);
 ```
 
-`cpu.tick()` is called each cycle to advance timers in lockstep with the CPU.
-
-### 🌈 WS2812B NeoPixel Decoder
-
-The emulator decodes the WS2812B bit-bang protocol entirely in software:
+### WS2812B NeoPixel Decoder
 
 1. Frontend sends NeoPixel topology in the `START` message: `{ componentId, arduinoPin, rows, cols }`
-2. `getPinPortMapping()` resolves the pin name (e.g., `"D6"`) to an AVR port address + bit mask
+2. `getPinPortMapping()` resolves the pin name to an AVR port address + bit mask
 3. A write hook watches for `HIGH > 10 cycles` (bit 1) and `LOW > 800 cycles` (latch/flush)
 4. 24-bit GRB bytes are accumulated per pixel, converted to RGB floats, and stored in `neopixelState`
 5. Pixel data is broadcast alongside pin states every frame
 
-### 📡 60 FPS State Streaming
+### 60 FPS State Streaming
 
-A continuous `setImmediate` loop runs the CPU and broadcasts state:
-
+A continuous loop runs the CPU and posts state to the main thread:
 ```json
 {
   "type": "state",
@@ -196,39 +187,30 @@ A continuous `setImmediate` loop runs the CPU and broadcasts state:
 }
 ```
 
+### I2C / SPI / ADC / USART
+
+- **TWI (I2C)**: `TWIAdapter` bridges `AVRTWI` events to `BaseComponent.onI2CStart/Byte/Stop/ReadByte`
+- **SPI**: `spi.onByte` delegates to components implementing `onSPIByte`
+- **ADC**: Reads analog voltages from component `getAnalogVoltage()` return values
+- **USART**: Serial output callback for `Serial.print()` output; `serialRx()` for loopback
+
 ---
 
-## WebSocket Protocol
+## WebSocket Protocol (Legacy)
+
+`src/server.js` implements a standalone WebSocket server (`ws://localhost:8085`). This was the original architecture. The current frontend uses the Web Worker (`execute.ts`) directly instead, so this server is **no longer required** for normal operation.
 
 ### Client → Server
 
-#### `START` message
-Sent by the frontend to begin simulation:
-
 ```json
-{
-  "type": "START",
-  "hex": ":100000000C945C000C947900...",
-  "neopixels": [
-    { "componentId": "matrix1", "arduinoPin": "D6", "rows": 8, "cols": 8 }
-  ]
-}
-```
-
-#### `STOP` message
-```json
+{ "type": "START", "hex": ":100000...", "neopixels": [...] }
 { "type": "STOP" }
 ```
 
 ### Server → Client
 
-#### `state` message (sent at ~60 FPS)
 ```json
-{
-  "type": "state",
-  "pins": { "D13": true },
-  "neopixels": [...]
-}
+{ "type": "state", "pins": { "D13": true }, "neopixels": [...] }
 ```
 
 ---
@@ -247,13 +229,15 @@ cd openhw-studio-emulator-danish
 npm install
 ```
 
-### Start the Emulator Server
+### Start the Legacy WebSocket Server (optional)
 
 ```bash
 node src/server.js
 ```
 
-The WebSocket server will be listening at **ws://localhost:8085**
+The WebSocket server will be listening at **ws://localhost:8085**.
+
+> In the current architecture, the frontend uses the in-browser Web Worker and does not connect to this server. You only need to run it if you are testing the legacy WebSocket integration.
 
 ---
 
@@ -261,6 +245,7 @@ The WebSocket server will be listening at **ws://localhost:8085**
 
 ```
 Frontend sends START + .hex + wiring
+(or hex served from IndexedDB offline cache)
           │
           ▼
 intel-hex parser decodes .hex into binary
@@ -269,12 +254,14 @@ intel-hex parser decodes .hex into binary
 Binary loaded into AVR CPU memory buffer (avr8js)
           │
           ▼
-setImmediate loop:
-  ├── Execute 16,000 CPU cycles (= 1ms real time)
+Web Worker run loop (setTimeout-based, 1ms ticks):
+  ├── Execute cycles proportional to wall-clock delta (16 MHz)
   ├── cpu.tick() — advance hardware timers
-  ├── Write hooks detect PORTB/C/D register changes
+  ├── AVRIOPort callbacks detect PORTB/C/D register changes
+  ├── Wire netlist propagates pin state to connected components
   ├── NeoPixel decoder accumulates GRB bit-bang signals
-  └── Broadcast { pins, neopixels } JSON to frontend
+  ├── I2C/SPI/ADC events dispatched to component logic
+  └── Broadcast { pins, neopixels, components } to main thread at 60 FPS
           │
           ▼
 Frontend updates Wokwi component DOM (LEDs, NeoPixels, etc.)

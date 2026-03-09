@@ -1,6 +1,7 @@
 {
     "type": "wokwi-arduino-uno",
     "label": "Arduino Uno",
+    "description": "ATmega328P microcontroller board at 16 MHz. 14 digital I/O pins (6 PWM), 6 analog inputs, UART/SPI/I2C support, 32 KB flash, USB connectivity.",
     "group": "Boards",
     "w": 311,
     "h": 228,

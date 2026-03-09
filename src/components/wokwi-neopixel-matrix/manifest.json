@@ -1,6 +1,7 @@
 {
     "type": "wokwi-neopixel-matrix",
     "label": "WS2812B RGB LED",
+    "description": "WS2812B addressable RGB LED (NeoPixel). Each pixel is individually controllable via a single-wire data protocol. Chain multiple pixels from one digital pin.",
     "group": "Outputs",
     "w": 30,
     "h": 30,

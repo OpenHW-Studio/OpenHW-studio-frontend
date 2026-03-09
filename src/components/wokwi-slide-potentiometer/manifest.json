@@ -1,6 +1,7 @@
 {
     "type": "wokwi-slide-potentiometer",
     "label": "Linear Potentiometer",
+    "description": "Linear slide potentiometer. Outputs a variable analog voltage as the slider moves along a linear track. Use with analogRead() for position sensing.",
     "group": "Sensors",
     "w": 205,
     "h": 60,
