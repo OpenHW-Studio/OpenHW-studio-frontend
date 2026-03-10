@@ -22,11 +22,7 @@
     *   Maps Arduino pin names (e.g., `D6`) to AVR port addresses and bit masks via `getPinPortMapping()`.
     *   Intercepts port write hooks and decodes WS2812 bit-bang timing: `HIGH > 10 cycles = bit 1`, `LOW > 800 cycles = reset/flush`.
     *   Accumulates 24-bit GRB color bytes per pixel, converts to RGB floats, and stores in `neopixelState`.
-*   **Hardware Servo Motor PWM Emulation**
-    *   Since generic memory port hooks (`writeHooks`) do not fire when hardware timers automatically pull pins `HIGH`/`LOW` (like Arduino's `Servo.h` library), the emulator utilizes a high-frequency polling loop running natively against the `pinStates` boolean stream.
-    *   Tracks the exact delta in `cpu.cycles` between rising (`true`) and falling (`false`) edges of a PWM signal.
-    *   Linearly filters `durationInCycles` (bypassing delay noise) and maps standard RC pulse bounds (between `8704` and `38400` cycle ticks) to strict `0-180` degree floating angles.
-    *   Aggregates positions into an internal `servoState` map, pushing telemetry directly into the WebSocket's 60fps `{ type: "state", servos: ... }` JSON payload.
+    *   Broadcasts decoded pixel data (`neopixels` field) alongside pin states at 60 FPS.
 *   **Real-time Output Streaming**
     *   Executes a continuous, non-blocking `setImmediate` instruction loop.
     *   Broadcasts serialized JSON state payloads (e.g., `{"type": "state", "pins": {"D13": true}}`) at ~60 FPS.

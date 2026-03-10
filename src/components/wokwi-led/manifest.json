@@ -1,0 +1,27 @@
+{
+    "type": "wokwi-led",
+    "label": "LED",
+    "description": "Light-emitting diode. Emits light when current flows through it. Supports multiple colors via the color attribute.",
+    "group": "Outputs",
+    "w": 38,
+    "h": 38,
+    "attrs": {
+        "color": "red"
+    },
+    "pins": [
+        {
+            "id": "A",
+            "x": 16,
+            "y": 43,
+            "type": "input",
+            "description": "Anode (+)"
+        },
+        {
+            "id": "K",
+            "x": 24,
+            "y": 43,
+            "type": "input",
+            "description": "Cathode (-)"
+        }
+    ]
+}

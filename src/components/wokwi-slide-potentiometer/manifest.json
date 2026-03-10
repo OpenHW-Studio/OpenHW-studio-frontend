@@ -1,0 +1,34 @@
+{
+    "type": "wokwi-slide-potentiometer",
+    "label": "Linear Potentiometer",
+    "description": "Linear slide potentiometer. Outputs a variable analog voltage as the slider moves along a linear track. Use with analogRead() for position sensing.",
+    "group": "Sensors",
+    "w": 205,
+    "h": 60,
+    "attrs": {
+        "value": "50"
+    },
+    "pins": [
+        {
+            "id": "GND",
+            "x": 206,
+            "y": 43,
+            "type": "power",
+            "description": "Ground"
+        },
+        {
+            "id": "SIG",
+            "x": 3,
+            "y": 66.5,
+            "type": "analog",
+            "description": "Signal Output"
+        },
+        {
+            "id": "VCC",
+            "x": 3,
+            "y": 43,
+            "type": "power",
+            "description": "5V Power"
+        }
+    ]
+}

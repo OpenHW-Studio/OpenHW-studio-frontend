@@ -1,0 +1,24 @@
+{
+    "type": "wokwi-pushbutton",
+    "label": "Push Button",
+    "description": "Momentary tactile push button. Closes the circuit while pressed and opens it when released. Ideal for digital input triggers and interrupt signals.",
+    "group": "Basic",
+    "w": 68,
+    "h": 44,
+    "pins": [
+        {
+            "id": "1",
+            "x": 1,
+            "y": 9,
+            "type": "passive",
+            "description": "Terminal 1"
+        },
+        {
+            "id": "2",
+            "x": 67,
+            "y": 9,
+            "type": "passive",
+            "description": "Terminal 2"
+        }
+    ]
+}
