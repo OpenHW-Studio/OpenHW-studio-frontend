@@ -129,37 +129,6 @@ function wireColor(pinLabel) {
 
 const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5000/examples';
 
-function normalizeDemoDiagram(diagram) {
-  const parts = Array.isArray(diagram?.parts) ? diagram.parts : [];
-  const connections = Array.isArray(diagram?.connections) ? diagram.connections : [];
-
-  const components = parts.map((part, idx) => ({
-    id: part?.id || `part-${idx + 1}`,
-    type: part?.type || '',
-    x: Number(part?.x) || 0,
-    y: Number(part?.y) || 0,
-    w: COMPONENT_REGISTRY[part?.type || '']?.manifest?.w || 60,
-    h: COMPONENT_REGISTRY[part?.type || '']?.manifest?.h || 60,
-    attrs: (part?.attrs && typeof part.attrs === 'object') ? part.attrs : {},
-  }));
-
-  const wires = connections
-    .map((conn, idx) => {
-      if (!Array.isArray(conn) || conn.length < 2) return null;
-      return {
-        id: `w${idx + 1}`,
-        from: conn[0],
-        to: conn[1],
-        color: conn[2] || '#2ecc71',
-        waypoints: [],
-        isBelow: false,
-      };
-    })
-    .filter(Boolean);
-
-  return { components, wires };
-}
-
 export default function SimulatorPage() {
   const { isAuthenticated, user } = useAuthStore() 
   const navigate = useNavigate()
@@ -351,25 +320,18 @@ export default function SimulatorPage() {
       if (!projectName) return;
 
       try {
-        const [diagramRes, codeRes] = await Promise.all([
-          fetch(`${EXAMPLES_BASE_URL}/${projectName}/diagram.json`),
-          fetch(`${EXAMPLES_BASE_URL}/${projectName}/sketch.ino`),
-        ]);
+        const pngName = 'circuit.png';
+        const pngUrl = `${EXAMPLES_BASE_URL}/${projectName}/${pngName}`;
+        const pngRes = await fetch(pngUrl);
+        if (pngRes.ok) {
+          const blob = await pngRes.blob();
+          if (cancelled) return;
+          const file = new File([blob], pngName, { type: blob.type || 'image/png' });
+          importPng(file);
+          return;
+        }
 
-        if (!diagramRes.ok || !codeRes.ok) return;
-
-        const diagram = await diagramRes.json();
-        const sketch = await codeRes.text();
-        if (cancelled) return;
-
-        const { components: demoComponents, wires: demoWires } = normalizeDemoDiagram(diagram);
-        applyLoadedCircuit({
-          board: 'arduino_uno',
-          code: sketch,
-          components: demoComponents,
-          connections: demoWires,
-          resetHistory: true,
-        });
+        return;
       } catch (err) {
         console.error(`Failed to load demo project "${projectName}"`, err);
       }
