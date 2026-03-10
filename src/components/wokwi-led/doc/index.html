@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LED – OpenHW Studio Docs</title>
+<style>
+  :root{--accent:#22c55e;--bg:#0f172a;--bg2:#1e293b;--card:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--border:#334155;--radius:8px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:760px;margin:0 auto;line-height:1.6}
+  h1{color:var(--accent);font-size:1.6rem;margin-bottom:4px}
+  .badge{display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;margin-bottom:16px}
+  p{color:var(--text2);margin-bottom:16px}
+  h2{font-size:1rem;color:var(--text);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+  th{background:var(--bg2);color:var(--text2);text-align:left;padding:8px 10px;border:1px solid var(--border)}
+  td{padding:8px 10px;border:1px solid var(--border);color:var(--text)}
+  pre{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;overflow-x:auto;margin-bottom:16px}
+  code{color:#7dd3fc}
+  .tip{background:#22c55e11;border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 var(--radius) var(--radius) 0;font-size:13px;color:var(--text2);margin-bottom:16px}
+</style>
+</head>
+<body>
+<h1>LED</h1>
+<span class="badge">Outputs</span>
+<p>Light-emitting diode. Emits light when sufficient current flows from Anode (A) to Cathode (K). The color can be configured in the component attributes. Always use a current-limiting resistor (typically 220 Ω for 5 V) in series.</p>
+
+<h2>Pins</h2>
+<table>
+  <tr><th>Pin</th><th>Label</th><th>Type</th><th>Description</th></tr>
+  <tr><td>A</td><td>Anode</td><td>Input</td><td>Positive terminal (+). Connect through a resistor to a digital output pin.</td></tr>
+  <tr><td>K</td><td>Cathode</td><td>Input</td><td>Negative terminal (–). Connect to GND.</td></tr>
+</table>
+
+<h2>Attributes</h2>
+<table>
+  <tr><th>Attribute</th><th>Default</th><th>Description</th></tr>
+  <tr><td>color</td><td>red</td><td>LED color: red, green, blue, yellow, white, orange, purple</td></tr>
+</table>
+
+<h2>Wiring</h2>
+<pre><code>Arduino Pin 13 ──[ 220Ω ]── A (LED) K ── GND</code></pre>
+
+<h2>Example Code</h2>
+<pre><code>void setup() {
+  pinMode(13, OUTPUT);
+}
+
+void loop() {
+  digitalWrite(13, HIGH);  // LED on
+  delay(500);
+  digitalWrite(13, LOW);   // LED off
+  delay(500);
+}</code></pre>
+
+<div class="tip">Tip: Use analogWrite() on a PWM pin (3, 5, 6, 9, 10, 11) to control brightness.</div>
+</body></html>

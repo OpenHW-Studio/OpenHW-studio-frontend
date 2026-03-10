@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>74HC595 Shift Register – OpenHW Studio Docs</title>
+<style>
+  :root{--accent:#8b5cf6;--bg:#0f172a;--bg2:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--border:#334155;--radius:8px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:760px;margin:0 auto;line-height:1.6}
+  h1{color:var(--accent);font-size:1.6rem;margin-bottom:4px}
+  .badge{display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;margin-bottom:16px}
+  p{color:var(--text2);margin-bottom:16px}
+  h2{font-size:1rem;color:var(--text);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+  th{background:var(--bg2);color:var(--text2);text-align:left;padding:8px 10px;border:1px solid var(--border)}
+  td{padding:8px 10px;border:1px solid var(--border);color:var(--text)}
+  pre{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;overflow-x:auto;margin-bottom:16px}
+  code{color:#7dd3fc}
+  .tip{background:#8b5cf611;border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 var(--radius) var(--radius) 0;font-size:13px;color:var(--text2);margin-bottom:16px}
+</style>
+</head>
+<body>
+<h1>74HC595 Shift Register</h1>
+<span class="badge">Logic</span>
+<p>The 74HC595 is an 8-bit serial-in, parallel-out shift register. It allows you to control 8 digital outputs using only 3 Arduino pins (SER, SRCLK, RCLK). Multiple chips can be daisy-chained via Q7' to expand output count indefinitely.</p>
+
+<h2>Pins</h2>
+<table>
+  <tr><th>Pin</th><th>Label</th><th>Description</th></tr>
+  <tr><td>vcc</td><td>VCC</td><td>5 V power supply</td></tr>
+  <tr><td>gnd</td><td>GND</td><td>Ground</td></tr>
+  <tr><td>ser</td><td>DS</td><td>Serial data input — connect to Arduino digital pin</td></tr>
+  <tr><td>srclk</td><td>SHCP</td><td>Shift register clock — rising edge shifts in one bit from SER</td></tr>
+  <tr><td>rclk</td><td>STCP</td><td>Storage register clock (latch) — rising edge copies SR → output</td></tr>
+  <tr><td>oe</td><td>/OE</td><td>Output enable (active LOW) — tie to GND to enable outputs</td></tr>
+  <tr><td>srclr</td><td>/SRCLR</td><td>Shift register clear (active LOW) — tie to VCC for normal operation</td></tr>
+  <tr><td>q0–q7</td><td>Q0–Q7</td><td>8 parallel output pins</td></tr>
+  <tr><td>q7s</td><td>Q7'</td><td>Serial output for daisy-chaining to next chip's SER</td></tr>
+</table>
+
+<h2>Wiring</h2>
+<pre><code>Arduino D11 ── SER   (DS)
+Arduino D12 ── SRCLK (SHCP)
+Arduino D8  ── RCLK  (STCP)
+GND         ── /OE
+5V          ── /SRCLR
+VCC = 5V,  GND = GND</code></pre>
+
+<h2>Example Code (shiftOut)</h2>
+<pre><code>#define SER   11
+#define SRCLK 12
+#define RCLK  8
+
+void setup() {
+  pinMode(SER, OUTPUT);
+  pinMode(SRCLK, OUTPUT);
+  pinMode(RCLK, OUTPUT);
+}
+
+void writeRegister(byte data) {
+  digitalWrite(RCLK, LOW);
+  shiftOut(SER, SRCLK, MSBFIRST, data);
+  digitalWrite(RCLK, HIGH);
+}
+
+void loop() {
+  for (int i = 0; i &lt; 8; i++) {
+    writeRegister(1 &lt;&lt; i);   // Light each output in sequence
+    delay(200);
+  }
+}</code></pre>
+
+<div class="tip">Tip: Chain two 74HC595s by connecting Q7' of the first chip to SER of the second. Call shiftOut() twice before pulsing RCLK to control 16 outputs.</div>
+</body></html>
