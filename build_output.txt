@@ -1,0 +1,19 @@
+
+> openhw-studio@0.1.0 build
+> vite build
+
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 154 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                            [39m[1m[2m  0.80 kB[22m[1m[22m[2m Γöé gzip:   0.48 kB[22m
+[2mdist/[22m[32massets/simulation.worker-BR4R6Rnj.js  [39m[1m[2m 58.45 kB[22m[1m[22m
+[2mdist/[22m[35massets/index-Cf_509xm.css             [39m[1m[2m 15.00 kB[22m[1m[22m[2m Γöé gzip:   3.84 kB[22m
+[2mdist/[22m[36massets/index-D6IXeaCH.js              [39m[1m[33m514.31 kB[39m[22m[2m Γöé gzip: 149.98 kB[22m
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[32mΓ£ô built in 1.33s[39m

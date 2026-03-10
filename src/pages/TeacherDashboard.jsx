@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from '../store/authStore.js'
+import { useAuth } from '../context/AuthContext.jsx'
 
 export default function TeacherDashboard() {
-  const { user, logout } = useAuthStore() 
+  const { user, logout } = useAuth()
   const navigate = useNavigate()
 
   return (

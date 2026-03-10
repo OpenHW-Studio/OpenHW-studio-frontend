@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useAuthStore } from '../store/authStore.js'
+import { useAuth } from '../context/AuthContext.jsx'
 import { signupUser } from '../services/authService.js'
 
 export default function SignupPage() {
   const navigate = useNavigate()
- 
-  const { login, isAuthenticated, role } = useAuthStore()
+
+  const { login, isAuthenticated, role } = useAuth()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
-    role: 'student', 
+    role: 'student',
     college: '',
     semester: ''
   })
@@ -36,7 +36,8 @@ export default function SignupPage() {
     setError('')
 
     try {
-      const data = await signupUser(formData)
+      const data = await signupUser({ ...formData, role: formData.role }) // Using formData.role as selectedRole is not defined
+      // Make sure login conforms to AuthContext expectations
       login(data.token, data.user)
       navigate(data.user.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
     } catch (err) {
@@ -48,7 +49,7 @@ export default function SignupPage() {
 
   return (
     <div className="auth-page">
- 
+
       <div className="auth-card max-w-[500px] w-full box-border">
         <div className="auth-logo">
           <span className="brand-icon">⚡</span>
@@ -59,11 +60,11 @@ export default function SignupPage() {
         <div className="role-section">
           <p className="role-label">I am a...</p>
           <div className="role-options">
-            <button type="button" className={`role-btn ${formData.role === 'student' ? 'active' : ''}`} onClick={() => setFormData({...formData, role: 'student'})}>
+            <button type="button" className={`role-btn ${formData.role === 'student' ? 'active' : ''}`} onClick={() => setFormData({ ...formData, role: 'student' })}>
               <span className="role-emoji">🎓</span>
               <span className="role-text">Student</span>
             </button>
-            <button type="button" className={`role-btn ${formData.role === 'teacher' ? 'active' : ''}`} onClick={() => setFormData({...formData, role: 'teacher'})}>
+            <button type="button" className={`role-btn ${formData.role === 'teacher' ? 'active' : ''}`} onClick={() => setFormData({ ...formData, role: 'teacher' })}>
               <span className="role-emoji">👨‍🏫</span>
               <span className="role-text">Teacher</span>
             </button>
@@ -72,7 +73,7 @@ export default function SignupPage() {
 
         {error && <div className="auth-error">⚠️ {error}</div>}
 
-   
+
         <form className="flex flex-col gap-4 mt-4 w-full" onSubmit={handleSignup}>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
             <div className="flex flex-col gap-1.5 text-left w-full">
