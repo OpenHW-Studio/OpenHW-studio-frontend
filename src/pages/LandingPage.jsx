@@ -1,18 +1,30 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext.jsx'
+import { useAuthStore } from '../store/authStore.js' 
 
 const exampleProjects = [
-  { title: 'LED Blink', board: 'Arduino Uno', difficulty: 'Beginner', icon: '💡', points: 50 },
-  { title: 'RGB LED', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎨', points: 80 },
-  { title: 'Servo Motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '⚙️', points: 120 },
-  { title: 'Temperature Sensor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', points: 150 },
-  { title: 'Wi-Fi LED Control', board: 'ESP32', difficulty: 'Advanced', icon: '📶', points: 200 },
-  { title: 'DC Motor PWM', board: 'ESP32', difficulty: 'Advanced', icon: '🔄', points: 220 },
+  { title: 'LED Blink', slug: 'led-blink', board: 'Arduino Uno', difficulty: 'Beginner', icon: '💡', points: 50 },
+  { title: 'RGB LED', slug: 'rgb-led', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎨', points: 80 },
+  { title: 'Buzzer', slug: 'buzzer', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🔔', points: 70 },
+  { title: 'LED Strip', slug: 'led-strip', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🌈', points: 90 },
+  { title: 'Potentiometer', slug: 'potentiometer', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎚️', points: 100 },
+  { title: 'Button & Debounce', slug: 'button-debounce', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🕹️', points: 110 },
+  { title: 'LDR', slug: 'ldr', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '☀️', points: 130 },
+  { title: 'DC Motor', slug: 'dc-motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🔄', points: 140 },
+  { title: 'Servo Motor', slug: 'servo-motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '⚙️', points: 120 },
+  { title: 'Temperature Sensor', slug: 'temperature-sensor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', points: 150 },
 ]
 
 export default function LandingPage() {
   const navigate = useNavigate()
-  const { isAuthenticated, role } = useAuth()
+  const { isAuthenticated, role } = useAuthStore()
+  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark'
+    setTheme(newTheme)
+    document.documentElement.setAttribute('data-theme', newTheme)
+  }
 
   const handleDashboard = () => {
     if (role === 'teacher') navigate('/teacher/dashboard')
@@ -28,12 +40,16 @@ export default function LandingPage() {
           <span className="brand-name">OpenHW<span className="brand-accent">-Studio</span></span>
         </div>
         <div className="nav-actions">
+          <button className="btn btn-ghost" onClick={toggleTheme} title="Toggle Dark/Light Mode">
+            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+          </button>
           {isAuthenticated ? (
             <button className="btn btn-primary" onClick={handleDashboard}>Dashboard →</button>
           ) : (
             <>
-              <button className="btn btn-ghost" onClick={() => navigate('/login')}>Sign In</button>
-              <button className="btn btn-primary" onClick={() => navigate('/login')}>Get Started</button>
+            
+              <button className="btn btn-ghost" onClick={() => navigate('/signin')}>Sign In</button>
+              <button className="btn btn-primary" onClick={() => navigate('/signup')}>Get Started</button>
             </>
           )}
         </div>
@@ -54,7 +70,8 @@ export default function LandingPage() {
           <button className="btn btn-primary btn-lg" onClick={() => navigate('/simulator')}>
             ▶ Try Simulator — No Login Required
           </button>
-          <button className="btn btn-outline btn-lg" onClick={() => navigate('/login')}>
+          {/* Updated to /signup */}
+          <button className="btn btn-outline btn-lg" onClick={() => navigate('/signup')}>
             Join as Student / Teacher
           </button>
         </div>
@@ -98,7 +115,7 @@ export default function LandingPage() {
         <p className="section-sub">Complete projects to earn XP and unlock advanced components</p>
         <div className="projects-grid">
           {exampleProjects.map((p) => (
-            <div className="project-card" key={p.title} onClick={() => navigate('/simulator')}>
+            <div className="project-card" key={p.title} onClick={() => navigate(`/${p.slug}/guide`)}>
               <div className="project-icon">{p.icon}</div>
               <div className="project-info">
                 <h4>{p.title}</h4>
@@ -118,13 +135,15 @@ export default function LandingPage() {
         <h2>Ready to start building?</h2>
         <p>Join as a student to track progress, or as a teacher to manage your class.</p>
         <div className="cta-cards">
-          <div className="cta-card student-card" onClick={() => navigate('/login?role=student')}>
+  
+          <div className="cta-card student-card" onClick={() => navigate('/signup?role=student')}>
             <div className="cta-icon">🎓</div>
             <h3>I'm a Student</h3>
             <p>Join classes, submit assignments, earn rewards</p>
             <button className="btn btn-primary">Join as Student →</button>
           </div>
-          <div className="cta-card teacher-card" onClick={() => navigate('/login?role=teacher')}>
+      
+          <div className="cta-card teacher-card" onClick={() => navigate('/signup?role=teacher')}>
             <div className="cta-icon">👨‍🏫</div>
             <h3>I'm a Teacher</h3>
             <p>Create classes, assign projects, monitor students</p>

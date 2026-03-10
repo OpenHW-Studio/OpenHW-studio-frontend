@@ -1,28 +1,26 @@
 /**
  * AUTH SERVICE
- * All API calls related to authentication.
- * Replace BASE_URL with your actual backend URL when ready.
- * 
- * Currently uses localStorage to simulate auth state (no backend needed).
+ * Handles API communication between the frontend and the Node.js backend.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
-// ─── Token Helpers ───────────────────────────────────────────────────────────
+// ─── Token & User Storage Helpers ───────────────────────────────────────────
 
-export const saveToken = (token) => localStorage.setItem('openhw_token', token)
-export const getToken = () => localStorage.getItem('openhw_token')
-export const removeToken = () => localStorage.removeItem('openhw_token')
+export const saveToken = (token) => localStorage.setItem('openhw_token', token);
+export const getToken = () => localStorage.getItem('openhw_token');
+export const removeToken = () => localStorage.removeItem('openhw_token');
 
-export const saveUser = (user) => localStorage.setItem('openhw_user', JSON.stringify(user))
+export const saveUser = (user) => localStorage.setItem('openhw_user', JSON.stringify(user));
 export const getUser = () => {
   try {
-    return JSON.parse(localStorage.getItem('openhw_user'))
+    const user = localStorage.getItem('openhw_user');
+    return user ? JSON.parse(user) : null;
   } catch {
-    return null
+    return null;
   }
-}
-export const removeUser = () => localStorage.removeItem('openhw_user')
+};
+export const removeUser = () => localStorage.removeItem('openhw_user');
 
 // ─── Admin session Helpers ───────────────────────────────────────────────────
 export const saveAdminToken = (token) => localStorage.setItem('openhw_admin_token', token)
@@ -40,67 +38,126 @@ export const getAdminUser = () => {
 export const removeAdminUser = () => localStorage.removeItem('openhw_admin_user')
 
 // ─── API Calls ───────────────────────────────────────────────────────────────
-
 /**
- * Send Google OAuth credential token to backend.
- * Backend verifies it, creates/finds user, returns JWT + user profile.
- * 
- * @param {string} googleCredential - The credential string from Google OAuth response
- * @param {string} role - 'student' | 'teacher'
- * @returns {Promise<{token: string, user: object}>}
+ * Register a new user
+ * Connects to 'signupUser' in userController.js
  */
-export const googleLogin = async (googleCredential, role) => {
-  const response = await fetch(`${BASE_URL}/auth/google`, {
+export const signupUser = async (userData) => {
+  const response = await fetch(`${BASE_URL}/user/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ credential: googleCredential, role }),
-  })
+    body: JSON.stringify({
+      name: userData.name,
+      email: userData.email,
+      password: userData.password,
+      role: userData.role,
+      college: userData.college,
+      branch: userData.branch,
+      semester: userData.semester,
+      bio: userData.bio
+    }),
+  });
+
+  const data = await response.json();
 
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.message || 'Google login failed')
+    // Backend returns 'error' field for signup failures
+    throw new Error(data.error || 'Registration failed');
   }
 
-  return response.json() // expects { token, user: { id, name, email, role, points, coins, level } }
-}
+  // Automatically log in the user after successful registration
+  if (data.token) saveToken(data.token);
+  if (data.user) saveUser(data.user);
+
+  return data; // Returns { message, user, token }
+};
 
 /**
- * Email/password login (future use)
+ * Native Email/Password Login
+ * Matches 'signinUser' in userController.js
  */
-export const emailLogin = async (email, password) => {
-  const response = await fetch(`${BASE_URL}/auth/login`, {
+export const loginUser = async (credentials) => {
+  const response = await fetch(`${BASE_URL}/user/signin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  })
+    body: JSON.stringify({
+      email: credentials.email,
+      password: credentials.password
+    }),
+  });
+
+  const data = await response.json();
 
   if (!response.ok) {
-    const error = await response.json()
-    throw new Error(error.message || 'Login failed')
+    throw new Error(data.message || 'Login failed');
   }
 
-  return response.json()
-}
+  // Save the JWT and user data returned by the backend
+  if (data.token) saveToken(data.token);
+  if (data.user) saveUser(data.user);
+
+  return data; // Returns { message, token, user }
+};
+
+/**
+ * Google OAuth Login
+ * Sends the access token to the backend for verification.
+ */
+export const googleLogin = async (accessToken, role) => {
+  const response = await fetch(`${BASE_URL}/user/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ access_token: accessToken, role }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.message || 'Google login failed');
+  }
+
+  if (data.token) saveToken(data.token);
+  if (data.user) saveUser(data.user);
+
+  return data;
+};
+
+/**
+ * Logout
+ * Clears local storage and notifies the backend to clear the JWT cookie.
+ */
+export const logout = async () => {
+  try {
+    const token = getToken();
+    // Calls logoutController in userController.js
+    await fetch(`${BASE_URL}/user/logout`, { 
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+  } catch (err) {
+    console.error("Backend logout failed", err);
+  } finally {
+    removeToken();
+    removeUser();
+  }
+};
 
 /**
  * Fetch current user profile using stored JWT
+ * Protected by protectRoute middleware
  */
 export const fetchProfile = async () => {
-  const token = getToken()
-  if (!token) throw new Error('No token found')
+  const token = getToken();
+  if (!token) throw new Error('No token found');
 
-  const response = await fetch(`${BASE_URL}/auth/profile`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
+  const response = await fetch(`${BASE_URL}/user/profile`, {
+    headers: { 
+      'Authorization': `Bearer ${token}` // Handled by protectRoute in backend
+    },
+  });
 
-  if (!response.ok) throw new Error('Failed to fetch profile')
-  return response.json()
-}
-
-/**
- * Logout - clears local storage
- */
-export const logout = () => {
-  removeToken()
-  removeUser()
-}
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to fetch profile');
+  
+  return data;
+};
