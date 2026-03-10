@@ -15,12 +15,4 @@ export default defineConfig({
       ],
     },
   },
-  resolve: {
-    alias: {
-      // Use the local emulator source instead of the git-pinned npm package.
-      // This makes all component UI, ContextMenu, and logic changes immediately
-      // visible to the frontend without needing to push to git or reinstall.
-      '@openhw/emulator': path.resolve(__dirname, '../openhw-studio-emulator-danish'),
-    },
-  },
 })

@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@babel/standalone": "^7.29.1",
-    "@openhw/emulator": "file:../openhw-studio-emulator-danish",
+    "@openhw/emulator": "github:OpenHW-Studio/openhw-studio-emulator#develop",
     "@react-oauth/google": "^0.12.1",
     "@tailwindcss/postcss": "^4.2.1",
     "avr8js": "^0.21.0",
