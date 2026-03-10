@@ -17,7 +17,7 @@ export default function ProtectedRoute({ children, allowedRole }) {
     }
 
     if (!isAuthenticated) {
-        return <Navigate to="/login" replace />;
+        return <Navigate to="/signin" replace />;
     }
 
     // Ensures students can't access teacher routes and vice-versa

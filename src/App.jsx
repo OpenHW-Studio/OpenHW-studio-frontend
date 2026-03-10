@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx'
+import { AuthProvider } from './context/AuthContext.jsx'
 
 // Pages
 import LandingPage from './pages/LandingPage.jsx'
@@ -22,7 +23,6 @@ export default function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
           <Route path="/signin" element={<SigninPage />} />
           <Route path="/select-role" element={<RoleSelectPage />} />
           <Route path="/signup" element={<SignupPage />} />

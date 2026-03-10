@@ -1,8 +1,0 @@
-package-lock.json
-package.json
-src/App.jsx
-src/components/auth/ProtectedRoute.jsx
-src/context/AuthContext.jsx
-src/pages/SimulatorPage.jsx
-src/services/simulatorService.js
-vite.config.js
