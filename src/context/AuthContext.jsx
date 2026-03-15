@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import {
   getUser, getToken, saveUser, saveToken, logout as logoutService,
-  getAdminUser, getAdminToken, saveAdminUser, saveAdminToken, removeAdminToken, removeAdminUser
+  getAdminUser, getAdminToken, saveAdminUser, saveAdminToken, removeAdminToken, removeAdminUser,
+  fetchProfile
 } from '../services/authService.js'
 
 const AuthContext = createContext(null)
@@ -13,29 +14,56 @@ export function AuthProvider({ children }) {
   const [adminToken, setAdminToken] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Restore session(s) from localStorage on app load
+  // Restore session(s) from localStorage or URL on app load
   useEffect(() => {
-    const storedUser = getUser()
-    const storedToken = getToken()
-    if (storedUser && storedToken) {
-      if (storedUser.role === 'admin') {
-        // Clear the old admin session from standard storage to fix redirect conflicts
-        logoutService()
+    const handleInitialLoad = async () => {
+      // 1. Check if returning from Google OAuth with a token in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlToken = urlParams.get('token');
+
+      if (urlToken) {
+        // Save token temporarily to fetch profile
+        saveToken(urlToken);
+        try {
+          // Fetch the user's profile using the new token
+          const data = await fetchProfile();
+          if (data && data.user) {
+            login(urlToken, data.user); // Save to context and local storage
+          }
+        } catch (error) {
+          console.error("Failed to fetch profile with OAuth token:", error);
+          logoutService();
+        } finally {
+          // Clean up the URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
       } else {
-        setUser(storedUser)
-        setToken(storedToken)
+        // 2. Normal load: Check local storage
+        const storedUser = getUser()
+        const storedToken = getToken()
+        if (storedUser && storedToken) {
+          if (storedUser.role === 'admin') {
+            logoutService()
+          } else {
+            setUser(storedUser)
+            setToken(storedToken)
+          }
+        }
       }
-    }
 
-    const storedAdminUser = getAdminUser()
-    const storedAdminToken = getAdminToken()
-    if (storedAdminUser && storedAdminToken) {
-      setAdminUser(storedAdminUser)
-      setAdminToken(storedAdminToken)
-    }
+      const storedAdminUser = getAdminUser()
+      const storedAdminToken = getAdminToken()
+      if (storedAdminUser && storedAdminToken) {
+        setAdminUser(storedAdminUser)
+        setAdminToken(storedAdminToken)
+      }
 
-    setLoading(false)
+      setLoading(false)
+    };
+
+    handleInitialLoad();
   }, [])
+
 
   /**
    * Called after successful Google OAuth + backend verification
