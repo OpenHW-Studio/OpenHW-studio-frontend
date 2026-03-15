@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { useGoogleLogin } from '@react-oauth/google'
 import { useAuth } from '../context/AuthContext.jsx'
-import { googleLogin, loginUser } from '../services/authService.js'
+import { loginUser } from '../services/authService.js'
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 export default function SigninPage() {
   const navigate = useNavigate()
@@ -53,31 +54,22 @@ export default function SigninPage() {
     }
   }
 
-  const handleGoogleSuccess = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      if (!selectedRole) {
-        setError('Please select your role first.')
-        return
-      }
-      setLoading(true)
-      setError('')
-      try {
-        const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-        })
-        const googleUser = await res.json()
+  const handleGoogleLogin = () => {
+    if (!selectedRole) {
+      setError('Please select your role first.')
+      return
+    }
+    // Note: The backend will currently not know what role was selected. 
+    // To support passing the role, we could store it in a cookie or localStorage here briefly,
+    // or append it to the Google OAuth URL. Let's save it to localStorage so the profile fetch knows it.
+    localStorage.setItem('pending_oauth_role', selectedRole);
 
-        const mockToken = 'mock_jwt_token'
-        login(mockToken, { ...googleUser, role: selectedRole })
-        navigate(selectedRole === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
-      } catch (err) {
-        setError('Google authentication failed.')
-      } finally {
-        setLoading(false)
-      }
-    },
-    onError: () => setError('Google sign-in was cancelled.')
-  })
+    // Redirect directly to the backend passport route
+    // The backend uses the base url but without the `/api` depending on how it's mounted.
+    // In server.js we mounted passport under /auth
+    const authUrl = BASE_URL.replace('/api', '/auth');
+    window.location.href = `${authUrl}/google`;
+  }
 
   return (
     <div className="auth-page">
@@ -149,7 +141,7 @@ export default function SigninPage() {
 
         <button
           className={`google-btn ${!selectedRole ? 'disabled' : ''}`}
-          onClick={() => selectedRole ? handleGoogleSuccess() : setError('Select a role first')}
+          onClick={handleGoogleLogin}
           type="button"
         >
           <svg width="20" height="20" viewBox="0 0 24 24">
