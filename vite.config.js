@@ -7,6 +7,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    exclude: ['@openhw/emulator'],
+  },
   server: {
     fs: {
       // Allow serving files from the emulator package which lives outside the frontend root
