@@ -45,6 +45,14 @@ export default function SignupPage() {
     }
   }
 
+  const handleGoogleLogin = () => {
+    // Save the selected role before redirecting to Google OAuth
+    localStorage.setItem('pending_oauth_role', formData.role);
+
+    const authUrl = BASE_URL.replace('/api', '/auth');
+    window.location.href = `${authUrl}/google`;
+  }
+
   return (
     <div className="auth-screen auth-screen--signup">
       <div className="auth-shell auth-shell--wide auth-shell--reverse">
