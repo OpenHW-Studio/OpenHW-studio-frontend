@@ -36,8 +36,7 @@ export default function LandingPage() {
       {/* NAV */}
       <nav className="nav">
         <div className="nav-brand">
-          <span className="brand-icon">⚡</span>
-          <span className="brand-name">OpenHW<span className="brand-accent">-Studio</span></span>
+          <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--nav" />
         </div>
         <div className="nav-actions">
           <button className="btn btn-ghost" onClick={toggleTheme} title="Toggle Dark/Light Mode">
@@ -155,7 +154,7 @@ export default function LandingPage() {
       {/* FOOTER */}
       <footer className="footer">
         <div className="footer-brand">
-          <span className="brand-icon">⚡</span> OpenHW-Studio
+          <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--footer" />
         </div>
         <p>Open Source Hardware Simulation & Learning Platform</p>
         <div className="footer-links">
