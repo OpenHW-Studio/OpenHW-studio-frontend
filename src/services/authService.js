@@ -54,7 +54,8 @@ export const signupUser = async (userData) => {
       college: userData.college,
       branch: userData.branch,
       semester: userData.semester,
-      bio: userData.bio
+      bio: userData.bio,
+      image: userData.image
     }),
   });
 
