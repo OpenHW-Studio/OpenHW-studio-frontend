@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import { useAuth } from '../context/AuthContext.jsx'
 import { compileCode, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../services/simulatorService.js'
@@ -58,6 +58,8 @@ const BACKEND_INJECTED_TYPES = new Set();
 
 let nextId = 1
 let nextWireId = 1
+
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5000/examples';
 
 // ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
 function renderRoundedPath(pts) {
@@ -212,6 +214,11 @@ const GROUP_COLORS = {
 export default function SimulatorPage() {
   const { isAuthenticated, user } = useAuth()
   const navigate = useNavigate()
+  const { projectName = '' } = useParams()
+  const location = useLocation()
+  const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const assessmentMode = assessmentParams.get('mode') === 'assessment'
+  const assessmentProjectName = assessmentParams.get('project') || projectName
 
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(() => {
@@ -228,6 +235,7 @@ export default function SimulatorPage() {
 
   const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection
   const [previewBanner, setPreviewBanner] = useState(null); // { id, label } — set when opened from admin "Test in Simulator"
+  const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false)
   const [components, setComponents] = useState([])
   const [wires, setWires] = useState([])
   const [paletteSearch, setPaletteSearch] = useState('')
@@ -437,14 +445,44 @@ export default function SimulatorPage() {
     try {
       const libraries = await fetchInstalledLibraries();
       setLibInstalled(libraries);
+      setLibMessage(null);
     } catch (err) {
       console.error('Failed to fetch installed libraries', err);
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.error || 'Failed to load installed libraries.';
+      if (status === 503) {
+        setLibMessage({ type: 'error', text: msg });
+      }
     }
   };
 
   useEffect(() => {
     loadLibraries();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDemoProject = async () => {
+      if (!projectName) return;
+
+      try {
+        const pngName = 'circuit.png';
+        const pngUrl = `${EXAMPLES_BASE_URL}/${projectName}/${pngName}`;
+        const pngRes = await fetch(pngUrl);
+        if (!pngRes.ok) return;
+        const blob = await pngRes.blob();
+        if (cancelled) return;
+        const file = new File([blob], pngName, { type: blob.type || 'image/png' });
+        importPng(file);
+      } catch (err) {
+        console.error(`Failed to load demo project "${projectName}"`, err);
+      }
+    };
+
+    loadDemoProject();
+    return () => { cancelled = true; };
+  }, [projectName]);
 
   // ── Offline component queue: flush to backend when connectivity restores ──
   useEffect(() => {
@@ -479,7 +517,11 @@ export default function SimulatorPage() {
   };
 
   // ── Project: load most-recent project on first mount ─────────────────────
+  // ── Project: load most-recent project on first mount ─────────────────────
   useEffect(() => {
+    // Don't auto-load a project if we're in assessment mode or loading a demo
+    if (assessmentMode || projectName) return;
+
     const owner = user?.email || 'guest';
     listProjects(owner).then((projects) => {
       if (projects.length === 0) return;
@@ -1539,6 +1581,27 @@ export default function SimulatorPage() {
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
   const handleSyncToCloud = () => { alert('Sync feature coming soon!'); };
 
+  const handleAssessmentSubmit = async () => {
+    if (!assessmentMode) return;
+    if (!assessmentProjectName) {
+      alert('Assessment project is missing. Please open assessment from the project page.');
+      return;
+    }
+    setIsSubmittingAssessment(true);
+    try {
+      const payload = {
+        projectName: assessmentProjectName,
+        submittedAt: new Date().toISOString(),
+        components,
+        wires,
+        code,
+      };
+      sessionStorage.setItem(`openhw_assessment_submission:${assessmentProjectName}`, JSON.stringify(payload));
+      navigate(`/${assessmentProjectName}/assessment`);
+    } finally {
+      setIsSubmittingAssessment(false);
+    }
+  };
   // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
   const logSerial = (msg, color = 'var(--text)') => {
     // In a real implementation this would push to a serial console state array
@@ -2033,7 +2096,7 @@ export default function SimulatorPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={S.page} ref={pageRef}>
+    <div style={S.page} ref={pageRef} className="min-h-screen">
 
       {/* ADMIN PREVIEW BANNER — shown when opened via "Test in Simulator" from admin dashboard */}
       {previewBanner && (
@@ -2108,6 +2171,17 @@ export default function SimulatorPage() {
               ) : (
                 <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect x="1.5" y="1" width="3.5" height="11" rx="1"/><rect x="8" y="1" width="3.5" height="11" rx="1"/></svg>
               )}
+            </Btn>
+          )}
+
+          {assessmentMode && (
+            <Btn
+              color="var(--accent)"
+              disabled={isSubmittingAssessment || !assessmentProjectName}
+              onClick={!isSubmittingAssessment ? handleAssessmentSubmit : undefined}
+              title={!assessmentProjectName ? 'Assessment project is missing' : 'Submit assessment'}
+            >
+              {isSubmittingAssessment ? 'Submitting...' : 'Submit Assessment'}
             </Btn>
           )}
 
@@ -3848,3 +3922,5 @@ const S = {
   plotterToolbar: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
   plotterLegend: { display: 'flex', flexWrap: 'wrap', gap: '4px 16px', padding: '4px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
 }
+
+
