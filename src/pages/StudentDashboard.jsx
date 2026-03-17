@@ -1,8 +1,8 @@
 import { useNavigate } from 'react-router-dom'
-import { useAuthStore } from "../store/authStore.js";
+import { useAuth } from "../context/AuthContext.jsx";
 
 export default function StudentDashboard() {
-  const { isAuthenticated, user, logout } = useAuthStore() 
+  const { isAuthenticated, user, logout } = useAuth()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -37,13 +37,13 @@ export default function StudentDashboard() {
             <h1>Welcome back, {user?.name?.split(' ')[0]} 👋</h1>
             <p>Level {user?.level || 1} Student · {user?.email}</p>
           </div>
-          
+
           <div className="user-avatar" style={{ width: '50px', height: '50px', borderRadius: '50%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#38bdf8', color: '#0f172a', fontWeight: 'bold', fontSize: '1.2rem' }}>
             {user?.picture ? (
-              <img 
-                src={user.picture} 
-                alt="Profile" 
-                referrerPolicy="no-referrer" 
+              <img
+                src={user.picture}
+                alt="Profile"
+                referrerPolicy="no-referrer"
                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
               />
             ) : (

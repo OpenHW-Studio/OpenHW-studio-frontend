@@ -22,6 +22,21 @@ export const getUser = () => {
 };
 export const removeUser = () => localStorage.removeItem('openhw_user');
 
+// ─── Admin session Helpers ───────────────────────────────────────────────────
+export const saveAdminToken = (token) => localStorage.setItem('openhw_admin_token', token)
+export const getAdminToken = () => localStorage.getItem('openhw_admin_token')
+export const removeAdminToken = () => localStorage.removeItem('openhw_admin_token')
+
+export const saveAdminUser = (user) => localStorage.setItem('openhw_admin_user', JSON.stringify(user))
+export const getAdminUser = () => {
+  try {
+    return JSON.parse(localStorage.getItem('openhw_admin_user'))
+  } catch {
+    return null
+  }
+}
+export const removeAdminUser = () => localStorage.removeItem('openhw_admin_user')
+
 // ─── API Calls ───────────────────────────────────────────────────────────────
 /**
  * Register a new user
