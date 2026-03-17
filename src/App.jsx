@@ -8,6 +8,8 @@ import SigninPage from './pages/SigninPage.jsx'
 import RoleSelectPage from './pages/RoleSelectPage.jsx'
 import StudentDashboard from './pages/StudentDashboard.jsx'
 import TeacherDashboard from './pages/TeacherDashboard.jsx'
+import TeacherClassDetailPage from './pages/TeacherClassDetailPage.jsx'
+import StudentClassDetailPage from './pages/StudentClassDetailPage.jsx'
 import SimulatorPage from './pages/SimulatorPage.jsx'
 import AdminPage from './pages/admin/AdminPage.jsx'
 import AdminLoginPage from './pages/admin/AdminLoginPage.jsx'
@@ -42,6 +44,14 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/student/classes/:classId"
+            element={
+              <ProtectedRoute allowedRole="student">
+                <StudentClassDetailPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Admin Workflow */}
           <Route path="/admin" element={<AdminLandingPage />} />
@@ -58,6 +68,14 @@ export default function App() {
             element={
               <ProtectedRoute allowedRole="teacher">
                 <TeacherDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/teacher/classes/:classId"
+            element={
+              <ProtectedRoute allowedRole="teacher">
+                <TeacherClassDetailPage />
               </ProtectedRoute>
             }
           />
