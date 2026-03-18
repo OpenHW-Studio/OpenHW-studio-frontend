@@ -81,8 +81,7 @@ export default function AdminLoginPage() {
         <div className="auth-page">
             <div className="auth-card">
                 <div className="auth-logo">
-                    <span className="brand-icon">⚡</span>
-                    <span className="brand-name">OpenHW<span className="brand-accent">-Studio</span></span>
+                    <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--admin" />
                 </div>
                 <h1 className="auth-title">Admin Login</h1>
                 <p className="auth-subtitle">Restricted Area. Authorized Access Only.</p>
