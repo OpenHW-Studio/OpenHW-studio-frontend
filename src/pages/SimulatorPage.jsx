@@ -13,6 +13,7 @@ import * as EmulatorComponents from '@openhw/emulator/src/components/index.ts';
 
 // Web Editor features
 import Editor from 'react-simple-code-editor';
+import BlocklyEditor from '../components/BlocklyEditor.jsx';
 import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
@@ -58,6 +59,21 @@ const BACKEND_INJECTED_TYPES = new Set();
 
 let nextId = 1
 let nextWireId = 1
+
+// ─── SYNC ID COUNTERS AFTER LOADING EXTERNAL DATA ──────────────────────────
+// Prevents duplicate keys when a saved project has IDs higher than the
+// current module-level counter (e.g. loading "wokwi-ili9341_2" with nextId=1
+// would let a subsequent add generate the same key again).
+function syncNextIds(comps, ws) {
+  for (const c of (comps || [])) {
+    const m = c.id && c.id.match(/_(\d+)$/);
+    if (m) nextId = Math.max(nextId, parseInt(m[1]) + 1);
+  }
+  for (const w of (ws || [])) {
+    const m = w.id && w.id.match(/^w(\d+)$/);
+    if (m) nextWireId = Math.max(nextWireId, parseInt(m[1]) + 1);
+  }
+}
 
 // ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
 function renderRoundedPath(pts) {
@@ -210,7 +226,7 @@ const GROUP_COLORS = {
 };
 
 export default function SimulatorPage() {
-  const { isAuthenticated, user } = useAuth()
+  const { isAuthenticated, user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
 
   // Theme Logic — defaults to light mode
@@ -263,6 +279,7 @@ export default function SimulatorPage() {
   const paletteContextMenuRef = useRef(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [showCanvasMenu, setShowCanvasMenu] = useState(false)
+  const [showConnectionsPanel, setShowConnectionsPanel] = useState(true)
   const [wirepointsEnabled, setWirepointsEnabled] = useState(false)
   const canvasZoomRef = useRef(1)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
@@ -302,6 +319,12 @@ export default function SimulatorPage() {
   // PNG Export State
   const [isExporting, setIsExporting] = useState(false);
 
+  // View Panel State
+  const [showViewPanel, setShowViewPanel] = useState(false);
+  const [viewPanelSection, setViewPanelSection] = useState(null); // null | 'schematic' | 'components'
+  const [schematicLoading, setSchematicLoading] = useState(false);
+  const [schematicDataUrl, setSchematicDataUrl] = useState(null);
+
   const workerRef = useRef(null)
   const lastCompiledRef = useRef(null)
   const neopixelRefs = useRef({})
@@ -312,6 +335,8 @@ export default function SimulatorPage() {
 
   const canvasRef = useRef(null)
   const svgRef = useRef(null)
+  const viewPanelRef = useRef(null)
+  const schematicSvgRef = useRef(null)
   const dragPayload = useRef(null)
   const movingComp = useRef(null)
   const componentZipInputRef = useRef(null);
@@ -403,6 +428,7 @@ export default function SimulatorPage() {
         COMPONENT_REGISTRY[manifest.type] = {
           manifest,
           UI: uiComponent,
+          BOUNDS: exportsUI.BOUNDS,
           ContextMenu: contextMenu,
           contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
           contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
@@ -444,6 +470,26 @@ export default function SimulatorPage() {
 
   useEffect(() => {
     loadLibraries();
+  }, []);
+
+  // ── Auto-load component from Component Editor ("Test in Simulator") ────────
+  useEffect(() => {
+    const raw = localStorage.getItem('openhw_pending_component');
+    if (!raw) return;
+    localStorage.removeItem('openhw_pending_component');
+    try {
+      const { data, name, label } = JSON.parse(raw);
+      fetch(data)
+        .then(r => r.blob())
+        .then(blob => {
+          const file = new File([blob], `${name || 'component'}.zip`, { type: 'application/zip' });
+          handleUploadZip({ target: { files: [file] } });
+        })
+        .catch(err => console.error('[ComponentEditor] Failed to load pending component:', err));
+    } catch (e) {
+      console.error('[ComponentEditor] Could not parse pending component data:', e);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Offline component queue: flush to backend when connectivity restores ──
@@ -488,6 +534,7 @@ export default function SimulatorPage() {
       setCode(latest.code || '');
       setComponents(latest.components || []);
       setWires(latest.connections || []);
+      syncNextIds(latest.components, latest.connections);
       setCurrentProjectId(latest.id);
       currentProjectIdRef.current = latest.id;
       setCurrentProjectName(latest.name || 'Untitled');
@@ -622,7 +669,7 @@ export default function SimulatorPage() {
       group.items = group.items.filter(i => i.type !== compType);
       group.items.push(newCatItem);
 
-      COMPONENT_REGISTRY[compType] = { manifest, UI: uiComponent, logicCode: transpileLogic };
+      COMPONENT_REGISTRY[compType] = { manifest, UI: uiComponent, BOUNDS: exportsUI.BOUNDS, logicCode: transpileLogic };
       if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
 
       setCustomCatalogCounter(c => c + 1);
@@ -692,6 +739,7 @@ export default function SimulatorPage() {
             COMPONENT_REGISTRY[compType] = {
               manifest,
               UI: uiComponent,
+              BOUNDS: exportsUI.BOUNDS,
               ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))],
               contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
               contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
@@ -803,6 +851,14 @@ export default function SimulatorPage() {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [paletteContextMenu]);
+
+  // ── Close View panel on outside click ──────────────────────────────────────
+  useEffect(() => {
+    if (!showViewPanel) return;
+    const close = (e) => { if (viewPanelRef.current && !viewPanelRef.current.contains(e.target)) setShowViewPanel(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showViewPanel]);
 
   // ── Load Wokwi bundle ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -1470,6 +1526,7 @@ export default function SimulatorPage() {
     setCode(proj.code || '');
     setComponents(proj.components || []);
     setWires(proj.connections || []);
+    syncNextIds(proj.components, proj.connections);
     setCurrentProjectId(proj.id);
     currentProjectIdRef.current = proj.id;
     setCurrentProjectName(proj.name || 'Untitled');
@@ -1530,6 +1587,7 @@ export default function SimulatorPage() {
       setCode(json.code || '');
       setComponents(json.components || []);
       setWires(json.connections || []);
+      syncNextIds(json.components, json.connections);
       setCurrentProjectName(json.name || 'Untitled');
       setHistory({ past: [], future: [] });
       lastCompiledRef.current = null;
@@ -1759,151 +1817,166 @@ export default function SimulatorPage() {
     if (isExporting) return;
     setIsExporting(true);
     try {
-      // 1. Capture the circuit canvas element
-      const circuitCanvas = await html2canvas(canvasRef.current, {
-        backgroundColor: '#070b14',
-        scale: 1.5,
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
+      const canvasEl = canvasRef.current;
+      const SCALE = 2;
+      const PAD = 60; // padding around content in canvas-space pixels
+
+      // 1. Calculate bounding box of all components + wire waypoints (in canvas-space coords)
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      components.forEach(c => {
+        const reg = COMPONENT_REGISTRY[c.type];
+        const b = typeof reg?.BOUNDS === 'function'
+          ? reg.BOUNDS(getComponentStateAttrs(c))
+          : (reg?.BOUNDS || { x: 0, y: 0, w: c.w, h: c.h });
+        // component body
+        minX = Math.min(minX, c.x + b.x);
+        minY = Math.min(minY, c.y + b.y);
+        maxX = Math.max(maxX, c.x + b.x + b.w);
+        maxY = Math.max(maxY, c.y + b.y + b.h);
+        // label below component adds ~20px
+        maxY = Math.max(maxY, c.y + b.y + b.h + 20);
+        // pins (they're positioned relative to component and can extend beyond its box)
+        (PIN_DEFS[c.type] || []).forEach(pin => {
+          const pp = getPinPos(c.id, pin.id);
+          if (pp) {
+            minX = Math.min(minX, pp.x - 4);
+            minY = Math.min(minY, pp.y - 4);
+            maxX = Math.max(maxX, pp.x + 4);
+            maxY = Math.max(maxY, pp.y + 4);
+          }
+        });
+      });
+      // wire waypoints
+      wires.forEach(w => {
+        (w.waypoints || []).forEach(wp => {
+          minX = Math.min(minX, wp.x);
+          minY = Math.min(minY, wp.y);
+          maxX = Math.max(maxX, wp.x);
+          maxY = Math.max(maxY, wp.y);
+        });
+        // wire endpoints (from/to pin positions)
+        const [fComp, fPin] = (w.from || '').split(':');
+        const [tComp, tPin] = (w.to || '').split(':');
+        const fp = getPinPos(fComp, fPin);
+        const tp = getPinPos(tComp, tPin);
+        if (fp) { minX = Math.min(minX, fp.x); minY = Math.min(minY, fp.y); maxX = Math.max(maxX, fp.x); maxY = Math.max(maxY, fp.y); }
+        if (tp) { minX = Math.min(minX, tp.x); minY = Math.min(minY, tp.y); maxX = Math.max(maxX, tp.x); maxY = Math.max(maxY, tp.y); }
+      });
+      if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+
+      minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+      const bboxW = maxX - minX;
+      const bboxH = maxY - minY;
+
+      // 2. Hide overlays and temporarily adjust canvas + zoom wrapper for full-content capture
+      const overlays = canvasEl.querySelectorAll('[data-export-ignore="true"]');
+      overlays.forEach(el => { el.style.visibility = 'hidden'; });
+      // Find the zoom wrapper (first absolutely-positioned child)
+      const zoomWrapper = canvasEl.querySelector(':scope > div');
+
+      // Save original styles
+      const origStyles = {
+        canvasOverflow: canvasEl.style.overflow,
+        canvasWidth: canvasEl.style.width,
+        canvasHeight: canvasEl.style.height,
+        canvasFlex: canvasEl.style.flex,
+        canvasMinWidth: canvasEl.style.minWidth,
+        canvasMinHeight: canvasEl.style.minHeight,
+        canvasBackground: canvasEl.style.backgroundImage,
+        zoomTransform: zoomWrapper.style.transform,
+        zoomWidth: zoomWrapper.style.width,
+        zoomHeight: zoomWrapper.style.height,
+      };
+
+      // Temporarily reset to fit all content at scale 1
+      canvasEl.style.overflow = 'visible';
+      canvasEl.style.width = bboxW + 'px';
+      canvasEl.style.height = bboxH + 'px';
+      canvasEl.style.flex = 'none';
+      canvasEl.style.minWidth = bboxW + 'px';
+      canvasEl.style.minHeight = bboxH + 'px';
+      canvasEl.style.backgroundImage = 'none'; // hide grid dots from export
+      zoomWrapper.style.transform = `translate(${-minX}px, ${-minY}px) scale(1)`;
+      zoomWrapper.style.width = bboxW + 'px';
+      zoomWrapper.style.height = bboxH + 'px';
+
+      // Tag all open shadow-root elements (wokwi web components) so we can
+      // inline their shadow DOM in the cloned document — html2canvas cannot
+      // capture shadow DOM content on its own, causing the board image to be
+      // blank while pin dots render at correct positions (apparent misalignment).
+      const shadowHostEls = [];
+      canvasEl.querySelectorAll('*').forEach(el => {
+        if (el.shadowRoot) {
+          el.dataset.h2cShadow = String(shadowHostEls.length);
+          shadowHostEls.push(el);
+        }
       });
 
-      const CW = circuitCanvas.width;   // circuit width
-      const CH = circuitCanvas.height;  // circuit height
-      const CODE_W = 340;               // code panel width
-      const HEADER_H = 48;              // header bar height
-      const FOOTER_H = 140;             // metadata footer height
-      const TOTAL_W = CW + CODE_W;
-      const TOTAL_H = HEADER_H + Math.max(CH, 400) + FOOTER_H;
-
-      // 2. Create composite canvas
-      const out = document.createElement('canvas');
-      out.width = TOTAL_W;
-      out.height = TOTAL_H;
-      const ctx = out.getContext('2d');
-
-      // ── Background
-      ctx.fillStyle = '#07080f';
-      ctx.fillRect(0, 0, TOTAL_W, TOTAL_H);
-
-      // ── Header bar
-      const grad = ctx.createLinearGradient(0, 0, TOTAL_W, 0);
-      grad.addColorStop(0, '#0d1525');
-      grad.addColorStop(1, '#111827');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, TOTAL_W, HEADER_H);
-
-      // Header bottom border
-      ctx.fillStyle = '#1e2d47';
-      ctx.fillRect(0, HEADER_H - 1, TOTAL_W, 1);
-
-      // Logo text
-      ctx.fillStyle = '#00d4ff';
-      ctx.font = 'bold 16px "Space Grotesk", sans-serif';
-      ctx.fillText('⚡ OpenHW-Studio', 20, HEADER_H / 2 + 6);
-
-      // Board chip (right side of header)
-      const boardLabel = board === 'arduino_uno' ? 'Arduino Uno' : board === 'pico' ? 'Raspberry Pi Pico' : 'ESP32';
-      ctx.font = '13px "Space Grotesk", sans-serif';
-      ctx.fillStyle = '#8fa3be';
-      const boardText = `Board: ${boardLabel}`;
-      const boardTW = ctx.measureText(boardText).width;
-      ctx.fillText(boardText, TOTAL_W - boardTW - 20, HEADER_H / 2 + 5);
-
-      // Component count chip
-      const infoText = `${components.length} components · ${wires.length} wires`;
-      const infoTW = ctx.measureText(infoText).width;
-      ctx.fillText(infoText, TOTAL_W - boardTW - infoTW - 36, HEADER_H / 2 + 5);
-
-      // ── Circuit image (left column)
-      ctx.drawImage(circuitCanvas, 0, HEADER_H);
-
-      // ── Code panel (right column)
-      const codeX = CW;
-      const codeY = HEADER_H;
-      const codeH = TOTAL_H - HEADER_H - FOOTER_H;
-
-      ctx.fillStyle = '#0a0f1a';
-      ctx.fillRect(codeX, codeY, CODE_W, codeH);
-
-      // Code panel left border
-      ctx.fillStyle = '#1e2d47';
-      ctx.fillRect(codeX, codeY, 1, codeH);
-
-      // Code panel header
-      ctx.fillStyle = '#0d1525';
-      ctx.fillRect(codeX + 1, codeY, CODE_W - 1, 28);
-      ctx.fillStyle = '#1e2d47';
-      ctx.fillRect(codeX + 1, codeY + 28, CODE_W - 1, 1);
-      ctx.fillStyle = '#00d4ff';
-      ctx.font = 'bold 11px "JetBrains Mono", monospace';
-      ctx.fillText('{ } Code', codeX + 12, codeY + 18);
-
-      // Code lines
-      ctx.font = '10px "JetBrains Mono", monospace';
-      const LINE_H = 14;
-      const MAX_LINES = Math.floor((codeH - 40) / LINE_H);
-      const codeLines = code.split('\n');
-      const keywords = /\b(void|int|float|bool|char|long|unsigned|return|if|else|for|while|do|switch|case|break|continue|new|delete|true|false|null|nullptr|include|define|const|static|struct|class|public|private|protected)\b/g;
-      const callFn = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/g;
-      codeLines.slice(0, MAX_LINES).forEach((line, i) => {
-        const y = codeY + 40 + i * LINE_H;
-        // Line number
-        ctx.fillStyle = '#3a4a5c';
-        ctx.fillText(String(i + 1).padStart(3, ' '), codeX + 6, y);
-        // Code text (simplified coloring - green for keywords, blue for calls, white for rest)
-        const truncated = line.length > 36 ? line.slice(0, 35) + '…' : line;
-        ctx.fillStyle = '#c8d8ea';
-        ctx.fillText(truncated, codeX + 32, y);
-      });
-      if (codeLines.length > MAX_LINES) {
-        ctx.fillStyle = '#4d6380';
-        ctx.fillText(`… ${codeLines.length - MAX_LINES} more lines`, codeX + 32, codeY + 40 + MAX_LINES * LINE_H);
+      let circuitCanvas;
+      try {
+        circuitCanvas = await html2canvas(canvasEl, {
+          backgroundColor: '#070b14',
+          scale: SCALE,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          width: bboxW,
+          height: bboxH,
+          x: 0,
+          y: 0,
+          scrollX: 0,
+          scrollY: 0,
+          onclone: (_clonedDoc, clonedEl) => {
+            shadowHostEls.forEach((liveEl, idx) => {
+              const cloned = clonedEl.querySelector(`[data-h2c-shadow="${idx}"]`);
+              if (!cloned || !liveEl.shadowRoot) return;
+              const wrapper = _clonedDoc.createElement('div');
+              // Preserve inline styles (transform, size, etc.) from the original element
+              Array.from(cloned.style).forEach(p =>
+                wrapper.style.setProperty(p, cloned.style.getPropertyValue(p))
+              );
+              // Deep-copy shadow root children into the wrapper so html2canvas sees them
+              liveEl.shadowRoot.childNodes.forEach(node =>
+                wrapper.appendChild(_clonedDoc.importNode(node, true))
+              );
+              cloned.replaceWith(wrapper);
+            });
+          },
+        });
+      } finally {
+        // Restore all original styles
+        canvasEl.style.overflow = origStyles.canvasOverflow;
+        canvasEl.style.width = origStyles.canvasWidth;
+        canvasEl.style.height = origStyles.canvasHeight;
+        canvasEl.style.flex = origStyles.canvasFlex;
+        canvasEl.style.minWidth = origStyles.canvasMinWidth;
+        canvasEl.style.minHeight = origStyles.canvasMinHeight;
+        canvasEl.style.backgroundImage = origStyles.canvasBackground;
+        zoomWrapper.style.transform = origStyles.zoomTransform;
+        zoomWrapper.style.width = origStyles.zoomWidth;
+        zoomWrapper.style.height = origStyles.zoomHeight;
+        overlays.forEach(el => { el.style.visibility = ''; });
+        // Remove temporary shadow-tracking attributes
+        shadowHostEls.forEach(el => { delete el.dataset.h2cShadow; });
       }
 
-      // ── Metadata footer
-      const footerY = TOTAL_H - FOOTER_H;
+      const CW = circuitCanvas.width;
+      const CH = circuitCanvas.height;
 
-      // Footer separator
-      ctx.fillStyle = '#1e2d47';
-      ctx.fillRect(0, footerY, TOTAL_W, 1);
+      // 2. Output canvas — circuit only (no header bar)
+      const out = document.createElement('canvas');
+      out.width = CW;
+      out.height = CH;
+      const ctx = out.getContext('2d');
 
-      ctx.fillStyle = '#0d1220';
-      ctx.fillRect(0, footerY + 1, TOTAL_W, FOOTER_H - 1);
+      ctx.fillStyle = '#070b14';
+      ctx.fillRect(0, 0, CW, CH);
+      ctx.drawImage(circuitCanvas, 0, 0);
 
-      // Build the metadata object matching the spec
-      const metadata = {
-        board,
-        components: components.map(c => ({ id: c.id, type: c.type, label: c.label, x: c.x, y: c.y, attrs: c.attrs })),
-        connections: wires.map(w => ({ id: w.id, from: w.from, to: w.to, color: w.color })),
-        code: code.length > 500 ? code.slice(0, 497) + '...' : code,
-        exported: new Date().toISOString(),
-      };
-      const jsonStr = JSON.stringify(metadata, null, 0);
-
-      // Footer label
-      ctx.fillStyle = '#00d4ff';
-      ctx.font = 'bold 10px "JetBrains Mono", monospace';
-      ctx.fillText('{ } Metadata', 16, footerY + 18);
-
-      // JSON block
-      ctx.font = '9.5px "JetBrains Mono", monospace';
-      const footerLines = [
-        `board: "${metadata.board}"`,
-        `components: [${metadata.components.length} items]`,
-        `connections: [${metadata.connections.length} wires]`,
-        `code: ${metadata.components.length} sketch lines`,
-        `exported: "${metadata.exported}"`,
-      ];
-      footerLines.forEach((ln, i) => {
-        ctx.fillStyle = i % 2 === 0 ? '#8fa3be' : '#6b82a0';
-        ctx.fillText(ln, 16, footerY + 34 + i * 16);
-      });
-
-      // Branding
+      // Branding watermark (bottom-right)
       ctx.fillStyle = '#2a3a52';
-      ctx.font = '9px "Space Grotesk", sans-serif';
-      ctx.fillText('Generated by OpenHW-Studio · openhw.studio', TOTAL_W - 264, TOTAL_H - 10);
+      ctx.font = `${9 * SCALE}px "Space Grotesk", sans-serif`;
+      ctx.fillText('Generated by OpenHW-Studio', CW - 240 * SCALE, CH - 8 * SCALE);
 
       // 3. Encode FULL metadata (no truncation) for machine-readable round-trip
       const fullMetadata = {
@@ -1942,6 +2015,443 @@ export default function SimulatorPage() {
     }
   };
 
+  // ── View Panel helpers — SVG Schematic Generator ─────────────────────────
+  const generateSchematic = useCallback(() => {
+    setSchematicLoading(true);
+    setSchematicDataUrl(null);
+    try {
+      const SW = 1122, SH = 794;           // A4 landscape px
+      const OM = 10, GL = 20, TH = 65;     // outer-margin, grid-label, title height
+      const FX1 = OM + GL, FY1 = OM + GL;
+      const FX2 = SW - OM - GL, FY2 = SH - OM - GL - TH;
+      const FW = FX2 - FX1, FH = FY2 - FY1;
+
+      // ── SVG micro helpers ───────────────────────────────────────────────
+      const ln  = (x1,y1,x2,y2,sw=1.5,col='#1a1a1a') =>
+        `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${sw}"/>`;
+      const bx  = (x,y,w,h,fill='white',sw=1.5,rx=0) =>
+        `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}" stroke="#1a1a1a" stroke-width="${sw}"/>`;
+      const tx  = (x,y,t,sz=9,anchor='middle',bold=false,fill='#1a1a1a',font='monospace') =>
+        `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${sz}" font-family="${font}" ${bold?'font-weight="bold"':''} fill="${fill}">${t}</text>`;
+      const circ= (cx,cy,r,fill='white') =>
+        `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="#1a1a1a" stroke-width="1.5"/>`;
+
+      // ── Symbol library ──────────────────────────────────────────────────
+      const SYMS = {};
+
+      // LED
+      SYMS['wokwi-led'] = {
+        w:72, h:44, refPrefix:'D',
+        pins:{ A:{dx:0,dy:22}, K:{dx:72,dy:22} },
+        draw(x,y,comp,ref){
+          const c=comp.attrs?.color||'red';
+          const fill=c==='green'?'#2a7a2a30':c==='blue'?'#2a2a9a30':c==='yellow'?'#8a7a0030':'#c0202030';
+          return [
+            ln(x,y+22,x+16,y+22),
+            `<polygon points="${x+16},${y+6} ${x+16},${y+38} ${x+48},${y+22}" fill="${fill}" stroke="#1a1a1a" stroke-width="1.5"/>`,
+            ln(x+48,y+6,x+48,y+38), ln(x+48,y+22,x+72,y+22),
+            ln(x+38,y+6,x+52,y-5,1), ln(x+32,y+6,x+46,y-5,1),
+            `<polygon points="${x+50},${y-7} ${x+52},${y-5} ${x+48},${y-4}" fill="#1a1a1a"/>`,
+            `<polygon points="${x+44},${y-7} ${x+46},${y-5} ${x+42},${y-4}" fill="#1a1a1a"/>`,
+            tx(x+36,y+54,ref,9,'middle',true),
+            tx(x+5,y+18,'+',7,'middle',false,'#777'), tx(x+64,y+18,'−',7,'middle',false,'#777'),
+          ].join('');
+        }
+      };
+
+      // Resistor
+      SYMS['wokwi-resistor'] = {
+        w:70, h:32, refPrefix:'R',
+        pins:{ p1:{dx:0,dy:16}, p2:{dx:70,dy:16} },
+        draw(x,y,comp,ref){
+          const v=parseFloat(comp.attrs?.value||220);
+          const u=v>=1e6?`${v/1e6}M\u03A9`:v>=1000?`${v/1000}k\u03A9`:`${v}\u03A9`;
+          return [ln(x,y+16,x+12,y+16), bx(x+12,y+6,46,20), ln(x+58,y+16,x+70,y+16),
+            tx(x+35,y+44,ref,9,'middle',true), tx(x+35,y+53,u,8,'middle',false,'#555')].join('');
+        }
+      };
+
+      // Push button
+      SYMS['wokwi-pushbutton'] = {
+        w:62, h:48, refPrefix:'S',
+        pins:{ '1':{dx:0,dy:28}, '2':{dx:62,dy:28} },
+        draw(x,y,comp,ref){
+          return [
+            ln(x,y+28,x+16,y+28), ln(x+16,y+14,x+16,y+42),
+            ln(x+40,y+14,x+40,y+42), ln(x+16,y+14,x+46,y+9),
+            ln(x+40,y+28,x+62,y+28),
+            ln(x+28,y+9,x+28,y+2), ln(x+23,y+2,x+33,y+2,1.5),
+            tx(x+31,y+60,ref,9,'middle',true),
+          ].join('');
+        }
+      };
+
+      // Buzzer
+      SYMS['wokwi-buzzer'] = {
+        w:52, h:48, refPrefix:'BZ',
+        pins:{ '1':{dx:0,dy:24}, '2':{dx:52,dy:24} },
+        draw(x,y,comp,ref){
+          return [
+            ln(x,y+24,x+10,y+24), bx(x+10,y+10,32,28),
+            `<path d="M${x+21},${y+16} Q${x+26},${y+11} ${x+31},${y+16}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
+            `<path d="M${x+17},${y+13} Q${x+26},${y+5} ${x+35},${y+13}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
+            ln(x+26,y+24,x+26,y+30,1.5), ln(x+42,y+24,x+52,y+24),
+            tx(x+6,y+22,'+',7,'middle',false,'#777'),
+            tx(x+26,y+60,ref,9,'middle',true),
+          ].join('');
+        }
+      };
+
+      // Power supply
+      SYMS['wokwi-power-supply'] = {
+        w:52, h:70, refPrefix:'PS',
+        pins:{ '5V':{dx:26,dy:0}, 'GND':{dx:26,dy:70} },
+        draw(x,y,comp,ref){
+          const v=comp.attrs?.voltage||'5V';
+          return [
+            ln(x+26,y,x+26,y+16), ln(x+14,y+16,x+38,y+16,2),
+            ln(x+26,y+50,x+26,y+70),
+            ln(x+14,y+50,x+38,y+50), ln(x+18,y+56,x+34,y+56), ln(x+22,y+62,x+30,y+62),
+            tx(x+26,y-4,`+${v}`,9), tx(x+26,y+32,ref,8,'middle',false,'#555'),
+          ].join('');
+        }
+      };
+
+      // Potentiometer
+      SYMS['wokwi-potentiometer'] = {
+        w:80, h:72, refPrefix:'RV',
+        pins:{ '1':{dx:0,dy:36}, '2':{dx:80,dy:36}, 'SIG':{dx:40,dy:72} },
+        draw(x,y,comp,ref){
+          const v=parseFloat(comp.attrs?.value||50000);
+          const u=v>=1e6?`${v/1e6}M\u03A9`:v>=1000?`${v/1000}k\u03A9`:`${v}\u03A9`;
+          return [
+            ln(x,y+36,x+12,y+36), bx(x+12,y+26,56,20), ln(x+68,y+36,x+80,y+36),
+            ln(x+40,y+46,x+40,y+60),
+            `<polygon points="${x+34},${y+46} ${x+46},${y+46} ${x+40},${y+36}" fill="#1a1a1a"/>`,
+            ln(x+40,y+60,x+40,y+72),
+            tx(x+40,y+22,u,7), tx(x+40,y+84,ref,9,'middle',true),
+          ].join('');
+        }
+      };
+
+      // Servo
+      SYMS['wokwi-servo'] = {
+        w:90, h:56, refPrefix:'SV',
+        pins:{ 'GND':{dx:18,dy:56}, 'V+':{dx:45,dy:56}, 'PWM':{dx:72,dy:56} },
+        draw(x,y,comp,ref){
+          return [
+            bx(x+5,y+5,80,36,undefined,1.5,3), tx(x+45,y+28,'SERVO',10,'middle',true,'#1a1a1a','sans-serif'),
+            ln(x+18,y+41,x+18,y+56), ln(x+45,y+41,x+45,y+56), ln(x+72,y+41,x+72,y+56),
+            tx(x+18,y+66,'GND',7), tx(x+45,y+66,'V+',7), tx(x+72,y+66,'PWM',7),
+            tx(x+45,y+76,ref,9,'middle',true),
+          ].join('');
+        }
+      };
+
+      // DC Motor
+      SYMS['wokwi-motor'] = {
+        w:60, h:52, refPrefix:'M',
+        pins:{ '1':{dx:0,dy:26}, '2':{dx:60,dy:26} },
+        draw(x,y,comp,ref){
+          return [ln(x,y+26,x+8,y+26), circ(x+30,y+26,18), tx(x+30,y+30,'M',14,'middle',true,'#1a1a1a','sans-serif'),
+            ln(x+52,y+26,x+60,y+26), tx(x+30,y+56,ref,9,'middle',true)].join('');
+        }
+      };
+
+      // NeoPixel
+      SYMS['wokwi-neopixel-matrix'] = {
+        w:80, h:62, refPrefix:'NP',
+        pins:{ 'DIN':{dx:0,dy:31}, 'VCC':{dx:40,dy:0}, 'GND':{dx:40,dy:62} },
+        draw(x,y,comp,ref){
+          return [
+            bx(x+10,y+10,60,42,'#111'), ln(x,y+31,x+10,y+31),
+            ln(x+40,y,x+40,y+10), ln(x+40,y+52,x+40,y+62),
+            `<circle cx="${x+30}" cy="${y+26}" r="5" fill="#f00" opacity="0.9"/>`,
+            `<circle cx="${x+40}" cy="${y+26}" r="5" fill="#0f0" opacity="0.9"/>`,
+            `<circle cx="${x+50}" cy="${y+26}" r="5" fill="#00f" opacity="0.9"/>`,
+            `<circle cx="${x+35}" cy="${y+38}" r="5" fill="#ff0" opacity="0.9"/>`,
+            `<circle cx="${x+45}" cy="${y+38}" r="5" fill="#0ff" opacity="0.9"/>`,
+            tx(x+40,y+76,ref,9,'middle',true),
+          ].join('');
+        }
+      };
+
+      // 74HC595 Shift Register
+      SYMS['shift_register'] = {
+        w:120, h:210, refPrefix:'IC',
+        pins:{
+          vcc:{dx:60,dy:0},gnd:{dx:60,dy:210},
+          ser:{dx:0,dy:40},srclk:{dx:0,dy:58},rclk:{dx:0,dy:76},oe:{dx:0,dy:94},srclr:{dx:0,dy:112},
+          q0:{dx:120,dy:40},q1:{dx:120,dy:58},q2:{dx:120,dy:76},q3:{dx:120,dy:94},
+          q4:{dx:120,dy:112},q5:{dx:120,dy:130},q6:{dx:120,dy:148},q7:{dx:120,dy:166},q7s:{dx:120,dy:184},
+        },
+        draw(x,y,comp,ref){
+          const LP=[['SER',40],['SRCLK',58],['RCLK',76],['~OE',94],['~SRCLR',112]];
+          const RP=[['Q0',40],['Q1',58],['Q2',76],['Q3',94],['Q4',112],['Q5',130],['Q6',148],['Q7',166],["Q7'",184]];
+          return [
+            bx(x+15,y+12,90,186),tx(x+60,y+28,'74HC595',9,'middle',true),tx(x+60,y+10,ref,7,'middle',false,'#555'),
+            ln(x+60,y,x+60,y+12),tx(x+60,y-2,'VCC',7),
+            ln(x+60,y+198,x+60,y+210),tx(x+60,y+220,'GND',7),
+            ...LP.map(([l,dy])=> ln(x,y+dy,x+15,y+dy)+`<text x="${x+18}" y="${y+dy+3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+            ...RP.map(([l,dy])=> ln(x+105,y+dy,x+120,y+dy)+`<text x="${x+102}" y="${y+dy+3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+          ].join('');
+        }
+      };
+
+      // L298N Motor Driver
+      SYMS['wokwi-motor-driver'] = {
+        w:130, h:170, refPrefix:'MD',
+        pins:{
+          ENA:{dx:0,dy:30},IN1:{dx:0,dy:50},IN2:{dx:0,dy:70},IN3:{dx:0,dy:90},IN4:{dx:0,dy:110},ENB:{dx:0,dy:130},
+          OUT1:{dx:130,dy:30},OUT2:{dx:130,dy:50},OUT3:{dx:130,dy:90},OUT4:{dx:130,dy:110},
+          '12V':{dx:30,dy:0},'GND':{dx:65,dy:0},'5V':{dx:100,dy:0},
+        },
+        draw(x,y,comp,ref){
+          const LP=[['ENA',30],['IN1',50],['IN2',70],['IN3',90],['IN4',110],['ENB',130]];
+          const RP=[['OUT1',30],['OUT2',50],['OUT3',90],['OUT4',110]];
+          const TP=[['12V',30],['GND',65],['5V',100]];
+          return [
+            bx(x+15,y+12,100,148),tx(x+65,y+34,'L298N',10,'middle',true,'#1a1a1a','sans-serif'),tx(x+65,y+10,ref,7,'middle',false,'#555'),
+            ...LP.map(([l,dy])=> ln(x,y+dy,x+15,y+dy)+`<text x="${x+18}" y="${y+dy+3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+            ...RP.map(([l,dy])=> ln(x+115,y+dy,x+130,y+dy)+`<text x="${x+112}" y="${y+dy+3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+            ...TP.map(([l,dx])=> ln(x+dx,y,x+dx,y+12)+`<text x="${x+dx}" y="${y-2}" text-anchor="middle" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+          ].join('');
+        }
+      };
+
+      // Arduino Uno ─────────────────────────────────────────────────────────
+      const UL=['0','1','2','3','4','5','6','7','8','9','10','11','12','13'];
+      const UR=['A0','A1','A2','A3','A4','A5','vin','gnd_1','gnd_2','gnd_3','5V','3v3','rst','ioref'];
+      const ULL=['D0','D1','D2','D3','D4','D5~','D6~','D7','D8','D9~','D10~','D11~','D12','D13'];
+      const URL2=['A0','A1','A2','A3','A4','A5','VIN','GND','GND','GND','5V','3.3V','RST','IOREF'];
+      const UPS=18, UW=148, UH=UL.length*UPS+46;
+      const unoPins={};
+      UL.forEach((id,i)=>{ unoPins[id]={dx:0,dy:34+i*UPS}; });
+      UR.forEach((id,i)=>{ unoPins[id]={dx:UW,dy:34+i*UPS}; });
+      SYMS['wokwi-arduino-uno']={
+        w:UW, h:UH, refPrefix:'U', pins:unoPins,
+        draw(x,y,comp,ref){
+          return [
+            bx(x+16,y+14,UW-32,UH-28),
+            tx(x+UW/2,y+30,'Arduino Uno',10,'middle',true),
+            tx(x+UW/2,y+10,ref,8,'middle',false,'#555'),
+            tx(x+UW/2,y+44,'ATmega328P',7,'middle',false,'#777'),
+            ...UL.map((id,i)=>{const py=y+34+i*UPS; return ln(x,py,x+16,py)+`<text x="${x+19}" y="${py+3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${ULL[i]}</text>`;}),
+            ...UR.map((id,i)=>{const py=y+34+i*UPS; return ln(x+UW-16,py,x+UW,py)+`<text x="${x+UW-19}" y="${py+3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${URL2[i]}</text>`;}),
+          ].join('');
+        }
+      };
+
+      // Generic fallback IC ─────────────────────────────────────────────────
+      const makeGenericSym = (comp) => {
+        const used = new Set();
+        wires.forEach(w => {
+          const [ci,pi]=w.from.split(':'); if(ci===comp.id&&pi) used.add(pi);
+          const [ci2,pi2]=w.to.split(':'); if(ci2===comp.id&&pi2) used.add(pi2);
+        });
+        const pl=[...used]; const half=Math.ceil(pl.length/2);
+        const lp=pl.slice(0,half), rp=pl.slice(half);
+        const rows=Math.max(lp.length,rp.length,2), gh=rows*20+44, gw=100;
+        const pins={};
+        lp.forEach((id,i)=>{ pins[id]={dx:0,dy:32+i*20}; });
+        rp.forEach((id,i)=>{ pins[id]={dx:gw+30,dy:32+i*20}; });
+        return {
+          w:gw+30, h:gh, refPrefix:'IC', pins,
+          draw(x,y,_c,ref){
+            const sType=_c.type.replace('wokwi-','');
+            return [
+              bx(x+15,y+12,gw,gh-24), tx(x+15+gw/2,y+28,sType,8,'middle',true), tx(x+15+gw/2,y+10,ref,7,'middle',false,'#555'),
+              ...lp.map((id,i)=> ln(x,y+32+i*20,x+15,y+32+i*20)+`<text x="${x+18}" y="${y+36+i*20}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
+              ...rp.map((id,i)=> ln(x+gw+15,y+32+i*20,x+gw+30,y+32+i*20)+`<text x="${x+gw+12}" y="${y+36+i*20}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
+            ].join('');
+          }
+        };
+      };
+
+      // ── Layout ────────────────────────────────────────────────────────────
+      if (components.length === 0) {
+        const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${SW}" height="${SH}"><rect width="${SW}" height="${SH}" fill="white"/><text x="${SW/2}" y="${SH/2}" text-anchor="middle" font-size="18" fill="#aaa" font-family="sans-serif">No components on canvas</text></svg>`;
+        schematicSvgRef.current=svg;
+        setSchematicDataUrl(`data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`);
+        return;
+      }
+
+      // Assign reference designators (sorted left-to-right by canvas x)
+      const sorted=[...components].sort((a,b)=>a.x-b.x);
+      const refCounts={}, compSymMap={}, compRefMap={};
+      sorted.forEach(c=>{
+        let sym=SYMS[c.type]; if(!sym) sym=makeGenericSym(c);
+        compSymMap[c.id]=sym;
+        const pre=sym.refPrefix; refCounts[pre]=(refCounts[pre]||0)+1;
+        compRefMap[c.id]=`${pre}${refCounts[pre]}`;
+      });
+
+      // Bounding box (canvas component centers)
+      let mnX=1e9,mnY=1e9,mxX=-1e9,mxY=-1e9;
+      components.forEach(c=>{
+        const cx=c.x+(c.w||60)/2, cy=c.y+(c.h||60)/2;
+        mnX=Math.min(mnX,cx); mnY=Math.min(mnY,cy); mxX=Math.max(mxX,cx); mxY=Math.max(mxY,cy);
+      });
+
+      const PAD=70;
+      const availW=FW-PAD*2, availH=FH-PAD*2;
+      const srcW=Math.max(mxX-mnX,1), srcH=Math.max(mxY-mnY,1);
+      const sc=Math.min(availW/srcW, availH/srcH, 1.8);
+
+      const toSch=(cx,cy)=>({ x:FX1+PAD+(cx-mnX)*sc, y:FY1+PAD+(cy-mnY)*sc });
+
+      // Symbol top-left positions
+      const cPos={};
+      components.forEach(c=>{
+        const sym=compSymMap[c.id];
+        const cx=c.x+(c.w||60)/2, cy=c.y+(c.h||60)/2;
+        const s=toSch(cx,cy);
+        cPos[c.id]={ x:s.x-sym.w/2, y:s.y-sym.h/2 };
+      });
+
+      // Pin world position helper
+      const pinXY=(compId,pinId)=>{
+        const c=components.find(cc=>cc.id===compId); if(!c) return null;
+        const sym=compSymMap[c.id]; if(!sym) return null;
+        const pos=cPos[c.id]; const pin=sym.pins[pinId];
+        if(!pin) return { x:pos.x+sym.w, y:pos.y+sym.h/2 };
+        return { x:pos.x+pin.dx, y:pos.y+pin.dy };
+      };
+
+      // ── Components SVG ────────────────────────────────────────────────────
+      const compsSVG=components.map(c=>{
+        const sym=compSymMap[c.id]; const pos=cPos[c.id]; const ref=compRefMap[c.id];
+        return `<g class="comp" id="${c.id}">${sym.draw(pos.x,pos.y,c,ref)}</g>`;
+      }).join('\n');
+
+      // ── Wires SVG ─────────────────────────────────────────────────────────
+      const wiresSVG=wires.map(w=>{
+        const [fC,fP]=w.from.split(':'), [tC,tP]=w.to.split(':');
+        const p1=pinXY(fC,fP), p2=pinXY(tC,tP); if(!p1||!p2) return '';
+        // Route: horizontal from p1 half-way, then vertical, then horizontal to p2
+        const midX=(p1.x+p2.x)/2;
+        const d=`M${p1.x.toFixed(1)},${p1.y.toFixed(1)} L${midX.toFixed(1)},${p1.y.toFixed(1)} L${midX.toFixed(1)},${p2.y.toFixed(1)} L${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+        // Junction dot at middle junction if same Y (direct horizontal)
+        const dot=(Math.abs(p1.y-p2.y)<1)?'':`<circle cx="${midX.toFixed(1)}" cy="${p1.y.toFixed(1)}" r="2.5" fill="#1a1a1a"/>`;
+        return `<path d="${d}" fill="none" stroke="#1a1a1a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>${dot}`;
+      }).filter(Boolean).join('\n');
+
+      // ── Border + grid coordinates ─────────────────────────────────────────
+      const GCOLS=6, GROWS=4, GRL=['A','B','C','D'];
+      const cStep=FW/GCOLS, rStep=FH/GROWS;
+      let borderSVG=`
+        <rect x="${OM}" y="${OM}" width="${SW-OM*2}" height="${SH-OM*2}" fill="none" stroke="#cc0000" stroke-width="1.2"/>
+        <rect x="${FX1}" y="${FY1}" width="${FW}" height="${FH}" fill="none" stroke="#cc0000" stroke-width="2"/>
+      `;
+      for(let c=1;c<GCOLS;c++){
+        const gx=FX1+c*cStep;
+        borderSVG+=`${ln(gx,FY1,gx,FY1-3,0.5,'#777')}${ln(gx,FY2,gx,FY2+3,0.5,'#777')}`;
+      }
+      for(let r=1;r<GROWS;r++){
+        const gy=FY1+r*rStep;
+        borderSVG+=`${ln(FX1,gy,FX1-3,gy,0.5,'#777')}${ln(FX2,gy,FX2+3,gy,0.5,'#777')}`;
+      }
+      for(let c=0;c<GCOLS;c++){
+        const cx=FX1+c*cStep+cStep/2;
+        borderSVG+=tx(cx,FY1-5,c+1,8,'middle',false,'#444','sans-serif');
+        borderSVG+=tx(cx,FY2+14,c+1,8,'middle',false,'#444','sans-serif');
+      }
+      for(let r=0;r<GROWS;r++){
+        const ry=FY1+r*rStep+rStep/2+4;
+        borderSVG+=tx(FX1-5,ry,GRL[r],8,'end',false,'#444','sans-serif');
+        borderSVG+=tx(FX2+5,ry,GRL[r],8,'start',false,'#444','sans-serif');
+      }
+
+      // ── Title block ───────────────────────────────────────────────────────
+      const TBY=FY2, TBH2=SH-OM-GL-FY2, divW=FW/3;
+      const boardLabel=board==='arduino_uno'?'Arduino Uno':board==='pico'?'Raspberry Pi Pico':'ESP32';
+      const dateStr=new Date().toISOString().slice(0,10);
+      borderSVG+=`
+        <rect x="${FX1}" y="${TBY}" width="${FW}" height="${TBH2}" fill="white" stroke="#cc0000" stroke-width="1"/>
+        <line x1="${FX1+divW}" y1="${TBY}" x2="${FX1+divW}" y2="${TBY+TBH2}" stroke="#bbb" stroke-width="0.5"/>
+        <line x1="${FX1+divW*2}" y1="${TBY}" x2="${FX1+divW*2}" y2="${TBY+TBH2}" stroke="#bbb" stroke-width="0.5"/>
+        <text x="${FX1+10}" y="${TBY+TBH2/2+4}" font-size="9" font-family="sans-serif" fill="#666">Made with OpenHW Studio</text>
+        <text x="${FX1+divW*1.5}" y="${TBY+TBH2/2-4}" text-anchor="middle" font-size="10" font-weight="bold" font-family="sans-serif" fill="#1a1a1a">Board: ${boardLabel}</text>
+        <text x="${FX1+divW*1.5}" y="${TBY+TBH2/2+10}" text-anchor="middle" font-size="8" font-family="sans-serif" fill="#555">${components.length} components · ${wires.length} wires</text>
+        <text x="${FX1+divW*2.5}" y="${TBY+TBH2/2+4}" text-anchor="middle" font-size="9" font-family="sans-serif" fill="#444">${dateStr}</text>
+        <text x="${FX1+divW}" y="${TBY+8}" font-size="6" font-family="sans-serif" fill="#aaa">TITLE</text>
+        <text x="${FX1+divW*2}" y="${TBY+8}" font-size="6" font-family="sans-serif" fill="#aaa">DATE</text>
+      `;
+
+      // ── Assemble SVG ───────────────────────────────────────────────────────
+      const svgStr=`<svg xmlns="http://www.w3.org/2000/svg" width="${SW}" height="${SH}" viewBox="0 0 ${SW} ${SH}">
+  <rect width="${SW}" height="${SH}" fill="white"/>
+  ${borderSVG}
+  <g id="wires" stroke-linecap="round" stroke-linejoin="round">${wiresSVG}</g>
+  <g id="components">${compsSVG}</g>
+</svg>`;
+
+      schematicSvgRef.current = svgStr;
+      const b64 = btoa(unescape(encodeURIComponent(svgStr)));
+      setSchematicDataUrl(`data:image/svg+xml;base64,${b64}`);
+    } catch (err) {
+      console.error('[Schematic]', err);
+    } finally {
+      setSchematicLoading(false);
+    }
+  }, [components, wires, board]);
+
+  const downloadSchematicPng = useCallback(() => {
+    const svgStr = schematicSvgRef.current;
+    if (!svgStr) return;
+    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 2244; canvas.height = 1588; // 2x high-res
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png', 0.95);
+      a.download = 'schematic.png'; a.click();
+    };
+    img.onerror = () => {
+      // Fallback: download SVG
+      const a = document.createElement('a'); a.href = url; a.download = 'schematic.svg'; a.click();
+    };
+    img.src = url;
+  }, []);
+
+  const downloadSchematicPdf = useCallback(() => {
+    const svgStr = schematicSvgRef.current;
+    if (!svgStr) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(
+      `<html><head><title>Schematic</title>` +
+      `<style>@page{margin:0;size:A4 landscape}body{margin:0;padding:0}svg{width:100%;height:auto;display:block}</style></head>` +
+      `<body>${svgStr}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};}<\/script></body></html>`
+    );
+    win.document.close();
+  }, []);
+
+  const downloadCompCsv = () => {
+    const counts = {};
+    components.forEach(c => {
+      if (!counts[c.type]) counts[c.type] = { type: c.type, label: c.label, count: 0 };
+      counts[c.type].count++;
+    });
+    const rows = Object.values(counts);
+    let csv = '#,Component,Type,Quantity\n';
+    rows.forEach((row, i) => {
+      csv += `${i + 1},"${row.label}","${row.type}",${row.count}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'components.csv';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  };
+
   // ── PNG Import ────────────────────────────────────────────────────────────
   const importFileRef = useRef(null);
 
@@ -1978,6 +2488,7 @@ export default function SimulatorPage() {
         if (meta.code) setCode(meta.code);
         if (Array.isArray(meta.components)) setComponents(meta.components);
         if (Array.isArray(meta.connections)) setWires(meta.connections);
+        syncNextIds(meta.components, meta.connections);
         setSelected(null);
         setWireStart(null);
       } catch (err) {
@@ -2174,6 +2685,163 @@ export default function SimulatorPage() {
               </svg>
             )}
           </Btn>
+
+          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
+
+          {/* VIEW PANEL — button + dropdown */}
+          <div ref={viewPanelRef} style={{ position: 'relative' }}>
+            <Btn onClick={() => setShowViewPanel(v => !v)} title="View schematic or component list">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+              </svg>
+              View
+            </Btn>
+            {/* Dropdown panel */}
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 300,
+              background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
+              boxShadow: '0 8px 32px rgba(0,0,0,.45)', zIndex: 9999,
+              overflow: 'hidden',
+              maxHeight: showViewPanel ? 660 : 0,
+              opacity: showViewPanel ? 1 : 0,
+              transition: 'max-height 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
+              pointerEvents: showViewPanel ? 'auto' : 'none',
+            }}>
+              {/* Panel header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>View</span>
+                <button onClick={() => setShowViewPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>✕</button>
+              </div>
+
+              {/* ── Schematic View accordion ── */}
+              <div>
+                <button
+                  onClick={() => {
+                    if (viewPanelSection === 'schematic') {
+                      setViewPanelSection(null);
+                      setSchematicDataUrl(null);
+                      setSchematicLoading(false);
+                    } else {
+                      setViewPanelSection('schematic');
+                      generateSchematic();
+                    }
+                  }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '11px 16px', border: 'none', borderBottom: '1px solid var(--border)',
+                    background: viewPanelSection === 'schematic' ? 'rgba(100,180,255,.07)' : 'var(--bg2)',
+                    color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+                    </svg>
+                    Schematic View
+                  </span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    {viewPanelSection === 'schematic'
+                      ? <path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      : <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    }
+                  </svg>
+                </button>
+                {viewPanelSection === 'schematic' && (
+                  <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+                    {schematicLoading ? (
+                      <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text3)', fontSize: 12 }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }}><path d="M21 12a9 9 0 1 1-4.5-7.8"/></svg>
+                        Capturing circuit…
+                      </div>
+                    ) : schematicDataUrl ? (
+                      <>
+                        <img src={schematicDataUrl} alt="Schematic" style={{ width: '100%', borderRadius: 6, border: '1px solid var(--border)', marginBottom: 10, display: 'block' }} />
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={downloadSchematicPng} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>↓ PNG</button>
+                          <button onClick={downloadSchematicPdf} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>↓ PDF</button>
+                          <button onClick={generateSchematic} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }} title="Recapture">↺ Refresh</button>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text3)', fontSize: 12 }}>Capture failed. Try again.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* ── Component List accordion ── */}
+              <div>
+                <button
+                  onClick={() => setViewPanelSection(s => s === 'components' ? null : 'components')}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '11px 16px', border: 'none',
+                    background: viewPanelSection === 'components' ? 'rgba(100,180,255,.07)' : 'var(--bg2)',
+                    color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                      <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                    </svg>
+                    Component List
+                  </span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                    {viewPanelSection === 'components'
+                      ? <path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      : <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    }
+                  </svg>
+                </button>
+                {viewPanelSection === 'components' && (
+                  <div style={{ padding: '12px 16px' }}>
+                    {components.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text3)', fontSize: 12 }}>No components on canvas.</div>
+                    ) : (
+                      <>
+                        <div style={{ overflowX: 'auto', marginBottom: 10, borderRadius: 6, border: '1px solid var(--border)' }}>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: 'var(--bg3)' }}>
+                                {['#', 'Component', 'Type', 'Qty'].map(h => (
+                                  <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: 'var(--text3)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(() => {
+                                const counts = {};
+                                components.forEach(c => {
+                                  if (!counts[c.type]) counts[c.type] = { type: c.type, label: c.label, count: 0 };
+                                  counts[c.type].count++;
+                                });
+                                return Object.values(counts).map((row, i) => (
+                                  <tr key={row.type} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,.02)' }}>
+                                    <td style={{ padding: '7px 10px', color: 'var(--text3)', fontSize: 11 }}>{i + 1}</td>
+                                    <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--text)' }}>{row.label}</td>
+                                    <td style={{ padding: '7px 10px', color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>{row.type}</td>
+                                    <td style={{ padding: '7px 10px', fontWeight: 700, color: 'var(--accent)' }}>{row.count}</td>
+                                  </tr>
+                                ));
+                              })()}
+                            </tbody>
+                          </table>
+                        </div>
+                        <button
+                          onClick={downloadCompCsv}
+                          style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          Download CSV
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* RIGHT SIDE — right to left: Sign In/User, My Projects, Save, Export, Import */}
@@ -2297,7 +2965,7 @@ export default function SimulatorPage() {
       </header>
 
       {/* GUEST BANNER */}
-      {(!isAuthenticated && showGuestBanner) && (
+      {(!authLoading && !isAuthenticated && showGuestBanner) && (
         <div style={S.guestBanner}>
           <div style={{ flex: 1 }}>
              <strong>Guest Mode</strong> — Your work is auto-saved locally in your browser. Click <strong>My Projects</strong> to see all saved circuits. Sign in to access your projects from any device.
@@ -2380,7 +3048,7 @@ export default function SimulatorPage() {
                   Upload ZIP
                 </button>
                 <button
-                  onClick={() => setShowCreateComponentModal(true)}
+                  onClick={() => window.open('/component-editor', '_blank')}
                   style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 600 }}>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                   Create
@@ -2487,7 +3155,7 @@ export default function SimulatorPage() {
                             >
                               {/* Component SVG — absolutely centred in upper area, no inner box */}
                               {hasUI ? (
-                                <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center', pointerEvents: 'none', lineHeight: 0 }}>
+                                <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center', pointerEvents: 'none', lineHeight: 0, width: compW, height: compH }}>
                                   {React.createElement(COMPONENT_REGISTRY[item.type].UI, { state: {}, attrs: {}, isRunning: false })}
                                 </div>
                               ) : (
@@ -2569,7 +3237,7 @@ export default function SimulatorPage() {
                 icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
                 label: 'Edit a Copy',
                 color: 'var(--text)',
-                action: () => { setShowCreateComponentModal(true); setPaletteContextMenu(null); setIsPaletteHovered(false); }
+                action: () => { window.open('/component-editor', '_blank'); setPaletteContextMenu(null); setIsPaletteHovered(false); }
               },
             ].map(({ icon, label, color, action }) => (
               <button
@@ -2634,25 +3302,6 @@ export default function SimulatorPage() {
               setWireClickPos(null)
             }
           }}
-          onMouseMove={e => {
-            if (wireStart && canvasRef.current) {
-              const r = canvasRef.current.getBoundingClientRect()
-              const rawX = (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom;
-              const rawY = (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom;
-              const snapRadius = 15;
-              let snapped = null;
-              outer: for (const c of components) {
-                if (c.id === wireStart.compId) continue;
-                for (const pin of (PIN_DEFS[c.type] || [])) {
-                  const pp = getPinPos(c.id, pin.id);
-                  if (pp && Math.hypot(pp.x - rawX, pp.y - rawY) < snapRadius) {
-                    snapped = pp; break outer;
-                  }
-                }
-              }
-              setMousePos(snapped || { x: rawX, y: rawY });
-            }
-          }}
           onDoubleClick={e => {
             if (wireStart || isRunning) return;
             // Don't open search if clicking on an input, button, select, textarea, or inside a context menu
@@ -2670,7 +3319,7 @@ export default function SimulatorPage() {
           {/* Zoom Wrapper — scales all circuit content */}
           <div style={{
             position: 'absolute', top: 0, left: 0,
-            width: `${100 / canvasZoom}%`, height: `${100 / canvasZoom}%`,
+            width: '10000px', height: '8000px',
             transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
           }}>
             {/* BOTTOM SVG layer for wires (Below Components) */}
@@ -3140,6 +3789,7 @@ export default function SimulatorPage() {
           {/* Component Description Panel — shows info of canvas-selected component */}
           {showComponentDesc && selectedComponentInfo && (
             <div
+              data-export-ignore="true"
               onClick={e => e.stopPropagation()}
               onMouseDown={e => e.stopPropagation()}
               style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 220, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden' }}
@@ -3178,6 +3828,7 @@ export default function SimulatorPage() {
 
           {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
           <div
+            data-export-ignore="true"
             style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '4px 6px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}
             onClick={e => e.stopPropagation()}
             onMouseDown={e => e.stopPropagation()}
@@ -3234,6 +3885,7 @@ export default function SimulatorPage() {
                     setShowCanvasMenu(false);
                   }}>{wirepointsEnabled ? 'Disable Wire Waypoints' : 'Enable Wire Waypoints'}</button>
                   <button className="canvas-menu-item" onClick={() => { setShowComponentDesc(d => !d); setShowCanvasMenu(false); }}>{showComponentDesc ? 'Hide Component Info' : 'Show Component Info'}</button>
+                  <button className="canvas-menu-item" onClick={() => { setShowConnectionsPanel(p => !p); setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
                   <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
                   <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
                 </div>
@@ -3402,6 +4054,7 @@ export default function SimulatorPage() {
               )}
 
               {/* Wires list */}
+              {showConnectionsPanel && (
               <div className="panel-scroll" style={S.wiresList}>
                 <div style={S.wiresHeader}>Connections ({wires.length})</div>
                 {wires.length === 0 ? (
@@ -3426,17 +4079,18 @@ export default function SimulatorPage() {
                   ))
                 )}
               </div>
+              )}
 
               {/* Code editor */}
               <div style={S.codePanel}>
                 <div style={S.codeTabs}>
-                  {['code', 'libraries', 'serial', 'plotter'].map(t => (
+                  {['code', 'block', 'libraries', 'serial', 'plotter'].map(t => (
                     <button
                       key={t}
                       style={{ ...S.codeTab, ...(codeTab === t ? S.codeTabActive : {}) }}
                       onClick={() => setCodeTab(t)}
                     >
-                      {t === 'code' ? '{ } Code' : t === 'libraries' ? ' Libraries' : t === 'serial' ? ' Serial' : ' Plotter'}
+                      {t === 'code' ? '{ } Code' : t === 'block' ? 'Block' : t === 'libraries' ? ' Libraries' : t === 'serial' ? ' Serial' : ' Plotter'}
                     </button>
                   ))}
                 </div>
@@ -3460,6 +4114,9 @@ export default function SimulatorPage() {
                       textareaClassName="editor-textarea"
                     />
                   </div>
+                )}
+                {codeTab === 'block' && (
+                  <BlocklyEditor onExportCode={(generated) => { setCode(generated); setCodeTab('code'); }} />
                 )}
                 {codeTab === 'libraries' && (
                   <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', padding: 12, background: 'var(--bg)' }}>
