@@ -13,6 +13,13 @@ export { default as wokwiMotorDriver } from './wokwi-motor-driver';
 export { default as wokwiSlidePotentiometer } from './wokwi-slide-potentiometer';
 export { default as wokwiPotentiometer } from './wokwi-potentiometer';
 export { default as shiftRegister } from './shift_register';
+export { default as wokwiMax7219 } from './wokwi-max7219';
+export { default as wokwiSSD1306Oled } from './wokwi-ssd1306-oled';
+export { default as wokwi7Segment } from './wokwi-7segment';
+export { default as wokwiIli9341 } from './wokwi-ili9341';
+export { default as wokwiLcd2004I2C } from './wokwi-lcd2004-i2c';
+export { default as wokwiLdrModule } from './wokwi-ldr-module';
+export { default as max30102 } from './max30102';
 
 
 

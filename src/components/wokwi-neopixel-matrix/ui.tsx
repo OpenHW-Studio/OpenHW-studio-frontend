@@ -34,8 +34,8 @@ export const BOUNDS = (attrs: any) => {
     return {
         x: 0,
         y: 0,
-        w: Math.max(20, cols * 25),
-        h: Math.max(20, rows * 25)
+        w: Math.max(30, cols * 30),
+        h: Math.max(30, rows * 30)
     };
 };
 
@@ -45,7 +45,7 @@ export const NeopixelContextMenu = ({ attrs, onUpdate }: { attrs: any, onUpdate:
 
     const handleChange = (key: string, raw: string, min: number, max: number) => {
         const v = Math.max(min, Math.min(max, parseInt(raw, 10) || min));
-        onUpdate(key, v);
+        onUpdate(key, String(v));
     };
 
     return (

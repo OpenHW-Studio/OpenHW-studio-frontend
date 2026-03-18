@@ -1,0 +1,93 @@
+{
+  "type": "wokwi-7segment",
+  "label": "7-Segment Display",
+  "group": "Outputs",
+  "w": 120,
+  "h": 70,
+  "attrs": {
+    "color": "red",
+    "common": "cathode",
+    "digits": "2",
+    "colon": "0"
+  },
+  "pins": [
+    {
+      "id": "A",
+      "x": 0,
+      "y": 0,
+      "type": "digital"
+    },
+    {
+      "id": "B",
+      "x": 10,
+      "y": 0,
+      "type": "digital"
+    },
+    {
+      "id": "C",
+      "x": 20,
+      "y": 0,
+      "type": "digital"
+    },
+    {
+      "id": "D",
+      "x": 30,
+      "y": 0,
+      "type": "digital"
+    },
+    {
+      "id": "E",
+      "x": 40,
+      "y": 0,
+      "type": "digital"
+    },
+    {
+      "id": "F",
+      "x": 50,
+      "y": 0,
+      "type": "digital"
+    },
+    {
+      "id": "G",
+      "x": 60,
+      "y": 0,
+      "type": "digital"
+    },
+    {
+      "id": "DP",
+      "x": 70,
+      "y": 0,
+      "type": "digital"
+    },
+    {
+      "id": "DIG1",
+      "x": 0,
+      "y": 70,
+      "type": "digital"
+    },
+    {
+      "id": "DIG2",
+      "x": 10,
+      "y": 70,
+      "type": "digital"
+    },
+    {
+      "id": "DIG3",
+      "x": 20,
+      "y": 70,
+      "type": "digital"
+    },
+    {
+      "id": "DIG4",
+      "x": 30,
+      "y": 70,
+      "type": "digital"
+    },
+    {
+      "id": "COLON",
+      "x": 40,
+      "y": 70,
+      "type": "digital"
+    }
+  ]
+}
