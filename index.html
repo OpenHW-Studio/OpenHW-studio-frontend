@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenHW-Studio</title>
+    <link rel="icon" href="data:,">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- Wokwi Elements — real hardware web components -->
@@ -11,6 +12,31 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Clear legacy service worker caches before loading the app bundle.
+      (function resetLegacyServiceWorker() {
+        if (!('serviceWorker' in navigator)) return;
+
+        const RESET_FLAG = 'openhw_sw_reset_once';
+        navigator.serviceWorker.getRegistrations().then(async (registrations) => {
+          if (!registrations.length) return;
+
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map((key) => caches.delete(key)));
+          }
+
+          if (!sessionStorage.getItem(RESET_FLAG)) {
+            sessionStorage.setItem(RESET_FLAG, '1');
+            window.location.reload();
+          }
+        }).catch(() => {
+          // Ignore cleanup errors; app boot should continue.
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

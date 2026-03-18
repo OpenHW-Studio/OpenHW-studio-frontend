@@ -961,31 +961,6 @@ const Sep = ({ v }) => <div style={v ? { width:1, height:18, background:'var(--b
 // ─────────────────────────────────────────────────────────────────────────────
 //  Styles
 // ─────────────────────────────────────────────────────────────────────────────
-const S = {
-  page:    { position:'fixed', inset:0, display:'flex', flexDirection:'column', background:'var(--bg)', color:'var(--text)', fontFamily:"'JetBrains Mono',monospace", zIndex:1000 },
-  header:  { height:46, background:'var(--bg2)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:8, padding:'0 12px', flexShrink:0 },
-  body:    { flex:1, display:'flex', overflow:'hidden' },
-  sidebar: { width:200, borderRight:'1px solid var(--border)', background:'var(--bg2)', display:'flex', flexDirection:'column', padding:'10px 0', flexShrink:0 },
-  stepBtn: (on,done) => ({ display:'flex', alignItems:'center', gap:8, padding:'7px 12px', background:on?'rgba(74,222,128,.09)':'transparent', color:on?'var(--accent)':done?'var(--text2)':'var(--text3)', border:'none', borderLeft:on?'3px solid var(--accent)':'3px solid transparent', width:'100%', textAlign:'left', fontSize:11, fontWeight:on?700:500, cursor:'pointer' }),
-  stepNum: (on,done) => ({ width:18, height:18, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700, flexShrink:0, background:on?'var(--accent)':done?'rgba(74,222,128,.3)':'var(--border)', color:on?'#000':done?'var(--accent)':'var(--text3)' }),
-  main:       { flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minWidth:0 },
-  stepHeader: { padding:'12px 22px 9px', borderBottom:'1px solid var(--border)', background:'var(--bg2)', flexShrink:0 },
-  content:    { flex:1, overflowY:'auto', overflowX:'hidden', padding:'16px 22px' },
-  footer:     { height:48, borderTop:'1px solid var(--border)', background:'var(--bg2)', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 18px', flexShrink:0 },
-  label:    { display:'block', fontSize:10, fontWeight:600, color:'var(--text2)', marginBottom:4, textTransform:'uppercase', letterSpacing:'.06em' },
-  input:    { width:'100%', background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', padding:'6px 8px', fontSize:12, outline:'none', boxSizing:'border-box' },
-  textarea: { width:'100%', background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', padding:'6px 8px', fontSize:12, outline:'none', boxSizing:'border-box', resize:'vertical', minHeight:60, fontFamily:'inherit' },
-  select:   { width:'100%', background:'var(--bg3)', border:'1px solid var(--border)', borderRadius:5, color:'var(--text)', padding:'6px 8px', fontSize:12, outline:'none', boxSizing:'border-box' },
-  g2: { display:'grid', gridTemplateColumns:'1fr 1fr', gap:13 },
-  g4: { display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:9 },
-  infoBox:  { background:'rgba(74,222,128,.05)', border:'1px solid rgba(74,222,128,.2)', borderRadius:6, padding:'7px 11px', marginBottom:11, fontSize:11, color:'var(--text2)', lineHeight:1.6 },
-  warnBox:  { background:'rgba(251,191,36,.06)', border:'1px solid rgba(251,191,36,.3)', borderRadius:6, padding:'7px 11px', marginBottom:9, fontSize:11, color:'#fbbf24', lineHeight:1.5 },
-  card:     { background:'var(--bg3)', borderRadius:7, padding:'11px 13px', border:'1px solid var(--border)', marginBottom:11 },
-  previewWrap: (extra={}) => ({ background:'var(--canvas-bg)', ...mkGrid(), borderRadius:7, border:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', position:'relative', ...extra }),
-  tab: (on) => ({ padding:'4px 11px', borderRadius:'5px 5px 0 0', fontSize:11, fontWeight:600, cursor:'pointer', background:on?'var(--bg)':'var(--bg3)', border:'1px solid var(--border)', borderBottom:on?'1px solid var(--bg)':'1px solid var(--border)', color:on?'var(--accent)':'var(--text3)', marginRight:2 }),
-  codeWrap: { background:'var(--bg)', borderRadius:'0 6px 6px 6px', border:'1px solid var(--border)', overflow:'auto', flex:1 },
-  pinRowS: (ed) => ({ display:'flex', alignItems:'center', gap:7, padding:'5px 8px', background:ed?'var(--bg)':'var(--bg3)', borderRadius:ed?'6px 6px 0 0':6, marginBottom:ed?0:4, border:`1px solid ${ed?'var(--accent)':'var(--border)'}`, cursor:'pointer' }),
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Main Page
@@ -1249,33 +1224,33 @@ export default function ComponentEditorPage() {
   // ─────────────────────────────────────────────────────────────────────────
   const s1 = () => (
     <div>
-      <div style={S.infoBox}>Fields auto-update <code>manifest.json</code>, <code>index.ts</code>, and <code>ui.tsx</code> in real-time.</div>
-      <div style={S.g2}>
+      <div className="bg-[rgba(74,222,128,.05)] border border-[rgba(74,222,128,.2)] rounded-[6px] px-[11px] py-[7px] mb-[11px] text-[11px] text-[var(--text2)] leading-[1.6]">Fields auto-update <code>manifest.json</code>, <code>index.ts</code>, and <code>ui.tsx</code> in real-time.</div>
+      <div className="grid grid-cols-2 gap-[13px]">
         <div style={{ marginBottom:13 }}>
-          <label style={S.label}>Component Type *</label>
-          <input style={S.input} placeholder="e.g. my-sensor" value={compType}
+          <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Component Type *</label>
+          <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" placeholder="e.g. my-sensor" value={compType}
             onChange={e=>setCompType(e.target.value.toLowerCase().replace(/\s/g,'-'))} onBlur={pushHist} />
           <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>Unique ID — lowercase, hyphens. Used as <code>manifest.type</code>.</div>
         </div>
         <div style={{ marginBottom:13 }}>
-          <label style={S.label}>Display Label *</label>
-          <input style={S.input} placeholder="e.g. My Sensor" value={compLabel}
+          <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Display Label *</label>
+          <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" placeholder="e.g. My Sensor" value={compLabel}
             onChange={e=>setCompLabel(e.target.value)} onBlur={pushHist} />
         </div>
       </div>
       <div style={{ marginBottom:13 }}>
-        <label style={S.label}>Description</label>
-        <textarea style={S.textarea} placeholder="What does this component do?" value={compDesc}
+        <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Description</label>
+        <textarea className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border resize-y min-h-[60px] font-inherit" placeholder="What does this component do?" value={compDesc}
           onChange={e=>setCompDesc(e.target.value)} onBlur={pushHist} />
       </div>
       <div style={{ marginBottom:13 }}>
-        <label style={S.label}>Group</label>
-        <select style={{ ...S.select, maxWidth:200 }} value={compGroup}
+        <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Group</label>
+        <select className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" style={{maxWidth:200 }} value={compGroup}
           onChange={e=>{ setCompGroup(e.target.value); pushHist() }}>
           {GROUPS.map(g=><option key={g}>{g}</option>)}
         </select>
       </div>
-      <div style={S.card}>
+      <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]">
         <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>Context Menu Flags</div>
         <div style={{ fontSize:11, color:'var(--text2)', marginBottom:10 }}>
           Exported in <code>manifest.json</code>, <code>ui.tsx</code> and <code>index.ts</code>.
@@ -1323,7 +1298,7 @@ export default function ComponentEditorPage() {
           {svgMode==='code' && (
             <div style={{ flex:1, display:'flex', flexDirection:'column', gap:4 }}>
               <div style={{ fontSize:10, color:'var(--text3)' }}>Use <code>viewBox="0 0 {compW} {compH}"</code> to match dimensions set in Step 3. viewBox is auto-added if missing.</div>
-              <div style={{ ...S.codeWrap, flex:1, minHeight:240, borderRadius:7 }}>
+              <div className="bg-[var(--bg)] rounded-b-[6px] border border-[var(--border)] overflow-auto flex-1" style={{flex:1, minHeight:240, borderRadius:7 }}>
                 <Editor value={svgCode} onValueChange={setSvgCode}
                   highlight={c=>Prism.highlight(c||'',Prism.languages.markup,'markup')}
                   padding={12} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, minHeight:240, color:'var(--text)' }}
@@ -1338,7 +1313,7 @@ export default function ComponentEditorPage() {
                 Write a React component and <code>export</code> it. Props available: <code>state</code>, <code>attrs</code>, <code>isRunning</code>.
                 The component renders at {compW}×{compH}px using <code>position:absolute</code>.
               </div>
-              <div style={{ ...S.codeWrap, flex:1, minHeight:240, borderRadius:7 }}>
+              <div className="bg-[var(--bg)] rounded-b-[6px] border border-[var(--border)] overflow-auto flex-1" style={{flex:1, minHeight:240, borderRadius:7 }}>
                 <Editor value={reactCode} onValueChange={setReactCode}
                   highlight={c=>Prism.highlight(c||'',Prism.languages.javascript,'javascript')}
                   padding={12} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, minHeight:240, color:'var(--text)' }}
@@ -1354,7 +1329,7 @@ export default function ComponentEditorPage() {
           <div style={{ fontSize:10, fontWeight:600, color:'var(--text3)', textTransform:'uppercase' }}>
             Live Preview {isReact && <span style={{ color:'#60a5fa' }}>· React</span>}
           </div>
-          <div style={{ ...S.previewWrap({ width:380, height:320 }), backgroundSize:`${gridPx}px ${gridPx}px` }}>
+          <div className="bg-[var(--canvas-bg)] rounded-[7px] border border-[var(--border)] flex items-center justify-center overflow-hidden relative" style={{ width:380, height:320, backgroundSize:`${gridPx}px ${gridPx}px` }}>
             {isReact
               ? <ReactPreview reactCode={reactCode} compW={compW} compH={compH} zoom={zoom} />
               : <SvgPreview svgCode={svgCode} compW={compW} compH={compH} zoom={zoom} />
@@ -1383,28 +1358,28 @@ export default function ComponentEditorPage() {
     return (
       <div style={{ display:'flex', gap:18 }}>
         <div style={{ flex:1, minWidth:0 }}>
-          <div style={S.infoBox}>
+          <div className="bg-[rgba(74,222,128,.05)] border border-[rgba(74,222,128,.2)] rounded-[6px] px-[11px] py-[7px] mb-[11px] text-[11px] text-[var(--text2)] leading-[1.6]">
             <strong>w/h in manifest</strong> = total pixel area on the circuit canvas.<br/>
             <strong>BOUNDS in ui.tsx</strong> = inner clickable hit-box (selection + wire-snap target). Usually smaller because pin pads extend to edges.
           </div>
-          <div style={{ ...S.card, borderColor:'var(--border)' }}>
+          <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]" style={{borderColor:'var(--border)' }}>
             <div style={{ fontSize:11, fontWeight:700, color:'var(--text)', marginBottom:9 }}>Canvas Size</div>
-            <div style={S.g2}>
+            <div className="grid grid-cols-2 gap-[13px]">
               {[['Width (w) px','w',compW,v=>{setCompW(v);setBounds(b=>({...b,w:Math.max(GRID,v-26)}))}],
                 ['Height (h) px','h',compH,v=>{setCompH(v);setBounds(b=>({...b,h:Math.max(GRID,v-14)}))}]].map(([lbl,,val,set])=>(
-                <div key={lbl}><label style={S.label}>{lbl}</label>
-                  <input style={S.input} type="number" min={20} max={800} value={val}
+                <div key={lbl}><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">{lbl}</label>
+                  <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" type="number" min={20} max={800} value={val}
                     onChange={e=>set(+e.target.value)} onBlur={pushHist} />
                 </div>
               ))}
             </div>
           </div>
-          <div style={{ ...S.card, borderColor:'rgba(74,222,128,.4)' }}>
+          <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]" style={{borderColor:'rgba(74,222,128,.4)' }}>
             <div style={{ fontSize:11, fontWeight:700, color:'var(--accent)', marginBottom:9 }}>BOUNDS — Hit Box</div>
-            <div style={S.g4}>
+            <div className="grid grid-cols-4 gap-[9px]">
               {['x','y','w','h'].map(k=>(
-                <div key={k}><label style={S.label}>{k}</label>
-                  <input style={{ ...S.input, borderColor:'rgba(74,222,128,.4)' }} type="number"
+                <div key={k}><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">{k}</label>
+                  <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" style={{borderColor:'rgba(74,222,128,.4)' }} type="number"
                     value={bounds[k]} onChange={e=>setBounds(b=>({...b,[k]:+e.target.value}))} onBlur={pushHist} />
                 </div>
               ))}
@@ -1414,7 +1389,7 @@ export default function ComponentEditorPage() {
             </div>
           </div>
           {/* Mode toggle */}
-          <div style={{ ...S.card, display:'flex', alignItems:'center', gap:10, marginBottom:0 }}>
+          <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]" style={{display:'flex', alignItems:'center', gap:10, marginBottom:0 }}>
             <span style={{ fontSize:11, color:resizeMode==='comp'?'var(--accent)':'var(--text3)', fontWeight:600 }}>Component</span>
             <div onClick={()=>setResizeMode(m=>m==='comp'?'bounds':'comp')} style={{ position:'relative', width:40, height:20, background:resizeMode==='bounds'?'rgba(74,222,128,.25)':'var(--bg)', border:'1px solid rgba(74,222,128,.4)', borderRadius:10, cursor:'pointer', flexShrink:0 }}>
               <div style={{ position:'absolute', top:2, left:resizeMode==='comp'?2:20, width:14, height:14, borderRadius:'50%', background:'var(--accent)', transition:'left .2s' }} />
@@ -1430,7 +1405,7 @@ export default function ComponentEditorPage() {
             Preview — <span style={{ color:'var(--accent)' }}>green=BOUNDS</span>
             {resizeMode==='comp'&&<span style={{ color:'#60a5fa', marginLeft:6 }}>· blue=component</span>}
           </div>
-          <div style={{ ...S.previewWrap({ width:420, height:330, overflow:'hidden' }), backgroundSize:`${gridPx}px ${gridPx}px` }}>
+          <div className="bg-[var(--canvas-bg)] rounded-[7px] border border-[var(--border)] flex items-center justify-center overflow-hidden relative" style={{ width:420, height:330, overflow:'hidden', backgroundSize:`${gridPx}px ${gridPx}px` }}>
             <div style={{ position:'relative', width:Number(compW)*scale, height:Number(compH)*scale, flexShrink:0 }}>
               {imgPreview}
               {/* BOUNDS overlay */}
@@ -1466,25 +1441,25 @@ export default function ComponentEditorPage() {
     return (
       <div style={{ display:'flex', gap:16, height:'100%' }}>
         <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:9, overflowY:'auto' }}>
-          <div style={S.infoBox}>
+          <div className="bg-[rgba(74,222,128,.05)] border border-[rgba(74,222,128,.2)] rounded-[6px] px-[11px] py-[7px] mb-[11px] text-[11px] text-[var(--text2)] leading-[1.6]">
             Click <strong>Start Placing</strong> then click on the preview. Coordinates are in component coordinate space ({compW}×{compH}).
             Click any pin row to edit inline.
           </div>
-          <div style={S.card}>
+          <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]">
             <div style={{ fontSize:11, fontWeight:700, color:'var(--text)', marginBottom:8 }}>New Pin</div>
-            <div style={S.g2}>
-              <div><label style={S.label}>Pin ID</label>
-                <input style={S.input} placeholder="VCC, SDA…" value={newPinId} onChange={e=>setNPId(e.target.value)} />
+            <div className="grid grid-cols-2 gap-[13px]">
+              <div><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Pin ID</label>
+                <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" placeholder="VCC, SDA…" value={newPinId} onChange={e=>setNPId(e.target.value)} />
               </div>
-              <div><label style={S.label}>Type</label>
-                <select style={S.select} value={newPinType} onChange={e=>setNPType(e.target.value)}>
+              <div><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Type</label>
+                <select className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" value={newPinType} onChange={e=>setNPType(e.target.value)}>
                   {PIN_TYPES.map(t=><option key={t}>{t}</option>)}
                 </select>
               </div>
             </div>
             <div style={{ marginTop:9, marginBottom:9 }}>
-              <label style={S.label}>Description</label>
-              <input style={S.input} placeholder="Supply voltage 3.3–5 V" value={newPinDesc} onChange={e=>setNPDesc(e.target.value)} />
+              <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Description</label>
+              <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" placeholder="Supply voltage 3.3–5 V" value={newPinDesc} onChange={e=>setNPDesc(e.target.value)} />
             </div>
             <Btn v={pinPlacing?'danger':'primary'} onClick={()=>setPlacing(m=>!m)}>
               {pinPlacing?'✕ Cancel':'⊕ Start Placing — click preview'}
@@ -1495,7 +1470,7 @@ export default function ComponentEditorPage() {
           {pins.length===0&&<div style={{ color:'var(--text3)', fontSize:12 }}>No pins yet.</div>}
           {pins.map((pin,i)=>(
             <div key={i}>
-              <div style={S.pinRowS(editPin===i)} onClick={()=>setEditPin(editPin===i?null:i)}>
+              <div className={`flex items-center gap-[7px] px-2 py-[5px] cursor-pointer ${(editPin===i) ? "bg-[var(--bg)] rounded-t-[6px] mb-0 border border-[var(--accent)]" : "bg-[var(--bg3)] rounded-[6px] mb-1 border border-[var(--border)]"}`} onClick={()=>setEditPin(editPin===i?null:i)}>
                 <div style={{ width:8, height:8, background:editPin===i?'#f1c40f':'rgba(255,255,255,.25)', border:'1px solid rgba(255,255,255,.8)', flexShrink:0 }} />
                 <span style={{ fontSize:11, fontWeight:700, color:'var(--text)', minWidth:44 }}>{pin.id}</span>
                 <span style={{ fontSize:10, color:'var(--text3)', flex:1 }}>({pin.x},{pin.y}) · {pin.type}{pin.description?` — ${pin.description}`:''}</span>
@@ -1505,20 +1480,20 @@ export default function ComponentEditorPage() {
               {editPin===i&&(
                 <div style={{ padding:'9px 11px', background:'var(--bg)', border:'1px solid var(--accent)', borderTop:'none', borderRadius:'0 0 6px 6px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:9, marginBottom:4 }}>
                   {[['id','Pin ID',pin.id,'text'],['type','Type',null,'select'],['x','X (component px)',pin.x,'number'],['y','Y (component px)',pin.y,'number']].map(([k,lbl,val,type])=>(
-                    <div key={k}><label style={S.label}>{lbl}</label>
+                    <div key={k}><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">{lbl}</label>
                       {type==='select'
-                        ? <select style={S.select} value={pin.type} onChange={e=>{setPins(ps=>ps.map((p,j)=>j===i?{...p,type:e.target.value}:p));pushHist()}}>
+                        ? <select className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" value={pin.type} onChange={e=>{setPins(ps=>ps.map((p,j)=>j===i?{...p,type:e.target.value}:p));pushHist()}}>
                             {PIN_TYPES.map(t=><option key={t}>{t}</option>)}
                           </select>
-                        : <input style={S.input} type={type} value={val}
+                        : <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" type={type} value={val}
                             onChange={e=>setPins(ps=>ps.map((p,j)=>j===i?{...p,[k]:type==='number'?+e.target.value:e.target.value}:p))}
                             onBlur={pushHist} />
                       }
                     </div>
                   ))}
                   <div style={{ gridColumn:'1/-1' }}>
-                    <label style={S.label}>Description</label>
-                    <input style={S.input} value={pin.description||''} onChange={e=>setPins(ps=>ps.map((p,j)=>j===i?{...p,description:e.target.value}:p))} onBlur={pushHist} />
+                    <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Description</label>
+                    <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" value={pin.description||''} onChange={e=>setPins(ps=>ps.map((p,j)=>j===i?{...p,description:e.target.value}:p))} onBlur={pushHist} />
                   </div>
                 </div>
               )}
@@ -1531,7 +1506,7 @@ export default function ComponentEditorPage() {
           <div style={{ fontSize:10, fontWeight:600, color:pinPlacing?'var(--accent)':'var(--text3)', textTransform:'uppercase' }}>
             {pinPlacing?`▶ Click to place "${newPinId||`P${pins.length+1}`}"`:' Component Preview'}
           </div>
-          <div style={{ ...S.previewWrap({ width:400, height:340, cursor:pinPlacing?'crosshair':'default', borderColor:pinPlacing?'var(--accent)':'var(--border)' }), backgroundSize:`${GRID*zoom}px ${GRID*zoom}px` }}>
+          <div className="bg-[var(--canvas-bg)] rounded-[7px] border border-[var(--border)] flex items-center justify-center overflow-hidden relative" style={{ width:400, height:340, cursor:pinPlacing?'crosshair':'default', borderColor:pinPlacing?'var(--accent)':'var(--border)' , backgroundSize:`${GRID*zoom}px ${GRID*zoom}px` }}>
             {/* Inner ref div — exact scaled component size */}
             <div ref={pinInnerRef} onClick={handlePinClick}
               style={{ position:'relative', width:Number(compW)*zoom, height:Number(compH)*zoom, flexShrink:0 }}>
@@ -1568,7 +1543,7 @@ export default function ComponentEditorPage() {
     return (
       <div style={{ display:'flex', flexDirection:'column', height:'100%', gap:9 }}>
         {autoWarnings.length>0&&(
-          <div style={S.warnBox}>
+          <div className="bg-[rgba(251,191,36,.06)] border border-[rgba(251,191,36,.3)] rounded-[6px] px-[11px] py-[7px] mb-[9px] text-[11px] text-[#fbbf24] leading-[1.5]">
             <strong>Before generating:</strong>
             <ul style={{ margin:'5px 0 0 14px', padding:0 }}>{autoWarnings.map((w,i)=><li key={i}>{w}</li>)}</ul>
           </div>
@@ -1578,9 +1553,9 @@ export default function ComponentEditorPage() {
           <div style={{ fontSize:11, color:'var(--text3)' }}>Fills all 5 files from Steps 1–4. Manual edits to <code>logic.ts</code>/<code>validation.ts</code> are preserved.</div>
         </div>
         <div style={{ display:'flex', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
-          {tabs.map(t=><button key={t.id} style={S.tab(codeTab===t.id)} onClick={()=>setCodeTab(t.id)}>{t.l}</button>)}
+          {tabs.map(t=><button key={t.id} className={`px-[11px] py-1 rounded-t-[5px] min-w-max text-[11px] font-semibold cursor-pointer mr-[2px] ${(codeTab===t.id) ? "bg-[var(--bg)] border border-[var(--border)] border-b-[var(--bg)] text-[var(--accent)]" : "bg-[var(--bg3)] border border-[var(--border)] border-b-[var(--border)] text-[var(--text3)]"}`} onClick={()=>setCodeTab(t.id)}>{t.l}</button>)}
         </div>
-        <div style={{ ...S.codeWrap, flex:1 }}>
+        <div className="bg-[var(--bg)] rounded-b-[6px] border border-[var(--border)] overflow-auto flex-1" style={{flex:1 }}>
           <Editor key={codeTab} value={active.code||''} onValueChange={active.set}
             highlight={c=>Prism.highlight(c||'',Prism.languages.javascript,'javascript')}
             padding={13} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, minHeight:400, color:'var(--text)' }}
@@ -1606,7 +1581,7 @@ export default function ComponentEditorPage() {
       </div>
       {docsPreview
         ? <iframe srcDoc={docsCode||'<p style="color:#888;font-family:sans-serif;padding:20px">No docs yet — click Generate Template</p>'} style={{ flex:1, border:'1px solid var(--border)', borderRadius:8, background:'white', minHeight:420 }} title="Docs Preview" sandbox="allow-scripts" />
-        : <div style={{ ...S.codeWrap, flex:1 }}>
+        : <div className="bg-[var(--bg)] rounded-b-[6px] border border-[var(--border)] overflow-auto flex-1" style={{flex:1 }}>
             <Editor value={docsCode} onValueChange={setDocsCode}
               highlight={c=>Prism.highlight(c||'',Prism.languages.markup,'markup')}
               padding={13} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, minHeight:400, color:'var(--text)' }}
@@ -1624,10 +1599,10 @@ export default function ComponentEditorPage() {
     const d = getData()
     return (
       <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-        <div style={S.infoBox}>Your component is ready. Choose what to do next.</div>
-        <div style={S.card}>
+        <div className="bg-[rgba(74,222,128,.05)] border border-[rgba(74,222,128,.2)] rounded-[6px] px-[11px] py-[7px] mb-[11px] text-[11px] text-[var(--text2)] leading-[1.6]">Your component is ready. Choose what to do next.</div>
+        <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]">
           <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:9 }}>Summary</div>
-          <div style={S.g2}>
+          <div className="grid grid-cols-2 gap-[13px]">
             {[['Type',d.type||'—'],['Label',d.label||'—'],['Group',d.group],['Canvas',`${d.w}×${d.h} px`],['Pins',d.pins.length],['BOUNDS',`(${d.bounds?.x},${d.bounds?.y}) ${d.bounds?.w}×${d.bounds?.h}`]].map(([k,v])=>(
               <div key={k}><span style={{ fontSize:10, color:'var(--text3)' }}>{k}: </span><span style={{ fontSize:12 }}>{v}</span></div>
             ))}
@@ -1639,7 +1614,7 @@ export default function ComponentEditorPage() {
             { icon:'▶', t:'Test in Simulator', d:'Instantly loads component into a new simulator tab.',        btn:saving?'…':'Open & Load', bv:'primary', fn:handleTestInSim, dis:saving },
             { icon:'☁', t:'Save to Account',   d:'Submit for admin review and community catalog.',             btn:'Coming soon',       bv:'ghost',  fn:null, dis:true },
           ].map(c=>(
-            <div key={c.t} style={{ ...S.card, display:'flex', flexDirection:'column', gap:8, alignItems:'center', textAlign:'center', marginBottom:0, opacity:c.dis&&!saving?.55:1 }}>
+            <div key={c.t} className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]" style={{display:'flex', flexDirection:'column', gap:8, alignItems:'center', textAlign:'center', marginBottom:0, opacity:c.dis&&!saving?.55:1 }}>
               <div style={{ fontSize:24 }}>{c.icon}</div>
               <div style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>{c.t}</div>
               <div style={{ fontSize:11, color:'var(--text3)', flex:1 }}>{c.d}</div>
@@ -1658,9 +1633,9 @@ export default function ComponentEditorPage() {
   //  RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div style={S.page}>
+    <div className="fixed inset-0 flex flex-col bg-[var(--bg)] text-[var(--text)] font-mono z-[1000]">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={S.header}>
+      <div className="h-[46px] bg-[var(--bg2)] border-b border-[var(--border)] flex items-center gap-2 px-3 shrink-0">
         <button onClick={()=>window.close()||navigate('/simulator')} style={{ background:'transparent', border:'none', color:'var(--text2)', cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontSize:11, padding:'3px 7px', borderRadius:4 }}>
           <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 2L2 5.5l5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
           Back
@@ -1711,13 +1686,13 @@ export default function ComponentEditorPage() {
       </div>
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
-      <div style={S.body}>
+      <div className="flex-1 flex overflow-hidden">
         {/* Sidebar */}
-        <aside style={S.sidebar}>
+        <aside className="w-[200px] border-r border-[var(--border)] bg-[var(--bg2)] flex flex-col py-2.5 shrink-0">
           <div style={{ fontSize:9, fontWeight:700, color:'var(--text3)', letterSpacing:'.1em', padding:'0 12px 5px', textTransform:'uppercase' }}>Steps</div>
           {STEPS.map(s=>(
-            <button key={s.id} style={S.stepBtn(step===s.id,doneSteps.has(s.id))} onClick={()=>goToStep(s.id)}>
-              <span style={S.stepNum(step===s.id,doneSteps.has(s.id))}>{doneSteps.has(s.id)&&step!==s.id?'✓':s.id}</span>
+            <button key={s.id} className={`flex items-center gap-2 px-3 py-[7px] w-full text-left text-[11px] cursor-pointer border-l-3 ${(step===s.id) ? "bg-[rgba(74,222,128,.09)] text-[var(--accent)] border-l-[var(--accent)] font-bold" : (doneSteps.has(s.id)) ? "bg-transparent text-[var(--text2)] border-l-transparent font-medium" : "bg-transparent text-[var(--text3)] border-l-transparent font-medium"}`} onClick={()=>goToStep(s.id)}>
+              <span className={`w-[18px] h-[18px] rounded-[50%] flex items-center justify-center text-[10px] font-bold shrink-0 ${(step===s.id) ? "bg-[var(--accent)] text-[#000]" : (doneSteps.has(s.id)) ? "bg-[rgba(74,222,128,.3)] text-[var(--accent)]" : "bg-[var(--border)] text-[var(--text3)]"}`}>{doneSteps.has(s.id)&&step!==s.id?'✓':s.id}</span>
               <span style={{ fontSize:11, lineHeight:1.3 }}>{s.label}</span>
             </button>
           ))}
@@ -1731,15 +1706,15 @@ export default function ComponentEditorPage() {
         </aside>
 
         {/* Main */}
-        <main style={S.main}>
-          <div style={S.stepHeader}>
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <div className="px-[22px] pt-3 pb-[9px] border-b border-[var(--border)] bg-[var(--bg2)] shrink-0">
             <div style={{ fontSize:16, fontWeight:700, color:'var(--text)', marginBottom:2 }}>
               <span style={{ color:'var(--accent)', marginRight:6 }}>Step {step}:</span>{cfg.label}
             </div>
             <div style={{ fontSize:11, color:'var(--text2)' }}>{cfg.desc}</div>
           </div>
-          <div style={S.content}>{stepR[step]?.()}</div>
-          <div style={S.footer}>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-[22px] py-4">{stepR[step]?.()}</div>
+          <div className="h-[48px] border-t border-[var(--border)] bg-[var(--bg2)] flex items-center justify-between px-[18px] shrink-0">
             <Btn v="ghost" onClick={goPrev} disabled={step===1}>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M7 1.5L3 5l4 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
               Previous

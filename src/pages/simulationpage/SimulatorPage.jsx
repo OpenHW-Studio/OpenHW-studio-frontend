@@ -1,10 +1,22 @@
+import { TopToolbox } from './TopToolbox';
+import { Btn } from './Btn';
+import { RightPanel } from './RightPanel';
+import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
+
+
+
+
+
+
+
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import axios from 'axios'
-import { useAuth } from '../context/AuthContext.jsx'
-import { compileCode, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../services/simulatorService.js'
-import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../services/offlineCache.js'
-import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../services/projectStore.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { compileCode, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
+import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
+import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
 import * as Babel from '@babel/standalone';
@@ -13,7 +25,7 @@ import * as EmulatorComponents from "@openhw/emulator";
 
 // Web Editor features
 import Editor from 'react-simple-code-editor';
-import BlocklyEditor from '../components/BlocklyEditor.jsx';
+import BlocklyEditor from '../../components/BlocklyEditor.jsx';
 import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
@@ -36,6 +48,27 @@ Object.entries(EmulatorComponents).forEach(([key, module]) => {
 
 const LOCAL_CATALOG = [];
 const LOCAL_PIN_DEFS = {};
+
+function resolveUiExport(exportsUI) {
+  if (!exportsUI) return null;
+
+  if (exportsUI.default && typeof exportsUI.default === 'function') return exportsUI.default;
+  if (exportsUI.UI && typeof exportsUI.UI === 'function') return exportsUI.UI;
+
+  const keys = Object.keys(exportsUI);
+  const blocked = (k) => {
+    const l = String(k).toLowerCase();
+    return l.includes('contextmenu') || l === 'bounds' || l === 'contextmenuduringrun' || l === 'contextmenuonlyduringrun';
+  };
+
+  const fnKey = keys.find((k) => typeof exportsUI[k] === 'function' && !blocked(k));
+  if (fnKey) return exportsUI[fnKey];
+
+  const anyKey = keys.find((k) => !blocked(k));
+  if (anyKey) return exportsUI[anyKey];
+
+  return null;
+}
 
 Object.values(COMPONENT_REGISTRY).forEach(module => {
   const manifest = module.manifest;
@@ -75,138 +108,7 @@ function syncNextIds(comps, ws) {
   }
 }
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5000/examples';
-
-// ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
-function renderRoundedPath(pts) {
-  if (!pts || pts.length < 2) return '';
-  const r = 10;
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const prev = pts[i - 1], curr = pts[i], next = pts[i + 1];
-    const distPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
-    const distNext = Math.hypot(next.x - curr.x, next.y - curr.y);
-    const cornerR = Math.min(r, distPrev / 2, distNext / 2);
-    if (cornerR < 0.5) { d += ` L ${curr.x} ${curr.y}`; continue; }
-    const ps = { x: curr.x + (prev.x - curr.x) * (cornerR / distPrev), y: curr.y + (prev.y - curr.y) * (cornerR / distPrev) };
-    const pe = { x: curr.x + (next.x - curr.x) * (cornerR / distNext), y: curr.y + (next.y - curr.y) * (cornerR / distNext) };
-    d += ` L ${ps.x} ${ps.y} Q ${curr.x} ${curr.y} ${pe.x} ${pe.y}`;
-  }
-  d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
-  return d;
-}
-
-// ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
-// Returns [p1, exitStub1, ...midCorners, exitStub2, p2].
-// If waypoints[0]._corner is true, uses those as explicit corners directly.
-// Otherwise applies smart-exit routing: flips the stub if it points AWAY from
-// the target, so the wire goes toward the destination instead of U-turning.
-function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = []) {
-  // Explicit corner mode — stored by segment dragging
-  if (waypoints.length > 0 && waypoints[0]._corner) {
-    const pts = [p1, ...waypoints, p2];
-    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-  }
-
-  // Smart exit: flip stub when it points away from the other endpoint
-  const dx1 = e1.x - p1.x, dy1 = e1.y - p1.y;
-  const dx2 = e2.x - p2.x, dy2 = e2.y - p2.y;
-  const e1IsVert = Math.abs(dy1) > Math.abs(dx1);
-  const e2IsVert = Math.abs(dy2) > Math.abs(dx2);
-
-  let se1 = e1, se2 = e2;
-  if (e1IsVert) {
-    if (dy1 !== 0 && (p2.y - p1.y) * dy1 < 0) se1 = { x: p1.x, y: p1.y - dy1 };
-  } else {
-    if (dx1 !== 0 && (p2.x - p1.x) * dx1 < 0) se1 = { x: p1.x - dx1, y: p1.y };
-  }
-  if (e2IsVert) {
-    if (dy2 !== 0 && (p1.y - p2.y) * dy2 < 0) se2 = { x: p2.x, y: p2.y - dy2 };
-  } else {
-    if (dx2 !== 0 && (p1.x - p2.x) * dx2 < 0) se2 = { x: p2.x - dx2, y: p2.y };
-  }
-
-  const sdx1 = se1.x - p1.x, sdy1 = se1.y - p1.y;
-  const sdx2 = se2.x - p2.x, sdy2 = se2.y - p2.y;
-  const e1Horiz = Math.abs(sdx1) >= Math.abs(sdy1);
-  const e2Horiz = Math.abs(sdx2) >= Math.abs(sdy2);
-
-  let midPts;
-  if (e1Horiz && e2Horiz) {
-    const midX = (se1.x + se2.x) / 2;
-    midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
-  } else if (!e1Horiz && !e2Horiz) {
-    const midY = (se1.y + se2.y) / 2;
-    midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
-  } else if (e1Horiz && !e2Horiz) {
-    midPts = [{ x: se2.x, y: se1.y }];
-  } else {
-    midPts = [{ x: se1.x, y: se2.y }];
-  }
-
-  let pts = [p1, se1, ...midPts, se2, p2];
-  return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-}
-
-// ─── SINGLE SOURCE OF TRUTH: full orthogonal point list for any wire mode ──
-// Mode 1 – explicit corners (_corner:true, from segment dragging): use points as-is.
-// Mode 2 – route-hint waypoints (clicked mid-draw, no _corner): midX dog-leg.
-// Mode 3 – no waypoints: smart-exit auto-routing.
-function getWirePoints(p1, e1, e2, p2, waypoints = []) {
-  // Mode 1: explicit corners stored by segment dragging
-  if (waypoints.length > 0 && waypoints[0]._corner) {
-    let pts = [p1, ...waypoints, p2];
-    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-  }
-
-  // Mode 2: route-hint waypoints – midX dog-leg between each successive hint
-  if (waypoints.length > 0) {
-    const hints = [e1, ...waypoints, e2];
-    let pts = [p1];
-    for (let i = 0; i < hints.length - 1; i++) {
-      const a = hints[i], b = hints[i + 1];
-      pts.push(a);
-      const midX = (a.x + b.x) / 2;
-      pts.push({ x: midX, y: a.y });
-      pts.push({ x: midX, y: b.y });
-    }
-    pts.push(e2, p2);
-    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-  }
-
-  // Mode 3: no waypoints – smart-exit routing
-  return computeWireOrthoPoints(p1, e1, e2, p2, []);
-}
-
-// Preview wire while drawing (start→cursor with optional in-progress hints)
-function multiRoutePath(p1, p2, waypoints = []) {
-  if (!p1 || !p2) return '';
-  const hints = [p1, ...waypoints, p2];
-  let pts = [];
-  for (let i = 0; i < hints.length - 1; i++) {
-    const a = hints[i], b = hints[i + 1];
-    if (i === 0) pts.push(a);
-    const midX = (a.x + b.x) / 2;
-    pts.push({ x: midX, y: a.y });
-    pts.push({ x: midX, y: b.y });
-    pts.push(b);
-  }
-  pts = pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-  return renderRoundedPath(pts);
-}
-
-// Builds the SVG path string for a placed wire.
-function buildWirePath(p1, e1, e2, p2, waypoints = []) {
-  return renderRoundedPath(getWirePoints(p1, e1, e2, p2, waypoints));
-}
-
-function wireColor(pinLabel) {
-  if (!pinLabel) return '#2ecc71';
-  const l = pinLabel.toUpperCase();
-  if (l.includes('GND') || l === 'CATHODE') return '#808080'; // gray
-  if (l.includes('5V') || l.includes('3.3V') || l === 'VCC' || l === 'ANODE') return '#e74c3c'; // red
-  return '#2ecc71'; // green default
-}
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
 const GROUP_ICON_SVG = {
@@ -270,9 +172,9 @@ export default function SimulatorPage() {
   const [codeTab, setCodeTab] = useState('code')
   const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
   const [isPanelOpen, setIsPanelOpen] = useState(true)
+  const [isPaletteHovered, setIsPaletteHovered] = useState(false)
   const [panelWidth, setPanelWidth] = useState(400)
   const [isDragging, setIsDragging] = useState(false)
-  const [isPaletteHovered, setIsPaletteHovered] = useState(false)
   // Palette redesign state
   const [paletteViewMode, setPaletteViewMode] = useState('list') // 'list' | 'grid'
   const [favoriteComponents, setFavoriteComponents] = useState(() => {
@@ -417,7 +319,7 @@ export default function SimulatorPage() {
         return null;
       }, React);
 
-      const uiComponent = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().endsWith('ui'))] || exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
+      const uiComponent = resolveUiExport(exportsUI);
       const contextMenu = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))];
 
       if (uiComponent) {
@@ -692,7 +594,7 @@ export default function SimulatorPage() {
       const evalUI = new Function('exports', 'require', 'React', transpileUI);
       evalUI(exportsUI, (mod) => (mod === 'react' ? React : null), React);
 
-      const uiComponent = exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
+      const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) {
         console.warn('[SimulatorPage] Preview: UI component could not be evaluated.');
         return;
@@ -762,7 +664,7 @@ export default function SimulatorPage() {
               return null;
             }, React);
 
-            const uiComponent = exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
+            const uiComponent = resolveUiExport(exportsUI);
             if (!uiComponent) continue;
 
             // Inject into catalog
@@ -1696,7 +1598,7 @@ export default function SimulatorPage() {
       logSerial('Compiled! Connecting to emulator...');
 
       // Load Web Worker
-      const worker = new Worker(new URL('../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL('../../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
       workerRef.current = worker;
 
       worker.onmessage = (event) => {
@@ -2607,7 +2509,7 @@ export default function SimulatorPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={S.page} ref={pageRef} className="min-h-screen">
+    <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
 
       {/* ADMIN PREVIEW BANNER — shown when opened via "Test in Simulator" from admin dashboard */}
       {previewBanner && (
@@ -2632,442 +2534,37 @@ export default function SimulatorPage() {
       )}
 
       {/* TOP BAR */}
-      <header style={S.bar}>
-        <button style={S.logo} onClick={() => navigate('/')}> OpenHW-Studio</button>
-        <div style={S.barCenter}>
-          <select style={S.sel} value={board} onChange={e => setBoard(e.target.value)}>
-            <option value="arduino_uno">Arduino Uno</option>
-            <option value="pico">Raspberry Pi Pico</option>
-            <option value="esp32">ESP32</option>
-          </select>
-          {/* RUN button */}
-          <Btn
-            color={isRunning ? (isPaused ? 'var(--orange)' : 'var(--green)') : 'var(--green)'}
-            disabled={isRunning}
-            onClick={!isRunning ? handleRun : undefined}
-            title={isRunning ? (isCompiling ? 'Compiling…' : isPaused ? 'Paused' : 'Running') : 'Run'}
-          >
-            {isRunning ? (
-              isCompiling ? (
-                <>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', flexShrink: 0 }}>
-                    <path d="M21 12a9 9 0 1 1-4.5-7.8"/>
-                  </svg>
-                  Compiling…
-                </>
-              ) : isPaused ? 'Paused' : 'Running…'
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{ flexShrink: 0 }}><polygon points="2,1 11,6 2,11"/></svg>
-                Run
-              </>
-            )}
-          </Btn>
-
-          {/* STOP button — SVG icon only */}
-          <Btn color={isRunning ? 'var(--red)' : undefined} disabled={!isRunning} onClick={isRunning ? handleStop : undefined} title="Stop" iconOnly>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect width="13" height="13" rx="2"/></svg>
-          </Btn>
-
-          {/* PAUSE / RESUME button — visible only when running and not still compiling */}
-          {isRunning && !isCompiling && (
-            <Btn
-              color={isPaused ? 'var(--green)' : 'var(--orange)'}
-              onClick={isPaused ? handleResume : handlePause}
-              title={isPaused ? 'Resume' : 'Pause'}
-              iconOnly
-            >
-              {isPaused ? (
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><polygon points="2,1 12,6.5 2,12"/></svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect x="1.5" y="1" width="3.5" height="11" rx="1"/><rect x="8" y="1" width="3.5" height="11" rx="1"/></svg>
-              )}
-            </Btn>
-          )}
-
-          {assessmentMode && (
-            <Btn
-              color="var(--accent)"
-              disabled={isSubmittingAssessment || !assessmentProjectName}
-              onClick={!isSubmittingAssessment ? handleAssessmentSubmit : undefined}
-              title={!assessmentProjectName ? 'Assessment project is missing' : 'Submit assessment'}
-            >
-              {isSubmittingAssessment ? 'Submitting...' : 'Submit Assessment'}
-            </Btn>
-          )}
-
-          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
-
-          {/* UNDO — SVG icon only */}
-          <Btn onClick={undo} disabled={history.past.length === 0 || isRunning} title="Undo" iconOnly>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 7v6h6"/><path d="M3 13A9 9 0 1 0 5.9 5.3"/>
-            </svg>
-          </Btn>
-
-          {/* REDO — SVG icon only */}
-          <Btn onClick={redo} disabled={history.future.length === 0 || isRunning} title="Redo" iconOnly>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 7v6h-6"/><path d="M21 13A9 9 0 1 1 18.1 5.3"/>
-            </svg>
-          </Btn>
-
-          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
-
-          {/* DELETE — SVG icon only */}
-          <Btn color={selected ? 'var(--red)' : undefined} disabled={!selected || isRunning} onClick={() => {
-            if (!selected || isRunning) return;
-            saveHistory();
-            if (selected.match(/^w\d+$/)) {
-              setWires(prev => prev.filter(w => w.id !== selected));
-            } else {
-              setComponents(prev => prev.filter(c => c.id !== selected))
-              setWires(prev => prev.filter(w => !w.from.startsWith(selected + ':') && !w.to.startsWith(selected + ':')))
-            }
-            setSelected(null)
-          }} title="Delete selected" iconOnly>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-              <path d="M10 11v6"/><path d="M14 11v6"/>
-              <path d="M9 6V4h6v2"/>
-            </svg>
-          </Btn>
-
-          {/* ROTATE — SVG icon only, visible when a component is selected */}
-          {selected && components.find(c => c.id === selected) && (
-            <Btn onClick={() => rotateComponent(selected)} disabled={isRunning} title="Rotate 90°" iconOnly>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-              </svg>
-            </Btn>
-          )}
-
-          {/* THEME TOGGLE — SVG icon only */}
-          <Btn onClick={toggleTheme} title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'} iconOnly>
-            {theme === 'dark' ? (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5"/>
-                <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-              </svg>
-            ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-              </svg>
-            )}
-          </Btn>
-
-          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
-
-          {/* VIEW PANEL — button + dropdown */}
-          <div ref={viewPanelRef} style={{ position: 'relative' }}>
-            <Btn onClick={() => setShowViewPanel(v => !v)} title="View schematic or component list">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-              </svg>
-              View
-            </Btn>
-            {/* Dropdown panel */}
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 300,
-              background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
-              boxShadow: '0 8px 32px rgba(0,0,0,.45)', zIndex: 9999,
-              overflow: 'hidden',
-              maxHeight: showViewPanel ? 660 : 0,
-              opacity: showViewPanel ? 1 : 0,
-              transition: 'max-height 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
-              pointerEvents: showViewPanel ? 'auto' : 'none',
-            }}>
-              {/* Panel header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>View</span>
-                <button onClick={() => setShowViewPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>✕</button>
-              </div>
-
-              {/* ── Schematic View accordion ── */}
-              <div>
-                <button
-                  onClick={() => {
-                    if (viewPanelSection === 'schematic') {
-                      setViewPanelSection(null);
-                      setSchematicDataUrl(null);
-                      setSchematicLoading(false);
-                    } else {
-                      setViewPanelSection('schematic');
-                      generateSchematic();
-                    }
-                  }}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '11px 16px', border: 'none', borderBottom: '1px solid var(--border)',
-                    background: viewPanelSection === 'schematic' ? 'rgba(100,180,255,.07)' : 'var(--bg2)',
-                    color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-                  }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
-                    </svg>
-                    Schematic View
-                  </span>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    {viewPanelSection === 'schematic'
-                      ? <path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      : <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    }
-                  </svg>
-                </button>
-                {viewPanelSection === 'schematic' && (
-                  <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                    {schematicLoading ? (
-                      <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text3)', fontSize: 12 }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }}><path d="M21 12a9 9 0 1 1-4.5-7.8"/></svg>
-                        Capturing circuit…
-                      </div>
-                    ) : schematicDataUrl ? (
-                      <>
-                        <img src={schematicDataUrl} alt="Schematic" style={{ width: '100%', borderRadius: 6, border: '1px solid var(--border)', marginBottom: 10, display: 'block' }} />
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={downloadSchematicPng} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>↓ PNG</button>
-                          <button onClick={downloadSchematicPdf} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>↓ PDF</button>
-                          <button onClick={generateSchematic} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }} title="Recapture">↺ Refresh</button>
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text3)', fontSize: 12 }}>Capture failed. Try again.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Component List accordion ── */}
-              <div>
-                <button
-                  onClick={() => setViewPanelSection(s => s === 'components' ? null : 'components')}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '11px 16px', border: 'none',
-                    background: viewPanelSection === 'components' ? 'rgba(100,180,255,.07)' : 'var(--bg2)',
-                    color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-                  }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                      <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-                    </svg>
-                    Component List
-                  </span>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    {viewPanelSection === 'components'
-                      ? <path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      : <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    }
-                  </svg>
-                </button>
-                {viewPanelSection === 'components' && (
-                  <div style={{ padding: '12px 16px' }}>
-                    {components.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text3)', fontSize: 12 }}>No components on canvas.</div>
-                    ) : (
-                      <>
-                        <div style={{ overflowX: 'auto', marginBottom: 10, borderRadius: 6, border: '1px solid var(--border)' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                            <thead>
-                              <tr style={{ background: 'var(--bg3)' }}>
-                                {['#', 'Component', 'Type', 'Qty'].map(h => (
-                                  <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: 'var(--text3)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }}>{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(() => {
-                                const counts = {};
-                                components.forEach(c => {
-                                  if (!counts[c.type]) counts[c.type] = { type: c.type, label: c.label, count: 0 };
-                                  counts[c.type].count++;
-                                });
-                                return Object.values(counts).map((row, i) => (
-                                  <tr key={row.type} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,.02)' }}>
-                                    <td style={{ padding: '7px 10px', color: 'var(--text3)', fontSize: 11 }}>{i + 1}</td>
-                                    <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--text)' }}>{row.label}</td>
-                                    <td style={{ padding: '7px 10px', color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>{row.type}</td>
-                                    <td style={{ padding: '7px 10px', fontWeight: 700, color: 'var(--accent)' }}>{row.count}</td>
-                                  </tr>
-                                ));
-                              })()}
-                            </tbody>
-                          </table>
-                        </div>
-                        <button
-                          onClick={downloadCompCsv}
-                          style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          Download CSV
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT SIDE — right to left: Sign In/User, My Projects, Save, Export, Import */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Hidden file inputs */}
-          <input ref={importFileRef} type="file" accept=".png,image/png" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) importPng(e.target.files[0]); }} />
-          <input ref={backupRestoreInputRef} type="file" accept=".zip" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) { handleRestoreWorkflow(e.target.files[0]); e.target.value = ''; } }} />
-
-          {/* Import PNG */}
-          <Btn color="var(--orange)" onClick={() => importFileRef.current?.click()} title="Import a previously exported OpenHW-Studio PNG to restore the circuit"> Import PNG</Btn>
-          {/* Export PNG */}
-          <Btn color="var(--purple)" onClick={downloadPng} disabled={isExporting} title="Download circuit as PNG with embedded metadata">
-            {isExporting ? ' Exporting...' : ' Export PNG'}
-          </Btn>
-          {/* Save */}
-          <Btn color="var(--accent)" onClick={handleSave} title="Save current project"> Save</Btn>
-
-          {/* My Projects — dropdown anchor */}
-          <div ref={projectsDropdownRef} style={{ position: 'relative' }}>
-            <Btn
-              onClick={() => { refreshProjectList(); setShowProjectsDropdown(v => !v); }}
-              title="View and manage your saved projects"
-            > My Projects</Btn>
-            {/* Dropdown panel */}
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 340,
-              background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
-              boxShadow: '0 8px 32px rgba(0,0,0,.45)', zIndex: 9999,
-              overflow: 'hidden',
-              maxHeight: showProjectsDropdown ? 560 : 0,
-              opacity: showProjectsDropdown ? 1 : 0,
-              transition: 'max-height 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
-              pointerEvents: showProjectsDropdown ? 'auto' : 'none',
-            }}>
-              {/* Panel header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>My Projects</span>
-                <Btn color="var(--accent)" onClick={() => { setShowProjectsDropdown(false); handleNewProject(); }}>+ New</Btn>
-              </div>
-              {/* Project list */}
-              <div style={{ overflowY: 'auto', maxHeight: 340, padding: '8px' }}>
-                {myProjects.length === 0 ? (
-                  <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: '28px 0' }}>
-                    No saved projects yet.<br />Your circuits are auto-saved as you work.
-                  </div>
-                ) : myProjects.map(proj => (
-                  <div key={proj.id} style={{
-                    background: proj.id === currentProjectId ? 'rgba(100,180,255,.1)' : 'var(--card)',
-                    border: `1px solid ${proj.id === currentProjectId ? 'var(--accent)' : 'var(--border)'}`,
-                    borderRadius: 8, padding: '9px 12px', marginBottom: 6,
-                    display: 'flex', alignItems: 'center', gap: 8,
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {renamingProjectId === proj.id ? (
-                        <input
-                          autoFocus
-                          style={{ ...S.paletteSearch, marginBottom: 0, fontSize: 13, padding: '4px 8px', width: '100%' }}
-                          value={renameValue}
-                          onChange={e => setRenameValue(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') handleConfirmRename(proj.id); if (e.key === 'Escape') setRenamingProjectId(null); }}
-                          onClick={e => e.stopPropagation()}
-                        />
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                          <span style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {proj.name || 'Untitled'}
-                          </span>
-                          {proj.id === currentProjectId && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>● current</span>}
-                          {/* Rename icon */}
-                          <button
-                            onClick={e => handleStartRename(proj, e)}
-                            title="Rename project"
-                            style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', padding: '2px 4px', fontSize: 12, borderRadius: 4, flexShrink: 0, lineHeight: 1 }}
-                          >✎</button>
-                        </div>
-                      )}
-                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-                        {proj.board || 'arduino_uno'} · {proj.components?.length ?? 0} components · {formatProjectDate(proj.savedAt)}
-                      </div>
-                    </div>
-                    {renamingProjectId === proj.id ? (
-                      <>
-                        <Btn color="var(--accent)" onClick={() => handleConfirmRename(proj.id)}>✓</Btn>
-                        <Btn onClick={() => setRenamingProjectId(null)}>✕</Btn>
-                      </>
-                    ) : (
-                      <>
-                        <Btn onClick={() => { handleLoadProject(proj); setShowProjectsDropdown(false); }} disabled={isRunning}>Load</Btn>
-                        <Btn color="var(--red)" onClick={() => handleDeleteProject(proj.id)}>Del</Btn>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {/* Panel footer — Backup / Restore / Sync */}
-              <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <Btn onClick={handleBackupWorkflow} title="Download current workflow as a backup ZIP">↓ Backup</Btn>
-                <Btn onClick={() => backupRestoreInputRef.current?.click()} title="Restore workflow from a backup ZIP">↑ Restore</Btn>
-                {isAuthenticated && (
-                  <Btn color="var(--accent)" onClick={handleSyncToCloud} title="Sync local projects with cloud"> Sync</Btn>
-                )}
-                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>
-                  {!isAuthenticated ? 'Sign in to sync' : `Signed in as ${user?.name?.split(' ')[0]}`}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Sign In or Username (clickable → role dashboard) */}
-          {isAuthenticated
-            ? <button
-                style={{ ...S.userChip, cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)' }}
-                title={`Go to dashboard (${user?.role || 'user'})`}
-                onClick={() => navigate(user?.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')}
-              >
-                {user?.name?.split(' ')[0] || 'User'}
-              </button>
-            : <Btn color="var(--accent)" onClick={() => navigate('/login')} title="Sign in to access projects from any device"> Sign In</Btn>
-          }
-        </div>
-      </header>
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} />
 
       {/* GUEST BANNER */}
       {(!authLoading && !isAuthenticated && showGuestBanner) && (
-        <div style={S.guestBanner}>
+        <div className="bg-[rgba(255,145,0,.1)] border-b border-[rgba(255,145,0,.25)] text-[var(--orange)] px-5 py-2 text-[13px] flex items-center shrink-0">
           <div style={{ flex: 1 }}>
              <strong>Guest Mode</strong> — Your work is auto-saved locally in your browser. Click <strong>My Projects</strong> to see all saved circuits. Sign in to access your projects from any device.
-            <button style={{ ...S.bannerBtn, marginLeft: 10 }} onClick={() => navigate('/login')}>Sign in →</button>
+            <button className="bg-transparent border-none text-[var(--accent)] cursor-pointer text-[13px] underline font-inherit p-0" style={{marginLeft: 10 }} onClick={() => navigate('/login')}>Sign in →</button>
           </div>
-          <button style={S.bannerCloseBtn} onClick={() => setShowGuestBanner(false)} title="Dismiss">✕</button>
+          <button className="bg-transparent border-none text-[var(--orange)] cursor-pointer text-sm font-inherit opacity-70 px-2 py-1" onClick={() => setShowGuestBanner(false)} title="Dismiss">✕</button>
         </div>
       )}
 
       {/* WIRING MODE HINT */}
       {wireStart && (
-        <div style={{ ...S.guestBanner, background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
+        <div className="bg-[rgba(255,145,0,.1)] border-b border-[rgba(255,145,0,.25)] text-[var(--orange)] px-5 py-2 text-[13px] flex items-center shrink-0" style={{background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
           〰 <strong>Wiring in progress</strong> — Click another pin to connect. Press Esc to cancel.
           <span style={{ marginLeft: 12 }}>🔵 Started from <strong>{wireStart.compId} [{wireStart.pinLabel}]</strong></span>
         </div>
       )}
 
-      <div style={S.workspace}>
+      <div className="flex flex-1 overflow-hidden">
 
-        {/* PALETTE — hover to expand (280px), collapse to 38px */}
+        {/* PALETTE — hover to expand */}
         <aside
-          style={{
-            ...S.palette,
-            width: isPaletteHovered ? 410 : 38,
-            overflow: 'hidden',
+          className="bg-[var(--bg2)] border-r border-[var(--border)] overflow-y-auto overflow-x-hidden flex flex-col shrink-0" 
+          style={{ 
+            width: isPaletteHovered ? 280 : 38,
             transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-            position: 'relative',
-            padding: 0,
+            position: 'relative', 
+            zIndex: 10 
           }}
           onMouseEnter={() => setIsPaletteHovered(true)}
           onMouseLeave={() => { if (!paletteContextMenu) setIsPaletteHovered(false); }}
@@ -3078,23 +2575,23 @@ export default function SimulatorPage() {
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
             opacity: isPaletteHovered ? 0 : 1, transition: 'opacity 0.15s', pointerEvents: 'none',
           }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', writingMode: 'vertical-rl', letterSpacing: '0.1em' }}>Components</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', writingMode: 'vertical-rl', letterSpacing: '0.1em' }}>Components</span>
           </div>
 
-          {/* Full palette content — fades in when expanded */}
+          {/* Full palette content */}
           <div style={{
-            width: 410, opacity: isPaletteHovered ? 1 : 0, transition: 'opacity 0.2s',
+            width: 280, opacity: isPaletteHovered ? 1 : 0, transition: 'opacity 0.2s',
             pointerEvents: isPaletteHovered ? 'auto' : 'none',
             display: 'flex', flexDirection: 'column', height: '100%',
           }}>
             {/* Sticky top section */}
             <div style={{ flexShrink: 0, padding: '10px 8px 0', background: 'var(--bg2)' }}>
-              <div style={S.paletteHeader}>Components</div>
+              <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 pt-1 pb-2">Components</div>
 
               {/* Search + View Toggle */}
               <div style={{ display: 'flex', gap: 4, marginBottom: 8, alignItems: 'center' }}>
                 <input
-                  style={{ ...S.paletteSearch, flex: 1, marginBottom: 0 }}
+                  className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{flex: 1, marginBottom: 0 }}
                   placeholder="Search..."
                   value={paletteSearch}
                   onChange={(e) => setPaletteSearch(e.target.value)}
@@ -3197,7 +2694,7 @@ export default function SimulatorPage() {
                 const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
                 return (
                   <div key={group.group || `group-${index}`} style={{ marginBottom: paletteViewMode === 'grid' ? 10 : 4 }}>
-                    <div style={{ ...S.groupName, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1" style={{display: 'flex', alignItems: 'center', gap: 5 }}>
                       <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         {GROUP_ICON_SVG[group.group]?.(groupColor) || <span style={{ width: 6, height: 6, borderRadius: '50%', background: groupColor, display: 'inline-block' }} />}
                       </span>
@@ -3266,7 +2763,7 @@ export default function SimulatorPage() {
                   </div>
                 );
               })}
-              <div key="palette-tip" style={S.paletteTip}>
+              <div key="palette-tip" className="mt-auto px-2 py-2.5 text-[11px] text-[var(--text3)] leading-relaxed">
                 Click or drag → drop to place · Del removes selected
               </div>
             </div>
@@ -3290,7 +2787,7 @@ export default function SimulatorPage() {
                 icon: favoriteComponents.has(paletteContextMenu.item.type) ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>,
                 label: favoriteComponents.has(paletteContextMenu.item.type) ? 'Remove from Favourites' : 'Add to Favourites',
                 color: '#f59e0b',
-                action: () => { toggleFavorite(paletteContextMenu.item.type); setPaletteContextMenu(null); setIsPaletteHovered(false); }
+                action: () => { toggleFavorite(paletteContextMenu.item.type); setPaletteContextMenu(null); setIsPaletteHovered(false);  }
               },
               {
                 icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>,
@@ -3304,14 +2801,14 @@ export default function SimulatorPage() {
                   } else {
                     window.open(`https://wokwi.com/docs/parts/${paletteContextMenu.item.type}`, '_blank');
                   }
-                  setPaletteContextMenu(null); setIsPaletteHovered(false);
+                  setPaletteContextMenu(null); setIsPaletteHovered(false); 
                 }
               },
               {
                 icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
                 label: 'Edit a Copy',
                 color: 'var(--text)',
-                action: () => { window.open('/component-editor', '_blank'); setPaletteContextMenu(null); setIsPaletteHovered(false); }
+                action: () => { window.open('/component-editor', '_blank'); setPaletteContextMenu(null); setIsPaletteHovered(false);  }
               },
             ].map(({ icon, label, color, action }) => (
               <button
@@ -3330,9 +2827,9 @@ export default function SimulatorPage() {
 
         {/* Create Component Modal (placeholder) */}
         {showCreateComponentModal && (
-          <div style={S.modalOverlay} onClick={() => setShowCreateComponentModal(false)}>
-            <div style={S.modalBox} onClick={e => e.stopPropagation()}>
-              <div style={S.modalTitle}>Create Component</div>
+          <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowCreateComponentModal(false)}>
+            <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+              <div className="text-base font-bold mb-3.5 text-[var(--text)]">Create Component</div>
               <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 16 }}>
                 To create a custom component, build a ZIP package with <code>manifest.json</code>, <code>ui.tsx</code>, <code>logic.ts</code>, and optionally <code>validation.ts</code>, then upload via <strong>Upload ZIP to Test</strong>.
               </p>
@@ -3347,9 +2844,7 @@ export default function SimulatorPage() {
 
         {/* CANVAS + SVG WIRE LAYER */}
         <main
-          style={{
-            ...S.canvas,
-            cursor: segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
+          className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)] bg-[length:24px_24px]" style={{cursor: segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
             backgroundImage: showGrid
               ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
               : 'none',
@@ -3563,7 +3058,8 @@ export default function SimulatorPage() {
                   position: 'absolute',
                   left: comp.x + comp.w / 2,
                   top: comp.y - 14,
-                  transform: 'translateX(-50%) translateY(-100%)',
+                  transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
+                  transformOrigin: 'bottom center',
                   background: 'var(--bg2)', border: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '6px 10px', borderRadius: '10px',
@@ -3658,7 +3154,7 @@ export default function SimulatorPage() {
 
             {/* Empty state */}
             {components.length === 0 && (
-              <div style={S.emptyState}>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text3)] text-center pointer-events-none">
                 <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
                 <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
                 <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
@@ -4060,410 +3556,27 @@ export default function SimulatorPage() {
           })()}
         </main>
 
+
         {/* RIGHT PANEL */}
-        <aside style={{ ...S.rightPanel, width: isPanelOpen ? panelWidth : 40, transition: isDragging ? 'none' : 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-          {/* Drag Handle */}
-          {isPanelOpen && (
-            <div
-              onMouseDown={onMouseDownResize}
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: 5,
-                cursor: 'col-resize',
-                zIndex: 10,
-                background: 'transparent'
-              }}
-            />
-          )}
-
-          {/* Toggle Button */}
-          <button
-            onClick={() => setIsPanelOpen(!isPanelOpen)}
-            style={{
-              position: 'absolute',
-              left: isPanelOpen ? 5 : 0,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              height: 48,
-              width: 20,
-              background: 'var(--card)',
-              border: '1px solid var(--border)',
-              borderLeft: 'none',
-              borderRadius: '0 8px 8px 0',
-              color: 'var(--text3)',
-              cursor: 'pointer',
-              zIndex: 11,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '2px 0 8px rgba(0,0,0,0.2)'
-            }}
-          >
-            {isPanelOpen ? '▶' : '◀'}
-          </button>
-
-          {isPanelOpen && (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', paddingLeft: 12 }}>
-              {/* Validation panel */}
-              {validationErrors.length > 0 && showValidation && (
-                <div style={S.validationPanel}>
-                  <div style={S.validationHeader}>
-                    <span>⚠ Validation ({validationErrors.length})</span>
-                    <button style={S.closeBtn} onClick={() => setShowValidation(false)}>✕</button>
-                  </div>
-                  {validationErrors.map((err, i) => (
-                    <div key={i} style={{
-                      ...S.validationItem,
-                      borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
-                    }}>
-                      <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
-                        {err.type === 'error' ? '🔴' : '🟡'} {err.message}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Wires list */}
-              {showConnectionsPanel && (
-              <div className="panel-scroll" style={S.wiresList}>
-                <div style={S.wiresHeader}>Connections ({wires.length})</div>
-                {wires.length === 0 ? (
-                  <div style={{ padding: '12px 12px 16px', fontSize: 12, color: 'var(--text3)' }}>
-                    No wires connected.
-                  </div>
-                ) : (
-                  wires.map(w => (
-                    <div key={w.id} style={S.wireItem}>
-                      <input
-                        type="color"
-                        value={w.color}
-                        onChange={e => updateWireColor(w.id, e.target.value)}
-                        style={{ width: 14, height: 14, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent' }}
-                        title="Change wire color"
-                      />
-                      <span style={{ flex: 1, fontSize: 10, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {w.from} → {w.to}
-                      </span>
-                      <button style={S.wireDelete} onClick={() => deleteWire(w.id)}>✕</button>
-                    </div>
-                  ))
-                )}
-              </div>
-              )}
-
-              {/* Code editor */}
-              <div style={S.codePanel}>
-                <div style={S.codeTabs}>
-                  {['code', 'block', 'libraries', 'serial', 'plotter'].map(t => (
-                    <button
-                      key={t}
-                      style={{ ...S.codeTab, ...(codeTab === t ? S.codeTabActive : {}) }}
-                      onClick={() => setCodeTab(t)}
-                    >
-                      {t === 'code' ? '{ } Code' : t === 'block' ? 'Block' : t === 'libraries' ? ' Libraries' : t === 'serial' ? ' Serial' : ' Plotter'}
-                    </button>
-                  ))}
-                </div>
-                {codeTab === 'code' && (
-                  <div className="panel-scroll" style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
-                    <Editor
-                      value={code}
-                      onValueChange={code => setCode(code)}
-                      highlight={code => Prism.highlight(code, Prism.languages.cpp, 'cpp')}
-                      padding={14}
-                      style={{
-                        fontFamily: "'JetBrains Mono',monospace",
-                        fontSize: 12,
-                        lineHeight: 1.7,
-                        minHeight: '100%',
-                        color: 'var(--text)',
-                        border: 'none',
-                        outline: 'none',
-                        resize: 'none'
-                      }}
-                      textareaClassName="editor-textarea"
-                    />
-                  </div>
-                )}
-                {codeTab === 'block' && (
-                  <BlocklyEditor onExportCode={(generated) => { setCode(generated); setCodeTab('code'); }} />
-                )}
-                {codeTab === 'libraries' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', padding: 12, background: 'var(--bg)' }}>
-                    <form onSubmit={handleSearchLibraries} style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-                      <input
-                        style={S.serialInput}
-                        placeholder="Search for an Arduino library..."
-                        value={libQuery}
-                        onChange={e => setLibQuery(e.target.value)}
-                      />
-                      <Btn color="var(--accent)" disabled={isSearchingLib}>
-                        {isSearchingLib ? '...' : 'Search'}
-                      </Btn>
-                    </form>
-
-                    {libMessage && (
-                      <div style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 13, background: libMessage.type === 'error' ? 'rgba(255,68,68,0.1)' : 'rgba(0,230,118,0.1)', color: libMessage.type === 'error' ? 'var(--red)' : 'var(--green)', border: `1px solid ${libMessage.type === 'error' ? 'rgba(255,68,68,0.3)' : 'rgba(0,230,118,0.3)'}` }}>
-                        {libMessage.text}
-                      </div>
-                    )}
-
-                    <div className="panel-scroll" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>
-                      {libResults.length > 0 && <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 8 }}>Search Results</div>}
-                      {libResults.map((lib, idx) => (
-                        <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>{lib.name}</div>
-                            <Btn
-                              color="var(--green)"
-                              disabled={installingLib === lib.name}
-                              onClick={() => handleInstallLibrary(lib.name)}
-                            >
-                              {installingLib === lib.name ? 'Installing...' : 'Install'}
-                            </Btn>
-                          </div>
-                          <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.4 }}>{lib.sentence}</div>
-                          <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                            <span>v{lib.version}</span>
-                            <span>{lib.author}</span>
-                          </div>
-                        </div>
-                      ))}
-
-                      {libResults.length === 0 && (
-                        <>
-                          <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 8 }}>Installed on Host Server</div>
-                          {libInstalled.length === 0 ? (
-                            <div style={{ fontSize: 13, color: 'var(--text3)' }}>No external libraries installed.</div>
-                          ) : (
-                            libInstalled.map((lib, idx) => (
-                              <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, opacity: 0.85 }}>
-                                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{lib.library.name}</div>
-                                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace', marginTop: 6 }}>
-                                  <span>v{lib.library.version}</span>
-                                  <span>Installed</span>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {codeTab === 'serial' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden' }}>
-                    {/* Serial Toolbar */}
-                    <div style={S.serialToolbar}>
-                      <span style={{
-                        display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
-                        color: serialPaused ? 'var(--text3)' : 'var(--green)'
-                      }}>
-                        <span style={{
-                          width: 7, height: 7, borderRadius: '50%',
-                          background: serialPaused ? 'var(--text3)' : 'var(--green)',
-                          boxShadow: serialPaused ? 'none' : '0 0 6px var(--green)',
-                          animation: (!serialPaused && isRunning) ? 'pulse 1.2s infinite' : 'none',
-                          flexShrink: 0
-                        }} />
-                        {serialPaused ? 'Paused' : isRunning ? 'Live' : 'Idle'}
-                      </span>
-                      <div style={{ flex: 1 }} />
-                      <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                        {serialHistory.length} lines
-                      </span>
-                      <button
-                        style={S.serialCtrlBtn}
-                        onClick={() => setSerialPaused(p => !p)}
-                        title={serialPaused ? 'Resume auto-scroll' : 'Pause auto-scroll'}
-                      >
-                        {serialPaused ? '▶ Resume' : '⏸ Pause'}
-                      </button>
-                      <button
-                        style={{ ...S.serialCtrlBtn, color: 'var(--red)', borderColor: 'rgba(255,68,68,0.3)' }}
-                        onClick={() => setSerialHistory([])}
-                        title="Clear all output"
-                      >
-                        🗑 Clear
-                      </button>
-                    </div>
-
-                    {/* Output Area */}
-                    <div ref={serialOutputRef} className="panel-scroll" style={S.serialOutput}>
-                      {serialHistory.length === 0 ? (
-                        <div style={{ color: 'var(--text3)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
-                          {isRunning ? 'Waiting for serial output...' : 'Run the simulator to see serial output.'}
-                        </div>
-                      ) : (
-                        serialHistory.map((entry, i) => {
-                          const badgeColor = entry.dir === 'rx' ? '#2ecc71' : entry.dir === 'tx' ? '#3498db' : '#888';
-                          const badgeBg = entry.dir === 'rx' ? 'rgba(46,204,113,0.12)' : entry.dir === 'tx' ? 'rgba(52,152,219,0.12)' : 'rgba(128,128,128,0.12)';
-                          return (
-                            <div key={i} style={S.serialLine}>
-                              <span style={S.serialTs}>{entry.ts || ''}</span>
-                              <span style={{ ...S.serialBadge, color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}40` }}>
-                                {entry.dir?.toUpperCase() || 'RX'}
-                              </span>
-                              <span style={{ flex: 1, color: entry.dir === 'tx' ? '#3498db' : entry.dir === 'sys' ? 'var(--text3)' : 'var(--green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                {entry.text}
-                              </span>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* TX Input Row */}
-                    <div style={{ display: 'flex', gap: 6, padding: '8px 10px', borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg2)' }}>
-                      <input
-                        style={{ ...S.serialInput, flex: 1, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                        placeholder="Send message to Arduino..."
-                        value={serialInput}
-                        onChange={e => setSerialInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') sendSerialInput(); }}
-                        disabled={!isRunning}
-                      />
-                      <button
-                        onClick={sendSerialInput}
-                        disabled={!isRunning || !serialInput.trim()}
-                        style={{
-                          background: (isRunning && serialInput.trim()) ? 'var(--accent)' : 'transparent',
-                          border: '1px solid var(--accent)', color: (isRunning && serialInput.trim()) ? '#fff' : 'var(--text3)',
-                          borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 700,
-                          cursor: (isRunning && serialInput.trim()) ? 'pointer' : 'not-allowed',
-                          fontFamily: 'inherit', transition: 'all .15s', whiteSpace: 'nowrap'
-                        }}
-                      >
-                        ↑ Send
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {codeTab === 'plotter' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden' }}>
-                    {/* Plotter Toolbar */}
-                    <div style={S.plotterToolbar}>
-                      <span style={{
-                        display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
-                        color: plotterPaused ? 'var(--text3)' : 'var(--green)'
-                      }}>
-                        <span style={{
-                          width: 7, height: 7, borderRadius: '50%',
-                          background: plotterPaused ? 'var(--text3)' : 'var(--green)',
-                          boxShadow: plotterPaused ? 'none' : '0 0 6px var(--green)',
-                        }} />
-                        {plotterPaused ? 'Paused' : isRunning ? 'Plotting live...' : 'Idle'}
-                      </span>
-                      <div style={{ flex: 1 }} />
-                      <button
-                        style={S.serialCtrlBtn}
-                        onClick={() => setPlotterPaused(p => !p)}
-                        title={plotterPaused ? 'Resume plotting' : 'Pause plotting'}
-                      >
-                        {plotterPaused ? '▶ Resume' : '⏸ Pause'}
-                      </button>
-                      <button
-                        style={{ ...S.serialCtrlBtn, color: 'var(--red)', borderColor: 'rgba(255,68,68,0.3)' }}
-                        onClick={() => setPlotData([])}
-                        title="Clear plot"
-                      >
-                        🗑 Clear
-                      </button>
-                    </div>
-
-                    {/* Pin Selector */}
-                    <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>Pins:</span>
-                      {['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5', ...serialPlotLabelsRef.current.filter(l => !['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'].includes(l))].map((pin, i) => {
-                        const isSel = selectedPlotPins.includes(pin);
-                        const isAna = pin.startsWith('A');
-                        const isLogic = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'].includes(pin);
-                        let bg = isAna ? 'rgba(52,152,219,0.2)' : 'rgba(46,204,113,0.2)';
-                        let br = isAna ? '#3498db' : '#2ecc71';
-                        if (!isLogic) {
-                          const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-                          const c = colors[i % colors.length];
-                          bg = `${c}33`; br = c;
-                        }
-                        return (
-                          <button
-                            key={pin}
-                            onClick={() => setSelectedPlotPins(prev => {
-                              if (prev.includes(pin)) return prev.filter(p => p !== pin);
-                              if (prev.length >= 8) return [...prev.slice(1), pin];
-                              return [...prev, pin];
-                            })}
-                            style={{
-                              background: isSel ? bg : 'transparent',
-                              border: `1px solid ${isSel ? br : 'var(--border)'}`,
-                              color: isSel ? br : 'var(--text3)',
-                              borderRadius: 4, padding: '1px 5px', fontSize: 10, cursor: 'pointer'
-                            }}
-                          >{pin}</button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Legend */}
-                    {selectedPlotPins.length > 0 && (
-                      <div style={S.plotterLegend}>
-                        {selectedPlotPins.map((pin, i) => {
-                          let bg = pin.startsWith('A') ? '#3498db' : '#2ecc71';
-                          let lbl = `Pin ${pin}`;
-                          if (isNaN(parseInt(pin)) && !pin.startsWith('A')) {
-                            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-                            const serialVars = selectedPlotPins.filter(p => isNaN(parseInt(p)) && !p.startsWith('A'));
-                            bg = colors[serialVars.indexOf(pin) % colors.length];
-                            lbl = pin;
-                          }
-                          return (
-                            <span key={pin} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer' }}
-                              onClick={() => setSelectedPlotPins(prev => prev.filter(p => p !== pin))}
-                              title="Click to remove" >
-                              <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, flexShrink: 0 }} />
-                              <span style={{ color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace' }}>{lbl}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Canvas */}
-                    <div style={{ flex: 1, position: 'relative' }}>
-                      {!isRunning && plotData.length === 0 ? (
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', gap: 8, fontSize: 13 }}>
-                          <span style={{ fontSize: 28 }}>📈</span>
-                          Run simulator to trace signals.
-                        </div>
-                      ) : (
-                        <canvas
-                          ref={plotterCanvasRef}
-                          width={800}
-                          height={600}
-                          style={{ position: 'absolute', width: '100%', height: '100%', background: '#070b14' }}
-                        />
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </aside>
+        <RightPanel 
+          isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
+          validationErrors={validationErrors} showValidation={showValidation} setShowValidation={setShowValidation}
+          codeTab={codeTab} setCodeTab={setCodeTab} code={code} setCode={setCode}
+          libQuery={libQuery} setLibQuery={setLibQuery} handleSearchLibraries={handleSearchLibraries} isSearchingLib={isSearchingLib} libMessage={libMessage} libInstalled={libInstalled} libResults={libResults} handleInstallLibrary={handleInstallLibrary} installingLib={installingLib}
+          serialPaused={serialPaused} setSerialPaused={setSerialPaused} isRunning={isRunning} serialHistory={serialHistory} setSerialHistory={setSerialHistory} serialOutputRef={serialOutputRef} serialInput={serialInput} setSerialInput={setSerialInput} sendSerialInput={sendSerialInput}
+          plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
+          showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
+        />
       </div>
 
     {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
     {showSaveDialog && (
-      <div style={S.modalOverlay} onClick={() => setShowSaveDialog(false)}>
-        <div style={S.modalBox} onClick={e => e.stopPropagation()}>
-          <div style={S.modalTitle}>Save Project</div>
+      <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
+        <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+          <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
           <input
             autoFocus
-            style={{ ...S.paletteSearch, marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
+            className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
             placeholder="Project name..."
             value={saveDialogName}
             onChange={e => setSaveDialogName(e.target.value)}
@@ -4480,104 +3593,6 @@ export default function SimulatorPage() {
 
     </div>
   )
-}
-
-// ─── Tiny button component (Updated to support CSS Variables) ───────────────
-function Btn({ children, onClick, color, title, disabled, iconOnly }) {
-  const [hov, setHov] = useState(false)
-  const [clicked, setClicked] = useState(false)
-  const isInteractive = !disabled && hov;
-
-  const handleClick = () => {
-    if (disabled) return;
-    setClicked(true);
-    setTimeout(() => setClicked(false), 280);
-    onClick?.();
-  };
-
-  return (
-    <button
-      title={title}
-      onClick={handleClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        background: disabled ? 'transparent' : (color ? (isInteractive ? color : 'transparent') : isInteractive ? 'var(--border)' : 'var(--card)'),
-        border: `1px solid ${color || 'var(--border)'}`,
-        color: disabled ? 'var(--text3)' : (color ? (isInteractive ? '#fff' : color) : 'var(--text)'),
-        padding: iconOnly ? '7px 10px' : '7px 14px', borderRadius: 8,
-        fontFamily: 'Space Grotesk, sans-serif', fontSize: 13,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s',
-        whiteSpace: 'nowrap',
-        fontWeight: color ? 700 : 500,
-        opacity: disabled ? 0.5 : 1,
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        animation: clicked ? 'toolbtn-pop 0.26s ease' : 'none',
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-// ─── Styles (Refactored to map strictly to CSS variables) ───────────────────────
-const S = {
-  page: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)', fontFamily: "'Space Grotesk',sans-serif", color: 'var(--text)' },
-  bar: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', flexShrink: 0, flexWrap: 'wrap' },
-  logo: { background: 'none', border: 'none', color: 'var(--accent)', fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 },
-  barCenter: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' },
-  sel: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 12px', borderRadius: 8, fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' },
-  userChip: { background: 'var(--card)', border: '1px solid var(--border)', padding: '7px 12px', borderRadius: 8, fontSize: 13, color: 'var(--text2)' },
-  guestBanner: { background: 'rgba(255,145,0,.1)', borderBottom: '1px solid rgba(255,145,0,.25)', color: 'var(--orange)', padding: '8px 20px', fontSize: 13, display: 'flex', alignItems: 'center', flexShrink: 0 },
-  bannerBtn: { background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit', padding: 0 },
-  bannerCloseBtn: { background: 'none', border: 'none', color: 'var(--orange)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', opacity: 0.7, padding: '4px 8px' },
-  modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 },
-  modalBox: { background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, width: 360, boxShadow: '0 8px 40px rgba(0,0,0,.4)' },
-  modalTitle: { fontSize: 16, fontWeight: 700, marginBottom: 14, color: 'var(--text)' },
-  workspace: { display: 'flex', flex: 1, overflow: 'hidden' },
-
-  palette: { width: 410, background: 'var(--bg2)', borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 },
-  paletteHeader: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '4px 8px 8px' },
-  paletteSearch: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, width: '100%', marginBottom: 8, outline: 'none', boxSizing: 'border-box' },
-  groupName: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 },
-  paletteItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: 'grab', transition: 'all .15s', border: '1px solid transparent', userSelect: 'none' },
-  paletteTip: { marginTop: 'auto', padding: '10px 8px', fontSize: 11, color: 'var(--text3)', lineHeight: 1.6 },
-
-  canvas: {
-    flex: 1, position: 'relative', overflow: 'hidden',
-    backgroundColor: 'var(--canvas-bg)',
-    backgroundSize: '24px 24px',
-  },
-  emptyState: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', textAlign: 'center', pointerEvents: 'none' },
-
-  rightPanel: { position: 'relative', background: 'var(--bg2)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)' },
-
-  validationPanel: { background: 'var(--bg3)', borderBottom: '1px solid var(--border)', flexShrink: 0 },
-  validationHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', fontSize: 12, fontWeight: 700, color: 'var(--orange)' },
-  closeBtn: { background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit' },
-  validationItem: { padding: '6px 12px', fontSize: 12, borderLeft: '3px solid', marginBottom: 2, lineHeight: 1.5 },
-
-  wiresList: { background: 'var(--bg3)', borderBottom: '1px solid var(--border)', maxHeight: 140, overflowY: 'auto', flexShrink: 0 },
-  wiresHeader: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '8px 12px 4px' },
-  wireItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', borderBottom: '1px solid var(--border)' },
-  wireDelete: { background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', flexShrink: 0 },
-
-  codePanel: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  codeTabs: { display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 },
-  codeTab: { flex: 1, padding: '10px 4px', background: 'none', border: 'none', color: 'var(--text3)', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', borderBottom: '2px solid transparent', transition: 'all .15s' },
-  codeTabActive: { color: 'var(--accent)', borderBottomColor: 'var(--accent)' },
-  codeEditor: { flex: 1, color: 'var(--text)', border: 'none', outline: 'none', resize: 'none' },
-  codePlaceholder: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', gap: 8 },
-  serialOutput: { flex: 1, overflowY: 'auto', padding: '6px 0', display: 'flex', flexDirection: 'column' },
-  serialInput: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, outline: 'none' },
-  serialToolbar: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 },
-  serialCtrlBtn: { background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
-  serialLine: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '2px 12px', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', borderBottom: '1px solid var(--border)' },
-  serialTs: { color: 'var(--text3)', fontSize: 10, minWidth: 84, flexShrink: 0, paddingTop: 1 },
-  serialBadge: { display: 'inline-block', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 4px', flexShrink: 0, marginTop: 1 },
-  plotterToolbar: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
-  plotterLegend: { display: 'flex', flexWrap: 'wrap', gap: '4px 16px', padding: '4px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
 }
 
 

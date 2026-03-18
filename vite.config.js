@@ -10,16 +10,6 @@ export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
     exclude: ['@openhw/emulator'],
-  },
-  server: {
-    fs: {
-      // Allow serving files from the emulator package which lives outside the frontend root
-      allow: [
-        path.resolve(__dirname, '..'),
-      ],
-    },
-  },
-  optimizeDeps: {
     esbuildOptions: {
       plugins: [
         {
@@ -37,6 +27,14 @@ export default defineConfig({
             }))
           },
         },
+      ],
+    },
+  },
+  server: {
+    fs: {
+      // Allow serving files from the emulator package which lives outside the frontend root
+      allow: [
+        path.resolve(__dirname, '..'),
       ],
     },
   },
