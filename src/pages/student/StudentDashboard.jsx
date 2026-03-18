@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { BookOpen, ClipboardCheck, Home, Monitor, X } from 'lucide-react'
-import { useAuth } from '../context/AuthContext.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
 import {
   getClassAssignments,
   getClassroomNotices,
   getMyClassrooms,
   joinClassroomByCode
-} from '../services/classroomService.js'
-import { formatDateTime, normalizeJoinCode, getAvatarLetters } from '../components/common/test.js'
-import ClassroomSidebar from '../components/common/ClassroomSidebar.jsx'
-import ClassCard from '../components/common/ClassCard.jsx'
-import { ClassCardSkeleton } from '../components/common/ClassroomSkeletons.jsx'
+} from '../../services/classroomService.js'
+import { formatDateTime, normalizeJoinCode, getAvatarLetters } from '../../components/common/test.js'
+import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
+import ClassCard from '../../components/common/ClassCard.jsx'
+import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
 
 export default function StudentDashboard() {
   const { user, logout } = useAuth()

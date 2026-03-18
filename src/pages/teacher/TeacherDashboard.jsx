@@ -10,12 +10,12 @@ import {
   Plus,
   Settings,
 } from 'lucide-react'
-import { useAuth } from '../context/AuthContext.jsx'
-import { createClassroom, deleteClassroom, getMyClassrooms } from '../services/classroomService.js'
-import { formatDateTime, getAvatarLetters } from '../components/common/test.js'
-import ClassroomSidebar from '../components/common/ClassroomSidebar.jsx'
-import ClassCard from '../components/common/ClassCard.jsx'
-import { ClassCardSkeleton } from '../components/common/ClassroomSkeletons.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { createClassroom, deleteClassroom, getMyClassrooms } from '../../services/classroomService.js'
+import { formatDateTime, getAvatarLetters } from '../../components/common/test.js'
+import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
+import ClassCard from '../../components/common/ClassCard.jsx'
+import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
 
 const sidebarLinks = [
   { key: 'home', label: 'Home', icon: Home },

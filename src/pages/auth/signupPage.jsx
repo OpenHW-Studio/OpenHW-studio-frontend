@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '../context/AuthContext.jsx'
-import { signupUser } from '../services/authService.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { signupUser } from '../../services/authService.js'
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
 
 export default function SignupPage() {
   const navigate = useNavigate()
