@@ -52,10 +52,18 @@ export const PushbuttonUI = ({ state, attrs, isRunning }: { state: any, attrs: a
     return (
         <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0 }}>
             <div
-                onPointerDown={(e) => { e.stopPropagation(); handlePress(); }}
+                onPointerDown={(e) => {
+                    e.stopPropagation();
+                    if (e.currentTarget.setPointerCapture) {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                    }
+                    handlePress();
+                }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onPointerUp={handleRelease}
                 onPointerLeave={handleRelease}
+                onPointerCancel={handleRelease}
+                onLostPointerCapture={handleRelease}
                 className={`btn-wrapper ${pressed ? 'pressed' : ''}`}
                 style={{
                     position: 'relative',
