@@ -9,7 +9,7 @@ import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
 import * as Babel from '@babel/standalone';
 
-import * as EmulatorComponents from "c:/Users/light/OneDrive/Desktop/Open Source/fossee/openhw-studio-emulator/src/components/index.ts"
+import * as EmulatorComponents from "@openhw/emulator";
 
 // Web Editor features
 import Editor from 'react-simple-code-editor';
