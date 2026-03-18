@@ -5,18 +5,18 @@ import { signupUser } from '../services/authService.js'
 
 export default function SignupPage() {
   const navigate = useNavigate()
-
   const { login, isAuthenticated, role } = useAuth()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     role: 'student',
     college: '',
-    semester: ''
+    semester: '',
+    bio: '',
+    image: ''
   })
 
   useEffect(() => {
@@ -26,18 +26,16 @@ export default function SignupPage() {
   }, [isAuthenticated, role, navigate])
 
   const handleInputChange = (e) => {
-    const value = e.target.type === 'email' ? e.target.value.trim() : e.target.value;
-    setFormData({ ...formData, [e.target.name]: value });
+    const value = e.target.type === 'email' ? e.target.value.trim() : e.target.value
+    setFormData({ ...formData, [e.target.name]: value })
   }
 
   const handleSignup = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
-
     try {
-      const data = await signupUser({ ...formData, role: formData.role }) // Using formData.role as selectedRole is not defined
-      // Make sure login conforms to AuthContext expectations
+      const data = await signupUser(formData)
       login(data.token, data.user)
       navigate(data.user.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
     } catch (err) {
@@ -47,71 +45,171 @@ export default function SignupPage() {
     }
   }
 
+  const handleGoogleLogin = () => {
+    // Save the selected role before redirecting to Google OAuth
+    localStorage.setItem('pending_oauth_role', formData.role);
+
+    const authUrl = BASE_URL.replace('/api', '/auth');
+    window.location.href = `${authUrl}/google`;
+  }
+
   return (
-    <div className="auth-page">
+    <div className="auth-screen auth-screen--signup">
+      <div className="auth-shell auth-shell--wide auth-shell--reverse">
+        <section className="auth-panel">
+          <Link to="/" className="auth-panel__back">Back to Home</Link>
 
-      <div className="auth-card max-w-[500px] w-full box-border">
-        <div className="auth-logo">
-          <span className="brand-icon">⚡</span>
-          <span className="brand-name">OpenHW<span className="brand-accent">-Studio</span></span>
-        </div>
-        <h1 className="auth-title">Create an Account</h1>
+          <div className="auth-panel__brand">
+            <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
+          </div>
 
-        <div className="role-section">
-          <p className="role-label">I am a...</p>
-          <div className="role-options">
-            <button type="button" className={`role-btn ${formData.role === 'student' ? 'active' : ''}`} onClick={() => setFormData({ ...formData, role: 'student' })}>
-              <span className="role-emoji">🎓</span>
-              <span className="role-text">Student</span>
+          <header className="auth-panel__header">
+            <h2>Create an Account</h2>
+            <p>Set up your role, profile, and access details.</p>
+          </header>
+
+          <form className="auth-form" onSubmit={handleSignup}>
+            <div className="auth-role-picker">
+              <button
+                type="button"
+                className={`auth-role-picker__option${formData.role === 'teacher' ? ' is-active' : ''}`}
+                onClick={() => setFormData({ ...formData, role: 'teacher' })}
+              >
+                <strong>Teacher</strong>
+                <span>Create classes and assignments</span>
+              </button>
+
+              <button
+                type="button"
+                className={`auth-role-picker__option${formData.role === 'student' ? ' is-active' : ''}`}
+                onClick={() => setFormData({ ...formData, role: 'student' })}
+              >
+                <strong>Student</strong>
+                <span>Track coursework and progress</span>
+              </button>
+            </div>
+
+            <div className="auth-form__grid">
+              <label className="auth-field auth-field--full">
+                <span>Full Name</span>
+                <input
+                  type="text"
+                  name="name"
+                  placeholder="Enter your full name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  required
+                />
+              </label>
+
+              <label className="auth-field auth-field--full">
+                <span>Email</span>
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Enter your email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  required
+                />
+              </label>
+
+              <label className="auth-field auth-field--full">
+                <span>Password</span>
+                <input
+                  type="password"
+                  name="password"
+                  placeholder="Create a password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  required
+                />
+              </label>
+
+              <label className="auth-field auth-field--full">
+                <span>Bio (optional)</span>
+                <input
+                  type="text"
+                  name="bio"
+                  placeholder="Tell us about yourself"
+                  value={formData.bio}
+                  onChange={handleInputChange}
+                />
+              </label>
+
+              <label className="auth-field auth-field--full">
+                <span>Profile Image URL (optional)</span>
+                <input
+                  type="url"
+                  name="image"
+                  placeholder="https://..."
+                  value={formData.image}
+                  onChange={handleInputChange}
+                />
+              </label>
+
+              {formData.role === 'student' && (
+                <>
+                  <label className="auth-field">
+                    <span>College</span>
+                    <input
+                      type="text"
+                      name="college"
+                      placeholder="Enter your college"
+                      value={formData.college}
+                      onChange={handleInputChange}
+                    />
+                  </label>
+
+                  <label className="auth-field">
+                    <span>Semester</span>
+                    <input
+                      type="text"
+                      name="semester"
+                      placeholder="Enter your semester"
+                      value={formData.semester}
+                      onChange={handleInputChange}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+
+            {error && <div className="auth-form__error">{error}</div>}
+
+            <button type="submit" className="auth-form__submit" disabled={loading}>
+              {loading ? 'Creating account...' : 'Create Account'}
             </button>
-            <button type="button" className={`role-btn ${formData.role === 'teacher' ? 'active' : ''}`} onClick={() => setFormData({ ...formData, role: 'teacher' })}>
-              <span className="role-emoji">👨‍🏫</span>
-              <span className="role-text">Teacher</span>
-            </button>
-          </div>
-        </div>
+          </form>
 
-        {error && <div className="auth-error">⚠️ {error}</div>}
+          <p className="auth-panel__footer">
+            Already have an account? <Link to="/signin">Sign in</Link>
+          </p>
+        </section>
 
+        <section className="auth-showcase auth-showcase--signup">
+          <div className="auth-showcase__badge">Normal CSS powered UI</div>
+          <h1 className="auth-showcase__title">Build a clean onboarding flow that matches the rest of the product.</h1>
+          <p className="auth-showcase__copy">
+            The signup experience now uses custom classes instead of Tailwind utilities, so the styling is consistent even when utility generation is unavailable.
+          </p>
 
-        <form className="flex flex-col gap-4 mt-4 w-full" onSubmit={handleSignup}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
-            <div className="flex flex-col gap-1.5 text-left w-full">
-              <label className="text-sm font-medium text-slate-300">Full Name</label>
-              <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="text" name="name" placeholder="John Doe" value={formData.name} onChange={handleInputChange} required />
+          <div className="auth-showcase__metrics">
+            <div>
+              <strong>4</strong>
+              <span>sample classes</span>
             </div>
-            <div className="flex flex-col gap-1.5 text-left w-full">
-              <label className="text-sm font-medium text-slate-300">Email Address</label>
-              <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="email" name="email" placeholder="name@college.edu" value={formData.email} onChange={handleInputChange} required />
+            <div>
+              <strong>3</strong>
+              <span>views refreshed</span>
             </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5 text-left w-full">
-            <label className="text-sm font-medium text-slate-300">Password (Min 8 chars)</label>
-            <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="password" name="password" placeholder="••••••••" minLength="8" value={formData.password} onChange={handleInputChange} required />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
-            <div className="flex flex-col gap-1.5 text-left w-full">
-              <label className="text-sm font-medium text-slate-300">College (Optional)</label>
-              <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="text" name="college" placeholder="IIT Bombay" value={formData.college} onChange={handleInputChange} />
-            </div>
-            <div className="flex flex-col gap-1.5 text-left w-full">
-              <label className="text-sm font-medium text-slate-300">Semester (Optional)</label>
-              <input className="w-full bg-slate-900 border border-slate-700 px-4 py-3 rounded-lg text-white text-base transition-all duration-200 focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400" type="number" name="semester" min="1" max="12" placeholder="1" value={formData.semester} onChange={handleInputChange} />
+            <div>
+              <strong>100%</strong>
+              <span>custom CSS</span>
             </div>
           </div>
-
-          <button type="submit" className="w-full bg-sky-400 text-slate-900 font-bold px-4 py-3 rounded-lg border-none cursor-pointer text-base transition-all duration-200 mt-2 hover:bg-sky-300 active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed" disabled={loading}>
-            {loading ? 'Creating Account...' : 'Sign Up'}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-slate-400">
-          Already have an account? <Link to="/signin" className="text-sky-400 font-bold no-underline ml-1">Sign In</Link>
-        </p>
+        </section>
       </div>
-      <div className="auth-bg"><div className="auth-bg-circuit" /></div>
     </div>
   )
 }
