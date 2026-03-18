@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { BookOpen, ClipboardList, FileQuestion, Home, Monitor, MoreVertical, Search } from 'lucide-react'
-import { useAuth } from '../context/AuthContext.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
 import {
   getClassAssignments,
   getClassroomById,
   getClassroomNotices,
   getClassroomStudents
-} from '../services/classroomService.js'
-import { formatDateTime, getAvatarLetters } from '../components/common/test.js'
-import ClassroomSidebar from '../components/common/ClassroomSidebar.jsx'
-import StreamCard from '../components/common/StreamCard.jsx'
-import { ClassDetailSkeleton, StreamCardSkeleton } from '../components/common/ClassroomSkeletons.jsx'
+} from '../../services/classroomService.js'
+import { formatDateTime, getAvatarLetters } from '../../components/common/test.js'
+import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
+import StreamCard from '../../components/common/StreamCard.jsx'
+import { ClassDetailSkeleton, StreamCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
 
 const tabs = [
   { key: 'stream', label: 'Stream' },
