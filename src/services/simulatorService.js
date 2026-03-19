@@ -1,15 +1,16 @@
 import axios from 'axios';
 
-const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5000/api';
+const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5001/api';
 
 /**
  * Sends Arduino C++ code to the backend compiler.
- * @param {string} code - The C++ code to compile
+ * @param {string|object} input - code string or compile payload
  * @returns {Promise<string>} The Intel Hex string
  */
-export async function compileCode(code) {
+export async function compileCode(input) {
     try {
-        const response = await axios.post(`${COMPILER_URL}/compile`, { code });
+        const payload = typeof input === 'string' ? { code: input } : (input || {});
+        const response = await axios.post(`${COMPILER_URL}/compile`, payload);
         if (response.data && response.data.hex) {
             return response.data;
         }
@@ -17,6 +18,38 @@ export async function compileCode(code) {
     } catch (error) {
         if (error.response && error.response.data && error.response.data.details) {
             throw new Error(`Compilation Failed:\n${error.response.data.details}`);
+        }
+        throw error;
+    }
+}
+
+/**
+ * Flash firmware to a physical board via backend uploader (avrdude/esptool through arduino-cli).
+ */
+export async function flashFirmware({ port, fqbn, hex, baudRate, resetMethod }) {
+    try {
+        const response = await axios.post(`${COMPILER_URL}/compile/flash`, { port, fqbn, hex, baudRate, resetMethod });
+        return response.data;
+    } catch (error) {
+        if (error.response && error.response.data && error.response.data.details) {
+            throw new Error(`Flashing Failed:\n${error.response.data.details}`);
+        }
+        if (error.response && error.response.data && error.response.data.error) {
+            throw new Error(error.response.data.error);
+        }
+        throw error;
+    }
+}
+
+export async function listHardwarePorts(showAll = false) {
+    try {
+        const response = await axios.get(`${COMPILER_URL}/compile/ports`, {
+            params: { showAll: showAll ? 'true' : 'false' },
+        });
+        return response.data?.ports || [];
+    } catch (error) {
+        if (error.response && error.response.data && error.response.data.error) {
+            throw new Error(error.response.data.error);
         }
         throw error;
     }

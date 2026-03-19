@@ -10,16 +10,8 @@ export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
     exclude: ['@openhw/emulator'],
-  },
-  server: {
-    fs: {
-      // Allow serving files from the emulator package which lives outside the frontend root
-      allow: [
-        path.resolve(__dirname, '..'),
-      ],
-    },
-  },
-  optimizeDeps: {
+    // We ensure Vite pre-bundles the emulator package from its source components.
+    // This allows the raw-html esbuild plugin below to resolve .html?raw imports correctly.
     esbuildOptions: {
       plugins: [
         {
@@ -37,6 +29,14 @@ export default defineConfig({
             }))
           },
         },
+      ],
+    },
+  },
+  server: {
+    fs: {
+      // Allow serving files from the emulator package which lives outside the frontend root
+      allow: [
+        path.resolve(__dirname, '..'),
       ],
     },
   },
