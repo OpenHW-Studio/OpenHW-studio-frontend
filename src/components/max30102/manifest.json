@@ -1,0 +1,29 @@
+{
+  "type": "max30102",
+  "label": "MAX30102 Heart Rate",
+  "group": "Sensors",
+  "w": 200,
+  "h": 160,
+  "attrs": {
+    "redLed": {
+      "label": "Red LED (660nm)",
+      "type": "number",
+      "default": 0
+    },
+    "irLed": {
+      "label": "IR LED (880nm)",
+      "type": "number",
+      "default": 0
+    }
+  },
+  "pins": [
+    { "id": "VIN", "x": 72,  "y": 63,   "type": "power"   },
+    { "id": "SDA", "x": 56.8, "y": 63,   "type": "digital" },
+    { "id": "SCL", "x": 42.5,  "y": 63,   "type": "digital" },
+    { "id": "GND", "x": 28, "y":63, "type": "power"   },
+    { "id": "INT", "x": 28, "y": 8,   "type": "digital" },
+    { "id": "IRD", "x": 42.5,  "y": 8, "type": "digital" },
+    { "id": "RD",  "x": 56.8,  "y": 8, "type": "digital" },
+    { "id": "NC",  "x": 72, "y": 8, "type": "nc"      }
+  ]
+}

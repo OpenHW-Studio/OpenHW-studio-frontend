@@ -1,0 +1,72 @@
+{
+  "label": "MAX7219 Dot Matrix",
+  "type": "wokwi-max7219",
+  "group": "Outputs",
+  "w": 120,
+  "h": 80,
+  "attrs": {
+    "color": "red"
+  },
+  "pins": [
+    {
+      "id": "VCC",
+      "x": 0,
+      "y": 20,
+      "type": "power"
+    },
+    {
+      "id": "GND",
+      "x": 0,
+      "y": 30,
+      "type": "power"
+    },
+    {
+      "id": "DIN",
+      "x": 0,
+      "y": 40,
+      "type": "input"
+    },
+    {
+      "id": "CS",
+      "x": 0,
+      "y": 50,
+      "type": "input"
+    },
+    {
+      "id": "CLK",
+      "x": 0,
+      "y": 60,
+      "type": "input"
+    },
+    {
+      "id": "VCC_OUT",
+      "x": 120,
+      "y": 20,
+      "type": "power"
+    },
+    {
+      "id": "GND_OUT",
+      "x": 120,
+      "y": 30,
+      "type": "power"
+    },
+    {
+      "id": "DOUT",
+      "x": 120,
+      "y": 40,
+      "type": "output"
+    },
+    {
+      "id": "CS_OUT",
+      "x": 120,
+      "y": 50,
+      "type": "output"
+    },
+    {
+      "id": "CLK_OUT",
+      "x": 120,
+      "y": 60,
+      "type": "output"
+    }
+  ]
+}

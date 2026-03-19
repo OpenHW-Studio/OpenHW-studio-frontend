@@ -8,7 +8,8 @@ const spinBtn: React.CSSProperties = {
 };
 
 export const PowerSupplyContextMenu = ({ attrs, onUpdate }: { attrs: any, onUpdate: (key: string, value: any) => void }) => {
-    const voltage = parseFloat(attrs?.voltage ?? '5.0');
+    const parsed = parseFloat(String(attrs?.voltage ?? '5.0'));
+    const voltage = Number.isFinite(parsed) ? parsed : 5.0;
     const step = (delta: number) => {
         const next = Math.round((voltage + delta) * 10) / 10;
         onUpdate('voltage', next.toFixed(1));

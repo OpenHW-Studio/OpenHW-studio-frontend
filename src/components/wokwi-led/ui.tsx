@@ -21,7 +21,7 @@ export const LEDContextMenu = ({ attrs, onUpdate }: { attrs: any, onUpdate: (key
 // Bounding box for the blue selection ring.
 // x, y: offset from comp.x/comp.y (top-left corner of the visual area)
 // w, h: width and height of the visual area
-export const BOUNDS = { x: 12, y: 11, w: 16, h: 30 };
+export const BOUNDS = { x: 0, y: 0, w: 38, h: 38 };
 
 export const LEDUI = ({ state, attrs }: { state: any, attrs: any }) => {
     const isLit = state?.illuminated;
