@@ -650,6 +650,73 @@ body {
   color: var(--red) !important;
 }
 
+/* Canvas validation toast shown above zoom/menu controls */
+.validation-toast-canvas {
+  position: absolute;
+  right: 12px;
+  bottom: 62px;
+  z-index: 130;
+  width: min(420px, calc(100% - 24px));
+  background: color-mix(in srgb, var(--bg2) 88%, #7f1d1d 12%);
+  border: 1px solid color-mix(in srgb, var(--red) 60%, var(--border) 40%);
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  padding: 10px 11px;
+  animation: validationToastIn 0.18s ease-out;
+}
+
+.validation-toast-canvas__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--red);
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.validation-toast-canvas__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  cursor: pointer;
+  padding: 0;
+}
+
+.validation-toast-canvas__close:hover {
+  color: var(--text);
+  background: var(--bg3);
+}
+
+.validation-toast-canvas__list {
+  margin: 8px 0 0;
+  padding: 0 0 0 18px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.validation-toast-canvas__list li {
+  margin-bottom: 4px;
+}
+
+@keyframes validationToastIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ─── AUTH REDESIGN ──────────────────────────────────────────────────────── */
 .auth-screen {
   min-height: 100vh;

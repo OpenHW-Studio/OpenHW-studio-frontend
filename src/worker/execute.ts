@@ -74,6 +74,12 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
 };
 
+export type AVRRunnerOptions = {
+    boardId?: string;
+    onByteTransmit?: (payload: { boardId: string; value: number; char: string }) => void;
+    serialBaudRate?: number;
+};
+
 export class AVRRunner {
     cpu: CPU | null = null;
     adc: AVRADC | null = null;
@@ -92,10 +98,25 @@ export class AVRRunner {
     lastTime: number = 0;
     statusInterval: any;
     pinsChanged: boolean = true;
+    boardId: string;
+    private serialBaudRate: number = 9600;
+    private serialByteBudget: number = 0;
+    private readonly onStateUpdate: (state: any) => void;
+    private readonly onByteTransmitCb?: (payload: { boardId: string; value: number; char: string }) => void;
     private i2sState = new Map<string, { bclkLast: boolean; wsLast: boolean; shiftBuf: number; bitCount: number }>();
 
-    constructor(hexData: string, componentsDef: any[], wiresDef: any[], onStateUpdate: (state: any) => void) {
+    constructor(
+        hexData: string,
+        componentsDef: any[],
+        wiresDef: any[],
+        onStateUpdate: (state: any) => void,
+        options: AVRRunnerOptions = {}
+    ) {
         this.currentWires = wiresDef || [];
+        this.onStateUpdate = onStateUpdate;
+        this.onByteTransmitCb = options.onByteTransmit;
+        this.boardId = options.boardId || (componentsDef || []).find((c: any) => c.type === 'wokwi-arduino-uno')?.id || 'wokwi-arduino-uno_0';
+        this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 
         // Setup memory and CPU
         const program = new Uint16Array(32768);
@@ -116,7 +137,12 @@ export class AVRRunner {
         this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
         this.usart.onByteTransmit = (value) => {
             const char = String.fromCharCode(value);
-            onStateUpdate({ type: 'serial', data: char });
+            this.pulseBoardLed('1');
+            if (this.onByteTransmitCb) {
+                this.onByteTransmitCb({ boardId: this.boardId, value, char });
+            } else {
+                this.onStateUpdate({ type: 'serial', data: char, value, boardId: this.boardId });
+            }
         };
 
         this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
@@ -213,13 +239,7 @@ export class AVRRunner {
             const instArray = Array.from(this.instances.values());
             let returnByte = 0xFF; // Default MISO if nothing responds
 
-            let unoId = '';
-            for (const [id, inst] of this.instances) {
-                if (inst.type === 'wokwi-arduino-uno') {
-                    unoId = id;
-                    break;
-                }
-            }
+            const unoId = this.boardId;
 
             if (unoId) {
                 const misoNet = this.pinToNet.get(`${unoId}:12`);
@@ -300,9 +320,24 @@ export class AVRRunner {
 
                 // Always send state to ensure continuous plotter timing and analog tracking
                 if (!msg.pins) msg.pins = this.pinStates; // Ensure plotData has pins object
-                onStateUpdate(msg);
+                msg.boardId = this.boardId;
+                this.onStateUpdate(msg);
             }
         }, 1000 / 60);
+    }
+
+    private isBoardArduinoPin(wireCoord: string, targetPin: string): boolean {
+        const [compId, compPin] = wireCoord.split(':');
+        if (compId !== this.boardId) return false;
+        const inst = this.instances.get(compId);
+        if (!inst || !inst.type.includes('arduino')) return false;
+        return compPin === targetPin || compPin === `D${targetPin}` || compPin === `A${targetPin}`;
+    }
+
+    private pulseBoardLed(pinId: '0' | '1') {
+        const boardInst = this.instances.get(this.boardId);
+        if (!boardInst || !this.cpu) return;
+        boardInst.onPinStateChange(pinId, true, this.cpu.cycles);
     }
 
     private setupHooks() {
@@ -314,14 +349,6 @@ export class AVRRunner {
 
         const isArduino5VPin = (compPin: string) =>
             compPin === '5V' || compPin === 'VCC';
-
-        const isArduinoPin = (wireCoord: string, targetPin: string) => {
-            const [compId, compPin] = wireCoord.split(':');
-            const inst = this.instances.get(compId);
-            if (!inst || !inst.type.includes('arduino')) return false;
-
-            return compPin === targetPin || compPin === `D${targetPin}` || compPin === `A${targetPin}`;
-        };
 
         const updateOopPin = (arduinoPinStr: string, isHigh: boolean) => {
             const v = isHigh ? 5.0 : 0.0;
@@ -361,8 +388,8 @@ export class AVRRunner {
 
             // Ensure that the node we are expanding from is actually the Arduino's pin
             this.currentWires.forEach(w => {
-                const isFromArduino = isArduinoPin(w.from, arduinoPinStr);
-                const isToArduino = isArduinoPin(w.to, arduinoPinStr);
+                const isFromArduino = this.isBoardArduinoPin(w.from, arduinoPinStr);
+                const isToArduino = this.isBoardArduinoPin(w.to, arduinoPinStr);
 
                 if (isFromArduino || isToArduino) {
                     visitedWires.add(w);
@@ -378,8 +405,8 @@ export class AVRRunner {
                 const fromInst = this.instances.get(fromComp);
                 const toInst = this.instances.get(toComp);
 
-                const fromIsArduinoGnd = fromInst && fromInst.type.includes('arduino') && isArduinoGndPin(fromPin);
-                const toIsArduinoGnd = toInst && toInst.type.includes('arduino') && isArduinoGndPin(toPin);
+                const fromIsArduinoGnd = fromComp === this.boardId && fromInst && fromInst.type.includes('arduino') && isArduinoGndPin(fromPin);
+                const toIsArduinoGnd = toComp === this.boardId && toInst && toInst.type.includes('arduino') && isArduinoGndPin(toPin);
 
                 if (fromIsArduinoGnd && toInst) {
                     toInst.setPinVoltage(toPin, 0.0);
@@ -387,8 +414,8 @@ export class AVRRunner {
                     fromInst.setPinVoltage(fromPin, 0.0);
                 }
 
-                const fromIsArduino5V = fromInst && fromInst.type.includes('arduino') && isArduino5VPin(fromPin);
-                const toIsArduino5V = toInst && toInst.type.includes('arduino') && isArduino5VPin(toPin);
+                const fromIsArduino5V = fromComp === this.boardId && fromInst && fromInst.type.includes('arduino') && isArduino5VPin(fromPin);
+                const toIsArduino5V = toComp === this.boardId && toInst && toInst.type.includes('arduino') && isArduino5VPin(toPin);
 
                 if (fromIsArduino5V && toInst) {
                     toInst.setPinVoltage(toPin, 5.0);
@@ -450,8 +477,8 @@ export class AVRRunner {
                     };
 
                     this.currentWires.forEach(w => {
-                        const isFromArduino = isArduinoPin(w.from, arduinoPinStr);
-                        const isToArduino = isArduinoPin(w.to, arduinoPinStr);
+                        const isFromArduino = this.isBoardArduinoPin(w.from, arduinoPinStr);
+                        const isToArduino = this.isBoardArduinoPin(w.to, arduinoPinStr);
                         if (isFromArduino || isToArduino) {
                             visitedWires.add(w);
                             checkForGnd(isFromArduino ? w.to : w.from);
@@ -476,12 +503,10 @@ export class AVRRunner {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
 
-                        // Notify the board itself
-                        this.instances.forEach(inst => {
-                            if (inst.type.includes('arduino')) {
-                                inst.onPinStateChange(pin, isHigh, this.cpu!.cycles);
-                            }
-                        });
+                        const boardInst = this.instances.get(this.boardId);
+                        if (boardInst) {
+                            boardInst.onPinStateChange(pin, isHigh, this.cpu!.cycles);
+                        }
 
                         updateOopPin(pin, isHigh);
                     }
@@ -518,9 +543,18 @@ export class AVRRunner {
             }
             this.lastTime = now;
 
-            // Transmit one buffered serial byte per roughly 1ms chunk (simulates ~9600 baud)
-            if (this.serialBuffer.length > 0 && this.usart) {
-                this.usart.writeByte(this.serialBuffer.shift()!);
+            // Host/UART receive pacing: bytes per second = baud / 10 (8N1 frame)
+            // bytes per ms = baud / 10000. We accumulate fractional budget over time.
+            const bytesPerMs = this.serialBaudRate / 10000;
+            this.serialByteBudget += deltaTime * bytesPerMs;
+
+            if (this.serialBuffer.length > 0 && this.usart && this.serialByteBudget >= 1) {
+                const maxBytes = Math.floor(this.serialByteBudget);
+                const toSend = Math.min(maxBytes, this.serialBuffer.length);
+                for (let i = 0; i < toSend; i++) {
+                    this.usart.writeByte(this.serialBuffer.shift()!);
+                }
+                this.serialByteBudget -= toSend;
             }
 
             const instArray = Array.from(this.instances.values());
@@ -540,11 +574,11 @@ export class AVRRunner {
                         let otherCompId = '';
                         let otherCompPin = '';
 
-                        if (fromComp.includes('arduino') && fromPin === arduinoPin) {
+                        if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
                             isConnectedToPin = true;
                             otherCompId = toComp;
                             otherCompPin = toPin;
-                        } else if (toComp.includes('arduino') && toPin === arduinoPin) {
+                        } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
                             isConnectedToPin = true;
                             otherCompId = fromComp;
                             otherCompPin = fromPin;
@@ -570,7 +604,24 @@ export class AVRRunner {
     serialRx(data: string) {
         for (let i = 0; i < data.length; i++) {
             this.serialBuffer.push(data.charCodeAt(i));
+            this.pulseBoardLed('0');
         }
+    }
+
+    serialRxByte(value: number) {
+        this.serialBuffer.push(value & 0xff);
+        this.pulseBoardLed('0');
+    }
+
+    setSerialBaudRate(baud: number) {
+        const parsed = Number(baud);
+        if (!Number.isFinite(parsed)) return;
+        const clamped = Math.max(300, Math.min(2000000, Math.floor(parsed)));
+        this.serialBaudRate = clamped;
+    }
+
+    getSerialBaudRate(): number {
+        return this.serialBaudRate;
     }
 
     stop() {
