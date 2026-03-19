@@ -7,6 +7,24 @@ export class FullCircuitValidator {
         this.connections = projectData.connections || [];
         this.graph = this.buildGraph(this.connections);
         this.errors = [];
+        this.errorSet = new Set();
+
+        this.mcuSpecs = {
+            vinMin: 7,
+            vinMax: 12,
+            gpioPinMaxCurrentA: 0.04,
+            gpioPackageMaxCurrentA: 0.2,
+        };
+
+        this.componentSpecs = {
+            'wokwi-resistor': { maxPowerW: 0.25 },
+            'wokwi-potentiometer': { maxPowerW: 0.25, totalResistance: 10000 },
+            'wokwi-slide-potentiometer': { maxPowerW: 0.25, totalResistance: 10000 },
+            'wokwi-led': { forwardVoltage: 2.0, maxCurrentA: 0.02, reverseBreakdownVoltage: 5.0 },
+            'wokwi-buzzer': { typicalCurrentA: 0.03 },
+            'wokwi-motor': { typicalCurrentA: 0.25 },
+            'wokwi-servo': { typicalCurrentA: 0.5 },
+        };
     }
 
     // --- CORE GRAPH UTILITIES ---
@@ -27,8 +45,144 @@ export class FullCircuitValidator {
         return this.components.find(c => c.id === compId);
     }
 
-    // Mock calculation: In a full engine, this runs Modified Nodal Analysis (MNA)
-    calculateVoltageAtNode(nodeId) { return 5.0; }
+    getComponentById(componentId) {
+        return this.components.find(c => c.id === componentId);
+    }
+
+    getNeighbors(nodeId) {
+        return this.graph.get(nodeId) || [];
+    }
+
+    normalizeType(type) {
+        return String(type || '').toLowerCase().trim();
+    }
+
+    isType(component, ...types) {
+        if (!component) return false;
+        const normalized = this.normalizeType(component.type);
+        return types.map(t => this.normalizeType(t)).includes(normalized);
+    }
+
+    addError(message) {
+        if (!this.errorSet.has(message)) {
+            this.errorSet.add(message);
+            this.errors.push(message);
+        }
+    }
+
+    getNodeParts(nodeId) {
+        const [componentId, pinId] = String(nodeId || '').split('.');
+        return { componentId, pinId };
+    }
+
+    getPinNumericVoltageLabel(pinId) {
+        const normalized = String(pinId || '').toLowerCase();
+        if (normalized === '5v') return 5.0;
+        if (normalized === '3v3' || normalized === '3.3v') return 3.3;
+        if (normalized === '12v') return 12.0;
+        return null;
+    }
+
+    isGroundNode(nodeId) {
+        const { pinId } = this.getNodeParts(nodeId);
+        const normalized = String(pinId || '').toLowerCase();
+        return normalized === 'gnd' || normalized.startsWith('gnd_');
+    }
+
+    isSupplyNode(nodeId) {
+        const { pinId } = this.getNodeParts(nodeId);
+        const normalized = String(pinId || '').toLowerCase();
+        return ['5v', '3v3', '3.3v', 'vcc', 'vin', '12v'].includes(normalized);
+    }
+
+    getComponentAttrNumber(component, attrName, fallbackValue = 0) {
+        const raw = component?.attrs?.[attrName] ?? component?.[attrName];
+        const parsed = Number(raw);
+        return Number.isFinite(parsed) ? parsed : fallbackValue;
+    }
+
+    getTwoTerminalPins(component) {
+        const pins = component?.pins || component?.manifest?.pins || [];
+        return pins.map(p => p.id);
+    }
+
+    getOtherTerminalNode(component, nodeId) {
+        const { pinId } = this.getNodeParts(nodeId);
+        const pinCandidates = this.getTwoTerminalPins(component);
+
+        if (!pinCandidates.length) {
+            return null;
+        }
+
+        const explicitPairs = [
+            ['p1', 'p2'],
+            ['pin1', 'pin2'],
+            ['1', '2'],
+            ['A', 'K'],
+            ['GND', 'VCC'],
+            ['GND', 'V+'],
+        ];
+
+        for (const [a, b] of explicitPairs) {
+            if (pinCandidates.includes(a) && pinCandidates.includes(b)) {
+                if (pinId === a) return `${component.id}.${b}`;
+                if (pinId === b) return `${component.id}.${a}`;
+            }
+        }
+
+        if (pinCandidates.length === 2) {
+            const [a, b] = pinCandidates;
+            if (pinId === a) return `${component.id}.${b}`;
+            if (pinId === b) return `${component.id}.${a}`;
+        }
+
+        return null;
+    }
+
+    getNodeDirectVoltage(nodeId) {
+        const { componentId, pinId } = this.getNodeParts(nodeId);
+        const component = this.getComponentById(componentId);
+        const normalizedPin = String(pinId || '').toLowerCase();
+
+        if (this.isGroundNode(nodeId)) return 0.0;
+
+        const pinVoltage = this.getPinNumericVoltageLabel(pinId);
+        if (pinVoltage !== null) return pinVoltage;
+
+        if (this.isType(component, 'wokwi-power-supply')) {
+            const configured = this.getComponentAttrNumber(component, 'voltage', 5.0);
+            if (normalizedPin === '5v' || normalizedPin === 'vcc') return configured;
+            if (normalizedPin === 'gnd') return 0.0;
+        }
+
+        return null;
+    }
+
+    // Heuristic voltage lookup by traversing nearby rails/sources.
+    calculateVoltageAtNode(nodeId) {
+        const queue = [nodeId];
+        const visited = new Set([nodeId]);
+        const seenVoltages = [];
+
+        while (queue.length > 0) {
+            const currentNode = queue.shift();
+            const directVoltage = this.getNodeDirectVoltage(currentNode);
+
+            if (directVoltage !== null) {
+                seenVoltages.push(directVoltage);
+            }
+
+            const neighbors = this.getNeighbors(currentNode);
+            for (const neighbor of neighbors) {
+                if (visited.has(neighbor)) continue;
+                visited.add(neighbor);
+                queue.push(neighbor);
+            }
+        }
+
+        if (seenVoltages.length === 0) return 0.0;
+        return Math.max(...seenVoltages);
+    }
 
     // --- CORE HELPER: Calculate Series Resistance ---
     findSeriesResistance(startNode) {
@@ -56,18 +210,22 @@ export class FullCircuitValidator {
                     const comp = this.getComponent(neighbor);
                     let addedResistance = 0;
 
-                    if (comp && comp.type === "resistor") {
-                        addedResistance = comp.value || 0;
-                        const nextNode = neighbor.endsWith("pin1") ? `${comp.id}.pin2` : `${comp.id}.pin1`;
-                        queue.push([nextNode, newVisited, currentRes + addedResistance]);
-                        continue;
+                    if (this.isType(comp, 'resistor', 'wokwi-resistor')) {
+                        addedResistance = this.getComponentAttrNumber(comp, 'value', 0);
+                        const nextNode = this.getOtherTerminalNode(comp, neighbor);
+                        if (nextNode) {
+                            queue.push([nextNode, newVisited, currentRes + addedResistance]);
+                            continue;
+                        }
                     }
 
-                    else if (comp && comp.type === "potentiometer") {
+                    else if (this.isType(comp, 'potentiometer', 'wokwi-potentiometer', 'wokwi-slide-potentiometer', 'switch', 'wokwi-pushbutton')) {
                         addedResistance = 0;
-                        const nextNode = neighbor.endsWith("pin1") ? `${comp.id}.pin2` : `${comp.id}.pin1`;
-                        queue.push([nextNode, newVisited, currentRes + addedResistance]);
-                        continue;
+                        const nextNode = this.getOtherTerminalNode(comp, neighbor);
+                        if (nextNode) {
+                            queue.push([nextNode, newVisited, currentRes + addedResistance]);
+                            continue;
+                        }
                     }
 
                     queue.push([neighbor, newVisited, currentRes]);
@@ -80,6 +238,7 @@ export class FullCircuitValidator {
 
     runValidation() {
         this.errors = [];
+        this.errorSet = new Set();
 
         // Run all registered rules dynamically
         Object.values(allRules).forEach(ruleFunc => {
@@ -95,7 +254,7 @@ export class FullCircuitValidator {
                     if (EmulatorComp.validation && EmulatorComp.validation.rules) {
                         EmulatorComp.validation.rules.forEach(rule => {
                             const err = rule.check(comp, this.graph, this);
-                            if (err) this.errors.push(err);
+                            if (err) this.addError(err);
                         });
                     }
                 }
