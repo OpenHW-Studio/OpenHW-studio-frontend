@@ -1,0 +1,34 @@
+{
+  "type": "wokwi-ssd1306-oled",
+  "label": "SSD1306 OLED 128x64",
+  "group": "Outputs",
+  "w": 150,
+  "h": 140,
+  "attrs": {},
+  "pins": [
+    {
+      "id": "GND",
+      "x": 50,
+      "y": 15,
+      "type": "power"
+    },
+    {
+      "id": "VCC",
+      "x": 67,
+      "y": 15,
+      "type": "power"
+    },
+    {
+      "id": "SCL",
+      "x": 84,
+      "y": 15,
+      "type": "input"
+    },
+    {
+      "id": "SDA",
+      "x": 101,
+      "y": 15,
+      "type": "bidirectional"
+    }
+  ]
+}
