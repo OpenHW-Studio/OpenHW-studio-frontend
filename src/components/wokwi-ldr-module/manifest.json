@@ -5,6 +5,8 @@
   "w": 100,
   "h": 40,
   "attrs": {},
+  "contextMenuDuringRun": true,
+  "contextMenuOnlyDuringRun": true,
   "pins": [
     {
       "id": "VCC",

@@ -1,6 +1,17 @@
 export function validateShortCircuits(validator) {
     console.log("🔍 Checking for VCC-GND Short Circuits...");
-    const powerNodes = validator.components.filter(c => c.type === "mcu_uno").map(mcu => `${mcu.id}.5V`);
+    const powerNodes = [];
+
+    validator.components.forEach(component => {
+        if (validator.isType(component, 'wokwi-arduino-uno', 'mcu_uno')) {
+            powerNodes.push(`${component.id}.5V`);
+            return;
+        }
+
+        if (validator.isType(component, 'wokwi-power-supply')) {
+            powerNodes.push(`${component.id}.5V`);
+        }
+    });
 
     powerNodes.forEach(startNode => {
         const queue = [[startNode, new Set([startNode]), 0]];
@@ -8,8 +19,8 @@ export function validateShortCircuits(validator) {
         while (queue.length > 0) {
             const [currentNode, visited, resistance] = queue.shift();
 
-            if (currentNode.endsWith(".gnd") && resistance === 0) {
-                validator.errors.push(`🔥 FATAL SHORT CIRCUIT: Direct path from 5V to GND detected!`);
+            if (validator.isGroundNode(currentNode) && resistance === 0) {
+                validator.addError('🔥 FATAL SHORT CIRCUIT: Direct path from VCC to GND detected with 0 ohm resistance!');
                 return;
             }
 
@@ -26,15 +37,22 @@ export function validateShortCircuits(validator) {
                     }
 
                     let addedResistance = 0;
-                    if (comp.type === "resistor") {
-                        addedResistance = comp.value || 0;
-                    } else if (comp.type === "potentiometer") {
-                        addedResistance = 0;
-                    } else if (comp.type === "switch") {
-                        addedResistance = 0;
+                    if (validator.isType(comp, 'resistor', 'wokwi-resistor')) {
+                        addedResistance = validator.getComponentAttrNumber(comp, 'value', 0);
+                        const nextNode = validator.getOtherTerminalNode(comp, neighbor);
+                        if (nextNode) {
+                            queue.push([nextNode, newVisited, resistance + addedResistance]);
+                            continue;
+                        }
+                    } else if (validator.isType(comp, 'potentiometer', 'wokwi-potentiometer', 'wokwi-slide-potentiometer', 'switch', 'wokwi-pushbutton')) {
+                        const nextNode = validator.getOtherTerminalNode(comp, neighbor);
+                        if (nextNode) {
+                            queue.push([nextNode, newVisited, resistance]);
+                            continue;
+                        }
                     }
 
-                    if (["diode", "diode_array", "inductive_load", "active_load", "ic_sensor"].includes(comp.type)) continue;
+                    if (validator.isType(comp, 'wokwi-led', 'wokwi-motor', 'wokwi-servo', 'wokwi-buzzer')) continue;
 
                     queue.push([neighbor, newVisited, resistance + addedResistance]);
                 }
