@@ -9,13 +9,14 @@ import StudentDashboard from "./pages/student/StudentDashboard.jsx";
 import TeacherDashboard from "./pages/teacher/TeacherDashboard.jsx";
 import TeacherClassDetailPage from "./pages/teacher/TeacherClassDetailPage.jsx";
 import StudentClassDetailPage from "./pages/student/StudentClassDetailPage.jsx";
-import SimulatorPage from "./pages/SimulatorPage.jsx";
+import SimulatorPage from "./pages/simulationpage/SimulationPage.jsx";
 import AdminPage from "./pages/admin/AdminPage.jsx";
 import AdminLoginPage from "./pages/admin/AdminLoginPage.jsx";
 import AdminLandingPage from "./pages/admin/AdminLandingPage.jsx";
 import ProjectGuidePage from "./pages/ProjectGuidePage.jsx";
 import ProjectAssessmentPage from "./pages/ProjectAssessmentPage.jsx";
 import SignupPage from "./pages/auth/signupPage.jsx";
+import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="/signup" element={<SignupPage />} />
 
           <Route path="/simulator" element={<SimulatorPage />} />
+          <Route path="/component-editor" element={<ComponentEditorPage />} />
           <Route path="/:projectName/demo" element={<SimulatorPage />} />
           <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
           <Route
