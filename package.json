@@ -2,7 +2,7 @@
   "name": "@openhw/emulator",
   "version": "1.0.0",
   "description": "",
-  "main": "src/server.js",
+  "main": "src/components/index.ts",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
