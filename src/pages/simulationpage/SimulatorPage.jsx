@@ -539,155 +539,93 @@ export default function SimulatorPage() {
     appendConsoleEntry('info', `ZIP upload started: ${file.name}`, 'zip');
     try {
       const zip = await JSZip.loadAsync(file);
-      const allPaths = Object.keys(zip.files).filter((p) => !zip.files[p].dir);
-      const manifestPaths = allPaths.filter((p) => /(^|\/)manifest\.json$/i.test(p));
-
-      if (!manifestPaths.length) {
-        appendConsoleEntry('error', 'ZIP upload failed: no manifest.json found.', 'zip');
-        alert('Error: ZIP must contain at least one manifest.json');
+      let manifestStr = null, uiStr = null, logicStr = null, validationStr = null, indexStr = null, docHtml = null;
+      for (const relativePath of Object.keys(zip.files)) {
+        if (relativePath.endsWith('manifest.json')) manifestStr = await zip.files[relativePath].async('string');
+        if (relativePath.endsWith('ui.tsx') || relativePath.endsWith('ui.jsx')) uiStr = await zip.files[relativePath].async('string');
+        if (relativePath.endsWith('logic.ts') || relativePath.endsWith('logic.js')) logicStr = await zip.files[relativePath].async('string');
+        if (relativePath.endsWith('validation.ts') || relativePath.endsWith('validation.js')) validationStr = await zip.files[relativePath].async('string');
+        if (relativePath.endsWith('index.ts') || relativePath.endsWith('index.js')) indexStr = await zip.files[relativePath].async('string');
+        // Doc folder — any HTML file inside doc/ directory
+        if (/\/doc\/.*\.html$/i.test(relativePath) || /^doc\/.*\.html$/i.test(relativePath)) {
+          docHtml = await zip.files[relativePath].async('string');
+        }
+      }
+      if (!manifestStr || !uiStr || !logicStr || !validationStr || !indexStr) {
+        appendConsoleEntry('error', 'ZIP upload failed: required files are missing.', 'zip');
+        alert('Error: Zip must contain manifest.json, ui.tsx, logic.ts, validation.ts, and index.ts');
         return;
       }
-
-      const buildFallbackIndex = (componentType) => `import manifest from './manifest.json';\nimport { UI, BOUNDS } from './ui';\nimport { Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n  manifest,\n  UI,\n  LogicClass: Logic,\n  BOUNDS,\n  validation\n};\n`;
-
-      const pickFile = (dirPath, names) => {
-        for (const n of names) {
-          const full = `${dirPath}${n}`;
-          if (zip.files[full] && !zip.files[full].dir) return full;
-        }
-        return null;
+      const manifest = JSON.parse(manifestStr);
+      const submitPayload = {
+        id: manifest.type, manifest, ui: uiStr, logic: logicStr, validation: validationStr, index: indexStr,
+        ...(docHtml ? { doc: docHtml } : {})
       };
 
-      const uploaded = [];
-      const failed = [];
+      let submitted = false;
+      let offlineQueued = false;
+      try {
+        await submitCustomComponent(submitPayload);
+        submitted = true;
+        appendConsoleEntry('info', `ZIP submitted to admin: ${manifest.type}`, 'zip');
+      } catch (submitErr) {
+        // Network unavailable — queue for later submission when back online
+        await enqueueComponent(submitPayload);
+        offlineQueued = true;
+        appendConsoleEntry('warn', `Offline mode: queued ${manifest.type} for later submission.`, 'zip');
+      }
 
-      for (const manifestPath of manifestPaths) {
-        try {
-          const dirPath = manifestPath.slice(0, manifestPath.lastIndexOf('manifest.json'));
-          const manifestStr = await zip.files[manifestPath].async('string');
-          const manifest = JSON.parse(manifestStr);
+      // --- ZERO-TOUCH SANDBOX INJECTION ---
+      const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
+      const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
 
-          const uiPath = pickFile(dirPath, ['ui.tsx', 'ui.jsx']);
-          const logicPath = pickFile(dirPath, ['logic.ts', 'logic.js']);
-          const validationPath = pickFile(dirPath, ['validation.ts', 'validation.js']);
-          const indexPath = pickFile(dirPath, ['index.ts', 'index.js']);
+      const exportsUI = {};
+      const evalUI = new Function('exports', 'require', 'React', transpileUI);
+      evalUI(exportsUI, (mod) => {
+        if (mod === 'react') return React;
+        return null;
+      }, React);
 
-          if (!uiPath || !logicPath || !validationPath) {
-            failed.push(`${manifest?.type || manifestPath} (missing ui/logic/validation)`);
-            appendConsoleEntry('error', `Skipped ${manifest?.type || manifestPath}: missing ui/logic/validation`, 'zip');
-            continue;
-          }
+      const uiComponent = resolveUiExport(exportsUI);
+      const contextMenu = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))];
 
-          const uiStr = await zip.files[uiPath].async('string');
-          const logicStr = await zip.files[logicPath].async('string');
-          const validationStr = await zip.files[validationPath].async('string');
-          const indexStr = indexPath ? await zip.files[indexPath].async('string') : buildFallbackIndex(manifest.type || 'custom-component');
+      if (uiComponent) {
+        const newCatItem = { ...manifest };
+        delete newCatItem.pins;
+        delete newCatItem.group;
 
-          let docHtml = null;
-          const docPath = allPaths.find((p) => p.startsWith(`${dirPath}doc/`) && /\.html$/i.test(p));
-          if (docPath) docHtml = await zip.files[docPath].async('string');
+        const groupName = normalizeGroupName(manifest.group);
+        let group = LOCAL_CATALOG.find(g => g.group === groupName);
+        if (!group) {
+          group = { group: groupName, items: [] };
+          LOCAL_CATALOG.push(group);
+        }
+        group.items = group.items.filter(i => i.type !== manifest.type);
+        group.items.push(newCatItem);
+        sortCatalog(LOCAL_CATALOG);
 
-          const submitPayload = {
-            id: manifest.type,
-            manifest,
-            ui: uiStr,
-            logic: logicStr,
-            validation: validationStr,
-            index: indexStr,
-            ...(docHtml ? { doc: docHtml } : {})
-          };
-
-          let submitted = false;
-          let offlineQueued = false;
-          try {
-            await submitCustomComponent(submitPayload);
-            submitted = true;
-            appendConsoleEntry('info', `ZIP submitted to admin: ${manifest.type}`, 'zip');
-          } catch {
-            await enqueueComponent(submitPayload);
-            offlineQueued = true;
-            appendConsoleEntry('warn', `Offline mode: queued ${manifest.type} for later submission.`, 'zip');
-          }
-
-          const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
-          const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
-
-          const exportsUI = {};
-          const evalUI = new Function('exports', 'require', 'React', transpileUI);
-          evalUI(exportsUI, (mod) => (mod === 'react' ? React : null), React);
-
-          const uiComponent = resolveUiExport(exportsUI);
-          if (!uiComponent) {
-            failed.push(`${manifest.type} (UI export not found)`);
-            appendConsoleEntry('error', `Skipped ${manifest.type}: UI export not found`, 'zip');
-            continue;
-          }
-
-          const contextMenu = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))];
-
-          const newCatItem = { ...manifest };
-          delete newCatItem.pins;
-          delete newCatItem.group;
-
-          const groupName = normalizeGroupName(manifest.group);
-          let group = LOCAL_CATALOG.find(g => g.group === groupName);
-          if (!group) {
-            group = { group: groupName, items: [] };
-            LOCAL_CATALOG.push(group);
-          }
-          group.items = group.items.filter(i => i.type !== manifest.type);
-          group.items.push(newCatItem);
-          sortCatalog(LOCAL_CATALOG);
-
-          COMPONENT_REGISTRY[manifest.type] = {
-            manifest,
-            UI: uiComponent,
-            BOUNDS: exportsUI.BOUNDS,
-            ContextMenu: contextMenu,
-            contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
-            contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
-            logicCode: transpileLogic,
-            ...(docHtml ? { doc: docHtml } : {})
-          };
-
-          if (Array.isArray(manifest.pins)) {
-            LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
-          }
-
-          uploaded.push({ type: manifest.type, label: manifest.label || manifest.type, submitted, offlineQueued });
-        } catch (err) {
-          failed.push(`${manifestPath} (${err.message})`);
-          appendConsoleEntry('error', `Error parsing component at ${manifestPath}: ${err.message}`, 'zip');
+        COMPONENT_REGISTRY[manifest.type] = {
+          manifest,
+          UI: uiComponent,
+          BOUNDS: exportsUI.BOUNDS,
+          ContextMenu: contextMenu,
+          contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+          contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+          logicCode: transpileLogic,
+          ...(docHtml ? { doc: docHtml } : {})
+        };
+        if (manifest.pins) {
+          LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
+        }
+        setCustomCatalogCounter(c => c + 1);
+        if (submitted) {
+          appendConsoleEntry('info', `Component injected successfully: ${manifest.label}`, 'zip');
+          alert(`Successfully submitted to admin AND injected ${manifest.label} into your local Sandbox Memory!`);
+        } else if (offlineQueued) {
+          appendConsoleEntry('warn', `Component injected locally while offline: ${manifest.label}`, 'zip');
+          alert(`You are offline. "${manifest.label}" has been injected locally and will be submitted to the admin automatically when you reconnect.`);
         }
       }
-
-      if (uploaded.length) {
-        setCustomCatalogCounter(c => c + 1);
-      }
-
-      const submittedCount = uploaded.filter(x => x.submitted).length;
-      const queuedCount = uploaded.filter(x => x.offlineQueued).length;
-
-      if (uploaded.length) {
-        appendConsoleEntry('info', `ZIP injected ${uploaded.length} component(s).`, 'zip');
-      }
-      if (submittedCount) {
-        appendConsoleEntry('info', `${submittedCount} component(s) submitted to admin.`, 'zip');
-      }
-      if (queuedCount) {
-        appendConsoleEntry('warn', `${queuedCount} component(s) queued offline for later sync.`, 'zip');
-      }
-      if (failed.length) {
-        appendConsoleEntry('error', `${failed.length} component(s) failed import.`, 'zip');
-      }
-
-      const summary = [
-        `Imported: ${uploaded.length}`,
-        `Submitted: ${submittedCount}`,
-        `Queued offline: ${queuedCount}`,
-        `Failed: ${failed.length}`,
-      ].join('\n');
-      alert(`ZIP processing complete\n\n${summary}`);
     } catch (e) {
       appendConsoleEntry('error', `ZIP processing failed: ${e.message}`, 'zip');
       alert(`Error processing ZIP: ${e.message}`);
@@ -2592,11 +2530,10 @@ export default function SimulatorPage() {
       const customLogics = [];
       components.forEach((c) => {
         if (COMPONENT_REGISTRY[c.type]?.logicCode) {
-          const manifestPins = COMPONENT_REGISTRY[c.type]?.manifest?.pins;
           customLogics.push({
             type: c.type,
             code: COMPONENT_REGISTRY[c.type].logicCode,
-            pins: Array.isArray(manifestPins) ? manifestPins : []
+            pins: COMPONENT_REGISTRY[c.type].manifest.pins
           });
         }
       });
@@ -2672,28 +2609,25 @@ export default function SimulatorPage() {
     }
   };
 
-  const sendSerialInput = useCallback((targetBoardOverride) => {
+  const sendSerialInput = useCallback(() => {
     const txt = serialInput.trim();
     if (!txt) return;
-
-    const requestedBoard = targetBoardOverride || serialBoardFilter;
-    const targetBoardId = requestedBoard !== 'all' ? requestedBoard : undefined;
 
     if (workerRef.current && isRunning) {
       workerRef.current.postMessage({
         type: 'SERIAL_INPUT',
         data: txt + '\n',
-        targetBoardId,
+        targetBoardId: serialBoardFilter !== 'all' ? serialBoardFilter : undefined,
         baudRate: serialBaudRate,
       });
-      pushSerialTxLine(txt, targetBoardId || 'all', 'sim');
+      pushSerialTxLine(txt, serialBoardFilter !== 'all' ? serialBoardFilter : 'all', 'sim');
       setSerialInput('');
       return;
     }
 
     if (hardwareConnected) {
-      const targetBoard = targetBoardId
-        ? targetBoardId
+      const targetBoard = serialBoardFilter !== 'all'
+        ? serialBoardFilter
         : (hardwareSerialTargetRef.current || hardwareBoardId || 'hardware');
       sendHardwareSerialLine(txt, targetBoard)
         .then(() => setSerialInput(''))

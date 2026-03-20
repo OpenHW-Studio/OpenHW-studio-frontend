@@ -1,10 +1,12 @@
 import { AVRRunner, LOGIC_REGISTRY, COMPONENT_PINS } from './execute';
 import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
-import { isProgrammableBoardType, areBoardsUartConnected } from './protocol-routing.js';
+
+function isProgrammableBoardType(type: string): boolean {
+    return /(arduino|esp32|stm32|rp2040|pico)/i.test(type || '');
+}
 
 let runner: AVRRunner | null = null;
 let boardRunners: Map<string, AVRRunner> = new Map();
-let boardTypes: Map<string, string> = new Map();
 let mode: 'single' | 'multi' = 'single';
 let pinToNet: Map<string, number> = new Map();
 
@@ -15,7 +17,6 @@ function stopAllRunners() {
     }
     boardRunners.forEach((r) => r.stop());
     boardRunners.clear();
-    boardTypes.clear();
     pinToNet.clear();
 }
 
@@ -91,14 +92,14 @@ function postRunnerState(stateObj: any, boardId: string) {
 
 function routeUartByte(sourceBoardId: string, value: number) {
     const sourceRunner = boardRunners.get(sourceBoardId);
-    const sourceType = boardTypes.get(sourceBoardId) || '';
     const sourceBaud = sourceRunner?.getSerialBaudRate?.() ?? 9600;
 
     for (const [targetBoardId, targetRunner] of boardRunners.entries()) {
         if (targetBoardId === sourceBoardId) continue;
 
-        const targetType = boardTypes.get(targetBoardId) || '';
-        if (areBoardsUartConnected(sourceBoardId, sourceType, targetBoardId, targetType, areConnected)) {
+        const sourceTx = `${sourceBoardId}:1`;
+        const targetRx = `${targetBoardId}:0`;
+        if (areConnected(sourceTx, targetRx)) {
             targetRunner.setSerialBaudRate(sourceBaud);
             targetRunner.serialRxByte(value);
         }
@@ -128,7 +129,7 @@ self.onmessage = async (e) => {
                     const LogicClass = exportsObj[Object.keys(exportsObj)[0]] || exportsObj.default;
                     if (LogicClass) {
                         LOGIC_REGISTRY[cl.type] = LogicClass;
-                        COMPONENT_PINS[cl.type] = Array.isArray(cl.pins) ? cl.pins : [];
+                        COMPONENT_PINS[cl.type] = cl.pins;
                         console.log(`[Worker] Sandbox injected component logic for: ${cl.type}`);
                     }
                 } catch (e) {
@@ -137,20 +138,19 @@ self.onmessage = async (e) => {
             });
         }
 
-        const programmableBoards = (components || []).filter((c: any) => isProgrammableBoardType(c.type));
+        const unoComponents = (components || []).filter((c: any) => c.type === 'wokwi-arduino-uno');
         const sharedPeripheralComponents = (components || []).filter((c: any) => !isProgrammableBoardType(c.type));
 
-        if (programmableBoards.length <= 1) {
+        if (unoComponents.length <= 1) {
             mode = 'single';
-            const activeBoard = programmableBoards[0];
             runner = new AVRRunner(
                 hex,
                 components,
                 wires,
                 (stateObj) => postMessage(stateObj),
                 {
-                    boardId: activeBoard?.id,
-                    serialBaudRate: Number(boardBaudMap?.[activeBoard?.id] ?? baudRate ?? 9600),
+                    boardId: unoComponents[0]?.id,
+                    serialBaudRate: Number(boardBaudMap?.[unoComponents[0]?.id] ?? baudRate ?? 9600),
                 }
             );
             return;
@@ -159,18 +159,18 @@ self.onmessage = async (e) => {
         mode = 'multi';
         buildNetIndex(wires || []);
 
-        programmableBoards.forEach((boardComp: any) => {
-            const fwHex = boardHexMap?.[boardComp.id] || boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex || hex;
-            const runnerComponents = [boardComp, ...sharedPeripheralComponents];
+        unoComponents.forEach((uno: any) => {
+            const fwHex = boardHexMap?.[uno.id] || uno?.attrs?.firmwareHex || uno?.attrs?.hex || hex;
+            const runnerComponents = [uno, ...sharedPeripheralComponents];
 
             const boardRunner = new AVRRunner(
                 fwHex,
                 runnerComponents,
                 wires,
-                (stateObj) => postRunnerState(stateObj, boardComp.id),
+                (stateObj) => postRunnerState(stateObj, uno.id),
                 {
-                    boardId: boardComp.id,
-                    serialBaudRate: Number(boardBaudMap?.[boardComp.id] ?? baudRate ?? 9600),
+                    boardId: uno.id,
+                    serialBaudRate: Number(boardBaudMap?.[uno.id] ?? baudRate ?? 9600),
                     onByteTransmit: ({ boardId, value, char }) => {
                         postMessage({ type: 'serial', data: char, boardId, value });
                         routeUartByte(boardId, value);
@@ -178,24 +178,11 @@ self.onmessage = async (e) => {
                 }
             );
 
-            boardRunners.set(boardComp.id, boardRunner);
-            boardTypes.set(boardComp.id, String(boardComp.type || ''));
+            boardRunners.set(uno.id, boardRunner);
         });
 
     } else if (data.type === 'STOP') {
         stopAllRunners();
-    } else if (data.type === 'PAUSE') {
-        if (mode === 'single' && runner) {
-            runner.pause();
-        } else {
-            boardRunners.forEach((boardRunner) => boardRunner.pause());
-        }
-    } else if (data.type === 'RESUME') {
-        if (mode === 'single' && runner) {
-            runner.resume();
-        } else {
-            boardRunners.forEach((boardRunner) => boardRunner.resume());
-        }
     } else if (data.type === 'INTERACT') {
         console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
 

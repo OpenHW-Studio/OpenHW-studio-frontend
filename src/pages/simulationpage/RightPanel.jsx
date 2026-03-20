@@ -28,17 +28,10 @@ export function RightPanel(props) {
 
   const [fileMenu, setFileMenu] = React.useState(null); // { x, y, fileId }
   const [collapsedBoards, setCollapsedBoards] = React.useState({});
-  const [serialSendTarget, setSerialSendTarget] = React.useState(
-    serialBoardFilter && serialBoardFilter !== 'all' ? serialBoardFilter : 'all'
-  );
-  const [showSendTargetMenu, setShowSendTargetMenu] = React.useState(false);
 
-  const sendMenuRef = React.useRef(null);
 
   React.useEffect(() => {
-    const onWindowClick = () => {
-      setFileMenu(null);
-    };
+    const onWindowClick = () => setFileMenu(null);
     window.addEventListener('click', onWindowClick);
     return () => window.removeEventListener('click', onWindowClick);
   }, []);
@@ -74,49 +67,7 @@ export function RightPanel(props) {
 
   const filteredSerialHistory = serialBoardFilter === 'all'
     ? serialHistory
-    : serialHistory.filter((entry) => entry.boardId === serialBoardFilter);
-
-  const boardColors = React.useMemo(() => {
-    const palette = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#14b8a6', '#eab308', '#06b6d4', '#8b5cf6'];
-    const map = { all: '#94a3b8' };
-    (serialBoardOptions || []).filter((id) => id !== 'all').forEach((id, idx) => {
-      map[id] = palette[idx % palette.length];
-    });
-    return map;
-  }, [serialBoardOptions]);
-
-  React.useEffect(() => {
-    if (!serialBoardOptions?.length) {
-      setSerialSendTarget('all');
-      return;
-    }
-    if (!serialBoardOptions.includes(serialSendTarget)) {
-      setSerialSendTarget(serialBoardOptions.includes('all') ? 'all' : serialBoardOptions[0]);
-    }
-  }, [serialBoardOptions, serialSendTarget]);
-
-  React.useEffect(() => {
-    setShowSendTargetMenu(false);
-  }, [serialSendTarget]);
-
-  React.useEffect(() => {
-    const onDocMouseDown = (event) => {
-      if (!showSendTargetMenu) return;
-      if (sendMenuRef.current && sendMenuRef.current.contains(event.target)) return;
-      setShowSendTargetMenu(false);
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [showSendTargetMenu]);
-
-  React.useEffect(() => {
-    if (serialBoardFilter === 'all') {
-      setSerialSendTarget('all');
-      return;
-    }
-    setSerialSendTarget(serialBoardFilter);
-    setShowSendTargetMenu(false);
-  }, [serialBoardFilter]);
+    : serialHistory.filter((entry) => entry.boardId === serialBoardFilter || entry.boardId === 'all');
 
   const basePins = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'];
   const serialOnlyLabels = serialPlotLabelsRef.current.filter(l => !basePins.includes(l));
@@ -335,14 +286,6 @@ export function RightPanel(props) {
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
                               )}
                             </span>
-                            <span style={{
-                              width: 7,
-                              height: 7,
-                              borderRadius: '50%',
-                              background: boardColors[group.boardId] || '#64748b',
-                              boxShadow: `0 0 0 1px ${(boardColors[group.boardId] || '#64748b')}55`,
-                              display: 'inline-block'
-                            }} />
                             <span>{group.boardId}</span>
                           </button>
                           {!collapsedBoards[group.boardId] && group.files.map((file) => (
@@ -683,9 +626,7 @@ export function RightPanel(props) {
                       title="Select board"
                     >
                       {serialBoardOptions.map((id) => (
-                        <option key={id} value={id} style={{ color: boardColors[id] || 'var(--text2)' }}>
-                          {`● ${serialBoardLabels?.[id] || (id === 'all' ? 'All Boards' : id)}`}
-                        </option>
+                        <option key={id} value={id}>{serialBoardLabels?.[id] || (id === 'all' ? 'All Boards' : id)}</option>
                       ))}
                     </select>
 
@@ -756,13 +697,9 @@ export function RightPanel(props) {
                         filteredSerialHistory.map((entry, i) => {
                           const badgeColor = entry.dir === 'rx' ? '#2ecc71' : entry.dir === 'tx' ? '#3498db' : '#888';
                           const badgeBg = entry.dir === 'rx' ? 'rgba(46,204,113,0.12)' : entry.dir === 'tx' ? 'rgba(52,152,219,0.12)' : 'rgba(128,128,128,0.12)';
-                          const boardColor = boardColors[entry.boardId] || '#64748b';
                           return (
                             <div key={i} className="flex items-start gap-2 px-3 py-0.5 text-[11px] font-mono border-b border-[var(--border)]">
-                              <span className="text-[var(--text3)] text-[10px] min-w-[84px] shrink-0 pt-[1px]" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: boardColor, boxShadow: `0 0 0 1px ${boardColor}55` }} />
-                                {entry.ts || ''}
-                              </span>
+                              <span className="text-[var(--text3)] text-[10px] min-w-[84px] shrink-0 pt-[1px]">{entry.ts || ''}</span>
                               <span className="inline-block text-[9px] font-bold rounded-[3px] px-1 py-[1px] shrink-0 mt-[1px]" style={{ color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}40` }}>
                                 {entry.dir?.toUpperCase() || 'RX'}
                               </span>
@@ -785,107 +722,22 @@ export function RightPanel(props) {
                         placeholder="Send message to Arduino..."
                         value={serialInput}
                         onChange={e => setSerialInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') sendSerialInput(serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter); }}
+                        onKeyDown={e => { if (e.key === 'Enter') sendSerialInput(); }}
                         disabled={!isRunning && !hardwareConnected}
                       />
-                      <div ref={sendMenuRef} style={{ position: 'relative', display: 'inline-flex' }}>
-                        <button
-                          onClick={() => sendSerialInput(serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter)}
-                          disabled={(!isRunning && !hardwareConnected) || !serialInput.trim()}
-                          style={{
-                            background: ((isRunning || hardwareConnected) && serialInput.trim()) ? 'var(--accent)' : 'transparent',
-                            border: '1px solid var(--accent)',
-                            borderRight: serialBoardFilter === 'all' ? 'none' : '1px solid var(--accent)',
-                            color: ((isRunning || hardwareConnected) && serialInput.trim()) ? '#fff' : 'var(--text3)',
-                            borderRadius: serialBoardFilter === 'all' ? '8px 0 0 8px' : '8px',
-                            padding: '6px 10px',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            cursor: ((isRunning || hardwareConnected) && serialInput.trim()) ? 'pointer' : 'not-allowed',
-                            fontFamily: 'inherit',
-                            transition: 'all .15s',
-                            whiteSpace: 'nowrap',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                          }}
-                          title={`Send to ${serialBoardLabels?.[(serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter)] || (serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter)}`}
-                        >
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: boardColors[serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter] || '#94a3b8', boxShadow: `0 0 0 1px ${(boardColors[serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter] || '#94a3b8')}66` }} />
-                          Send
-                        </button>
-                        {serialBoardFilter === 'all' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowSendTargetMenu((v) => !v);
-                            }}
-                            disabled={!isRunning && !hardwareConnected}
-                            style={{
-                              background: ((isRunning || hardwareConnected) && serialInput.trim()) ? 'var(--accent)' : 'transparent',
-                              border: '1px solid var(--accent)',
-                              color: ((isRunning || hardwareConnected) && serialInput.trim()) ? '#fff' : 'var(--text3)',
-                              borderRadius: '0 8px 8px 0',
-                              padding: '6px 7px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: (!isRunning && !hardwareConnected) ? 'not-allowed' : 'pointer',
-                              fontFamily: 'inherit',
-                              transition: 'all .15s',
-                              whiteSpace: 'nowrap'
-                            }}
-                            title="Choose board to send"
-                          >
-                            ▾
-                          </button>
-                        )}
-
-                        {serialBoardFilter === 'all' && showSendTargetMenu && (
-                          <div style={{
-                            position: 'absolute',
-                            right: 0,
-                            bottom: 'calc(100% + 6px)',
-                            minWidth: 180,
-                            background: 'var(--bg2)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                            overflow: 'hidden',
-                            zIndex: 20,
-                          }}>
-                            {(serialBoardOptions || []).filter((id) => id !== 'all').map((id) => {
-                              const active = serialSendTarget === id;
-                              return (
-                                <button
-                                  key={`send-target-${id}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSerialSendTarget(id);
-                                    setShowSendTargetMenu(false);
-                                  }}
-                                  style={{
-                                    width: '100%',
-                                    border: 'none',
-                                    borderBottom: '1px solid var(--border)',
-                                    background: active ? 'rgba(0,255,255,0.08)' : 'transparent',
-                                    color: active ? 'var(--accent)' : 'var(--text2)',
-                                    fontSize: 11,
-                                    padding: '7px 9px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 7,
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: boardColors[id] || '#94a3b8', boxShadow: `0 0 0 1px ${(boardColors[id] || '#94a3b8')}66` }} />
-                                  <span>{serialBoardLabels?.[id] || id}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
+                      <button
+                        onClick={sendSerialInput}
+                        disabled={(!isRunning && !hardwareConnected) || !serialInput.trim()}
+                        style={{
+                          background: ((isRunning || hardwareConnected) && serialInput.trim()) ? 'var(--accent)' : 'transparent',
+                          border: '1px solid var(--accent)', color: ((isRunning || hardwareConnected) && serialInput.trim()) ? '#fff' : 'var(--text3)',
+                          borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 700,
+                          cursor: ((isRunning || hardwareConnected) && serialInput.trim()) ? 'pointer' : 'not-allowed',
+                          fontFamily: 'inherit', transition: 'all .15s', whiteSpace: 'nowrap'
+                        }}
+                      >
+                        ↑ Send
+                      </button>
                     </div>
                   </>
                 ) : (

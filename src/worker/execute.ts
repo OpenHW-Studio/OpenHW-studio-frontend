@@ -92,7 +92,6 @@ export class AVRRunner {
     updatePhysics: (() => void) | null = null;
     timers: AVRTimer[] = [];
     running: boolean = false;
-    paused: boolean = false;
     pinStates: Record<string, boolean> = {};
     currentWires: any[] = [];
     instances: Map<string, BaseComponent> = new Map();
@@ -116,7 +115,7 @@ export class AVRRunner {
         this.currentWires = wiresDef || [];
         this.onStateUpdate = onStateUpdate;
         this.onByteTransmitCb = options.onByteTransmit;
-        this.boardId = options.boardId || (componentsDef || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')))?.id || 'wokwi-arduino-uno_0';
+        this.boardId = options.boardId || (componentsDef || []).find((c: any) => c.type === 'wokwi-arduino-uno')?.id || 'wokwi-arduino-uno_0';
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 
         // Setup memory and CPU
@@ -327,28 +326,12 @@ export class AVRRunner {
         }, 1000 / 60);
     }
 
-    private isBoardPin(wireCoord: string, targetPin: string): boolean {
+    private isBoardArduinoPin(wireCoord: string, targetPin: string): boolean {
         const [compId, compPin] = wireCoord.split(':');
         if (compId !== this.boardId) return false;
         const inst = this.instances.get(compId);
-        if (!inst || !/(arduino|esp32|stm32|rp2040|pico)/i.test(String(inst.type || ''))) return false;
-
-        const expand = (value: string) => {
-            const v = String(value || '');
-            const out = new Set<string>([v]);
-            if (/^D\d+$/i.test(v)) out.add(v.substring(1));
-            if (/^\d+$/.test(v)) out.add(`D${v}`);
-            if (/^GPIO\d+$/i.test(v)) out.add(v.replace(/^GPIO/i, ''));
-            if (/^GP\d+$/i.test(v)) out.add(v.replace(/^GP/i, ''));
-            return out;
-        };
-
-        const a = expand(compPin);
-        const b = expand(targetPin);
-        for (const v of a) {
-            if (b.has(v)) return true;
-        }
-        return false;
+        if (!inst || !inst.type.includes('arduino')) return false;
+        return compPin === targetPin || compPin === `D${targetPin}` || compPin === `A${targetPin}`;
     }
 
     private pulseBoardLed(pinId: '0' | '1') {
@@ -405,8 +388,8 @@ export class AVRRunner {
 
             // Ensure that the node we are expanding from is actually the Arduino's pin
             this.currentWires.forEach(w => {
-                const isFromArduino = this.isBoardPin(w.from, arduinoPinStr);
-                const isToArduino = this.isBoardPin(w.to, arduinoPinStr);
+                const isFromArduino = this.isBoardArduinoPin(w.from, arduinoPinStr);
+                const isToArduino = this.isBoardArduinoPin(w.to, arduinoPinStr);
 
                 if (isFromArduino || isToArduino) {
                     visitedWires.add(w);
@@ -494,8 +477,8 @@ export class AVRRunner {
                     };
 
                     this.currentWires.forEach(w => {
-                        const isFromArduino = this.isBoardPin(w.from, arduinoPinStr);
-                        const isToArduino = this.isBoardPin(w.to, arduinoPinStr);
+                        const isFromArduino = this.isBoardArduinoPin(w.from, arduinoPinStr);
+                        const isToArduino = this.isBoardArduinoPin(w.to, arduinoPinStr);
                         if (isFromArduino || isToArduino) {
                             visitedWires.add(w);
                             checkForGnd(isFromArduino ? w.to : w.from);
@@ -544,12 +527,6 @@ export class AVRRunner {
 
     private runLoop = () => {
         if (!this.running || !this.cpu) return;
-
-        if (this.paused) {
-            this.lastTime = performance.now();
-            setTimeout(this.runLoop, 16);
-            return;
-        }
 
         const now = performance.now();
         const deltaTime = now - this.lastTime;
@@ -620,15 +597,6 @@ export class AVRRunner {
         }
 
         setTimeout(this.runLoop, 1);
-    }
-
-    pause() {
-        this.paused = true;
-    }
-
-    resume() {
-        this.paused = false;
-        this.lastTime = performance.now();
     }
 
     private serialBuffer: number[] = [];
