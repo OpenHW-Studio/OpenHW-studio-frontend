@@ -21,29 +21,6 @@ export function AdminPreviewBanner({ previewBanner, onDismiss }) {
   );
 }
 
-export function GuestModeBanner({ onSignIn, onDismiss }) {
-  return (
-    <div className="mx-2 mt-2 flex items-center gap-3 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs text-[var(--text2)]">
-      <div className="flex-1">
-        <strong>Guest Mode</strong> - Your work is auto-saved locally in your browser. Click{' '}
-        <strong>My Projects</strong> to see all saved circuits. Sign in to access your projects from any device.
-        <button
-          onClick={onSignIn}
-          className="ml-2 cursor-pointer rounded border border-[var(--accent)] bg-transparent px-2 py-1 text-xs font-semibold text-[var(--accent)]"
-        >
-          Sign in -&gt;
-        </button>
-      </div>
-      <button
-        onClick={onDismiss}
-        title="Dismiss"
-        className="cursor-pointer rounded border-0 bg-transparent px-1 text-sm text-[var(--text3)]"
-      >
-        ✕
-      </button>
-    </div>
-  );
-}
 
 export function WiringHintBanner({ wireStart }) {
   if (!wireStart) return null;

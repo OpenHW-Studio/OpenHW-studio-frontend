@@ -1,0 +1,5 @@
+=== SVG RETURN ===
+"  return `import React from 'react';\\n\\n${boundsLine}${ctxLines}\\nexport const ${name}UI = ({ state, attrs, isRunning }: { state:any; attrs:any; isRunning:boolean }) => (\\n    <div style={{ pointerEvents:'none', position:'absolute', inset:0 }}>\\n        ${svg}\\n    </div>\\n);\\n`\r\n}\r\n\r\nfunction genLogicCode(d) {\r\n  const name = toPascalCase(d.type)\r"
+
+=== ZIP BLOCK ===
+'      if (uiStr) {\r\n        uiEdited.current=true; setUiCode(uiStr)\r\n        const bm = uiStr.match(/BOUNDS\\s*=\\s*\\{\\s*x:\\s*(\\d+)[^}]*y:\\s*(\\d+)[^}]*w:\\s*(\\d+)[^}]*h:\\s*(\\d+)/)\r\n        if (bm) setBounds({ x:+bm[1], y:+bm[2], w:+bm[3], h:+bm[4] })\r\n        // Detect if ui.tsx is a React component (has JSX/React imports) vs plain SVG\r\n        const hasReactImport = /import\\s+React|from\\s+[\'"]react[\'"]/.test(uiStr)\r\n        const hasJsxExport = /export\\s+(const|function)\\s+\\w+.*=.*\\(/.test(uiStr)\r\n        if (hasReactImport || hasJsxExport) {\r\n          // React mode: set the full ui.tsx as reac'

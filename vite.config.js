@@ -10,6 +10,8 @@ export default defineConfig({
   plugins: [react()],
   optimizeDeps: {
     exclude: ['@openhw/emulator'],
+    // We ensure Vite pre-bundles the emulator package from its source components.
+    // This allows the raw-html esbuild plugin below to resolve .html?raw imports correctly.
     esbuildOptions: {
       plugins: [
         {

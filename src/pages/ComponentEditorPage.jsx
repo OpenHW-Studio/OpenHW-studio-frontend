@@ -38,9 +38,10 @@ const STEPS = [
   { id:2, label:'Component Image',   desc:'Upload SVG, code SVG, or write React JSX for the visual' },
   { id:3, label:'Dimensions',        desc:'Canvas size and interactive BOUNDS rectangle' },
   { id:4, label:'Pins',              desc:'Place and define electrical pins' },
-  { id:5, label:'Simulation',        desc:'Write logic.ts, validation.ts and ui.tsx' },
-  { id:6, label:'Docs',              desc:'Documentation HTML page' },
-  { id:7, label:'Save & Export',     desc:'Download ZIP or test in simulator' },
+  { id:5, label:'Context Windows',   desc:'Write the ContextMenu component and preview it live' },
+  { id:6, label:'Simulation',        desc:'Write logic.ts, validation.ts and ui.tsx' },
+  { id:7, label:'Docs',              desc:'Documentation HTML page' },
+  { id:8, label:'Save & Export',     desc:'Download ZIP or test in simulator' },
 ]
 
 // Grid cell size — must match simulator's 24 × 24 px
@@ -181,6 +182,9 @@ function svgToFluid(svg) {
 }
 
 // ─── Code generators ──────────────────────────────────────────────────────────
+// ── Context-menu code separator written into ui.tsx ──────────────────────
+const CTX_MENU_MARKER = '// ── Context Menu ─────────────────────────────────────────────────────────'
+
 function genManifest(d) {
   return JSON.stringify({
     type: d.type || 'my-component', label: d.label || 'My Component', group: d.group || 'Other',
@@ -198,9 +202,14 @@ function genUICode(d) {
   const boundsLine = `export const BOUNDS = { x: ${b.x}, y: ${b.y}, w: ${b.w}, h: ${b.h} };\n`
   const ctxLines = (d.contextMenuDuringRun?'export const contextMenuDuringRun = true;\n':'') + (d.contextMenuOnlyDuringRun?'export const contextMenuOnlyDuringRun = true;\n':'')
 
+  // Context-menu block — appended at the bottom when the user has written one
+  const ctxBlock = d.ctxMenuCode?.trim()
+    ? `\n\n${CTX_MENU_MARKER}\n${d.ctxMenuCode.trim()}\n`
+    : ''
+
   // React JSX mode — embed the user's exported component directly
   if (d.imageMode === 'react' && d.reactCode?.trim()) {
-    return `import React from 'react';\n\n${boundsLine}${ctxLines}\n// ── Component UI (React mode) ──────────────────────────────────────\n${d.reactCode}\n`
+    return `import React from 'react';\n\n${boundsLine}${ctxLines}\n// ── Component UI (React mode) ──────────────────────────────────────\n${d.reactCode}\n${ctxBlock}`
   }
 
   // SVG mode — wrap SVG in a div.
@@ -211,7 +220,7 @@ function genUICode(d) {
   <text x="${w/2}" y="${h/2+4}" textAnchor="middle" fill="#4ade80" fontSize="11" fontFamily="monospace">${d.label||'Component'}</text>
 </svg>`
   const svg = svgToFluid(rawSvg).split('\n').join('\n            ')
-  return `import React from 'react';\n\n${boundsLine}${ctxLines}\nexport const ${name}UI = ({ state, attrs, isRunning }: { state:any; attrs:any; isRunning:boolean }) => (\n    <div style={{ pointerEvents:'none', position:'absolute', inset:0 }}>\n        ${svg}\n    </div>\n);\n`
+  return `import React from 'react';\n\n${boundsLine}${ctxLines}\nexport const ${name}UI = ({ state, attrs, isRunning }: { state:any; attrs:any; isRunning:boolean }) => (\n    <div style={{ pointerEvents:'none', position:'absolute', inset:0 }}>\n        ${svg}\n    </div>\n);\n${ctxBlock}`
 }
 
 function genLogicCode(d) {
@@ -226,7 +235,10 @@ function genValidationCode(d) {
 function genIndexCode(d) {
   const name = toPascalCase(d.type)
   const extras = [d.contextMenuDuringRun&&'contextMenuDuringRun', d.contextMenuOnlyDuringRun&&'contextMenuOnlyDuringRun'].filter(Boolean)
-  return `import manifest from './manifest.json';\nimport { ${name}UI, BOUNDS${extras.length?', '+extras.join(', '):''} } from './ui';\nimport { ${name}Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n    manifest,\n    UI: ${name}UI,\n    LogicClass: ${name}Logic,\n    BOUNDS,\n    validation,${extras.map(e=>`\n    ${e},`).join('')}\n};\n`
+  const hasCtxMenu = !!d.ctxMenuCode?.trim()
+  const ctxMenuImport = hasCtxMenu ? `, ContextMenu` : ''
+  const ctxMenuExport = hasCtxMenu ? `\n    ContextMenu,` : ''
+  return `import manifest from './manifest.json';\nimport { ${name}UI, BOUNDS${extras.length?', '+extras.join(', '):''}${ctxMenuImport} } from './ui';\nimport { ${name}Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n    manifest,\n    UI: ${name}UI,\n    LogicClass: ${name}Logic,\n    BOUNDS,\n    validation,${extras.map(e=>`\n    ${e},`).join('')}${ctxMenuExport}\n};\n`
 }
 
 function genDocsHTML(d) {
@@ -950,13 +962,83 @@ function CheckBtn({ onClick }) {
 }
 
 // Small inline Btn component
-function Btn({ children, onClick, v='def', sm, disabled, style:xs }) {
-  const base = { padding:sm?'3px 9px':'6px 14px', borderRadius:5, cursor:disabled?'not-allowed':'pointer', fontSize:sm?11:12, fontWeight:600, border:'none', display:'inline-flex', alignItems:'center', gap:5, opacity:disabled?.5:1, whiteSpace:'nowrap', ...xs }
-  const vars = { def:{background:'var(--bg3)',color:'var(--text)',border:'1px solid var(--border)'}, primary:{background:'var(--accent)',color:'#000'}, ghost:{background:'transparent',color:'var(--text2)',border:'1px solid var(--border)'}, danger:{background:'rgba(255,68,68,.14)',color:'#ff5555',border:'1px solid rgba(255,68,68,.3)'}, green:{background:'rgba(74,222,128,.14)',color:'#4ade80',border:'1px solid rgba(74,222,128,.3)'}, yellow:{background:'rgba(251,191,36,.14)',color:'#fbbf24',border:'1px solid rgba(251,191,36,.3)'}, blue:{background:'rgba(96,165,250,.14)',color:'#60a5fa',border:'1px solid rgba(96,165,250,.3)'} }
-  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...vars[v] }}>{children}</button>
+function Btn({ children, onClick, v='def', sm, disabled, style:xs, title }) {
+  const base = {
+    padding: sm ? '5px 12px' : '8px 18px',
+    borderRadius: '8px',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontSize: sm ? '11px' : '13px',
+    fontWeight: 600,
+    border: '1px solid transparent',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '8px',
+    opacity: disabled ? 0.4 : 1,
+    whiteSpace: 'nowrap',
+    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+    fontFamily: 'inherit',
+    ...xs
+  }
+
+  const variants = {
+    def: {
+      background: 'var(--bg3)',
+      color: 'var(--text)',
+      borderColor: 'var(--border)',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    },
+    primary: {
+      background: 'linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%)',
+      color: '#fff',
+      boxShadow: '0 4px 12px rgba(0, 212, 255, 0.25)',
+      textShadow: '0 1px 2px rgba(0,0,0,0.1)'
+    },
+    ghost: {
+      background: 'transparent',
+      color: 'var(--text2)',
+      borderColor: 'var(--border)',
+    },
+    danger: {
+      background: 'rgba(239, 68, 68, 0.1)',
+      color: '#ef4444',
+      borderColor: 'rgba(239, 68, 68, 0.2)',
+    },
+    green: {
+      background: 'rgba(34, 197, 94, 0.1)',
+      color: '#22c55e',
+      borderColor: 'rgba(34, 197, 94, 0.2)',
+    },
+    yellow: {
+      background: 'rgba(234, 179, 8, 0.1)',
+      color: '#eab308',
+      borderColor: 'rgba(234, 179, 8, 0.2)',
+    },
+    blue: {
+      background: 'rgba(59, 130, 246, 0.1)',
+      color: '#3b82f6',
+      borderColor: 'rgba(59, 130, 246, 0.2)',
+    }
+  }
+
+  return (
+    <button 
+      onClick={onClick} 
+      disabled={disabled} 
+      title={title}
+      style={{ ...base, ...variants[v] }}
+      className="hover:-translate-y-px hover:brightness-110 active:translate-y-0"
+    >
+      {children}
+    </button>
+  )
 }
 
-const Sep = ({ v }) => <div style={v ? { width:1, height:18, background:'var(--border)' } : { height:1, background:'var(--border)', margin:'8px 0' }} />
+const Sep = ({ v }) => (
+  <div style={v 
+    ? { width: 1, height: 20, background: 'var(--border)', margin: '0 8px', alignSelf: 'center' } 
+    : { height: 1, background: 'var(--border)', margin: '16px 0', opacity: 0.6 }
+  } />
+)
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Styles
@@ -1004,7 +1086,11 @@ export default function ComponentEditorPage() {
   const [editPin,    setEditPin]= useState(null)
   const pinInnerRef             = useRef(null)
 
-  // ── Step 5 ────────────────────────────────────────────────────────────────
+  // ── Step 5 — Context Windows ─────────────────────────────────────────────
+  const [ctxMenuCode, setCtxMenuCode] = useState('')
+  const [ctxMenuZoom, setCtxMenuZoom] = useState(1)
+
+  // ── Step 6 ────────────────────────────────────────────────────────────────
   const [codeTab,      setCodeTab]      = useState('logic')
   const [logicCode,    setLogicCode]    = useState('')
   const [validCode,    setValidCode]    = useState('')
@@ -1013,7 +1099,7 @@ export default function ComponentEditorPage() {
   const [manifestCode, setManifestCode] = useState('')
   const uiEdited = useRef(false)
 
-  // ── Step 6 ────────────────────────────────────────────────────────────────
+  // ── Step 7 ────────────────────────────────────────────────────────────────
   const [docsCode,    setDocsCode]    = useState('')
   const [docsPreview, setDocsPreview] = useState(false)
 
@@ -1073,8 +1159,8 @@ export default function ComponentEditorPage() {
   const getData = useCallback(() => ({
     type:compType, label:compLabel, description:compDesc, group:compGroup,
     w:compW, h:compH, contextMenuDuringRun:ctxDuringRun, contextMenuOnlyDuringRun:ctxOnlyDuringRun,
-    svgCode, reactCode, imageMode:svgMode, bounds, pins,
-  }), [compType,compLabel,compDesc,compGroup,compW,compH,ctxDuringRun,ctxOnlyDuringRun,svgCode,reactCode,svgMode,bounds,pins])
+    svgCode, reactCode, imageMode:svgMode, bounds, pins, ctxMenuCode,
+  }), [compType,compLabel,compDesc,compGroup,compW,compH,ctxDuringRun,ctxOnlyDuringRun,svgCode,reactCode,svgMode,bounds,pins,ctxMenuCode])
 
   // ── Dynamic warnings — reactive, no stale state ───────────────────────────
   const autoWarnings = useMemo(() => [
@@ -1084,24 +1170,120 @@ export default function ComponentEditorPage() {
     !pins.length && 'No pins defined — add them in Step 4.',
   ].filter(Boolean), [compType, svgCode, reactCode, svgMode, pins.length])
 
+  // ── Shared helper: parse a ui.tsx string into { reactCode, svgCode, svgMode, ctxMenuCode }
+  // Works for both marker-based (our editor) and raw TypeScript files (Edit-a-Copy).
+  const parseUISource = useCallback((src) => {
+    // Normalize line endings so regexes work on Windows files too
+    const s = (src || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+    // ── 1. Extract ContextMenu block ──────────────────────────────────────────
+    let ctxCode = ''
+    const markerIdx = s.indexOf(CTX_MENU_MARKER)
+    if (markerIdx !== -1) {
+      // Method A: our generated marker separator
+      ctxCode = s.substring(markerIdx + CTX_MENU_MARKER.length).trim()
+    } else {
+      // Method B: find any `export const/function ContextMenu` in the file
+      const m = s.match(
+        /(export\s+(?:const|function)\s+ContextMenu[\s\S]*?)(?=\nexport\s+(?:const|function|default|class)|\Z|$)/
+      )
+      if (m) ctxCode = m[0].trim()
+    }
+
+    // ── 2. Get the UI-only body (strip ctx block when marker was used) ─────────
+    const uiSrc = markerIdx !== -1 ? s.substring(0, markerIdx).trim() : s
+
+    // ── 3. Determine mode and extract the visual component code ───────────────
+    let outReactCode = '', outSvgCode = '', outMode = 'code'
+
+    // 3a. Our generated React-mode marker
+    const reactMarker = '// ── Component UI (React mode) ──────────────────────────────────────'
+    const reactMarkerIdx = uiSrc.indexOf(reactMarker)
+    if (reactMarkerIdx !== -1) {
+      outReactCode = uiSrc.substring(reactMarkerIdx + reactMarker.length).trim()
+      outMode = 'react'
+    } else if (/import\s+React|from\s+['"]react['"]/.test(uiSrc)) {
+      // 3b. Raw TypeScript React file — strip boilerplate header, keep component exports
+      // Remove: import lines, BOUNDS constant, contextMenu flag exports
+      let stripped = uiSrc
+        .replace(/^import\s+[^;]+;?[ \t]*/gm, '')          // remove all import lines
+        .replace(/export\s+const\s+BOUNDS\s*=[^;]+;[ \t]*/g, '')   // remove BOUNDS
+        .replace(/export\s+const\s+contextMenu\w+\s*=\s*true;[ \t]*/g, '') // remove ctx flags
+      // Remove the ContextMenu export so it only appears in Step 5
+      if (ctxCode) {
+        stripped = stripped.replace(ctxCode, '')
+      }
+      outReactCode = stripped.trim()
+      outMode = 'react'
+    } else {
+      // 3c. SVG mode — pull out the inline SVG element
+      const svgM = uiSrc.match(/<svg[\s\S]*?<\/svg>/)
+      if (svgM) { outSvgCode = svgM[0]; outMode = 'code' }
+    }
+
+    return { reactCode: outReactCode, svgCode: outSvgCode, svgMode: outMode, ctxMenuCode: ctxCode }
+  }, [])
+
+  // ── Import "Edit a Copy" data from Simulator ──────────────────────────────
+  useEffect(() => {
+    const raw = localStorage.getItem('openhw_edit_copy')
+    if (raw) {
+      try {
+        const data = JSON.parse(raw)
+        localStorage.removeItem('openhw_edit_copy')
+        if (data.manifest) {
+          const m = data.manifest
+          setCompType((m.type || 'component') + '-copy')
+          setCompLabel((m.label || 'Component') + ' (Copy)')
+          setCompDesc(m.description || '')
+          setCompGroup(m.group || 'Other')
+          setCompW(m.w || 100)
+          setCompH(m.h || 80)
+          setPins(m.pins || [])
+          setCtxDuringRun(!!m.contextMenuDuringRun)
+          setCtxOnlyDuringRun(!!m.contextMenuOnlyDuringRun)
+          // Extract bounds from UI string if available
+          if (data.ui) {
+            const n = data.ui.replace(/\r\n/g, '\n')
+            const bMatch = n.match(/BOUNDS\s*=\s*\{\s*x:\s*([\d.-]+)[^}]*y:\s*([\d.-]+)[^}]*w:\s*([\d.-]+)[^}]*h:\s*([\d.-]+)/);
+            if (bMatch) {
+              setBounds({ x: parseFloat(bMatch[1]), y: parseFloat(bMatch[2]), w: parseFloat(bMatch[3]), h: parseFloat(bMatch[4]) });
+            } else {
+              setBounds({ x: 5, y: 5, w: (m.w || 100) - 10, h: (m.h || 80) - 10 })
+            }
+          }
+        }
+        if (data.ui) {
+          const { reactCode: rc, svgCode: sc, svgMode: sm, ctxMenuCode: ctx } = parseUISource(data.ui)
+          if (ctx)  setCtxMenuCode(ctx)
+          if (sm === 'react') { setReactCode(rc); setSvgMode('react') }
+          else if (sm === 'code' && sc) { setSvgCode(sc); setSvgMode('code') }
+        }
+        if (data.logic) setLogicCode(data.logic)
+      } catch (e) {
+        console.error('[Editor] Failed to import Edit a Copy data:', e)
+      }
+    }
+  }, [])
+
   // ── Auto-regenerate manifest + index ──────────────────────────────────────
   useEffect(() => {
     const d = getData()
     setManifestCode(genManifest(d))
     setIndexCode(genIndexCode(d))
-  }, [compType,compLabel,compDesc,compGroup,compW,compH,ctxDuringRun,ctxOnlyDuringRun,bounds,pins])
+  }, [compType,compLabel,compDesc,compGroup,compW,compH,ctxDuringRun,ctxOnlyDuringRun,bounds,pins,ctxMenuCode])
 
   useEffect(() => {
     if (!uiEdited.current) setUiCode(genUICode(getData()))
-  }, [svgCode,reactCode,svgMode,bounds,compW,compH,compType,compLabel,ctxDuringRun,ctxOnlyDuringRun])
+  }, [svgCode,reactCode,svgMode,bounds,compW,compH,compType,compLabel,ctxDuringRun,ctxOnlyDuringRun,ctxMenuCode])
 
   // ── Nav ───────────────────────────────────────────────────────────────────
   const mark = (s) => setDoneSteps(p=>new Set([...p,s]))
   const goToStep = (n) => { mark(step); setStep(n) }
   const goNext = () => {
-    if (step===4) { if (!logicCode) setLogicCode(genLogicCode(getData())); if (!validCode) setValidCode(genValidationCode(getData())) }
-    if (step===6 && !docsCode) setDocsCode(genDocsHTML(getData()))
-    mark(step); if (step<7) setStep(s=>s+1)
+    if (step===5) { if (!logicCode) setLogicCode(genLogicCode(getData())); if (!validCode) setValidCode(genValidationCode(getData())) }
+    if (step===7 && !docsCode) setDocsCode(genDocsHTML(getData()))
+    mark(step); if (step<8) setStep(s=>s+1)
   }
   const goPrev = () => { if (step>1) setStep(s=>s-1) }
 
@@ -1149,21 +1331,18 @@ export default function ComponentEditorPage() {
         if (m.pins?.length) setPins(m.pins); setManifestCode(mStr)
       }
       if (uiStr) {
-        uiEdited.current=true; setUiCode(uiStr)
-        const bm = uiStr.match(/BOUNDS\s*=\s*\{\s*x:\s*(\d+)[^}]*y:\s*(\d+)[^}]*w:\s*(\d+)[^}]*h:\s*(\d+)/)
+        // Use shared parser — handles CRLF, marker, regex, boilerplate strip
+        const { reactCode: rc, svgCode: sc, svgMode: sm, ctxMenuCode: ctx } = parseUISource(uiStr)
+        if (ctx) setCtxMenuCode(ctx)
+        if (sm === 'react') { setSvgMode('react'); setReactCode(rc) }
+        else if (sm === 'code' && sc) { setSvgCode(sc); setSvgMode('code') }
+
+        uiEdited.current = true; setUiCode(uiStr)
+
+        // Extract BOUNDS from the raw source
+        const normalized = uiStr.replace(/\r\n/g, '\n')
+        const bm = normalized.match(/BOUNDS\s*=\s*\{\s*x:\s*(\d+)[^}]*y:\s*(\d+)[^}]*w:\s*(\d+)[^}]*h:\s*(\d+)/)
         if (bm) setBounds({ x:+bm[1], y:+bm[2], w:+bm[3], h:+bm[4] })
-        // Detect if ui.tsx is a React component (has JSX/React imports) vs plain SVG
-        const hasReactImport = /import\s+React|from\s+['"]react['"]/.test(uiStr)
-        const hasJsxExport = /export\s+(const|function)\s+\w+.*=.*\(/.test(uiStr)
-        if (hasReactImport || hasJsxExport) {
-          // React mode: set the full ui.tsx as reactCode
-          setSvgMode('react')
-          setReactCode(uiStr)
-        } else {
-          // SVG mode: extract inline SVG
-          const sm = uiStr.match(/<svg[\s\S]*?<\/svg>/)
-          if (sm) { setSvgCode(sm[0]); setSvgMode('code') }
-        }
       }
       if (logicStr) setLogicCode(logicStr)
       if (validStr) setValidCode(validStr)
@@ -1223,51 +1402,86 @@ export default function ComponentEditorPage() {
   //  Step 1
   // ─────────────────────────────────────────────────────────────────────────
   const s1 = () => (
-    <div>
-      <div className="bg-[rgba(74,222,128,.05)] border border-[rgba(74,222,128,.2)] rounded-[6px] px-[11px] py-[7px] mb-[11px] text-[11px] text-[var(--text2)] leading-[1.6]">Fields auto-update <code>manifest.json</code>, <code>index.ts</code>, and <code>ui.tsx</code> in real-time.</div>
-      <div className="grid grid-cols-2 gap-[13px]">
-        <div style={{ marginBottom:13 }}>
-          <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Component Type *</label>
-          <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" placeholder="e.g. my-sensor" value={compType}
-            onChange={e=>setCompType(e.target.value.toLowerCase().replace(/\s/g,'-'))} onBlur={pushHist} />
-          <div style={{ fontSize:10, color:'var(--text3)', marginTop:3 }}>Unique ID — lowercase, hyphens. Used as <code>manifest.type</code>.</div>
-        </div>
-        <div style={{ marginBottom:13 }}>
-          <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Display Label *</label>
-          <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" placeholder="e.g. My Sensor" value={compLabel}
-            onChange={e=>setCompLabel(e.target.value)} onBlur={pushHist} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24, maxWidth: 800 }}>
+      <div style={{ padding: '16px 20px', background: 'rgba(34, 197, 94, 0.05)', border: '1px solid rgba(34, 197, 94, 0.15)', borderRadius: 12, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+        <div style={{ fontSize: 20 }}>💡</div>
+        <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+          Start by defining the core identity of your component. These fields automatically populate your 
+          <code>manifest.json</code>, <code>index.ts</code>, and <code>ui.tsx</code> files. 
+          Use clear, descriptive labels to help others understand your component.
         </div>
       </div>
-      <div style={{ marginBottom:13 }}>
-        <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Description</label>
-        <textarea className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border resize-y min-h-[60px] font-inherit" placeholder="What does this component do?" value={compDesc}
-          onChange={e=>setCompDesc(e.target.value)} onBlur={pushHist} />
-      </div>
-      <div style={{ marginBottom:13 }}>
-        <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Group</label>
-        <select className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" style={{maxWidth:200 }} value={compGroup}
-          onChange={e=>{ setCompGroup(e.target.value); pushHist() }}>
-          {GROUPS.map(g=><option key={g}>{g}</option>)}
-        </select>
-      </div>
-      <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]">
-        <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>Context Menu Flags</div>
-        <div style={{ fontSize:11, color:'var(--text2)', marginBottom:10 }}>
-          Exported in <code>manifest.json</code>, <code>ui.tsx</code> and <code>index.ts</code>.
+
+      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 24, boxShadow: 'var(--shadow)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Component Type *</label>
+            <input 
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '10px 14px', fontSize: 14, outline: 'none', transition: 'border-color 0.2s' }}
+              placeholder="e.g. pressure-sensor" 
+              value={compType}
+              onChange={e=>setCompType(e.target.value.toLowerCase().replace(/\s/g,'-'))} 
+              onBlur={pushHist}
+              onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+            />
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>A unique URL-safe identifier (e.g., <code>my-awesome-led</code>)</div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Display Label *</label>
+            <input 
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '10px 14px', fontSize: 14, outline: 'none', transition: 'border-color 0.2s' }}
+              placeholder="e.g. BMP280 Sensor" 
+              value={compLabel}
+              onChange={e=>setCompLabel(e.target.value)} 
+              onBlur={pushHist}
+              onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+            />
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>How the component appears in the library palette.</div>
+          </div>
         </div>
-        {[
-          { v:ctxDuringRun,    s:setCtxDuringRun,    n:'contextMenuDuringRun',    d:'Context menu accessible while simulation is running (live controls).' },
-          { v:ctxOnlyDuringRun,s:setCtxOnlyDuringRun,n:'contextMenuOnlyDuringRun',d:'Hide context menu when simulation is stopped — only show it during a run.' },
-        ].map(row=>(
-          <label key={row.n} style={{ display:'flex', alignItems:'flex-start', gap:8, cursor:'pointer', marginBottom:9 }}>
-            <input type="checkbox" checked={row.v} onChange={e=>{row.s(e.target.checked); pushHist()}}
-              style={{ marginTop:2, width:13, height:13, accentColor:'var(--accent)', flexShrink:0 }} />
-            <span>
-              <strong style={{ fontSize:12, color:'var(--text)' }}>{row.n}</strong>
-              <br/><span style={{ fontSize:11, color:'var(--text3)' }}>{row.d}</span>
-            </span>
-          </label>
-        ))}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Description</label>
+          <textarea 
+            style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '10px 14px', fontSize: 14, outline: 'none', minHeight: 80, resize: 'vertical', fontFamily: 'inherit' }}
+            placeholder="Describe what this component simulates..." 
+            value={compDesc}
+            onChange={e=>setCompDesc(e.target.value)} 
+            onBlur={pushHist}
+            onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+          />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 300 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Category Group</label>
+          <select 
+            style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '10px 14px', fontSize: 14, outline: 'none', cursor: 'pointer' }}
+            value={compGroup}
+            onChange={e=>{ setCompGroup(e.target.value); pushHist() }}>
+            {GROUPS.map(g=><option key={g}>{g}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, boxShadow: 'var(--shadow)' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 18 }}>⚙️</span> Advanced UX Options
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {[
+            { v:ctxDuringRun,    s:setCtxDuringRun,    n:'contextMenuDuringRun',    d:'Allows users to open the context menu even while simulation is active. Useful for live controls like sliders or buttons.' },
+            { v:ctxOnlyDuringRun,s:setCtxOnlyDuringRun,n:'contextMenuOnlyDuringRun',d:'Hides the context menu when simulation is stopped. Use this for run-time only configuration.' },
+          ].map(row=>(
+            <label key={row.n} style={{ display:'flex', alignItems:'flex-start', gap:16, cursor:'pointer', padding: '12px', borderRadius: 12, background: row.v ? 'rgba(0, 212, 255, 0.05)' : 'transparent', border: `1px solid ${row.v ? 'rgba(0, 212, 255, 0.2)' : 'transparent'}`, transition: 'all 0.2s' }}>
+              <input type="checkbox" checked={row.v} onChange={e=>{row.s(e.target.checked); pushHist()}}
+                style={{ marginTop:4, width:18, height:18, accentColor:'var(--accent)', flexShrink:0, cursor: 'pointer' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <strong style={{ fontSize:14, color: row.v ? 'var(--accent)' : 'var(--text)' }}>{row.n}</strong>
+                <span style={{ fontSize:12, color:'var(--text3)', lineHeight: 1.5 }}>{row.d}</span>
+              </div>
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -1281,63 +1495,103 @@ export default function ComponentEditorPage() {
     const gridPx = GRID * zoom
     const isReact = svgMode === 'react'
     return (
-      <div style={{ display:'flex', gap:16, height:'100%' }}>
-        <div style={{ flex:1, display:'flex', flexDirection:'column', gap:9, minWidth:0 }}>
-          <div style={{ display:'flex', gap:5 }}>
-            <Btn v={svgMode==='code'?'primary':'ghost'} sm onClick={()=>setSvgMode('code')}>SVG Code</Btn>
-            <Btn v={svgMode==='upload'?'primary':'ghost'} sm onClick={()=>setSvgMode('upload')}>Upload SVG</Btn>
-            <Btn v={svgMode==='react'?'primary':'ghost'} sm onClick={()=>setSvgMode('react')} style={{ borderColor:'rgba(96,165,250,.5)' }}>React JSX</Btn>
+      <div style={{ display:'flex', gap:24, height:'100%', alignItems: 'stretch' }}>
+        <div style={{ flex:1, display:'flex', flexDirection:'column', gap:16, minWidth:0 }}>
+          <div style={{ display:'flex', gap:8, background: 'var(--bg2)', padding: 6, borderRadius: 12, border: '1px solid var(--border)', width: 'fit-content' }}>
+            <button 
+              onClick={()=>setSvgMode('code')}
+              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', background: svgMode==='code' ? 'var(--accent)' : 'transparent', color: svgMode==='code' ? '#fff' : 'var(--text2)' }}
+            >SVG Code</button>
+            <button 
+              onClick={()=>setSvgMode('upload')}
+              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', background: svgMode==='upload' ? 'var(--accent)' : 'transparent', color: svgMode==='upload' ? '#fff' : 'var(--text2)' }}
+            >Upload SVG</button>
+            <button 
+              onClick={()=>setSvgMode('react')}
+              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', background: svgMode==='react' ? 'var(--accent)' : 'transparent', color: svgMode==='react' ? '#fff' : 'var(--text2)' }}
+            >React JSX</button>
           </div>
-          {svgMode==='upload' && (
-            <div onClick={()=>svgFileRef.current?.click()} style={{ border:'2px dashed var(--border)', borderRadius:7, padding:'36px 16px', textAlign:'center', cursor:'pointer', background:'var(--bg3)', flex:1 }}>
-              <div style={{ fontSize:28, marginBottom:8 }}>⬆</div>
-              <div style={{ fontSize:12, color:'var(--text2)' }}>Click to upload .svg</div>
-              {svgCode && <div style={{ marginTop:7, fontSize:11, color:'var(--accent)' }}>✓ loaded ({svgCode.length} chars)</div>}
-            </div>
-          )}
-          {svgMode==='code' && (
-            <div style={{ flex:1, display:'flex', flexDirection:'column', gap:4 }}>
-              <div style={{ fontSize:10, color:'var(--text3)' }}>Use <code>viewBox="0 0 {compW} {compH}"</code> to match dimensions set in Step 3. viewBox is auto-added if missing.</div>
-              <div className="bg-[var(--bg)] rounded-b-[6px] border border-[var(--border)] overflow-auto flex-1" style={{flex:1, minHeight:240, borderRadius:7 }}>
-                <Editor value={svgCode} onValueChange={setSvgCode}
-                  highlight={c=>Prism.highlight(c||'',Prism.languages.markup,'markup')}
-                  padding={12} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, minHeight:240, color:'var(--text)' }}
-                  placeholder={`<svg width="${compW}" height="${compH}" viewBox="0 0 ${compW} ${compH}" xmlns="http://www.w3.org/2000/svg">\n  <!-- art here -->\n</svg>`}
-                />
+
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+            {svgMode==='upload' && (
+              <div 
+                onClick={()=>svgFileRef.current?.click()} 
+                style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, cursor:'pointer', padding: 40, border: '2px dashed var(--border)', margin: 16, borderRadius: 12, transition: 'all 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
+              >
+                <div style={{ fontSize:48, filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.2))' }}>📤</div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize:15, fontWeight: 700, color:'var(--text)', marginBottom: 4 }}>Upload Vector Artwork</div>
+                  <div style={{ fontSize:12, color:'var(--text3)' }}>Supports .svg files. Best results with simple shapes.</div>
+                </div>
+                {svgCode && <div style={{ fontSize:12, color:'var(--green)', fontWeight: 600, background: 'rgba(34,197,94,0.1)', padding: '6px 12px', borderRadius: 20 }}>✓ {svgCode.length.toLocaleString()} bytes loaded</div>}
               </div>
-            </div>
-          )}
-          {svgMode==='react' && (
-            <div style={{ flex:1, display:'flex', flexDirection:'column', gap:4 }}>
-              <div style={{ fontSize:10, color:'var(--text3)', lineHeight:1.6 }}>
-                Write a React component and <code>export</code> it. Props available: <code>state</code>, <code>attrs</code>, <code>isRunning</code>.
-                The component renders at {compW}×{compH}px using <code>position:absolute</code>.
+            )}
+            {(svgMode==='code' || svgMode==='react') && (
+              <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize:11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' }}>Editor</span>
+                  <span style={{ fontSize:10, color: 'var(--text3)' }}>{svgMode==='react' ? 'TypeScript / JSX' : 'XML / SVG'}</span>
+                </div>
+                <div style={{ flex: 1, overflow: 'auto' }}>
+                  <Editor 
+                    value={svgMode === 'react' ? reactCode : svgCode} 
+                    onValueChange={svgMode === 'react' ? setReactCode : setSvgCode}
+                    highlight={c=>Prism.highlight(c||'', svgMode==='react' ? Prism.languages.javascript : Prism.languages.markup, svgMode==='react' ? 'javascript' : 'markup')}
+                    padding={16} 
+                    style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight: '100%', color:'var(--text)', background: 'transparent' }}
+                    placeholder={svgMode === 'react' ? 'export const MyUI = () => ...' : '<svg ...>'}
+                  />
+                </div>
               </div>
-              <div className="bg-[var(--bg)] rounded-b-[6px] border border-[var(--border)] overflow-auto flex-1" style={{flex:1, minHeight:240, borderRadius:7 }}>
-                <Editor value={reactCode} onValueChange={setReactCode}
-                  highlight={c=>Prism.highlight(c||'',Prism.languages.javascript,'javascript')}
-                  padding={12} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, minHeight:240, color:'var(--text)' }}
-                  placeholder={`export const MyComponentUI = ({ state, attrs, isRunning }) => (\n  <div style={{ position:'absolute', inset:0, background:'#1e1e2e', border:'2px solid #4ade80', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>\n    <span style={{ color:'#4ade80', fontFamily:'monospace', fontSize:11 }}>My Component</span>\n  </div>\n)`}
-                />
-              </div>
-            </div>
-          )}
+            )}
+          </div>
           <input ref={svgFileRef} type="file" accept=".svg,image/svg+xml" onChange={handleSvgUpload} style={{ display:'none' }} />
         </div>
-        {/* Preview */}
-        <div style={{ width:380, flexShrink:0, display:'flex', flexDirection:'column', gap:5 }}>
-          <div style={{ fontSize:10, fontWeight:600, color:'var(--text3)', textTransform:'uppercase' }}>
-            Live Preview {isReact && <span style={{ color:'#60a5fa' }}>· React</span>}
+
+        {/* Preview Area */}
+        <div style={{ width:400, flexShrink:0, display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', gap: 16, boxShadow: 'var(--shadow)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize:12, fontWeight:700, color:'var(--text)', letterSpacing: '0.05em' }}>PREVIEW</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ff5f57' }} />
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ffbd2e' }} />
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#27c93f' }} />
+              </div>
+            </div>
+            
+            <div 
+              style={{ 
+                width:'100%', height:300, 
+                backgroundColor:'var(--canvas-bg)', 
+                backgroundImage:`linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)`,
+                backgroundSize:`${gridPx}px ${gridPx}px`,
+                borderRadius: 12, border: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', position: 'relative'
+              }}
+            >
+              {isReact
+                ? <ReactPreview reactCode={reactCode} compW={compW} compH={compH} zoom={zoom} />
+                : <SvgPreview svgCode={svgCode} compW={compW} compH={compH} zoom={zoom} />
+              }
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <ZoomBar zoom={zoom} onZoom={setS2Zoom} onFit={()=>setS2Zoom(null)} fitZoom={fz} />
+              <div style={{ height: 1, background: 'var(--border)' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)' }}>
+                <span>Dimension: {compW} × {compH} px</span>
+                <span style={{ color: 'var(--accent)', fontWeight: 600 }}>Grid: {GRID}px</span>
+              </div>
+              <Btn v="blue" onClick={()=>setCanvasOpen(true)} style={{ width: '100%', justifyContent: 'center' }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="2" width="10" height="10" rx="2"/><circle cx="7" cy="7" r="2"/></svg>
+                View on Canvas
+              </Btn>
+            </div>
           </div>
-          <div className="bg-[var(--canvas-bg)] rounded-[7px] border border-[var(--border)] flex items-center justify-center overflow-hidden relative" style={{ width:380, height:320, backgroundSize:`${gridPx}px ${gridPx}px` }}>
-            {isReact
-              ? <ReactPreview reactCode={reactCode} compW={compW} compH={compH} zoom={zoom} />
-              : <SvgPreview svgCode={svgCode} compW={compW} compH={compH} zoom={zoom} />
-            }
-          </div>
-          <ZoomBar zoom={zoom} onZoom={setS2Zoom} onFit={()=>setS2Zoom(null)} fitZoom={fz} />
-          <div style={{ fontSize:10, color:'var(--text3)' }}>Canvas: {compW}×{compH}px · Grid: {GRID}px (scaled {gridPx.toFixed(0)}px at this zoom)</div>
-          <CheckBtn onClick={()=>setCanvasOpen(true)} />
         </div>
       </div>
     )
@@ -1347,85 +1601,145 @@ export default function ComponentEditorPage() {
   //  Step 3
   // ─────────────────────────────────────────────────────────────────────────
   const s3 = () => {
-    const maxW=380, maxH=310
+    const maxW=400, maxH=350
     const fz = fitZoom(maxW, maxH)
     const zoom = s3Zoom ?? fz
-    const scale = zoom  // alias for clarity in overlay positioning
+    const scale = zoom
     const gridPx = GRID * scale
     const imgPreview = svgMode === 'react'
       ? <ReactPreview reactCode={reactCode} compW={compW} compH={compH} zoom={scale} />
       : <SvgPreview svgCode={svgCode} compW={compW} compH={compH} zoom={scale} />
     return (
-      <div style={{ display:'flex', gap:18 }}>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div className="bg-[rgba(74,222,128,.05)] border border-[rgba(74,222,128,.2)] rounded-[6px] px-[11px] py-[7px] mb-[11px] text-[11px] text-[var(--text2)] leading-[1.6]">
-            <strong>w/h in manifest</strong> = total pixel area on the circuit canvas.<br/>
-            <strong>BOUNDS in ui.tsx</strong> = inner clickable hit-box (selection + wire-snap target). Usually smaller because pin pads extend to edges.
+      <div style={{ display:'flex', gap:32, alignItems: 'flex-start' }}>
+        <div style={{ flex:1, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div style={{ padding: '16px 20px', background: 'rgba(96, 165, 250, 0.05)', border: '1px solid rgba(96, 165, 250, 0.15)', borderRadius: 12, fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+            Define the physical footprint and interaction area. Adjusting <strong>Canvas Size</strong> changes the total area, while 
+            <strong style={{ color: 'var(--accent)' }}> BOUNDS</strong> defines the inner clickable "hit-box".
           </div>
-          <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]" style={{borderColor:'var(--border)' }}>
-            <div style={{ fontSize:11, fontWeight:700, color:'var(--text)', marginBottom:9 }}>Canvas Size</div>
-            <div className="grid grid-cols-2 gap-[13px]">
-              {[['Width (w) px','w',compW,v=>{setCompW(v);setBounds(b=>({...b,w:Math.max(GRID,v-26)}))}],
-                ['Height (h) px','h',compH,v=>{setCompH(v);setBounds(b=>({...b,h:Math.max(GRID,v-14)}))}]].map(([lbl,,val,set])=>(
-                <div key={lbl}><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">{lbl}</label>
-                  <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" type="number" min={20} max={800} value={val}
-                    onChange={e=>set(+e.target.value)} onBlur={pushHist} />
-                </div>
-              ))}
+
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', gap: 24, boxShadow: 'var(--shadow)' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>📏 Canvas Footprint</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                {[
+                  ['Canvas Width', 'w', compW, v=>{setCompW(v);setBounds(b=>({...b,w:Math.max(GRID,v-26)}))}],
+                  ['Canvas Height', 'h', compH, v=>{setCompH(v);setBounds(b=>({...b,h:Math.max(GRID,v-14)}))}]
+                ].map(([lbl, key, val, updater]) => (
+                  <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' }}>{lbl}</label>
+                    <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '2px 4px' }}>
+                      <input 
+                        type="number" 
+                        value={val} 
+                        onChange={e => updater(Number(e.target.value))}
+                        onBlur={pushHist}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text)', padding: '8px 10px', fontSize: 14, width: '100%', outline: 'none' }} 
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text3)', paddingRight: 8 }}>px</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]" style={{borderColor:'rgba(74,222,128,.4)' }}>
-            <div style={{ fontSize:11, fontWeight:700, color:'var(--accent)', marginBottom:9 }}>BOUNDS — Hit Box</div>
-            <div className="grid grid-cols-4 gap-[9px]">
-              {['x','y','w','h'].map(k=>(
-                <div key={k}><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">{k}</label>
-                  <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" style={{borderColor:'rgba(74,222,128,.4)' }} type="number"
-                    value={bounds[k]} onChange={e=>setBounds(b=>({...b,[k]:+e.target.value}))} onBlur={pushHist} />
-                </div>
-              ))}
+
+            <div style={{ height: 1, background: 'var(--border)' }} />
+
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                🎯 Interaction Bounds (Hit Box)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                {['x','y','w','h'].map(k=>(
+                  <div key={k} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' }}>{k}</label>
+                    <input 
+                      type="number" 
+                      value={bounds[k]} 
+                      onChange={e=>setBounds(b=>({...b,[k]:Number(e.target.value)}))} 
+                      onBlur={pushHist}
+                      style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '8px 10px', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' }} 
+                    />
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text2)' }}>
+                export const <span style={{ color: 'var(--accent)' }}>BOUNDS</span> = &#123; x:{bounds.x}, y:{bounds.y}, w:{bounds.w}, h:{bounds.h} &#125;;
+              </div>
             </div>
-            <div style={{ fontSize:10, color:'var(--text3)', marginTop:7 }}>
-              → <code>export const BOUNDS = &#123; x:{bounds.x}, y:{bounds.y}, w:{bounds.w}, h:{bounds.h} &#125;;</code>
+
+            <div 
+              style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px', background: 'var(--bg)', borderRadius: 12, border: '1px solid var(--border)' }}
+            >
+              <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 18 }}>🖱️</span>
+                <span style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 600 }}>Editing Mode</span>
+              </div>
+              <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', padding: 4, borderRadius: 8 }}>
+                <button 
+                  onClick={()=>setResizeMode('comp')}
+                  style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', background: resizeMode === 'comp' ? 'var(--accent)' : 'transparent', color: resizeMode === 'comp' ? '#fff' : 'var(--text3)' }}
+                >Canvas</button>
+                <button 
+                  onClick={()=>setResizeMode('bounds')}
+                  style={{ padding: '6px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', background: resizeMode === 'bounds' ? 'var(--accent)' : 'transparent', color: resizeMode === 'bounds' ? '#fff' : 'var(--text3)' }}
+                >Bounds</button>
+              </div>
             </div>
-          </div>
-          {/* Mode toggle */}
-          <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]" style={{display:'flex', alignItems:'center', gap:10, marginBottom:0 }}>
-            <span style={{ fontSize:11, color:resizeMode==='comp'?'var(--accent)':'var(--text3)', fontWeight:600 }}>Component</span>
-            <div onClick={()=>setResizeMode(m=>m==='comp'?'bounds':'comp')} style={{ position:'relative', width:40, height:20, background:resizeMode==='bounds'?'rgba(74,222,128,.25)':'var(--bg)', border:'1px solid rgba(74,222,128,.4)', borderRadius:10, cursor:'pointer', flexShrink:0 }}>
-              <div style={{ position:'absolute', top:2, left:resizeMode==='comp'?2:20, width:14, height:14, borderRadius:'50%', background:'var(--accent)', transition:'left .2s' }} />
-            </div>
-            <span style={{ fontSize:11, color:resizeMode==='bounds'?'var(--accent)':'var(--text3)', fontWeight:600 }}>BOUNDS</span>
-            <span style={{ fontSize:10, color:'var(--text3)' }}>→ drag handles in preview</span>
           </div>
         </div>
 
-        {/* Preview */}
-        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', gap:5 }}>
-          <div style={{ fontSize:10, fontWeight:600, color:'var(--text3)', textTransform:'uppercase' }}>
-            Preview — <span style={{ color:'var(--accent)' }}>green=BOUNDS</span>
-            {resizeMode==='comp'&&<span style={{ color:'#60a5fa', marginLeft:6 }}>· blue=component</span>}
-          </div>
-          <div className="bg-[var(--canvas-bg)] rounded-[7px] border border-[var(--border)] flex items-center justify-center overflow-hidden relative" style={{ width:420, height:330, overflow:'hidden', backgroundSize:`${gridPx}px ${gridPx}px` }}>
-            <div style={{ position:'relative', width:Number(compW)*scale, height:Number(compH)*scale, flexShrink:0 }}>
-              {imgPreview}
-              {/* BOUNDS overlay */}
-              {resizeMode==='bounds'
-                ? <DragResizeBox bx={bounds.x} by={bounds.y} bw={bounds.w} bh={bounds.h} scale={scale} color="rgba(74,222,128,.95)"
-                    label={`BOUNDS (${bounds.x},${bounds.y}) ${bounds.w}×${bounds.h}`}
-                    onChange={v=>setBounds(v)} onEnd={pushHist} />
-                : <div style={{ position:'absolute', pointerEvents:'none', left:bounds.x*scale, top:bounds.y*scale, width:bounds.w*scale, height:bounds.h*scale, border:'2px solid rgba(74,222,128,.8)', background:'rgba(74,222,128,.06)' }} />
-              }
-              {/* Component size overlay */}
-              {resizeMode==='comp' && (
-                <DragResizeBox bx={0} by={0} bw={Number(compW)} bh={Number(compH)} scale={scale} color="rgba(96,165,250,.9)"
-                  label={`${compW}×${compH}`} noMove onlyEdges
-                  onChange={v=>{ setCompW(v.w); setCompH(v.h) }} onEnd={pushHist} />
-              )}
+        {/* Visual Preview */}
+        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, boxShadow: 'var(--shadow)' }}>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize:11, fontWeight:700, color:'var(--text3)', textTransform:'uppercase' }}>Placement Preview</span>
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                  <div style={{ width:6, height:6, borderRadius:1, background: 'rgba(74,222,128,.8)' }} />
+                  <span style={{ fontSize:9, color:'var(--text3)' }}>BOUNDS</span>
+                </div>
+                <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+                  <div style={{ width:6, height:6, borderRadius:1, background: 'rgba(96,165,250,.8)' }} />
+                  <span style={{ fontSize:9, color:'var(--text3)' }}>CANVAS</span>
+                </div>
+              </div>
+            </div>
+
+            <div 
+              style={{ 
+                width: '100%', height: 350, 
+                backgroundColor:'var(--canvas-bg)', 
+                backgroundImage:`linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)`,
+                backgroundSize:`${gridPx}px ${gridPx}px`,
+                borderRadius: 12, border: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', position: 'relative'
+              }}
+            >
+              <div style={{ position:'relative', width:Number(compW)*scale, height:Number(compH)*scale }}>
+                {imgPreview}
+                {resizeMode==='bounds'
+                  ? <DragResizeBox bx={bounds.x} by={bounds.y} bw={bounds.w} bh={bounds.h} scale={scale} color="var(--accent)"
+                      label={`BOUNDS`}
+                      onChange={v=>setBounds(v)} onEnd={pushHist} />
+                  : <div style={{ position:'absolute', pointerEvents:'none', left:bounds.x*scale, top:bounds.y*scale, width:bounds.w*scale, height:bounds.h*scale, border:'2px solid var(--accent)', background:'rgba(0, 212, 255, 0.05)', borderRadius: 2 }} />
+                }
+                {resizeMode==='comp' && (
+                  <DragResizeBox bx={0} by={0} bw={Number(compW)} bh={Number(compH)} scale={scale} color="#3b82f6"
+                    label={`${compW}×${compH}`} noMove onlyEdges
+                    onChange={v=>{ setCompW(v.w); setCompH(v.h) }} onEnd={pushHist} />
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16, display:'flex', flexDirection:'column', gap:10 }}>
+              <ZoomBar zoom={scale} onZoom={setS3Zoom} onFit={()=>setS3Zoom(null)} fitZoom={fz} />
+              <Btn v="ghost" sm onClick={()=>setCanvasOpen(true)} style={{ width: '100%', justifyContent: 'center' }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor"><rect x="1" y="1" width="10" height="10" rx="1.5"/><circle cx="6" cy="6" r="1.5"/></svg>
+                Check on Simulation Grid
+              </Btn>
             </div>
           </div>
-          <ZoomBar zoom={scale} onZoom={setS3Zoom} onFit={()=>setS3Zoom(null)} fitZoom={fz} />
-          <div style={{ fontSize:10, color:'var(--text3)' }}>Canvas: {compW}×{compH} | BOUNDS: ({bounds.x},{bounds.y}) {bounds.w}×{bounds.h}</div>
-          <CheckBtn onClick={()=>setCanvasOpen(true)} />
         </div>
       </div>
     )
@@ -1435,103 +1749,321 @@ export default function ComponentEditorPage() {
   //  Step 4
   // ─────────────────────────────────────────────────────────────────────────
   const s4 = () => {
-    const maxW=380, maxH=330
-    const fz = fitZoom(maxW, maxH)
+    const fz = fitZoom(400, 350)
     const zoom = s4Zoom ?? fz
+    const scale = zoom
+    const gridPx = GRID * scale
+    const ui = svgMode === 'react'
+      ? <ReactPreview reactCode={reactCode} compW={compW} compH={compH} zoom={scale} />
+      : <SvgPreview svgCode={svgCode} compW={compW} compH={compH} zoom={scale} />
+
     return (
-      <div style={{ display:'flex', gap:16, height:'100%' }}>
-        <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:9, overflowY:'auto' }}>
-          <div className="bg-[rgba(74,222,128,.05)] border border-[rgba(74,222,128,.2)] rounded-[6px] px-[11px] py-[7px] mb-[11px] text-[11px] text-[var(--text2)] leading-[1.6]">
-            Click <strong>Start Placing</strong> then click on the preview. Coordinates are in component coordinate space ({compW}×{compH}).
-            Click any pin row to edit inline.
+      <div style={{ display:'flex', gap:32, alignItems: 'flex-start' }}>
+        <div style={{ flex:1, display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div style={{ padding: '16px 20px', background: 'rgba(236, 72, 153, 0.05)', border: '1px solid rgba(236, 72, 153, 0.15)', borderRadius: 12, fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+            Define connection points for wires. Pins must align to the <strong style={{ color: 'var(--accent)' }}>{GRID}px grid</strong> for correct circuit behavior.
           </div>
-          <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]">
-            <div style={{ fontSize:11, fontWeight:700, color:'var(--text)', marginBottom:8 }}>New Pin</div>
-            <div className="grid grid-cols-2 gap-[13px]">
-              <div><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Pin ID</label>
-                <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" placeholder="VCC, SDA…" value={newPinId} onChange={e=>setNPId(e.target.value)} />
-              </div>
-              <div><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Type</label>
-                <select className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" value={newPinType} onChange={e=>setNPType(e.target.value)}>
-                  {PIN_TYPES.map(t=><option key={t}>{t}</option>)}
-                </select>
-              </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>Pins <span style={{ color: 'var(--text3)', fontWeight: 500, marginLeft: 4 }}>({pins.length})</span></div>
+              <div style={{ height: 16, width: 1, background: 'var(--border)' }} />
+              <div style={{ fontSize: 12, color: 'var(--text3)' }}>{pinPlacing ? 'Click on preview to place' : 'Management'}</div>
             </div>
-            <div style={{ marginTop:9, marginBottom:9 }}>
-              <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Description</label>
-              <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" placeholder="Supply voltage 3.3–5 V" value={newPinDesc} onChange={e=>setNPDesc(e.target.value)} />
-            </div>
-            <Btn v={pinPlacing?'danger':'primary'} onClick={()=>setPlacing(m=>!m)}>
-              {pinPlacing?'✕ Cancel':'⊕ Start Placing — click preview'}
+            <Btn v={pinPlacing ? 'danger' : 'primary'} onClick={()=>setPlacing(!pinPlacing)}>
+              {pinPlacing ? '🛑 Cancel' : '➕ Add Pin'}
             </Btn>
-            {pinPlacing&&<div style={{ marginTop:6, fontSize:11, color:'var(--accent)' }}>Placing <strong>"{newPinId||`P${pins.length+1}`}"</strong> →</div>}
           </div>
-          <div style={{ fontSize:10, fontWeight:600, color:'var(--text3)', textTransform:'uppercase' }}>Pins ({pins.length})</div>
-          {pins.length===0&&<div style={{ color:'var(--text3)', fontSize:12 }}>No pins yet.</div>}
-          {pins.map((pin,i)=>(
-            <div key={i}>
-              <div className={`flex items-center gap-[7px] px-2 py-[5px] cursor-pointer ${(editPin===i) ? "bg-[var(--bg)] rounded-t-[6px] mb-0 border border-[var(--accent)]" : "bg-[var(--bg3)] rounded-[6px] mb-1 border border-[var(--border)]"}`} onClick={()=>setEditPin(editPin===i?null:i)}>
-                <div style={{ width:8, height:8, background:editPin===i?'#f1c40f':'rgba(255,255,255,.25)', border:'1px solid rgba(255,255,255,.8)', flexShrink:0 }} />
-                <span style={{ fontSize:11, fontWeight:700, color:'var(--text)', minWidth:44 }}>{pin.id}</span>
-                <span style={{ fontSize:10, color:'var(--text3)', flex:1 }}>({pin.x},{pin.y}) · {pin.type}{pin.description?` — ${pin.description}`:''}</span>
-                <span style={{ fontSize:10, color:'var(--text3)' }}>{editPin===i?'▲':'▼'}</span>
-                <Btn v="danger" sm onClick={e=>{e.stopPropagation();setPins(ps=>ps.filter((_,j)=>j!==i));if(editPin===i)setEditPin(null);pushHist()}}>✕</Btn>
-              </div>
-              {editPin===i&&(
-                <div style={{ padding:'9px 11px', background:'var(--bg)', border:'1px solid var(--accent)', borderTop:'none', borderRadius:'0 0 6px 6px', display:'grid', gridTemplateColumns:'1fr 1fr', gap:9, marginBottom:4 }}>
-                  {[['id','Pin ID',pin.id,'text'],['type','Type',null,'select'],['x','X (component px)',pin.x,'number'],['y','Y (component px)',pin.y,'number']].map(([k,lbl,val,type])=>(
-                    <div key={k}><label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">{lbl}</label>
-                      {type==='select'
-                        ? <select className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" value={pin.type} onChange={e=>{setPins(ps=>ps.map((p,j)=>j===i?{...p,type:e.target.value}:p));pushHist()}}>
-                            {PIN_TYPES.map(t=><option key={t}>{t}</option>)}
+
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
+            <div style={{ maxHeight: 400, overflowY: 'auto' }} className="panel-scroll">
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead style={{ background: 'rgba(255,255,255,0.02)', position: 'sticky', top: 0, zIndex: 10 }}>
+                  <tr style={{ textAlign: 'left', color: 'var(--text3)', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>
+                    <th style={{ padding: '12px 20px' }}>Pin ID</th>
+                    <th style={{ padding: '12px 20px' }}>Type</th>
+                    <th style={{ padding: '12px 20px' }}>Position</th>
+                    <th style={{ padding: '12px 20px', textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pins.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>No pins added yet. Click "Add Pin" to start placing.</td>
+                    </tr>
+                  ) : (
+                    pins.map((p, i) => (
+                      <tr 
+                        key={i} 
+                        style={{ 
+                          borderTop: '1px solid var(--border)', 
+                          background: editPin === i ? 'rgba(0, 212, 255, 0.05)' : 'transparent',
+                          transition: 'background 0.2s'
+                        }}
+                      >
+                        <td style={{ padding: '12px 20px' }}>
+                          <input 
+                            style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 10px', fontSize: 13, outline: 'none', width: '100%' }}
+                            value={p.id} 
+                            onChange={e => setPins(ps => ps.map((x, j) => j === i ? { ...x, id: e.target.value } : x))} 
+                            onBlur={pushHist}
+                          />
+                        </td>
+                        <td style={{ padding: '12px 20px' }}>
+                          <select 
+                            style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 10px', fontSize: 13, outline: 'none', width: '100%' }}
+                            value={p.type}
+                            onChange={e => { setPins(ps => ps.map((x, j) => j === i ? { ...x, type: e.target.value } : x)); pushHist() }}
+                          >
+                            {PIN_TYPES.map(t => <option key={t}>{t}</option>)}
                           </select>
-                        : <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" type={type} value={val}
-                            onChange={e=>setPins(ps=>ps.map((p,j)=>j===i?{...p,[k]:type==='number'?+e.target.value:e.target.value}:p))}
-                            onBlur={pushHist} />
-                      }
-                    </div>
-                  ))}
-                  <div style={{ gridColumn:'1/-1' }}>
-                    <label className="block text-[10px] font-semibold text-[var(--text2)] mb-1 uppercase tracking-[.06em]">Description</label>
-                    <input className="w-full bg-[var(--bg3)] border border-[var(--border)] rounded-[5px] text-[var(--text)] px-2 py-1.5 text-xs outline-none box-border" value={pin.description||''} onChange={e=>setPins(ps=>ps.map((p,j)=>j===i?{...p,description:e.target.value}:p))} onBlur={pushHist} />
-                  </div>
-                </div>
-              )}
+                        </td>
+                        <td style={{ padding: '12px 20px' }}>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, color: 'var(--text3)' }}>X</span>
+                            <input type="number" style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 12, outline: 'none', width: 45 }} value={p.x} onChange={e => setPins(ps => ps.map((x, j) => j === i ? { ...x, x: +e.target.value } : x))} onBlur={pushHist} />
+                            <span style={{ fontSize: 11, color: 'var(--text3)', marginLeft: 4 }}>Y</span>
+                            <input type="number" style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 12, outline: 'none', width: 45 }} value={p.y} onChange={e => setPins(ps => ps.map((x, j) => j === i ? { ...x, y: +e.target.value } : x))} onBlur={pushHist} />
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px 20px', textAlign: 'right' }}>
+                          <Btn v="danger" sm onClick={() => { setPins(ps => ps.filter((_, j) => j !== i)); pushHist() }}>✕</Btn>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-          ))}
+            {pins.length > 0 && (
+              <div style={{ padding: '12px 20px', background: 'rgba(255,255,255,0.01)', borderTop: '1px solid var(--border)', fontSize: 11, color: 'var(--text3)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Total: {pins.length} pins</span>
+                <span>Pin coordinates are relative to Component (0,0)</span>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Pin preview */}
-        <div style={{ width:400, flexShrink:0, display:'flex', flexDirection:'column', gap:5 }}>
-          <div style={{ fontSize:10, fontWeight:600, color:pinPlacing?'var(--accent)':'var(--text3)', textTransform:'uppercase' }}>
-            {pinPlacing?`▶ Click to place "${newPinId||`P${pins.length+1}`}"`:' Component Preview'}
-          </div>
-          <div className="bg-[var(--canvas-bg)] rounded-[7px] border border-[var(--border)] flex items-center justify-center overflow-hidden relative" style={{ width:400, height:340, cursor:pinPlacing?'crosshair':'default', borderColor:pinPlacing?'var(--accent)':'var(--border)' , backgroundSize:`${GRID*zoom}px ${GRID*zoom}px` }}>
-            {/* Inner ref div — exact scaled component size */}
-            <div ref={pinInnerRef} onClick={handlePinClick}
-              style={{ position:'relative', width:Number(compW)*zoom, height:Number(compH)*zoom, flexShrink:0 }}>
-              {svgMode === 'react'
-                ? <ReactPreview reactCode={reactCode} compW={compW} compH={compH} zoom={zoom} />
-                : <SvgPreview svgCode={svgCode} compW={compW} compH={compH} zoom={zoom} />
-              }
-              {/* Simulator-accurate pin rendering */}
-              {pins.map((pin,i) => (
-                <SimPin key={i} pin={pin} zoom={zoom} selected={editPin===i} onClick={()=>setEditPin(editPin===i?null:i)} />
-              ))}
+        {/* Visual Preview */}
+        <div style={{ width:420, flexShrink:0, display:'flex', flexDirection:'column', gap:16 }}>
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, boxShadow: 'var(--shadow)' }}>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize:11, fontWeight:700, color:'var(--text3)', textTransform:'uppercase' }}>Placement View</span>
+              <div style={{ fontSize:10, color: pinPlacing ? 'var(--accent)' : 'var(--text3)', fontWeight: 700 }}>
+                {pinPlacing ? '📍 CLICK PREVIEW TO PLACE' : 'PREVIEW'}
+              </div>
+            </div>
+
+            <div 
+              onClick={handlePinClick}
+              style={{ 
+                width: '100%', height: 350, 
+                backgroundColor:'var(--canvas-bg)', 
+                backgroundImage:`linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)`,
+                backgroundSize:`${gridPx}px ${gridPx}px`,
+                borderRadius: 12, border: pinPlacing ? '2px solid var(--accent)' : '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden', position: 'relative',
+                cursor: pinPlacing ? 'crosshair' : 'default',
+                transition: 'border-color 0.2s'
+              }}
+            >
+              <div ref={pinInnerRef} style={{ position:'relative', width:Number(compW)*scale, height:Number(compH)*scale }}>
+                {ui}
+                {pins.map((p,i)=>(
+                  <SimPin 
+                    key={i} pin={p} zoom={scale} 
+                    selected={editPin===i} 
+                    onClick={(e)=>{ e.stopPropagation(); setEditPin(editPin===i?null:i) }} 
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16, display:'flex', flexDirection:'column', gap:12 }}>
+              <ZoomBar zoom={scale} onZoom={setS4Zoom} onFit={()=>setS4Zoom(null)} fitZoom={fz} />
+              <Btn v="ghost" sm onClick={()=>setCanvasOpen(true)} style={{ width: '100%', justifyContent: 'center' }}>
+                Full Circuit Canvas
+              </Btn>
             </div>
           </div>
-          <ZoomBar zoom={zoom} onZoom={setS4Zoom} onFit={()=>setS4Zoom(null)} fitZoom={fz} />
-          <div style={{ fontSize:10, color:'var(--text3)' }}>Pin shape/colors match the simulator. Hover a pin to see label. Click to edit.</div>
-          <CheckBtn onClick={()=>setCanvasOpen(true)} />
         </div>
       </div>
     )
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  //  Step 5
+  //  Step 5 — Context Windows
   // ─────────────────────────────────────────────────────────────────────────
   const s5 = () => {
+    // Live compile & render the ContextMenu component
+    let liveCtxEl = null
+    let liveCtxErr = null
+    if (ctxMenuCode.trim()) {
+      try {
+        const transformed = Babel.transform(ctxMenuCode, { filename:'context.tsx', presets: ['react','typescript','env'] }).code
+        const exps = {}
+        // eslint-disable-next-line no-new-func
+        new Function('exports','require','React', transformed)(exps, m => m==='react'?React:null, React)
+        const key = Object.keys(exps).find(k => k.toLowerCase().includes('contextmenu')) || Object.keys(exps).find(k => typeof exps[k]==='function') || Object.keys(exps)[0]
+        const Comp = exps[key]
+        if (typeof Comp !== 'function') throw new Error('No exported React component found. Export a named ContextMenu component.')
+        liveCtxEl = React.createElement(Comp, { attrs: {}, onUpdate: () => {} })
+      } catch(e) { liveCtxErr = e.message }
+    }
+
+    // Default template
+    const defaultTemplate = `// Context menu component — rendered above your component when selected
+// Props: attrs (object), onUpdate (key: string, value: any) => void
+
+export const ContextMenu = ({ attrs, onUpdate }) => (
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    {/* Example: a brightness slider */}
+    <label style={{ fontSize: 11, color: '#aaa' }}>Value</label>
+    <input
+      type="range" min={0} max={255}
+      value={attrs.value ?? 128}
+      onChange={e => onUpdate('value', +e.target.value)}
+      style={{ width: 100 }}
+    />
+    <span style={{ fontSize: 11, minWidth: 28, color: '#fff' }}>{attrs.value ?? 128}</span>
+  </div>
+);
+`
+
+    // Compute canvas preview bounds/position
+    const w = Number(compW) || 100, h = Number(compH) || 80
+    const b = bounds || { x: 0, y: 0, w, h }
+    const scale = ctxMenuZoom
+    const canvasW = Math.max(w * scale + 120, 400)
+    const canvasH = Math.max(h * scale + 120, 250)
+
+    return (
+      <div style={{ display:'flex', gap:24, height:'calc(100vh - 340px)' }}>
+        {/* LEFT — Code Editor */}
+        <div style={{ flex:1, display:'flex', flexDirection:'column', gap:12, minWidth:0 }}>
+          <div style={{ padding:'14px 18px', background:'rgba(139,92,246,0.06)', border:'1px solid rgba(139,92,246,0.2)', borderRadius:12, fontSize:13, color:'var(--text2)', lineHeight:1.6 }}>
+            Write a <strong style={{ color:'#a78bfa' }}>ContextMenu</strong> React component. It receives{' '}
+            <code style={{ background:'var(--bg2)', padding:'2px 6px', borderRadius:4, fontSize:12 }}>attrs</code> and{' '}
+            <code style={{ background:'var(--bg2)', padding:'2px 6px', borderRadius:4, fontSize:12 }}>onUpdate(key, value)</code> props.
+            The preview on the right shows it exactly as the simulator renders it.
+          </div>
+
+          <div style={{ flex:1, display:'flex', flexDirection:'column', background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:16, overflow:'hidden', boxShadow:'0 8px 32px rgba(0,0,0,0.2)' }}>
+            <div style={{ padding:'10px 16px', background:'rgba(255,255,255,0.02)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{ width:10, height:10, borderRadius:'50%', background:'#ff5f57' }} />
+                <div style={{ width:10, height:10, borderRadius:'50%', background:'#ffbd2e' }} />
+                <div style={{ width:10, height:10, borderRadius:'50%', background:'#27c93f' }} />
+                <span style={{ fontSize:11, fontWeight:700, color:'var(--text3)', marginLeft:8 }}>context.tsx</span>
+              </div>
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <span style={{ fontSize:10, color:'var(--text3)' }}>TypeScript / JSX</span>
+                <button
+                  onClick={() => setCtxMenuCode(defaultTemplate)}
+                  style={{ padding:'4px 10px', borderRadius:6, fontSize:10, fontWeight:700, background:'rgba(139,92,246,0.15)', border:'1px solid rgba(139,92,246,0.3)', color:'#a78bfa', cursor:'pointer' }}
+                >Insert Template</button>
+              </div>
+            </div>
+            <div style={{ flex:1, overflow:'auto' }}>
+              <Editor
+                value={ctxMenuCode}
+                onValueChange={setCtxMenuCode}
+                highlight={c => Prism.highlight(c||'', Prism.languages.javascript, 'javascript')}
+                padding={18}
+                style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.65, minHeight:'100%', color:'var(--text)', background:'transparent' }}
+                placeholder="export const ContextMenu = ({ attrs, onUpdate }) => (...)"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT — Live Preview */}
+        <div style={{ width:400, flexShrink:0, display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:16, padding:20, display:'flex', flexDirection:'column', gap:14, boxShadow:'var(--shadow)', flex:1 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <span style={{ fontSize:12, fontWeight:700, color:'var(--text)', letterSpacing:'0.05em' }}>LIVE PREVIEW</span>
+              <div style={{ display:'flex', gap:4 }}>
+                <div style={{ width:8, height:8, borderRadius:'50%', background:'#ff5f57' }} />
+                <div style={{ width:8, height:8, borderRadius:'50%', background:'#ffbd2e' }} />
+                <div style={{ width:8, height:8, borderRadius:'50%', background:'#27c93f' }} />
+              </div>
+            </div>
+
+            {/* Simulator-accurate canvas preview */}
+            <div style={{
+              flex:1, minHeight:220, position:'relative', borderRadius:12, overflow:'hidden',
+              backgroundColor:'var(--canvas-bg)',
+              backgroundImage:'linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)',
+              backgroundSize:`${GRID*scale}px ${GRID*scale}px`,
+              border:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'center',
+            }}>
+              <div style={{ position:'relative', width:w*scale, height:h*scale }}>
+                {/* Component body */}
+                {svgMode==='react'
+                  ? <ReactPreview reactCode={reactCode} compW={compW} compH={compH} zoom={scale} />
+                  : <SvgPreview svgCode={svgCode} compW={compW} compH={compH} zoom={scale} />}
+
+                {/* Context menu bubble — rendered above BOUNDS centre, exactly like SimulatorPage */}
+                <div data-contextmenu="true" style={{
+                  position:'absolute',
+                  left: b.x * scale + (b.w * scale) / 2,
+                  top:  b.y * scale - 14 * scale,
+                  transform:'translateX(-50%) translateY(-100%)',
+                  background:'var(--bg2)', border:'1px solid var(--border)',
+                  display:'flex', alignItems:'center', gap:8,
+                  padding:'6px 10px', borderRadius:10,
+                  boxShadow:'0 8px 24px rgba(0,0,0,0.6)',
+                  pointerEvents:'all', whiteSpace:'nowrap', zIndex:200,
+                  minWidth:140,
+                }}>
+                  {liveCtxErr
+                    ? <span style={{ fontSize:10, color:'#ff6b6b', fontFamily:'monospace', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis' }}>⚠ {liveCtxErr}</span>
+                    : liveCtxEl
+                      ? liveCtxEl
+                      : <span style={{ fontSize:10, color:'var(--text3)', fontStyle:'italic' }}>Write a ContextMenu component →</span>
+                  }
+                  {/* Tooltip arrow */}
+                  <div style={{ position:'absolute', bottom:-6, left:'50%', transform:'translateX(-50%)', width:0, height:0, borderLeft:'6px solid transparent', borderRight:'6px solid transparent', borderTop:'6px solid var(--border)' }} />
+                  <div style={{ position:'absolute', bottom:-5, left:'50%', transform:'translateX(-50%)', width:0, height:0, borderLeft:'5px solid transparent', borderRight:'5px solid transparent', borderTop:'5px solid var(--bg2)' }} />
+                </div>
+
+                {/* Selection ring */}
+                <div style={{ position:'absolute', left:b.x*scale-6, top:b.y*scale-6, width:b.w*scale+12, height:b.h*scale+12, borderRadius:8, border:'2px solid var(--accent)', boxShadow:'0 0 16px var(--glow)', pointerEvents:'none' }} />
+              </div>
+            </div>
+
+            {/* Zoom bar */}
+            <ZoomBar zoom={ctxMenuZoom} onZoom={setCtxMenuZoom} onFit={() => setCtxMenuZoom(fitZoom(360,250))} fitZoom={fitZoom(360,250)} />
+
+            {/* Status info */}
+            <div style={{ padding:'10px 14px', background:'var(--bg)', borderRadius:10, border:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:6 }}>
+              <div style={{ fontSize:11, color:'var(--text3)', display:'flex', justifyContent:'space-between' }}>
+                <span>Render status</span>
+                <span style={{ color: liveCtxErr ? '#f87171' : liveCtxEl ? '#4ade80' : 'var(--text3)', fontWeight:700 }}>
+                  {liveCtxErr ? 'Compile error' : liveCtxEl ? '✓ OK' : 'Waiting for code'}
+                </span>
+              </div>
+              <div style={{ fontSize:11, color:'var(--text3)', display:'flex', justifyContent:'space-between' }}>
+                <span>Visibility flags</span>
+                <span style={{ color:'var(--text2)' }}>
+                  {ctxDuringRun ? 'duringRun' : ''}{ctxOnlyDuringRun ? ' onlyDuringRun' : ''}{!ctxDuringRun && !ctxOnlyDuringRun ? 'standard' : ''}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Step 6 (was Step 5)
+  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Step 6
+  // ─────────────────────────────────────────────────────────────────────────
+  const s6 = () => {
     const tabs = [
       { id:'logic',    l:'logic.ts',       code:logicCode,    set:setLogicCode },
       { id:'valid',    l:'validation.ts',  code:validCode,    set:setValidCode },
@@ -1539,94 +2071,123 @@ export default function ComponentEditorPage() {
       { id:'index',    l:'index.ts',       code:indexCode,    set:setIndexCode },
       { id:'manifest', l:'manifest.json',  code:manifestCode, set:setManifestCode },
     ]
-    const active = tabs.find(t=>t.id===codeTab)||tabs[0]
+    const cur = tabs.find(t=>t.id===codeTab) || tabs[0]
+    
     return (
-      <div style={{ display:'flex', flexDirection:'column', height:'100%', gap:9 }}>
-        {autoWarnings.length>0&&(
-          <div className="bg-[rgba(251,191,36,.06)] border border-[rgba(251,191,36,.3)] rounded-[6px] px-[11px] py-[7px] mb-[9px] text-[11px] text-[#fbbf24] leading-[1.5]">
-            <strong>Before generating:</strong>
-            <ul style={{ margin:'5px 0 0 14px', padding:0 }}>{autoWarnings.map((w,i)=><li key={i}>{w}</li>)}</ul>
-          </div>
-        )}
-        <div style={{ display:'flex', gap:9, alignItems:'center', flexShrink:0 }}>
-          <Btn v="green" onClick={genAll}>⚡ Generate / Refresh All Files</Btn>
-          <div style={{ fontSize:11, color:'var(--text3)' }}>Fills all 5 files from Steps 1–4. Manual edits to <code>logic.ts</code>/<code>validation.ts</code> are preserved.</div>
+      <div style={{ height: 'calc(100vh - 350px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+          {tabs.map(t => (
+            <button 
+              key={t.id} 
+              onClick={() => setCodeTab(t.id)}
+              style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', cursor: 'pointer', transition: 'all 0.2s', background: codeTab===t.id ? 'var(--bg3)' : 'transparent', color: codeTab===t.id ? 'var(--accent)' : 'var(--text2)', borderColor: codeTab===t.id ? 'var(--accent)' : 'var(--border)' }}
+            >{t.l}</button>
+          ))}
+          <div style={{ flex: 1 }} />
+          <Btn v="ghost" sm onClick={genAll}>Regenerate Files</Btn>
         </div>
-        <div style={{ display:'flex', borderBottom:'1px solid var(--border)', flexShrink:0 }}>
-          {tabs.map(t=><button key={t.id} className={`px-[11px] py-1 rounded-t-[5px] min-w-max text-[11px] font-semibold cursor-pointer mr-[2px] ${(codeTab===t.id) ? "bg-[var(--bg)] border border-[var(--border)] border-b-[var(--bg)] text-[var(--accent)]" : "bg-[var(--bg3)] border border-[var(--border)] border-b-[var(--border)] text-[var(--text3)]"}`} onClick={()=>setCodeTab(t.id)}>{t.l}</button>)}
-        </div>
-        <div className="bg-[var(--bg)] rounded-b-[6px] border border-[var(--border)] overflow-auto flex-1" style={{flex:1 }}>
-          <Editor key={codeTab} value={active.code||''} onValueChange={active.set}
-            highlight={c=>Prism.highlight(c||'',Prism.languages.javascript,'javascript')}
-            padding={13} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, minHeight:400, color:'var(--text)' }}
-            placeholder={`// Click "Generate / Refresh All Files" to populate ${active.l}`}
-          />
+
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+           <div style={{ padding: '12px 20px', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ff5f57' }} />
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ffbd2e' }} />
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#27c93f' }} />
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', marginLeft: 10 }}>{cur.l}</span>
+             </div>
+             <span style={{ fontSize: 10, color: 'var(--text3)' }}>{cur.id === 'manifest' ? 'JSON' : 'TypeScript'}</span>
+           </div>
+           <div style={{ flex: 1, overflow: 'auto' }}>
+              <Editor 
+                value={cur.code} 
+                onValueChange={cur.set}
+                highlight={c=>Prism.highlight(c||'', Prism.languages.javascript, 'javascript')}
+                padding={20} 
+                style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight: '100%', color:'var(--text)', background: 'transparent' }}
+              />
+           </div>
         </div>
       </div>
     )
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  //  Step 6
+  //  Step 7 (was Step 6)
   // ─────────────────────────────────────────────────────────────────────────
-  const s6 = () => (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%', gap:9 }}>
-      <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
-        <Btn v="green" onClick={()=>setDocsCode(genDocsHTML(getData()))}>Generate Template</Btn>
-        <Sep v />
-        <Btn v={docsPreview?'primary':'ghost'} onClick={()=>setDocsPreview(p=>!p)}>
-          {docsPreview?'📋 Edit Code':'🔍 Preview HTML'}
-        </Btn>
-        {docsPreview && <span style={{ fontSize:11, color:'var(--text3)' }}>Live render of your docs HTML</span>}
+  const s7 = () => (
+    <div style={{ display:'flex', gap:24, height:'calc(100vh - 350px)' }}>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', gap:12 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:'var(--text)' }}>Documentation Editor (HTML)</div>
+        <div style={{ flex:1, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+          <Editor 
+            value={docsCode} onValueChange={setDocsCode}
+            highlight={c=>Prism.highlight(c||'',Prism.languages.markup,'markup')}
+            padding={16} 
+            style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight:'100%', color:'var(--text)' }}
+          />
+        </div>
       </div>
-      {docsPreview
-        ? <iframe srcDoc={docsCode||'<p style="color:#888;font-family:sans-serif;padding:20px">No docs yet — click Generate Template</p>'} style={{ flex:1, border:'1px solid var(--border)', borderRadius:8, background:'white', minHeight:420 }} title="Docs Preview" sandbox="allow-scripts" />
-        : <div className="bg-[var(--bg)] rounded-b-[6px] border border-[var(--border)] overflow-auto flex-1" style={{flex:1 }}>
-            <Editor value={docsCode} onValueChange={setDocsCode}
-              highlight={c=>Prism.highlight(c||'',Prism.languages.markup,'markup')}
-              padding={13} style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12, lineHeight:1.7, minHeight:400, color:'var(--text)' }}
-              placeholder="<!-- Click Generate Template to get started -->"
-            />
-          </div>
-      }
+
+      <div style={{ flex:1, display:'flex', flexDirection:'column', gap:12 }}>
+        <div style={{ fontSize:14, fontWeight:700, color:'var(--text)' }}>Live Preview</div>
+        <div style={{ flex:1, background: 'white', color: '#333', borderRadius: 16, padding: 32, overflowY: 'auto', border: '1px solid var(--border)' }} className="panel-scroll prose">
+           <div dangerouslySetInnerHTML={{ __html: docsCode }} />
+        </div>
+      </div>
     </div>
   )
 
   // ─────────────────────────────────────────────────────────────────────────
-  //  Step 7
+  //  Step 8 (was Step 7)
   // ─────────────────────────────────────────────────────────────────────────
-  const s7 = () => {
-    const d = getData()
-    return (
-      <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-        <div className="bg-[rgba(74,222,128,.05)] border border-[rgba(74,222,128,.2)] rounded-[6px] px-[11px] py-[7px] mb-[11px] text-[11px] text-[var(--text2)] leading-[1.6]">Your component is ready. Choose what to do next.</div>
-        <div className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]">
-          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:9 }}>Summary</div>
-          <div className="grid grid-cols-2 gap-[13px]">
-            {[['Type',d.type||'—'],['Label',d.label||'—'],['Group',d.group],['Canvas',`${d.w}×${d.h} px`],['Pins',d.pins.length],['BOUNDS',`(${d.bounds?.x},${d.bounds?.y}) ${d.bounds?.w}×${d.bounds?.h}`]].map(([k,v])=>(
-              <div key={k}><span style={{ fontSize:10, color:'var(--text3)' }}>{k}: </span><span style={{ fontSize:12 }}>{v}</span></div>
-            ))}
-          </div>
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:11 }}>
-          {[
-            { icon:'⬇', t:'Download ZIP',      d:"Full package — upload via 'Upload ZIP' in simulator.",       btn:'Download',          bv:'green',  fn:handleDownload, dis:false },
-            { icon:'▶', t:'Test in Simulator', d:'Instantly loads component into a new simulator tab.',        btn:saving?'…':'Open & Load', bv:'primary', fn:handleTestInSim, dis:saving },
-            { icon:'☁', t:'Save to Account',   d:'Submit for admin review and community catalog.',             btn:'Coming soon',       bv:'ghost',  fn:null, dis:true },
-          ].map(c=>(
-            <div key={c.t} className="bg-[var(--bg3)] rounded-[7px] px-[13px] py-[11px] border border-[var(--border)] mb-[11px]" style={{display:'flex', flexDirection:'column', gap:8, alignItems:'center', textAlign:'center', marginBottom:0, opacity:c.dis&&!saving?.55:1 }}>
-              <div style={{ fontSize:24 }}>{c.icon}</div>
-              <div style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>{c.t}</div>
-              <div style={{ fontSize:11, color:'var(--text3)', flex:1 }}>{c.d}</div>
-              <Btn v={c.bv} disabled={!!c.dis} onClick={c.fn}>{c.btn}</Btn>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
+  const s8 = () => (
+    <div style={{ maxWidth:900, margin:'0 auto', display:'flex', flexDirection:'column', gap:32 }}>
+       <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>🚀</div>
+          <h2 style={{ fontSize: 32, fontWeight: 800, color: 'var(--text)', margin: '0 0 8px' }}>Your Component is Ready!</h2>
+          <p style={{ fontSize: 16, color: 'var(--text2)', maxWidth: 600, margin: '0 auto' }}>You've successfully defined the manifest, visuals, logic, and pins. Now it's time to bring it to life in the simulator.</p>
+       </div>
 
-  const stepR = {1:s1,2:s2,3:s3,4:s4,5:s5,6:s6,7:s7}
+       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 24, padding: 32, display: 'flex', flexDirection: 'column', gap: 20, boxShadow: 'var(--shadow)', transition: 'transform 0.2s', cursor: 'pointer' }} onClick={handleTestInSim} className="hover:scale-[1.02]">
+             <div style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+             </div>
+             <div>
+                <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>Test in Simulator</h3>
+                <p style={{ fontSize: 13, color: 'var(--text2)', margin: 0, lineHeight: 1.5 }}>Launch a local instance of the simulator with this component pre-loaded. Perfect for debugging logic and pin mapping.</p>
+             </div>
+             <Btn v="blue" style={{ marginTop: 'auto', justifyContent: 'center' }}>Run Live Test</Btn>
+          </div>
+
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 24, padding: 32, display: 'flex', flexDirection: 'column', gap: 20, boxShadow: 'var(--shadow)', transition: 'transform 0.2s', cursor: 'pointer' }} onClick={handleDownload} className="hover:scale-[1.02]">
+             <div style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(34, 197, 94, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+             </div>
+             <div>
+                <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 8px' }}>Download Project ZIP</h3>
+                <p style={{ fontSize: 13, color: 'var(--text2)', margin: 0, lineHeight: 1.5 }}>Get a production-ready ZIP containing all source files. You can upload this to the global library or share it.</p>
+             </div>
+             <Btn v="green" style={{ marginTop: 'auto', justifyContent: 'center' }}>Download .zip</Btn>
+          </div>
+       </div>
+
+       <div style={{ background: 'rgba(0, 212, 255, 0.03)', border: '1px dashed var(--accent)', borderRadius: 16, padding: 24, display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={{ fontSize: 24 }}>📝</div>
+          <div style={{ flex:1 }}>
+             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>Summary Checklist</div>
+             <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11, color: '#22c55e' }}>✓ {pins.length} Pins Map</div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11, color: '#22c55e' }}>✓ {compW}x{compH} Canvas</div>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 11, color: '#22c55e' }}>✓ {svgMode} Visuals</div>
+             </div>
+          </div>
+          <Btn v="ghost" sm onClick={()=>setStep(1)}>Review All Steps</Btn>
+       </div>
+    </div>
+  )
+
+  const stepR = {1:s1,2:s2,3:s3,4:s4,5:s5,6:s6,7:s7,8:s8}
   const cfg = STEPS[step-1]
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1635,99 +2196,159 @@ export default function ComponentEditorPage() {
   return (
     <div className="fixed inset-0 flex flex-col bg-[var(--bg)] text-[var(--text)] font-mono z-[1000]">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="h-[46px] bg-[var(--bg2)] border-b border-[var(--border)] flex items-center gap-2 px-3 shrink-0">
-        <button onClick={()=>window.close()||navigate('/simulator')} style={{ background:'transparent', border:'none', color:'var(--text2)', cursor:'pointer', display:'flex', alignItems:'center', gap:5, fontSize:11, padding:'3px 7px', borderRadius:4 }}>
-          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M7 2L2 5.5l5 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          Back
-        </button>
-        <Sep v />
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="11" height="11" rx="2" stroke="var(--accent)" strokeWidth="1.2"/><path d="M4.5 7h5M7 4.5v5" stroke="var(--accent)" strokeWidth="1.2" strokeLinecap="round"/></svg>
-        <span style={{ fontSize:13, fontWeight:700, color:'var(--text)' }}>Component Editor</span>
-        {compType&&<span style={{ fontSize:11, color:'var(--text3)' }}>— {compType}</span>}
-        <Sep v />
-
-        {/* Undo / Redo */}
-        <Btn v="ghost" sm disabled={!canUndo} onClick={undo} style={{ padding:'2px 8px' }} title="Undo Ctrl+Z">
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 5H7a3 3 0 010 6H5M2 5L5 2M2 5l3 3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-        </Btn>
-        <Btn v="ghost" sm disabled={!canRedo} onClick={redo} style={{ padding:'2px 8px' }} title="Redo Ctrl+Y">
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M10 5H5a3 3 0 000 6h2M10 5L7 2M10 5L7 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-        </Btn>
-        <Sep v />
-
-        {/* Import */}
-        <Btn v="yellow" sm onClick={()=>importRef.current?.click()} title="Import component ZIP to edit">
-          <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><path d="M5.5 7.5V1M3 4.5l2.5 3 2.5-3M1 8.5v1a.5.5 0 00.5.5h8a.5.5 0 00.5-.5v-1" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
-          Import ZIP
-        </Btn>
-        <input ref={importRef} type="file" accept=".zip" onChange={handleImport} style={{ display:'none' }} />
-        <Sep v />
-
-        {/* Theme toggle */}
-        <Btn v="ghost" sm onClick={toggleTheme} title={`Switch to ${theme==='dark'?'light':'dark'} mode`} style={{ padding:'2px 8px' }}>
-          {theme==='dark'
-            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" strokeLinecap="round"/></svg>
-            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" strokeLinecap="round" strokeLinejoin="round"/></svg>
-          }
-        </Btn>
-
-        {/* Canvas panel toggle */}
-        <Btn v={canvasOpen?'primary':'ghost'} sm onClick={()=>setCanvasOpen(o=>!o)} title="Toggle Canvas Preview" style={{ padding:'2px 8px', marginLeft:'auto' }}>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/><rect x="7" y="1" width="4" height="10" rx="1.5" fill="currentColor" opacity=".4"/></svg>
-          Canvas
-        </Btn>
-
-        {/* Progress dots */}
-        <div style={{ display:'flex', gap:3, alignItems:'center' }}>
-          {STEPS.map(s=>(
-            <div key={s.id} onClick={()=>goToStep(s.id)} title={s.label} style={{ width:s.id===step?18:6, height:6, borderRadius:3, cursor:'pointer', background:s.id===step?'var(--accent)':doneSteps.has(s.id)?'rgba(74,222,128,.4)':'var(--border)', transition:'width .2s' }} />
-          ))}
+      <header className="h-[60px] bg-[var(--bg2)] border-b border-[var(--border)] flex items-center gap-4 px-6 shrink-0 z-[10]">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button 
+            onClick={()=>window.close()||navigate('/simulator')} 
+            className="hover:bg-[var(--bg3)]"
+            style={{ background:'transparent', border:'1px solid var(--border)', color:'var(--text2)', cursor:'pointer', display:'flex', alignItems:'center', gap:8, fontSize:12, padding:'6px 12px', borderRadius:8, transition: 'all 0.2s' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 1L4 8l7 7"/></svg>
+            Back
+          </button>
+          <div style={{ height: 24, width: 1, background: 'var(--border)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 32, height: 32, background: 'rgba(0, 212, 255, 0.1)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            </div>
+            <div>
+              <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', lineHeight: 1 }}>Component Studio</div>
+              {compType && <div style={{ fontSize:11, color:'var(--text3)', marginTop: 2 }}>{compType}</div>}
+            </div>
+          </div>
         </div>
-      </div>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Toolbar Actions */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: 3 }}>
+            <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" style={{ background: 'transparent', border: 'none', color: canUndo ? 'var(--text)' : 'var(--text3)', padding: '6px 10px', cursor: canUndo ? 'pointer' : 'default', borderRadius: 8, transition: 'all 0.15s' }} className={canUndo ? "hover:bg-[var(--bg3)]" : ""}>
+               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14L4 9l5-5"/><path d="M20 20v-7a4 4 0 00-4-4H4"/></svg>
+            </button>
+            <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" style={{ background: 'transparent', border: 'none', color: canRedo ? 'var(--text)' : 'var(--text3)', padding: '6px 10px', cursor: canRedo ? 'pointer' : 'default', borderRadius: 8, transition: 'all 0.15s' }} className={canRedo ? "hover:bg-[var(--bg3)]" : ""}>
+               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 14l5-5-5-5"/><path d="M4 20v-7a4 4 0 014-4h12"/></svg>
+            </button>
+          </div>
+
+          <Btn v="yellow" sm onClick={()=>importRef.current?.click()} title="Import .zip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import
+          </Btn>
+
+          <Btn v="ghost" sm onClick={toggleTheme} style={{ padding: '8px 10px' }}>
+            {theme==='dark' 
+              ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+              : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+            }
+          </Btn>
+
+          <div style={{ height: 24, width: 1, background: 'var(--border)' }} />
+
+          <Btn v={canvasOpen?'primary':'ghost'} sm onClick={()=>setCanvasOpen(o=>!o)}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>
+            Canvas
+          </Btn>
+        </div>
+      </header>
 
       {/* ── Body ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-[200px] border-r border-[var(--border)] bg-[var(--bg2)] flex flex-col py-2.5 shrink-0">
-          <div style={{ fontSize:9, fontWeight:700, color:'var(--text3)', letterSpacing:'.1em', padding:'0 12px 5px', textTransform:'uppercase' }}>Steps</div>
-          {STEPS.map(s=>(
-            <button key={s.id} className={`flex items-center gap-2 px-3 py-[7px] w-full text-left text-[11px] cursor-pointer border-l-3 ${(step===s.id) ? "bg-[rgba(74,222,128,.09)] text-[var(--accent)] border-l-[var(--accent)] font-bold" : (doneSteps.has(s.id)) ? "bg-transparent text-[var(--text2)] border-l-transparent font-medium" : "bg-transparent text-[var(--text3)] border-l-transparent font-medium"}`} onClick={()=>goToStep(s.id)}>
-              <span className={`w-[18px] h-[18px] rounded-[50%] flex items-center justify-center text-[10px] font-bold shrink-0 ${(step===s.id) ? "bg-[var(--accent)] text-[#000]" : (doneSteps.has(s.id)) ? "bg-[rgba(74,222,128,.3)] text-[var(--accent)]" : "bg-[var(--border)] text-[var(--text3)]"}`}>{doneSteps.has(s.id)&&step!==s.id?'✓':s.id}</span>
-              <span style={{ fontSize:11, lineHeight:1.3 }}>{s.label}</span>
+        {/* Sidebar Navigation */}
+        <aside className="w-[240px] border-r border-[var(--border)] bg-[var(--bg2)] flex flex-col py-6 shrink-0 relative">
+          <div style={{ fontSize:10, fontWeight:700, color:'var(--text3)', letterSpacing:'.12em', padding:'0 24px 12px', textTransform:'uppercase' }}>CREATION STEPS</div>
+          
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '0 12px' }}>
+            {STEPS.map(s=>(
+              <button 
+                key={s.id} 
+                onClick={()=>goToStep(s.id)}
+                className="group"
+                style={{ 
+                  display: 'flex', alignItems: 'center', gap: 12, width: '100%', textAlign: 'left',
+                  padding: '10px 16px', borderRadius: 12, cursor: 'pointer', border: 'none',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  background: step === s.id ? 'var(--accent)' : 'transparent',
+                  color: step === s.id ? '#fff' : (doneSteps.has(s.id) ? 'var(--text2)' : 'var(--text3)')
+                }}
+              >
+                <div style={{ 
+                  width: 24, height: 24, borderRadius: 8, fontSize: 11, fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyCenter: 'center', flexShrink: 0,
+                  background: step === s.id ? 'rgba(255,255,255,0.25)' : (doneSteps.has(s.id) ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg)'),
+                  color: step === s.id ? '#fff' : (doneSteps.has(s.id) ? 'var(--green)' : 'var(--text3)'),
+                  border: `1px solid ${step === s.id ? 'transparent' : 'var(--border)'}`,
+                  justifyContent: 'center'
+                }}>
+                  {doneSteps.has(s.id) && step !== s.id ? '✓' : s.id}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: 13, fontWeight: step === s.id ? 700 : 600 }}>{s.label}</span>
+                </div>
+              </button>
+            ))}
+          </nav>
+
+          <div style={{ marginTop:'auto', padding:'20px 16px', borderTop:'1px solid var(--border)' }}>
+            <button 
+              onClick={()=>goToStep(6)} 
+              className="hover:border-[var(--accent)] hover:text-[var(--accent)]"
+              style={{ width:'100%', padding:'10px', borderRadius:10, background:'var(--bg)', border:'1px dashed var(--border)', color:'var(--text2)', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', gap:10, fontWeight:600, transition: 'all 0.2s' }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              Switch to Code
             </button>
-          ))}
-          <div style={{ marginTop:'auto', padding:'11px 9px 0', borderTop:'1px solid var(--border)' }}>
-            <button onClick={()=>goToStep(5)} style={{ width:'100%', padding:'6px 9px', borderRadius:5, background:'var(--bg3)', border:'1px dashed var(--border)', color:'var(--text2)', cursor:'pointer', fontSize:11, display:'flex', alignItems:'center', gap:6, fontWeight:600 }}>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M1 3l-1 2 1 2M9 3l1 2-1 2M6 1L4 9" stroke="currentColor" strokeWidth="1" strokeLinecap="round"/></svg>
-              Open Code Editor
-            </button>
-            <div style={{ fontSize:9, color:'var(--text3)', textAlign:'center', marginTop:3 }}>Skip to Step 5</div>
           </div>
         </aside>
 
-        {/* Main */}
-        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-          <div className="px-[22px] pt-3 pb-[9px] border-b border-[var(--border)] bg-[var(--bg2)] shrink-0">
-            <div style={{ fontSize:16, fontWeight:700, color:'var(--text)', marginBottom:2 }}>
-              <span style={{ color:'var(--accent)', marginRight:6 }}>Step {step}:</span>{cfg.label}
-            </div>
-            <div style={{ fontSize:11, color:'var(--text2)' }}>{cfg.desc}</div>
+        {/* Main Workspace */}
+        <main className="flex-1 flex flex-col min-w-0 bg-[var(--bg)]">
+          {/* Active Step Info */}
+          <div style={{ padding: '24px 32px 20px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ padding: '4px 10px', background: 'rgba(0, 212, 255, 0.1)', color: 'var(--accent)', borderRadius: 6, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em' }}>STEP {step} OF {STEPS.length}</span>
+                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border)' }} />
+                  <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 500 }}>{Math.round((step / STEPS.length) * 100)}% Complete</span>
+                </div>
+                <h2 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text)', margin: 0 }}>{cfg.label}</h2>
+                <p style={{ fontSize: 14, color: 'var(--text2)', margin: 0 }}>{cfg.desc}</p>
+             </div>
+             <div style={{ display: 'flex', gap: 6 }}>
+                {STEPS.map(s => (
+                  <div key={s.id} style={{ width: 8, height: 8, borderRadius: '50%', background: step === s.id ? 'var(--accent)' : (doneSteps.has(s.id) ? 'var(--green)' : 'var(--border)'), border: step === s.id ? '2px solid var(--bg)' : 'none', boxShadow: step === s.id ? '0 0 0 2px var(--accent)' : 'none' }} />
+                ))}
+             </div>
           </div>
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-[22px] py-4">{stepR[step]?.()}</div>
-          <div className="h-[48px] border-t border-[var(--border)] bg-[var(--bg2)] flex items-center justify-between px-[18px] shrink-0">
+
+          {/* Step Content */}
+          <div className="flex-1 overflow-y-auto scroll-smooth panel-scroll" style={{ padding: '32px' }}>
+            {stepR[step]?.()}
+          </div>
+
+          {/* Footer Navigation */}
+          <footer style={{ height: 72, background: 'var(--bg2)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 32px', zIndex: 5 }}>
             <Btn v="ghost" onClick={goPrev} disabled={step===1}>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M7 1.5L3 5l4 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              Previous
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+              Back
             </Btn>
-            <span style={{ fontSize:10, color:'var(--text3)' }}>{step} / {STEPS.length}</span>
-            {step===7
-              ? <Btn v="green" onClick={handleDownload}>⬇ Download ZIP</Btn>
-              : <Btn v="primary" onClick={goNext}>
-                  {step===6?'Finish':'Next'}
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M3 1.5l4 3.5-4 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                </Btn>
-            }
-          </div>
+            
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+               <span style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 600 }}>{step} / {STEPS.length}</span>
+               {step < 8 && (
+                  <Btn v="primary" onClick={goNext} style={{ minWidth: 120, justifyContent: 'center' }}>
+                    {step === 7 ? 'Finalize' : 'Continue'}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
+                  </Btn>
+               )}
+               {step === 8 && (
+                  <Btn v="primary" onClick={handleDownload} style={{ minWidth: 160, justifyContent: 'center' }}>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download Project
+                  </Btn>
+               )}
+            </div>
+          </footer>
         </main>
 
         {/* ── Collapsible Canvas Panel ───────────────────────────────────────── */}
@@ -1745,6 +2366,7 @@ export default function ComponentEditorPage() {
           compLabel={compLabel||'My Component'}
         />
       </div>
+      <input ref={importRef} type="file" accept=".zip" onChange={handleImport} style={{ display:'none' }} />
     </div>
   )
 }

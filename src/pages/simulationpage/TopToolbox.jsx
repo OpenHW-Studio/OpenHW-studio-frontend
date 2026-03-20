@@ -1,12 +1,15 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Btn } from './Btn';
 import { useNavigate } from 'react-router-dom';
 
 export function TopToolbox(props) {
-          const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, handleSave, isExporting, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires } = props;
+          const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, handleSave, isExporting, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus } = props;
 
   const viewPanelRef = useRef(null);
   const projectsDropdownRef = useRef(null);
+  const connectPanelRef = useRef(null);
+  const [showConnectPanel, setShowConnectPanel] = useState(false);
+  const [showAdvancedFlash, setShowAdvancedFlash] = useState(false);
 
   useEffect(() => {
     const handleOutsideClick = (event) => {
@@ -17,11 +20,15 @@ export function TopToolbox(props) {
       if (showProjectsDropdown && projectsDropdownRef.current && !projectsDropdownRef.current.contains(event.target)) {
         setShowProjectsDropdown(false);
       }
+
+      if (showConnectPanel && connectPanelRef.current && !connectPanelRef.current.contains(event.target)) {
+        setShowConnectPanel(false);
+      }
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showViewPanel, showProjectsDropdown, setShowViewPanel, setShowProjectsDropdown]);
+  }, [showViewPanel, showProjectsDropdown, showConnectPanel, setShowViewPanel, setShowProjectsDropdown]);
 
   return (
 <header className="flex items-center gap-2.5 px-4 py-2.5 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
@@ -32,6 +39,7 @@ export function TopToolbox(props) {
             <option value="pico">Raspberry Pi Pico</option>
             <option value="esp32">ESP32</option>
           </select>
+
           {/* RUN button */}
           <Btn
             color={isRunning ? (isPaused ? 'var(--orange)' : 'var(--green)') : 'var(--green)'}
@@ -92,15 +100,15 @@ export function TopToolbox(props) {
 
           {/* UNDO — SVG icon only */}
           <Btn onClick={undo} disabled={history.past.length === 0 || isRunning} title="Undo" iconOnly>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 7v6h6"/><path d="M3 13A9 9 0 1 0 5.9 5.3"/>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path fillRule="evenodd" clipRule="evenodd" d="M7.53033 3.46967C7.82322 3.76256 7.82322 4.23744 7.53033 4.53033L5.81066 6.25H15C18.1756 6.25 20.75 8.82436 20.75 12C20.75 15.1756 18.1756 17.75 15 17.75H8.00001C7.58579 17.75 7.25001 17.4142 7.25001 17C7.25001 16.5858 7.58579 16.25 8.00001 16.25H15C17.3472 16.25 19.25 14.3472 19.25 12C19.25 9.65279 17.3472 7.75 15 7.75H5.81066L7.53033 9.46967C7.82322 9.76256 7.82322 10.2374 7.53033 10.5303C7.23744 10.8232 6.76256 10.8232 6.46967 10.5303L3.46967 7.53033C3.17678 7.23744 3.17678 6.76256 3.46967 6.46967L6.46967 3.46967C6.76256 3.17678 7.23744 3.17678 7.53033 3.46967Z" />
             </svg>
           </Btn>
 
           {/* REDO — SVG icon only */}
           <Btn onClick={redo} disabled={history.future.length === 0 || isRunning} title="Redo" iconOnly>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 7v6h-6"/><path d="M21 13A9 9 0 1 1 18.1 5.3"/>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 7H9.00001C6.23858 7 4 9.23857 4 12C4 14.7614 6.23858 17 9 17H16M20 7L17 4M20 7L17 10" />
             </svg>
           </Btn>
 
@@ -312,6 +320,156 @@ export function TopToolbox(props) {
 
         {/* RIGHT SIDE — right to left: Sign In/User, My Projects, Save, Export, Import */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div ref={connectPanelRef} style={{ position: 'relative' }}>
+            <Btn
+              color={hardwareConnected ? 'var(--green)' : undefined}
+              onClick={() => setShowConnectPanel(v => !v)}
+              title="Connect hardware and flash over bootloader"
+            >
+              Connect
+            </Btn>
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 320,
+              background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
+              boxShadow: '0 8px 32px rgba(0,0,0,.45)', zIndex: 10000,
+              overflow: 'hidden',
+              maxHeight: showConnectPanel ? 460 : 0,
+              opacity: showConnectPanel ? 1 : 0,
+              transition: 'max-height 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
+              pointerEvents: showConnectPanel ? 'auto' : 'none',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px 10px', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Hardware Connect</span>
+                <button onClick={() => setShowConnectPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>✕</button>
+              </div>
+
+              <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {!webSerialSupported && (
+                  <div style={{ fontSize: 12, color: 'var(--orange)', lineHeight: 1.45 }}>
+                    Web Serial is not available in this browser. Flash upload can still work via backend port, but serial monitor connect needs Chrome/Edge over HTTPS or localhost.
+                  </div>
+                )}
+                <>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <label style={{ fontSize: 11, color: 'var(--text3)' }}>Board from Canvas</label>
+                      <select
+                        value={hardwareBoardId}
+                        onChange={(e) => setHardwareBoardId(e.target.value)}
+                        style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 8, padding: '7px 8px', fontSize: 12 }}
+                      >
+                        {hardwareBoards.length === 0 ? (
+                          <option value="">No programmable board on canvas</option>
+                        ) : hardwareBoards.map((b) => (
+                          <option key={b.id} value={b.id}>{b.id} ({b.type})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <label style={{ fontSize: 11, color: 'var(--text3)' }}>Detected Port (Auto)</label>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <div style={{ flex: 1, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '7px 8px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', minHeight: 32, display: 'flex', alignItems: 'center' }}>
+                          {resolvedHardwarePort || 'No ports found'}
+                        </div>
+                        <Btn onClick={refreshHardwarePorts} disabled={isLoadingHardwarePorts} title="Refresh available serial ports">{isLoadingHardwarePorts ? '...' : '↻'}</Btn>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--text3)' }}>
+                        <input
+                          id="show-all-ports"
+                          type="checkbox"
+                          checked={showAllHardwarePorts}
+                          onChange={(e) => setShowAllHardwarePorts(e.target.checked)}
+                        />
+                        <label htmlFor="show-all-ports" style={{ cursor: 'pointer' }}>Show all serial ports</label>
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.35 }}>
+                        Off: only likely dev boards are shown. On: include Bluetooth and other virtual COM ports.
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setShowAdvancedFlash((v) => !v)}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit' }}
+                    >
+                      <span>Advanced</span>
+                      <span>{showAdvancedFlash ? '▴' : '▾'}</span>
+                    </button>
+
+                    {showAdvancedFlash && (
+                      <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 11, color: 'var(--text3)' }}>Port Override (optional)</label>
+                          <select
+                            value={hardwarePortPath}
+                            onChange={(e) => setHardwarePortPath(e.target.value)}
+                            style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 8, padding: '7px 8px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace' }}
+                          >
+                            <option value="">Auto ({resolvedHardwarePort || 'none'})</option>
+                            {(hardwareAvailablePorts || []).map((p) => (
+                              <option key={p.port} value={p.port}>{p.label || p.port}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 11, color: 'var(--text3)' }}>Baud Rate</label>
+                          <select
+                            value={hardwareBaudRate}
+                            onChange={(e) => setHardwareBaudRate(e.target.value)}
+                            style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 8, padding: '7px 8px', fontSize: 12 }}
+                          >
+                            {['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'].map((b) => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={{ fontSize: 11, color: 'var(--text3)' }}>Reset Method</label>
+                          <select
+                            value={hardwareResetMethod}
+                            onChange={(e) => setHardwareResetMethod(e.target.value)}
+                            style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 8, padding: '7px 8px', fontSize: 12 }}
+                          >
+                            <option value="normal">Normal (RTS/DTR)</option>
+                            <option value="no-rts-dtr">No RTS/DTR</option>
+                          </select>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {!hardwareConnected ? (
+                        <Btn
+                          color="var(--accent)"
+                          onClick={connectHardwareSerial}
+                          disabled={!webSerialSupported || hardwareConnecting || !hardwareBoardId || hardwareBoards.length === 0}
+                          title="Open browser serial device picker"
+                        >
+                          {hardwareConnecting ? 'Connecting...' : 'Connect'}
+                        </Btn>
+                      ) : (
+                        <Btn color="var(--red)" onClick={disconnectHardwareSerial} title="Close serial connection">Disconnect</Btn>
+                      )}
+
+                      <Btn
+                        color="var(--green)"
+                        onClick={uploadToHardware}
+                        disabled={!hardwareBoardId || isUploadingHardware || hardwareBoards.length === 0}
+                        title="Flash selected board using backend bootloader uploader"
+                      >
+                        {isUploadingHardware ? 'Uploading...' : 'Upload'}
+                      </Btn>
+                    </div>
+
+                    <div style={{ fontSize: 11, color: hardwareConnected ? 'var(--green)' : 'var(--text3)', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                      {hardwareStatus}
+                    </div>
+                </>
+              </div>
+            </div>
+          </div>
+
           {/* Hidden file inputs */}
           <input ref={importFileRef} type="file" accept=".png,image/png" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) importPng(e.target.files[0]); }} />
           <input ref={backupRestoreInputRef} type="file" accept=".zip" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) { handleRestoreWorkflow(e.target.files[0]); e.target.value = ''; } }} />
