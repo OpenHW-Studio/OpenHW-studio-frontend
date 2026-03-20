@@ -22,7 +22,7 @@ export default function AdminPage() {
     const [pendingComponents, setPendingComponents] = useState([]);
     const [installedComponents, setInstalledComponents] = useState([]);
     const [logs, setLogs] = useState([]);
-    const [transpileModal, setTranspileModal] = useState(null); // { id, results: [{file, ok, lines, error}] }
+    const [transpileModal, setTranspileModal] = useState(null);
     const fileInputRef = useRef();
     const restoreInputRef = useRef(null);
 
@@ -42,22 +42,16 @@ export default function AdminPage() {
     useEffect(() => {
         loadLibrariesAndComponents();
 
-        // Auto-refresh pending components every 15s so uploads from the simulator
-        // appear in the dashboard without a manual page refresh.
         const pollPending = setInterval(async () => {
             try {
                 const comps = await fetchPendingComponents();
                 setPendingComponents(comps);
-            } catch (_) { /* silently skip when backend is unreachable */ }
+            } catch (_) { }
         }, 15000);
 
-        return () => clearInterval(pollPending); // cleanup on unmount
+        return () => clearInterval(pollPending);
     }, []);
 
-    // handleUploadZip was moved to SimulatorPage
-
-    // "Test Transpile JSX" — runs Babel on both ui.tsx and logic.ts to check for syntax errors
-    // before the admin commits to approving. Shows a detailed modal with line counts and any errors.
     const handlePreviewComponent = (comp) => {
         addLog(`Running transpile check on ${comp.id}...`);
         const results = [];
@@ -87,7 +81,6 @@ export default function AdminPage() {
         setTranspileModal({ id: comp.id, label: comp.manifest.label, results });
     };
 
-    // Download a pending component's source files as a ZIP
     const handleDownloadComponentZip = async (comp) => {
         addLog(`Packaging ${comp.id} as ZIP...`);
         try {
@@ -112,9 +105,6 @@ export default function AdminPage() {
         }
     };
 
-    // Open the pending component in a live simulator tab for functional testing.
-    // The component is passed via sessionStorage — the SimulatorPage picks it up
-    // on mount and injects it into the local registry (browser memory only, no backend).
     const handleTestInSimulator = (comp) => {
         const previewKey = `simulatorPreview_${comp.id}_${Date.now()}`;
         const payload = JSON.stringify({
@@ -126,7 +116,6 @@ export default function AdminPage() {
             indexRaw: comp.indexRaw,
         });
         sessionStorage.setItem(previewKey, payload);
-        // Store the key name so the simulator tab knows which entry to read
         sessionStorage.setItem('pendingPreviewKey', previewKey);
         addLog(`Opening simulator preview for ${comp.id}...`, 'info');
         window.open('/simulator', '_blank');
@@ -135,8 +124,6 @@ export default function AdminPage() {
     const handleRejectBackend = async (comp) => {
         addLog(`Rejecting submission ${comp.submissionId || comp.id}...`);
         try {
-            // Pass submissionId so only THIS specific upload is rejected,
-            // not every pending entry that shares the same component id.
             await rejectCustomComponent(comp.submissionId || comp.id);
             addLog(`Rejected submission of ${comp.id}`, 'success');
             setPendingComponents(prev => prev.filter(p => p.submissionId !== comp.submissionId));
@@ -158,10 +145,8 @@ export default function AdminPage() {
             };
             await approveCustomComponent(payload);
             addLog(`Successfully merged ${comp.id} into backend openhw-studio-emulator!`, 'success');
-            // Optimistic UI: move component from pending → installed list instantly (no refresh)
             setPendingComponents(prev => prev.filter(p => p.id !== comp.id));
             setInstalledComponents(prev => {
-                // Avoid duplicate if already in list
                 if (prev.some(c => c.id === comp.id)) return prev;
                 return [...prev, { id: comp.id, manifest: comp.manifest }];
             });
@@ -175,7 +160,7 @@ export default function AdminPage() {
         try {
             await uninstallLibrary(libName);
             addLog(`Uninstalled ${libName}`, 'success');
-            loadLibraries();
+            loadLibrariesAndComponents();
         } catch (e) {
             addLog(`Failed to uninstall ${libName}: ${e.message}`, 'error');
         }
@@ -310,72 +295,71 @@ export default function AdminPage() {
     };
 
     return (
-        <div style={{ padding: 40, fontFamily: 'sans-serif', background: '#0f172a', minHeight: '100vh', color: '#f1f5f9' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <h1 style={{ fontSize: 32, margin: 0 }}>Admin Control Panel</h1>
+        <div className="p-10 font-sans bg-slate-900 min-h-screen text-slate-100">
+            <div className="flex justify-between items-center mb-2">
+                <h1 className="text-3xl m-0">Admin Control Panel</h1>
                 <button
                     onClick={handleLogout}
-                    style={{ padding: '8px 16px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold' }}>
+                    className="px-4 py-2 bg-red-500 text-white border-none rounded-md cursor-pointer font-bold hover:bg-red-600 transition-colors">
                     Logout System
                 </button>
             </div>
-            <p style={{ color: '#94a3b8', marginBottom: 40 }}>Manage C++ libraries and review community component submissions.</p>
+            <p className="text-slate-400 mb-10">Manage C++ libraries and review community component submissions.</p>
 
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 24 }}>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
                 {/* ── Col 1: Library Manager ──────────────────────────────────── */}
-                <section style={{ background: '#1e293b', padding: 24, borderRadius: 12, display: 'flex', flexDirection: 'column' }}>
-                    <h2 style={{ fontSize: 18, marginBottom: 16, margin: '0 0 16px' }}>Library Manager</h2>
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                        <input placeholder="Search Arduino libraries..." style={{ flex: 1, padding: '7px 10px', borderRadius: 6, border: 'none', background: '#334155', color: '#fff', fontSize: 13 }} />
-                        <button style={{ padding: '7px 14px', borderRadius: 6, border: 'none', background: '#3b82f6', color: '#fff', cursor: 'pointer', fontSize: 13 }}>Search</button>
+                <section className="bg-slate-800 p-6 rounded-xl flex flex-col">
+                    <h2 className="text-lg mb-4 mt-0">Library Manager</h2>
+                    <div className="flex gap-2 mb-4">
+                        <input placeholder="Search Arduino libraries..." className="flex-1 px-3 py-2 rounded-md border-none bg-slate-700 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                        <button className="px-3.5 py-2 rounded-md border-none bg-blue-500 text-white cursor-pointer text-sm hover:bg-blue-600 transition-colors">Search</button>
                     </div>
-                    <div className="panel-scroll" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
-                        {libraries.length === 0 && <div style={{ color: '#64748b', fontSize: 13, textAlign: 'center', padding: 20 }}>No libraries installed.</div>}
+                    <div className="panel-scroll flex-1 flex flex-col gap-2 max-h-[420px] overflow-y-auto pr-1">
+                        {libraries.length === 0 && <div className="text-slate-500 text-sm text-center p-5">No libraries installed.</div>}
                         {libraries.map(lib => (
-                            <div key={lib.library.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', padding: '10px 12px', borderRadius: 6 }}>
+                            <div key={lib.library.name} className="flex justify-between items-center bg-slate-900 px-3 py-2.5 rounded-md">
                                 <div>
-                                    <div style={{ fontSize: 13 }}>{lib.library.name}</div>
-                                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>v{lib.library.version}</div>
+                                    <div className="text-sm">{lib.library.name}</div>
+                                    <div className="text-xs text-slate-500 mt-0.5">v{lib.library.version}</div>
                                 </div>
-                                <button onClick={() => handleUninstallLibrary(lib.library.name)} style={{ padding: '3px 8px', borderRadius: 4, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 11 }}>Uninstall</button>
+                                <button onClick={() => handleUninstallLibrary(lib.library.name)} className="px-2 py-1 rounded bg-red-500 text-white border-none cursor-pointer text-xs hover:bg-red-600 transition-colors">Uninstall</button>
                             </div>
                         ))}
                     </div>
                 </section>
 
                 {/* ── Col 2: Pending Approval ─────────────────────────────────── */}
-                <section style={{ background: '#1e293b', padding: 24, borderRadius: 12, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                        <h2 style={{ fontSize: 18, margin: 0 }}>Pending Approval</h2>
+                <section className="bg-slate-800 p-6 rounded-xl flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg m-0">Pending Approval</h2>
                         {pendingComponents.length > 0 && (
-                            <span style={{ background: '#f59e0b', color: '#000', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 'bold' }}>
+                            <span className="bg-amber-500 text-black rounded-full px-2.5 py-0.5 text-xs font-bold">
                                 {pendingComponents.length}
                             </span>
                         )}
                     </div>
-                    <div className="panel-scroll" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 480, overflowY: 'auto', paddingRight: 4 }}>
+                    <div className="panel-scroll flex-1 flex flex-col gap-2.5 max-h-[480px] overflow-y-auto pr-1">
                         {pendingComponents.length === 0 && (
-                            <div style={{ color: '#64748b', fontSize: 13, textAlign: 'center', padding: 20 }}>No pending submissions.</div>
+                            <div className="text-slate-500 text-sm text-center p-5">No pending submissions.</div>
                         )}
                         {pendingComponents.map(comp => (
-                            <div key={comp.submissionId || comp.id} style={{ background: '#0f172a', padding: 14, borderRadius: 8, border: '1px solid #334155' }}>
-                                <div style={{ marginBottom: 6 }}>
-                                    <span style={{ fontWeight: 'bold', fontSize: 14 }}>{comp.manifest.label}</span>
-                                    <span style={{ fontSize: 11, color: '#64748b', marginLeft: 6 }}>({comp.id})</span>
+                            <div key={comp.submissionId || comp.id} className="bg-slate-900 p-3.5 rounded-lg border border-slate-700">
+                                <div className="mb-1.5">
+                                    <span className="font-bold text-sm">{comp.manifest.label}</span>
+                                    <span className="text-xs text-slate-500 ml-1.5">({comp.id})</span>
                                 </div>
-                                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
-                                    Group: <strong style={{ color: '#cbd5e1' }}>{comp.manifest.group || '—'}</strong>
-                                    &nbsp;·&nbsp; Type: <strong style={{ color: '#cbd5e1' }}>{comp.manifest.type || comp.id}</strong>
-                                    {comp.timestamp && <div style={{ marginTop: 3, color: '#64748b' }}>Submitted: {new Date(comp.timestamp).toLocaleString()}</div>}
+                                <div className="text-xs text-slate-400 mb-2.5">
+                                    Group: <strong className="text-slate-300">{comp.manifest.group || '—'}</strong>
+                                    &nbsp;·&nbsp; Type: <strong className="text-slate-300">{comp.manifest.type || comp.id}</strong>
+                                    {comp.timestamp && <div className="mt-1 text-slate-500">Submitted: {new Date(comp.timestamp).toLocaleString()}</div>}
                                 </div>
-                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                    <button onClick={() => handlePreviewComponent(comp)} title="Check all files transpile without errors" style={{ padding: '4px 9px', borderRadius: 4, background: '#334155', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Transpile</button>
-                                    <button onClick={() => handleDownloadComponentZip(comp)} title="Download source as ZIP" style={{ padding: '4px 9px', borderRadius: 4, background: '#0ea5e9', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>ZIP</button>
-                                    <button onClick={() => handleTestInSimulator(comp)} title="Open in simulator for live testing" style={{ padding: '4px 9px', borderRadius: 4, background: '#f59e0b', color: '#000', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>Test</button>
-                                    <button onClick={() => handleApproveBackend(comp)} style={{ padding: '4px 9px', borderRadius: 4, background: '#10b981', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Approve</button>
-                                    <button onClick={() => handleRejectBackend(comp)} style={{ padding: '4px 9px', borderRadius: 4, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Reject</button>
+                                <div className="flex gap-1.5 flex-wrap">
+                                    <button onClick={() => handlePreviewComponent(comp)} title="Check all files transpile without errors" className="px-2.5 py-1 rounded bg-slate-700 text-white border-none cursor-pointer text-xs hover:bg-slate-600 transition-colors">Transpile</button>
+                                    <button onClick={() => handleDownloadComponentZip(comp)} title="Download source as ZIP" className="px-2.5 py-1 rounded bg-sky-500 text-white border-none cursor-pointer text-xs hover:bg-sky-600 transition-colors">ZIP</button>
+                                    <button onClick={() => handleTestInSimulator(comp)} title="Open in simulator for live testing" className="px-2.5 py-1 rounded bg-amber-500 text-black border-none cursor-pointer text-xs font-bold hover:bg-amber-600 transition-colors">Test</button>
+                                    <button onClick={() => handleApproveBackend(comp)} className="px-2.5 py-1 rounded bg-emerald-500 text-white border-none cursor-pointer text-xs hover:bg-emerald-600 transition-colors">Approve</button>
+                                    <button onClick={() => handleRejectBackend(comp)} className="px-2.5 py-1 rounded bg-red-500 text-white border-none cursor-pointer text-xs hover:bg-red-600 transition-colors">Reject</button>
                                 </div>
                             </div>
                         ))}
@@ -383,11 +367,11 @@ export default function AdminPage() {
                 </section>
 
                 {/* ── Col 3: Installed Components ─────────────────────────────── */}
-                <section style={{ background: '#1e293b', padding: 24, borderRadius: 12, display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <h2 style={{ fontSize: 18, margin: 0 }}>Installed</h2>
+                <section className="bg-slate-800 p-6 rounded-xl flex flex-col">
+                    <div className="flex justify-between items-center mb-2.5">
+                        <h2 className="text-lg m-0">Installed</h2>
                         {installedComponents.length > 0 && (
-                            <span style={{ background: '#10b981', color: '#fff', borderRadius: 20, padding: '2px 10px', fontSize: 12, fontWeight: 'bold' }}>
+                            <span className="bg-emerald-500 text-white rounded-full px-2.5 py-0.5 text-xs font-bold">
                                 {installedComponents.length}
                             </span>
                         )}
@@ -397,82 +381,81 @@ export default function AdminPage() {
                         type="file"
                         accept=".zip"
                         ref={restoreInputRef}
-                        style={{ display: 'none' }}
+                        className="hidden"
                         onChange={handleRestoreFileChange}
                     />
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-                        <button onClick={() => restoreInputRef.current?.click()} style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: '#3b82f6', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Restore / Import ZIP</button>
-                        <button onClick={handleBackupComponents} style={{ flex: 1, padding: '6px 10px', borderRadius: 6, background: '#8b5cf6', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Backup All Installed</button>
+                    <div className="flex gap-2 mb-3.5">
+                        <button onClick={() => restoreInputRef.current?.click()} className="flex-1 px-2.5 py-1.5 rounded-md bg-blue-500 text-white border-none cursor-pointer text-xs hover:bg-blue-600 transition-colors">Restore / Import ZIP</button>
+                        <button onClick={handleBackupComponents} className="flex-1 px-2.5 py-1.5 rounded-md bg-violet-500 text-white border-none cursor-pointer text-xs hover:bg-violet-600 transition-colors">Backup All Installed</button>
                     </div>
 
-                    <div className="panel-scroll" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+                    <div className="panel-scroll flex-1 flex flex-col gap-2 max-h-[420px] overflow-y-auto pr-1">
                         {installedComponents.length === 0 && (
-                            <div style={{ color: '#64748b', fontSize: 13, textAlign: 'center', padding: 20 }}>No installed custom components.</div>
+                            <div className="text-slate-500 text-sm text-center p-5">No installed custom components.</div>
                         )}
                         {installedComponents.map(comp => (
-                            <div key={comp.id} style={{ background: '#0f172a', padding: '12px 14px', borderRadius: 8, border: '1px solid #1e3a5f', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                                <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontWeight: 'bold', fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{comp.manifest.label}</div>
-                                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                            <div key={comp.id} className="bg-slate-900 px-3.5 py-3 rounded-lg border border-slate-700 flex justify-between items-center gap-2">
+                                <div className="min-w-0 flex-1">
+                                    <div className="font-bold text-sm whitespace-nowrap overflow-hidden text-ellipsis">{comp.manifest.label}</div>
+                                    <div className="text-xs text-slate-500 mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
                                         {comp.id} · v{comp.manifest.version || '1.0.0'}
                                     </div>
                                 </div>
-                                <button onClick={() => handleDeleteInstalled(comp.id)} style={{ flexShrink: 0, padding: '4px 10px', borderRadius: 4, background: '#ef4444', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 12 }}>Delete</button>
+                                <button onClick={() => handleDeleteInstalled(comp.id)} className="flex-shrink-0 px-2.5 py-1 rounded bg-red-500 text-white border-none cursor-pointer text-xs hover:bg-red-600 transition-colors">Delete</button>
                             </div>
                         ))}
                     </div>
                 </section>
 
                 {/* ── Admin Logs (full width) ──────────────────────────────────── */}
-                <section className="panel-scroll" style={{ gridColumn: '1 / -1', background: '#0f172a', border: '1px solid #1e293b', padding: 16, borderRadius: 8, fontFamily: 'monospace', height: 200, overflowY: 'auto' }}>
-                    <div style={{ color: '#64748b', marginBottom: 10 }}>-- System Event Logs --</div>
+                <section className="panel-scroll col-span-1 md:col-span-3 bg-slate-900 border border-slate-800 p-4 rounded-lg font-mono h-[200px] overflow-y-auto">
+                    <div className="text-slate-500 mb-2.5">-- System Event Logs --</div>
                     {logs.map((L, i) => (
-                        <div key={i} style={{ color: L.type === 'error' ? '#ef4444' : L.type === 'success' ? '#10b981' : '#cbd5e1', marginBottom: 4, fontSize: 13 }}>
-                            <span style={{ color: '#64748b' }}>[{L.time}]</span> {L.msg}
+                        <div key={i} className={`mb-1 text-sm ${L.type === 'error' ? 'text-red-500' : L.type === 'success' ? 'text-emerald-500' : 'text-slate-300'}`}>
+                            <span className="text-slate-500">[{L.time}]</span> {L.msg}
                         </div>
                     ))}
                 </section>
 
             </div>
 
-
             {/* ── Transpile Result Modal ─────────────────────────────────────────── */}
             {
                 transpileModal && (
                     <div
                         onClick={() => setTranspileModal(null)}
-                        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+                        className="fixed inset-0 bg-black/70 flex items-center justify-center z-[1000] p-4"
                     >
                         <div
                             onClick={e => e.stopPropagation()}
-                            style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 12, padding: 32, minWidth: 480, maxWidth: 640 }}
+                            className="bg-slate-800 border border-slate-700 rounded-xl p-8 min-w-[300px] sm:min-w-[480px] max-w-[640px] w-full"
                         >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                                <h2 style={{ margin: 0, fontSize: 18 }}>Transpile Check: <span style={{ color: '#94a3b8', fontWeight: 'normal' }}>{transpileModal.label}</span></h2>
-                                <button onClick={() => setTranspileModal(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: 20, cursor: 'pointer' }}>x</button>
+                            <div className="flex justify-between items-center mb-5">
+                                <h2 className="m-0 text-lg">Transpile Check: <span className="text-slate-400 font-normal">{transpileModal.label}</span></h2>
+                                <button onClick={() => setTranspileModal(null)} className="bg-transparent border-none text-slate-400 text-xl cursor-pointer hover:text-white transition-colors">x</button>
                             </div>
-                            <p style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>
+                            <p className="text-sm text-slate-500 mb-4">
                                 Each source file is passed through Babel (TypeScript + React presets) to detect syntax errors before approval.
                                 If all files pass, the component is safe to inject into the simulator.
                             </p>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div className="flex flex-col gap-2.5">
                                 {transpileModal.results.map(r => (
                                     <div
                                         key={r.file}
-                                        style={{ background: '#0f172a', padding: '12px 16px', borderRadius: 8, border: `1px solid ${r.ok ? '#10b981' : '#ef4444'}` }}
+                                        className={`bg-slate-900 px-4 py-3 rounded-lg border ${r.ok ? 'border-emerald-500' : 'border-red-500'}`}
                                     >
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            <span style={{ fontFamily: 'monospace', fontSize: 14, color: '#e2e8f0' }}>{r.file}</span>
-                                            <span style={{ fontWeight: 'bold', color: r.ok ? '#10b981' : '#ef4444', fontSize: 14 }}>
+                                        <div className="flex justify-between items-center">
+                                            <span className="font-mono text-sm text-slate-200">{r.file}</span>
+                                            <span className={`font-bold text-sm ${r.ok ? 'text-emerald-500' : 'text-red-500'}`}>
                                                 {r.ok ? `OK  (${r.lines} lines output)` : 'ERROR'}
                                             </span>
                                         </div>
-                                        {!r.ok && <pre style={{ margin: '8px 0 0', fontSize: 11, color: '#fca5a5', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{r.error}</pre>}
+                                        {!r.ok && <pre className="m-0 mt-2 text-xs text-red-300 whitespace-pre-wrap break-words">{r.error}</pre>}
                                     </div>
                                 ))}
                             </div>
-                            <div style={{ marginTop: 20, textAlign: 'right' }}>
-                                <button onClick={() => setTranspileModal(null)} style={{ padding: '8px 20px', background: '#334155', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>Close</button>
+                            <div className="mt-5 text-right">
+                                <button onClick={() => setTranspileModal(null)} className="px-5 py-2 bg-slate-700 text-white border-none rounded-md cursor-pointer hover:bg-slate-600 transition-colors">Close</button>
                             </div>
                         </div>
                     </div>

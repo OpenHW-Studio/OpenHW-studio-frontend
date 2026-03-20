@@ -1,19 +1,34 @@
+import { TopToolbox } from './TopToolbox';
+import { Btn } from './Btn';
+import { RightPanel } from './RightPanel';
+import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
+import { useWebSerialHardware } from './webSerialHardware';
+import { useHardwareFlashing } from './useHardwareFlashing';
+import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
+
+
+
+
+
+
+
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import axios from 'axios'
-import { useAuth } from '../context/AuthContext.jsx'
-import { compileCode, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../services/simulatorService.js'
-import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../services/offlineCache.js'
-import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../services/projectStore.js'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
+import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
+import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
 import * as Babel from '@babel/standalone';
 
-import * as EmulatorComponents from "@openhw/emulator";
+import * as EmulatorComponents from "@openhw/emulator/src/components/index.ts";
 
 // Web Editor features
 import Editor from 'react-simple-code-editor';
-import BlocklyEditor from '../components/BlocklyEditor.jsx';
+import BlocklyEditor from '../../components/BlocklyEditor.jsx';
 import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
@@ -37,11 +52,61 @@ Object.entries(EmulatorComponents).forEach(([key, module]) => {
 const LOCAL_CATALOG = [];
 const LOCAL_PIN_DEFS = {};
 
+const GROUP_MAPPING = {
+  'Basic': 'basic',
+  'Passives': 'basic',
+  'Power': 'basic',
+  'Outputs': 'output',
+  'Inputs': 'input',
+  'Sensors': 'sensor',
+  'Displays': 'display',
+  'Memory': 'misc',
+  'Logic': 'logic'
+};
+
+function normalizeGroupName(name) {
+  return GROUP_MAPPING[name] || name;
+}
+
+function sortCatalog(catalog) {
+  const GROUP_ORDER = ['Boards', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
+  catalog.sort((a, b) => {
+    const idxA = GROUP_ORDER.indexOf(a.group);
+    const idxB = GROUP_ORDER.indexOf(b.group);
+    if (idxA === -1 && idxB === -1) return a.group.localeCompare(b.group);
+    if (idxA === -1) return 1;
+    if (idxB === -1) return -1;
+    return idxA - idxB;
+  });
+}
+
+function resolveUiExport(exportsUI) {
+  if (!exportsUI) return null;
+
+  if (exportsUI.default && typeof exportsUI.default === 'function') return exportsUI.default;
+  if (exportsUI.UI && typeof exportsUI.UI === 'function') return exportsUI.UI;
+
+  const keys = Object.keys(exportsUI);
+  const blocked = (k) => {
+    const l = String(k).toLowerCase();
+    return l.includes('contextmenu') || l === 'bounds' || l === 'contextmenuduringrun' || l === 'contextmenuonlyduringrun';
+  };
+
+  const fnKey = keys.find((k) => typeof exportsUI[k] === 'function' && !blocked(k));
+  if (fnKey) return exportsUI[fnKey];
+
+  const anyKey = keys.find((k) => !blocked(k));
+  if (anyKey) return exportsUI[anyKey];
+
+  return null;
+}
+
 Object.values(COMPONENT_REGISTRY).forEach(module => {
   const manifest = module.manifest;
-  let group = LOCAL_CATALOG.find(g => g.group === manifest.group);
+  const groupName = normalizeGroupName(manifest.group);
+  let group = LOCAL_CATALOG.find(g => g.group === groupName);
   if (!group) {
-    group = { group: manifest.group, items: [] };
+    group = { group: groupName, items: [] };
     LOCAL_CATALOG.push(group);
   }
 
@@ -52,6 +117,8 @@ Object.values(COMPONENT_REGISTRY).forEach(module => {
     LOCAL_PIN_DEFS[manifest.type] = pins;
   }
 });
+
+sortCatalog(LOCAL_CATALOG);
 
 // Tracks component types that were dynamically injected from the backend (not built-in).
 // Used by the polling loop to detect deletions and purge them from the registry.
@@ -75,157 +142,165 @@ function syncNextIds(comps, ws) {
   }
 }
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5000/examples';
-
-// ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
-function renderRoundedPath(pts) {
-  if (!pts || pts.length < 2) return '';
-  const r = 10;
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const prev = pts[i - 1], curr = pts[i], next = pts[i + 1];
-    const distPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
-    const distNext = Math.hypot(next.x - curr.x, next.y - curr.y);
-    const cornerR = Math.min(r, distPrev / 2, distNext / 2);
-    if (cornerR < 0.5) { d += ` L ${curr.x} ${curr.y}`; continue; }
-    const ps = { x: curr.x + (prev.x - curr.x) * (cornerR / distPrev), y: curr.y + (prev.y - curr.y) * (cornerR / distPrev) };
-    const pe = { x: curr.x + (next.x - curr.x) * (cornerR / distNext), y: curr.y + (next.y - curr.y) * (cornerR / distNext) };
-    d += ` L ${ps.x} ${ps.y} Q ${curr.x} ${curr.y} ${pe.x} ${pe.y}`;
-  }
-  d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
-  return d;
-}
-
-// ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
-// Returns [p1, exitStub1, ...midCorners, exitStub2, p2].
-// If waypoints[0]._corner is true, uses those as explicit corners directly.
-// Otherwise applies smart-exit routing: flips the stub if it points AWAY from
-// the target, so the wire goes toward the destination instead of U-turning.
-function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = []) {
-  // Explicit corner mode — stored by segment dragging
-  if (waypoints.length > 0 && waypoints[0]._corner) {
-    const pts = [p1, ...waypoints, p2];
-    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-  }
-
-  // Smart exit: flip stub when it points away from the other endpoint
-  const dx1 = e1.x - p1.x, dy1 = e1.y - p1.y;
-  const dx2 = e2.x - p2.x, dy2 = e2.y - p2.y;
-  const e1IsVert = Math.abs(dy1) > Math.abs(dx1);
-  const e2IsVert = Math.abs(dy2) > Math.abs(dx2);
-
-  let se1 = e1, se2 = e2;
-  if (e1IsVert) {
-    if (dy1 !== 0 && (p2.y - p1.y) * dy1 < 0) se1 = { x: p1.x, y: p1.y - dy1 };
-  } else {
-    if (dx1 !== 0 && (p2.x - p1.x) * dx1 < 0) se1 = { x: p1.x - dx1, y: p1.y };
-  }
-  if (e2IsVert) {
-    if (dy2 !== 0 && (p1.y - p2.y) * dy2 < 0) se2 = { x: p2.x, y: p2.y - dy2 };
-  } else {
-    if (dx2 !== 0 && (p1.x - p2.x) * dx2 < 0) se2 = { x: p2.x - dx2, y: p2.y };
-  }
-
-  const sdx1 = se1.x - p1.x, sdy1 = se1.y - p1.y;
-  const sdx2 = se2.x - p2.x, sdy2 = se2.y - p2.y;
-  const e1Horiz = Math.abs(sdx1) >= Math.abs(sdy1);
-  const e2Horiz = Math.abs(sdx2) >= Math.abs(sdy2);
-
-  let midPts;
-  if (e1Horiz && e2Horiz) {
-    const midX = (se1.x + se2.x) / 2;
-    midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
-  } else if (!e1Horiz && !e2Horiz) {
-    const midY = (se1.y + se2.y) / 2;
-    midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
-  } else if (e1Horiz && !e2Horiz) {
-    midPts = [{ x: se2.x, y: se1.y }];
-  } else {
-    midPts = [{ x: se1.x, y: se2.y }];
-  }
-
-  let pts = [p1, se1, ...midPts, se2, p2];
-  return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-}
-
-// ─── SINGLE SOURCE OF TRUTH: full orthogonal point list for any wire mode ──
-// Mode 1 – explicit corners (_corner:true, from segment dragging): use points as-is.
-// Mode 2 – route-hint waypoints (clicked mid-draw, no _corner): midX dog-leg.
-// Mode 3 – no waypoints: smart-exit auto-routing.
-function getWirePoints(p1, e1, e2, p2, waypoints = []) {
-  // Mode 1: explicit corners stored by segment dragging
-  if (waypoints.length > 0 && waypoints[0]._corner) {
-    let pts = [p1, ...waypoints, p2];
-    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-  }
-
-  // Mode 2: route-hint waypoints – midX dog-leg between each successive hint
-  if (waypoints.length > 0) {
-    const hints = [e1, ...waypoints, e2];
-    let pts = [p1];
-    for (let i = 0; i < hints.length - 1; i++) {
-      const a = hints[i], b = hints[i + 1];
-      pts.push(a);
-      const midX = (a.x + b.x) / 2;
-      pts.push({ x: midX, y: a.y });
-      pts.push({ x: midX, y: b.y });
-    }
-    pts.push(e2, p2);
-    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-  }
-
-  // Mode 3: no waypoints – smart-exit routing
-  return computeWireOrthoPoints(p1, e1, e2, p2, []);
-}
-
-// Preview wire while drawing (start→cursor with optional in-progress hints)
-function multiRoutePath(p1, p2, waypoints = []) {
-  if (!p1 || !p2) return '';
-  const hints = [p1, ...waypoints, p2];
-  let pts = [];
-  for (let i = 0; i < hints.length - 1; i++) {
-    const a = hints[i], b = hints[i + 1];
-    if (i === 0) pts.push(a);
-    const midX = (a.x + b.x) / 2;
-    pts.push({ x: midX, y: a.y });
-    pts.push({ x: midX, y: b.y });
-    pts.push(b);
-  }
-  pts = pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
-  return renderRoundedPath(pts);
-}
-
-// Builds the SVG path string for a placed wire.
-function buildWirePath(p1, e1, e2, p2, waypoints = []) {
-  return renderRoundedPath(getWirePoints(p1, e1, e2, p2, waypoints));
-}
-
-function wireColor(pinLabel) {
-  if (!pinLabel) return '#2ecc71';
-  const l = pinLabel.toUpperCase();
-  if (l.includes('GND') || l === 'CATHODE') return '#808080'; // gray
-  if (l.includes('5V') || l.includes('3.3V') || l === 'VCC' || l === 'ANODE') return '#e74c3c'; // red
-  return '#2ecc71'; // green default
-}
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
 const GROUP_ICON_SVG = {
-  'Boards':    (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="18" x2="8" y2="22"/><line x1="16" y1="18" x2="16" y2="22"/><line x1="2" y1="8" x2="6" y2="8"/><line x1="2" y1="16" x2="6" y2="16"/><line x1="18" y1="8" x2="22" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/><rect x="8" y="8" width="8" height="8" rx="1" fill={c} fillOpacity="0.2"/></svg>,
-  'Outputs':   (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="5"/><path d="M12 15v4M9 19h6M8.5 7.5A5 5 0 0 1 12 5"/></svg>,
-  'Inputs':    (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="10" width="12" height="8" rx="2"/><circle cx="12" cy="10" r="2" fill={c} fillOpacity="0.3"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="4" y1="18" x2="6" y2="18"/><line x1="18" y1="18" x2="20" y2="18"/></svg>,
-  'Passives':  (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="12" x2="6" y2="12"/><rect x="6" y="8" width="12" height="8" rx="1"/><line x1="18" y1="12" x2="22" y2="12"/></svg>,
-  'Power':     (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="12"/><path d="M7.5 5A8 8 0 1 0 16.5 5"/></svg>,
-  'Actuators': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>,
-  'Memory':    (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><line x1="8" y1="5" x2="8" y2="19"/><line x1="12" y1="5" x2="12" y2="19"/><line x1="16" y1="5" x2="16" y2="19"/></svg>,
-  'Displays':  (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="22" x2="16" y2="22"/><line x1="12" y1="18" x2="12" y2="22"/></svg>,
-  'Sensors':   (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5.5 5.5A11 11 0 0 0 5.5 18.5M18.5 5.5A11 11 0 0 1 18.5 18.5M8.5 8.5A6 6 0 0 0 8.5 15.5M15.5 8.5A6 6 0 0 1 15.5 15.5"/><circle cx="12" cy="12" r="1.5" fill={c}/></svg>,
-  'Logic':     (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h8c3.3 0 6 2.7 6 6s-2.7 6-6 6H4z"/><line x1="4" y1="4" x2="4" y2="20"/><line x1="2" y1="11" x2="4" y2="11"/><line x1="2" y1="17" x2="4" y2="17"/><line x1="18" y1="14" x2="22" y2="14"/></svg>,
+  'Boards': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="18" x2="8" y2="22" /><line x1="16" y1="18" x2="16" y2="22" /><line x1="2" y1="8" x2="6" y2="8" /><line x1="2" y1="16" x2="6" y2="16" /><line x1="18" y1="8" x2="22" y2="8" /><line x1="18" y1="16" x2="22" y2="16" /><rect x="8" y="8" width="8" height="8" rx="1" fill={c} fillOpacity="0.2" /></svg>,
+  'output': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="5" /><path d="M12 15v4M9 19h6M8.5 7.5A5 5 0 0 1 12 5" /></svg>,
+  'input': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="10" width="12" height="8" rx="2" /><circle cx="12" cy="10" r="2" fill={c} fillOpacity="0.3" /><line x1="12" y1="2" x2="12" y2="8" /><line x1="4" y1="18" x2="6" y2="18" /><line x1="18" y1="18" x2="20" y2="18" /></svg>,
+  'basic': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="12" x2="6" y2="12" /><rect x="6" y="8" width="12" height="8" rx="1" /><line x1="18" y1="12" x2="22" y2="12" /></svg>,
+  'Actuators': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" /></svg>,
+  'misc': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="5" width="16" height="14" rx="2" /><line x1="8" y1="5" x2="8" y2="19" /><line x1="12" y1="5" x2="12" y2="19" /><line x1="16" y1="5" x2="16" y2="19" /></svg>,
+  'display': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="14" rx="2" /><line x1="8" y1="22" x2="16" y2="22" /><line x1="12" y1="18" x2="12" y2="22" /></svg>,
+  'sensor': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5.5 5.5A11 11 0 0 0 5.5 18.5M18.5 5.5A11 11 0 0 1 18.5 18.5M8.5 8.5A6 6 0 0 0 8.5 15.5M15.5 8.5A6 6 0 0 1 15.5 15.5" /><circle cx="12" cy="12" r="1.5" fill={c} /></svg>,
+  'logic': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h8c3.3 0 6 2.7 6 6s-2.7 6-6 6H4z" /><line x1="4" y1="4" x2="4" y2="20" /><line x1="2" y1="11" x2="4" y2="11" /><line x1="2" y1="17" x2="4" y2="17" /><line x1="18" y1="14" x2="22" y2="14" /></svg>,
 };
 const GROUP_COLORS = {
-  'Boards': '#6366f1', 'Outputs': '#22c55e', 'Inputs': '#3b82f6',
-  'Passives': '#f59e0b', 'Power': '#ef4444', 'Actuators': '#06b6d4',
-  'Memory': '#8b5cf6', 'Displays': '#ec4899', 'Sensors': '#14b8a6', 'Logic': '#8b5cf6',
+  'Boards': '#6366f1', 'output': '#22c55e', 'input': '#3b82f6',
+  'basic': '#f59e0b', 'Actuators': '#06b6d4',
+  'misc': '#8b5cf6', 'display': '#ec4899', 'sensor': '#14b8a6', 'logic': '#8b5cf6',
 };
+
+const BOARD_BAUD_PRESETS = {
+  arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
+  esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
+  rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
+};
+
+const BOARD_DEFAULT_BAUD = {
+  arduino_uno: '9600',
+  esp32: '115200',
+  stm32: '115200',
+  rp2040: '115200',
+};
+
+const BOARD_FQBN = {
+  arduino_uno: 'arduino:avr:uno',
+  esp32: 'esp32:esp32:esp32',
+  stm32: 'STMicroelectronics:stm32:GenF1',
+  rp2040: 'rp2040:rp2040:rpipico',
+};
+
+function normalizeBoardKind(source) {
+  const s = String(source || '').toLowerCase();
+  if (s.includes('esp32')) return 'esp32';
+  if (s.includes('stm32')) return 'stm32';
+  if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
+  return 'arduino_uno';
+}
+
+function createDefaultMainCode(boardKind, boardId) {
+  if (boardKind === 'esp32' || boardKind === 'stm32' || boardKind === 'rp2040') {
+    return `// ${boardId} main sketch\nvoid setup() {\n  // Serial.begin(${BOARD_DEFAULT_BAUD[boardKind] || 115200});\n}\n\nvoid loop() {\n  delay(1000);\n}\n`;
+  }
+  return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(13, OUTPUT);\n  // Serial.begin(${BOARD_DEFAULT_BAUD.arduino_uno});\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(500);\n  digitalWrite(13, LOW);\n  delay(500);\n}\n`;
+}
+
+function fileExt(path) {
+  const idx = path.lastIndexOf('.');
+  return idx >= 0 ? path.substring(idx).toLowerCase() : '';
+}
+
+function isProgrammableBoardType(type) {
+  return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
+}
+
+function endpointAliases(endpoint) {
+  const [compId, pinIdRaw] = String(endpoint || '').split(':');
+  const pinId = String(pinIdRaw || '');
+  if (!compId || !pinId) return [String(endpoint || '')];
+
+  const aliases = new Set([`${compId}:${pinId}`]);
+  if (/^\d+$/.test(pinId)) aliases.add(`${compId}:D${pinId}`);
+  if (/^D\d+$/i.test(pinId)) aliases.add(`${compId}:${pinId.substring(1)}`);
+  if (/^gnd(_\d+)?$/i.test(pinId) || /^GND$/i.test(pinId)) aliases.add(`${compId}:gnd`);
+  if (/^5v$/i.test(pinId) || /^VCC$/i.test(pinId)) aliases.add(`${compId}:5V`);
+  return Array.from(aliases);
+}
+
+function validateCircuitLocally(components, wires) {
+  const errors = [];
+  const componentById = new Map((components || []).map((c) => [c.id, c]));
+
+  const programmableBoards = (components || []).filter((c) => isProgrammableBoardType(c.type));
+  if (programmableBoards.length === 0) return errors;
+
+  const graph = new Map();
+  const addEdge = (a, b) => {
+    if (!graph.has(a)) graph.set(a, new Set());
+    if (!graph.has(b)) graph.set(b, new Set());
+    graph.get(a).add(b);
+    graph.get(b).add(a);
+  };
+
+  (wires || []).forEach((w) => {
+    const fromAliases = endpointAliases(w.from);
+    const toAliases = endpointAliases(w.to);
+    fromAliases.forEach((fa) => toAliases.forEach((ta) => addEdge(fa, ta)));
+  });
+
+  const isMcuDigitalEndpoint = (endpoint) => {
+    const [compId, pin] = String(endpoint || '').split(':');
+    const comp = componentById.get(compId);
+    if (!comp || !isProgrammableBoardType(comp.type)) return false;
+    if (!pin) return false;
+    return /^D?\d+$/i.test(pin) || /^A\d+$/i.test(pin);
+  };
+
+  const bfsReachable = (starts) => {
+    const q = [...starts];
+    const visited = new Set(starts);
+    while (q.length) {
+      const n = q.shift();
+      for (const nei of graph.get(n) || []) {
+        if (visited.has(nei)) continue;
+        visited.add(nei);
+        q.push(nei);
+      }
+    }
+    return visited;
+  };
+
+  programmableBoards.forEach((board) => {
+    const powerPins = [`${board.id}:5V`, `${board.id}:3v3`, `${board.id}:VCC`];
+    const gndPins = [`${board.id}:gnd`, `${board.id}:gnd_1`, `${board.id}:gnd_2`, `${board.id}:gnd_3`, `${board.id}:GND`];
+    const reachable = bfsReachable(powerPins);
+    const isShorted = gndPins.some((g) => reachable.has(g) || reachable.has(`${board.id}:gnd`));
+    if (isShorted) {
+      errors.push({
+        type: 'error',
+        message: `Potential short circuit on ${board.id}: power net is connected to GND.`,
+        compIds: [board.id],
+      });
+    }
+  });
+
+  // LED should not be directly connected between two MCU GPIO pins in this simulator.
+  const leds = (components || []).filter((c) => String(c.type || '').toLowerCase() === 'wokwi-led');
+  leds.forEach((led) => {
+    const anode = `${led.id}:A`;
+    const cathode = `${led.id}:K`;
+    const anodeN = [...(graph.get(anode) || [])];
+    const cathodeN = [...(graph.get(cathode) || [])];
+
+    const anodeMcu = anodeN.filter(isMcuDigitalEndpoint);
+    const cathodeMcu = cathodeN.filter(isMcuDigitalEndpoint);
+
+    if (anodeMcu.length > 0 && cathodeMcu.length > 0) {
+      const involved = new Set([led.id]);
+      [...anodeMcu, ...cathodeMcu].forEach((ep) => involved.add(String(ep).split(':')[0]));
+      errors.push({
+        type: 'error',
+        message: `Invalid LED wiring on ${led.id}: anode and cathode are tied to MCU GPIO pins. Connect LED through a resistor to VCC/GND instead of pin-to-pin drive.`,
+        compIds: [...involved],
+      });
+    }
+  });
+
+  return errors;
+}
 
 export default function SimulatorPage() {
   const { isAuthenticated, user, loading: authLoading } = useAuth()
@@ -255,7 +330,7 @@ export default function SimulatorPage() {
   const [components, setComponents] = useState([])
   const [wires, setWires] = useState([])
   const [paletteSearch, setPaletteSearch] = useState('')
-  const [showGuestBanner, setShowGuestBanner] = useState(true)
+
   const [history, setHistory] = useState({ past: [], future: [] })
   const [selected, setSelected] = useState(null)   // comp or wire id
   const [wireStart, setWireStart] = useState(null)   // { compId, pinId, pinLabel, x, y }
@@ -269,16 +344,25 @@ export default function SimulatorPage() {
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
   const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
+  const [projectFiles, setProjectFiles] = useState([])
+  const [openCodeTabs, setOpenCodeTabs] = useState([])
+  const [activeCodeFileId, setActiveCodeFileId] = useState('')
+  const [showCodeExplorer, setShowCodeExplorer] = useState(true)
+  const suppressCodeSyncRef = useRef(false)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
-  const [panelWidth, setPanelWidth] = useState(400)
-  const [isDragging, setIsDragging] = useState(false)
   const [isPaletteHovered, setIsPaletteHovered] = useState(false)
+  const [panelWidth, setPanelWidth] = useState(470)
+  const [explorerWidth, setExplorerWidth] = useState(190)
+  const [isDragging, setIsDragging] = useState(false)
+  const [isExplorerDragging, setIsExplorerDragging] = useState(false)
   // Palette redesign state
-  const [paletteViewMode, setPaletteViewMode] = useState('list') // 'list' | 'grid'
+  const [paletteViewMode, setPaletteViewMode] = useState('grid') // 'list' | 'grid'
   const [favoriteComponents, setFavoriteComponents] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('openhw_fav_components') || '[]')); }
     catch { return new Set(); }
   })
+  const [activeGroupFilter, setActiveGroupFilter] = useState('All')
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showFavorites, setShowFavorites] = useState(true)
   const [paletteContextMenu, setPaletteContextMenu] = useState(null) // { x, y, item }
   const [selectedPaletteItem, setSelectedPaletteItem] = useState(null) // item for description panel
@@ -307,6 +391,7 @@ export default function SimulatorPage() {
 
   const [validationErrors, setValidationErrors] = useState([])
   const [showValidation, setShowValidation] = useState(true)
+  const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
   const [isCompiling, setIsCompiling] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
@@ -316,13 +401,93 @@ export default function SimulatorPage() {
   const [serialHistory, setSerialHistory] = useState([]);
   const [serialInput, setSerialInput] = useState('');
   const [serialPaused, setSerialPaused] = useState(false);
+  const [serialViewMode, setSerialViewMode] = useState('monitor'); // 'monitor' | 'plotter'
+  const [serialBoardFilter, setSerialBoardFilter] = useState('all');
+  const [serialBaudRate, setSerialBaudRate] = useState('9600');
+  const [hardwareBoardId, setHardwareBoardId] = useState('');
+  const [hardwareSerialTargetId, setHardwareSerialTargetId] = useState(null);
+  const [hardwareStatus, setHardwareStatus] = useState('Not connected');
   const serialOutputRef = useRef(null);
+  const lastHardwareStatusRef = useRef('');
+  const hardwareSerialTargetRef = useRef(null);
+
+  const {
+    consoleEntries,
+    isConsoleOpen,
+    setIsConsoleOpen,
+    consoleHeight,
+    setConsoleHeight,
+    appendConsoleEntry,
+    clearConsoleEntries,
+    downloadConsoleLog,
+  } = useSimulationConsole();
 
   // Plotter State
   const [plotData, setPlotData] = useState([]);
   const [selectedPlotPins, setSelectedPlotPins] = useState(['13', 'A0']);
   const plotterCanvasRef = useRef(null);
   const [plotterPaused, setPlotterPaused] = useState(false);
+
+  const serialBoardOptions = useMemo(() => {
+    const ids = components
+      .filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+      .map(c => c.id)
+      .sort((a, b) => a.localeCompare(b));
+    if (hardwareBoardId && !ids.includes(hardwareBoardId)) ids.push(hardwareBoardId);
+    if (hardwareSerialTargetId && !ids.includes(hardwareSerialTargetId)) ids.push(hardwareSerialTargetId);
+    return ['all', ...ids];
+  }, [components, hardwareBoardId, hardwareSerialTargetId]);
+
+  const serialBoardLabels = useMemo(() => {
+    const labels = { all: 'All Boards' };
+    serialBoardOptions.forEach((id) => {
+      if (id === 'all') return;
+      if (id.startsWith('hw:')) {
+        labels[id] = `${id.slice(3)} (WebSerial)`;
+      } else {
+        labels[id] = id;
+      }
+    });
+    return labels;
+  }, [serialBoardOptions]);
+
+  const serialBoardMap = useMemo(() => {
+    const m = new Map();
+    components.forEach((c) => m.set(c.id, c));
+    return m;
+  }, [components]);
+
+  const selectedSerialBoardKind = useMemo(() => {
+    if (serialBoardFilter !== 'all') {
+      const comp = serialBoardMap.get(serialBoardFilter);
+      if (comp) return normalizeBoardKind(comp.type);
+    }
+    return normalizeBoardKind(board);
+  }, [serialBoardFilter, serialBoardMap, board]);
+
+  const serialBaudOptions = useMemo(() => {
+    return BOARD_BAUD_PRESETS[selectedSerialBoardKind] || BOARD_BAUD_PRESETS.arduino_uno;
+  }, [selectedSerialBoardKind]);
+
+  const projectFileMap = useMemo(() => {
+    const m = new Map();
+    projectFiles.forEach((f) => m.set(f.id, f));
+    return m;
+  }, [projectFiles]);
+
+  const activeCodeFile = useMemo(() => projectFileMap.get(activeCodeFileId) || null, [projectFileMap, activeCodeFileId]);
+
+  const boardComponents = useMemo(() => components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type)), [components]);
+  const webSerialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
+
+  useEffect(() => {
+    if (boardComponents.length === 0) {
+      setHardwareBoardId('');
+      return;
+    }
+    const hasCurrent = hardwareBoardId && boardComponents.some((b) => b.id === hardwareBoardId);
+    if (!hasCurrent) setHardwareBoardId(boardComponents[0].id);
+  }, [boardComponents, hardwareBoardId]);
 
   // PNG Export State
   const [isExporting, setIsExporting] = useState(false);
@@ -371,89 +536,160 @@ export default function SimulatorPage() {
   const handleUploadZip = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
+    appendConsoleEntry('info', `ZIP upload started: ${file.name}`, 'zip');
     try {
       const zip = await JSZip.loadAsync(file);
-      let manifestStr = null, uiStr = null, logicStr = null, validationStr = null, indexStr = null, docHtml = null;
-      for (const relativePath of Object.keys(zip.files)) {
-        if (relativePath.endsWith('manifest.json')) manifestStr = await zip.files[relativePath].async('string');
-        if (relativePath.endsWith('ui.tsx') || relativePath.endsWith('ui.jsx')) uiStr = await zip.files[relativePath].async('string');
-        if (relativePath.endsWith('logic.ts') || relativePath.endsWith('logic.js')) logicStr = await zip.files[relativePath].async('string');
-        if (relativePath.endsWith('validation.ts') || relativePath.endsWith('validation.js')) validationStr = await zip.files[relativePath].async('string');
-        if (relativePath.endsWith('index.ts') || relativePath.endsWith('index.js')) indexStr = await zip.files[relativePath].async('string');
-        // Doc folder — any HTML file inside doc/ directory
-        if (/\/doc\/.*\.html$/i.test(relativePath) || /^doc\/.*\.html$/i.test(relativePath)) {
-          docHtml = await zip.files[relativePath].async('string');
-        }
-      }
-      if (!manifestStr || !uiStr || !logicStr || !validationStr || !indexStr) {
-        alert('Error: Zip must contain manifest.json, ui.tsx, logic.ts, validation.ts, and index.ts');
+      const allPaths = Object.keys(zip.files).filter((p) => !zip.files[p].dir);
+      const manifestPaths = allPaths.filter((p) => /(^|\/)manifest\.json$/i.test(p));
+
+      if (!manifestPaths.length) {
+        appendConsoleEntry('error', 'ZIP upload failed: no manifest.json found.', 'zip');
+        alert('Error: ZIP must contain at least one manifest.json');
         return;
       }
-      const manifest = JSON.parse(manifestStr);
-      const submitPayload = {
-        id: manifest.type, manifest, ui: uiStr, logic: logicStr, validation: validationStr, index: indexStr,
-        ...(docHtml ? { doc: docHtml } : {})
+
+      const buildFallbackIndex = (componentType) => `import manifest from './manifest.json';\nimport { UI, BOUNDS } from './ui';\nimport { Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n  manifest,\n  UI,\n  LogicClass: Logic,\n  BOUNDS,\n  validation\n};\n`;
+
+      const pickFile = (dirPath, names) => {
+        for (const n of names) {
+          const full = `${dirPath}${n}`;
+          if (zip.files[full] && !zip.files[full].dir) return full;
+        }
+        return null;
       };
 
-      let submitted = false;
-      let offlineQueued = false;
-      try {
-        await submitCustomComponent(submitPayload);
-        submitted = true;
-      } catch (submitErr) {
-        // Network unavailable — queue for later submission when back online
-        await enqueueComponent(submitPayload);
-        offlineQueued = true;
+      const uploaded = [];
+      const failed = [];
+
+      for (const manifestPath of manifestPaths) {
+        try {
+          const dirPath = manifestPath.slice(0, manifestPath.lastIndexOf('manifest.json'));
+          const manifestStr = await zip.files[manifestPath].async('string');
+          const manifest = JSON.parse(manifestStr);
+
+          const uiPath = pickFile(dirPath, ['ui.tsx', 'ui.jsx']);
+          const logicPath = pickFile(dirPath, ['logic.ts', 'logic.js']);
+          const validationPath = pickFile(dirPath, ['validation.ts', 'validation.js']);
+          const indexPath = pickFile(dirPath, ['index.ts', 'index.js']);
+
+          if (!uiPath || !logicPath || !validationPath) {
+            failed.push(`${manifest?.type || manifestPath} (missing ui/logic/validation)`);
+            appendConsoleEntry('error', `Skipped ${manifest?.type || manifestPath}: missing ui/logic/validation`, 'zip');
+            continue;
+          }
+
+          const uiStr = await zip.files[uiPath].async('string');
+          const logicStr = await zip.files[logicPath].async('string');
+          const validationStr = await zip.files[validationPath].async('string');
+          const indexStr = indexPath ? await zip.files[indexPath].async('string') : buildFallbackIndex(manifest.type || 'custom-component');
+
+          let docHtml = null;
+          const docPath = allPaths.find((p) => p.startsWith(`${dirPath}doc/`) && /\.html$/i.test(p));
+          if (docPath) docHtml = await zip.files[docPath].async('string');
+
+          const submitPayload = {
+            id: manifest.type,
+            manifest,
+            ui: uiStr,
+            logic: logicStr,
+            validation: validationStr,
+            index: indexStr,
+            ...(docHtml ? { doc: docHtml } : {})
+          };
+
+          let submitted = false;
+          let offlineQueued = false;
+          try {
+            await submitCustomComponent(submitPayload);
+            submitted = true;
+            appendConsoleEntry('info', `ZIP submitted to admin: ${manifest.type}`, 'zip');
+          } catch {
+            await enqueueComponent(submitPayload);
+            offlineQueued = true;
+            appendConsoleEntry('warn', `Offline mode: queued ${manifest.type} for later submission.`, 'zip');
+          }
+
+          const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
+          const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+
+          const exportsUI = {};
+          const evalUI = new Function('exports', 'require', 'React', transpileUI);
+          evalUI(exportsUI, (mod) => (mod === 'react' ? React : null), React);
+
+          const uiComponent = resolveUiExport(exportsUI);
+          if (!uiComponent) {
+            failed.push(`${manifest.type} (UI export not found)`);
+            appendConsoleEntry('error', `Skipped ${manifest.type}: UI export not found`, 'zip');
+            continue;
+          }
+
+          const contextMenu = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))];
+
+          const newCatItem = { ...manifest };
+          delete newCatItem.pins;
+          delete newCatItem.group;
+
+          const groupName = normalizeGroupName(manifest.group);
+          let group = LOCAL_CATALOG.find(g => g.group === groupName);
+          if (!group) {
+            group = { group: groupName, items: [] };
+            LOCAL_CATALOG.push(group);
+          }
+          group.items = group.items.filter(i => i.type !== manifest.type);
+          group.items.push(newCatItem);
+          sortCatalog(LOCAL_CATALOG);
+
+          COMPONENT_REGISTRY[manifest.type] = {
+            manifest,
+            UI: uiComponent,
+            BOUNDS: exportsUI.BOUNDS,
+            ContextMenu: contextMenu,
+            contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+            contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+            logicCode: transpileLogic,
+            ...(docHtml ? { doc: docHtml } : {})
+          };
+
+          if (Array.isArray(manifest.pins)) {
+            LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
+          }
+
+          uploaded.push({ type: manifest.type, label: manifest.label || manifest.type, submitted, offlineQueued });
+        } catch (err) {
+          failed.push(`${manifestPath} (${err.message})`);
+          appendConsoleEntry('error', `Error parsing component at ${manifestPath}: ${err.message}`, 'zip');
+        }
       }
 
-      // --- ZERO-TOUCH SANDBOX INJECTION ---
-      const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
-      const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
-
-      const exportsUI = {};
-      const evalUI = new Function('exports', 'require', 'React', transpileUI);
-      evalUI(exportsUI, (mod) => {
-        if (mod === 'react') return React;
-        return null;
-      }, React);
-
-      const uiComponent = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().endsWith('ui'))] || exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
-      const contextMenu = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))];
-
-      if (uiComponent) {
-        const newCatItem = { ...manifest };
-        delete newCatItem.pins;
-        delete newCatItem.group;
-
-        let group = LOCAL_CATALOG.find(g => g.group === manifest.group);
-        if (!group) {
-          group = { group: manifest.group, items: [] };
-          LOCAL_CATALOG.push(group);
-        }
-        group.items = group.items.filter(i => i.type !== manifest.type);
-        group.items.push(newCatItem);
-
-        COMPONENT_REGISTRY[manifest.type] = {
-          manifest,
-          UI: uiComponent,
-          BOUNDS: exportsUI.BOUNDS,
-          ContextMenu: contextMenu,
-          contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
-          contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
-          logicCode: transpileLogic,
-          ...(docHtml ? { doc: docHtml } : {})
-        };
-        if (manifest.pins) {
-          LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
-        }
+      if (uploaded.length) {
         setCustomCatalogCounter(c => c + 1);
-        if (submitted) {
-          alert(`Successfully submitted to admin AND injected ${manifest.label} into your local Sandbox Memory!`);
-        } else if (offlineQueued) {
-          alert(`You are offline. "${manifest.label}" has been injected locally and will be submitted to the admin automatically when you reconnect.`);
-        }
       }
+
+      const submittedCount = uploaded.filter(x => x.submitted).length;
+      const queuedCount = uploaded.filter(x => x.offlineQueued).length;
+
+      if (uploaded.length) {
+        appendConsoleEntry('info', `ZIP injected ${uploaded.length} component(s).`, 'zip');
+      }
+      if (submittedCount) {
+        appendConsoleEntry('info', `${submittedCount} component(s) submitted to admin.`, 'zip');
+      }
+      if (queuedCount) {
+        appendConsoleEntry('warn', `${queuedCount} component(s) queued offline for later sync.`, 'zip');
+      }
+      if (failed.length) {
+        appendConsoleEntry('error', `${failed.length} component(s) failed import.`, 'zip');
+      }
+
+      const summary = [
+        `Imported: ${uploaded.length}`,
+        `Submitted: ${submittedCount}`,
+        `Queued offline: ${queuedCount}`,
+        `Failed: ${failed.length}`,
+      ].join('\n');
+      alert(`ZIP processing complete\n\n${summary}`);
     } catch (e) {
+      appendConsoleEntry('error', `ZIP processing failed: ${e.message}`, 'zip');
       alert(`Error processing ZIP: ${e.message}`);
     }
     event.target.value = '';
@@ -503,7 +739,7 @@ export default function SimulatorPage() {
     } catch (e) {
       console.error('[ComponentEditor] Could not parse pending component data:', e);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -576,6 +812,9 @@ export default function SimulatorPage() {
       setCode(latest.code || '');
       setComponents(latest.components || []);
       setWires(latest.connections || []);
+      setProjectFiles(Array.isArray(latest.projectFiles) ? latest.projectFiles : []);
+      setOpenCodeTabs(Array.isArray(latest.openCodeTabs) ? latest.openCodeTabs : []);
+      setActiveCodeFileId(latest.activeCodeFileId || '');
       syncNextIds(latest.components, latest.connections);
       setCurrentProjectId(latest.id);
       currentProjectIdRef.current = latest.id;
@@ -605,13 +844,16 @@ export default function SimulatorPage() {
         components,
         connections: wires,
         code,
+        projectFiles,
+        openCodeTabs,
+        activeCodeFileId,
         owner,
       });
     }, 2500);
 
     return () => clearTimeout(autoSaveTimerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [components, wires, code, board]);
+  }, [components, wires, code, board, projectFiles, openCodeTabs, activeCodeFileId]);
 
   useEffect(() => { canvasZoomRef.current = canvasZoom; }, [canvasZoom]);
   useEffect(() => { canvasOffsetRef.current = canvasOffset; }, [canvasOffset]);
@@ -692,7 +934,7 @@ export default function SimulatorPage() {
       const evalUI = new Function('exports', 'require', 'React', transpileUI);
       evalUI(exportsUI, (mod) => (mod === 'react' ? React : null), React);
 
-      const uiComponent = exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
+      const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) {
         console.warn('[SimulatorPage] Preview: UI component could not be evaluated.');
         return;
@@ -703,13 +945,15 @@ export default function SimulatorPage() {
       delete newCatItem.pins;
       delete newCatItem.group;
 
-      let group = LOCAL_CATALOG.find(g => g.group === manifest.group);
+      const groupName = normalizeGroupName(manifest.group);
+      let group = LOCAL_CATALOG.find(g => g.group === groupName);
       if (!group) {
-        group = { group: manifest.group, items: [] };
+        group = { group: groupName, items: [] };
         LOCAL_CATALOG.push(group);
       }
       group.items = group.items.filter(i => i.type !== compType);
       group.items.push(newCatItem);
+      sortCatalog(LOCAL_CATALOG);
 
       COMPONENT_REGISTRY[compType] = { manifest, UI: uiComponent, BOUNDS: exportsUI.BOUNDS, logicCode: transpileLogic };
       if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
@@ -762,7 +1006,7 @@ export default function SimulatorPage() {
               return null;
             }, React);
 
-            const uiComponent = exportsUI[Object.keys(exportsUI)[0]] || exportsUI.default;
+            const uiComponent = resolveUiExport(exportsUI);
             if (!uiComponent) continue;
 
             // Inject into catalog
@@ -770,13 +1014,15 @@ export default function SimulatorPage() {
             delete newCatItem.pins;
             delete newCatItem.group;
 
-            let group = LOCAL_CATALOG.find(g => g.group === manifest.group);
+            const groupName = normalizeGroupName(manifest.group);
+            let group = LOCAL_CATALOG.find(g => g.group === groupName);
             if (!group) {
-              group = { group: manifest.group, items: [] };
+              group = { group: groupName, items: [] };
               LOCAL_CATALOG.push(group);
             }
             group.items = group.items.filter(i => i.type !== compType);
             group.items.push(newCatItem);
+            sortCatalog(LOCAL_CATALOG);
 
             COMPONENT_REGISTRY[compType] = {
               manifest,
@@ -785,7 +1031,9 @@ export default function SimulatorPage() {
               ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))],
               contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
               contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
-              logicCode: transpileLogic
+              logicCode: transpileLogic,
+              uiRaw: uiStr,
+              logicRaw: logicStr
             };
             if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
 
@@ -886,6 +1134,48 @@ export default function SimulatorPage() {
     document.addEventListener('mouseup', onMouseUp);
   }, [panelWidth]);
 
+  const onMouseDownConsoleResize = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startY = e.clientY;
+    const startHeight = consoleHeight;
+
+    const onMouseMove = (moveEvent) => {
+      const delta = startY - moveEvent.clientY;
+      const newHeight = Math.max(140, Math.min(540, startHeight + delta));
+      setConsoleHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [consoleHeight, setConsoleHeight]);
+
+  const onMouseDownExplorerResize = useCallback((e) => {
+    e.preventDefault();
+    setIsExplorerDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isExplorerDragging) return;
+    const onMouseMove = (e) => {
+      const rightPanelStart = window.innerWidth - panelWidth;
+      const newWidth = e.clientX - rightPanelStart;
+      setExplorerWidth(Math.max(120, Math.min(panelWidth - 100, newWidth)));
+    };
+    const onMouseUp = () => setIsExplorerDragging(false);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [isExplorerDragging, panelWidth]);
+
   // ── Close palette context menu on outside click ──────────────────────────
   useEffect(() => {
     if (!paletteContextMenu) return;
@@ -902,6 +1192,14 @@ export default function SimulatorPage() {
     return () => document.removeEventListener('mousedown', close);
   }, [showViewPanel]);
 
+  // ── Close Filter dropdown on outside click ──────────────────────────────────
+  useEffect(() => {
+    if (!showFilterDropdown) return;
+    const close = (e) => { if (!e.target.closest('.filter-dropdown-container')) setShowFilterDropdown(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showFilterDropdown]);
+
   // ── Load Wokwi bundle ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!customElements.get('wokwi-7segment') && !document.getElementById('wokwi-bundle')) {
@@ -912,12 +1210,12 @@ export default function SimulatorPage() {
     }
   }, [])
 
-  // ── Remote Validation ────────────────────────────────────────────────────────
+  // ── Validation toast auto-dismiss ───────────────────────────────────────────
   useEffect(() => {
-    // Skipping validation for now as logic moved to frontend worker completely
-    // We can add static validateCircuit functions back to the components if needed
-    setValidationErrors([]);
-  }, [components, wires, isRunning]);
+    if (!validationToast) return undefined;
+    const timer = setTimeout(() => setValidationToast(null), 10000);
+    return () => clearTimeout(timer);
+  }, [validationToast]);
 
   // ── Load Catalog on Mount ────────────────────────────────────────────────────
   const CATALOG = LOCAL_CATALOG;
@@ -979,10 +1277,135 @@ export default function SimulatorPage() {
     }
   }, [serialHistory, serialPaused]);
 
+  useEffect(() => {
+    if (serialBoardFilter === 'all') return;
+    if (!serialBoardOptions.includes(serialBoardFilter)) {
+      setSerialBoardFilter(serialBoardOptions.length > 1 ? serialBoardOptions[1] : 'all');
+    }
+  }, [serialBoardFilter, serialBoardOptions]);
+
+  useEffect(() => {
+    setProjectFiles(prev => {
+      const next = [...prev];
+      const byId = new Map(next.map(f => [f.id, f]));
+
+      // Remove board files for boards no longer present
+      const validBoardIds = new Set(boardComponents.map(b => b.id));
+      const pruned = next.filter(f => {
+        const m = f.path.match(/^project\/([^/]+)\//);
+        if (!m) return true;
+        return validBoardIds.has(m[1]);
+      });
+
+      let changed = pruned.length !== next.length;
+      const result = [...pruned];
+      const resultIds = new Set(result.map(f => f.id));
+
+      const upsert = (fileObj) => {
+        const idx = result.findIndex(f => f.id === fileObj.id);
+        if (idx === -1) {
+          result.push(fileObj);
+          changed = true;
+        } else {
+          const existing = result[idx];
+          if (existing.path !== fileObj.path || existing.name !== fileObj.name || existing.boardId !== fileObj.boardId || existing.boardKind !== fileObj.boardKind) {
+            result[idx] = { ...existing, ...fileObj, content: existing.content, dirty: existing.dirty };
+            changed = true;
+          }
+        }
+      };
+
+      boardComponents.forEach((bc) => {
+        const kind = normalizeBoardKind(bc.type);
+        const basePath = `project/${bc.id}`;
+        const files = [
+          { path: `${basePath}/${bc.id}.ino`, type: 'code', content: createDefaultMainCode(kind, bc.id) },
+        ];
+        files.forEach((ff) => {
+          upsert({
+            id: ff.path,
+            path: ff.path,
+            name: ff.path.split('/').pop(),
+            kind: ff.type,
+            boardId: bc.id,
+            boardKind: kind,
+            content: ff.content,
+            dirty: false,
+          });
+        });
+      });
+
+      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
+      const diagramJson = JSON.stringify({
+        board,
+        components: components.map(c => ({ id: c.id, type: c.type, attrs: c.attrs || {} })),
+        connections: wires.map(w => ({ id: w.id, from: w.from, to: w.to })),
+      }, null, 2);
+
+      const rootFiles = [
+        { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
+        { id: 'project/diagram.png', path: 'project/diagram.png', name: 'diagram.png', kind: 'root', content: '[binary png placeholder]', dirty: false },
+        { id: 'project/library.txt', path: 'project/library.txt', name: 'library.txt', kind: 'root', content: libraries.join('\n'), dirty: false },
+      ];
+
+      rootFiles.forEach((rf) => {
+        const idx = result.findIndex(f => f.id === rf.id);
+        if (idx === -1) {
+          result.push(rf);
+          changed = true;
+        } else if (result[idx].content !== rf.content) {
+          // keep manual edits only for library.txt; diagram files are generated
+          if (rf.id === 'project/library.txt' || rf.id === 'project/diagram.json') {
+            result[idx] = { ...result[idx], content: rf.content, dirty: false };
+            changed = true;
+          }
+        }
+      });
+
+      return changed ? result : prev;
+    });
+  }, [boardComponents, board, components, wires, libInstalled]);
+
+  useEffect(() => {
+    if (projectFiles.length === 0) return;
+    if (activeCodeFileId && projectFileMap.has(activeCodeFileId)) return;
+
+    const firstCodeFile = projectFiles.find(f => f.kind === 'code') || projectFiles[0];
+    if (!firstCodeFile) return;
+
+    setActiveCodeFileId(firstCodeFile.id);
+    setOpenCodeTabs(prev => prev.includes(firstCodeFile.id) ? prev : [...prev, firstCodeFile.id]);
+  }, [projectFiles, activeCodeFileId, projectFileMap]);
+
+  useEffect(() => {
+    if (!activeCodeFile) return;
+    suppressCodeSyncRef.current = true;
+    setCode(activeCodeFile.content || '');
+  }, [activeCodeFile?.id]);
+
+  useEffect(() => {
+    if (!activeCodeFileId) return;
+    if (suppressCodeSyncRef.current) {
+      suppressCodeSyncRef.current = false;
+      return;
+    }
+
+    setProjectFiles(prev => prev.map(f => {
+      if (f.id !== activeCodeFileId) return f;
+      if (f.content === code) return f;
+      return { ...f, content: code, dirty: true };
+    }));
+  }, [code, activeCodeFileId]);
+
+  useEffect(() => {
+    const nextDefault = BOARD_DEFAULT_BAUD[selectedSerialBoardKind] || BOARD_DEFAULT_BAUD.arduino_uno;
+    setSerialBaudRate(nextDefault);
+  }, [selectedSerialBoardKind]);
+
   // ── Plotter Rendering Loop ───────────────────────────────────────────────────
   useEffect(() => {
     const canvas = plotterCanvasRef.current;
-    if (!canvas || codeTab !== 'plotter' || plotData.length === 0 || selectedPlotPins.length === 0) return;
+    if (!canvas || codeTab !== 'serial' || serialViewMode !== 'plotter' || plotData.length === 0 || selectedPlotPins.length === 0) return;
     if (plotterPaused) return; // Freeze canvas when paused
 
     const ctx = canvas.getContext('2d');
@@ -992,6 +1415,12 @@ export default function SimulatorPage() {
     ctx.clearRect(0, 0, width, height);
 
     const Y_LABEL_W = 35;
+
+    const scopedPlotData = serialBoardFilter === 'all'
+      ? plotData
+      : plotData.filter(pt => pt.boardId === serialBoardFilter);
+
+    if (scopedPlotData.length === 0) return;
 
     // Separate selected pins into serial vs logic
     const logicPins = selectedPlotPins.filter(p => !isNaN(parseInt(p)) || p.startsWith('A'));
@@ -1011,7 +1440,7 @@ export default function SimulatorPage() {
 
       // Calculate global min/max for serial vars
       let sMin = Infinity, sMax = -Infinity;
-      plotData.forEach(pt => {
+      scopedPlotData.forEach(pt => {
         if (!pt.serialVars) return;
         serialVars.forEach(sv => {
           const v = pt.serialVars[sv];
@@ -1054,7 +1483,7 @@ export default function SimulatorPage() {
         ctx.beginPath();
 
         const maxPts = width - Y_LABEL_W;
-        const pts = plotData.slice(-maxPts);
+        const pts = scopedPlotData.slice(-maxPts);
         const xStep = maxPts / Math.max(pts.length, 1);
 
         let hasStarted = false;
@@ -1132,7 +1561,7 @@ export default function SimulatorPage() {
       ctx.beginPath();
 
       const maxPts = width - Y_LABEL_W;
-      const pts = plotData.slice(-maxPts);
+      const pts = scopedPlotData.slice(-maxPts);
       const xStep = maxPts / Math.max(pts.length, 1);
 
       pts.forEach((pt, i) => {
@@ -1156,7 +1585,7 @@ export default function SimulatorPage() {
     ctx.fillStyle = 'rgba(255,255,255,0.25)';
     ctx.textAlign = 'left';
     ctx.fillText('← time', Y_LABEL_W + 4, height - 4);
-  }, [plotData, codeTab, selectedPlotPins, plotterPaused]);
+  }, [plotData, codeTab, selectedPlotPins, plotterPaused, serialViewMode, serialBoardFilter]);
 
   // ── Get absolute pin position on canvas ────────────────────────────────────
   const componentsMap = useMemo(() => {
@@ -1234,7 +1663,7 @@ export default function SimulatorPage() {
     setFavoriteComponents(prev => {
       const next = new Set(prev);
       if (next.has(type)) next.delete(type); else next.add(type);
-      try { localStorage.setItem('openhw_fav_components', JSON.stringify([...next])); } catch {}
+      try { localStorage.setItem('openhw_fav_components', JSON.stringify([...next])); } catch { }
       return next;
     });
   }, []);
@@ -1520,6 +1949,172 @@ export default function SimulatorPage() {
     setComponents(prev => prev.map(c => c.id === id ? { ...c, rotation: ((c.rotation || 0) + 90) % 360 } : c));
   };
 
+  const openCodeFile = useCallback((fileId) => {
+    setOpenCodeTabs(prev => prev.includes(fileId) ? prev : [...prev, fileId]);
+    setActiveCodeFileId(fileId);
+  }, []);
+
+  const closeCodeTab = useCallback((fileId) => {
+    setOpenCodeTabs(prev => {
+      const next = prev.filter(id => id !== fileId);
+      if (activeCodeFileId === fileId) {
+        setActiveCodeFileId(next[next.length - 1] || '');
+      }
+      return next;
+    });
+  }, [activeCodeFileId]);
+
+  const saveCodeFile = useCallback((fileId) => {
+    setProjectFiles(prev => prev.map(f => f.id === fileId ? { ...f, dirty: false } : f));
+  }, []);
+
+  const duplicateCodeFile = useCallback((fileId) => {
+    setProjectFiles(prev => {
+      const source = prev.find(f => f.id === fileId);
+      if (!source) return prev;
+      const ext = fileExt(source.name);
+      const base = ext ? source.name.slice(0, -ext.length) : source.name;
+      let name = `${base}_copy${ext}`;
+      let path = `${source.path.substring(0, source.path.lastIndexOf('/') + 1)}${name}`;
+      let i = 2;
+      while (prev.some(f => f.path === path)) {
+        name = `${base}_copy${i}${ext}`;
+        path = `${source.path.substring(0, source.path.lastIndexOf('/') + 1)}${name}`;
+        i++;
+      }
+      const dup = { ...source, id: path, path, name, dirty: true };
+      return [...prev, dup];
+    });
+  }, []);
+
+  const renameCodeFile = useCallback((fileId, nextName) => {
+    const cleaned = String(nextName || '').trim();
+    if (!cleaned) return;
+    const source = projectFileMap.get(fileId);
+    if (!source) return;
+    const parent = source.path.substring(0, source.path.lastIndexOf('/') + 1);
+    const nextPath = `${parent}${cleaned}`;
+
+    setProjectFiles(prev => {
+      if (prev.some(f => f.id !== fileId && f.path === nextPath)) return prev;
+      return prev.map(f => f.id === fileId ? { ...f, id: nextPath, path: nextPath, name: cleaned, dirty: true } : f);
+    });
+    setOpenCodeTabs(prev => prev.map(id => id === fileId ? nextPath : id));
+    if (activeCodeFileId === fileId) {
+      setActiveCodeFileId(nextPath);
+    }
+  }, [activeCodeFileId, projectFileMap]);
+
+  const deleteCodeFile = useCallback((fileId) => {
+    setProjectFiles(prev => prev.filter(f => f.id !== fileId));
+    setOpenCodeTabs(prev => prev.filter(id => id !== fileId));
+    if (activeCodeFileId === fileId) {
+      const next = openCodeTabs.find(id => id !== fileId) || '';
+      setActiveCodeFileId(next);
+    }
+  }, [activeCodeFileId, openCodeTabs]);
+
+  const downloadCodeFile = useCallback((fileId) => {
+    const file = projectFileMap.get(fileId);
+    if (!file) return;
+    const blob = new Blob([file.content || ''], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }, [projectFileMap]);
+
+  const getBoardMainCode = useCallback((boardId) => {
+    const preferred = `project/${boardId}/${boardId}.ino`;
+    const prefFile = projectFileMap.get(preferred);
+    if (prefFile && prefFile.content) return prefFile.content;
+
+    const ino = projectFiles.find(f => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino');
+    if (ino?.content) return ino.content;
+
+    return code;
+  }, [projectFileMap, projectFiles, code]);
+
+  const getBoardCompileFiles = useCallback((boardId) => {
+    const allowed = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
+    const allFiles = projectFiles
+      .filter((f) => f.path.startsWith(`project/${boardId}/`))
+      .filter((f) => allowed.has(fileExt(f.path)))
+      .map((f) => ({ name: f.name, content: f.content || '' }));
+
+    const preferredMainName = `${boardId}.ino`;
+    const main = allFiles.find((f) => f.name === preferredMainName)
+      || allFiles.find((f) => fileExt(f.name) === '.ino')
+      || null;
+
+    const files = allFiles.filter((f) => !(main && f.name === main.name));
+
+    return {
+      mainCode: main?.content || getBoardMainCode(boardId) || code,
+      sketchName: boardId,
+      files,
+    };
+  }, [projectFiles, getBoardMainCode, code]);
+
+  const createCodeFile = useCallback((requestedName, openAfterCreate = false) => {
+    const cleaned = String(requestedName || '').trim();
+    if (!cleaned) return null;
+
+    const activePath = activeCodeFile?.path || '';
+    const parent = activePath.includes('/')
+      ? activePath.substring(0, activePath.lastIndexOf('/'))
+      : 'project';
+
+    const rawExt = fileExt(cleaned);
+    const fileNameBase = rawExt ? cleaned.slice(0, -rawExt.length) : cleaned;
+    const ext = rawExt || '.ino';
+    const safeBase = fileNameBase.replace(/[^a-zA-Z0-9._-]/g, '_') || 'new_file';
+    const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, '') || '.ino';
+
+    let candidate = `${safeBase}${safeExt}`;
+    let candidatePath = `${parent}/${candidate}`;
+    let i = 2;
+
+    while (projectFileMap.has(candidatePath)) {
+      candidate = `${safeBase}_${i}${safeExt}`;
+      candidatePath = `${parent}/${candidate}`;
+      i++;
+    }
+
+    const boardMatch = candidatePath.match(/^project\/([^/]+)\//);
+    const content = safeExt === '.h'
+      ? `#pragma once\n\n// ${safeBase} declarations\n`
+      : safeExt === '.cpp'
+        ? `#include "${safeBase}.h"\n\n// ${safeBase} implementation\n`
+        : safeExt === '.ino'
+          ? `void setup() {\n}\n\nvoid loop() {\n}\n`
+          : '';
+
+    const nextFile = {
+      id: candidatePath,
+      path: candidatePath,
+      name: candidate,
+      kind: 'code',
+      boardId: boardMatch ? boardMatch[1] : undefined,
+      content,
+      dirty: true,
+    };
+
+    setProjectFiles(prev => [...prev, nextFile]);
+    if (openAfterCreate) {
+      setOpenCodeTabs(prev => prev.includes(candidatePath) ? prev : [...prev, candidatePath]);
+      setActiveCodeFileId(candidatePath);
+    }
+
+    return candidatePath;
+  }, [activeCodeFile, projectFileMap]);
+
+  const createCodeTab = useCallback((requestedName) => {
+    return createCodeFile(requestedName, true);
+  }, [createCodeFile]);
+
   // ─── Project Save / Load Handlers ───────────────────────────────────────────
 
   /** Open the save dialog. Pre-fills with the current project name. */
@@ -1540,7 +2135,7 @@ export default function SimulatorPage() {
     }
     setCurrentProjectName(name);
     clearTimeout(autoSaveTimerRef.current);
-    await saveProject({ id, name, board, components, connections: wires, code, owner });
+    await saveProject({ id, name, board, components, connections: wires, code, projectFiles, openCodeTabs, activeCodeFileId, owner });
     setShowSaveDialog(false);
   };
 
@@ -1557,6 +2152,9 @@ export default function SimulatorPage() {
     setCode('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n');
     setComponents([]);
     setWires([]);
+    setProjectFiles([]);
+    setOpenCodeTabs([]);
+    setActiveCodeFileId('');
     setHistory({ past: [], future: [] });
     lastCompiledRef.current = null;
   };
@@ -1568,6 +2166,9 @@ export default function SimulatorPage() {
     setCode(proj.code || '');
     setComponents(proj.components || []);
     setWires(proj.connections || []);
+    setProjectFiles(Array.isArray(proj.projectFiles) ? proj.projectFiles : []);
+    setOpenCodeTabs(Array.isArray(proj.openCodeTabs) ? proj.openCodeTabs : []);
+    setActiveCodeFileId(proj.activeCodeFileId || '');
     syncNextIds(proj.components, proj.connections);
     setCurrentProjectId(proj.id);
     currentProjectIdRef.current = proj.id;
@@ -1607,7 +2208,7 @@ export default function SimulatorPage() {
   // ─── Backup / Restore ──────────────────────────────────────────────────────
   const handleBackupWorkflow = async () => {
     const zip = new JSZip();
-    const data = { name: currentProjectName, board, components, connections: wires, code, exportedAt: new Date().toISOString() };
+    const data = { name: currentProjectName, board, components, connections: wires, code, projectFiles, openCodeTabs, activeCodeFileId, exportedAt: new Date().toISOString() };
     zip.file('workflow.json', JSON.stringify(data, null, 2));
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
@@ -1629,6 +2230,9 @@ export default function SimulatorPage() {
       setCode(json.code || '');
       setComponents(json.components || []);
       setWires(json.connections || []);
+      setProjectFiles(Array.isArray(json.projectFiles) ? json.projectFiles : []);
+      setOpenCodeTabs(Array.isArray(json.openCodeTabs) ? json.openCodeTabs : []);
+      setActiveCodeFileId(json.activeCodeFileId || '');
       syncNextIds(json.components, json.connections);
       setCurrentProjectName(json.name || 'Untitled');
       setHistory({ past: [], future: [] });
@@ -1666,37 +2270,274 @@ export default function SimulatorPage() {
     console.log(`[SIM]`, msg);
   };
 
+  const runCircuitValidation = useCallback(() => {
+    try {
+      const errs = validateCircuitLocally(components, wires);
+      if (errs.length > 0) {
+        setValidationErrors(errs);
+        setShowValidation(true);
+        setValidationToast({
+          title: `Circuit validation failed (${errs.length})`,
+          reasons: errs.slice(0, 3).map((e) => e.message),
+        });
+      } else {
+        setValidationErrors([]);
+        setValidationToast(null);
+      }
+      return errs.length === 0;
+    } catch (err) {
+      console.warn('[Validation] Engine failed, continuing run:', err);
+      return true;
+    }
+  }, [components, wires]);
+
+  const getSerialTimestamp = () => {
+    const now = new Date();
+    return now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
+  };
+
+  const parseSerialForPlotter = useCallback((chunk) => {
+    serialPlotBufferRef.current += chunk;
+    const lines = serialPlotBufferRef.current.split('\n');
+    if (lines.length <= 1) return;
+
+    const completeLines = lines.slice(0, -1);
+    serialPlotBufferRef.current = lines[lines.length - 1];
+
+    completeLines.forEach((line) => {
+      const parts = line.split(/[,\s\t]+/).filter(Boolean);
+      if (parts.length === 0) return;
+
+      const isNumeric = parts.every((p) => !isNaN(parseFloat(p)));
+      if (!isNumeric) {
+        serialPlotLabelsRef.current = parts;
+        setSelectedPlotPins((prev) => {
+          const nextPins = [...prev];
+          parts.forEach((lbl) => { if (!nextPins.includes(lbl)) nextPins.push(lbl); });
+          return nextPins;
+        });
+        return;
+      }
+
+      latestParsedSerialRef.current = parts.map((p) => parseFloat(p));
+      if (serialPlotLabelsRef.current.length < parts.length) {
+        for (let i = serialPlotLabelsRef.current.length; i < parts.length; i++) {
+          serialPlotLabelsRef.current.push(`SVar${i}`);
+        }
+      }
+
+      setSelectedPlotPins((prev) => {
+        let changed = false;
+        const nextPins = [...prev];
+        serialPlotLabelsRef.current.slice(0, parts.length).forEach((lbl) => {
+          if (!nextPins.includes(lbl)) {
+            nextPins.push(lbl);
+            changed = true;
+          }
+        });
+        return changed ? nextPins : prev;
+      });
+    });
+  }, []);
+
+  const pushSerialRxChunk = useCallback((chunk, boardId = 'default', source = 'sim') => {
+    parseSerialForPlotter(chunk);
+    const ts = getSerialTimestamp();
+    setSerialHistory((prev) => {
+      let next = prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
+      if (next.length > 0) {
+        const last = next[next.length - 1];
+        if (last.dir === 'rx' && last.boardId === boardId && last.source === source && !last.text.endsWith('\n')) {
+          next[next.length - 1] = { ...last, text: last.text + chunk };
+          return next;
+        }
+      }
+      return [...next, { dir: 'rx', text: chunk, ts, boardId, source }];
+    });
+  }, [parseSerialForPlotter]);
+
+  const pushSerialTxLine = useCallback((text, boardId = 'all', source = 'sim') => {
+    setSerialHistory((prev) => [...prev, { dir: 'tx', text, ts: getSerialTimestamp(), boardId, source }]);
+  }, []);
+
+  const handleHardwareBoardChange = useCallback((nextBoardId) => {
+    setHardwareBoardId(nextBoardId);
+    if (nextBoardId) setSelected(nextBoardId);
+  }, [setSelected]);
+
+  const resolveBoardHex = useCallback(async (boardComp) => {
+    if (!boardComp) throw new Error('No board selected for upload.');
+    const kind = normalizeBoardKind(boardComp.type);
+    const boardHex = boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
+    if (typeof boardHex === 'string' && boardHex.trim()) return boardHex;
+
+    const compileUnit = getBoardCompileFiles(boardComp.id);
+    const sourceCode = getBoardMainCode(boardComp.id) || code;
+    const cacheKeyBoard = `${kind}:${boardComp.id}`;
+    const cacheSource = [
+      compileUnit.mainCode || sourceCode,
+      ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+      BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+    ].join('\n/*__SPLIT__*/\n');
+
+    let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
+    if (!compiled) {
+      compiled = await compileCode({
+        code: compileUnit.mainCode || sourceCode,
+        files: compileUnit.files,
+        sketchName: compileUnit.sketchName,
+        fqbn: BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+      });
+      setCachedHex(cacheSource, cacheKeyBoard, compiled);
+    }
+    return compiled.hex;
+  }, [code, getBoardCompileFiles, getBoardMainCode]);
+
+  const {
+    hardwareAvailablePorts,
+    showAllHardwarePorts,
+    setShowAllHardwarePorts,
+    isLoadingHardwarePorts,
+    hardwareBaudRate,
+    setHardwareBaudRate,
+    hardwareResetMethod,
+    setHardwareResetMethod,
+    hardwarePortPath,
+    setHardwarePortPath,
+    resolvedHardwarePort,
+    refreshHardwarePorts,
+    uploadToHardware,
+    isUploadingHardware,
+  } = useHardwareFlashing({
+    hardwareBoardId,
+    boardComponents,
+    resolveBoardHex,
+    normalizeBoardKind,
+    boardFqbn: BOARD_FQBN,
+    flashFirmware,
+    pushSerialTxLine,
+    pushSerialRxChunk,
+    setHardwareStatus,
+  });
+
+  const {
+    hardwareConnected,
+    hardwareConnecting,
+    connectHardwareSerial,
+    disconnectHardwareSerial,
+    sendHardwareSerialLine,
+  } = useWebSerialHardware({
+    hardwareBoardId,
+    hardwareSerialTargetRef,
+    boardComponents,
+    board,
+    hardwareBaudRate,
+    showAllHardwarePorts,
+    normalizeBoardKind,
+    boardDefaultBaud: BOARD_DEFAULT_BAUD,
+    pushSerialRxChunk,
+    pushSerialTxLine,
+    setHardwareStatus,
+  });
+
+  useEffect(() => {
+    if (!hardwareConnected) {
+      setHardwareSerialTargetId(null);
+      hardwareSerialTargetRef.current = null;
+      return;
+    }
+
+    const deviceLabel = String(resolvedHardwarePort || '').trim();
+    const nextTarget = deviceLabel
+      ? `hw:${deviceLabel}`
+      : (hardwareBoardId ? `hw:${hardwareBoardId}` : 'hw:connected');
+
+    setHardwareSerialTargetId(nextTarget);
+    hardwareSerialTargetRef.current = nextTarget;
+  }, [hardwareConnected, resolvedHardwarePort, hardwareBoardId]);
+
+  const handleUploadToHardware = useCallback(async () => {
+    // Disconnect browser Web Serial first to release COM port lock for arduino-cli upload.
+    if (hardwareConnected) {
+      setHardwareStatus('Disconnecting Web Serial before flash...');
+      appendConsoleEntry('info', 'Disconnecting Web Serial to release port for flashing...', 'hardware');
+      await disconnectHardwareSerial();
+    }
+
+    await uploadToHardware();
+  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry]);
+
   const handleRun = async () => {
     try {
+      appendConsoleEntry('info', 'Run requested.', 'simulator');
+      if (!runCircuitValidation()) {
+        appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
+        return;
+      }
+
       setIsRunning(true);
       setIsCompiling(true);
+      const boardHexMap = {};
+      const boardBaudMap = {};
+      const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+      let result = null;
 
-      let result;
-      if (lastCompiledRef.current && lastCompiledRef.current.code === code && lastCompiledRef.current.board === board) {
-        // Fast path: in-memory hit from this session
-        logSerial('Using cached compilation...');
-        result = lastCompiledRef.current.result;
-      } else {
-        // Persistent path: check IndexedDB (survives page refresh + offline)
+      if (programmableBoards.length > 0) {
+        for (const boardComp of programmableBoards) {
+          const kind = normalizeBoardKind(boardComp.type);
+          boardBaudMap[boardComp.id] = Number(BOARD_DEFAULT_BAUD[kind] || BOARD_DEFAULT_BAUD.arduino_uno);
+
+          const boardHex = boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
+          if (typeof boardHex === 'string' && boardHex.trim()) {
+            boardHexMap[boardComp.id] = boardHex;
+            if (!result) result = { hex: boardHex };
+            continue;
+          }
+
+          const sourceCode = getBoardMainCode(boardComp.id) || code;
+          const compileUnit = getBoardCompileFiles(boardComp.id);
+          const cacheKeyBoard = `${kind}:${boardComp.id}`;
+          const cacheSource = [
+            compileUnit.mainCode || sourceCode,
+            ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+          ].join('\n/*__SPLIT__*/\n');
+
+          let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
+          if (compiled) {
+            logSerial(`Using cached compilation for ${boardComp.id}...`);
+          } else {
+            logSerial(`Compiling ${boardComp.id}...`);
+            compiled = await compileCode({
+              code: compileUnit.mainCode || sourceCode,
+              files: compileUnit.files,
+              sketchName: compileUnit.sketchName,
+            });
+            setCachedHex(cacheSource, cacheKeyBoard, compiled);
+          }
+
+          boardHexMap[boardComp.id] = compiled.hex;
+          if (!result) result = compiled;
+        }
+      }
+
+      if (!result) {
         const cached = await getCachedHex(code, board);
         if (cached) {
           logSerial('Using locally cached compilation (offline cache)...');
           result = cached;
-          lastCompiledRef.current = { code, board, result };
         } else {
           logSerial('Compiling...');
           result = await compileCode(code);
-          lastCompiledRef.current = { code, board, result };
-          // Persist for future offline use
           setCachedHex(code, board, result);
         }
       }
 
+      lastCompiledRef.current = { code, board, result };
       setIsCompiling(false);
       logSerial('Compiled! Connecting to emulator...');
 
       // Load Web Worker
-      const worker = new Worker(new URL('../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
+      const worker = new Worker(new URL('../../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
       workerRef.current = worker;
 
       worker.onmessage = (event) => {
@@ -1710,7 +2551,7 @@ export default function SimulatorPage() {
               const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
               serialVars[lbl] = val;
             });
-            const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars };
+            const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars, boardId: msg.boardId || 'default' };
             const next = [...prev, newPt];
             if (next.length > 800) return next.slice(next.length - 800);
             return next;
@@ -1729,63 +2570,13 @@ export default function SimulatorPage() {
           });
         }
         if (msg.type === 'serial') {
-          // --- BEGIN SERIAL PLOTTER PARSER ---
-          serialPlotBufferRef.current += msg.data;
-          const lines = serialPlotBufferRef.current.split('\n');
-          if (lines.length > 1) {
-            const completeLines = lines.slice(0, -1);
-            serialPlotBufferRef.current = lines[lines.length - 1];
-
-            completeLines.forEach(line => {
-              const parts = line.split(/[,\s\t]+/).filter(Boolean);
-              if (parts.length > 0) {
-                const isNumeric = parts.every(p => !isNaN(parseFloat(p)));
-                if (!isNumeric) {
-                  serialPlotLabelsRef.current = parts;
-                  setSelectedPlotPins(prev => {
-                    const newPins = [...prev];
-                    parts.forEach(l => { if (!newPins.includes(l)) newPins.push(l); });
-                    return newPins;
-                  });
-                } else {
-                  latestParsedSerialRef.current = parts.map(p => parseFloat(p));
-                  if (serialPlotLabelsRef.current.length < parts.length) {
-                    for (let i = serialPlotLabelsRef.current.length; i < parts.length; i++) {
-                      serialPlotLabelsRef.current.push(`SVar${i}`);
-                    }
-                  }
-                  setSelectedPlotPins(prev => {
-                    let changed = false;
-                    const newPins = [...prev];
-                    serialPlotLabelsRef.current.slice(0, parts.length).forEach(lbl => {
-                      if (!newPins.includes(lbl)) { newPins.push(lbl); changed = true; }
-                    });
-                    return changed ? newPins : prev;
-                  });
-                }
-              }
-            });
-          }
-          // --- END SERIAL PLOTTER PARSER ---
-
-          const now = new Date();
-          const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
-          setSerialHistory(prev => {
-            let next = prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
-            if (next.length > 0) {
-              const last = next[next.length - 1];
-              if (last.dir === 'rx' && !last.text.endsWith('\n')) {
-                next[next.length - 1] = { ...last, text: last.text + msg.data };
-                return next;
-              }
-            }
-            return [...next, { dir: 'rx', text: msg.data, ts }];
-          });
+          pushSerialRxChunk(msg.data, msg.boardId || 'default', 'sim');
         }
       };
 
       worker.onerror = (err) => {
         console.error('Worker Error:', err);
+        appendConsoleEntry('error', `Worker error: ${err?.message || 'Unknown error'}`, 'simulator');
         logSerial('Worker threw an error', 'var(--red)');
         handleStop();
       };
@@ -1801,10 +2592,11 @@ export default function SimulatorPage() {
       const customLogics = [];
       components.forEach((c) => {
         if (COMPONENT_REGISTRY[c.type]?.logicCode) {
+          const manifestPins = COMPONENT_REGISTRY[c.type]?.manifest?.pins;
           customLogics.push({
             type: c.type,
             code: COMPONENT_REGISTRY[c.type].logicCode,
-            pins: COMPONENT_REGISTRY[c.type].manifest.pins
+            pins: Array.isArray(manifestPins) ? manifestPins : []
           });
         }
       });
@@ -1815,11 +2607,15 @@ export default function SimulatorPage() {
         neopixels: neopixelWiring,
         wires: wires,
         components: components,
-        customLogics: customLogics
+        customLogics: customLogics,
+        boardHexMap: Object.keys(boardHexMap).length > 0 ? boardHexMap : undefined,
+        boardBaudMap: Object.keys(boardBaudMap).length > 0 ? boardBaudMap : undefined,
+        baudRate: Number(serialBaudRate || BOARD_DEFAULT_BAUD[selectedSerialBoardKind] || BOARD_DEFAULT_BAUD.arduino_uno),
       });
     } catch (err) {
       setIsRunning(false);
       setIsCompiling(false);
+      appendConsoleEntry('error', `Run failed: ${err?.message || 'Unknown error'}`, 'simulator');
       console.error(err);
       alert(err.message);
     }
@@ -1844,7 +2640,18 @@ export default function SimulatorPage() {
     serialPlotBufferRef.current = '';
     serialPlotLabelsRef.current = [];
     latestParsedSerialRef.current = [];
+    appendConsoleEntry('info', 'Simulation stopped.', 'simulator');
   };
+
+  useEffect(() => {
+    if (!hardwareStatus) return;
+    if (lastHardwareStatusRef.current === hardwareStatus) return;
+    lastHardwareStatusRef.current = hardwareStatus;
+
+    const statusLower = String(hardwareStatus).toLowerCase();
+    const level = statusLower.includes('failed') || statusLower.includes('lost') ? 'error' : 'info';
+    appendConsoleEntry(level, hardwareStatus, 'hardware');
+  }, [hardwareStatus, appendConsoleEntry]);
 
   const handlePause = () => {
     if (workerRef.current) workerRef.current.postMessage({ type: 'PAUSE' });
@@ -1865,15 +2672,40 @@ export default function SimulatorPage() {
     }
   };
 
-  const sendSerialInput = () => {
+  const sendSerialInput = useCallback((targetBoardOverride) => {
     const txt = serialInput.trim();
-    if (!txt || !workerRef.current || !isRunning) return;
-    workerRef.current.postMessage({ type: 'SERIAL_INPUT', data: txt + '\n' });
-    const now = new Date();
-    const ts = now.toTimeString().slice(0, 8) + '.' + String(now.getMilliseconds()).padStart(3, '0');
-    setSerialHistory(prev => [...prev, { dir: 'tx', text: txt, ts }]);
-    setSerialInput('');
-  };
+    if (!txt) return;
+
+    const requestedBoard = targetBoardOverride || serialBoardFilter;
+    const targetBoardId = requestedBoard !== 'all' ? requestedBoard : undefined;
+
+    if (workerRef.current && isRunning) {
+      workerRef.current.postMessage({
+        type: 'SERIAL_INPUT',
+        data: txt + '\n',
+        targetBoardId,
+        baudRate: serialBaudRate,
+      });
+      pushSerialTxLine(txt, targetBoardId || 'all', 'sim');
+      setSerialInput('');
+      return;
+    }
+
+    if (hardwareConnected) {
+      const targetBoard = targetBoardId
+        ? targetBoardId
+        : (hardwareSerialTargetRef.current || hardwareBoardId || 'hardware');
+      sendHardwareSerialLine(txt, targetBoard)
+        .then(() => setSerialInput(''))
+        .catch((err) => {
+          console.error('[WebSerial] TX failed:', err);
+          alert(`Hardware serial write failed: ${err?.message || 'Unknown error'}`);
+        });
+      return;
+    }
+
+    alert('Run simulator or connect hardware serial before sending data.');
+  }, [serialInput, workerRef, isRunning, serialBoardFilter, serialBaudRate, pushSerialTxLine, hardwareConnected, hardwareBoardId, sendHardwareSerialLine]);
 
   // ── PNG Export ────────────────────────────────────────────────────────────
   const downloadPng = async () => {
@@ -2047,6 +2879,9 @@ export default function SimulatorPage() {
         components: components.map(c => ({ id: c.id, type: c.type, label: c.label, x: c.x, y: c.y, w: c.w, h: c.h, attrs: c.attrs })),
         connections: wires.map(w => ({ id: w.id, from: w.from, to: w.to, color: w.color, waypoints: w.waypoints || [], isBelow: w.isBelow || false, fromLabel: w.fromLabel || '', toLabel: w.toLabel || '' })),
         code,
+        projectFiles,
+        openCodeTabs,
+        activeCodeFileId,
         exported: new Date().toISOString(),
       };
       const MARKER = '\x00OPENHW_META\x00';
@@ -2090,13 +2925,13 @@ export default function SimulatorPage() {
       const FW = FX2 - FX1, FH = FY2 - FY1;
 
       // ── SVG micro helpers ───────────────────────────────────────────────
-      const ln  = (x1,y1,x2,y2,sw=1.5,col='#1a1a1a') =>
+      const ln = (x1, y1, x2, y2, sw = 1.5, col = '#1a1a1a') =>
         `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="${sw}"/>`;
-      const bx  = (x,y,w,h,fill='white',sw=1.5,rx=0) =>
+      const bx = (x, y, w, h, fill = 'white', sw = 1.5, rx = 0) =>
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}" stroke="#1a1a1a" stroke-width="${sw}"/>`;
-      const tx  = (x,y,t,sz=9,anchor='middle',bold=false,fill='#1a1a1a',font='monospace') =>
-        `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${sz}" font-family="${font}" ${bold?'font-weight="bold"':''} fill="${fill}">${t}</text>`;
-      const circ= (cx,cy,r,fill='white') =>
+      const tx = (x, y, t, sz = 9, anchor = 'middle', bold = false, fill = '#1a1a1a', font = 'monospace') =>
+        `<text x="${x}" y="${y}" text-anchor="${anchor}" font-size="${sz}" font-family="${font}" ${bold ? 'font-weight="bold"' : ''} fill="${fill}">${t}</text>`;
+      const circ = (cx, cy, r, fill = 'white') =>
         `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="#1a1a1a" stroke-width="1.5"/>`;
 
       // ── Symbol library ──────────────────────────────────────────────────
@@ -2104,203 +2939,203 @@ export default function SimulatorPage() {
 
       // LED
       SYMS['wokwi-led'] = {
-        w:72, h:44, refPrefix:'D',
-        pins:{ A:{dx:0,dy:22}, K:{dx:72,dy:22} },
-        draw(x,y,comp,ref){
-          const c=comp.attrs?.color||'red';
-          const fill=c==='green'?'#2a7a2a30':c==='blue'?'#2a2a9a30':c==='yellow'?'#8a7a0030':'#c0202030';
+        w: 72, h: 44, refPrefix: 'D',
+        pins: { A: { dx: 0, dy: 22 }, K: { dx: 72, dy: 22 } },
+        draw(x, y, comp, ref) {
+          const c = comp.attrs?.color || 'red';
+          const fill = c === 'green' ? '#2a7a2a30' : c === 'blue' ? '#2a2a9a30' : c === 'yellow' ? '#8a7a0030' : '#c0202030';
           return [
-            ln(x,y+22,x+16,y+22),
-            `<polygon points="${x+16},${y+6} ${x+16},${y+38} ${x+48},${y+22}" fill="${fill}" stroke="#1a1a1a" stroke-width="1.5"/>`,
-            ln(x+48,y+6,x+48,y+38), ln(x+48,y+22,x+72,y+22),
-            ln(x+38,y+6,x+52,y-5,1), ln(x+32,y+6,x+46,y-5,1),
-            `<polygon points="${x+50},${y-7} ${x+52},${y-5} ${x+48},${y-4}" fill="#1a1a1a"/>`,
-            `<polygon points="${x+44},${y-7} ${x+46},${y-5} ${x+42},${y-4}" fill="#1a1a1a"/>`,
-            tx(x+36,y+54,ref,9,'middle',true),
-            tx(x+5,y+18,'+',7,'middle',false,'#777'), tx(x+64,y+18,'−',7,'middle',false,'#777'),
+            ln(x, y + 22, x + 16, y + 22),
+            `<polygon points="${x + 16},${y + 6} ${x + 16},${y + 38} ${x + 48},${y + 22}" fill="${fill}" stroke="#1a1a1a" stroke-width="1.5"/>`,
+            ln(x + 48, y + 6, x + 48, y + 38), ln(x + 48, y + 22, x + 72, y + 22),
+            ln(x + 38, y + 6, x + 52, y - 5, 1), ln(x + 32, y + 6, x + 46, y - 5, 1),
+            `<polygon points="${x + 50},${y - 7} ${x + 52},${y - 5} ${x + 48},${y - 4}" fill="#1a1a1a"/>`,
+            `<polygon points="${x + 44},${y - 7} ${x + 46},${y - 5} ${x + 42},${y - 4}" fill="#1a1a1a"/>`,
+            tx(x + 36, y + 54, ref, 9, 'middle', true),
+            tx(x + 5, y + 18, '+', 7, 'middle', false, '#777'), tx(x + 64, y + 18, '−', 7, 'middle', false, '#777'),
           ].join('');
         }
       };
 
       // Resistor
       SYMS['wokwi-resistor'] = {
-        w:70, h:32, refPrefix:'R',
-        pins:{ p1:{dx:0,dy:16}, p2:{dx:70,dy:16} },
-        draw(x,y,comp,ref){
-          const v=parseFloat(comp.attrs?.value||220);
-          const u=v>=1e6?`${v/1e6}M\u03A9`:v>=1000?`${v/1000}k\u03A9`:`${v}\u03A9`;
-          return [ln(x,y+16,x+12,y+16), bx(x+12,y+6,46,20), ln(x+58,y+16,x+70,y+16),
-            tx(x+35,y+44,ref,9,'middle',true), tx(x+35,y+53,u,8,'middle',false,'#555')].join('');
+        w: 70, h: 32, refPrefix: 'R',
+        pins: { p1: { dx: 0, dy: 16 }, p2: { dx: 70, dy: 16 } },
+        draw(x, y, comp, ref) {
+          const v = parseFloat(comp.attrs?.value || 220);
+          const u = v >= 1e6 ? `${v / 1e6}M\u03A9` : v >= 1000 ? `${v / 1000}k\u03A9` : `${v}\u03A9`;
+          return [ln(x, y + 16, x + 12, y + 16), bx(x + 12, y + 6, 46, 20), ln(x + 58, y + 16, x + 70, y + 16),
+          tx(x + 35, y + 44, ref, 9, 'middle', true), tx(x + 35, y + 53, u, 8, 'middle', false, '#555')].join('');
         }
       };
 
       // Push button
       SYMS['wokwi-pushbutton'] = {
-        w:62, h:48, refPrefix:'S',
-        pins:{ '1':{dx:0,dy:28}, '2':{dx:62,dy:28} },
-        draw(x,y,comp,ref){
+        w: 62, h: 48, refPrefix: 'S',
+        pins: { '1': { dx: 0, dy: 28 }, '2': { dx: 62, dy: 28 } },
+        draw(x, y, comp, ref) {
           return [
-            ln(x,y+28,x+16,y+28), ln(x+16,y+14,x+16,y+42),
-            ln(x+40,y+14,x+40,y+42), ln(x+16,y+14,x+46,y+9),
-            ln(x+40,y+28,x+62,y+28),
-            ln(x+28,y+9,x+28,y+2), ln(x+23,y+2,x+33,y+2,1.5),
-            tx(x+31,y+60,ref,9,'middle',true),
+            ln(x, y + 28, x + 16, y + 28), ln(x + 16, y + 14, x + 16, y + 42),
+            ln(x + 40, y + 14, x + 40, y + 42), ln(x + 16, y + 14, x + 46, y + 9),
+            ln(x + 40, y + 28, x + 62, y + 28),
+            ln(x + 28, y + 9, x + 28, y + 2), ln(x + 23, y + 2, x + 33, y + 2, 1.5),
+            tx(x + 31, y + 60, ref, 9, 'middle', true),
           ].join('');
         }
       };
 
       // Buzzer
       SYMS['wokwi-buzzer'] = {
-        w:52, h:48, refPrefix:'BZ',
-        pins:{ '1':{dx:0,dy:24}, '2':{dx:52,dy:24} },
-        draw(x,y,comp,ref){
+        w: 52, h: 48, refPrefix: 'BZ',
+        pins: { '1': { dx: 0, dy: 24 }, '2': { dx: 52, dy: 24 } },
+        draw(x, y, comp, ref) {
           return [
-            ln(x,y+24,x+10,y+24), bx(x+10,y+10,32,28),
-            `<path d="M${x+21},${y+16} Q${x+26},${y+11} ${x+31},${y+16}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
-            `<path d="M${x+17},${y+13} Q${x+26},${y+5} ${x+35},${y+13}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
-            ln(x+26,y+24,x+26,y+30,1.5), ln(x+42,y+24,x+52,y+24),
-            tx(x+6,y+22,'+',7,'middle',false,'#777'),
-            tx(x+26,y+60,ref,9,'middle',true),
+            ln(x, y + 24, x + 10, y + 24), bx(x + 10, y + 10, 32, 28),
+            `<path d="M${x + 21},${y + 16} Q${x + 26},${y + 11} ${x + 31},${y + 16}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
+            `<path d="M${x + 17},${y + 13} Q${x + 26},${y + 5} ${x + 35},${y + 13}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
+            ln(x + 26, y + 24, x + 26, y + 30, 1.5), ln(x + 42, y + 24, x + 52, y + 24),
+            tx(x + 6, y + 22, '+', 7, 'middle', false, '#777'),
+            tx(x + 26, y + 60, ref, 9, 'middle', true),
           ].join('');
         }
       };
 
       // Power supply
       SYMS['wokwi-power-supply'] = {
-        w:52, h:70, refPrefix:'PS',
-        pins:{ '5V':{dx:26,dy:0}, 'GND':{dx:26,dy:70} },
-        draw(x,y,comp,ref){
-          const v=comp.attrs?.voltage||'5V';
+        w: 52, h: 70, refPrefix: 'PS',
+        pins: { '5V': { dx: 26, dy: 0 }, 'GND': { dx: 26, dy: 70 } },
+        draw(x, y, comp, ref) {
+          const v = comp.attrs?.voltage || '5V';
           return [
-            ln(x+26,y,x+26,y+16), ln(x+14,y+16,x+38,y+16,2),
-            ln(x+26,y+50,x+26,y+70),
-            ln(x+14,y+50,x+38,y+50), ln(x+18,y+56,x+34,y+56), ln(x+22,y+62,x+30,y+62),
-            tx(x+26,y-4,`+${v}`,9), tx(x+26,y+32,ref,8,'middle',false,'#555'),
+            ln(x + 26, y, x + 26, y + 16), ln(x + 14, y + 16, x + 38, y + 16, 2),
+            ln(x + 26, y + 50, x + 26, y + 70),
+            ln(x + 14, y + 50, x + 38, y + 50), ln(x + 18, y + 56, x + 34, y + 56), ln(x + 22, y + 62, x + 30, y + 62),
+            tx(x + 26, y - 4, `+${v}`, 9), tx(x + 26, y + 32, ref, 8, 'middle', false, '#555'),
           ].join('');
         }
       };
 
       // Potentiometer
       SYMS['wokwi-potentiometer'] = {
-        w:80, h:72, refPrefix:'RV',
-        pins:{ '1':{dx:0,dy:36}, '2':{dx:80,dy:36}, 'SIG':{dx:40,dy:72} },
-        draw(x,y,comp,ref){
-          const v=parseFloat(comp.attrs?.value||50000);
-          const u=v>=1e6?`${v/1e6}M\u03A9`:v>=1000?`${v/1000}k\u03A9`:`${v}\u03A9`;
+        w: 80, h: 72, refPrefix: 'RV',
+        pins: { '1': { dx: 0, dy: 36 }, '2': { dx: 80, dy: 36 }, 'SIG': { dx: 40, dy: 72 } },
+        draw(x, y, comp, ref) {
+          const v = parseFloat(comp.attrs?.value || 50000);
+          const u = v >= 1e6 ? `${v / 1e6}M\u03A9` : v >= 1000 ? `${v / 1000}k\u03A9` : `${v}\u03A9`;
           return [
-            ln(x,y+36,x+12,y+36), bx(x+12,y+26,56,20), ln(x+68,y+36,x+80,y+36),
-            ln(x+40,y+46,x+40,y+60),
-            `<polygon points="${x+34},${y+46} ${x+46},${y+46} ${x+40},${y+36}" fill="#1a1a1a"/>`,
-            ln(x+40,y+60,x+40,y+72),
-            tx(x+40,y+22,u,7), tx(x+40,y+84,ref,9,'middle',true),
+            ln(x, y + 36, x + 12, y + 36), bx(x + 12, y + 26, 56, 20), ln(x + 68, y + 36, x + 80, y + 36),
+            ln(x + 40, y + 46, x + 40, y + 60),
+            `<polygon points="${x + 34},${y + 46} ${x + 46},${y + 46} ${x + 40},${y + 36}" fill="#1a1a1a"/>`,
+            ln(x + 40, y + 60, x + 40, y + 72),
+            tx(x + 40, y + 22, u, 7), tx(x + 40, y + 84, ref, 9, 'middle', true),
           ].join('');
         }
       };
 
       // Servo
       SYMS['wokwi-servo'] = {
-        w:90, h:56, refPrefix:'SV',
-        pins:{ 'GND':{dx:18,dy:56}, 'V+':{dx:45,dy:56}, 'PWM':{dx:72,dy:56} },
-        draw(x,y,comp,ref){
+        w: 90, h: 56, refPrefix: 'SV',
+        pins: { 'GND': { dx: 18, dy: 56 }, 'V+': { dx: 45, dy: 56 }, 'PWM': { dx: 72, dy: 56 } },
+        draw(x, y, comp, ref) {
           return [
-            bx(x+5,y+5,80,36,undefined,1.5,3), tx(x+45,y+28,'SERVO',10,'middle',true,'#1a1a1a','sans-serif'),
-            ln(x+18,y+41,x+18,y+56), ln(x+45,y+41,x+45,y+56), ln(x+72,y+41,x+72,y+56),
-            tx(x+18,y+66,'GND',7), tx(x+45,y+66,'V+',7), tx(x+72,y+66,'PWM',7),
-            tx(x+45,y+76,ref,9,'middle',true),
+            bx(x + 5, y + 5, 80, 36, undefined, 1.5, 3), tx(x + 45, y + 28, 'SERVO', 10, 'middle', true, '#1a1a1a', 'sans-serif'),
+            ln(x + 18, y + 41, x + 18, y + 56), ln(x + 45, y + 41, x + 45, y + 56), ln(x + 72, y + 41, x + 72, y + 56),
+            tx(x + 18, y + 66, 'GND', 7), tx(x + 45, y + 66, 'V+', 7), tx(x + 72, y + 66, 'PWM', 7),
+            tx(x + 45, y + 76, ref, 9, 'middle', true),
           ].join('');
         }
       };
 
       // DC Motor
       SYMS['wokwi-motor'] = {
-        w:60, h:52, refPrefix:'M',
-        pins:{ '1':{dx:0,dy:26}, '2':{dx:60,dy:26} },
-        draw(x,y,comp,ref){
-          return [ln(x,y+26,x+8,y+26), circ(x+30,y+26,18), tx(x+30,y+30,'M',14,'middle',true,'#1a1a1a','sans-serif'),
-            ln(x+52,y+26,x+60,y+26), tx(x+30,y+56,ref,9,'middle',true)].join('');
+        w: 60, h: 52, refPrefix: 'M',
+        pins: { '1': { dx: 0, dy: 26 }, '2': { dx: 60, dy: 26 } },
+        draw(x, y, comp, ref) {
+          return [ln(x, y + 26, x + 8, y + 26), circ(x + 30, y + 26, 18), tx(x + 30, y + 30, 'M', 14, 'middle', true, '#1a1a1a', 'sans-serif'),
+          ln(x + 52, y + 26, x + 60, y + 26), tx(x + 30, y + 56, ref, 9, 'middle', true)].join('');
         }
       };
 
       // NeoPixel
       SYMS['wokwi-neopixel-matrix'] = {
-        w:80, h:62, refPrefix:'NP',
-        pins:{ 'DIN':{dx:0,dy:31}, 'VCC':{dx:40,dy:0}, 'GND':{dx:40,dy:62} },
-        draw(x,y,comp,ref){
+        w: 80, h: 62, refPrefix: 'NP',
+        pins: { 'DIN': { dx: 0, dy: 31 }, 'VCC': { dx: 40, dy: 0 }, 'GND': { dx: 40, dy: 62 } },
+        draw(x, y, comp, ref) {
           return [
-            bx(x+10,y+10,60,42,'#111'), ln(x,y+31,x+10,y+31),
-            ln(x+40,y,x+40,y+10), ln(x+40,y+52,x+40,y+62),
-            `<circle cx="${x+30}" cy="${y+26}" r="5" fill="#f00" opacity="0.9"/>`,
-            `<circle cx="${x+40}" cy="${y+26}" r="5" fill="#0f0" opacity="0.9"/>`,
-            `<circle cx="${x+50}" cy="${y+26}" r="5" fill="#00f" opacity="0.9"/>`,
-            `<circle cx="${x+35}" cy="${y+38}" r="5" fill="#ff0" opacity="0.9"/>`,
-            `<circle cx="${x+45}" cy="${y+38}" r="5" fill="#0ff" opacity="0.9"/>`,
-            tx(x+40,y+76,ref,9,'middle',true),
+            bx(x + 10, y + 10, 60, 42, '#111'), ln(x, y + 31, x + 10, y + 31),
+            ln(x + 40, y, x + 40, y + 10), ln(x + 40, y + 52, x + 40, y + 62),
+            `<circle cx="${x + 30}" cy="${y + 26}" r="5" fill="#f00" opacity="0.9"/>`,
+            `<circle cx="${x + 40}" cy="${y + 26}" r="5" fill="#0f0" opacity="0.9"/>`,
+            `<circle cx="${x + 50}" cy="${y + 26}" r="5" fill="#00f" opacity="0.9"/>`,
+            `<circle cx="${x + 35}" cy="${y + 38}" r="5" fill="#ff0" opacity="0.9"/>`,
+            `<circle cx="${x + 45}" cy="${y + 38}" r="5" fill="#0ff" opacity="0.9"/>`,
+            tx(x + 40, y + 76, ref, 9, 'middle', true),
           ].join('');
         }
       };
 
       // 74HC595 Shift Register
       SYMS['shift_register'] = {
-        w:120, h:210, refPrefix:'IC',
-        pins:{
-          vcc:{dx:60,dy:0},gnd:{dx:60,dy:210},
-          ser:{dx:0,dy:40},srclk:{dx:0,dy:58},rclk:{dx:0,dy:76},oe:{dx:0,dy:94},srclr:{dx:0,dy:112},
-          q0:{dx:120,dy:40},q1:{dx:120,dy:58},q2:{dx:120,dy:76},q3:{dx:120,dy:94},
-          q4:{dx:120,dy:112},q5:{dx:120,dy:130},q6:{dx:120,dy:148},q7:{dx:120,dy:166},q7s:{dx:120,dy:184},
+        w: 120, h: 210, refPrefix: 'IC',
+        pins: {
+          vcc: { dx: 60, dy: 0 }, gnd: { dx: 60, dy: 210 },
+          ser: { dx: 0, dy: 40 }, srclk: { dx: 0, dy: 58 }, rclk: { dx: 0, dy: 76 }, oe: { dx: 0, dy: 94 }, srclr: { dx: 0, dy: 112 },
+          q0: { dx: 120, dy: 40 }, q1: { dx: 120, dy: 58 }, q2: { dx: 120, dy: 76 }, q3: { dx: 120, dy: 94 },
+          q4: { dx: 120, dy: 112 }, q5: { dx: 120, dy: 130 }, q6: { dx: 120, dy: 148 }, q7: { dx: 120, dy: 166 }, q7s: { dx: 120, dy: 184 },
         },
-        draw(x,y,comp,ref){
-          const LP=[['SER',40],['SRCLK',58],['RCLK',76],['~OE',94],['~SRCLR',112]];
-          const RP=[['Q0',40],['Q1',58],['Q2',76],['Q3',94],['Q4',112],['Q5',130],['Q6',148],['Q7',166],["Q7'",184]];
+        draw(x, y, comp, ref) {
+          const LP = [['SER', 40], ['SRCLK', 58], ['RCLK', 76], ['~OE', 94], ['~SRCLR', 112]];
+          const RP = [['Q0', 40], ['Q1', 58], ['Q2', 76], ['Q3', 94], ['Q4', 112], ['Q5', 130], ['Q6', 148], ['Q7', 166], ["Q7'", 184]];
           return [
-            bx(x+15,y+12,90,186),tx(x+60,y+28,'74HC595',9,'middle',true),tx(x+60,y+10,ref,7,'middle',false,'#555'),
-            ln(x+60,y,x+60,y+12),tx(x+60,y-2,'VCC',7),
-            ln(x+60,y+198,x+60,y+210),tx(x+60,y+220,'GND',7),
-            ...LP.map(([l,dy])=> ln(x,y+dy,x+15,y+dy)+`<text x="${x+18}" y="${y+dy+3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
-            ...RP.map(([l,dy])=> ln(x+105,y+dy,x+120,y+dy)+`<text x="${x+102}" y="${y+dy+3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+            bx(x + 15, y + 12, 90, 186), tx(x + 60, y + 28, '74HC595', 9, 'middle', true), tx(x + 60, y + 10, ref, 7, 'middle', false, '#555'),
+            ln(x + 60, y, x + 60, y + 12), tx(x + 60, y - 2, 'VCC', 7),
+            ln(x + 60, y + 198, x + 60, y + 210), tx(x + 60, y + 220, 'GND', 7),
+            ...LP.map(([l, dy]) => ln(x, y + dy, x + 15, y + dy) + `<text x="${x + 18}" y="${y + dy + 3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+            ...RP.map(([l, dy]) => ln(x + 105, y + dy, x + 120, y + dy) + `<text x="${x + 102}" y="${y + dy + 3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
           ].join('');
         }
       };
 
       // L298N Motor Driver
       SYMS['wokwi-motor-driver'] = {
-        w:130, h:170, refPrefix:'MD',
-        pins:{
-          ENA:{dx:0,dy:30},IN1:{dx:0,dy:50},IN2:{dx:0,dy:70},IN3:{dx:0,dy:90},IN4:{dx:0,dy:110},ENB:{dx:0,dy:130},
-          OUT1:{dx:130,dy:30},OUT2:{dx:130,dy:50},OUT3:{dx:130,dy:90},OUT4:{dx:130,dy:110},
-          '12V':{dx:30,dy:0},'GND':{dx:65,dy:0},'5V':{dx:100,dy:0},
+        w: 130, h: 170, refPrefix: 'MD',
+        pins: {
+          ENA: { dx: 0, dy: 30 }, IN1: { dx: 0, dy: 50 }, IN2: { dx: 0, dy: 70 }, IN3: { dx: 0, dy: 90 }, IN4: { dx: 0, dy: 110 }, ENB: { dx: 0, dy: 130 },
+          OUT1: { dx: 130, dy: 30 }, OUT2: { dx: 130, dy: 50 }, OUT3: { dx: 130, dy: 90 }, OUT4: { dx: 130, dy: 110 },
+          '12V': { dx: 30, dy: 0 }, 'GND': { dx: 65, dy: 0 }, '5V': { dx: 100, dy: 0 },
         },
-        draw(x,y,comp,ref){
-          const LP=[['ENA',30],['IN1',50],['IN2',70],['IN3',90],['IN4',110],['ENB',130]];
-          const RP=[['OUT1',30],['OUT2',50],['OUT3',90],['OUT4',110]];
-          const TP=[['12V',30],['GND',65],['5V',100]];
+        draw(x, y, comp, ref) {
+          const LP = [['ENA', 30], ['IN1', 50], ['IN2', 70], ['IN3', 90], ['IN4', 110], ['ENB', 130]];
+          const RP = [['OUT1', 30], ['OUT2', 50], ['OUT3', 90], ['OUT4', 110]];
+          const TP = [['12V', 30], ['GND', 65], ['5V', 100]];
           return [
-            bx(x+15,y+12,100,148),tx(x+65,y+34,'L298N',10,'middle',true,'#1a1a1a','sans-serif'),tx(x+65,y+10,ref,7,'middle',false,'#555'),
-            ...LP.map(([l,dy])=> ln(x,y+dy,x+15,y+dy)+`<text x="${x+18}" y="${y+dy+3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
-            ...RP.map(([l,dy])=> ln(x+115,y+dy,x+130,y+dy)+`<text x="${x+112}" y="${y+dy+3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
-            ...TP.map(([l,dx])=> ln(x+dx,y,x+dx,y+12)+`<text x="${x+dx}" y="${y-2}" text-anchor="middle" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+            bx(x + 15, y + 12, 100, 148), tx(x + 65, y + 34, 'L298N', 10, 'middle', true, '#1a1a1a', 'sans-serif'), tx(x + 65, y + 10, ref, 7, 'middle', false, '#555'),
+            ...LP.map(([l, dy]) => ln(x, y + dy, x + 15, y + dy) + `<text x="${x + 18}" y="${y + dy + 3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+            ...RP.map(([l, dy]) => ln(x + 115, y + dy, x + 130, y + dy) + `<text x="${x + 112}" y="${y + dy + 3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
+            ...TP.map(([l, dx]) => ln(x + dx, y, x + dx, y + 12) + `<text x="${x + dx}" y="${y - 2}" text-anchor="middle" font-size="6.5" font-family="monospace" fill="#1a1a1a">${l}</text>`),
           ].join('');
         }
       };
 
       // Arduino Uno ─────────────────────────────────────────────────────────
-      const UL=['0','1','2','3','4','5','6','7','8','9','10','11','12','13'];
-      const UR=['A0','A1','A2','A3','A4','A5','vin','gnd_1','gnd_2','gnd_3','5V','3v3','rst','ioref'];
-      const ULL=['D0','D1','D2','D3','D4','D5~','D6~','D7','D8','D9~','D10~','D11~','D12','D13'];
-      const URL2=['A0','A1','A2','A3','A4','A5','VIN','GND','GND','GND','5V','3.3V','RST','IOREF'];
-      const UPS=18, UW=148, UH=UL.length*UPS+46;
-      const unoPins={};
-      UL.forEach((id,i)=>{ unoPins[id]={dx:0,dy:34+i*UPS}; });
-      UR.forEach((id,i)=>{ unoPins[id]={dx:UW,dy:34+i*UPS}; });
-      SYMS['wokwi-arduino-uno']={
-        w:UW, h:UH, refPrefix:'U', pins:unoPins,
-        draw(x,y,comp,ref){
+      const UL = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13'];
+      const UR = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'vin', 'gnd_1', 'gnd_2', 'gnd_3', '5V', '3v3', 'rst', 'ioref'];
+      const ULL = ['D0', 'D1', 'D2', 'D3', 'D4', 'D5~', 'D6~', 'D7', 'D8', 'D9~', 'D10~', 'D11~', 'D12', 'D13'];
+      const URL2 = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'VIN', 'GND', 'GND', 'GND', '5V', '3.3V', 'RST', 'IOREF'];
+      const UPS = 18, UW = 148, UH = UL.length * UPS + 46;
+      const unoPins = {};
+      UL.forEach((id, i) => { unoPins[id] = { dx: 0, dy: 34 + i * UPS }; });
+      UR.forEach((id, i) => { unoPins[id] = { dx: UW, dy: 34 + i * UPS }; });
+      SYMS['wokwi-arduino-uno'] = {
+        w: UW, h: UH, refPrefix: 'U', pins: unoPins,
+        draw(x, y, comp, ref) {
           return [
-            bx(x+16,y+14,UW-32,UH-28),
-            tx(x+UW/2,y+30,'Arduino Uno',10,'middle',true),
-            tx(x+UW/2,y+10,ref,8,'middle',false,'#555'),
-            tx(x+UW/2,y+44,'ATmega328P',7,'middle',false,'#777'),
-            ...UL.map((id,i)=>{const py=y+34+i*UPS; return ln(x,py,x+16,py)+`<text x="${x+19}" y="${py+3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${ULL[i]}</text>`;}),
-            ...UR.map((id,i)=>{const py=y+34+i*UPS; return ln(x+UW-16,py,x+UW,py)+`<text x="${x+UW-19}" y="${py+3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${URL2[i]}</text>`;}),
+            bx(x + 16, y + 14, UW - 32, UH - 28),
+            tx(x + UW / 2, y + 30, 'Arduino Uno', 10, 'middle', true),
+            tx(x + UW / 2, y + 10, ref, 8, 'middle', false, '#555'),
+            tx(x + UW / 2, y + 44, 'ATmega328P', 7, 'middle', false, '#777'),
+            ...UL.map((id, i) => { const py = y + 34 + i * UPS; return ln(x, py, x + 16, py) + `<text x="${x + 19}" y="${py + 3}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${ULL[i]}</text>`; }),
+            ...UR.map((id, i) => { const py = y + 34 + i * UPS; return ln(x + UW - 16, py, x + UW, py) + `<text x="${x + UW - 19}" y="${py + 3}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${URL2[i]}</text>`; }),
           ].join('');
         }
       };
@@ -2309,23 +3144,23 @@ export default function SimulatorPage() {
       const makeGenericSym = (comp) => {
         const used = new Set();
         wires.forEach(w => {
-          const [ci,pi]=w.from.split(':'); if(ci===comp.id&&pi) used.add(pi);
-          const [ci2,pi2]=w.to.split(':'); if(ci2===comp.id&&pi2) used.add(pi2);
+          const [ci, pi] = w.from.split(':'); if (ci === comp.id && pi) used.add(pi);
+          const [ci2, pi2] = w.to.split(':'); if (ci2 === comp.id && pi2) used.add(pi2);
         });
-        const pl=[...used]; const half=Math.ceil(pl.length/2);
-        const lp=pl.slice(0,half), rp=pl.slice(half);
-        const rows=Math.max(lp.length,rp.length,2), gh=rows*20+44, gw=100;
-        const pins={};
-        lp.forEach((id,i)=>{ pins[id]={dx:0,dy:32+i*20}; });
-        rp.forEach((id,i)=>{ pins[id]={dx:gw+30,dy:32+i*20}; });
+        const pl = [...used]; const half = Math.ceil(pl.length / 2);
+        const lp = pl.slice(0, half), rp = pl.slice(half);
+        const rows = Math.max(lp.length, rp.length, 2), gh = rows * 20 + 44, gw = 100;
+        const pins = {};
+        lp.forEach((id, i) => { pins[id] = { dx: 0, dy: 32 + i * 20 }; });
+        rp.forEach((id, i) => { pins[id] = { dx: gw + 30, dy: 32 + i * 20 }; });
         return {
-          w:gw+30, h:gh, refPrefix:'IC', pins,
-          draw(x,y,_c,ref){
-            const sType=_c.type.replace('wokwi-','');
+          w: gw + 30, h: gh, refPrefix: 'IC', pins,
+          draw(x, y, _c, ref) {
+            const sType = _c.type.replace('wokwi-', '');
             return [
-              bx(x+15,y+12,gw,gh-24), tx(x+15+gw/2,y+28,sType,8,'middle',true), tx(x+15+gw/2,y+10,ref,7,'middle',false,'#555'),
-              ...lp.map((id,i)=> ln(x,y+32+i*20,x+15,y+32+i*20)+`<text x="${x+18}" y="${y+36+i*20}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
-              ...rp.map((id,i)=> ln(x+gw+15,y+32+i*20,x+gw+30,y+32+i*20)+`<text x="${x+gw+12}" y="${y+36+i*20}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
+              bx(x + 15, y + 12, gw, gh - 24), tx(x + 15 + gw / 2, y + 28, sType, 8, 'middle', true), tx(x + 15 + gw / 2, y + 10, ref, 7, 'middle', false, '#555'),
+              ...lp.map((id, i) => ln(x, y + 32 + i * 20, x + 15, y + 32 + i * 20) + `<text x="${x + 18}" y="${y + 36 + i * 20}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
+              ...rp.map((id, i) => ln(x + gw + 15, y + 32 + i * 20, x + gw + 30, y + 32 + i * 20) + `<text x="${x + gw + 12}" y="${y + 36 + i * 20}" text-anchor="end" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
             ].join('');
           }
         };
@@ -2333,116 +3168,116 @@ export default function SimulatorPage() {
 
       // ── Layout ────────────────────────────────────────────────────────────
       if (components.length === 0) {
-        const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${SW}" height="${SH}"><rect width="${SW}" height="${SH}" fill="white"/><text x="${SW/2}" y="${SH/2}" text-anchor="middle" font-size="18" fill="#aaa" font-family="sans-serif">No components on canvas</text></svg>`;
-        schematicSvgRef.current=svg;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SW}" height="${SH}"><rect width="${SW}" height="${SH}" fill="white"/><text x="${SW / 2}" y="${SH / 2}" text-anchor="middle" font-size="18" fill="#aaa" font-family="sans-serif">No components on canvas</text></svg>`;
+        schematicSvgRef.current = svg;
         setSchematicDataUrl(`data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`);
         return;
       }
 
       // Assign reference designators (sorted left-to-right by canvas x)
-      const sorted=[...components].sort((a,b)=>a.x-b.x);
-      const refCounts={}, compSymMap={}, compRefMap={};
-      sorted.forEach(c=>{
-        let sym=SYMS[c.type]; if(!sym) sym=makeGenericSym(c);
-        compSymMap[c.id]=sym;
-        const pre=sym.refPrefix; refCounts[pre]=(refCounts[pre]||0)+1;
-        compRefMap[c.id]=`${pre}${refCounts[pre]}`;
+      const sorted = [...components].sort((a, b) => a.x - b.x);
+      const refCounts = {}, compSymMap = {}, compRefMap = {};
+      sorted.forEach(c => {
+        let sym = SYMS[c.type]; if (!sym) sym = makeGenericSym(c);
+        compSymMap[c.id] = sym;
+        const pre = sym.refPrefix; refCounts[pre] = (refCounts[pre] || 0) + 1;
+        compRefMap[c.id] = `${pre}${refCounts[pre]}`;
       });
 
       // Bounding box (canvas component centers)
-      let mnX=1e9,mnY=1e9,mxX=-1e9,mxY=-1e9;
-      components.forEach(c=>{
-        const cx=c.x+(c.w||60)/2, cy=c.y+(c.h||60)/2;
-        mnX=Math.min(mnX,cx); mnY=Math.min(mnY,cy); mxX=Math.max(mxX,cx); mxY=Math.max(mxY,cy);
+      let mnX = 1e9, mnY = 1e9, mxX = -1e9, mxY = -1e9;
+      components.forEach(c => {
+        const cx = c.x + (c.w || 60) / 2, cy = c.y + (c.h || 60) / 2;
+        mnX = Math.min(mnX, cx); mnY = Math.min(mnY, cy); mxX = Math.max(mxX, cx); mxY = Math.max(mxY, cy);
       });
 
-      const PAD=70;
-      const availW=FW-PAD*2, availH=FH-PAD*2;
-      const srcW=Math.max(mxX-mnX,1), srcH=Math.max(mxY-mnY,1);
-      const sc=Math.min(availW/srcW, availH/srcH, 1.8);
+      const PAD = 70;
+      const availW = FW - PAD * 2, availH = FH - PAD * 2;
+      const srcW = Math.max(mxX - mnX, 1), srcH = Math.max(mxY - mnY, 1);
+      const sc = Math.min(availW / srcW, availH / srcH, 1.8);
 
-      const toSch=(cx,cy)=>({ x:FX1+PAD+(cx-mnX)*sc, y:FY1+PAD+(cy-mnY)*sc });
+      const toSch = (cx, cy) => ({ x: FX1 + PAD + (cx - mnX) * sc, y: FY1 + PAD + (cy - mnY) * sc });
 
       // Symbol top-left positions
-      const cPos={};
-      components.forEach(c=>{
-        const sym=compSymMap[c.id];
-        const cx=c.x+(c.w||60)/2, cy=c.y+(c.h||60)/2;
-        const s=toSch(cx,cy);
-        cPos[c.id]={ x:s.x-sym.w/2, y:s.y-sym.h/2 };
+      const cPos = {};
+      components.forEach(c => {
+        const sym = compSymMap[c.id];
+        const cx = c.x + (c.w || 60) / 2, cy = c.y + (c.h || 60) / 2;
+        const s = toSch(cx, cy);
+        cPos[c.id] = { x: s.x - sym.w / 2, y: s.y - sym.h / 2 };
       });
 
       // Pin world position helper
-      const pinXY=(compId,pinId)=>{
-        const c=components.find(cc=>cc.id===compId); if(!c) return null;
-        const sym=compSymMap[c.id]; if(!sym) return null;
-        const pos=cPos[c.id]; const pin=sym.pins[pinId];
-        if(!pin) return { x:pos.x+sym.w, y:pos.y+sym.h/2 };
-        return { x:pos.x+pin.dx, y:pos.y+pin.dy };
+      const pinXY = (compId, pinId) => {
+        const c = components.find(cc => cc.id === compId); if (!c) return null;
+        const sym = compSymMap[c.id]; if (!sym) return null;
+        const pos = cPos[c.id]; const pin = sym.pins[pinId];
+        if (!pin) return { x: pos.x + sym.w, y: pos.y + sym.h / 2 };
+        return { x: pos.x + pin.dx, y: pos.y + pin.dy };
       };
 
       // ── Components SVG ────────────────────────────────────────────────────
-      const compsSVG=components.map(c=>{
-        const sym=compSymMap[c.id]; const pos=cPos[c.id]; const ref=compRefMap[c.id];
-        return `<g class="comp" id="${c.id}">${sym.draw(pos.x,pos.y,c,ref)}</g>`;
+      const compsSVG = components.map(c => {
+        const sym = compSymMap[c.id]; const pos = cPos[c.id]; const ref = compRefMap[c.id];
+        return `<g class="comp" id="${c.id}">${sym.draw(pos.x, pos.y, c, ref)}</g>`;
       }).join('\n');
 
       // ── Wires SVG ─────────────────────────────────────────────────────────
-      const wiresSVG=wires.map(w=>{
-        const [fC,fP]=w.from.split(':'), [tC,tP]=w.to.split(':');
-        const p1=pinXY(fC,fP), p2=pinXY(tC,tP); if(!p1||!p2) return '';
+      const wiresSVG = wires.map(w => {
+        const [fC, fP] = w.from.split(':'), [tC, tP] = w.to.split(':');
+        const p1 = pinXY(fC, fP), p2 = pinXY(tC, tP); if (!p1 || !p2) return '';
         // Route: horizontal from p1 half-way, then vertical, then horizontal to p2
-        const midX=(p1.x+p2.x)/2;
-        const d=`M${p1.x.toFixed(1)},${p1.y.toFixed(1)} L${midX.toFixed(1)},${p1.y.toFixed(1)} L${midX.toFixed(1)},${p2.y.toFixed(1)} L${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+        const midX = (p1.x + p2.x) / 2;
+        const d = `M${p1.x.toFixed(1)},${p1.y.toFixed(1)} L${midX.toFixed(1)},${p1.y.toFixed(1)} L${midX.toFixed(1)},${p2.y.toFixed(1)} L${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
         // Junction dot at middle junction if same Y (direct horizontal)
-        const dot=(Math.abs(p1.y-p2.y)<1)?'':`<circle cx="${midX.toFixed(1)}" cy="${p1.y.toFixed(1)}" r="2.5" fill="#1a1a1a"/>`;
+        const dot = (Math.abs(p1.y - p2.y) < 1) ? '' : `<circle cx="${midX.toFixed(1)}" cy="${p1.y.toFixed(1)}" r="2.5" fill="#1a1a1a"/>`;
         return `<path d="${d}" fill="none" stroke="#1a1a1a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>${dot}`;
       }).filter(Boolean).join('\n');
 
       // ── Border + grid coordinates ─────────────────────────────────────────
-      const GCOLS=6, GROWS=4, GRL=['A','B','C','D'];
-      const cStep=FW/GCOLS, rStep=FH/GROWS;
-      let borderSVG=`
-        <rect x="${OM}" y="${OM}" width="${SW-OM*2}" height="${SH-OM*2}" fill="none" stroke="#cc0000" stroke-width="1.2"/>
+      const GCOLS = 6, GROWS = 4, GRL = ['A', 'B', 'C', 'D'];
+      const cStep = FW / GCOLS, rStep = FH / GROWS;
+      let borderSVG = `
+        <rect x="${OM}" y="${OM}" width="${SW - OM * 2}" height="${SH - OM * 2}" fill="none" stroke="#cc0000" stroke-width="1.2"/>
         <rect x="${FX1}" y="${FY1}" width="${FW}" height="${FH}" fill="none" stroke="#cc0000" stroke-width="2"/>
       `;
-      for(let c=1;c<GCOLS;c++){
-        const gx=FX1+c*cStep;
-        borderSVG+=`${ln(gx,FY1,gx,FY1-3,0.5,'#777')}${ln(gx,FY2,gx,FY2+3,0.5,'#777')}`;
+      for (let c = 1; c < GCOLS; c++) {
+        const gx = FX1 + c * cStep;
+        borderSVG += `${ln(gx, FY1, gx, FY1 - 3, 0.5, '#777')}${ln(gx, FY2, gx, FY2 + 3, 0.5, '#777')}`;
       }
-      for(let r=1;r<GROWS;r++){
-        const gy=FY1+r*rStep;
-        borderSVG+=`${ln(FX1,gy,FX1-3,gy,0.5,'#777')}${ln(FX2,gy,FX2+3,gy,0.5,'#777')}`;
+      for (let r = 1; r < GROWS; r++) {
+        const gy = FY1 + r * rStep;
+        borderSVG += `${ln(FX1, gy, FX1 - 3, gy, 0.5, '#777')}${ln(FX2, gy, FX2 + 3, gy, 0.5, '#777')}`;
       }
-      for(let c=0;c<GCOLS;c++){
-        const cx=FX1+c*cStep+cStep/2;
-        borderSVG+=tx(cx,FY1-5,c+1,8,'middle',false,'#444','sans-serif');
-        borderSVG+=tx(cx,FY2+14,c+1,8,'middle',false,'#444','sans-serif');
+      for (let c = 0; c < GCOLS; c++) {
+        const cx = FX1 + c * cStep + cStep / 2;
+        borderSVG += tx(cx, FY1 - 5, c + 1, 8, 'middle', false, '#444', 'sans-serif');
+        borderSVG += tx(cx, FY2 + 14, c + 1, 8, 'middle', false, '#444', 'sans-serif');
       }
-      for(let r=0;r<GROWS;r++){
-        const ry=FY1+r*rStep+rStep/2+4;
-        borderSVG+=tx(FX1-5,ry,GRL[r],8,'end',false,'#444','sans-serif');
-        borderSVG+=tx(FX2+5,ry,GRL[r],8,'start',false,'#444','sans-serif');
+      for (let r = 0; r < GROWS; r++) {
+        const ry = FY1 + r * rStep + rStep / 2 + 4;
+        borderSVG += tx(FX1 - 5, ry, GRL[r], 8, 'end', false, '#444', 'sans-serif');
+        borderSVG += tx(FX2 + 5, ry, GRL[r], 8, 'start', false, '#444', 'sans-serif');
       }
 
       // ── Title block ───────────────────────────────────────────────────────
-      const TBY=FY2, TBH2=SH-OM-GL-FY2, divW=FW/3;
-      const boardLabel=board==='arduino_uno'?'Arduino Uno':board==='pico'?'Raspberry Pi Pico':'ESP32';
-      const dateStr=new Date().toISOString().slice(0,10);
-      borderSVG+=`
+      const TBY = FY2, TBH2 = SH - OM - GL - FY2, divW = FW / 3;
+      const boardLabel = board === 'arduino_uno' ? 'Arduino Uno' : board === 'pico' ? 'Raspberry Pi Pico' : 'ESP32';
+      const dateStr = new Date().toISOString().slice(0, 10);
+      borderSVG += `
         <rect x="${FX1}" y="${TBY}" width="${FW}" height="${TBH2}" fill="white" stroke="#cc0000" stroke-width="1"/>
-        <line x1="${FX1+divW}" y1="${TBY}" x2="${FX1+divW}" y2="${TBY+TBH2}" stroke="#bbb" stroke-width="0.5"/>
-        <line x1="${FX1+divW*2}" y1="${TBY}" x2="${FX1+divW*2}" y2="${TBY+TBH2}" stroke="#bbb" stroke-width="0.5"/>
-        <text x="${FX1+10}" y="${TBY+TBH2/2+4}" font-size="9" font-family="sans-serif" fill="#666">Made with OpenHW Studio</text>
-        <text x="${FX1+divW*1.5}" y="${TBY+TBH2/2-4}" text-anchor="middle" font-size="10" font-weight="bold" font-family="sans-serif" fill="#1a1a1a">Board: ${boardLabel}</text>
-        <text x="${FX1+divW*1.5}" y="${TBY+TBH2/2+10}" text-anchor="middle" font-size="8" font-family="sans-serif" fill="#555">${components.length} components · ${wires.length} wires</text>
-        <text x="${FX1+divW*2.5}" y="${TBY+TBH2/2+4}" text-anchor="middle" font-size="9" font-family="sans-serif" fill="#444">${dateStr}</text>
-        <text x="${FX1+divW}" y="${TBY+8}" font-size="6" font-family="sans-serif" fill="#aaa">TITLE</text>
-        <text x="${FX1+divW*2}" y="${TBY+8}" font-size="6" font-family="sans-serif" fill="#aaa">DATE</text>
+        <line x1="${FX1 + divW}" y1="${TBY}" x2="${FX1 + divW}" y2="${TBY + TBH2}" stroke="#bbb" stroke-width="0.5"/>
+        <line x1="${FX1 + divW * 2}" y1="${TBY}" x2="${FX1 + divW * 2}" y2="${TBY + TBH2}" stroke="#bbb" stroke-width="0.5"/>
+        <text x="${FX1 + 10}" y="${TBY + TBH2 / 2 + 4}" font-size="9" font-family="sans-serif" fill="#666">Made with OpenHW Studio</text>
+        <text x="${FX1 + divW * 1.5}" y="${TBY + TBH2 / 2 - 4}" text-anchor="middle" font-size="10" font-weight="bold" font-family="sans-serif" fill="#1a1a1a">Board: ${boardLabel}</text>
+        <text x="${FX1 + divW * 1.5}" y="${TBY + TBH2 / 2 + 10}" text-anchor="middle" font-size="8" font-family="sans-serif" fill="#555">${components.length} components · ${wires.length} wires</text>
+        <text x="${FX1 + divW * 2.5}" y="${TBY + TBH2 / 2 + 4}" text-anchor="middle" font-size="9" font-family="sans-serif" fill="#444">${dateStr}</text>
+        <text x="${FX1 + divW}" y="${TBY + 8}" font-size="6" font-family="sans-serif" fill="#aaa">TITLE</text>
+        <text x="${FX1 + divW * 2}" y="${TBY + 8}" font-size="6" font-family="sans-serif" fill="#aaa">DATE</text>
       `;
 
       // ── Assemble SVG ───────────────────────────────────────────────────────
-      const svgStr=`<svg xmlns="http://www.w3.org/2000/svg" width="${SW}" height="${SH}" viewBox="0 0 ${SW} ${SH}">
+      const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${SW}" height="${SH}" viewBox="0 0 ${SW} ${SH}">
   <rect width="${SW}" height="${SH}" fill="white"/>
   ${borderSVG}
   <g id="wires" stroke-linecap="round" stroke-linejoin="round">${wiresSVG}</g>
@@ -2527,16 +3362,32 @@ export default function SimulatorPage() {
     reader.onload = (e) => {
       try {
         const bytes = new Uint8Array(e.target.result);
-        // Scan the tail (last 512KB) for the marker to avoid decoding the full PNG image data
-        const TAIL_SIZE = Math.min(bytes.length, 524288);
-        const tail = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(bytes.length - TAIL_SIZE));
         const MARKER = '\x00OPENHW_META\x00';
-        const markerIdx = tail.indexOf(MARKER);
-        if (markerIdx === -1) {
+        const markerBytes = new TextEncoder().encode(MARKER);
+
+        // Search full payload from the end so very large metadata remains importable.
+        let markerByteIdx = -1;
+        for (let i = bytes.length - markerBytes.length; i >= 0; i--) {
+          let ok = true;
+          for (let j = 0; j < markerBytes.length; j++) {
+            if (bytes[i + j] !== markerBytes[j]) {
+              ok = false;
+              break;
+            }
+          }
+          if (ok) {
+            markerByteIdx = i;
+            break;
+          }
+        }
+
+        if (markerByteIdx === -1) {
           alert('This PNG does not contain OpenHW-Studio circuit data.\nOnly PNGs exported from this simulator can be imported.');
           return;
         }
-        const jsonStr = tail.slice(markerIdx + MARKER.length);
+
+        const payloadBytes = bytes.slice(markerByteIdx + markerBytes.length);
+        const jsonStr = new TextDecoder('utf-8', { fatal: false }).decode(payloadBytes);
         const meta = JSON.parse(jsonStr);
 
         // Confirm before overwriting current circuit
@@ -2548,10 +3399,46 @@ export default function SimulatorPage() {
         // Restore state
         saveHistory();
         if (meta.board) setBoard(meta.board);
-        if (meta.code) setCode(meta.code);
+        if (Object.prototype.hasOwnProperty.call(meta, 'code')) setCode(meta.code || '');
         if (Array.isArray(meta.components)) setComponents(meta.components);
         if (Array.isArray(meta.connections)) setWires(meta.connections);
-        syncNextIds(meta.components, meta.connections);
+
+        const importedBoards = Array.isArray(meta.components)
+          ? meta.components.filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+          : [];
+
+        let normalizedFiles = Array.isArray(meta.projectFiles) ? [...meta.projectFiles] : [];
+
+        // Backward compatibility: older PNG exports had only `code`.
+        if (normalizedFiles.length === 0 && typeof meta.code === 'string' && meta.code.trim()) {
+          if (importedBoards.length > 0) {
+            normalizedFiles = importedBoards.map((bc, idx) => ({
+              id: `project/${bc.id}/${bc.id}.ino`,
+              path: `project/${bc.id}/${bc.id}.ino`,
+              name: `${bc.id}.ino`,
+              kind: 'code',
+              boardId: bc.id,
+              boardKind: normalizeBoardKind(bc.type),
+              content: idx === 0 ? meta.code : createDefaultMainCode(normalizeBoardKind(bc.type), bc.id),
+              dirty: false,
+            }));
+          }
+        }
+
+        if (normalizedFiles.length > 0 && typeof meta.code === 'string' && meta.code.trim()) {
+          const codeFileIdx = normalizedFiles.findIndex((f) => f.kind === 'code' || /\.(ino|h|hpp|c|cpp)$/i.test(f.name || f.path || ''));
+          const hasCodeContent = normalizedFiles.some((f) => (f.kind === 'code' || /\.(ino|h|hpp|c|cpp)$/i.test(f.name || f.path || '')) && String(f.content || '').trim().length > 0);
+          if (!hasCodeContent && codeFileIdx >= 0) {
+            const target = normalizedFiles[codeFileIdx];
+            normalizedFiles[codeFileIdx] = { ...target, content: meta.code };
+          }
+        }
+
+        setProjectFiles(normalizedFiles);
+        setOpenCodeTabs(Array.isArray(meta.openCodeTabs) ? meta.openCodeTabs : []);
+        setActiveCodeFileId(typeof meta.activeCodeFileId === 'string' ? meta.activeCodeFileId : '');
+
+        syncNextIds(Array.isArray(meta.components) ? meta.components : [], Array.isArray(meta.connections) ? meta.connections : []);
         setSelected(null);
         setWireStart(null);
       } catch (err) {
@@ -2607,7 +3494,7 @@ export default function SimulatorPage() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={S.page} ref={pageRef} className="min-h-screen">
+    <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
 
       {/* ADMIN PREVIEW BANNER — shown when opened via "Test in Simulator" from admin dashboard */}
       {previewBanner && (
@@ -2632,445 +3519,32 @@ export default function SimulatorPage() {
       )}
 
       {/* TOP BAR */}
-      <header style={S.bar}>
-        <button style={S.logo} onClick={() => navigate('/')}> OpenHW-Studio</button>
-        <div style={S.barCenter}>
-          <select style={S.sel} value={board} onChange={e => setBoard(e.target.value)}>
-            <option value="arduino_uno">Arduino Uno</option>
-            <option value="pico">Raspberry Pi Pico</option>
-            <option value="esp32">ESP32</option>
-          </select>
-          {/* RUN button */}
-          <Btn
-            color={isRunning ? (isPaused ? 'var(--orange)' : 'var(--green)') : 'var(--green)'}
-            disabled={isRunning}
-            onClick={!isRunning ? handleRun : undefined}
-            title={isRunning ? (isCompiling ? 'Compiling…' : isPaused ? 'Paused' : 'Running') : 'Run'}
-          >
-            {isRunning ? (
-              isCompiling ? (
-                <>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', flexShrink: 0 }}>
-                    <path d="M21 12a9 9 0 1 1-4.5-7.8"/>
-                  </svg>
-                  Compiling…
-                </>
-              ) : isPaused ? 'Paused' : 'Running…'
-            ) : (
-              <>
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style={{ flexShrink: 0 }}><polygon points="2,1 11,6 2,11"/></svg>
-                Run
-              </>
-            )}
-          </Btn>
+              <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
 
-          {/* STOP button — SVG icon only */}
-          <Btn color={isRunning ? 'var(--red)' : undefined} disabled={!isRunning} onClick={isRunning ? handleStop : undefined} title="Stop" iconOnly>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect width="13" height="13" rx="2"/></svg>
-          </Btn>
 
-          {/* PAUSE / RESUME button — visible only when running and not still compiling */}
-          {isRunning && !isCompiling && (
-            <Btn
-              color={isPaused ? 'var(--green)' : 'var(--orange)'}
-              onClick={isPaused ? handleResume : handlePause}
-              title={isPaused ? 'Resume' : 'Pause'}
-              iconOnly
-            >
-              {isPaused ? (
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><polygon points="2,1 12,6.5 2,12"/></svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect x="1.5" y="1" width="3.5" height="11" rx="1"/><rect x="8" y="1" width="3.5" height="11" rx="1"/></svg>
-              )}
-            </Btn>
-          )}
-
-          {assessmentMode && (
-            <Btn
-              color="var(--accent)"
-              disabled={isSubmittingAssessment || !assessmentProjectName}
-              onClick={!isSubmittingAssessment ? handleAssessmentSubmit : undefined}
-              title={!assessmentProjectName ? 'Assessment project is missing' : 'Submit assessment'}
-            >
-              {isSubmittingAssessment ? 'Submitting...' : 'Submit Assessment'}
-            </Btn>
-          )}
-
-          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
-
-          {/* UNDO — SVG icon only */}
-          <Btn onClick={undo} disabled={history.past.length === 0 || isRunning} title="Undo" iconOnly>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 7v6h6"/><path d="M3 13A9 9 0 1 0 5.9 5.3"/>
-            </svg>
-          </Btn>
-
-          {/* REDO — SVG icon only */}
-          <Btn onClick={redo} disabled={history.future.length === 0 || isRunning} title="Redo" iconOnly>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 7v6h-6"/><path d="M21 13A9 9 0 1 1 18.1 5.3"/>
-            </svg>
-          </Btn>
-
-          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
-
-          {/* DELETE — SVG icon only */}
-          <Btn color={selected ? 'var(--red)' : undefined} disabled={!selected || isRunning} onClick={() => {
-            if (!selected || isRunning) return;
-            saveHistory();
-            if (selected.match(/^w\d+$/)) {
-              setWires(prev => prev.filter(w => w.id !== selected));
-            } else {
-              setComponents(prev => prev.filter(c => c.id !== selected))
-              setWires(prev => prev.filter(w => !w.from.startsWith(selected + ':') && !w.to.startsWith(selected + ':')))
-            }
-            setSelected(null)
-          }} title="Delete selected" iconOnly>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="3 6 5 6 21 6"/>
-              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-              <path d="M10 11v6"/><path d="M14 11v6"/>
-              <path d="M9 6V4h6v2"/>
-            </svg>
-          </Btn>
-
-          {/* ROTATE — SVG icon only, visible when a component is selected */}
-          {selected && components.find(c => c.id === selected) && (
-            <Btn onClick={() => rotateComponent(selected)} disabled={isRunning} title="Rotate 90°" iconOnly>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-              </svg>
-            </Btn>
-          )}
-
-          {/* THEME TOGGLE — SVG icon only */}
-          <Btn onClick={toggleTheme} title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'} iconOnly>
-            {theme === 'dark' ? (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5"/>
-                <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-                <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-              </svg>
-            ) : (
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-              </svg>
-            )}
-          </Btn>
-
-          <div style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
-
-          {/* VIEW PANEL — button + dropdown */}
-          <div ref={viewPanelRef} style={{ position: 'relative' }}>
-            <Btn onClick={() => setShowViewPanel(v => !v)} title="View schematic or component list">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-              </svg>
-              View
-            </Btn>
-            {/* Dropdown panel */}
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 8px)', left: 0, width: 300,
-              background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
-              boxShadow: '0 8px 32px rgba(0,0,0,.45)', zIndex: 9999,
-              overflow: 'hidden',
-              maxHeight: showViewPanel ? 660 : 0,
-              opacity: showViewPanel ? 1 : 0,
-              transition: 'max-height 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
-              pointerEvents: showViewPanel ? 'auto' : 'none',
-            }}>
-              {/* Panel header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 10px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>View</span>
-                <button onClick={() => setShowViewPanel(false)} style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}>✕</button>
-              </div>
-
-              {/* ── Schematic View accordion ── */}
-              <div>
-                <button
-                  onClick={() => {
-                    if (viewPanelSection === 'schematic') {
-                      setViewPanelSection(null);
-                      setSchematicDataUrl(null);
-                      setSchematicLoading(false);
-                    } else {
-                      setViewPanelSection('schematic');
-                      generateSchematic();
-                    }
-                  }}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '11px 16px', border: 'none', borderBottom: '1px solid var(--border)',
-                    background: viewPanelSection === 'schematic' ? 'rgba(100,180,255,.07)' : 'var(--bg2)',
-                    color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-                  }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
-                    </svg>
-                    Schematic View
-                  </span>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    {viewPanelSection === 'schematic'
-                      ? <path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      : <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    }
-                  </svg>
-                </button>
-                {viewPanelSection === 'schematic' && (
-                  <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-                    {schematicLoading ? (
-                      <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text3)', fontSize: 12 }}>
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', display: 'inline-block', verticalAlign: 'middle', marginRight: 6 }}><path d="M21 12a9 9 0 1 1-4.5-7.8"/></svg>
-                        Capturing circuit…
-                      </div>
-                    ) : schematicDataUrl ? (
-                      <>
-                        <img src={schematicDataUrl} alt="Schematic" style={{ width: '100%', borderRadius: 6, border: '1px solid var(--border)', marginBottom: 10, display: 'block' }} />
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={downloadSchematicPng} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>↓ PNG</button>
-                          <button onClick={downloadSchematicPdf} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit' }}>↓ PDF</button>
-                          <button onClick={generateSchematic} style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text3)', cursor: 'pointer', fontSize: 11, fontFamily: 'inherit' }} title="Recapture">↺ Refresh</button>
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--text3)', fontSize: 12 }}>Capture failed. Try again.</div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Component List accordion ── */}
-              <div>
-                <button
-                  onClick={() => setViewPanelSection(s => s === 'components' ? null : 'components')}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '11px 16px', border: 'none',
-                    background: viewPanelSection === 'components' ? 'rgba(100,180,255,.07)' : 'var(--bg2)',
-                    color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit',
-                  }}
-                >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                      <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-                    </svg>
-                    Component List
-                  </span>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    {viewPanelSection === 'components'
-                      ? <path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                      : <path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    }
-                  </svg>
-                </button>
-                {viewPanelSection === 'components' && (
-                  <div style={{ padding: '12px 16px' }}>
-                    {components.length === 0 ? (
-                      <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--text3)', fontSize: 12 }}>No components on canvas.</div>
-                    ) : (
-                      <>
-                        <div style={{ overflowX: 'auto', marginBottom: 10, borderRadius: 6, border: '1px solid var(--border)' }}>
-                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                            <thead>
-                              <tr style={{ background: 'var(--bg3)' }}>
-                                {['#', 'Component', 'Type', 'Qty'].map(h => (
-                                  <th key={h} style={{ padding: '7px 10px', textAlign: 'left', color: 'var(--text3)', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap', borderBottom: '1px solid var(--border)' }}>{h}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(() => {
-                                const counts = {};
-                                components.forEach(c => {
-                                  if (!counts[c.type]) counts[c.type] = { type: c.type, label: c.label, count: 0 };
-                                  counts[c.type].count++;
-                                });
-                                return Object.values(counts).map((row, i) => (
-                                  <tr key={row.type} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,.02)' }}>
-                                    <td style={{ padding: '7px 10px', color: 'var(--text3)', fontSize: 11 }}>{i + 1}</td>
-                                    <td style={{ padding: '7px 10px', fontWeight: 600, color: 'var(--text)' }}>{row.label}</td>
-                                    <td style={{ padding: '7px 10px', color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>{row.type}</td>
-                                    <td style={{ padding: '7px 10px', fontWeight: 700, color: 'var(--accent)' }}>{row.count}</td>
-                                  </tr>
-                                ));
-                              })()}
-                            </tbody>
-                          </table>
-                        </div>
-                        <button
-                          onClick={downloadCompCsv}
-                          style={{ width: '100%', padding: '8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text)', cursor: 'pointer', fontSize: 11, fontWeight: 600, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                          Download CSV
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT SIDE — right to left: Sign In/User, My Projects, Save, Export, Import */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {/* Hidden file inputs */}
-          <input ref={importFileRef} type="file" accept=".png,image/png" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) importPng(e.target.files[0]); }} />
-          <input ref={backupRestoreInputRef} type="file" accept=".zip" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) { handleRestoreWorkflow(e.target.files[0]); e.target.value = ''; } }} />
-
-          {/* Import PNG */}
-          <Btn color="var(--orange)" onClick={() => importFileRef.current?.click()} title="Import a previously exported OpenHW-Studio PNG to restore the circuit"> Import PNG</Btn>
-          {/* Export PNG */}
-          <Btn color="var(--purple)" onClick={downloadPng} disabled={isExporting} title="Download circuit as PNG with embedded metadata">
-            {isExporting ? ' Exporting...' : ' Export PNG'}
-          </Btn>
-          {/* Save */}
-          <Btn color="var(--accent)" onClick={handleSave} title="Save current project"> Save</Btn>
-
-          {/* My Projects — dropdown anchor */}
-          <div ref={projectsDropdownRef} style={{ position: 'relative' }}>
-            <Btn
-              onClick={() => { refreshProjectList(); setShowProjectsDropdown(v => !v); }}
-              title="View and manage your saved projects"
-            > My Projects</Btn>
-            {/* Dropdown panel */}
-            <div style={{
-              position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 340,
-              background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
-              boxShadow: '0 8px 32px rgba(0,0,0,.45)', zIndex: 9999,
-              overflow: 'hidden',
-              maxHeight: showProjectsDropdown ? 560 : 0,
-              opacity: showProjectsDropdown ? 1 : 0,
-              transition: 'max-height 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
-              pointerEvents: showProjectsDropdown ? 'auto' : 'none',
-            }}>
-              {/* Panel header */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '1px solid var(--border)' }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>My Projects</span>
-                <Btn color="var(--accent)" onClick={() => { setShowProjectsDropdown(false); handleNewProject(); }}>+ New</Btn>
-              </div>
-              {/* Project list */}
-              <div style={{ overflowY: 'auto', maxHeight: 340, padding: '8px' }}>
-                {myProjects.length === 0 ? (
-                  <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: '28px 0' }}>
-                    No saved projects yet.<br />Your circuits are auto-saved as you work.
-                  </div>
-                ) : myProjects.map(proj => (
-                  <div key={proj.id} style={{
-                    background: proj.id === currentProjectId ? 'rgba(100,180,255,.1)' : 'var(--card)',
-                    border: `1px solid ${proj.id === currentProjectId ? 'var(--accent)' : 'var(--border)'}`,
-                    borderRadius: 8, padding: '9px 12px', marginBottom: 6,
-                    display: 'flex', alignItems: 'center', gap: 8,
-                  }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {renamingProjectId === proj.id ? (
-                        <input
-                          autoFocus
-                          style={{ ...S.paletteSearch, marginBottom: 0, fontSize: 13, padding: '4px 8px', width: '100%' }}
-                          value={renameValue}
-                          onChange={e => setRenameValue(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') handleConfirmRename(proj.id); if (e.key === 'Escape') setRenamingProjectId(null); }}
-                          onClick={e => e.stopPropagation()}
-                        />
-                      ) : (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-                          <span style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {proj.name || 'Untitled'}
-                          </span>
-                          {proj.id === currentProjectId && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>● current</span>}
-                          {/* Rename icon */}
-                          <button
-                            onClick={e => handleStartRename(proj, e)}
-                            title="Rename project"
-                            style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', padding: '2px 4px', fontSize: 12, borderRadius: 4, flexShrink: 0, lineHeight: 1 }}
-                          >✎</button>
-                        </div>
-                      )}
-                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-                        {proj.board || 'arduino_uno'} · {proj.components?.length ?? 0} components · {formatProjectDate(proj.savedAt)}
-                      </div>
-                    </div>
-                    {renamingProjectId === proj.id ? (
-                      <>
-                        <Btn color="var(--accent)" onClick={() => handleConfirmRename(proj.id)}>✓</Btn>
-                        <Btn onClick={() => setRenamingProjectId(null)}>✕</Btn>
-                      </>
-                    ) : (
-                      <>
-                        <Btn onClick={() => { handleLoadProject(proj); setShowProjectsDropdown(false); }} disabled={isRunning}>Load</Btn>
-                        <Btn color="var(--red)" onClick={() => handleDeleteProject(proj.id)}>Del</Btn>
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {/* Panel footer — Backup / Restore / Sync */}
-              <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <Btn onClick={handleBackupWorkflow} title="Download current workflow as a backup ZIP">↓ Backup</Btn>
-                <Btn onClick={() => backupRestoreInputRef.current?.click()} title="Restore workflow from a backup ZIP">↑ Restore</Btn>
-                {isAuthenticated && (
-                  <Btn color="var(--accent)" onClick={handleSyncToCloud} title="Sync local projects with cloud"> Sync</Btn>
-                )}
-                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>
-                  {!isAuthenticated ? 'Sign in to sync' : `Signed in as ${user?.name?.split(' ')[0]}`}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Sign In or Username (clickable → role dashboard) */}
-          {isAuthenticated
-            ? <button
-                style={{ ...S.userChip, cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)' }}
-                title={`Go to dashboard (${user?.role || 'user'})`}
-                onClick={() => navigate(user?.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')}
-              >
-                {user?.name?.split(' ')[0] || 'User'}
-              </button>
-            : <Btn color="var(--accent)" onClick={() => navigate('/login')} title="Sign in to access projects from any device"> Sign In</Btn>
-          }
-        </div>
-      </header>
-
-      {/* GUEST BANNER */}
-      {(!authLoading && !isAuthenticated && showGuestBanner) && (
-        <div style={S.guestBanner}>
-          <div style={{ flex: 1 }}>
-             <strong>Guest Mode</strong> — Your work is auto-saved locally in your browser. Click <strong>My Projects</strong> to see all saved circuits. Sign in to access your projects from any device.
-            <button style={{ ...S.bannerBtn, marginLeft: 10 }} onClick={() => navigate('/login')}>Sign in →</button>
-          </div>
-          <button style={S.bannerCloseBtn} onClick={() => setShowGuestBanner(false)} title="Dismiss">✕</button>
-        </div>
-      )}
 
       {/* WIRING MODE HINT */}
       {wireStart && (
-        <div style={{ ...S.guestBanner, background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
+        <div className="bg-[rgba(255,145,0,.1)] border-b border-[rgba(255,145,0,.25)] text-[var(--orange)] px-5 py-2 text-[13px] flex items-center shrink-0" style={{ background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
           〰 <strong>Wiring in progress</strong> — Click another pin to connect. Press Esc to cancel.
           <span style={{ marginLeft: 12 }}>🔵 Started from <strong>{wireStart.compId} [{wireStart.pinLabel}]</strong></span>
         </div>
       )}
 
-      <div style={S.workspace}>
+      <div className="flex flex-1 overflow-hidden">
 
-        {/* PALETTE — hover to expand (280px), collapse to 38px */}
+        {/* PALETTE — hover to expand */}
         <aside
+          className="bg-[var(--bg2)] border-r border-[var(--border)] overflow-y-auto overflow-x-hidden flex flex-col shrink-0"
           style={{
-            ...S.palette,
-            width: isPaletteHovered ? 410 : 38,
-            overflow: 'hidden',
+            width: isPaletteHovered ? 340 : 38,
             transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
             position: 'relative',
-            padding: 0,
+            zIndex: 10
           }}
           onMouseEnter={() => setIsPaletteHovered(true)}
-          onMouseLeave={() => { if (!paletteContextMenu) setIsPaletteHovered(false); }}
+          onMouseLeave={() => { if (!paletteContextMenu) { setIsPaletteHovered(false); setShowFilterDropdown(false); } }}
+          onDoubleClick={(e) => e.stopPropagation()}
         >
           {/* Collapsed indicator — visible only when closed */}
           <div style={{
@@ -3078,36 +3552,73 @@ export default function SimulatorPage() {
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
             opacity: isPaletteHovered ? 0 : 1, transition: 'opacity 0.15s', pointerEvents: 'none',
           }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', writingMode: 'vertical-rl', letterSpacing: '0.1em' }}>Components</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', writingMode: 'vertical-rl', letterSpacing: '0.1em' }}>Components</span>
           </div>
 
-          {/* Full palette content — fades in when expanded */}
+          {/* Full palette content */}
           <div style={{
-            width: 410, opacity: isPaletteHovered ? 1 : 0, transition: 'opacity 0.2s',
+            width: 340, opacity: isPaletteHovered ? 1 : 0, transition: 'opacity 0.2s',
             pointerEvents: isPaletteHovered ? 'auto' : 'none',
             display: 'flex', flexDirection: 'column', height: '100%',
           }}>
             {/* Sticky top section */}
             <div style={{ flexShrink: 0, padding: '10px 8px 0', background: 'var(--bg2)' }}>
-              <div style={S.paletteHeader}>Components</div>
+              <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 pt-1 pb-2">Components</div>
 
-              {/* Search + View Toggle */}
-              <div style={{ display: 'flex', gap: 4, marginBottom: 8, alignItems: 'center' }}>
-                <input
-                  style={{ ...S.paletteSearch, flex: 1, marginBottom: 0 }}
-                  placeholder="Search..."
-                  value={paletteSearch}
-                  onChange={(e) => setPaletteSearch(e.target.value)}
-                />
+              {/* Search + Filter + View Toggle */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 12, alignItems: 'center' }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                  <input
+                    className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] pl-9 pr-3 rounded-lg text-xs w-full outline-none font-inherit box-border transition-all focus:border-[var(--accent)]"
+                    style={{ flex: 1, height: 28, marginBottom: 0 }}
+                    placeholder="Search..."
+                    value={paletteSearch}
+                    onChange={(e) => setPaletteSearch(e.target.value)}
+                  />
+                  {paletteSearch && (
+                    <button onClick={() => setPaletteSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4, opacity: 0.5, display: 'flex' }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M18 6L6 18M6 6l12 12" /></svg>
+                    </button>
+                  )}
+                </div>
+
+                <div className="filter-dropdown-container" style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setShowFilterDropdown(!showFilterDropdown)}
+                    style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: activeGroupFilter !== 'All' ? 'var(--accent)' : 'var(--card)', color: activeGroupFilter !== 'All' ? '#fff' : 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                    title="Filter by group"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
+                  </button>
+
+                  {showFilterDropdown && (
+                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 100, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', padding: 4, minWidth: 160 }}>
+                      <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-3 py-1.5 border-b border-[var(--border)] mb-1">Groups</div>
+                      {['All', ...CATALOG.map(g => g.group)].map(group => (
+                        <button
+                          key={group}
+                          onClick={() => { setActiveGroupFilter(group); setShowFilterDropdown(false); }}
+                          style={{ width: '100%', textAlign: 'left', padding: '6px 10px', borderRadius: 6, border: 'none', background: activeGroupFilter === group ? 'var(--accent)' : 'transparent', color: activeGroupFilter === group ? '#fff' : 'var(--text)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}
+                          onMouseEnter={e => { if (activeGroupFilter !== group) e.currentTarget.style.background = 'var(--bg3)'; }}
+                          onMouseLeave={e => { if (activeGroupFilter !== group) e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          {group === 'All' ? 'All Groups' : group}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <button
                   onClick={() => setPaletteViewMode(m => m === 'list' ? 'grid' : 'list')}
                   style={{ flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}
                   title={paletteViewMode === 'list' ? 'Switch to Grid View' : 'Switch to List View'}
                 >
                   {paletteViewMode === 'list' ? (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor"/><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor"/><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="1" width="6" height="6" rx="1" fill="currentColor" /><rect x="9" y="1" width="6" height="6" rx="1" fill="currentColor" /><rect x="1" y="9" width="6" height="6" rx="1" fill="currentColor" /><rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" /></svg>
                   ) : (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="2" rx="1" fill="currentColor"/><rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor"/><rect x="1" y="12" width="14" height="2" rx="1" fill="currentColor"/></svg>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1" y="2" width="14" height="2" rx="1" fill="currentColor" /><rect x="1" y="7" width="14" height="2" rx="1" fill="currentColor" /><rect x="1" y="12" width="14" height="2" rx="1" fill="currentColor" /></svg>
                   )}
                 </button>
               </div>
@@ -3118,13 +3629,13 @@ export default function SimulatorPage() {
                 <button
                   onClick={() => componentZipInputRef.current.click()}
                   style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 5l3-4 3 4M1 9v1a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v7M3 5l3-4 3 4M1 9v1a1 1 0 001 1h8a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
                   Upload ZIP
                 </button>
                 <button
                   onClick={() => window.open('/component-editor', '_blank')}
                   style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 600 }}>
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                   Create
                 </button>
               </div>
@@ -3135,13 +3646,13 @@ export default function SimulatorPage() {
                   onClick={() => setShowFavorites(f => !f)}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: 'var(--bg3)', border: 'none', borderBottom: showFavorites ? '1px solid var(--border)' : 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1l1.5 3H11l-2.5 1.8.9 3L6 7.2 3.6 9.8l.9-3L2 5h3.5z" fill="#f59e0b" stroke="#f59e0b" strokeWidth="0.5"/></svg>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1l1.5 3H11l-2.5 1.8.9 3L6 7.2 3.6 9.8l.9-3L2 5h3.5z" fill="#f59e0b" stroke="#f59e0b" strokeWidth="0.5" /></svg>
                     Favourites {favoriteComponents.size > 0 ? `(${favoriteComponents.size})` : ''}
                   </span>
                   <span style={{ display: 'flex', alignItems: 'center' }}>
                     {showFavorites
-                      ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                      : <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                      ? <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 7l3-4 3 4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                      : <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 3l3 4 3-4" stroke="var(--text3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     }
                   </span>
                 </button>
@@ -3189,6 +3700,9 @@ export default function SimulatorPage() {
               padding: '4px 8px 8px',
             }}>
               {CATALOG.map((group, index) => {
+                const isGroupMatch = activeGroupFilter === 'All' || group.group === activeGroupFilter;
+                if (!isGroupMatch) return null;
+
                 const filteredItems = group.items.filter(item =>
                   item.label.toLowerCase().includes(paletteSearch.toLowerCase()) ||
                   item.type.toLowerCase().includes(paletteSearch.toLowerCase())
@@ -3197,7 +3711,7 @@ export default function SimulatorPage() {
                 const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
                 return (
                   <div key={group.group || `group-${index}`} style={{ marginBottom: paletteViewMode === 'grid' ? 10 : 4 }}>
-                    <div style={{ ...S.groupName, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 py-1 flex items-center gap-1" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                       <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
                         {GROUP_ICON_SVG[group.group]?.(groupColor) || <span style={{ width: 6, height: 6, borderRadius: '50%', background: groupColor, display: 'inline-block' }} />}
                       </span>
@@ -3234,7 +3748,7 @@ export default function SimulatorPage() {
                                 </div>
                               ) : (
                                 <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: 'translate(-50%, -50%)' }}>
-                                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={groupColor} strokeWidth="1.2" opacity="0.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+                                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={groupColor} strokeWidth="1.2" opacity="0.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
                                 </div>
                               )}
                               {/* Label — pinned to bottom, single line */}
@@ -3266,7 +3780,7 @@ export default function SimulatorPage() {
                   </div>
                 );
               })}
-              <div key="palette-tip" style={S.paletteTip}>
+              <div key="palette-tip" className="mt-auto px-2 py-2.5 text-[11px] text-[var(--text3)] leading-relaxed">
                 Click or drag → drop to place · Del removes selected
               </div>
             </div>
@@ -3280,59 +3794,71 @@ export default function SimulatorPage() {
             ? paletteContextMenu.y - menuH
             : paletteContextMenu.y;
           return (
-          <div
-            onMouseDown={e => e.stopPropagation()}
-            style={{ position: 'fixed', left: paletteContextMenu.x, top: adjustedY, zIndex: 9000, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', minWidth: 200, overflow: 'hidden' }}
-          >
-            <div style={{ padding: '7px 12px 6px', fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>{paletteContextMenu.item.label}</div>
-            {[
-              {
-                icon: favoriteComponents.has(paletteContextMenu.item.type) ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>,
-                label: favoriteComponents.has(paletteContextMenu.item.type) ? 'Remove from Favourites' : 'Add to Favourites',
-                color: '#f59e0b',
-                action: () => { toggleFavorite(paletteContextMenu.item.type); setPaletteContextMenu(null); setIsPaletteHovered(false); }
-              },
-              {
-                icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>,
-                label: 'Component Documentation',
-                color: 'var(--text)',
-                action: () => {
-                  const doc = COMPONENT_REGISTRY[paletteContextMenu.item.type]?.doc;
-                  if (doc) {
-                    const b = new Blob([doc], { type: 'text/html' });
-                    window.open(URL.createObjectURL(b), '_blank');
-                  } else {
-                    window.open(`https://wokwi.com/docs/parts/${paletteContextMenu.item.type}`, '_blank');
+            <div
+              onMouseDown={e => e.stopPropagation()}
+              style={{ position: 'fixed', left: paletteContextMenu.x, top: adjustedY, zIndex: 9000, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', minWidth: 200, overflow: 'hidden' }}
+            >
+              <div style={{ padding: '7px 12px 6px', fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>{paletteContextMenu.item.label}</div>
+              {[
+                {
+                  icon: favoriteComponents.has(paletteContextMenu.item.type) ? <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>,
+                  label: favoriteComponents.has(paletteContextMenu.item.type) ? 'Remove from Favourites' : 'Add to Favourites',
+                  color: '#f59e0b',
+                  action: () => { toggleFavorite(paletteContextMenu.item.type); setPaletteContextMenu(null); setIsPaletteHovered(false); }
+                },
+                {
+                  icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>,
+                  label: 'Component Documentation',
+                  color: 'var(--text)',
+                  action: () => {
+                    const doc = COMPONENT_REGISTRY[paletteContextMenu.item.type]?.doc;
+                    if (doc) {
+                      const b = new Blob([doc], { type: 'text/html' });
+                      window.open(URL.createObjectURL(b), '_blank');
+                    } else {
+                      window.open(`https://wokwi.com/docs/parts/${paletteContextMenu.item.type}`, '_blank');
+                    }
+                    setPaletteContextMenu(null); setIsPaletteHovered(false);
                   }
-                  setPaletteContextMenu(null); setIsPaletteHovered(false);
-                }
-              },
-              {
-                icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
-                label: 'Edit a Copy',
-                color: 'var(--text)',
-                action: () => { window.open('/component-editor', '_blank'); setPaletteContextMenu(null); setIsPaletteHovered(false); }
-              },
-            ].map(({ icon, label, color, action }) => (
-              <button
-                key={label}
-                onClick={action}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'none', border: 'none', color, padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--card)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'none'}
-              >
-                <span>{icon}</span>{label}
-              </button>
-            ))}
-          </div>
+                },
+                {
+                  icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>,
+                  label: 'Edit a Copy',
+                  color: 'var(--text)',
+                  action: () => {
+                    const item = paletteContextMenu.item;
+                    const registryInfo = COMPONENT_REGISTRY[item.type];
+                    const editCopyData = {
+                      manifest: registryInfo?.manifest || item,
+                      logic: registryInfo?.logicRaw || '',
+                      ui: registryInfo?.uiRaw || '',
+                    };
+                    localStorage.setItem('openhw_edit_copy', JSON.stringify(editCopyData));
+                    window.open('/component-editor', '_blank');
+                    setPaletteContextMenu(null);
+                    setIsPaletteHovered(false);
+                  }
+                },
+              ].map(({ icon, label, color, action }) => (
+                <button
+                  key={label}
+                  onClick={action}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'none', border: 'none', color, padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--card)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                >
+                  <span>{icon}</span>{label}
+                </button>
+              ))}
+            </div>
           );
         })()}
 
         {/* Create Component Modal (placeholder) */}
         {showCreateComponentModal && (
-          <div style={S.modalOverlay} onClick={() => setShowCreateComponentModal(false)}>
-            <div style={S.modalBox} onClick={e => e.stopPropagation()}>
-              <div style={S.modalTitle}>Create Component</div>
+          <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowCreateComponentModal(false)}>
+            <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+              <div className="text-base font-bold mb-3.5 text-[var(--text)]">Create Component</div>
               <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 16 }}>
                 To create a custom component, build a ZIP package with <code>manifest.json</code>, <code>ui.tsx</code>, <code>logic.ts</code>, and optionally <code>validation.ts</code>, then upload via <strong>Upload ZIP to Test</strong>.
               </p>
@@ -3347,8 +3873,7 @@ export default function SimulatorPage() {
 
         {/* CANVAS + SVG WIRE LAYER */}
         <main
-          style={{
-            ...S.canvas,
+          className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)] bg-[length:24px_24px]" style={{
             cursor: segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
             backgroundImage: showGrid
               ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
@@ -3563,7 +4088,8 @@ export default function SimulatorPage() {
                   position: 'absolute',
                   left: comp.x + comp.w / 2,
                   top: comp.y - 14,
-                  transform: 'translateX(-50%) translateY(-100%)',
+                  transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
+                  transformOrigin: 'bottom center',
                   background: 'var(--bg2)', border: '1px solid var(--border)',
                   display: 'flex', alignItems: 'center', gap: 8,
                   padding: '6px 10px', borderRadius: '10px',
@@ -3658,7 +4184,7 @@ export default function SimulatorPage() {
 
             {/* Empty state */}
             {components.length === 0 && (
-              <div style={S.emptyState}>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text3)] text-center pointer-events-none">
                 <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
                 <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
                 <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
@@ -3672,6 +4198,7 @@ export default function SimulatorPage() {
               const pins = PIN_DEFS[comp.type] || []
               const hasError = errorCompIds.has(comp.id)
               const isSelected = selected === comp.id
+              const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
               return (
                 <div
                   key={comp.id}
@@ -3752,6 +4279,47 @@ export default function SimulatorPage() {
                         boxShadow: '0 0 16px rgba(255,68,68,.4)',
                         pointerEvents: 'none', zIndex: 10,
                       }} />
+                    );
+                  })()}
+
+                  {/* Serial-target board ring */}
+                  {isSerialBoardSelected && (() => {
+                    const getBounds = () => {
+                      const reg = COMPONENT_REGISTRY[comp.type];
+                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                    };
+                    const b = getBounds();
+                    return (
+                      <>
+                        <div style={{
+                          position: 'absolute',
+                          left: b.x - 10, top: b.y - 10,
+                          width: b.w + 20, height: b.h + 20,
+                          borderRadius: 10,
+                          border: '2px dashed #38bdf8',
+                          boxShadow: '0 0 18px rgba(56,189,248,.45)',
+                          pointerEvents: 'none', zIndex: 9,
+                        }} />
+                        <div style={{
+                          position: 'absolute',
+                          left: b.x - 10,
+                          top: b.y - 26,
+                          background: '#0c4a6e',
+                          color: '#e0f2fe',
+                          border: '1px solid #38bdf8',
+                          borderRadius: 6,
+                          fontSize: 9,
+                          padding: '1px 6px',
+                          letterSpacing: '0.04em',
+                          fontFamily: 'JetBrains Mono, monospace',
+                          pointerEvents: 'none',
+                          zIndex: 11,
+                        }}>
+                          SERIAL TARGET
+                        </div>
+                      </>
                     );
                   })()}
 
@@ -3901,12 +4469,60 @@ export default function SimulatorPage() {
           )}
 
           {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
+          {validationToast && (
+            <div
+              className="validation-toast-canvas"
+              role="alert"
+              data-export-ignore="true"
+              onClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+            >
+              <div className="validation-toast-canvas__header">
+                <span>{validationToast.title}</span>
+                <button
+                  type="button"
+                  className="validation-toast-canvas__close"
+                  onClick={() => setValidationToast(null)}
+                  aria-label="Close validation notification"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </div>
+              <ul className="validation-toast-canvas__list">
+                {validationToast.reasons.map((reason, idx) => (
+                  <li key={idx}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div
             data-export-ignore="true"
             style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '4px 6px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}
             onClick={e => e.stopPropagation()}
             onMouseDown={e => e.stopPropagation()}
+            onDoubleClick={e => e.stopPropagation()}
           >
+            <button
+              className="zoom-btn"
+              onClick={() => setIsConsoleOpen(v => !v)}
+              style={{
+                background: isConsoleOpen ? 'var(--card)' : 'none',
+                border: isConsoleOpen ? '1px solid var(--accent)' : 'none',
+                color: isConsoleOpen ? 'var(--accent)' : 'var(--text)',
+                cursor: 'pointer',
+                lineHeight: 1,
+                padding: '4px 7px',
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center'
+              }}
+              title="Toggle Console"
+            >
+              <TerminalIcon size={16} />
+            </button>
             <button
               className="zoom-btn"
               onClick={() => setCanvasZoom(z => Math.max(0.25, parseFloat((z - 0.25).toFixed(2))))}
@@ -3914,8 +4530,8 @@ export default function SimulatorPage() {
               title="Zoom Out"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                <line x1="8" y1="11" x2="14" y2="11"/>
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                <line x1="8" y1="11" x2="14" y2="11" />
               </svg>
             </button>
             <button
@@ -3930,8 +4546,8 @@ export default function SimulatorPage() {
               title="Zoom In"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                <line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" />
               </svg>
             </button>
             <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
@@ -3966,6 +4582,16 @@ export default function SimulatorPage() {
               )}
             </div>
           </div>
+
+          <SimulationConsolePanel
+            isOpen={isConsoleOpen}
+            height={consoleHeight}
+            entries={consoleEntries}
+            onResizeStart={onMouseDownConsoleResize}
+            onClose={() => setIsConsoleOpen(false)}
+            onClear={clearConsoleEntries}
+            onDownload={downloadConsoleLog}
+          />
 
           {/* ── Quick-Add Popup (double-click on canvas) ── */}
           {quickAdd && (() => {
@@ -4060,524 +4686,51 @@ export default function SimulatorPage() {
           })()}
         </main>
 
+
         {/* RIGHT PANEL */}
-        <aside style={{ ...S.rightPanel, width: isPanelOpen ? panelWidth : 40, transition: isDragging ? 'none' : 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}>
-          {/* Drag Handle */}
-          {isPanelOpen && (
-            <div
-              onMouseDown={onMouseDownResize}
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: 5,
-                cursor: 'col-resize',
-                zIndex: 10,
-                background: 'transparent'
-              }}
-            />
-          )}
-
-          {/* Toggle Button */}
-          <button
-            onClick={() => setIsPanelOpen(!isPanelOpen)}
-            style={{
-              position: 'absolute',
-              left: isPanelOpen ? 5 : 0,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              height: 48,
-              width: 20,
-              background: 'var(--card)',
-              border: '1px solid var(--border)',
-              borderLeft: 'none',
-              borderRadius: '0 8px 8px 0',
-              color: 'var(--text3)',
-              cursor: 'pointer',
-              zIndex: 11,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '2px 0 8px rgba(0,0,0,0.2)'
-            }}
-          >
-            {isPanelOpen ? '▶' : '◀'}
-          </button>
-
-          {isPanelOpen && (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', paddingLeft: 12 }}>
-              {/* Validation panel */}
-              {validationErrors.length > 0 && showValidation && (
-                <div style={S.validationPanel}>
-                  <div style={S.validationHeader}>
-                    <span>⚠ Validation ({validationErrors.length})</span>
-                    <button style={S.closeBtn} onClick={() => setShowValidation(false)}>✕</button>
-                  </div>
-                  {validationErrors.map((err, i) => (
-                    <div key={i} style={{
-                      ...S.validationItem,
-                      borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
-                    }}>
-                      <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
-                        {err.type === 'error' ? '🔴' : '🟡'} {err.message}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Wires list */}
-              {showConnectionsPanel && (
-              <div className="panel-scroll" style={S.wiresList}>
-                <div style={S.wiresHeader}>Connections ({wires.length})</div>
-                {wires.length === 0 ? (
-                  <div style={{ padding: '12px 12px 16px', fontSize: 12, color: 'var(--text3)' }}>
-                    No wires connected.
-                  </div>
-                ) : (
-                  wires.map(w => (
-                    <div key={w.id} style={S.wireItem}>
-                      <input
-                        type="color"
-                        value={w.color}
-                        onChange={e => updateWireColor(w.id, e.target.value)}
-                        style={{ width: 14, height: 14, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent' }}
-                        title="Change wire color"
-                      />
-                      <span style={{ flex: 1, fontSize: 10, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {w.from} → {w.to}
-                      </span>
-                      <button style={S.wireDelete} onClick={() => deleteWire(w.id)}>✕</button>
-                    </div>
-                  ))
-                )}
-              </div>
-              )}
-
-              {/* Code editor */}
-              <div style={S.codePanel}>
-                <div style={S.codeTabs}>
-                  {['code', 'block', 'libraries', 'serial', 'plotter'].map(t => (
-                    <button
-                      key={t}
-                      style={{ ...S.codeTab, ...(codeTab === t ? S.codeTabActive : {}) }}
-                      onClick={() => setCodeTab(t)}
-                    >
-                      {t === 'code' ? '{ } Code' : t === 'block' ? 'Block' : t === 'libraries' ? ' Libraries' : t === 'serial' ? ' Serial' : ' Plotter'}
-                    </button>
-                  ))}
-                </div>
-                {codeTab === 'code' && (
-                  <div className="panel-scroll" style={{ flex: 1, overflow: 'auto', background: 'var(--bg)' }}>
-                    <Editor
-                      value={code}
-                      onValueChange={code => setCode(code)}
-                      highlight={code => Prism.highlight(code, Prism.languages.cpp, 'cpp')}
-                      padding={14}
-                      style={{
-                        fontFamily: "'JetBrains Mono',monospace",
-                        fontSize: 12,
-                        lineHeight: 1.7,
-                        minHeight: '100%',
-                        color: 'var(--text)',
-                        border: 'none',
-                        outline: 'none',
-                        resize: 'none'
-                      }}
-                      textareaClassName="editor-textarea"
-                    />
-                  </div>
-                )}
-                {codeTab === 'block' && (
-                  <BlocklyEditor onExportCode={(generated) => { setCode(generated); setCodeTab('code'); }} />
-                )}
-                {codeTab === 'libraries' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', padding: 12, background: 'var(--bg)' }}>
-                    <form onSubmit={handleSearchLibraries} style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-                      <input
-                        style={S.serialInput}
-                        placeholder="Search for an Arduino library..."
-                        value={libQuery}
-                        onChange={e => setLibQuery(e.target.value)}
-                      />
-                      <Btn color="var(--accent)" disabled={isSearchingLib}>
-                        {isSearchingLib ? '...' : 'Search'}
-                      </Btn>
-                    </form>
-
-                    {libMessage && (
-                      <div style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 13, background: libMessage.type === 'error' ? 'rgba(255,68,68,0.1)' : 'rgba(0,230,118,0.1)', color: libMessage.type === 'error' ? 'var(--red)' : 'var(--green)', border: `1px solid ${libMessage.type === 'error' ? 'rgba(255,68,68,0.3)' : 'rgba(0,230,118,0.3)'}` }}>
-                        {libMessage.text}
-                      </div>
-                    )}
-
-                    <div className="panel-scroll" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>
-                      {libResults.length > 0 && <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 8 }}>Search Results</div>}
-                      {libResults.map((lib, idx) => (
-                        <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                            <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>{lib.name}</div>
-                            <Btn
-                              color="var(--green)"
-                              disabled={installingLib === lib.name}
-                              onClick={() => handleInstallLibrary(lib.name)}
-                            >
-                              {installingLib === lib.name ? 'Installing...' : 'Install'}
-                            </Btn>
-                          </div>
-                          <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.4 }}>{lib.sentence}</div>
-                          <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                            <span>v{lib.version}</span>
-                            <span>{lib.author}</span>
-                          </div>
-                        </div>
-                      ))}
-
-                      {libResults.length === 0 && (
-                        <>
-                          <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 8 }}>Installed on Host Server</div>
-                          {libInstalled.length === 0 ? (
-                            <div style={{ fontSize: 13, color: 'var(--text3)' }}>No external libraries installed.</div>
-                          ) : (
-                            libInstalled.map((lib, idx) => (
-                              <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, opacity: 0.85 }}>
-                                <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{lib.library.name}</div>
-                                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace', marginTop: 6 }}>
-                                  <span>v{lib.library.version}</span>
-                                  <span>Installed</span>
-                                </div>
-                              </div>
-                            ))
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {codeTab === 'serial' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden' }}>
-                    {/* Serial Toolbar */}
-                    <div style={S.serialToolbar}>
-                      <span style={{
-                        display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
-                        color: serialPaused ? 'var(--text3)' : 'var(--green)'
-                      }}>
-                        <span style={{
-                          width: 7, height: 7, borderRadius: '50%',
-                          background: serialPaused ? 'var(--text3)' : 'var(--green)',
-                          boxShadow: serialPaused ? 'none' : '0 0 6px var(--green)',
-                          animation: (!serialPaused && isRunning) ? 'pulse 1.2s infinite' : 'none',
-                          flexShrink: 0
-                        }} />
-                        {serialPaused ? 'Paused' : isRunning ? 'Live' : 'Idle'}
-                      </span>
-                      <div style={{ flex: 1 }} />
-                      <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                        {serialHistory.length} lines
-                      </span>
-                      <button
-                        style={S.serialCtrlBtn}
-                        onClick={() => setSerialPaused(p => !p)}
-                        title={serialPaused ? 'Resume auto-scroll' : 'Pause auto-scroll'}
-                      >
-                        {serialPaused ? '▶ Resume' : '⏸ Pause'}
-                      </button>
-                      <button
-                        style={{ ...S.serialCtrlBtn, color: 'var(--red)', borderColor: 'rgba(255,68,68,0.3)' }}
-                        onClick={() => setSerialHistory([])}
-                        title="Clear all output"
-                      >
-                        🗑 Clear
-                      </button>
-                    </div>
-
-                    {/* Output Area */}
-                    <div ref={serialOutputRef} className="panel-scroll" style={S.serialOutput}>
-                      {serialHistory.length === 0 ? (
-                        <div style={{ color: 'var(--text3)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
-                          {isRunning ? 'Waiting for serial output...' : 'Run the simulator to see serial output.'}
-                        </div>
-                      ) : (
-                        serialHistory.map((entry, i) => {
-                          const badgeColor = entry.dir === 'rx' ? '#2ecc71' : entry.dir === 'tx' ? '#3498db' : '#888';
-                          const badgeBg = entry.dir === 'rx' ? 'rgba(46,204,113,0.12)' : entry.dir === 'tx' ? 'rgba(52,152,219,0.12)' : 'rgba(128,128,128,0.12)';
-                          return (
-                            <div key={i} style={S.serialLine}>
-                              <span style={S.serialTs}>{entry.ts || ''}</span>
-                              <span style={{ ...S.serialBadge, color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}40` }}>
-                                {entry.dir?.toUpperCase() || 'RX'}
-                              </span>
-                              <span style={{ flex: 1, color: entry.dir === 'tx' ? '#3498db' : entry.dir === 'sys' ? 'var(--text3)' : 'var(--green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                {entry.text}
-                              </span>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    {/* TX Input Row */}
-                    <div style={{ display: 'flex', gap: 6, padding: '8px 10px', borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg2)' }}>
-                      <input
-                        style={{ ...S.serialInput, flex: 1, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                        placeholder="Send message to Arduino..."
-                        value={serialInput}
-                        onChange={e => setSerialInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') sendSerialInput(); }}
-                        disabled={!isRunning}
-                      />
-                      <button
-                        onClick={sendSerialInput}
-                        disabled={!isRunning || !serialInput.trim()}
-                        style={{
-                          background: (isRunning && serialInput.trim()) ? 'var(--accent)' : 'transparent',
-                          border: '1px solid var(--accent)', color: (isRunning && serialInput.trim()) ? '#fff' : 'var(--text3)',
-                          borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 700,
-                          cursor: (isRunning && serialInput.trim()) ? 'pointer' : 'not-allowed',
-                          fontFamily: 'inherit', transition: 'all .15s', whiteSpace: 'nowrap'
-                        }}
-                      >
-                        ↑ Send
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {codeTab === 'plotter' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden' }}>
-                    {/* Plotter Toolbar */}
-                    <div style={S.plotterToolbar}>
-                      <span style={{
-                        display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
-                        color: plotterPaused ? 'var(--text3)' : 'var(--green)'
-                      }}>
-                        <span style={{
-                          width: 7, height: 7, borderRadius: '50%',
-                          background: plotterPaused ? 'var(--text3)' : 'var(--green)',
-                          boxShadow: plotterPaused ? 'none' : '0 0 6px var(--green)',
-                        }} />
-                        {plotterPaused ? 'Paused' : isRunning ? 'Plotting live...' : 'Idle'}
-                      </span>
-                      <div style={{ flex: 1 }} />
-                      <button
-                        style={S.serialCtrlBtn}
-                        onClick={() => setPlotterPaused(p => !p)}
-                        title={plotterPaused ? 'Resume plotting' : 'Pause plotting'}
-                      >
-                        {plotterPaused ? '▶ Resume' : '⏸ Pause'}
-                      </button>
-                      <button
-                        style={{ ...S.serialCtrlBtn, color: 'var(--red)', borderColor: 'rgba(255,68,68,0.3)' }}
-                        onClick={() => setPlotData([])}
-                        title="Clear plot"
-                      >
-                        🗑 Clear
-                      </button>
-                    </div>
-
-                    {/* Pin Selector */}
-                    <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>Pins:</span>
-                      {['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5', ...serialPlotLabelsRef.current.filter(l => !['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'].includes(l))].map((pin, i) => {
-                        const isSel = selectedPlotPins.includes(pin);
-                        const isAna = pin.startsWith('A');
-                        const isLogic = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'].includes(pin);
-                        let bg = isAna ? 'rgba(52,152,219,0.2)' : 'rgba(46,204,113,0.2)';
-                        let br = isAna ? '#3498db' : '#2ecc71';
-                        if (!isLogic) {
-                          const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-                          const c = colors[i % colors.length];
-                          bg = `${c}33`; br = c;
-                        }
-                        return (
-                          <button
-                            key={pin}
-                            onClick={() => setSelectedPlotPins(prev => {
-                              if (prev.includes(pin)) return prev.filter(p => p !== pin);
-                              if (prev.length >= 8) return [...prev.slice(1), pin];
-                              return [...prev, pin];
-                            })}
-                            style={{
-                              background: isSel ? bg : 'transparent',
-                              border: `1px solid ${isSel ? br : 'var(--border)'}`,
-                              color: isSel ? br : 'var(--text3)',
-                              borderRadius: 4, padding: '1px 5px', fontSize: 10, cursor: 'pointer'
-                            }}
-                          >{pin}</button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Legend */}
-                    {selectedPlotPins.length > 0 && (
-                      <div style={S.plotterLegend}>
-                        {selectedPlotPins.map((pin, i) => {
-                          let bg = pin.startsWith('A') ? '#3498db' : '#2ecc71';
-                          let lbl = `Pin ${pin}`;
-                          if (isNaN(parseInt(pin)) && !pin.startsWith('A')) {
-                            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-                            const serialVars = selectedPlotPins.filter(p => isNaN(parseInt(p)) && !p.startsWith('A'));
-                            bg = colors[serialVars.indexOf(pin) % colors.length];
-                            lbl = pin;
-                          }
-                          return (
-                            <span key={pin} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer' }}
-                              onClick={() => setSelectedPlotPins(prev => prev.filter(p => p !== pin))}
-                              title="Click to remove" >
-                              <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, flexShrink: 0 }} />
-                              <span style={{ color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace' }}>{lbl}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Canvas */}
-                    <div style={{ flex: 1, position: 'relative' }}>
-                      {!isRunning && plotData.length === 0 ? (
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', gap: 8, fontSize: 13 }}>
-                          <span style={{ fontSize: 28 }}>📈</span>
-                          Run simulator to trace signals.
-                        </div>
-                      ) : (
-                        <canvas
-                          ref={plotterCanvasRef}
-                          width={800}
-                          height={600}
-                          style={{ position: 'absolute', width: '100%', height: '100%', background: '#070b14' }}
-                        />
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </aside>
+        <RightPanel
+          isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
+          explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
+          selected={selected} setSelected={setSelected}
+          validationErrors={validationErrors} showValidation={showValidation} setShowValidation={setShowValidation}
+          codeTab={codeTab} setCodeTab={setCodeTab} code={code} setCode={setCode}
+          projectFiles={projectFiles} openCodeTabs={openCodeTabs} activeCodeFileId={activeCodeFileId} showCodeExplorer={showCodeExplorer}
+          onToggleCodeExplorer={() => setShowCodeExplorer(v => !v)} onOpenCodeFile={openCodeFile} onCloseCodeTab={closeCodeTab}
+          onSaveCodeFile={saveCodeFile} onDuplicateCodeFile={duplicateCodeFile} onRenameCodeFile={renameCodeFile} onDeleteCodeFile={deleteCodeFile} onDownloadCodeFile={downloadCodeFile}
+          onCreateCodeFile={createCodeFile} onCreateCodeTab={createCodeTab}
+          libQuery={libQuery} setLibQuery={setLibQuery} handleSearchLibraries={handleSearchLibraries} isSearchingLib={isSearchingLib} libMessage={libMessage} libInstalled={libInstalled} libResults={libResults} handleInstallLibrary={handleInstallLibrary} installingLib={installingLib}
+          serialPaused={serialPaused} setSerialPaused={setSerialPaused} isRunning={isRunning} serialHistory={serialHistory} setSerialHistory={setSerialHistory} serialOutputRef={serialOutputRef} serialInput={serialInput} setSerialInput={setSerialInput} sendSerialInput={sendSerialInput}
+          serialViewMode={serialViewMode} setSerialViewMode={setSerialViewMode} serialBoardFilter={serialBoardFilter} setSerialBoardFilter={setSerialBoardFilter} serialBoardOptions={serialBoardOptions} serialBoardLabels={serialBoardLabels} serialBaudRate={serialBaudRate} setSerialBaudRate={setSerialBaudRate} serialBaudOptions={serialBaudOptions}
+          hardwareConnected={hardwareConnected}
+          plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
+          showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
+        />
       </div>
 
-    {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
-    {showSaveDialog && (
-      <div style={S.modalOverlay} onClick={() => setShowSaveDialog(false)}>
-        <div style={S.modalBox} onClick={e => e.stopPropagation()}>
-          <div style={S.modalTitle}>Save Project</div>
-          <input
-            autoFocus
-            style={{ ...S.paletteSearch, marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
-            placeholder="Project name..."
-            value={saveDialogName}
-            onChange={e => setSaveDialogName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
-          />
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
-            <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+      {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+            <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
+            <input
+              autoFocus
+              className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
+              placeholder="Project name..."
+              value={saveDialogName}
+              onChange={e => setSaveDialogName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
+              <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
 
 
     </div>
   )
-}
-
-// ─── Tiny button component (Updated to support CSS Variables) ───────────────
-function Btn({ children, onClick, color, title, disabled, iconOnly }) {
-  const [hov, setHov] = useState(false)
-  const [clicked, setClicked] = useState(false)
-  const isInteractive = !disabled && hov;
-
-  const handleClick = () => {
-    if (disabled) return;
-    setClicked(true);
-    setTimeout(() => setClicked(false), 280);
-    onClick?.();
-  };
-
-  return (
-    <button
-      title={title}
-      onClick={handleClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        background: disabled ? 'transparent' : (color ? (isInteractive ? color : 'transparent') : isInteractive ? 'var(--border)' : 'var(--card)'),
-        border: `1px solid ${color || 'var(--border)'}`,
-        color: disabled ? 'var(--text3)' : (color ? (isInteractive ? '#fff' : color) : 'var(--text)'),
-        padding: iconOnly ? '7px 10px' : '7px 14px', borderRadius: 8,
-        fontFamily: 'Space Grotesk, sans-serif', fontSize: 13,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transition: 'background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s',
-        whiteSpace: 'nowrap',
-        fontWeight: color ? 700 : 500,
-        opacity: disabled ? 0.5 : 1,
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-        animation: clicked ? 'toolbtn-pop 0.26s ease' : 'none',
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
-// ─── Styles (Refactored to map strictly to CSS variables) ───────────────────────
-const S = {
-  page: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', background: 'var(--bg)', fontFamily: "'Space Grotesk',sans-serif", color: 'var(--text)' },
-  bar: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', flexShrink: 0, flexWrap: 'wrap' },
-  logo: { background: 'none', border: 'none', color: 'var(--accent)', fontSize: 16, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 6 },
-  barCenter: { display: 'flex', alignItems: 'center', gap: 8, flex: 1, flexWrap: 'wrap' },
-  sel: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 12px', borderRadius: 8, fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' },
-  userChip: { background: 'var(--card)', border: '1px solid var(--border)', padding: '7px 12px', borderRadius: 8, fontSize: 13, color: 'var(--text2)' },
-  guestBanner: { background: 'rgba(255,145,0,.1)', borderBottom: '1px solid rgba(255,145,0,.25)', color: 'var(--orange)', padding: '8px 20px', fontSize: 13, display: 'flex', alignItems: 'center', flexShrink: 0 },
-  bannerBtn: { background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline', fontFamily: 'inherit', padding: 0 },
-  bannerCloseBtn: { background: 'none', border: 'none', color: 'var(--orange)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', opacity: 0.7, padding: '4px 8px' },
-  modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 },
-  modalBox: { background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, padding: 24, width: 360, boxShadow: '0 8px 40px rgba(0,0,0,.4)' },
-  modalTitle: { fontSize: 16, fontWeight: 700, marginBottom: 14, color: 'var(--text)' },
-  workspace: { display: 'flex', flex: 1, overflow: 'hidden' },
-
-  palette: { width: 410, background: 'var(--bg2)', borderRight: '1px solid var(--border)', overflowY: 'auto', padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 },
-  paletteHeader: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.1em', padding: '4px 8px 8px' },
-  paletteSearch: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, width: '100%', marginBottom: 8, outline: 'none', boxSizing: 'border-box' },
-  groupName: { fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 },
-  paletteItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: 'grab', transition: 'all .15s', border: '1px solid transparent', userSelect: 'none' },
-  paletteTip: { marginTop: 'auto', padding: '10px 8px', fontSize: 11, color: 'var(--text3)', lineHeight: 1.6 },
-
-  canvas: {
-    flex: 1, position: 'relative', overflow: 'hidden',
-    backgroundColor: 'var(--canvas-bg)',
-    backgroundSize: '24px 24px',
-  },
-  emptyState: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', textAlign: 'center', pointerEvents: 'none' },
-
-  rightPanel: { position: 'relative', background: 'var(--bg2)', borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', transition: 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)' },
-
-  validationPanel: { background: 'var(--bg3)', borderBottom: '1px solid var(--border)', flexShrink: 0 },
-  validationHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', fontSize: 12, fontWeight: 700, color: 'var(--orange)' },
-  closeBtn: { background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit' },
-  validationItem: { padding: '6px 12px', fontSize: 12, borderLeft: '3px solid', marginBottom: 2, lineHeight: 1.5 },
-
-  wiresList: { background: 'var(--bg3)', borderBottom: '1px solid var(--border)', maxHeight: 140, overflowY: 'auto', flexShrink: 0 },
-  wiresHeader: { fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.08em', padding: '8px 12px 4px' },
-  wireItem: { display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', borderBottom: '1px solid var(--border)' },
-  wireDelete: { background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', flexShrink: 0 },
-
-  codePanel: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
-  codeTabs: { display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 },
-  codeTab: { flex: 1, padding: '10px 4px', background: 'none', border: 'none', color: 'var(--text3)', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', borderBottom: '2px solid transparent', transition: 'all .15s' },
-  codeTabActive: { color: 'var(--accent)', borderBottomColor: 'var(--accent)' },
-  codeEditor: { flex: 1, color: 'var(--text)', border: 'none', outline: 'none', resize: 'none' },
-  codePlaceholder: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', gap: 8 },
-  serialOutput: { flex: 1, overflowY: 'auto', padding: '6px 0', display: 'flex', flexDirection: 'column' },
-  serialInput: { background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', padding: '7px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, outline: 'none' },
-  serialToolbar: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 },
-  serialCtrlBtn: { background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' },
-  serialLine: { display: 'flex', alignItems: 'flex-start', gap: 8, padding: '2px 12px', fontSize: 11, fontFamily: 'JetBrains Mono, monospace', borderBottom: '1px solid var(--border)' },
-  serialTs: { color: 'var(--text3)', fontSize: 10, minWidth: 84, flexShrink: 0, paddingTop: 1 },
-  serialBadge: { display: 'inline-block', fontSize: 9, fontWeight: 700, borderRadius: 3, padding: '1px 4px', flexShrink: 0, marginTop: 1 },
-  plotterToolbar: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
-  plotterLegend: { display: 'flex', flexWrap: 'wrap', gap: '4px 16px', padding: '4px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
 }
 
 
