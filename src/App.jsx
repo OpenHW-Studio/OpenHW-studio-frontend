@@ -12,7 +12,7 @@ import StudentDashboard from './pages/student/StudentDashboard.jsx'
 import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx'
 import TeacherClassDetailPage from './pages/teacher/TeacherClassDetailPage.jsx'
 import StudentClassDetailPage from './pages/student/StudentClassDetailPage.jsx'
-import SimulatorPage from './pages/SimulatorPage.jsx'
+import SimulatorPage from "./pages/simulationpage/SimulationPage.jsx";
 import AdminPage from './pages/admin/AdminPage.jsx'
 import AdminLoginPage from './pages/admin/AdminLoginPage.jsx'
 import AdminLandingPage from './pages/admin/AdminLandingPage.jsx'
