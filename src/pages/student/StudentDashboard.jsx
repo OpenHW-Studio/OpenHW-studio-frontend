@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { BookOpen, ClipboardCheck, Home, Monitor, X } from 'lucide-react'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { useAuth } from "../../context/AuthContext.jsx";
+import { useGamification } from "../../context/GamificationContext.jsx";
+import { PROJECTS } from "../../services/gamification/ProjectsConfig.js";
 import {
   getClassAssignments,
   getClassroomNotices,
@@ -13,10 +15,27 @@ import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 import ClassCard from '../../components/common/ClassCard.jsx'
 import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
 
+const DEMO_PROJECTS = [
+  { title: 'LED Blink',          slug: 'led-blink',          board: 'Arduino Uno', difficulty: 'Beginner',     icon: '💡', xp: 100 },
+  { title: 'RGB LED',            slug: 'rgb-led',             board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🌈', xp: 150 },
+  { title: 'Buzzer',             slug: 'buzzer',              board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🔊', xp: 150 },
+  { title: 'Potentiometer',      slug: 'potentiometer',       board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🎛️', xp: 175 },
+  { title: 'Button & Debounce',  slug: 'button-debounce',     board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🔘', xp: 200 },
+  { title: 'Temperature Sensor', slug: 'temperature-sensor',  board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', xp: 250 },
+]
+
 export default function StudentDashboard() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+
+  const {
+    currentLevel, currentLevelData, nextLevel, xpProgress, xp,
+    completedProjects = [], unlockedComponents = [], earnedBadges = [], coins = 0,
+  } = useGamification()
+
+  const completedCount = completedProjects.length
+  const unlockedCount = unlockedComponents.length
 
   const [classrooms, setClassrooms] = useState([])
   const [assignmentsByClass, setAssignmentsByClass] = useState({})
@@ -245,48 +264,211 @@ export default function StudentDashboard() {
         </section>
 
         <section className="teacher-dashboard-grid">
-          <section className="teacher-classes-panel">
-            <header className="teacher-section-heading teacher-section-heading--compact">
-              <h3>Your classes</h3>
-              <button type="button" className="teacher-section-link" onClick={handleOpenJoinModal}>
-                + Join
-              </button>
-            </header>
-
-            {loadingDashboard ? (
-              <div className="teacher-class-grid">
-                <ClassCardSkeleton count={4} />
-              </div>
-            ) : null}
-            {dashboardError ? <p className="teacher-inline-state teacher-inline-state--error">{dashboardError}</p> : null}
-
-            {!loadingDashboard && !dashboardError && classrooms.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon">??</div>
-                <p>You have not joined any classes yet.</p>
-                <button type="button" className="btn btn-primary" onClick={handleOpenJoinModal}>
-                  Join with class code
+          {/* LEFT COLUMN CONTENT */}
+          <div>
+            {/* CLASSES PANEL */}
+            <section className="teacher-classes-panel">
+              <header className="teacher-section-heading teacher-section-heading--compact">
+                <h3>Your classes</h3>
+                <button type="button" className="teacher-section-link" onClick={handleOpenJoinModal}>
+                  + Join
                 </button>
-              </div>
-            ) : null}
+              </header>
 
-            {!loadingDashboard && classrooms.length > 0 ? (
-              <div className="teacher-class-grid">
-                {classrooms.map((classroom, index) => (
-                  <ClassCard
-                    key={classroom._id}
-                    classroom={classroom}
-                    index={index}
-                    role="student"
-                    userName={classroom.teacher?.name || 'Teacher'}
-                    avatarInitials={avatarLetter}
-                    onClick={() => navigate(`/student/classes/${classroom._id}`)}
-                  />
+              {loadingDashboard ? (
+                <div className="teacher-class-grid">
+                  <ClassCardSkeleton count={4} />
+                </div>
+              ) : null}
+              {dashboardError ? <p className="teacher-inline-state teacher-inline-state--error">{dashboardError}</p> : null}
+
+              {!loadingDashboard && !dashboardError && classrooms.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">??</div>
+                  <p>You have not joined any classes yet.</p>
+                  <button type="button" className="btn btn-primary" onClick={handleOpenJoinModal}>
+                    Join with class code
+                  </button>
+                </div>
+              ) : null}
+
+              {!loadingDashboard && classrooms.length > 0 ? (
+                <div className="teacher-class-grid">
+                  {classrooms.map((classroom, index) => (
+                    <ClassCard
+                      key={classroom._id}
+                      classroom={classroom}
+                      index={index}
+                      role="student"
+                      userName={classroom.teacher?.name || 'Teacher'}
+                      avatarInitials={avatarLetter}
+                      onClick={() => navigate(`/student/classes/${classroom._id}`)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+
+            {/* DEMO PROJECTS — guide only, no gamification */}
+            <section className="teacher-classes-panel projects-section" style={{ marginTop: '2rem' }}>
+              <header className="teacher-section-heading teacher-section-heading--compact">
+                <div>
+                  <h3 style={{ margin: 0 }}>Guided project demos</h3>
+                  <p className="section-sub" style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                    Explore the circuit and code before starting the real challenge
+                  </p>
+                </div>
+              </header>
+
+              <div className="projects-grid" style={{ marginTop: '1.5rem' }}>
+                {DEMO_PROJECTS.map((p) => (
+                  <div
+                    className="project-card"
+                    key={p.slug}
+                    onClick={() => navigate(`/${p.slug}/guide`)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="project-icon">{p.icon}</div>
+                    <div className="project-info">
+                      <h4>{p.title}</h4>
+                      <span className="project-board">{p.board}</span>
+                    </div>
+                    <div className="project-meta">
+                      <span className={`difficulty ${p.difficulty.toLowerCase()}`}>{p.difficulty}</span>
+                      <span className="points">+{p.xp} XP</span>
+                    </div>
+                  </div>
                 ))}
               </div>
-            ) : null}
-          </section>
+            </section>
 
+            {/* GAMIFIED PROGRESS — XP, level, completed projects */}
+            <section className="teacher-classes-panel projects-section" style={{ marginTop: '2rem' }}>
+              <header className="teacher-section-heading teacher-section-heading--compact">
+                <div>
+                  <h3 style={{ margin: 0 }}>Your progress</h3>
+                  <p className="section-sub" style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                    Complete gamified projects to earn XP, coins, and badges
+                  </p>
+                </div>
+                <button type="button" className="teacher-section-link" onClick={() => navigate('/projects')}>
+                  Full Project Gallery →
+                </button>
+              </header>
+
+              {/* XP + level bar */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+                background: 'var(--card, #1a2236)', border: '1px solid var(--border)',
+                borderRadius: 12, padding: '14px 18px', margin: '1rem 0',
+              }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
+                  background: `${currentLevelData?.color || '#22c55e'}22`,
+                  border: `2px solid ${currentLevelData?.color || '#22c55e'}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 18, fontWeight: 800, color: currentLevelData?.color || '#22c55e',
+                }}>{currentLevel}</div>
+                <div style={{ flex: 1, minWidth: 140 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>
+                    {currentLevelData?.title || 'Hello, World'}
+                    <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.5, marginLeft: 6 }}>
+                      Level {currentLevel}
+                    </span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 999, background: 'var(--border)', overflow: 'hidden', marginBottom: 3 }}>
+                    <div style={{
+                      height: '100%', borderRadius: 999,
+                      width: `${xpProgress}%`,
+                      background: `linear-gradient(90deg, ${currentLevelData?.color || '#22c55e'}, ${nextLevel?.color || currentLevelData?.color || '#22c55e'})`,
+                      transition: 'width .5s',
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.5 }}>
+                    {xpProgress}% to Level {nextLevel?.id ?? '—'} · {xp.toLocaleString()} XP total
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {[
+                    { icon: '✅', label: 'Completed', value: completedCount },
+                    { icon: '🔓', label: 'Components', value: unlockedCount },
+                    { icon: '🏅', label: 'Badges', value: earnedBadges.length },
+                    { icon: '🪙', label: 'Coins', value: coins },
+                  ].map(s => (
+                    <div key={s.label} style={{
+                      textAlign: 'center', padding: '6px 12px',
+                      background: 'var(--bg, #07080f)', border: '1px solid var(--border)',
+                      borderRadius: 8,
+                    }}>
+                      <div style={{ fontSize: 16 }}>{s.icon}</div>
+                      <div style={{ fontSize: 14, fontWeight: 800 }}>{s.value}</div>
+                      <div style={{ fontSize: 9, opacity: 0.45, textTransform: 'uppercase', letterSpacing: '.05em' }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Recent completed projects */}
+              {completedCount > 0 ? (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.4, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>
+                    Recently completed
+                  </div>
+                  <div className="projects-grid">
+                    {PROJECTS.filter(p => completedProjects.includes(p.slug)).slice(0, 3).map(p => (
+                      <div
+                        key={p.slug}
+                        className="project-card"
+                        onClick={() => navigate(`/gamification-simulator/${p.slug}`)}
+                        style={{ cursor: 'pointer', borderColor: 'rgba(34,197,94,.3)', background: 'rgba(34,197,94,.04)' }}
+                      >
+                        <div className="project-icon">{p.icon}</div>
+                        <div className="project-info">
+                          <h4 style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span style={{ fontSize: 11, color: '#22c55e' }}>✓</span>
+                            {p.title}
+                          </h4>
+                          <span className="project-board">{p.estimatedTime}</span>
+                        </div>
+                        <div className="project-meta">
+                          <span className="difficulty beginner">Done</span>
+                          <span className="points">+{p.xpReward} XP</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  textAlign: 'center', padding: '28px 0',
+                  opacity: 0.45, fontSize: 13,
+                }}>
+                  <div style={{ fontSize: 36, marginBottom: 8 }}>🎯</div>
+                  No projects completed yet. Go to the Full Project Gallery to start!
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: '1rem' }}>
+                <button
+                  type="button"
+                  className="teacher-button teacher-button--primary"
+                  onClick={() => navigate('/projects')}
+                  style={{ flex: 1 }}
+                >
+                  🚀 Start a Gamified Project
+                </button>
+                <button
+                  type="button"
+                  className="teacher-button teacher-button--secondary"
+                  onClick={() => navigate('/components')}
+                >
+                  🔓 Unlock Components
+                </button>
+              </div>
+            </section>
+          </div>
+
+          {/* RIGHT SIDEBAR */}
           <aside className="teacher-dashboard-sidepanels">
             <section className="teacher-side-card">
               <header className="teacher-section-heading teacher-section-heading--compact">

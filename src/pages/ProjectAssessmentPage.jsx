@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useGamification } from '../context/GamificationContext'
+import { PROJECTS } from '../services/gamification/ProjectsConfig'
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5000/examples'
 
 const S = {
   page: {
@@ -464,7 +466,7 @@ function evaluateAssessment(config, components, wires, code) {
         if (directRegex.test(codeText) || (idRegex && idRegex.test(codeText)) || aliasMatch) passed += 1
         else issues.push('analogRead should use the expected input pin.')
       }
-
+      
       if (expectedBehavior.pattern) {
         checks += 1
         const pattern = expectedBehavior.pattern.toString().toLowerCase()
@@ -511,6 +513,10 @@ function evaluateAssessment(config, components, wires, code) {
 export default function ProjectAssessmentPage() {
   const navigate = useNavigate()
   const { projectName = '' } = useParams()
+  
+  // Extract gamification functions inside the component body
+  const { completedProjects, completeProject, awardXP } = useGamification()
+  
   const projectTitle = useMemo(() => titleFromSlug(projectName), [projectName])
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const [evaluationConfig, setEvaluationConfig] = useState(null)
@@ -562,7 +568,10 @@ export default function ProjectAssessmentPage() {
 
   useEffect(() => {
     if (!evaluationConfig || !submission) return
+    
+    // Evaluate the results
     const result = evaluateAssessment(evaluationConfig, submission.components || [], submission.wires || [], submission.code || '')
+    
     const payload = {
       projectName,
       submittedAt: submission.submittedAt,
@@ -570,7 +579,18 @@ export default function ProjectAssessmentPage() {
     }
     setEvaluationResult(payload)
     sessionStorage.setItem(`openhw_assessment_result:${projectName}`, JSON.stringify(payload))
-  }, [evaluationConfig, submission, projectName])
+    
+    // Process Gamification logic based on the calculated result
+    if (result.passed) {
+      if (completedProjects && !completedProjects.includes(projectName)) {
+        if (completeProject) completeProject(projectName)
+      } else {
+        const project = PROJECTS.find(p => p.slug === projectName)
+        const bonus = Math.round((project?.xpReward || 100) * 0.25)
+        if (awardXP) awardXP(bonus, 'Re-submission bonus')
+      }
+    }
+  }, [evaluationConfig, submission, projectName, completedProjects, completeProject, awardXP])
 
   const criteriaList = useMemo(() => {
     if (!evaluationConfig?.evaluationCriteria) return []
