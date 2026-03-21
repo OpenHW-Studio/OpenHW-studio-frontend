@@ -2,19 +2,6 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore.js' 
 
-const exampleProjects = [
-  { title: 'LED Blink', slug: 'led-blink', board: 'Arduino Uno', difficulty: 'Beginner', icon: '💡', points: 50 },
-  { title: 'RGB LED', slug: 'rgb-led', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎨', points: 80 },
-  { title: 'Buzzer', slug: 'buzzer', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🔔', points: 70 },
-  { title: 'LED Strip', slug: 'led-strip', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🌈', points: 90 },
-  { title: 'Potentiometer', slug: 'potentiometer', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🎚️', points: 100 },
-  { title: 'Button & Debounce', slug: 'button-debounce', board: 'Arduino Uno', difficulty: 'Beginner', icon: '🕹️', points: 110 },
-  { title: 'LDR', slug: 'ldr', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '☀️', points: 130 },
-  { title: 'DC Motor', slug: 'dc-motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🔄', points: 140 },
-  { title: 'Servo Motor', slug: 'servo-motor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '⚙️', points: 120 },
-  { title: 'Temperature Sensor', slug: 'temperature-sensor', board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', points: 150 },
-]
-
 export default function LandingPage() {
   const navigate = useNavigate()
   const { isAuthenticated, role } = useAuthStore()
@@ -46,7 +33,6 @@ export default function LandingPage() {
             <button className="btn btn-primary" onClick={handleDashboard}>Dashboard →</button>
           ) : (
             <>
-            
               <button className="btn btn-ghost" onClick={() => navigate('/signin')}>Sign In</button>
               <button className="btn btn-primary" onClick={() => navigate('/signup')}>Get Started</button>
             </>
@@ -69,7 +55,6 @@ export default function LandingPage() {
           <button className="btn btn-primary btn-lg" onClick={() => navigate('/simulator')}>
             ▶ Try Simulator — No Login Required
           </button>
-          {/* Updated to /signup */}
           <button className="btn btn-outline btn-lg" onClick={() => navigate('/signup')}>
             Join as Student / Teacher
           </button>
@@ -93,7 +78,6 @@ export default function LandingPage() {
         <div className="features-grid">
           {[
             { icon: '🖥️', title: 'Real-Time Simulation', desc: 'Instruction-level Arduino & Pico emulation directly in your browser. No plugins.' },
-            { icon: '🎮', title: 'Gamified Learning', desc: 'Earn points, coins and badges. Unlock advanced components as you level up.' },
             { icon: '🏫', title: 'Classroom Mode', desc: 'Teachers create classes, push templates, lock screens, and grade submissions live.' },
             { icon: '🧩', title: 'Block + Code Editor', desc: 'Start with visual blocks, graduate to full C++ code. Switch modes any time.' },
             { icon: '⚡', title: 'Smart Auto-Assist', desc: 'Drop an LED and get a resistor added automatically. Context-aware circuit help.' },
@@ -108,21 +92,38 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* EXAMPLE PROJECTS */}
-      <section className="projects-section">
+      {/* GUIDED PROJECTS */}
+      <section className="features">
         <h2 className="section-title">Start with guided projects</h2>
-        <p className="section-sub">Complete projects to earn XP and unlock advanced components</p>
-        <div className="projects-grid">
-          {exampleProjects.map((p) => (
-            <div className="project-card" key={p.title} onClick={() => navigate(`/${p.slug}/guide`)}>
-              <div className="project-icon">{p.icon}</div>
-              <div className="project-info">
-                <h4>{p.title}</h4>
-                <span className="project-board">{p.board}</span>
-              </div>
-              <div className="project-meta">
-                <span className={`difficulty ${p.difficulty.toLowerCase()}`}>{p.difficulty}</span>
-                <span className="points">+{p.points} XP</span>
+        <p style={{ textAlign: 'center', color: 'var(--text2)', marginBottom: '2rem', fontSize: 15 }}>
+          Explore pre-built circuits and code — no login required
+        </p>
+        <div className="features-grid">
+          {[
+            { icon: '💡', title: 'LED Blink',          slug: 'led-blink',         board: 'Arduino Uno', difficulty: 'Beginner',     xp: 100 },
+            { icon: '🌈', title: 'RGB LED',             slug: 'rgb-led',            board: 'Arduino Uno', difficulty: 'Beginner',     xp: 150 },
+            { icon: '🔊', title: 'Buzzer',              slug: 'buzzer',             board: 'Arduino Uno', difficulty: 'Beginner',     xp: 150 },
+            { icon: '🎛️', title: 'Potentiometer',       slug: 'potentiometer',      board: 'Arduino Uno', difficulty: 'Beginner',     xp: 175 },
+            { icon: '🔘', title: 'Button & Debounce',   slug: 'button-debounce',    board: 'Arduino Uno', difficulty: 'Beginner',     xp: 200 },
+            { icon: '🌡️', title: 'Temperature Sensor',  slug: 'temperature-sensor', board: 'Arduino Uno', difficulty: 'Intermediate', xp: 250 },
+          ].map((p) => (
+            <div
+              className="feature-card"
+              key={p.slug}
+              onClick={() => navigate(`/${p.slug}/guide`)}
+              style={{ cursor: 'pointer', textAlign: 'left' }}
+            >
+              <div className="feature-icon">{p.icon}</div>
+              <h3 style={{ marginBottom: 4 }}>{p.title}</h3>
+              <p style={{ margin: '0 0 10px', fontSize: 13, opacity: 0.6 }}>{p.board}</p>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 5,
+                  background: p.difficulty === 'Beginner' ? 'rgba(34,197,94,.15)' : 'rgba(251,191,36,.15)',
+                  color: p.difficulty === 'Beginner' ? '#22c55e' : '#fbbf24',
+                  border: `1px solid ${p.difficulty === 'Beginner' ? 'rgba(34,197,94,.3)' : 'rgba(251,191,36,.3)'}`,
+                }}>{p.difficulty}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>+{p.xp} XP</span>
               </div>
             </div>
           ))}
@@ -134,7 +135,6 @@ export default function LandingPage() {
         <h2>Ready to start building?</h2>
         <p>Join as a student to track progress, or as a teacher to manage your class.</p>
         <div className="cta-cards">
-  
           <div className="cta-card student-card" onClick={() => navigate('/signup?role=student')}>
             <div className="cta-icon">🎓</div>
             <h3>I'm a Student</h3>
