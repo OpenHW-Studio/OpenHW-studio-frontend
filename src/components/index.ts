@@ -20,6 +20,7 @@ export { default as wokwiIli9341 } from './wokwi-ili9341';
 export { default as wokwiLcd2004I2C } from './wokwi-lcd2004-i2c';
 export { default as wokwiLdrModule } from './wokwi-ldr-module';
 export { default as max30102 } from './max30102';
+export { default as wokwiMembraneKeypad } from './wokwi-membrane-keypad';
 
 
 
