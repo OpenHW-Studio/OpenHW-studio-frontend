@@ -187,16 +187,13 @@ self.onmessage = async (e) => {
         console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
 
         if (mode === 'single' && runner) {
-            const inst = runner.instances.get(data.compId);
-            if (inst && typeof inst.onEvent === 'function') {
-                inst.onEvent(data.event);
-            }
+            runner.onEvent(data.compId, data.event);
         } else {
             let delivered = false;
             for (const boardRunner of boardRunners.values()) {
                 const inst = boardRunner.instances.get(data.compId);
-                if (inst && typeof inst.onEvent === 'function') {
-                    inst.onEvent(data.event);
+                if (inst) {
+                    boardRunner.onEvent(data.compId, data.event);
                     delivered = true;
                 }
             }
