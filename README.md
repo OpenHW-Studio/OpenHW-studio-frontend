@@ -29,7 +29,7 @@ OpenHW Studio Frontend is the **visual client** of the simulator platform. It al
 - Save and load projects locally — **guests included** — using IndexedDB
 
 It connects to one backend service:
-- **Compiler Backend** (`http://localhost:5000`) — compiles C++ code to `.hex`
+- **Compiler Backend** (`http://localhost:5001`) — compiles C++ code to `.hex`
 
 The simulation itself runs entirely **in the browser** via a Web Worker powered by `avr8js`.
 
@@ -103,7 +103,10 @@ public/
 ### `SimulatorPage.jsx`
 The core of the application. Responsibilities include:
 - **Circuit Canvas** — drag, drop, and wire Wokwi components
-- **Code Editor** — write Arduino sketches with syntax highlighting
+- **Resizable Explorer** — The file explorer panel is resizable for better code editing space
+- **Tabbed Interface** — Right panel features high-visibility interactive tabs for Editor, Explorer, and Console
+- **Code Editor** — write Arduino sketches with syntax highlighting; `diagram.json` is protected as read-only
+- **Undo/Redo** — Quick toolbar actions for circuit design with updated iconography
 - **Run/Stop** — triggers compilation → `.hex` delivery → Web Worker `START` message
 - **Live State Rendering** — receives `{ type: "state", pins: {...} }` at 60 FPS and updates component visual attributes (LEDs, NeoPixels, etc.)
 - **Component Registry** — maps component type names to their imported index definitions from `@openhw/emulator`
@@ -225,7 +228,7 @@ See **[OFFLINE_AND_STORAGE.md](../OFFLINE_AND_STORAGE.md)** for full technical d
 ### Prerequisites
 - Node.js 18+
 - npm 9+
-- The **Compiler Backend** running at `http://localhost:5000`
+- The **Compiler Backend** running at `http://localhost:5001`
 
 ### Installation
 
@@ -275,11 +278,25 @@ npm run preview
 
 ---
 
-## Environment & Dependencies
+## Environment Variables
 
-The frontend relies on the shared `@openhw/emulator` workspace package for component type definitions. This is resolved automatically by the npm workspace at the monorepo root. Make sure you run `npm install` from the root (`simulator/`) directory.
+The frontend uses Vite environment variables. Create a `.env` file in the project directory:
 
-The `vite.config.js` aliases `@openhw/emulator` to the local `openhw-studio-emulator-danish/` directory during development, so changes to component source are immediately reflected without reinstalling.
+| Variable | Description | Default |
+|---|---|---|
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth 2.0 Client ID | — |
+| `VITE_API_BASE_URL` | Base URL for the Backend API | `http://localhost:5001/api` |
+| `VITE_EXAMPLES_BASE_URL` | Base URL for Example Projects URI | `http://localhost:5001/examples` |
+| `VITE_ADMIN_EMAILS` | Comma-separated list of admin emails | — |
+
+### Sample `.env` Setup:
+
+```env
+VITE_GOOGLE_CLIENT_ID=your_id.apps.googleusercontent.com
+VITE_API_BASE_URL=http://localhost:5001/api
+VITE_EXAMPLES_BASE_URL=http://localhost:5001/examples
+VITE_ADMIN_EMAILS=admin@example.com,user@example.com
+```
 
 ---
 
@@ -289,7 +306,7 @@ The `vite.config.js` aliases `@openhw/emulator` to the local `openhw-studio-emul
 User writes C++ code
         │
         ▼
-POST /api/compile  ──►  Compiler Backend (port 5000)
+POST /api/compile  ──►  Compiler Backend (port 5001)
                                 │
                          Returns .hex file
                                 │ also cached to IndexedDB

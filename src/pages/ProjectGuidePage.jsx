@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 const EXAMPLES_BASE_URL = 'http://localhost:5000/examples'
@@ -81,15 +81,7 @@ const S = {
     fontWeight: 700,
     cursor: 'pointer',
   },
-  assessmentButton: {
-    background: 'transparent',
-    color: 'var(--green)',
-    border: '1px solid var(--green)',
-    padding: '12px 16px',
-    borderRadius: 10,
-    fontWeight: 700,
-    cursor: 'pointer',
-  },
+  assessmentButton: {},
 }
 
 function titleFromSlug(slug) {
@@ -176,12 +168,6 @@ export default function ProjectGuidePage() {
             style={S.demoButton}
           >
             Open Demo Project
-          </button>
-          <button
-            onClick={() => navigate(`/${projectName}/assessment`)}
-            style={S.assessmentButton}
-          >
-            Next Step: Assessment
           </button>
         </div>
       </div>
