@@ -1,0 +1,66 @@
+{
+    "type": "wokwi-membrane-keypad",
+    "label": "Membrane Keypad (4x4)",
+    "description": "Standard 4x4 membrane keypad matrix. Connect rows to output pins and columns to input pullup pins to scan for key presses.",
+    "group": "Inputs",
+    "w": 90,
+    "h": 105,
+    "pins": [
+        {
+            "id": "R1",
+            "x": 10,
+            "y": 0,
+            "type": "passive",
+            "description": "Row 1"
+        },
+        {
+            "id": "R2",
+            "x": 20,
+            "y": 0,
+            "type": "passive",
+            "description": "Row 2"
+        },
+        {
+            "id": "R3",
+            "x": 30,
+            "y": 0,
+            "type": "passive",
+            "description": "Row 3"
+        },
+        {
+            "id": "R4",
+            "x": 40,
+            "y": 0,
+            "type": "passive",
+            "description": "Row 4"
+        },
+        {
+            "id": "C1",
+            "x": 50,
+            "y": 0,
+            "type": "passive",
+            "description": "Column 1"
+        },
+        {
+            "id": "C2",
+            "x": 60,
+            "y": 0,
+            "type": "passive",
+            "description": "Column 2"
+        },
+        {
+            "id": "C3",
+            "x": 70,
+            "y": 0,
+            "type": "passive",
+            "description": "Column 3"
+        },
+        {
+            "id": "C4",
+            "x": 80,
+            "y": 0,
+            "type": "passive",
+            "description": "Column 4"
+        }
+    ]
+}
