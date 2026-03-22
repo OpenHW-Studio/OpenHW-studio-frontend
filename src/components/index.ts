@@ -21,6 +21,7 @@ export { default as wokwiLcd2004I2C } from './wokwi-lcd2004-i2c';
 export { default as wokwiLdrModule } from './wokwi-ldr-module';
 export { default as max30102 } from './max30102';
 export { default as wokwiMembraneKeypad } from './wokwi-membrane-keypad';
+export { default as wokwiAnalogJoystick } from './wokwi-analog-joystick';
 
 
 
