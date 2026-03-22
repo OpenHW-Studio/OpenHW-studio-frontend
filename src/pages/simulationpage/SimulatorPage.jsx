@@ -1173,6 +1173,7 @@ export default function SimulatorPage() {
     'wokwi-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
     'wokwi-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
     'wokwi-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
+    'wokwi-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
     'shift_register': '74HC595 8-bit serial-in, parallel-out shift register. Expands digital outputs.',
     'wokwi-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
   };

@@ -14,6 +14,7 @@ import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-dr
 import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
 import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
+import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
 
 // ── Membrane Keypad Logic (defined inline to avoid Rollup web-worker resolution issues) ────
 class KeypadLogic extends BaseComponent {
@@ -80,6 +81,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-potentiometer': PotentiometerLogic,
     'shift_register': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
+    'wokwi-analog-joystick': JoystickLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -97,6 +99,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
+    'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
 };
 
 export type AVRRunnerOptions = {
@@ -548,6 +551,24 @@ export class AVRRunner {
                             const otherPin = compPin === '1' ? '2' : (compPin === '2' ? '1' : null);
                             if (otherPin) {
                                 const forwardStr = `${compId}:${otherPin}`;
+                                this.currentWires.forEach(w => {
+                                    if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
+                                        visitedWires.add(w);
+                                        checkForGndInternal(w.from === forwardStr ? w.to : w.from);
+                                    }
+                                });
+                            }
+                        } else if (inst.type === 'wokwi-analog-joystick' && inst.state.pressed) {
+                            if (compPin === 'SW') {
+                                const forwardStr = `${compId}:GND`;
+                                this.currentWires.forEach(w => {
+                                    if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
+                                        visitedWires.add(w);
+                                        checkForGndInternal(w.from === forwardStr ? w.to : w.from);
+                                    }
+                                });
+                            } else if (compPin === 'GND' || compPin === 'gnd') {
+                                const forwardStr = `${compId}:SW`;
                                 this.currentWires.forEach(w => {
                                     if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
                                         visitedWires.add(w);
