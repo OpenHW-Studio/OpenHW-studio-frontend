@@ -319,6 +319,51 @@ Or with external pull-down (10kΩ to GND):
       ],
     },
   },
+  {
+    id: 'analog-joystick',
+    name: 'Analog Joystick',
+    fullName: '2-Axis Analog Joystick',
+    icon: '🕹️',
+    color: '#f43f5e',
+    category: 'Input',
+    levelRequired: 3,
+    xpReward: 70,
+    coinReward: 15,
+    description: 'Provides two analog outputs (X/Y) and one digital button output.',
+    usedInProjects: ['game-controller', 'robot-arm'],
+    theory: {
+      readTime: '3 min',
+      sections: [
+        {
+          title: 'What is an Analog Joystick?',
+          content: `An analog joystick is essentially two potentiometers (one for the X-axis and one for the Y-axis) and a tactile push button combined into one module.\n\nMoving the stick changes the resistance of the potentiometers, which alters the voltage sent to the Arduino's analog pins. Pressing down on the stick activates the button.`,
+        },
+        {
+          title: 'Reading the Joystick',
+          content: `To read the joystick, you need to read two analog pins and one digital pin:\n\n1. Read the X-axis using analogRead(A0)\n2. Read the Y-axis using analogRead(A1)\n3. Read the button using digitalRead(2) (with INPUT_PULLUP enabled)\n\nThe analog readings will range from 0 to 1023, with the center position resting at approximately 512.`,
+        }
+      ],
+    },
+    quiz: {
+      passingScore: 80,
+      questions: [
+        {
+          id: 'joy_q1',
+          question: 'What is the resting value of the analog X/Y pins when the joystick is in the center?',
+          options: ['0', '512', '1023', 'It fluctuates constantly'],
+          correct: 1,
+          explanation: 'Since the potentiometers act as voltage dividers between 5V and GND, the center position rests at half voltage, which is roughly 512 on the Arduino\'s 10-bit ADC.',
+        },
+        {
+          id: 'joy_q2',
+          question: 'How do you read the push button on the joystick?',
+          options: ['Using analogRead()', 'Using digitalRead() with INPUT_PULLUP', 'Wait for an interrupt', 'Measure the resistance'],
+          correct: 1,
+          explanation: 'The push button simply connects the switch pin to ground. Using digitalRead() with the internal pull-up resistor keeps it HIGH normally, and goes LOW when pressed.',
+        }
+      ],
+    },
+  },
 
   {
     id: 'potentiometer',

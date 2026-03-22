@@ -24,7 +24,7 @@ import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
 import * as Babel from '@babel/standalone';
 
-import * as EmulatorComponents from "@openhw/emulator/src/components/index.ts";
+import * as EmulatorComponents from "@local-emulator/components/index.ts";
 
 // Web Editor features
 import Editor from 'react-simple-code-editor';
@@ -1173,7 +1173,9 @@ export default function SimulatorPage() {
     'wokwi-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
     'wokwi-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
     'wokwi-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
+    'wokwi-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
     'shift_register': '74HC595 8-bit serial-in, parallel-out shift register. Expands digital outputs.',
+    'wokwi-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
   };
 
   // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
@@ -2980,13 +2982,26 @@ export default function SimulatorPage() {
         }
       };
 
-      // DC Motor
+      // DC Motor (TT Gear Motor)
       SYMS['wokwi-motor'] = {
-        w: 60, h: 52, refPrefix: 'M',
-        pins: { '1': { dx: 0, dy: 26 }, '2': { dx: 60, dy: 26 } },
+        w: 100, h: 50, refPrefix: 'M',
+        // Schematic Pins mapped from manifest terminal distances
+        pins: { '1': { dx: 0, dy: 15 }, '2': { dx: 0, dy: 35 } },
         draw(x, y, comp, ref) {
-          return [ln(x, y + 26, x + 8, y + 26), circ(x + 30, y + 26, 18), tx(x + 30, y + 30, 'M', 14, 'middle', true, '#1a1a1a', 'sans-serif'),
-          ln(x + 52, y + 26, x + 60, y + 26), tx(x + 30, y + 56, ref, 9, 'middle', true)].join('');
+          return [
+            // Rear housing
+            bx(x, y + 5, 20, 40, undefined, 2),
+            // Yellow Body
+            bx(x + 20, y + 5, 60, 40, undefined, 2),
+            `<rect x="${x + 25}" y="${y + 10}" width="10" height="30" rx="2" fill="none" stroke="#1a1a1a" stroke-width="2"/>`,
+            `<rect x="${x + 65}" y="${y + 10}" width="10" height="30" rx="2" fill="none" stroke="#1a1a1a" stroke-width="2"/>`,
+            // Shaft
+            bx(x + 80, y + 18, 12, 14, undefined, 2),
+            // Tires Outline
+            `<rect x="${x + 60}" y="${y - 10}" width="15" height="70" rx="5" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-dasharray="2,2"/>`,
+            tx(x + 50, y + 30, 'M', 18, 'middle', true, '#1a1a1a', 'sans-serif', 'bold'),
+            tx(x + 50, y + 65, ref, 9, 'middle', true)
+          ].join('');
         }
       };
 
@@ -3453,7 +3468,7 @@ export default function SimulatorPage() {
       )}
 
       {/* TOP BAR */}
-              <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
 
 
 
@@ -4420,7 +4435,7 @@ export default function SimulatorPage() {
                   aria-label="Close validation notification"
                 >
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
                   </svg>
                 </button>
               </div>

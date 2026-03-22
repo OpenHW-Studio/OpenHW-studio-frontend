@@ -14,6 +14,29 @@ import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-dr
 import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
 import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
+import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
+// ── Membrane Keypad Logic (defined inline to avoid Rollup web-worker resolution issues) ────
+class KeypadLogic extends BaseComponent {
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { pressedKey: null, connectedPair: null };
+    }
+    onEvent(event: string) {
+        if (event.startsWith('press:')) {
+            const key = event.split(':')[1];
+            const matrix: Record<string, [string, string]> = {
+                '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
+                '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
+                '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
+                '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
+            };
+            this.setState({ pressedKey: key, connectedPair: matrix[key] || null });
+        } else if (event === 'release') {
+            this.setState({ pressedKey: null, connectedPair: null });
+        }
+    }
+}
+
 
 export function parse(data: string) {
     const lines = data.split('\n');
@@ -56,6 +79,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-slide-potentiometer': SlidePotLogic,
     'wokwi-potentiometer': PotentiometerLogic,
     'shift_register': ShiftRegisterLogic,
+    'wokwi-membrane-keypad': KeypadLogic,
+    'wokwi-analog-joystick': JoystickLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -72,6 +97,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
     'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
+    'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
+    'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
 };
 
 export type AVRRunnerOptions = {
@@ -326,18 +353,62 @@ export class AVRRunner {
         }, 1000 / 60);
     }
 
+    onEvent(compId: string, event: string) {
+        const inst = this.instances.get(compId);
+        if (inst) {
+            inst.onEvent(event);
+            if (this.updatePhysics) this.updatePhysics();
+            this.pinsChanged = true;
+        }
+    }
+
     private isBoardArduinoPin(wireCoord: string, targetPin: string): boolean {
         const [compId, compPin] = wireCoord.split(':');
         if (compId !== this.boardId) return false;
-        const inst = this.instances.get(compId);
-        if (!inst || !inst.type.includes('arduino')) return false;
-        return compPin === targetPin || compPin === `D${targetPin}` || compPin === `A${targetPin}`;
+
+        const pin = compPin.toUpperCase();
+        const target = targetPin.toUpperCase();
+
+        return pin === target ||
+            pin === `D${target}` ||
+            pin === `A${target}` ||
+            (pin.startsWith('D') && pin.substring(1) === target) ||
+            (pin.startsWith('A') && pin.substring(1) === target);
     }
 
     private pulseBoardLed(pinId: '0' | '1') {
         const boardInst = this.instances.get(this.boardId);
         if (!boardInst || !this.cpu) return;
         boardInst.onPinStateChange(pinId, true, this.cpu.cycles);
+    }
+
+    private isPinDrivenLow(compPin: string): boolean {
+        let port: any = null;
+        let bit = -1;
+        let normalized = compPin.toUpperCase();
+
+        if (normalized.startsWith('D')) {
+            normalized = normalized.substring(1);
+        }
+
+        const num = parseInt(normalized);
+        if (!isNaN(num) && normalized.indexOf('A') === -1) {
+            if (num >= 0 && num <= 7) { port = this.portD; bit = num; }
+            else if (num >= 8 && num <= 13) { port = this.portB; bit = num - 8; }
+        } else if (normalized.startsWith('A')) {
+            const numA = parseInt(normalized.substring(1));
+            if (numA >= 0 && numA <= 5) { port = this.portC; bit = numA; }
+        }
+
+        if (port && bit !== -1 && this.cpu) {
+            // DDR: 1 = output, 0 = input
+            // Check if it's an output AND driven LOW
+            const isOutput = (this.cpu.data[port.portConfig.DDR] & (1 << bit)) !== 0;
+            // The mapping in pinStates uses names like '0', '8', 'A0'
+            const searchKey = normalized;
+            return isOutput && (this.pinStates[searchKey] === false || this.pinStates[compPin] === false);
+        }
+        return false;
     }
 
     private setupHooks() {
@@ -438,70 +509,129 @@ export class AVRRunner {
 
 
         this.updatePhysics = () => {
-            const checkPort = (port: AVRIOPort, pinNames: string[]) => {
-                pinNames.forEach((pin, i) => {
-                    let forcedLow = false;
-                    const arduinoPinStr = pin;
-                    const visitedWires = new Set();
+            const forcedLowSet = new Set<string>();
 
-                    const checkForGnd = (targetStr: string) => {
-                        const [compId, compPin] = targetStr.split(':');
-                        const inst = this.instances.get(compId);
-                        if (inst) {
-                            const pk = compPin.toLowerCase();
-                            const isGndNode = pk.startsWith('gnd') || pk === 'vss' || pk === 'k';
-                            if (inst.getPinVoltage(compPin) === 0 && isGndNode) {
-                                forcedLow = true;
-                            }
-                            if (inst.type === 'wokwi-pushbutton' && inst.state.pressed && !forcedLow) {
-                                const otherPin = compPin === '1' ? '2' : '1';
+            const checkPinForGnd = (arduinoPinStr: string) => {
+                let forcedLow = false;
+                const visitedWires = new Set();
+
+                const checkForGndInternal = (targetStr: string) => {
+                    if (forcedLow) return;
+                    const [compId, compPin] = targetStr.split(':');
+                    const inst = this.instances.get(compId);
+                    if (inst) {
+                        const pk = compPin.toLowerCase();
+                        const isGndNode = pk.startsWith('gnd') || pk === 'vss' || pk === 'k';
+
+                        // Check if this is the board and specifically if the pin is driven LOW by CPU
+                        const isArduinoLow = compId === this.boardId &&
+                            compPin !== arduinoPinStr &&
+                            this.isPinDrivenLow(compPin);
+
+                        if (isGndNode || isArduinoLow) {
+                            forcedLow = true;
+                            return;
+                        }
+
+                        // Traversal logic
+                        if (inst.type === 'wokwi-membrane-keypad' && inst.state.connectedPair) {
+                            const pair = inst.state.connectedPair;
+                            const otherPin = compPin === pair[0] ? pair[1] : (compPin === pair[1] ? pair[0] : null);
+                            if (otherPin) {
                                 const forwardStr = `${compId}:${otherPin}`;
                                 this.currentWires.forEach(w => {
                                     if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
                                         visitedWires.add(w);
-                                        checkForGnd(w.from === forwardStr ? w.to : w.from);
+                                        checkForGndInternal(w.from === forwardStr ? w.to : w.from);
                                     }
                                 });
                             }
-                            if (inst.type === 'wokwi-resistor' && !forcedLow) {
-                                const otherPin = compPin === 'p1' ? 'p2' : 'p1';
+                        } else if (inst.type === 'wokwi-pushbutton' && inst.state.pressed) {
+                            const otherPin = compPin === '1' ? '2' : (compPin === '2' ? '1' : null);
+                            if (otherPin) {
                                 const forwardStr = `${compId}:${otherPin}`;
                                 this.currentWires.forEach(w => {
                                     if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
                                         visitedWires.add(w);
-                                        checkForGnd(w.from === forwardStr ? w.to : w.from);
+                                        checkForGndInternal(w.from === forwardStr ? w.to : w.from);
+                                    }
+                                });
+                            }
+                        } else if (inst.type === 'wokwi-analog-joystick' && inst.state.pressed) {
+                            if (compPin === 'SW') {
+                                const forwardStr = `${compId}:GND`;
+                                this.currentWires.forEach(w => {
+                                    if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
+                                        visitedWires.add(w);
+                                        checkForGndInternal(w.from === forwardStr ? w.to : w.from);
+                                    }
+                                });
+                            } else if (compPin === 'GND' || compPin === 'gnd') {
+                                const forwardStr = `${compId}:SW`;
+                                this.currentWires.forEach(w => {
+                                    if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
+                                        visitedWires.add(w);
+                                        checkForGndInternal(w.from === forwardStr ? w.to : w.from);
+                                    }
+                                });
+                            }
+                        } else if (inst.type === 'wokwi-resistor') {
+                            const otherPin = compPin === 'p1' ? 'p2' : (compPin === 'p2' ? 'p1' : null);
+                            if (otherPin) {
+                                const forwardStr = `${compId}:${otherPin}`;
+                                this.currentWires.forEach(w => {
+                                    if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
+                                        visitedWires.add(w);
+                                        checkForGndInternal(w.from === forwardStr ? w.to : w.from);
                                     }
                                 });
                             }
                         }
-                    };
+                    }
+                };
 
-                    this.currentWires.forEach(w => {
-                        const isFromArduino = this.isBoardArduinoPin(w.from, arduinoPinStr);
-                        const isToArduino = this.isBoardArduinoPin(w.to, arduinoPinStr);
-                        if (isFromArduino || isToArduino) {
-                            visitedWires.add(w);
-                            checkForGnd(isFromArduino ? w.to : w.from);
-                        }
-                    });
+                this.currentWires.forEach(w => {
+                    const isFromArduino = this.isBoardArduinoPin(w.from, arduinoPinStr);
+                    const isToArduino = this.isBoardArduinoPin(w.to, arduinoPinStr);
+                    if (isFromArduino || isToArduino) {
+                        const targetStr = isFromArduino ? w.to : w.from;
+                        visitedWires.add(w);
+                        checkForGndInternal(targetStr);
+                    }
+                });
 
-                    // Set native input bit. If forced to GND by external circuit, it's false
-                    if (port) port.setPin(i, !forcedLow);
+                return forcedLow;
+            };
+
+            // Pass 1: Identify all pins that should be LOW
+            const allPinsToCheck = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'];
+            allPinsToCheck.forEach(pin => {
+                if (checkPinForGnd(pin)) {
+                    forcedLowSet.add(pin);
+                }
+            });
+
+            // Pass 2: Apply to ports
+            const applyPort = (p: AVRIOPort, pNames: string[]) => {
+                pNames.forEach((pin, i) => {
+                    p.setPin(i, !forcedLowSet.has(pin));
                 });
             };
 
-            if (this.portB) checkPort(this.portB, ['8', '9', '10', '11', '12', '13']);
-            if (this.portD) checkPort(this.portD, ['0', '1', '2', '3', '4', '5', '6', '7']);
-            if (this.portC) checkPort(this.portC, ['A0', 'A1', 'A2', 'A3', 'A4', 'A5']);
+            if (this.portB) applyPort(this.portB, ['8', '9', '10', '11', '12', '13']);
+            if (this.portD) applyPort(this.portD, ['0', '1', '2', '3', '4', '5', '6', '7']);
+            if (this.portC) applyPort(this.portC, ['A0', 'A1', 'A2', 'A3', 'A4', 'A5']);
         };
 
         const attachPort = (port: AVRIOPort, pinNames: string[]) => {
             port.addListener((value) => {
+                let anyChanged = false;
                 pinNames.forEach((pin, i) => {
                     const isHigh = (value & (1 << i)) !== 0;
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
+                        anyChanged = true;
 
                         const boardInst = this.instances.get(this.boardId);
                         if (boardInst) {
@@ -511,6 +641,9 @@ export class AVRRunner {
                         updateOopPin(pin, isHigh);
                     }
                 });
+                if (anyChanged && this.updatePhysics) {
+                    this.updatePhysics();
+                }
             });
         };
 
@@ -523,6 +656,24 @@ export class AVRRunner {
             this.pinStates[pin] = false;
             updateOopPin(pin, false);
         });
+
+        // Hook DDR registers because transitioning from INPUT floating (0) to OUTPUT LOW (0) 
+        // doesn't trigger port.addListener (logic level doesn't change, both are 0), 
+        // but it DOES change whether the pin can act as a GROUND in updatePhysics!
+        const hookDdr = (addr: number) => {
+            if (!this.cpu) return;
+            const orig = this.cpu.writeHooks[addr];
+            this.cpu.writeHooks[addr] = (value: number, oldVal: number, addrFunc: number, mask: number) => {
+                const ret = orig ? orig(value, oldVal, addrFunc, mask) : false;
+                if (value !== oldVal && this.updatePhysics) {
+                    this.updatePhysics();
+                }
+                return ret;
+            };
+        };
+        hookDdr(portBConfig.DDR);
+        hookDdr(portCConfig.DDR);
+        hookDdr(portDConfig.DDR);
     }
 
     private runLoop = () => {
@@ -639,7 +790,7 @@ export class AVRRunner {
     private isSPISelected(inst: BaseComponent): boolean {
         const csNames = ['cs', 'ce', 'ss', 'ssel', 'nss', 'csn', 'cs_n', 'nce'];
         for (const name of csNames) {
-            if (inst.pins[name])             return inst.getPinVoltage(name) < 0.5;
+            if (inst.pins[name]) return inst.getPinVoltage(name) < 0.5;
             if (inst.pins[name.toUpperCase()]) return inst.getPinVoltage(name.toUpperCase()) < 0.5;
         }
         return true; // no CS pin → always selected
@@ -661,9 +812,9 @@ export class AVRRunner {
     private tickI2S(inst: BaseComponent, compId: string, changedPin: string, isHigh: boolean): void {
         if (!inst.onI2SFrame) return;
 
-        const pin    = changedPin.toLowerCase();
+        const pin = changedPin.toLowerCase();
         const isBclk = pin === 'bclk' || pin === 'sck' || pin === 'bit_clk' || pin === 'blck';
-        const isWs   = pin === 'ws'   || pin === 'lrck' || pin === 'wsel'   || pin === 'lrc';
+        const isWs = pin === 'ws' || pin === 'lrck' || pin === 'wsel' || pin === 'lrc';
 
         if (!isBclk && !isWs) return;
 
@@ -678,10 +829,10 @@ export class AVRRunner {
                 const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
                 if (state.bitCount >= bpf) {
                     const channel = state.wsLast ? 1 : 0;
-                    const sample  = (state.shiftBuf << (32 - bpf)) | 0; // sign-extend
+                    const sample = (state.shiftBuf << (32 - bpf)) | 0; // sign-extend
                     inst.onI2SFrame(channel, sample, bpf);
                 }
-                state.wsLast   = isHigh;
+                state.wsLast = isHigh;
                 state.shiftBuf = 0;
                 state.bitCount = 0;
             }
@@ -695,7 +846,7 @@ export class AVRRunner {
         if (rising) {
             // Sample SDATA (accept several common pin names)
             const sdPin = this.findI2SPinName(inst, ['sdata', 'sdin', 'din', 'sd', 'dout', 'data']);
-            const bit   = sdPin !== null ? (inst.getPinVoltage(sdPin) > 0.5 ? 1 : 0) : 0;
+            const bit = sdPin !== null ? (inst.getPinVoltage(sdPin) > 0.5 ? 1 : 0) : 0;
 
             const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
             state.shiftBuf = ((state.shiftBuf << 1) | bit) >>> 0;
@@ -703,7 +854,7 @@ export class AVRRunner {
 
             if (state.bitCount >= bpf) {
                 const channel = state.wsLast ? 1 : 0;
-                const sample  = (state.shiftBuf << (32 - bpf)) | 0;
+                const sample = (state.shiftBuf << (32 - bpf)) | 0;
                 inst.onI2SFrame(channel, sample, bpf);
                 state.shiftBuf = 0;
                 state.bitCount = 0;
@@ -715,7 +866,7 @@ export class AVRRunner {
      *  (case-insensitive, lower then UPPER checked). */
     private findI2SPinName(inst: BaseComponent, candidates: string[]): string | null {
         for (const name of candidates) {
-            if (inst.pins[name])               return name;
+            if (inst.pins[name]) return name;
             if (inst.pins[name.toUpperCase()]) return name.toUpperCase();
         }
         return null;
