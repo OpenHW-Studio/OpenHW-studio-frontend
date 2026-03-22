@@ -2982,13 +2982,26 @@ export default function SimulatorPage() {
         }
       };
 
-      // DC Motor
+      // DC Motor (TT Gear Motor)
       SYMS['wokwi-motor'] = {
-        w: 60, h: 52, refPrefix: 'M',
-        pins: { '1': { dx: 0, dy: 26 }, '2': { dx: 60, dy: 26 } },
+        w: 100, h: 50, refPrefix: 'M',
+        // Schematic Pins mapped from manifest terminal distances
+        pins: { '1': { dx: 0, dy: 15 }, '2': { dx: 0, dy: 35 } },
         draw(x, y, comp, ref) {
-          return [ln(x, y + 26, x + 8, y + 26), circ(x + 30, y + 26, 18), tx(x + 30, y + 30, 'M', 14, 'middle', true, '#1a1a1a', 'sans-serif'),
-          ln(x + 52, y + 26, x + 60, y + 26), tx(x + 30, y + 56, ref, 9, 'middle', true)].join('');
+          return [
+            // Rear housing
+            bx(x, y + 5, 20, 40, undefined, 2),
+            // Yellow Body
+            bx(x + 20, y + 5, 60, 40, undefined, 2),
+            `<rect x="${x + 25}" y="${y + 10}" width="10" height="30" rx="2" fill="none" stroke="#1a1a1a" stroke-width="2"/>`,
+            `<rect x="${x + 65}" y="${y + 10}" width="10" height="30" rx="2" fill="none" stroke="#1a1a1a" stroke-width="2"/>`,
+            // Shaft
+            bx(x + 80, y + 18, 12, 14, undefined, 2),
+            // Tires Outline
+            `<rect x="${x + 60}" y="${y - 10}" width="15" height="70" rx="5" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-dasharray="2,2"/>`,
+            tx(x + 50, y + 30, 'M', 18, 'middle', true, '#1a1a1a', 'sans-serif', 'bold'),
+            tx(x + 50, y + 65, ref, 9, 'middle', true)
+          ].join('');
         }
       };
 

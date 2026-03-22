@@ -15,7 +15,6 @@ import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-poten
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
 import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
 import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
-
 // ── Membrane Keypad Logic (defined inline to avoid Rollup web-worker resolution issues) ────
 class KeypadLogic extends BaseComponent {
     constructor(id: string, manifest: any) {
