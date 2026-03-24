@@ -1,4 +1,5 @@
 import { CalendarDays, Home, Monitor, Settings } from "lucide-react";
+import { getFilenameFromAssetUrl } from "./uploadUtils.js";
 
 export const sidebarLinks = [
   { key: "home", label: "Home", icon: Home, route: "/teacher/dashboard" },
@@ -26,9 +27,15 @@ export const pickAttachments = (item) => {
 };
 
 export const isImageAttachment = (url) =>
+  /^data:image\//i.test(url || "") ||
   /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(url || "");
 
 export const getAttachmentLabel = (url, index) => {
+  const dataUrlName = getFilenameFromAssetUrl(url);
+  if (dataUrlName) {
+    return dataUrlName;
+  }
+
   try {
     const parsedUrl = new URL(url);
     const fileName = parsedUrl.pathname.split("/").filter(Boolean).pop();

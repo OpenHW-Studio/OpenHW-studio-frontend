@@ -9,7 +9,9 @@ import SigninPage from './pages/auth/SigninPage.jsx'
 import SignupPage from './pages/auth/signupPage.jsx'
 import RoleSelectPage from './pages/RoleSelectPage.jsx'
 import StudentDashboard from './pages/student/StudentDashboard.jsx'
+import StudentProfilePage from './pages/student/StudentProfilePage.jsx'
 import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx'
+import TeacherProfilePage from './pages/teacher/TeacherProfilePage.jsx'
 import TeacherClassDetailPage from './pages/teacher/TeacherClassDetailPage.jsx'
 import StudentClassDetailPage from './pages/student/StudentClassDetailPage.jsx'
 import SimulatorPage from "./pages/simulationpage/SimulationPage.jsx";
@@ -68,6 +70,14 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/student/profile"
+              element={
+                <ProtectedRoute allowedRole="student">
+                  <StudentProfilePage />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Protected: Teacher */}
             <Route
@@ -83,6 +93,14 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRole="teacher">
                   <TeacherClassDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/profile"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherProfilePage />
                 </ProtectedRoute>
               }
             />
