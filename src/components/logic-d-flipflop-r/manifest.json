@@ -1,0 +1,46 @@
+{
+    "type": "logic-d-flipflop-r",
+    "label": "D Flip-Flop (Reset)",
+    "description": "Edge-triggered D Flip-Flop with active-HIGH asynchronous reset. On the rising edge of CLK, Q captures D. If R is HIGH, Q is forced LOW.",
+    "group": "Logic",
+    "w": 90,
+    "h": 80,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "D",
+            "x": 0,
+            "y": 22,
+            "type": "digital",
+            "description": "Data input"
+        },
+        {
+            "id": "CLK",
+            "x": 0,
+            "y": 58,
+            "type": "digital",
+            "description": "Clock input (rising-edge triggered)"
+        },
+        {
+            "id": "R",
+            "x": 45,
+            "y": 80,
+            "type": "digital",
+            "description": "Asynchronous Reset (Active HIGH)"
+        },
+        {
+            "id": "Q",
+            "x": 90,
+            "y": 22,
+            "type": "digital",
+            "description": "Output"
+        },
+        {
+            "id": "Qbar",
+            "x": 90,
+            "y": 58,
+            "type": "digital",
+            "description": "Inverted output"
+        }
+    ]
+}

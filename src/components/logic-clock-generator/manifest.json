@@ -1,0 +1,21 @@
+{
+    "type": "logic-clock-generator",
+    "label": "Clock",
+    "description": "Adjustable Clock Generator. Outputs a continuous square wave.",
+    "group": "Logic",
+    "w": 80,
+    "h": 60,
+    "attrs": {
+        "frequency": "10",
+        "units": "KHz"
+    },
+    "pins": [
+        {
+            "id": "OUT",
+            "x": 80,
+            "y": 40,
+            "type": "digital",
+            "description": "Clock Output"
+        }
+    ]
+}
