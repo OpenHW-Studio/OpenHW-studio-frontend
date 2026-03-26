@@ -22,6 +22,18 @@ export { default as wokwiLdrModule } from './wokwi-ldr-module';
 export { default as max30102 } from './max30102';
 export { default as wokwiMembraneKeypad } from './wokwi-membrane-keypad';
 export { default as wokwiAnalogJoystick } from './wokwi-analog-joystick';
+export { default as logicNotGate } from './logic-not-gate';
+export { default as logicAndGate } from './logic-and-gate';
+export { default as logicOrGate } from './logic-or-gate';
+export { default as logicNorGate } from './logic-nor-gate';
+export { default as logicNandGate } from './logic-nand-gate';
+export { default as logicXorGate } from './logic-xor-gate';
+export { default as logicXnorGate } from './logic-xnor-gate';
+export { default as logicMux2to1 } from './logic-mux-2to1';
+export { default as logicDFlipFlop } from './logic-d-flipflop';
+export { default as logicDFlipFlopR } from './logic-d-flipflop-r';
+export { default as logicDFlipFlopDsr } from './logic-d-flipflop-dsr';
+export { default as logicClockGenerator } from './logic-clock-generator';
 
 
 
