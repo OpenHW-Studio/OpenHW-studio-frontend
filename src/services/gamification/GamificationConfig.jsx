@@ -123,6 +123,7 @@ export const LEVELS = [
     unlockedComponents: [
       'wokwi-rgb-led',
       'wokwi-neopixel-matrix',
+      'wokwi-neopixel-ring',
     ],
     badge: {
       id: 'badge_color_wizard',
@@ -150,6 +151,7 @@ export const LEVELS = [
     unlockedComponents: [
       'wokwi-lcd1602',
       'wokwi-7segment',
+      'wokwi-tm1637-7segment',
     ],
     badge: {
       id: 'badge_data_displayer',
@@ -274,10 +276,10 @@ export const LEVELS = [
 
 // Badge rarity colors and labels
 export const RARITY_CONFIG = {
-  common:    { color: '#9ca3af', glow: '#9ca3af44', label: 'Common' },
-  uncommon:  { color: '#22c55e', glow: '#22c55e44', label: 'Uncommon' },
-  rare:      { color: '#3b82f6', glow: '#3b82f644', label: 'Rare' },
-  epic:      { color: '#a855f7', glow: '#a855f744', label: 'Epic' },
+  common: { color: '#9ca3af', glow: '#9ca3af44', label: 'Common' },
+  uncommon: { color: '#22c55e', glow: '#22c55e44', label: 'Uncommon' },
+  rare: { color: '#3b82f6', glow: '#3b82f644', label: 'Rare' },
+  epic: { color: '#a855f7', glow: '#a855f744', label: 'Epic' },
   legendary: { color: '#fbbf24', glow: '#fbbf2444', label: 'Legendary' },
 };
 
