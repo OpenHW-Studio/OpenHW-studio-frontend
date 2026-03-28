@@ -22,7 +22,8 @@ export { default as wokwiLdrModule } from './wokwi-ldr-module';
 export { default as max30102 } from './max30102';
 export { default as wokwiMembraneKeypad } from './wokwi-membrane-keypad';
 export { default as wokwiAnalogJoystick } from './wokwi-analog-joystick';
-
+export { default as wokwiTm16377Segment } from './wokwi-tm1637-7segment';
+export { default as wokwiNeopixelRing } from './wokwi-neopixel-ring';
 
 
 
