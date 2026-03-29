@@ -241,6 +241,34 @@ function validateCircuitLocally(components, wires) {
     fromAliases.forEach((fa) => toAliases.forEach((ta) => addEdge(fa, ta)));
   });
 
+  (components || []).forEach((c) => {
+    if (c.type === 'wokwi-breadboard' || c.type === 'wokwi-breadboard-half') {
+      const connectAll = (arr) => {
+        for (let i = 0; i < arr.length - 1; i++) {
+          addEdge(arr[i], arr[i + 1]);
+        }
+      };
+
+      const topGnd = [], topVcc = [], bottomVcc = [], bottomGnd = [];
+      for (let i = 1; i <= 50; i++) {
+        topGnd.push(`${c.id}:top_gnd_${i}`);
+        topVcc.push(`${c.id}:top_vcc_${i}`);
+        bottomVcc.push(`${c.id}:bottom_vcc_${i}`);
+        bottomGnd.push(`${c.id}:bottom_gnd_${i}`);
+      }
+      connectAll(topGnd);
+      connectAll(topVcc);
+      connectAll(bottomVcc);
+      connectAll(bottomGnd);
+
+      const cols = c.type === 'wokwi-breadboard-half' ? 30 : 63;
+      for (let col = 1; col <= cols; col++) {
+        connectAll([`${c.id}:${col}a`, `${c.id}:${col}b`, `${c.id}:${col}c`, `${c.id}:${col}d`, `${c.id}:${col}e`]);
+        connectAll([`${c.id}:${col}f`, `${c.id}:${col}g`, `${c.id}:${col}h`, `${c.id}:${col}i`, `${c.id}:${col}j`]);
+      }
+    }
+  });
+
   const isMcuDigitalEndpoint = (endpoint) => {
     const [compId, pin] = String(endpoint || '').split(':');
     const comp = componentById.get(compId);

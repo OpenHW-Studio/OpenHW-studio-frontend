@@ -894,6 +894,33 @@ export class AVRRunner {
                 if (!adj.has(p2)) adj.set(p2, []);
                 adj.get(p1)!.push(p2);
                 adj.get(p2)!.push(p1);
+            } else if (inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half') {
+                const connectAll = (arr: string[]) => {
+                    for (let i = 0; i < arr.length - 1; i++) {
+                        if (!adj.has(arr[i])) adj.set(arr[i], []);
+                        if (!adj.has(arr[i + 1])) adj.set(arr[i + 1], []);
+                        adj.get(arr[i])!.push(arr[i + 1]);
+                        adj.get(arr[i + 1])!.push(arr[i]);
+                    }
+                };
+
+                const topGnd = [], topVcc = [], bottomVcc = [], bottomGnd = [];
+                for (let i = 1; i <= 50; i++) {
+                    topGnd.push(`${id}:top_gnd_${i}`);
+                    topVcc.push(`${id}:top_vcc_${i}`);
+                    bottomVcc.push(`${id}:bottom_vcc_${i}`);
+                    bottomGnd.push(`${id}:bottom_gnd_${i}`);
+                }
+                connectAll(topGnd);
+                connectAll(topVcc);
+                connectAll(bottomVcc);
+                connectAll(bottomGnd);
+
+                const cols = inst.type === 'wokwi-breadboard-half' ? 30 : 63;
+                for (let col = 1; col <= cols; col++) {
+                    connectAll([`${id}:${col}a`, `${id}:${col}b`, `${id}:${col}c`, `${id}:${col}d`, `${id}:${col}e`]);
+                    connectAll([`${id}:${col}f`, `${id}:${col}g`, `${id}:${col}h`, `${id}:${col}i`, `${id}:${col}j`]);
+                }
             }
         }
 

@@ -16,6 +16,8 @@ export const LEVELS = [
       'wokwi-arduino-uno',
       'wokwi-led',
       'wokwi-resistor',
+      'wokwi-breadboard',
+      'wokwi-breadboard-half',
     ],
     badge: {
       id: 'badge_hello_world',
