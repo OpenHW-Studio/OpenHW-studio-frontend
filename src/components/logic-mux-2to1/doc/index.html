@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MUX 2:1 – OpenHW Studio Docs</title>
+  <style>
+    :root {
+      --accent: #8b5cf6;
+      --bg: #0f172a;
+      --bg2: #1e293b;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --border: #334155;
+      --radius: 8px
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      max-width: 760px;
+      margin: 0 auto;
+      line-height: 1.6
+    }
+
+    h1 {
+      color: var(--accent);
+      font-size: 1.6rem;
+      margin-bottom: 4px
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--accent)22;
+      color: var(--accent);
+      border: 1px solid var(--accent)44;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 16px
+    }
+
+    p {
+      color: var(--text2);
+      margin-bottom: 16px
+    }
+
+    h2 {
+      font-size: 1rem;
+      color: var(--text);
+      margin: 24px 0 10px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 16px
+    }
+
+    th {
+      background: var(--bg2);
+      color: var(--text2);
+      text-align: left;
+      padding: 8px 10px;
+      border: 1px solid var(--border)
+    }
+
+    td {
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      color: var(--text)
+    }
+
+    pre {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      font-size: 13px;
+      overflow-x: auto;
+      margin-bottom: 16px
+    }
+
+    code {
+      color: #7dd3fc
+    }
+
+    .tip {
+      background: #8b5cf611;
+      border-left: 3px solid var(--accent);
+      padding: 10px 14px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      font-size: 13px;
+      color: var(--text2);
+      margin-bottom: 16px
+    }
+  </style>
+</head>
+
+<body>
+  <h1>MUX 2:1 (Multiplexer)</h1>
+  <span class="badge">Logic</span>
+  <p>A 2-to-1 digital multiplexer. Routes one of two data inputs to the output based on the select line. When SEL is LOW, D0 is passed to OUT. When SEL is HIGH, D1 is passed to OUT.</p>
+
+  <h2>Function Table</h2>
+  <table>
+    <tr>
+      <th>SEL</th>
+      <th>OUT</th>
+    </tr>
+    <tr>
+      <td>0</td>
+      <td>D0</td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>D1</td>
+    </tr>
+  </table>
+
+  <h2>Pins</h2>
+  <table>
+    <tr>
+      <th>Pin</th>
+      <th>Type</th>
+      <th>Description</th>
+    </tr>
+    <tr>
+      <td>D0</td>
+      <td>Digital</td>
+      <td>Data input 0 (selected when SEL=LOW)</td>
+    </tr>
+    <tr>
+      <td>D1</td>
+      <td>Digital</td>
+      <td>Data input 1 (selected when SEL=HIGH)</td>
+    </tr>
+    <tr>
+      <td>SEL</td>
+      <td>Digital</td>
+      <td>Select line — chooses which input to route</td>
+    </tr>
+    <tr>
+      <td>OUT</td>
+      <td>Digital</td>
+      <td>Output — passes the selected input</td>
+    </tr>
+  </table>
+
+  <h2>Wiring</h2>
+  <pre><code>
+Arduino D5  ── D0  (MUX)
+Arduino D6  ── D1  (MUX)
+Arduino D7  ── SEL (MUX)
+MUX OUT ── Resistor (220Ω) ── LED Anode
+LED Cathode ── GND</code></pre>
+
+  <h2>Example Code</h2>
+  <pre><code>void setup() {
+  pinMode(5, OUTPUT);  // D0
+  pinMode(6, OUTPUT);  // D1
+  pinMode(7, OUTPUT);  // SEL
+  Serial.begin(9600);
+}
+
+void loop() {
+  // D0=HIGH, D1=LOW, SEL=LOW → OUT=HIGH (selects D0)
+  digitalWrite(5, HIGH);
+  digitalWrite(6, LOW);
+  digitalWrite(7, LOW);
+  Serial.println("SEL=0 → OUT=D0=HIGH");
+  delay(1000);
+
+  // D0=HIGH, D1=LOW, SEL=HIGH → OUT=LOW (selects D1)
+  digitalWrite(7, HIGH);
+  Serial.println("SEL=1 → OUT=D1=LOW");
+  delay(1000);
+
+  // D0=LOW, D1=HIGH, SEL=HIGH → OUT=HIGH (selects D1)
+  digitalWrite(5, LOW);
+  digitalWrite(6, HIGH);
+  Serial.println("SEL=1 → OUT=D1=HIGH");
+  delay(1000);
+}</code></pre>
+
+  <div class="tip">Tip: The MUX acts as a digitally controlled switch. Use the SEL line to choose which data input appears at the output.</div>
+</body>
+
+</html>
