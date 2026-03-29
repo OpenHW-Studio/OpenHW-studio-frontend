@@ -33,6 +33,7 @@ export const LEVELS = [
       'wokwi-diode',
       'wokwi-photodiode',
       'wokwi-pca9685',
+      'wokwi-pca9865',
     ],
     badge: {
       id: 'badge_hello_world',
