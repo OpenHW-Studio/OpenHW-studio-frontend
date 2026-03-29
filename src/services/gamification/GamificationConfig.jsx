@@ -19,6 +19,9 @@ export const LEVELS = [
       'wokwi-breadboard',
       'wokwi-breadboard-half',
       'wokwi-breadboard-mini',
+      'wokwi-a4988',
+      'wokwi-stepper-motor',
+      'wokwi-nlsf595',
     ],
     badge: {
       id: 'badge_hello_world',
