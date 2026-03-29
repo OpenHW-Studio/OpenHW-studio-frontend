@@ -27,6 +27,9 @@ export { default as wokwiNeopixelRing } from './wokwi-neopixel-ring';
 export { default as wokwiBreadboard } from './wokwi-breadboard';
 export { default as wokwiBreadboardHalf } from './wokwi-breadboard-half';
 export { default as wokwiBreadboardMini } from './wokwi-breadboard-mini';
+export { default as wokwiA4988 } from './wokwi-a4988';
+export { default as wokwiStepperMotor } from './wokwi-stepper-motor';
+export { default as wokwiNLSF595 } from './wokwi-nlsf595';
 
 
 
