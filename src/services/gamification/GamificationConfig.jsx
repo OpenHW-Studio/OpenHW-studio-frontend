@@ -18,6 +18,7 @@ export const LEVELS = [
       'wokwi-resistor',
       'wokwi-breadboard',
       'wokwi-breadboard-half',
+      'wokwi-breadboard-mini',
     ],
     badge: {
       id: 'badge_hello_world',
