@@ -1,0 +1,384 @@
+{
+    "type": "wokwi-pca9865",
+    "label": "16-Channel PWM Module (PCA9865)",
+    "group": "Actuators",
+    "w": 160,
+    "h": 80,
+    "attrs": {
+        "i2c_address": "0x40"
+    },
+    "pins": [
+        {
+            "id": "GND",
+            "x": 0,
+            "y": 15,
+            "type": "power"
+        },
+        {
+            "id": "OE",
+            "x": 0,
+            "y": 22,
+            "type": "digital"
+        },
+        {
+            "id": "SCL",
+            "x": 0,
+            "y": 29,
+            "type": "digital"
+        },
+        {
+            "id": "SDA",
+            "x": 0,
+            "y": 36,
+            "type": "digital"
+        },
+        {
+            "id": "VCC",
+            "x": 0,
+            "y": 43,
+            "type": "power"
+        },
+        {
+            "id": "V+",
+            "x": 0,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "GND_R",
+            "x": 155,
+            "y": 15,
+            "type": "power"
+        },
+        {
+            "id": "OE_R",
+            "x": 155,
+            "y": 22,
+            "type": "digital"
+        },
+        {
+            "id": "SCL_R",
+            "x": 155,
+            "y": 29,
+            "type": "digital"
+        },
+        {
+            "id": "SDA_R",
+            "x": 155,
+            "y": 36,
+            "type": "digital"
+        },
+        {
+            "id": "VCC_R",
+            "x": 155,
+            "y": 43,
+            "type": "power"
+        },
+        {
+            "id": "V+_R",
+            "x": 155,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "V+_IN",
+            "x": 95,
+            "y": 5,
+            "type": "power"
+        },
+        {
+            "id": "GND_IN",
+            "x": 105,
+            "y": 5,
+            "type": "power"
+        },
+        {
+            "id": "S0",
+            "x": 26,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+0",
+            "x": 26,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G0",
+            "x": 26,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S1",
+            "x": 32,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+1",
+            "x": 32,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G1",
+            "x": 32,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S2",
+            "x": 38,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+2",
+            "x": 38,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G2",
+            "x": 38,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S3",
+            "x": 44,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+3",
+            "x": 44,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G3",
+            "x": 44,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S4",
+            "x": 58,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+4",
+            "x": 58,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G4",
+            "x": 58,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S5",
+            "x": 64,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+5",
+            "x": 64,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G5",
+            "x": 64,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S6",
+            "x": 70,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+6",
+            "x": 70,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G6",
+            "x": 70,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S7",
+            "x": 76,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+7",
+            "x": 76,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G7",
+            "x": 76,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S8",
+            "x": 90,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+8",
+            "x": 90,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G8",
+            "x": 90,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S9",
+            "x": 96,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+9",
+            "x": 96,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G9",
+            "x": 96,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S10",
+            "x": 102,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+10",
+            "x": 102,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G10",
+            "x": 102,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S11",
+            "x": 108,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+11",
+            "x": 108,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G11",
+            "x": 108,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S12",
+            "x": 122,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+12",
+            "x": 122,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G12",
+            "x": 122,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S13",
+            "x": 128,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+13",
+            "x": 128,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G13",
+            "x": 128,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S14",
+            "x": 134,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+14",
+            "x": 134,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G14",
+            "x": 134,
+            "y": 74,
+            "type": "power"
+        },
+        {
+            "id": "S15",
+            "x": 140,
+            "y": 62,
+            "type": "digital"
+        },
+        {
+            "id": "V+15",
+            "x": 140,
+            "y": 68,
+            "type": "power"
+        },
+        {
+            "id": "G15",
+            "x": 140,
+            "y": 74,
+            "type": "power"
+        }
+    ]
+}
