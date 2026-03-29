@@ -1,0 +1,22 @@
+{
+    "type": "wokwi-photodiode",
+    "label": "Photodiode",
+    "group": "Sensors",
+    "w": 15,
+    "h": 30,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "A",
+            "x": 0,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "C",
+            "x": 15,
+            "y": 30,
+            "type": "digital"
+        }
+    ]
+}

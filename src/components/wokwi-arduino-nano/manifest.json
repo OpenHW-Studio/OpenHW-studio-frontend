@@ -1,0 +1,202 @@
+{
+    "type": "wokwi-arduino-nano",
+    "label": "Arduino Nano Type-C",
+    "group": "Boards",
+    "w": 180,
+    "h": 50,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "12",
+            "x": 20,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "11",
+            "x": 30,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "10",
+            "x": 40,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "9",
+            "x": 50,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "8",
+            "x": 60,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "7",
+            "x": 70,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "6",
+            "x": 80,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "5",
+            "x": 90,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "4",
+            "x": 100,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "3",
+            "x": 110,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "2",
+            "x": 120,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "GND.2",
+            "x": 130,
+            "y": 5,
+            "type": "power"
+        },
+        {
+            "id": "RST.2",
+            "x": 140,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "RX",
+            "x": 150,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "TX",
+            "x": 160,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "PE1",
+            "x": 170,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "13",
+            "x": 20,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "3V3",
+            "x": 30,
+            "y": 45,
+            "type": "power"
+        },
+        {
+            "id": "AREF",
+            "x": 40,
+            "y": 45,
+            "type": "power"
+        },
+        {
+            "id": "A0",
+            "x": 50,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "A1",
+            "x": 60,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "A2",
+            "x": 70,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "A3",
+            "x": 80,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "A4",
+            "x": 90,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "A5",
+            "x": 100,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "A6",
+            "x": 110,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "A7",
+            "x": 120,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "5V",
+            "x": 130,
+            "y": 45,
+            "type": "power"
+        },
+        {
+            "id": "RST.1",
+            "x": 140,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "GND.1",
+            "x": 150,
+            "y": 45,
+            "type": "power"
+        },
+        {
+            "id": "VIN",
+            "x": 160,
+            "y": 45,
+            "type": "power"
+        },
+        {
+            "id": "PE0",
+            "x": 170,
+            "y": 45,
+            "type": "digital"
+        }
+    ]
+}

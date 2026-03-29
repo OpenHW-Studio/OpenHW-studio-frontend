@@ -27,6 +27,23 @@ export { default as wokwiNeopixelRing } from './wokwi-neopixel-ring';
 export { default as wokwiBreadboard } from './wokwi-breadboard';
 export { default as wokwiBreadboardHalf } from './wokwi-breadboard-half';
 export { default as wokwiBreadboardMini } from './wokwi-breadboard-mini';
+export { default as wokwiA4988 } from './wokwi-a4988';
+export { default as wokwiStepperMotor } from './wokwi-stepper-motor';
+export { default as wokwiNLSF595 } from './wokwi-nlsf595';
+export { default as wokwiCD74HC4067 } from './wokwi-cd74hc4067';
+export { default as wokwiL293D } from './wokwi-l293d';
+export { default as wokwiRGBLED } from './wokwi-rgb-led';
+export { default as wokwiRotaryEncoder } from './wokwi-rotary-encoder';
+export { default as wokwiLogicAnalyzer } from './wokwi-logic-analyzer';
+export { default as wokwiNokia5110 } from './wokwi-nokia-5110';
+export { default as wokwiSoilMoistureSensor } from './wokwi-soil-moisture-sensor';
+export { default as wokwiNpnTransistor } from './wokwi-npn-transistor';
+export { default as wokwiDiode } from './wokwi-diode';
+export { default as wokwiPhotodiode } from './wokwi-photodiode';
+export { default as wokwiPCA9685 } from './wokwi-pca9685';
+export { default as wokwiPCA9865 } from './wokwi-pca9865';
+export { default as wokwiArduinoSensorShield } from './wokwi-arduino-sensor-shield';
+export { default as wokwiArduinoNano } from './wokwi-arduino-nano';
 export { default as logicNotGate } from './logic-not-gate';
 export { default as logicAndGate } from './logic-and-gate';
 export { default as logicOrGate } from './logic-or-gate';
@@ -39,7 +56,6 @@ export { default as logicDFlipFlop } from './logic-d-flipflop';
 export { default as logicDFlipFlopR } from './logic-d-flipflop-r';
 export { default as logicDFlipFlopDsr } from './logic-d-flipflop-dsr';
 export { default as logicClockGenerator } from './logic-clock-generator';
-
 
 
 
