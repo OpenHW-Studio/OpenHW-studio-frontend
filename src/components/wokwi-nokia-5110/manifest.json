@@ -1,0 +1,58 @@
+{
+    "type": "wokwi-nokia-5110",
+    "label": "Nokia 5110 Screen",
+    "group": "Displays",
+    "w": 50,
+    "h": 50,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "RST",
+            "x": 5,
+            "y": 48,
+            "type": "digital"
+        },
+        {
+            "id": "CE",
+            "x": 10,
+            "y": 48,
+            "type": "digital"
+        },
+        {
+            "id": "DC",
+            "x": 15,
+            "y": 48,
+            "type": "digital"
+        },
+        {
+            "id": "DIN",
+            "x": 20,
+            "y": 48,
+            "type": "digital"
+        },
+        {
+            "id": "CLK",
+            "x": 25,
+            "y": 48,
+            "type": "digital"
+        },
+        {
+            "id": "VCC",
+            "x": 30,
+            "y": 48,
+            "type": "power"
+        },
+        {
+            "id": "LIGHT",
+            "x": 35,
+            "y": 48,
+            "type": "digital"
+        },
+        {
+            "id": "GND",
+            "x": 40,
+            "y": 48,
+            "type": "power"
+        }
+    ]
+}
