@@ -30,6 +30,11 @@ export { default as wokwiBreadboardMini } from './wokwi-breadboard-mini';
 export { default as wokwiA4988 } from './wokwi-a4988';
 export { default as wokwiStepperMotor } from './wokwi-stepper-motor';
 export { default as wokwiNLSF595 } from './wokwi-nlsf595';
+export { default as wokwiCD74HC4067 } from './wokwi-cd74hc4067';
+export { default as wokwiL293D } from './wokwi-l293d';
+export { default as wokwiRGBLED } from './wokwi-rgb-led';
+export { default as wokwiRotaryEncoder } from './wokwi-rotary-encoder';
+export { default as wokwiLogicAnalyzer } from './wokwi-logic-analyzer';
 
 
 
