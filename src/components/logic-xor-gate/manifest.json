@@ -1,0 +1,32 @@
+{
+    "type": "logic-xor-gate",
+    "label": "XOR Gate",
+    "description": "Digital XOR logic gate. Output is HIGH when inputs are different.",
+    "group": "Logic",
+    "w": 90,
+    "h": 60,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "IN1",
+            "x": 0,
+            "y": 18,
+            "type": "digital",
+            "description": "Input 1"
+        },
+        {
+            "id": "IN2",
+            "x": 0,
+            "y": 42,
+            "type": "digital",
+            "description": "Input 2"
+        },
+        {
+            "id": "OUT",
+            "x": 90,
+            "y": 30,
+            "type": "digital",
+            "description": "Output"
+        }
+    ]
+}

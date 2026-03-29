@@ -1,0 +1,25 @@
+{
+    "type": "logic-not-gate",
+    "label": "NOT Gate",
+    "description": "Digital logic inverter (NOT gate). Output is HIGH when input is LOW and vice versa.",
+    "group": "Logic",
+    "w": 90,
+    "h": 50,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "IN",
+            "x": 0,
+            "y": 25,
+            "type": "digital",
+            "description": "Input"
+        },
+        {
+            "id": "OUT",
+            "x": 90,
+            "y": 25,
+            "type": "digital",
+            "description": "Output (inverted)"
+        }
+    ]
+}
