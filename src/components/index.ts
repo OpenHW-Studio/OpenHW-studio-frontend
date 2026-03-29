@@ -35,6 +35,12 @@ export { default as wokwiL293D } from './wokwi-l293d';
 export { default as wokwiRGBLED } from './wokwi-rgb-led';
 export { default as wokwiRotaryEncoder } from './wokwi-rotary-encoder';
 export { default as wokwiLogicAnalyzer } from './wokwi-logic-analyzer';
+export { default as wokwiNokia5110 } from './wokwi-nokia-5110';
+export { default as wokwiSoilMoistureSensor } from './wokwi-soil-moisture-sensor';
+export { default as wokwiNpnTransistor } from './wokwi-npn-transistor';
+export { default as wokwiDiode } from './wokwi-diode';
+export { default as wokwiPhotodiode } from './wokwi-photodiode';
+export { default as wokwiPCA9685 } from './wokwi-pca9685';
 
 
 
