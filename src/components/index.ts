@@ -43,6 +43,7 @@ export { default as wokwiPhotodiode } from './wokwi-photodiode';
 export { default as wokwiPCA9685 } from './wokwi-pca9685';
 export { default as wokwiPCA9865 } from './wokwi-pca9865';
 export { default as wokwiArduinoSensorShield } from './wokwi-arduino-sensor-shield';
+export { default as wokwiArduinoNano } from './wokwi-arduino-nano';
 
 
 
