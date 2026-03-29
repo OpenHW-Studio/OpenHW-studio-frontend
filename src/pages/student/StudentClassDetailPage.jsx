@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { BookOpen, ClipboardList, FileQuestion, Home, Monitor, MoreVertical, Search } from 'lucide-react'
+import { BookOpen, ClipboardList, FileQuestion, Home, Loader2, Monitor, Search, Upload, X } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
   getClassAssignments,
+  getMyAssignmentSubmission,
   getClassroomById,
   getClassroomNotices,
-  getClassroomStudents
+  getClassroomStudents,
+  submitAssignment
 } from '../../services/classroomService.js'
 import { formatDateTime, getAvatarLetters } from '../../components/common/test.js'
 import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
+import ClassroomAttachmentBlock from '../../components/common/ClassroomAttachmentBlock.jsx'
+import ClassroomFilePreviewModal from '../../components/common/ClassroomFilePreviewModal.jsx'
 import StreamCard from '../../components/common/StreamCard.jsx'
-import { ClassDetailSkeleton, StreamCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
+import { ClassDetailSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
+import { getAttachmentLabel, pickAttachments } from '../../components/teacher/class-detail/helpers.js'
+import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 
 const tabs = [
   { key: 'stream', label: 'Stream' },
@@ -19,24 +25,14 @@ const tabs = [
   { key: 'people', label: 'People' }
 ]
 
-const pickAttachments = (item) => {
-  if (Array.isArray(item?.attachments)) return item.attachments
-  if (Array.isArray(item?.files)) return item.files
-  return []
+const getSubmissionStatus = (assignment) => {
+  if (!assignment?.dueDate) return 'nodue'
+  return new Date(assignment.dueDate) < new Date() ? 'overdue' : 'upcoming'
 }
 
-const isImageAttachment = (url) => /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(url || '')
-
-const getAttachmentLabel = (url, index) => {
-  try {
-    const parsedUrl = new URL(url)
-    const fileName = parsedUrl.pathname.split('/').filter(Boolean).pop()
-    if (fileName) return decodeURIComponent(fileName)
-  } catch {
-    // Fallback for non-URL or malformed values.
-  }
-  return `Link ${index + 1}`
-}
+const isAssignmentClosed = (assignment) => (
+  Boolean(assignment?.dueDate) && new Date(assignment.dueDate) < new Date()
+)
 
 export default function StudentClassDetailPage() {
   const { classId } = useParams()
@@ -51,6 +47,18 @@ export default function StudentClassDetailPage() {
   const [assignments, setAssignments] = useState([])
   const [notices, setNotices] = useState([])
   const [peopleSearch, setPeopleSearch] = useState('')
+  const [activeAssignmentId, setActiveAssignmentId] = useState(null)
+  const [submissionState, setSubmissionState] = useState({
+    loading: false,
+    saving: false,
+    error: '',
+    data: null
+  })
+  const [submissionForm, setSubmissionForm] = useState({
+    notes: '',
+    attachments: []
+  })
+  const [previewFile, setPreviewFile] = useState(null)
 
   const avatarInitials = useMemo(() => getAvatarLetters(user?.name, 'S'), [user?.name])
 
@@ -61,7 +69,8 @@ export default function StudentClassDetailPage() {
       title: notice.title || 'Class notice',
       body: notice.message,
       createdAt: notice.createdAt,
-      createdBy: notice.createdBy
+      createdBy: notice.createdBy,
+      raw: notice
     }))
 
     const assignmentItems = (assignments || []).map((assignment) => ({
@@ -70,7 +79,8 @@ export default function StudentClassDetailPage() {
       title: assignment.title || 'Assignment',
       body: assignment.description || '',
       createdAt: assignment.createdAt || assignment.updatedAt,
-      dueDate: assignment.dueDate
+      dueDate: assignment.dueDate,
+      raw: assignment
     }))
 
     return [...assignmentItems, ...noticeItems].sort((a, b) => {
@@ -120,6 +130,124 @@ export default function StudentClassDetailPage() {
     loadClassDetail()
   }, [classId])
 
+  const handleSelectAssignment = async (assignmentId, options = {}) => {
+    const { forceOpen = false } = options
+
+    if (!forceOpen && activeAssignmentId === assignmentId) {
+      setActiveAssignmentId(null)
+      setSubmissionState({ loading: false, saving: false, error: '', data: null })
+      setSubmissionForm({ notes: '', attachments: [] })
+      return
+    }
+
+    setActiveAssignmentId(assignmentId)
+    setSubmissionState({ loading: true, saving: false, error: '', data: null })
+
+    try {
+      const response = await getMyAssignmentSubmission(classId, assignmentId)
+      const submission = response?.submission || null
+      setSubmissionState({ loading: false, saving: false, error: '', data: submission })
+      setSubmissionForm({
+        notes: submission?.notes || '',
+        attachments: submission?.attachments || submission?.files || []
+      })
+    } catch (submissionError) {
+      setSubmissionState({
+        loading: false,
+        saving: false,
+        error: submissionError.message || 'Failed to load submission',
+        data: null
+      })
+    }
+  }
+
+  const handleOpenAssignmentFromStream = async (assignmentId) => {
+    setActiveTab('classwork')
+    await handleSelectAssignment(assignmentId, { forceOpen: true })
+  }
+
+  const handleSubmissionFilesChange = async (event) => {
+    const currentAssignment = assignments.find((assignment) => assignment._id === activeAssignmentId)
+
+    if (isAssignmentClosed(currentAssignment)) {
+      setSubmissionState((current) => ({
+        ...current,
+        error: 'This assignment is closed. You can no longer upload files.'
+      }))
+      event.target.value = ''
+      return
+    }
+
+    try {
+      const uploadedFiles = await uploadClassroomFiles(event.target.files, {
+        classId,
+        category: 'submissions',
+        maxFiles: 8,
+        allowedTypes: ['application/pdf', 'image']
+      })
+
+      setSubmissionForm((current) => ({
+        ...current,
+        attachments: [...current.attachments, ...uploadedFiles]
+      }))
+      setSubmissionState((current) => ({ ...current, error: '' }))
+    } catch (uploadError) {
+      setSubmissionState((current) => ({
+        ...current,
+        error: uploadError.message || 'Failed to upload submission files'
+      }))
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  const handleRemoveSubmissionFile = (index) => {
+    setSubmissionForm((current) => ({
+      ...current,
+      attachments: current.attachments.filter((_, idx) => idx !== index)
+    }))
+  }
+
+  const handleSubmitAssignment = async (assignmentId) => {
+    const currentAssignment = assignments.find((assignment) => assignment._id === assignmentId)
+
+    if (isAssignmentClosed(currentAssignment)) {
+      setSubmissionState((current) => ({
+        ...current,
+        saving: false,
+        error: 'This assignment is closed. Submissions are no longer accepted.'
+      }))
+      return
+    }
+
+    setSubmissionState((current) => ({ ...current, saving: true, error: '' }))
+
+    try {
+      const response = await submitAssignment(classId, assignmentId, {
+        notes: submissionForm.notes,
+        attachments: submissionForm.attachments
+      })
+
+      const submission = response?.submission || null
+      setSubmissionState({
+        loading: false,
+        saving: false,
+        error: '',
+        data: submission
+      })
+      setSubmissionForm({
+        notes: submission?.notes || '',
+        attachments: submission?.attachments || submission?.files || []
+      })
+    } catch (submitError) {
+      setSubmissionState((current) => ({
+        ...current,
+        saving: false,
+        error: submitError.message || 'Failed to submit assignment'
+      }))
+    }
+  }
+
   if (loading) {
     return <ClassDetailSkeleton />
   }
@@ -136,7 +264,12 @@ export default function StudentClassDetailPage() {
 
   return (
     <div className="teacher-dashboard-page">
-      <ClassroomSidebar links={sidebarLinks} user={user} onLogout={handleLogout} />
+      <ClassroomSidebar
+        links={sidebarLinks}
+        user={user}
+        onLogout={handleLogout}
+        onProfileClick={() => navigate('/student/profile')}
+      />
 
       <main className="teacher-dashboard-main teacher-dashboard-main--with-fixed-sidebar">
         <section className="teacher-class-page teacher-class-page--shell">
@@ -180,6 +313,8 @@ export default function StudentClassDetailPage() {
                           classId={classId}
                           showCommentInput={item.type === 'notice'}
                           enableComments={true}
+                          onAssignmentClick={handleOpenAssignmentFromStream}
+                          onPreviewFile={setPreviewFile}
                         />
                       ))
                     )}
@@ -192,66 +327,201 @@ export default function StudentClassDetailPage() {
                   {assignments.length === 0 ? (
                     <p className="teacher-inline-state teacher-inline-state--plain">No assignment.</p>
                   ) : (
-                  <div className="teacher-classwork-module teacher-classwork-module--student">
-                    <header className="teacher-classwork-module__header">
-                      <div className="teacher-classwork-module__title">
-                        <h3>Classwork</h3>
-                        <small>{assignments.length} items</small>
-                      </div>
-                      <button type="button" className="teacher-classwork-module__menu" aria-label="Classwork menu">
-                        <MoreVertical size={16} />
-                      </button>
-                    </header>
+                    <div className="teacher-classwork-shell teacher-classwork-shell--student">
+                      <header className="teacher-classwork-shell__header">
+                        <div className="teacher-classwork-shell__title">
+                          <p>Classwork</p>
+                        </div>
 
-                    <div className="teacher-classwork-list">
-                    {assignments.map((assignment) => {
-                        const attachments = pickAttachments(assignment)
-                        const imageAttachments = attachments.filter((url) => isImageAttachment(url)).slice(0, 2)
+                        <div className="teacher-classwork-shell__stats">
+                          <div className="teacher-classwork-shell__stat">
+                            <ClipboardList size={16} />
+                            <span>{assignments.length} items</span>
+                          </div>
+                        </div>
+                      </header>
 
-                        return (
-                          <article key={assignment._id} className="teacher-classwork-item teacher-classwork-item--student">
-                            <div className="teacher-classwork-item__row">
-                              <div className="teacher-classwork-item__icon" aria-hidden="true">
-                                {assignment.dueDate ? <ClipboardList size={16} /> : <FileQuestion size={16} />}
-                              </div>
-                              <div className="teacher-classwork-item__copy">
-                                <div className="teacher-classwork-item__top">
-                                  <strong>{assignment.title}</strong>
-                                  <span className={`teacher-classwork-item__badge teacher-classwork-item__badge--${assignment.dueDate ? (new Date(assignment.dueDate) < new Date() ? 'overdue' : 'upcoming') : 'nodue'}`}>
-                                    {assignment.dueDate ? (new Date(assignment.dueDate) < new Date() ? 'Overdue' : 'Due') : 'No due date'}
-                                  </span>
+                      <div className="teacher-classwork-shell__list">
+                        {assignments.map((assignment) => {
+                          const attachments = pickAttachments(assignment)
+                          const isExpanded = activeAssignmentId === assignment._id
+                          const submission = isExpanded ? submissionState.data : null
+                          const statusKey = getSubmissionStatus(assignment)
+                          const isClosed = isAssignmentClosed(assignment)
+                          const resourceCount = attachments.length
+
+                          return (
+                            <article
+                              key={assignment._id}
+                              className={`teacher-classwork-card teacher-classwork-card--student${isExpanded ? ' is-active' : ''}`}
+                            >
+                              <div
+                                className="teacher-classwork-card__row"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => handleSelectAssignment(assignment._id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault()
+                                    handleSelectAssignment(assignment._id)
+                                  }
+                                }}
+                              >
+                                <div className={`teacher-classwork-card__icon${assignment.dueDate ? ' teacher-classwork-card__icon--due' : ''}`} aria-hidden="true">
+                                  {assignment.dueDate ? <ClipboardList size={22} /> : <FileQuestion size={22} />}
                                 </div>
-                                <small>
-                                  {assignment.dueDate ? `Due ${formatDateTime(assignment.dueDate)}` : `Posted ${formatDateTime(assignment.createdAt)}`}
-                                </small>
-                                {attachments.length > 0 ? (
-                                  <div className="teacher-classwork-item__attachments">
-                                    {imageAttachments.map((url, idx) => (
-                                      <img key={`${assignment._id}-img-${idx}`} src={url} alt="Attachment preview" className="teacher-classwork-item__attachment-thumb" />
-                                    ))}
-                                    <div className="teacher-classwork-item__links" role="list" aria-label="Assignment links">
-                                      {attachments.map((url, idx) => (
-                                        <a
-                                          key={`${assignment._id}-link-${idx}`}
-                                          href={url}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          role="listitem"
-                                          className="teacher-classwork-item__link"
-                                        >
-                                          {getAttachmentLabel(url, idx)}
-                                        </a>
-                                      ))}
-                                    </div>
+
+                                <div className="teacher-classwork-card__copy">
+                                  <div className="teacher-classwork-card__title-row">
+                                    <strong className="teacher-classwork-card__title">{assignment.title}</strong>
+                                    <span className={`teacher-classwork-card__badge teacher-classwork-card__badge--${statusKey === 'upcoming' ? 'open' : statusKey === 'overdue' ? 'closed' : 'neutral'}`}>
+                                      {statusKey === 'overdue' ? 'Overdue' : statusKey === 'upcoming' ? 'Due Soon' : 'No Due Date'}
+                                    </span>
                                   </div>
-                                ) : null}
+
+                                  <p className="teacher-classwork-card__meta">
+                                    {assignment.dueDate ? `Due ${formatDateTime(assignment.dueDate)}` : `Posted ${formatDateTime(assignment.createdAt)}`}
+                                  </p>
+
+                                  {attachments.length > 0 ? (
+                                    <div
+                                      className="teacher-classwork-card__files"
+                                      onClick={(event) => event.stopPropagation()}
+                                    >
+                                      <ClassroomAttachmentBlock
+                                        source={assignment}
+                                        onPreviewFile={setPreviewFile}
+                                      />
+                                    </div>
+                                  ) : null}
+                                </div>
+
+                                <div className="teacher-classwork-card__metrics">
+                                  <div className="teacher-classwork-card__metric">
+                                    <strong>{resourceCount}</strong>
+                                    <small>Resources</small>
+                                  </div>
+                                  <div className="teacher-classwork-card__metric">
+                                    <strong>{isClosed ? 'Closed' : 'Open'}</strong>
+                                    <small>Window</small>
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </article>
-                        )
-                      })}
-                  </div>
-                  </div>
+
+                              {isExpanded ? (
+                                <div className="teacher-classwork-card__submissions student-assignment-submit">
+                                  {submission?.updatedAt ? (
+                                    <div className="student-assignment-submit__meta">
+                                      <span className="student-assignment-submit__status">Updated {formatDateTime(submission.updatedAt)}</span>
+                                    </div>
+                                  ) : null}
+
+                                  {isClosed ? (
+                                    <p className="teacher-inline-state teacher-inline-state--error">
+                                      This assignment is closed. Submissions are no longer accepted.
+                                    </p>
+                                  ) : null}
+
+                                  {submissionState.loading ? (
+                                    <p className="teacher-inline-state">Loading submission...</p>
+                                  ) : null}
+                                  {submissionState.error ? (
+                                    <p className="teacher-inline-state teacher-inline-state--error">{submissionState.error}</p>
+                                  ) : null}
+
+                                  {!submissionState.loading ? (
+                                    <>
+                                      <label className="teacher-assignment-form__field">
+                                        <span>Submission Notes</span>
+                                        <textarea
+                                          value={submissionForm.notes}
+                                          onChange={(event) =>
+                                            setSubmissionForm((current) => ({
+                                              ...current,
+                                              notes: event.target.value
+                                            }))
+                                          }
+                                          rows={3}
+                                          placeholder="Add a short note for your teacher"
+                                        />
+                                      </label>
+
+                                      <div className="teacher-assignment-form__files-label">
+                                        <div className="teacher-assignment-form__files-copy">
+                                          <span>Submission Files</span>
+                                          <small>Upload PDFs or images for your assignment work.</small>
+                                        </div>
+
+                                        <label className="teacher-upload-dropzone student-assignment-submit__dropzone">
+                                          <input
+                                            type="file"
+                                            accept="application/pdf,image/*"
+                                            multiple
+                                            onChange={handleSubmissionFilesChange}
+                                            disabled={isClosed}
+                                          />
+                                          <span className="teacher-upload-dropzone__empty">
+                                            <Upload size={18} />
+                                            {isClosed ? 'Submission closed' : 'Upload files'}
+                                          </span>
+                                        </label>
+
+                                        {submissionForm.attachments.length > 0 ? (
+                                          <div className="teacher-assignment-form__link-list">
+                                            {submissionForm.attachments.map((file, idx) => (
+                                              <div key={`submission-file-${idx}`} className="teacher-assignment-form__link-pill">
+                                                <button
+                                                  type="button"
+                                                  className="teacher-assignment-form__link-pill-copy student-assignment-submit__file"
+                                                  onClick={() =>
+                                                    setPreviewFile({
+                                                      url: file,
+                                                      name: getAttachmentLabel(file, idx)
+                                                    })
+                                                  }
+                                                >
+                                                  <span>{getAttachmentLabel(file, idx)}</span>
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  className="teacher-assignment-form__link-pill-remove"
+                                                  onClick={() => handleRemoveSubmissionFile(idx)}
+                                                  aria-label={`Remove file ${idx + 1}`}
+                                                >
+                                                  <X size={14} />
+                                                </button>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : null}
+                                      </div>
+
+                                      <div className="student-assignment-submit__actions">
+                                        <button
+                                          type="button"
+                                          className="teacher-button teacher-button--primary"
+                                          onClick={() => handleSubmitAssignment(assignment._id)}
+                                          disabled={submissionState.saving || isClosed}
+                                        >
+                                          {submissionState.saving ? (
+                                            <>
+                                              <Loader2 size={16} className="teacher-spin" />
+                                              <span>Saving...</span>
+                                            </>
+                                          ) : (
+                                            <span>{isClosed ? 'Submission Closed' : submission ? 'Update Submission' : 'Submit Assignment'}</span>
+                                          )}
+                                        </button>
+                                      </div>
+                                    </>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </article>
+                          )
+                        })}
+                      </div>
+                    </div>
                   )}
                 </section>
               )}
@@ -349,6 +619,7 @@ export default function StudentClassDetailPage() {
           </div>
         </section>
       </main>
+      {previewFile ? <ClassroomFilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} /> : null}
     </div>
   )
 }

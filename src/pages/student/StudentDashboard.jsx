@@ -228,7 +228,12 @@ export default function StudentDashboard() {
 
   return (
     <div className="teacher-dashboard-page">
-      <ClassroomSidebar links={sidebarLinks} user={user} onLogout={handleLogout} />
+      <ClassroomSidebar
+        links={sidebarLinks}
+        user={user}
+        onLogout={handleLogout}
+        onProfileClick={() => navigate('/student/profile')}
+      />
 
       <main className="teacher-dashboard-main teacher-dashboard-main--with-fixed-sidebar">
         <section className="teacher-hero">
@@ -259,7 +264,15 @@ export default function StudentDashboard() {
           <div className="teacher-hero__badge">
             <div className="teacher-hero__shape teacher-hero__shape--outer" />
             <div className="teacher-hero__shape teacher-hero__shape--inner" />
-            <div className="teacher-hero__monogram">{avatarLetter}</div>
+            {user?.image ? (
+              <img
+                src={user.image}
+                alt={user?.name || 'Student'}
+                className="teacher-hero__avatar-image"
+              />
+            ) : (
+              <div className="teacher-hero__monogram">{avatarLetter}</div>
+            )}
           </div>
         </section>
 
@@ -310,17 +323,17 @@ export default function StudentDashboard() {
             </section>
 
             {/* DEMO PROJECTS — guide only, no gamification */}
-            <section className="teacher-classes-panel projects-section" style={{ marginTop: '2rem' }}>
+            <section className="teacher-classes-panel projects-section student-dashboard__section-gap">
               <header className="teacher-section-heading teacher-section-heading--compact">
                 <div>
-                  <h3 style={{ margin: 0 }}>Guided project demos</h3>
-                  <p className="section-sub" style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                  <h3 className="student-dashboard__section-title">Guided project demos</h3>
+                  <p className="section-sub student-dashboard__section-sub">
                     Explore the circuit and code before starting the real challenge
                   </p>
                 </div>
               </header>
 
-              <div className="projects-grid" style={{ marginTop: '1.5rem' }}>
+              <div className="projects-grid student-dashboard__projects-grid">
                 {DEMO_PROJECTS.map((p) => (
                   <div
                     className="project-card"
@@ -343,11 +356,11 @@ export default function StudentDashboard() {
             </section>
 
             {/* GAMIFIED PROGRESS — XP, level, completed projects */}
-            <section className="teacher-classes-panel projects-section" style={{ marginTop: '2rem' }}>
+            <section className="teacher-classes-panel projects-section student-dashboard__section-gap">
               <header className="teacher-section-heading teacher-section-heading--compact">
                 <div>
-                  <h3 style={{ margin: 0 }}>Your progress</h3>
-                  <p className="section-sub" style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--text-secondary)' }}>
+                  <h3 className="student-dashboard__section-title">Your progress</h3>
+                  <p className="section-sub student-dashboard__section-sub">
                     Complete gamified projects to earn XP, coins, and badges
                   </p>
                 </div>

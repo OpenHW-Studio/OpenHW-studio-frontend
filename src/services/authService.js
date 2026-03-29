@@ -165,3 +165,26 @@ export const fetchProfile = async () => {
   
   return data;
 };
+
+export const updateProfile = async (profileData) => {
+  const token = getToken();
+  if (!token) throw new Error('No token found');
+
+  const response = await fetch(`${BASE_URL}/user/profile`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(profileData)
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to update profile');
+
+  if (data.user) {
+    saveUser(data.user);
+  }
+
+  return data;
+};

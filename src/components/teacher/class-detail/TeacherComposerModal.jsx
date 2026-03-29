@@ -1,9 +1,10 @@
 import {
   BookOpenCheck,
   CalendarDays,
+  FileImage,
   FilePlus2,
-  Link2,
-  Plus,
+  FileText,
+  Upload,
   X,
 } from "lucide-react";
 import { getAttachmentLabel } from "./helpers.js";
@@ -15,17 +16,16 @@ export default function TeacherComposerModal({
   onCreateAssignment,
   assignmentForm,
   onAssignmentInputChange,
-  assignmentLinkInput,
-  onAssignmentLinkInputChange,
-  onAddAssignmentLink,
-  assignmentLinks,
-  onRemoveAssignmentLink,
+  assignmentFiles,
+  onAssignmentFilesChange,
+  onRemoveAssignmentFile,
   postingAssignment,
   onCreateNotice,
   noticeForm,
   onNoticeInputChange,
   noticeFiles,
   onNoticeFilesChange,
+  onRemoveNoticeFile,
   postingNotice,
 }) {
   return (
@@ -37,6 +37,18 @@ export default function TeacherComposerModal({
     >
       <div className="teacher-composer-modal__backdrop" onClick={onClose} />
       <section className="teacher-composer-modal__content">
+        <header className="teacher-composer-modal__header">
+          <div>
+            <p className="teacher-modal__eyebrow">Classroom Composer</p>
+            <h3>
+              {composerMode === "assignment" ? "Create Assignment" : "Post Notice"}
+            </h3>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close modal">
+            <X size={16} />
+          </button>
+        </header>
+
         <div className="teacher-fab__switches">
           <button
             type="button"
@@ -58,7 +70,6 @@ export default function TeacherComposerModal({
 
         {composerMode === "assignment" ? (
           <form className="teacher-assignment-form" onSubmit={onCreateAssignment}>
-            <h3>Add Assignment</h3>
             <label className="teacher-assignment-form__field">
               <span>Assignment Title</span>
               <input
@@ -92,45 +103,49 @@ export default function TeacherComposerModal({
               />
             </label>
             <div className="teacher-assignment-form__files-label">
-              <span>Assignment Links</span>
-              <div className="teacher-assignment-form__link-input-row">
-                <input
-                  type="url"
-                  value={assignmentLinkInput}
-                  onChange={onAssignmentLinkInputChange}
-                  placeholder="Paste URL here (e.g., https://...)"
-                />
-                <button
-                  type="button"
-                  className="teacher-assignment-form__link-add-icon"
-                  onClick={onAddAssignmentLink}
-                  aria-label="Add attachment link"
-                >
-                  <Plus size={16} />
-                </button>
+              <div className="teacher-assignment-form__files-copy">
+                <span>Assignment Attachments</span>
+                <small>Upload PDFs, images, or reference handouts.</small>
               </div>
 
-              {assignmentLinks.length > 0 ? (
+              <label className="teacher-upload-dropzone">
+                <input
+                  type="file"
+                  accept="application/pdf,image/*"
+                  multiple
+                  onChange={onAssignmentFilesChange}
+                />
+                <span className="teacher-upload-dropzone__empty">
+                  <Upload size={18} />
+                  Upload files
+                </span>
+              </label>
+
+              {assignmentFiles.length > 0 ? (
                 <div
                   className="teacher-assignment-form__link-list"
                   role="list"
-                  aria-label="Added assignment links"
+                  aria-label="Uploaded assignment files"
                 >
-                  {assignmentLinks.map((link, idx) => (
+                  {assignmentFiles.map((file, idx) => (
                     <div
                       key={`assignment-link-${idx}`}
                       className="teacher-assignment-form__link-pill"
                       role="listitem"
                     >
                       <span className="teacher-assignment-form__link-pill-copy">
-                        <Link2 size={14} />
-                        {getAttachmentLabel(link, idx)}
+                        {file.startsWith("data:image/") ? (
+                          <FileImage size={14} />
+                        ) : (
+                          <FileText size={14} />
+                        )}
+                        {getAttachmentLabel(file, idx)}
                       </span>
                       <button
                         type="button"
                         className="teacher-assignment-form__link-pill-remove"
-                        onClick={() => onRemoveAssignmentLink(idx)}
-                        aria-label={`Remove link ${idx + 1}`}
+                        onClick={() => onRemoveAssignmentFile(idx)}
+                        aria-label={`Remove file ${idx + 1}`}
                       >
                         <X size={14} />
                       </button>
@@ -148,7 +163,6 @@ export default function TeacherComposerModal({
             className="teacher-assignment-form teacher-assignment-form--notice"
             onSubmit={onCreateNotice}
           >
-            <h3>Add Notice</h3>
             <label className="teacher-assignment-form__field">
               <span>Notice Title</span>
               <input
@@ -170,15 +184,58 @@ export default function TeacherComposerModal({
                 required
               />
             </label>
-            <label className="teacher-assignment-form__files-label">
-              <span>Attachments (paste URLs, one per line)</span>
-              <textarea
-                value={noticeFiles}
-                onChange={onNoticeFilesChange}
-                placeholder="https://example.com/notes.pdf"
-                rows={2}
-              />
-            </label>
+            <div className="teacher-assignment-form__files-label">
+              <div className="teacher-assignment-form__files-copy">
+                <span>Notice Attachments</span>
+                <small>Upload class notes, posters, PDFs, or screenshots.</small>
+              </div>
+
+              <label className="teacher-upload-dropzone">
+                <input
+                  type="file"
+                  accept="application/pdf,image/*"
+                  multiple
+                  onChange={onNoticeFilesChange}
+                />
+                <span className="teacher-upload-dropzone__empty">
+                  <Upload size={18} />
+                  Upload files
+                </span>
+              </label>
+
+              {noticeFiles.length > 0 ? (
+                <div
+                  className="teacher-assignment-form__link-list"
+                  role="list"
+                  aria-label="Uploaded notice files"
+                >
+                  {noticeFiles.map((file, idx) => (
+                    <div
+                      key={`notice-file-${idx}`}
+                      className="teacher-assignment-form__link-pill"
+                      role="listitem"
+                    >
+                      <span className="teacher-assignment-form__link-pill-copy">
+                        {file.startsWith("data:image/") ? (
+                          <FileImage size={14} />
+                        ) : (
+                          <FileText size={14} />
+                        )}
+                        {getAttachmentLabel(file, idx)}
+                      </span>
+                      <button
+                        type="button"
+                        className="teacher-assignment-form__link-pill-remove"
+                        onClick={() => onRemoveNoticeFile(idx)}
+                        aria-label={`Remove file ${idx + 1}`}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             <button type="submit" disabled={postingNotice}>
               {postingNotice ? "Posting..." : "Post Notice"}
             </button>
