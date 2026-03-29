@@ -1,0 +1,36 @@
+{
+    "type": "wokwi-tm1637-7segment",
+    "label": "TM1637 Display",
+    "group": "Outputs",
+    "w": 120,
+    "h": 50,
+    "attrs": {
+        "color": "red"
+    },
+    "pins": [
+        {
+            "id": "GND",
+            "x": 0,
+            "y": 10,
+            "type": "power"
+        },
+        {
+            "id": "VCC",
+            "x": 0,
+            "y": 20,
+            "type": "power"
+        },
+        {
+            "id": "DIO",
+            "x": 0,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "CLK",
+            "x": 0,
+            "y": 40,
+            "type": "digital"
+        }
+    ]
+}
