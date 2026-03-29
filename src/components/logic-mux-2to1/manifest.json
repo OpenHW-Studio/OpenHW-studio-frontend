@@ -1,0 +1,39 @@
+{
+    "type": "logic-mux-2to1",
+    "label": "MUX 2:1",
+    "description": "2-to-1 Multiplexer. Selects one of two data inputs based on the select line.",
+    "group": "Logic",
+    "w": 90,
+    "h": 80,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "D0",
+            "x": 0,
+            "y": 22,
+            "type": "digital",
+            "description": "Data input 0 (selected when SEL=LOW)"
+        },
+        {
+            "id": "D1",
+            "x": 0,
+            "y": 58,
+            "type": "digital",
+            "description": "Data input 1 (selected when SEL=HIGH)"
+        },
+        {
+            "id": "SEL",
+            "x": 45,
+            "y": 80,
+            "type": "digital",
+            "description": "Select line"
+        },
+        {
+            "id": "OUT",
+            "x": 90,
+            "y": 40,
+            "type": "digital",
+            "description": "Output"
+        }
+    ]
+}

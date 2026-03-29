@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Clock Generator – OpenHW Studio Docs</title>
+  <style>
+    :root {
+      --accent: #9c27b0;
+      --bg: #0f172a;
+      --bg2: #1e293b;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --border: #334155;
+      --radius: 8px
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0 }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+      padding: 24px; max-width: 760px; margin: 0 auto; line-height: 1.6
+    }
+
+    h1 { color: var(--accent); font-size: 1.6rem; margin-bottom: 4px }
+
+    .badge {
+      display: inline-block; background: var(--accent)22; color: var(--accent);
+      border: 1px solid var(--accent)44; border-radius: 4px;
+      padding: 2px 8px; font-size: 12px; font-weight: 600; margin-bottom: 16px
+    }
+
+    p { color: var(--text2); margin-bottom: 16px }
+
+    h2 { font-size: 1rem; color: var(--text); margin: 24px 0 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px }
+    th { background: var(--bg2); color: var(--text2); text-align: left; padding: 8px 10px; border: 1px solid var(--border) }
+    td { padding: 8px 10px; border: 1px solid var(--border); color: var(--text) }
+
+    pre { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; font-size: 13px; overflow-x: auto; margin-bottom: 16px }
+    code { color: #7dd3fc }
+
+    .tip { background: #9c27b011; border-left: 3px solid var(--accent); padding: 10px 14px; border-radius: 0 var(--radius) var(--radius) 0; font-size: 13px; color: var(--text2); margin-bottom: 16px }
+  </style>
+</head>
+
+<body>
+  <h1>Clock Generator</h1>
+  <span class="badge">Logic</span>
+  <p>An adjustable digital clock generator. It outputs a continuous square wave oscillating between HIGH (5V) and LOW (0V). You can adjust the frequency and units (Hz, KHz, MHz) using its property panel.</p>
+
+  <h2>Attributes (Properties Panel)</h2>
+  <table>
+    <tr><th>Attribute</th><th>Type</th><th>Description</th></tr>
+    <tr><td>Frequency</td><td>Number</td><td>The base number for frequency (e.g. "10").</td></tr>
+    <tr><td>Units</td><td>Select</td><td>The multiplier: Hz, KHz, or MHz. (e.g., 10 + KHz = 10,000 cycles/sec).</td></tr>
+  </table>
+
+  <h2>Pins</h2>
+  <table>
+    <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+    <tr><td>OUT</td><td>Digital Output</td><td>Produces the continuously toggling square wave.</td></tr>
+  </table>
+
+  <h2>Wiring</h2>
+  <pre><code>
+Clock OUT ────► CLK input on D Flip-Flop
+          ────► Counter devices
+          ────► Arduino D2 (for interrupt counting)</code></pre>
+
+  <div class="tip">Tip: Right-click the Clock Generator to open the Properties Panel where you can set your desired Frequency and Units. In a browser environment, extreme frequencies (e.g., MHz) might be capped smoothly to match your browser's frame rate capabilities visually, but logical propagation steps will still simulate correctly.</div>
+</body>
+
+</html>
