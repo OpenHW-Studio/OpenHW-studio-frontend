@@ -1,0 +1,144 @@
+{
+    "type": "wokwi-pca9685",
+    "label": "16-Channel PWM HAT",
+    "group": "Actuators",
+    "w": 80,
+    "h": 60,
+    "attrs": {
+        "i2c_address": "0x40"
+    },
+    "pins": [
+        {
+            "id": "VCC",
+            "x": 5,
+            "y": 10,
+            "type": "power"
+        },
+        {
+            "id": "GND",
+            "x": 5,
+            "y": 20,
+            "type": "power"
+        },
+        {
+            "id": "SCL",
+            "x": 5,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "SDA",
+            "x": 5,
+            "y": 40,
+            "type": "digital"
+        },
+        {
+            "id": "V+",
+            "x": 30,
+            "y": 55,
+            "type": "power"
+        },
+        {
+            "id": "GND_M",
+            "x": 45,
+            "y": 55,
+            "type": "power"
+        },
+        {
+            "id": "PWM0",
+            "x": 10,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM1",
+            "x": 14,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM2",
+            "x": 18,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM3",
+            "x": 22,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM4",
+            "x": 26,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM5",
+            "x": 30,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM6",
+            "x": 34,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM7",
+            "x": 38,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM8",
+            "x": 42,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM9",
+            "x": 46,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM10",
+            "x": 50,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM11",
+            "x": 54,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM12",
+            "x": 58,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM13",
+            "x": 62,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM14",
+            "x": 66,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "PWM15",
+            "x": 70,
+            "y": 55,
+            "type": "digital"
+        }
+    ]
+}
