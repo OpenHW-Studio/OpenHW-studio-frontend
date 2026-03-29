@@ -27,6 +27,12 @@ export const LEVELS = [
       'wokwi-rgb-led',
       'wokwi-rotary-encoder',
       'wokwi-logic-analyzer',
+      'wokwi-nokia-5110',
+      'wokwi-soil-moisture-sensor',
+      'wokwi-npn-transistor',
+      'wokwi-diode',
+      'wokwi-photodiode',
+      'wokwi-pca9685',
     ],
     badge: {
       id: 'badge_hello_world',
