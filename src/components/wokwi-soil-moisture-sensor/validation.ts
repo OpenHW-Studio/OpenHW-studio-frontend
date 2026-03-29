@@ -9,11 +9,11 @@ export function validate(component: any, wires: any[]) {
     });
 
     if (!connectedPins.has('VCC') || !connectedPins.has('GND')) {
-        errors.push('Soil Moisture Sensor requires VCC and GND connections to operate.');
+        errors.push('Soil Moisture Sensor requires VCC (+) and GND (-) connections to operate.');
     }
 
-    if (!connectedPins.has('A0') && !connectedPins.has('D0')) {
-        warnings.push('Soil Moisture Sensor has no output pins connected (A0 or D0).');
+    if (!connectedPins.has('SIG')) {
+        warnings.push('Soil Moisture Sensor has no output pin connected (SIG / S).');
     }
 
     return { warnings, errors };
