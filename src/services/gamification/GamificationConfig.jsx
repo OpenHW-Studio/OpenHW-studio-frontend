@@ -34,6 +34,8 @@ export const LEVELS = [
       'wokwi-photodiode',
       'wokwi-pca9685',
       'wokwi-pca9865',
+      'wokwi-arduino-sensor-shield',
+      'wokwi-arduino-nano',
     ],
     badge: {
       id: 'badge_hello_world',
