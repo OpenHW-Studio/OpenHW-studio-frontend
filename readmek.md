@@ -26,5 +26,36 @@
     *   Overhauled the `getComponentStateAttrs` engine so the `value` property is actively injected or deleted from the DOM based on physical voltage rules.
 
 ---
+
+## 🛠️ Implemented Components Library (v1.2 Expansion)
+
+The following components have been fully integrated into the simulator palette:
+
+### Controllers & Boards
+- **Arduino Nano Type-C**: Modernized Nano clone with PE0/PE1 breakouts.
+- **Arduino Sensor Shield v5.0**: G-V-S expansion shield for Arduino Uno.
+
+### Actuators & Drivers
+- **16-Channel PWM/Servo Pi HAT (PCA9685)**: I2C-based 16-channel motor driver.
+- **16-Channel PWM Breakout (PCA9865)**: Daisy-chainable standalone PWM module.
+- **L293D Dual H-Bridge**: High-current motor driver IC.
+- **A4988 Stepper Driver**: Precise bipolar stepper controller.
+- **Biaxial Stepper Motor**: Interactive 4-wire stepper with visual shaft rotation.
+
+### Sensors & Inputs
+- **Soil Moisture Sensor**: Analog/Digital soil probe with interactive moisture slider.
+- **Nokia 5110 LCD**: 84x48 monochrome graphical display (SPI).
+- **Photodiode**: Light-sensitive leakage diode with interactive Lux control.
+- **Rotary Encoder**: Incremental encoder with pushbutton.
+
+### Logic & Discrete
+- **Digital Logic Suite**: Full set of 74-series style logic gates and D-FlipFlops.
+- **8-Channel Logic Analyzer**: Real-time D0-D7 bus monitor.
+- **NPN Transistor (BJT)**: TO-92 standard switching component.
+- **Rectifier Diode**: 1N4007-style voltage gate.
+- **CD74HC4067 Multiplexer**: 16-channel analog/digital MUX.
+- **NLSF595 SPI Driver**: Serialization shift register for LEDs.
+
+---
 *Generated for the Universal Emulator Integration.*
 
