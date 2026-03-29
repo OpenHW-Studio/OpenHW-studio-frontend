@@ -22,6 +22,11 @@ export const LEVELS = [
       'wokwi-a4988',
       'wokwi-stepper-motor',
       'wokwi-nlsf595',
+      'wokwi-cd74hc4067',
+      'wokwi-l293d',
+      'wokwi-rgb-led',
+      'wokwi-rotary-encoder',
+      'wokwi-logic-analyzer',
     ],
     badge: {
       id: 'badge_hello_world',
