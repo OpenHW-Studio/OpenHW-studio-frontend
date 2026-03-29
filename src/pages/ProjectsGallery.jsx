@@ -6,11 +6,9 @@ import {
   DIFFICULTY_CONFIG,
   getUnlockedProjects,
   getLockedProjects,
+  getProjectStatus,
 } from '../services/gamification/ProjectsConfig'
-import {
-  canStartProject,
-  getMissingComponents,
-} from '../services/gamification/ComponentsConfig'
+// Component unlock now handled by project rewards - no quiz-based unlock
 
 const S = {
   page: {
@@ -107,8 +105,12 @@ export default function ProjectsGallery() {
   const [filter, setFilter] = useState('all')
   const {
     currentLevel, currentLevelData, nextLevel, xp, xpProgress,
-    earnedBadges, completeLevel, unlockedComponents, coins, completedProjects = [],
+    earnedBadges, completeLevel, unlockedComponentTypes, coins, completedProjects = [],
+    isProjectUnlocked,
   } = useGamification()
+
+  // Sequential prerequisite chain (uses shared ProjectsConfig helper)
+  const isSeqUnlocked = (slug) => getProjectStatus(slug, completedProjects) !== 'locked' 
 
   // completedProjects stores slugs e.g. ['led-blink'] — map to project IDs
   const completedProjectIds = useMemo(
@@ -144,10 +146,16 @@ export default function ProjectsGallery() {
                 Complete each to earn XP, badges, and unlock new components.
               </p>
             </div>
-            <button
-              onClick={() => navigate('/')}
-              style={{ ...S.filterBtn, flexShrink: 0, alignSelf: 'flex-start' }}
-            >← Back to Simulator</button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <button
+                onClick={() => navigate('/adventure')}
+                style={{ ...S.filterBtn, flexShrink: 0, background: 'linear-gradient(135deg,rgba(0,194,255,.12),rgba(124,58,237,.12))', border: '1px solid rgba(0,194,255,.3)', color: '#00c2ff', fontWeight: 700 }}
+              >🗺️ Adventure Map</button>
+              <button
+                onClick={() => navigate('/')}
+                style={{ ...S.filterBtn, flexShrink: 0, alignSelf: 'flex-start' }}
+              >← Back</button>
+            </div>
           </div>
         </div>
 
@@ -222,10 +230,11 @@ export default function ProjectsGallery() {
             <ProjectCard
               key={project.id}
               project={project}
-              isLocked={project.levelRequired > currentLevel}
+              isLocked={project.levelRequired > currentLevel || !isSeqUnlocked(project.slug)}
+              isSeqLocked={!isSeqUnlocked(project.slug) && project.levelRequired <= currentLevel}
               isCompleted={completedProjectIds.has(project.id)}
               missingComponents={getMissingComponents(project, unlockedComponents)}
-              canStart={canStartProject(project, unlockedComponents)}
+              canStart={canStartProject(project, unlockedComponents) && isSeqUnlocked(project.slug)}
               onStart={() => navigate(`/gamification-simulator/${project.slug}`)}
               onGuide={() => navigate(`/${project.slug}/guide`)}
               onComplete={() => completeLevel(project.levelRequired)}
@@ -244,7 +253,7 @@ export default function ProjectsGallery() {
   )
 }
 
-function ProjectCard({ project, isLocked, isCompleted, missingComponents = [], canStart = true, onStart, onGuide, onComplete }) {
+function ProjectCard({ project, isLocked, isSeqLocked, isCompleted, missingComponents = [], canStart = true, onStart, onGuide, onComplete }) {
   const navigate = useNavigate()
   const diff = DIFFICULTY_CONFIG[project.difficulty]
   const [hovered, setHovered] = useState(false)
@@ -307,9 +316,10 @@ function ProjectCard({ project, isLocked, isCompleted, missingComponents = [], c
     >
       <div style={{ ...cardS.cardAccent, background: project.color }} />
 
-      {isLocked && <div style={cardS.lockBadge}>🔒 Level {project.levelRequired}</div>}
+      {isLocked && !isSeqLocked && <div style={cardS.lockBadge}>🔒 Level {project.levelRequired}</div>}
+      {isSeqLocked && <div style={{ ...cardS.lockBadge, color: '#a855f7', borderColor: '#a855f740', background: 'rgba(168,85,247,.12)' }}>🔗 Complete previous project</div>}
       {isCompleted && !isLocked && <div style={cardS.doneBadge}>✓ Done</div>}
-      {!isLocked && !canStart && !isCompleted && (
+      {!isLocked && !isSeqLocked && !canStart && !isCompleted && (
         <div style={{ ...cardS.lockBadge, color: '#f59e0b', borderColor: '#f59e0b40', background: 'rgba(245,158,11,.12)' }}>
           🔧 Components needed
         </div>

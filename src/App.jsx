@@ -19,10 +19,11 @@ import AdminLandingPage from './pages/admin/AdminLandingPage.jsx'
 import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
 import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx'
 import ProjectsGallery from './pages/ProjectsGallery.jsx'
-import ComponentsPage from './pages/ComponentsPage.jsx'  // ⚠️ verify this exists
+import ComponentsPage from './pages/ComponentsPage.jsx'
 import TheoryPage from './pages/TheoryPage.jsx'
 import QuizPage from './pages/QuizPage.jsx'
 import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
+import AdventureMapPage from './pages/AdventureMapPage.jsx'
 export default function App() {
   return (
     <BrowserRouter>
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/components/:componentId/theory" element={<TheoryPage />} />
             <Route path="/components/:componentId/quiz" element={<QuizPage />} />
+            <Route path="/adventure" element={<AdventureMapPage />} />
             <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
                         <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} />
             {/* Guest accessible simulator */}

@@ -52,8 +52,12 @@ export default function LandingPage() {
           classroom tools, and real hardware emulation. No hardware needed.
         </p>
         <div className="hero-actions">
+          <button className="btn btn-primary btn-lg" onClick={() => navigate('/adventure')}
+            style={{ background: 'linear-gradient(135deg,#22c55e,#00c2ff)', border: 'none', boxShadow: '0 4px 24px rgba(34,197,94,.35)' }}>
+            🗺️ Start Adventure Map
+          </button>
           <button className="btn btn-primary btn-lg" onClick={() => navigate('/simulator')}>
-            ▶ Try Simulator — No Login Required
+            ▶ Try Simulator
           </button>
           <button className="btn btn-outline btn-lg" onClick={() => navigate('/signup')}>
             Join as Student / Teacher

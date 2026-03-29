@@ -1,7 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { useGamification } from '../../context/GamificationContext';
-import { LEVELS, RARITY_CONFIG, getComponentUnlockLevel } from './GamificationConfig';
+import { LEVELS, RARITY_CONFIG } from './GamificationConfig.jsx';
 
 export function GamificationPanel() {
   const [open, setOpen] = useState(false);
@@ -321,21 +321,9 @@ function LevelsTab({ currentLevel, completedLevels, earnedBadges, completeLevel 
                   </div>
                 ))}
 
-                {/* Unlocks row */}
-                <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)', marginRight: 4 }}>Unlocks:</span>
-                  {lvl.unlockedComponents.includes('*')
-                    ? <span style={{ fontSize: 10, color: lvl.color, fontWeight: 700 }}>All Components 🎉</span>
-                    : lvl.unlockedComponents.map(type => (
-                      <span key={type} style={{
-                        fontSize: 10, padding: '2px 6px', borderRadius: 4,
-                        background: `${lvl.color}18`, border: `1px solid ${lvl.color}44`,
-                        color: lvl.color, fontFamily: 'monospace',
-                      }}>
-                        {type.replace('wokwi-', '')}
-                      </span>
-                    ))
-                  }
+                {/* Components unlocked by completing projects in this level */}
+                <div style={{ marginTop: 10, fontSize: 10, color: 'rgba(255,255,255,0.35)', lineHeight: 1.5 }}>
+                  🎁 Complete projects to earn new components!
                 </div>
 
                 {/* Complete button — dev/demo, replace with assessment trigger in production */}
@@ -543,11 +531,10 @@ function Toast({ notification: n, onDismiss }) {
 
 
 export function ComponentLockOverlay({ type, children }) {
-  const { isUnlocked, currentLevel } = useGamification();
+  const { isUnlocked } = useGamification();
 
   if (isUnlocked(type)) return children;
 
-  const unlockAt = getComponentUnlockLevel(type);
   return (
     <div style={{ position: 'relative', pointerEvents: 'none', userSelect: 'none' }}>
       <div style={{ opacity: 0.25, filter: 'grayscale(1)' }}>{children}</div>
@@ -558,11 +545,9 @@ export function ComponentLockOverlay({ type, children }) {
         pointerEvents: 'auto', cursor: 'not-allowed',
       }}>
         <span style={{ fontSize: 14 }}>🔒</span>
-        {unlockAt && (
-          <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 1.3 }}>
-            Level {unlockAt}
-          </span>
-        )}
+        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.5)', textAlign: 'center', lineHeight: 1.3 }}>
+          Complete a project!
+        </span>
       </div>
     </div>
   );
