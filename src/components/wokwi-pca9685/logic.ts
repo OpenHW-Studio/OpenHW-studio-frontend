@@ -88,7 +88,7 @@ export class PCA9685Logic extends BaseComponent {
             else if (this.pwmRegs[base + 3] & 0x10) duty = 0.0;
 
             // Output simulated PWM as a continuous analog voltage between 0-5V to drive components
-            this.setPinVoltage(`PWM${ch}`, 5.0 * duty);
+            this.setPinVoltage(`S${ch}`, 5.0 * duty);
         }
     }
 }
