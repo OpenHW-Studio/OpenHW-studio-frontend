@@ -1,7 +1,8 @@
-import { Trash2 } from 'lucide-react'
+import { Loader2, Trash2 } from 'lucide-react'
 import { formatDateTime, getAvatarLetters } from './test.js'
 import AssignmentCard from './AssignmentCard.jsx'
 import CommentInput from './CommentInput.jsx'
+import ClassroomAttachmentBlock from './ClassroomAttachmentBlock.jsx'
 
 export default function StreamCard({
   item,
@@ -11,7 +12,9 @@ export default function StreamCard({
   showCommentInput = true,
   enableComments = false,
   onDeleteNotice,
-  onAssignmentClick
+  deletingNoticeId,
+  onAssignmentClick,
+  onPreviewFile
 }) {
   const authorName = item.type === 'notice' ? (item.createdBy?.name || 'Teacher') : 'Assignment'
   const authorLetters = item.type === 'notice' ? getAvatarLetters(item.createdBy?.name, avatarInitials) : 'A'
@@ -37,10 +40,15 @@ export default function StreamCard({
             <button
               type="button"
               className="teacher-stream-card__action teacher-stream-card__action--danger"
+              disabled={deletingNoticeId === item.id}
               onClick={() => onDeleteNotice(item.id)}
               aria-label="Delete notice"
             >
-              <Trash2 size={14} />
+              {deletingNoticeId === item.id ? (
+                <Loader2 size={14} className="teacher-spin" />
+              ) : (
+                <Trash2 size={14} />
+              )}
             </button>
           </div>
         )}
@@ -53,10 +61,20 @@ export default function StreamCard({
             title={item.title}
             dueDate={item.dueDate}
             createdAt={item.createdAt}
+            attachments={item.raw?.attachments || item.raw?.files || []}
+            onPreviewFile={onPreviewFile}
             onClick={onAssignmentClick ? () => onAssignmentClick(item.id) : undefined}
           />
         ) : (
-          <p>{item.body}</p>
+          <div className="teacher-notice-panel">
+            <div className="teacher-notice-panel__copy">
+              <h5 className="teacher-notice-panel__title">
+                {item.title || 'Notice'}
+              </h5>
+              <p className="teacher-notice-panel__body">{item.body}</p>
+            </div>
+            <ClassroomAttachmentBlock source={item.raw} onPreviewFile={onPreviewFile} />
+          </div>
         )}
       </div>
 

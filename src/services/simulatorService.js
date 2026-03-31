@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5001/api';
+const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5000/api';
 
 /**
  * Sends Arduino C++ code to the backend compiler.

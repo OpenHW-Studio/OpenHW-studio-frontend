@@ -9,7 +9,9 @@ import TeacherClassMainContent from "../../components/teacher/class-detail/Teach
 import TeacherClassSidebar from "../../components/teacher/class-detail/TeacherClassSidebar.jsx";
 import TeacherComposerModal from "../../components/teacher/class-detail/TeacherComposerModal.jsx";
 import TeacherEditClassModal from "../../components/teacher/class-detail/TeacherEditClassModal.jsx";
+import ClassroomFilePreviewModal from "../../components/common/ClassroomFilePreviewModal.jsx";
 import { sidebarLinks } from "../../components/teacher/class-detail/helpers.js";
+import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
   createClassAssignment,
@@ -47,14 +49,16 @@ export default function TeacherClassDetailPage() {
     dueDate: "",
   });
 
-  const [noticeFiles, setNoticeFiles] = useState("");
-  const [assignmentLinks, setAssignmentLinks] = useState([]);
-  const [assignmentLinkInput, setAssignmentLinkInput] = useState("");
+  const [noticeFiles, setNoticeFiles] = useState([]);
+  const [assignmentFiles, setAssignmentFiles] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [postingNotice, setPostingNotice] = useState(false);
   const [postingAssignment, setPostingAssignment] = useState(false);
   const [deletingClass, setDeletingClass] = useState(false);
+  const [deletingNoticeId, setDeletingNoticeId] = useState(null);
+  const [deletingAssignmentId, setDeletingAssignmentId] = useState(null);
+  const [removingStudentId, setRemovingStudentId] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
@@ -81,6 +85,7 @@ export default function TeacherClassDetailPage() {
   const [assignmentMetrics, setAssignmentMetrics] = useState({});
   const [showCodeMenu, setShowCodeMenu] = useState(false);
   const [peopleSearch, setPeopleSearch] = useState("");
+  const [previewFile, setPreviewFile] = useState(null);
 
   const classMenuRef = useRef(null);
   const codeMenuRef = useRef(null);
@@ -283,19 +288,13 @@ export default function TeacherClassDetailPage() {
     setPostingNotice(true);
     setError("");
 
-    const attachments = noticeFiles
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
     try {
       await createClassNotice(classId, {
         title: "Class Update",
         message: noticeInput,
-        attachments,
+        attachments: [],
       });
       setNoticeInput("");
-      setNoticeFiles("");
       setNotices(await getClassroomNotices(classId));
       setShowComposer(false);
     } catch (postError) {
@@ -312,6 +311,24 @@ export default function TeacherClassDetailPage() {
     }));
   };
 
+  const handleNoticeFilesChange = async (event) => {
+    try {
+      const uploadedFiles = await uploadClassroomFiles(event.target.files, {
+        classId,
+        category: "notices",
+        maxFiles: 6,
+        allowedTypes: ["application/pdf", "image"],
+      });
+
+      setNoticeFiles((current) => [...current, ...uploadedFiles]);
+      setError("");
+    } catch (fileError) {
+      setError(fileError.message || "Failed to upload notice files");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const handleCreateNoticeFromComposer = async (event) => {
     event.preventDefault();
 
@@ -320,19 +337,14 @@ export default function TeacherClassDetailPage() {
     setPostingNotice(true);
     setError("");
 
-    const attachments = noticeFiles
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
     try {
       await createClassNotice(classId, {
         title: noticeForm.title || "Class Update",
         message: noticeForm.message,
-        attachments,
+        attachments: noticeFiles,
       });
       setNoticeForm({ title: "", message: "" });
-      setNoticeFiles("");
+      setNoticeFiles([]);
       setNotices(await getClassroomNotices(classId));
       setShowComposer(false);
     } catch (postError) {
@@ -349,6 +361,24 @@ export default function TeacherClassDetailPage() {
     }));
   };
 
+  const handleAssignmentFilesChange = async (event) => {
+    try {
+      const uploadedFiles = await uploadClassroomFiles(event.target.files, {
+        classId,
+        category: "assignments",
+        maxFiles: 8,
+        allowedTypes: ["application/pdf", "image"],
+      });
+
+      setAssignmentFiles((current) => [...current, ...uploadedFiles]);
+      setError("");
+    } catch (fileError) {
+      setError(fileError.message || "Failed to upload assignment files");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   const handleCreateAssignment = async (event) => {
     event.preventDefault();
 
@@ -357,23 +387,16 @@ export default function TeacherClassDetailPage() {
     setPostingAssignment(true);
     setError("");
 
-    const pendingLink = assignmentLinkInput.trim();
-    const attachments = [
-      ...assignmentLinks.map((link) => link.trim()).filter(Boolean),
-      ...(pendingLink ? [pendingLink] : []),
-    ];
-
     try {
       await createClassAssignment(classId, {
         title: assignmentForm.title,
         description: assignmentForm.description,
         dueDate: assignmentForm.dueDate || undefined,
-        attachments,
+        attachments: assignmentFiles,
       });
 
       setAssignmentForm({ title: "", description: "", dueDate: "" });
-      setAssignmentLinks([]);
-      setAssignmentLinkInput("");
+      setAssignmentFiles([]);
       setAssignments(await getClassAssignments(classId));
       setShowComposer(false);
       setActiveTab("classwork");
@@ -385,15 +408,21 @@ export default function TeacherClassDetailPage() {
   };
 
   const handleDeleteNotice = async (noticeId) => {
+    setDeletingNoticeId(noticeId);
+
     try {
       await deleteClassNotice(classId, noticeId);
       setNotices(await getClassroomNotices(classId));
     } catch (deleteError) {
       setError(deleteError.message || "Failed to delete notice");
+    } finally {
+      setDeletingNoticeId(null);
     }
   };
 
   const handleDeleteAssignment = async (assignmentId) => {
+    setDeletingAssignmentId(assignmentId);
+
     try {
       await deleteClassAssignment(classId, assignmentId);
       const refreshedAssignments = await getClassAssignments(classId);
@@ -405,19 +434,17 @@ export default function TeacherClassDetailPage() {
       }
     } catch (deleteError) {
       setError(deleteError.message || "Failed to delete assignment");
+    } finally {
+      setDeletingAssignmentId(null);
     }
   };
 
-  const handleAddAssignmentLink = () => {
-    const normalizedLink = assignmentLinkInput.trim();
-    if (!normalizedLink) return;
-
-    setAssignmentLinks((current) => [...current, normalizedLink]);
-    setAssignmentLinkInput("");
+  const handleRemoveAssignmentFile = (index) => {
+    setAssignmentFiles((current) => current.filter((_, idx) => idx !== index));
   };
 
-  const handleRemoveAssignmentLink = (index) => {
-    setAssignmentLinks((current) => current.filter((_, idx) => idx !== index));
+  const handleRemoveNoticeFile = (index) => {
+    setNoticeFiles((current) => current.filter((_, idx) => idx !== index));
   };
 
   const handleDeleteClass = async () => {
@@ -454,6 +481,29 @@ export default function TeacherClassDetailPage() {
       ...current,
       [event.target.name]: event.target.value,
     }));
+  };
+
+  const handleEditImageUpload = async (event) => {
+    try {
+      const [image] = await uploadClassroomFiles(event.target.files, {
+        classId,
+        category: "classes",
+        maxFiles: 1,
+        allowedTypes: ["image"],
+      });
+
+      if (image) {
+        setEditForm((current) => ({
+          ...current,
+          image,
+        }));
+        setEditError("");
+      }
+    } catch (uploadError) {
+      setEditError(uploadError.message || "Failed to upload class image");
+    } finally {
+      event.target.value = "";
+    }
   };
 
   const handleUpdateClassroom = async (event) => {
@@ -506,8 +556,7 @@ export default function TeacherClassDetailPage() {
   };
 
   const handleRemoveStudent = async (studentId) => {
-    const shouldRemove = window.confirm("Remove this student from the class?");
-    if (!shouldRemove) return;
+    setRemovingStudentId(studentId);
 
     try {
       const updatedStudents = await removeClassroomStudent(classId, studentId);
@@ -515,6 +564,8 @@ export default function TeacherClassDetailPage() {
       setInfo("Student removed from class.");
     } catch (removeError) {
       setError(removeError.message || "Failed to remove student");
+    } finally {
+      setRemovingStudentId(null);
     }
   };
 
@@ -581,7 +632,12 @@ export default function TeacherClassDetailPage() {
 
   return (
     <div className="teacher-dashboard-page">
-      <ClassroomSidebar links={navLinks} user={user} onLogout={handleLogout} />
+      <ClassroomSidebar
+        links={navLinks}
+        user={user}
+        onLogout={handleLogout}
+        onProfileClick={() => navigate('/teacher/profile')}
+      />
 
       <main className="teacher-dashboard-main teacher-dashboard-main--with-fixed-sidebar">
         <section className="teacher-class-page teacher-class-page--shell">
@@ -614,20 +670,24 @@ export default function TeacherClassDetailPage() {
               teacherName={user?.name || "Teacher"}
               classId={classId}
               onDeleteNotice={handleDeleteNotice}
+              deletingNoticeId={deletingNoticeId}
               onAssignmentClick={(id) => {
                 setActiveTab("classwork");
                 handleSelectAssignment(id);
               }}
+              onPreviewFile={setPreviewFile}
               assignments={assignments}
               assignmentMetrics={assignmentMetrics}
               studentsCount={students.length}
               activeAssignmentId={activeAssignmentId}
               onSelectAssignment={handleSelectAssignment}
               onDeleteAssignment={handleDeleteAssignment}
+              deletingAssignmentId={deletingAssignmentId}
               submissionsState={submissionsState}
               classroom={classroom}
               user={user}
               students={students}
+              removingStudentId={removingStudentId}
               peopleSearch={peopleSearch}
               onPeopleSearchChange={(event) =>
                 setPeopleSearch(event.target.value)
@@ -682,19 +742,16 @@ export default function TeacherClassDetailPage() {
           onCreateAssignment={handleCreateAssignment}
           assignmentForm={assignmentForm}
           onAssignmentInputChange={handleAssignmentInput}
-          assignmentLinkInput={assignmentLinkInput}
-          onAssignmentLinkInputChange={(event) =>
-            setAssignmentLinkInput(event.target.value)
-          }
-          onAddAssignmentLink={handleAddAssignmentLink}
-          assignmentLinks={assignmentLinks}
-          onRemoveAssignmentLink={handleRemoveAssignmentLink}
+          assignmentFiles={assignmentFiles}
+          onAssignmentFilesChange={handleAssignmentFilesChange}
+          onRemoveAssignmentFile={handleRemoveAssignmentFile}
           postingAssignment={postingAssignment}
           onCreateNotice={handleCreateNoticeFromComposer}
           noticeForm={noticeForm}
           onNoticeInputChange={handleNoticeComposerInput}
           noticeFiles={noticeFiles}
-          onNoticeFilesChange={(event) => setNoticeFiles(event.target.value)}
+          onNoticeFilesChange={handleNoticeFilesChange}
+          onRemoveNoticeFile={handleRemoveNoticeFile}
           postingNotice={postingNotice}
         />
       ) : null}
@@ -703,10 +760,21 @@ export default function TeacherClassDetailPage() {
         <TeacherEditClassModal
           editForm={editForm}
           onEditInputChange={handleEditInput}
+          onImageUpload={handleEditImageUpload}
+          onRemoveImage={() =>
+            setEditForm((current) => ({ ...current, image: "" }))
+          }
           onClose={() => setIsEditModalOpen(false)}
           onSubmit={handleUpdateClassroom}
           editError={editError}
           updatingClass={updatingClass}
+        />
+      ) : null}
+
+      {previewFile ? (
+        <ClassroomFilePreviewModal
+          file={previewFile}
+          onClose={() => setPreviewFile(null)}
         />
       ) : null}
     </div>
