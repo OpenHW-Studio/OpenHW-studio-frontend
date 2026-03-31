@@ -1,22 +1,20 @@
 import {
+  CalendarDays,
   ChevronRight,
   ClipboardList,
   FileQuestion,
-  MoreVertical,
+  Loader2,
   Search,
   Trash2,
 } from "lucide-react";
 import StreamCard from "../../common/StreamCard.jsx";
+import ClassroomAttachmentBlock from "../../common/ClassroomAttachmentBlock.jsx";
 import {
   assignmentStatus,
   formatDateTime,
   getAvatarLetters,
 } from "../../common/test.js";
-import {
-  getAttachmentLabel,
-  isImageAttachment,
-  pickAttachments,
-} from "./helpers.js";
+import { pickAttachments } from "./helpers.js";
 
 function TeacherStreamTab({
   noticeInput,
@@ -28,7 +26,9 @@ function TeacherStreamTab({
   teacherName,
   classId,
   onDeleteNotice,
+  deletingNoticeId,
   onAssignmentClick,
+  onPreviewFile,
 }) {
   return (
     <section className="teacher-list-block teacher-list-block--stream">
@@ -66,7 +66,9 @@ function TeacherStreamTab({
               showCommentInput={true}
               enableComments={true}
               onDeleteNotice={onDeleteNotice}
+              deletingNoticeId={deletingNoticeId}
               onAssignmentClick={onAssignmentClick}
+              onPreviewFile={onPreviewFile}
             />
           ))
         )}
@@ -82,26 +84,31 @@ function TeacherClassworkTab({
   activeAssignmentId,
   onSelectAssignment,
   onDeleteAssignment,
+  deletingAssignmentId,
   submissionsState,
+  onPreviewFile,
 }) {
   return (
     <section className="teacher-list-block teacher-list-block--classwork">
-      <div className="teacher-classwork-module">
-        <header className="teacher-classwork-module__header">
-          <div className="teacher-classwork-module__title">
-            <h3>Classwork</h3>
-            <small>{assignments.length} items</small>
+      <div className="teacher-classwork-shell">
+        <header className="teacher-classwork-shell__header">
+          <div className="teacher-classwork-shell__title">
+            <p>Classwork</p>
           </div>
-          <button
-            type="button"
-            className="teacher-classwork-module__menu"
-            aria-label="Classwork menu"
-          >
-            <MoreVertical size={16} />
-          </button>
+
+          <div className="teacher-classwork-shell__stats">
+            <div className="teacher-classwork-shell__stat">
+              <CalendarDays size={16} />
+              <span>{assignments.length} items</span>
+            </div>
+            <div className="teacher-classwork-shell__stat">
+              <ClipboardList size={16} />
+              <span>{studentsCount} assigned</span>
+            </div>
+          </div>
         </header>
 
-        <div className="teacher-classwork-list teacher-assignment-list--clickable">
+        <div className="teacher-classwork-shell__list">
           {assignments.length === 0 ? (
             <p className="teacher-inline-state">No assignments yet.</p>
           ) : (
@@ -112,17 +119,18 @@ function TeacherClassworkTab({
               };
               const status = assignmentStatus(assignment);
               const attachments = pickAttachments(assignment);
-              const imageAttachments = attachments
-                .filter((url) => isImageAttachment(url))
-                .slice(0, 2);
 
               return (
                 <article
                   key={assignment._id}
-                  className={`teacher-classwork-item${activeAssignmentId === assignment._id ? " is-active" : ""}`}
+                  className={`teacher-classwork-card ${
+                    activeAssignmentId === assignment._id
+                      ? "is-active"
+                      : ""
+                  }`}
                 >
                   <div
-                    className="teacher-classwork-item__row"
+                    className="teacher-classwork-card__row"
                     role="button"
                     tabIndex={0}
                     onClick={() => onSelectAssignment(assignment._id)}
@@ -134,90 +142,104 @@ function TeacherClassworkTab({
                     }}
                   >
                     <div
-                      className="teacher-classwork-item__icon"
+                      className={`teacher-classwork-card__icon ${
+                        assignment.dueDate
+                          ? "teacher-classwork-card__icon--due"
+                          : ""
+                      }`}
                       aria-hidden="true"
                     >
                       {assignment.dueDate ? (
-                        <ClipboardList size={16} />
+                        <ClipboardList size={22} />
                       ) : (
-                        <FileQuestion size={16} />
+                        <FileQuestion size={22} />
                       )}
                     </div>
 
-                    <div className="teacher-classwork-item__copy">
-                      <div className="teacher-classwork-item__top">
-                        <strong>{assignment.title}</strong>
+                    <div className="teacher-classwork-card__copy">
+                      <div className="teacher-classwork-card__title-row">
+                        <strong className="teacher-classwork-card__title">
+                          {assignment.title}
+                        </strong>
                         <span
-                          className={`teacher-classwork-item__badge teacher-classwork-item__badge--${status.key}`}
+                          className={`teacher-classwork-card__badge teacher-classwork-card__badge--${
+                            status.key === "open"
+                              ? "open"
+                              : status.key === "closed"
+                                ? "closed"
+                                : "neutral"
+                          }`}
                         >
                           {status.label}
                         </span>
                       </div>
-                      <small>
+
+                      <p className="teacher-classwork-card__meta">
                         {assignment.dueDate
                           ? `Due ${formatDateTime(assignment.dueDate)}`
                           : `Posted ${formatDateTime(assignment.createdAt)}`}
-                      </small>
+                      </p>
+
                       {attachments.length > 0 ? (
-                        <div className="teacher-classwork-item__attachments">
-                          {imageAttachments.map((url, idx) => (
-                            <img
-                              key={`${assignment._id}-img-${idx}`}
-                              src={url}
-                              alt="Attachment preview"
-                              className="teacher-classwork-item__attachment-thumb"
-                            />
-                          ))}
-                          <div
-                            className="teacher-classwork-item__links"
-                            role="list"
-                            aria-label="Assignment links"
-                          >
-                            {attachments.map((url, idx) => (
-                              <a
-                                key={`${assignment._id}-link-${idx}`}
-                                href={url}
-                                target="_blank"
-                                rel="noreferrer"
-                                role="listitem"
-                                className="teacher-classwork-item__link"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                {getAttachmentLabel(url, idx)}
-                              </a>
-                            ))}
-                          </div>
+                        <div
+                          className="teacher-classwork-card__files"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <ClassroomAttachmentBlock
+                            source={assignment}
+                            onPreviewFile={onPreviewFile}
+                          />
                         </div>
                       ) : null}
                     </div>
 
-                    <div className="teacher-classwork-item__meta">
-                      <div className="teacher-classwork-item__meta-block">
-                        <strong>{stats.submittedCount}</strong>
-                        <small>handed in</small>
+                    <div className="teacher-classwork-card__metrics">
+                      <div className="teacher-classwork-card__metric">
+                        <strong>
+                          {stats.submittedCount}
+                        </strong>
+                        <small>
+                          Handed In
+                        </small>
+                      </div>
+                      <div className="teacher-classwork-card__metric">
+                        <strong>
+                          {stats.classStudentCount}
+                        </strong>
+                        <small>
+                          Assigned
+                        </small>
                       </div>
                     </div>
 
-                    <div className="teacher-classwork-item__actions">
+                    <div className="teacher-classwork-card__actions">
                       <button
                         type="button"
+                        className="teacher-classwork-card__delete"
+                        disabled={deletingAssignmentId === assignment._id}
                         onClick={(event) => {
                           event.stopPropagation();
                           onDeleteAssignment(assignment._id);
                         }}
                         aria-label="Delete assignment"
                       >
-                        <Trash2 size={14} />
+                        {deletingAssignmentId === assignment._id ? (
+                          <Loader2 size={14} className="teacher-spin" />
+                        ) : (
+                          <Trash2 size={14} />
+                        )}
                       </button>
                     </div>
                   </div>
 
                   {activeAssignmentId === assignment._id ? (
-                    <div className="teacher-classwork-item__submissions">
-                      <header className="teacher-assignment-submissions__header">
-                        <h4>Student solutions</h4>
+                    <div className="teacher-classwork-card__submissions">
+                      <header className="teacher-classwork-card__submissions-header">
+                        <h4>
+                          Student solutions
+                        </h4>
                         {submissionsState.data?.stats ? (
-                          <small>
+                          <small className="teacher-classwork-card__submissions-badge">
                             {submissionsState.data.stats.submittedCount}/
                             {submissionsState.data.stats.classStudentCount}{" "}
                             submitted
@@ -273,15 +295,32 @@ function TeacherClassworkTab({
                                       </small>
                                     </div>
                                   </div>
-                                  <div className="teacher-submission-item__meta">
-                                    <small>
-                                      Updated{" "}
-                                      {formatDateTime(submission.updatedAt)}
-                                    </small>
-                                    <small>
-                                      Board:{" "}
-                                      {submission.projectId?.board || "N/A"}
-                                    </small>
+
+                                  <div className="teacher-submission-item__body">
+                                    <div className="teacher-submission-item__meta">
+                                      <small>
+                                        Updated{" "}
+                                        {formatDateTime(submission.updatedAt)}
+                                      </small>
+                                      <small>
+                                        {submission.attachments?.length ||
+                                        submission.files?.length ||
+                                        0}{" "}
+                                        files
+                                      </small>
+                                    </div>
+
+                                    {submission.notes ? (
+                                      <p className="teacher-submission-item__note">
+                                        {submission.notes}
+                                      </p>
+                                    ) : null}
+
+                                    <ClassroomAttachmentBlock
+                                      source={submission}
+                                      wrapperClassName="classroom-files--submission"
+                                      onPreviewFile={onPreviewFile}
+                                    />
                                   </div>
                                 </article>
                               ),
@@ -305,6 +344,7 @@ function TeacherPeopleTab({
   classroom,
   user,
   students,
+  removingStudentId,
   peopleSearch,
   onPeopleSearchChange,
   onRemoveStudent,
@@ -397,11 +437,16 @@ function TeacherPeopleTab({
                   <button
                     type="button"
                     className="teacher-people-row__remove"
+                    disabled={removingStudentId === student._id}
                     onClick={() => onRemoveStudent(student._id)}
                     aria-label={`Remove ${student.name}`}
                     title="Remove student"
                   >
-                    <Trash2 size={14} />
+                    {removingStudentId === student._id ? (
+                      <Loader2 size={14} className="teacher-spin" />
+                    ) : (
+                      <Trash2 size={14} />
+                    )}
                   </button>
                 </div>
               </article>

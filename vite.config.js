@@ -8,6 +8,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@local-emulator': path.resolve(__dirname, '../openhw-studio-emulator/src'),
+    },
+  },
   optimizeDeps: {
     exclude: ['@openhw/emulator'],
     // We ensure Vite pre-bundles the emulator package from its source components.

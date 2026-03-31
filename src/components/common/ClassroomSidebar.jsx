@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
 import { getAvatarLetters } from './test.js'
 
-export default function ClassroomSidebar({ links, user, onLogout }) {
+export default function ClassroomSidebar({ links, user, onLogout, onProfileClick }) {
   const [theme, setTheme] = useState(
     () => localStorage.getItem('openhw_theme') || document.documentElement.getAttribute('data-theme') || 'light'
   )
@@ -52,7 +52,17 @@ export default function ClassroomSidebar({ links, user, onLogout }) {
           className="teacher-sidebar-profile__trigger"
           onClick={() => setShowProfileMenu((s) => !s)}
         >
-          <span className="teacher-sidebar-profile__avatar">{avatarInitials}</span>
+          <span className="teacher-sidebar-profile__avatar">
+            {user?.image ? (
+              <img
+                src={user.image}
+                alt={user?.name || 'User'}
+                className="teacher-sidebar-profile__avatar-image"
+              />
+            ) : (
+              avatarInitials
+            )}
+          </span>
           <span className="teacher-sidebar-profile__copy">
             <strong>{user?.name || 'User'}</strong>
             <small>Profile</small>
@@ -61,6 +71,17 @@ export default function ClassroomSidebar({ links, user, onLogout }) {
 
         {showProfileMenu && (
           <div className="teacher-sidebar-profile__menu">
+            {onProfileClick ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProfileMenu(false)
+                  onProfileClick()
+                }}
+              >
+                Profile
+              </button>
+            ) : null}
             <button type="button" onClick={onLogout}>Logout</button>
           </div>
         )}

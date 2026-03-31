@@ -175,6 +175,7 @@ const ROLE_TO_TYPE = {
   led: 'wokwi-led',
   'rgb-led': 'wokwi-rgb-led',
   potentiometer: 'wokwi-potentiometer',
+  'analog-joystick': 'wokwi-analog-joystick',
 }
 
 function resolveRoleType(roleOrType) {
@@ -466,7 +467,7 @@ function evaluateAssessment(config, components, wires, code) {
         if (directRegex.test(codeText) || (idRegex && idRegex.test(codeText)) || aliasMatch) passed += 1
         else issues.push('analogRead should use the expected input pin.')
       }
-      
+
       if (expectedBehavior.pattern) {
         checks += 1
         const pattern = expectedBehavior.pattern.toString().toLowerCase()
@@ -513,10 +514,10 @@ function evaluateAssessment(config, components, wires, code) {
 export default function ProjectAssessmentPage() {
   const navigate = useNavigate()
   const { projectName = '' } = useParams()
-  
+
   // Extract gamification functions inside the component body
   const { completedProjects, completeProject, awardXP } = useGamification()
-  
+
   const projectTitle = useMemo(() => titleFromSlug(projectName), [projectName])
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const [evaluationConfig, setEvaluationConfig] = useState(null)
@@ -568,10 +569,10 @@ export default function ProjectAssessmentPage() {
 
   useEffect(() => {
     if (!evaluationConfig || !submission) return
-    
+
     // Evaluate the results
     const result = evaluateAssessment(evaluationConfig, submission.components || [], submission.wires || [], submission.code || '')
-    
+
     const payload = {
       projectName,
       submittedAt: submission.submittedAt,
@@ -579,7 +580,7 @@ export default function ProjectAssessmentPage() {
     }
     setEvaluationResult(payload)
     sessionStorage.setItem(`openhw_assessment_result:${projectName}`, JSON.stringify(payload))
-    
+
     // Process Gamification logic based on the calculated result
     if (result.passed) {
       if (completedProjects && !completedProjects.includes(projectName)) {
@@ -623,7 +624,7 @@ export default function ProjectAssessmentPage() {
             <h1 style={S.title}>{projectTitle} Assessment</h1>
           </div>
           <button onClick={toggleTheme} style={S.themeButton}>
-          {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
           </button>
         </div>
 
