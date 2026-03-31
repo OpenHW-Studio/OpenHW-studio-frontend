@@ -188,3 +188,27 @@ export const updateProfile = async (profileData) => {
 
   return data;
 };
+
+export const forgotPassword = async (email) => {
+  const response = await fetch(`${BASE_URL}/user/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to send reset link');
+  return data;
+};
+
+export const resetPassword = async (token, password) => {
+  const response = await fetch(`${BASE_URL}/user/reset-password/${token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || data.message || 'Failed to reset password');
+  return data;
+};
