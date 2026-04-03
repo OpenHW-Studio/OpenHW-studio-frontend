@@ -2,7 +2,7 @@
     "type": "wokwi-rotary-encoder",
     "label": "Rotary Encoder",
     "group": "Inputs",
-    "w": 40,
+    "w": 66,
     "h": 50,
     "attrs": {},
     "pins": [
