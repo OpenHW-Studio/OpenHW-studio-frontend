@@ -3442,6 +3442,10 @@ export default function SimulatorPage() {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
+    } else if (comp.type === 'wokwi-stepper-motor') {
+      if (remoteState && remoteState.angle !== undefined) {
+        attrs.angle = remoteState.angle.toString();
+      }
     } else if (comp.type === 'wokwi-buzzer') {
       if (remoteState && remoteState.isBuzzing) {
         // Wokwi buzzer visual indicator (if supported) can be driven here

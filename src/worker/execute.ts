@@ -10,6 +10,7 @@ import { NeopixelLogic } from '@openhw/emulator/src/components/wokwi-neopixel-ma
 import { BuzzerLogic } from '@openhw/emulator/src/components/wokwi-buzzer/logic.ts';
 import { MotorLogic } from '@openhw/emulator/src/components/wokwi-motor/logic.ts';
 import { ServoLogic } from '@openhw/emulator/src/components/wokwi-servo/logic.ts';
+import { StepperMotorLogic } from '@openhw/emulator/src/components/wokwi-stepper-motor/logic.ts';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-driver/logic.ts';
 import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
@@ -88,6 +89,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-motor': MotorLogic,
     'wokwi-servo': ServoLogic,
     'wokwi-motor-driver': MotorDriverLogic,
+    'wokwi-stepper-motor': StepperMotorLogic,
     'wokwi-slide-potentiometer': SlidePotLogic,
     'wokwi-potentiometer': PotentiometerLogic,
     'shift_register': ShiftRegisterLogic,
@@ -117,6 +119,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
     'wokwi-motor': [{ id: '1' }, { id: '2' }],
     'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
+    'wokwi-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
     'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
     'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
     'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
@@ -746,6 +749,34 @@ export class AVRRunner {
 
             const instArray = Array.from(this.instances.values());
             instArray.forEach(inst => inst.update(this.cpu!.cycles, this.currentWires, instArray));
+
+            // Propagate voltages through wires from non-Arduino component outputs
+            // (e.g. motor driver OUT1-OUT4 → stepper motor A+/A-/B+/B-)
+            for (const w of this.currentWires) {
+                const [fromComp, fromPin] = w.from.split(':');
+                const [toComp, toPin] = w.to.split(':');
+
+                // Skip wires connecting to the Arduino board itself (already handled by updateOopPin)
+                if (fromComp === this.boardId || toComp === this.boardId) continue;
+
+                const fromInst = this.instances.get(fromComp);
+                const toInst = this.instances.get(toComp);
+                if (!fromInst || !toInst) continue;
+
+                // Propagate from → to
+                const fromV = fromInst.getPinVoltage(fromPin);
+                if (toInst.getPinVoltage(toPin) !== fromV) {
+                    toInst.setPinVoltage(toPin, fromV);
+                    toInst.onPinStateChange(toPin, fromV > 2.5, this.cpu!.cycles);
+                }
+
+                // Propagate to → from (bidirectional for cases like power supply connections)
+                const toV = toInst.getPinVoltage(toPin);
+                if (fromInst.getPinVoltage(fromPin) !== toV) {
+                    fromInst.setPinVoltage(fromPin, toV);
+                    fromInst.onPinStateChange(fromPin, toV > 2.5, this.cpu!.cycles);
+                }
+            }
 
             if (this.adc && this.cpu) {
                 // Poll analog voltages at ~60Hz or however often runLoop breaks, 
