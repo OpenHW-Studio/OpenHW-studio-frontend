@@ -21,26 +21,62 @@ export const Nokia5110UI = ({ state, attrs }: { state: any, attrs: any }) => {
     }, [state?.fbStr]);
 
     return (
-        <svg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
-            <rect width="50" height="50" fill="#c0392b" rx="2" />
+        <svg width="60" height="72" viewBox="0 0 60 72" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="metalFrame" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#ecf0f1" />
+                    <stop offset="50%" stopColor="#bdc3c7" />
+                    <stop offset="100%" stopColor="#95a5a6" />
+                </linearGradient>
+            </defs>
 
-            <rect x="2" y="2" width="46" height="38" fill="#bdc3c7" />
-            <rect x="4" y="4" width="42" height="34" fill="#95a5a6" />
+            {/* PCB Board */}
+            <rect width="60" height="72" fill="#a03020" rx="1.5" />
 
-            {/* LCD Screen bounds: 84 * 0.5 = 42 width, 48 * 0.5 = 24 height */}
-            <rect x="4" y="9" width="42" height="24" fill="#8da988" />
+            {/* Mounting Holes */}
+            <circle cx="4" cy="4" r="2.5" fill="white" opacity="0.9" />
+            <circle cx="56" cy="4" r="2.5" fill="white" opacity="0.9" />
+            <circle cx="4" cy="68" r="2.5" fill="white" opacity="0.9" />
+            <circle cx="56" cy="68" r="2.5" fill="white" opacity="0.9" />
 
-            <g transform="translate(4, 9)">
-                <path d={pathD} fill="#111" />
+            {/* Top Pin Area */}
+            <g transform="translate(14, 2)">
+                <text x="-4" y="5" fill="white" fontSize="4" fontWeight="bold">1</text>
+                {[...Array(8)].map((_, i) => (
+                    <circle key={i} cx={i * 4.5} cy="4" r="2" fill="#444" stroke="#888" strokeWidth="0.5" />
+                ))}
+                <text x="36" y="5" fill="white" fontSize="4" fontWeight="bold">8</text>
+                <text x="42" y="5" fill="white" fontSize="5" fontWeight="bold">↑</text>
             </g>
 
-            {/* Pins */}
-            {['RST', 'CE', 'DC', 'DIN', 'CLK', 'VCC', 'LIGHT', 'GND'].map((l, i) => (
-                <g key={l}>
-                    <circle cx={5 + i * 5} cy="48" r="1.5" fill="#f1c40f" />
-                    <text x={5 + i * 5} y="45" fontSize="1.5" fill="white" textAnchor="middle">{l}</text>
-                </g>
-            ))}
+            {/* Bottom Pin Area (Functional & Decorative) */}
+            <g transform="translate(14, 66)">
+                <text x="-4" y="5" fill="white" fontSize="4" fontWeight="bold">1</text>
+                {['VCC', 'GND', 'SCE', 'RST', 'DC', 'DN', 'SCLK', 'LED'].map((l, i) => (
+                    <g key={l}>
+                        <circle cx={i * 4.5} cy="4" r="2" fill="#444" stroke="#f1c40f" strokeWidth="0.8" />
+                        <text x={i * 4.5} y="1.5" fontSize="1.5" fill="white" textAnchor="middle">{l}</text>
+                    </g>
+                ))}
+                <text x="36" y="5" fill="white" fontSize="4" fontWeight="bold">8</text>
+            </g>
+
+            {/* Metal Frame */}
+            <rect x="3" y="10" width="54" height="54" fill="#bdc3c7" rx="1" />
+            <rect x="5" y="12" width="50" height="50" fill="url(#metalFrame)" rx="0.5" stroke="#7f8c8d" strokeWidth="0.3" />
+
+            {/* Glass/LCD Screen Inner Area */}
+            <rect x="7" y="18" width="46" height="38" fill="#333" rx="4" /> {/* Dark border */}
+            <rect x="8" y="19" width="44" height="36" fill="#8da988" rx="3.5" /> {/* Greenish LCD */}
+
+            {/* Pixel Content */}
+            {/* Original content was 84x48 pixels. Each pixel was 0.5 units. 
+                New LCD area is 44x36. Scale factor: 44/42 ~= 1.04. 
+                We'll use a translation to center the original 42x24 content or scale it.
+            */}
+            <g transform="translate(9, 25) scale(1.04)">
+                <path d={pathD} fill="#111" />
+            </g>
         </svg>
     );
 };

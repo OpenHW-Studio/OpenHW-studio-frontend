@@ -24,13 +24,13 @@ export class Nokia5110Logic extends BaseComponent {
             return;
         }
 
-        const ce = this.getPinVoltage('CE') > 2.5;
+        const ce = this.getPinVoltage('SCE') > 2.5;
         if (ce) return; // Chip not selected
 
-        if (pinId === 'CLK') {
+        if (pinId === 'SCLK') {
             // Rising edge
             if (isHigh && !this.clkLast) {
-                const din = this.getPinVoltage('DIN') > 2.5 ? 1 : 0;
+                const din = this.getPinVoltage('DN') > 2.5 ? 1 : 0;
                 this.shiftReg = ((this.shiftReg << 1) | din) & 0xFF;
                 this.bitCount++;
 

@@ -7,52 +7,52 @@
     "attrs": {},
     "pins": [
         {
-            "id": "RST",
-            "x": 5,
-            "y": 48,
+            "id": "VCC",
+            "x": 14,
+            "y": 70,
+            "type": "power"
+        },
+        {
+            "id": "GND",
+            "x": 18.5,
+            "y": 70,
+            "type": "power"
+        },
+        {
+            "id": "SCE",
+            "x": 23,
+            "y": 70,
             "type": "digital"
         },
         {
-            "id": "CE",
-            "x": 10,
-            "y": 48,
+            "id": "RST",
+            "x": 27.5,
+            "y": 70,
             "type": "digital"
         },
         {
             "id": "DC",
-            "x": 15,
-            "y": 48,
+            "x": 32,
+            "y": 70,
             "type": "digital"
         },
         {
-            "id": "DIN",
-            "x": 20,
-            "y": 48,
+            "id": "DN",
+            "x": 36.5,
+            "y": 70,
             "type": "digital"
         },
         {
-            "id": "CLK",
-            "x": 25,
-            "y": 48,
+            "id": "SCLK",
+            "x": 41,
+            "y": 70,
             "type": "digital"
         },
         {
-            "id": "VCC",
-            "x": 30,
-            "y": 48,
-            "type": "power"
-        },
-        {
-            "id": "LIGHT",
-            "x": 35,
-            "y": 48,
+            "id": "LED",
+            "x": 45.5,
+            "y": 70,
             "type": "digital"
-        },
-        {
-            "id": "GND",
-            "x": 40,
-            "y": 48,
-            "type": "power"
         }
     ]
 }
