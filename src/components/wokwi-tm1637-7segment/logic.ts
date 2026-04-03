@@ -15,6 +15,7 @@ export class WokwiTM1637Logic extends BaseComponent {
 
     constructor(id: string, manifest: any) {
         super(id, manifest);
+        console.log(`[TM1637] Logic instance created for ${id}`);
         this.state = {
             digits: [0, 0, 0, 0],
             colon: false
@@ -27,10 +28,12 @@ export class WokwiTM1637Logic extends BaseComponent {
             if (this.clkHigh) {
                 if (isHigh) {
                     // STOP Condition
+                    console.log('[TM1637] STOP');
                     this.stateMachine = 'IDLE';
                     this.bitCount = 0;
                 } else {
                     // START Condition
+                    console.log('[TM1637] START');
                     this.bitCount = 0;
                     this.currentByte = 0;
                     this.stateMachine = 'COMMAND';
@@ -47,6 +50,7 @@ export class WokwiTM1637Logic extends BaseComponent {
                     this.bitCount++;
                 } else if (this.bitCount === 8) {
                     // 9th bit: ACK
+                    console.log(`[TM1637] Received Byte: 0x${this.currentByte.toString(16).toUpperCase()}`);
                     this.processByte(this.currentByte);
                     this.bitCount = 0;
                     this.currentByte = 0;
