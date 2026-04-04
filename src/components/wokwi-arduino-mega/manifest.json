@@ -1,0 +1,605 @@
+{
+    "type": "wokwi-arduino-mega",
+    "label": "Arduino Mega 2560",
+    "description": "ATmega2560 board",
+    "group": "Boards",
+    "w": 430,
+    "h": 228,
+    "pins": [
+        {
+            "id": "SCL",
+            "description": "SCL",
+            "x": 90,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "SDA",
+            "description": "SDA",
+            "x": 100,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "AREF",
+            "description": "AREF",
+            "x": 109,
+            "y": 9,
+            "type": "power"
+        },
+        {
+            "id": "GND.1",
+            "description": "GND.1",
+            "x": 119,
+            "y": 9,
+            "type": "power"
+        },
+        {
+            "id": "13",
+            "description": "13",
+            "x": 129,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "12",
+            "description": "12",
+            "x": 138,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "11",
+            "description": "11",
+            "x": 148,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "10",
+            "description": "10",
+            "x": 157.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "9",
+            "description": "9",
+            "x": 167.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "8",
+            "description": "8",
+            "x": 177,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "7",
+            "description": "7",
+            "x": 190,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "6",
+            "description": "6",
+            "x": 200,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "5",
+            "description": "5",
+            "x": 209.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "4",
+            "description": "4",
+            "x": 219,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "3",
+            "description": "3",
+            "x": 228.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "2",
+            "description": "2",
+            "x": 238,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "1",
+            "description": "1",
+            "x": 247.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "0",
+            "description": "0",
+            "x": 257.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "14",
+            "description": "14",
+            "x": 270.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "15",
+            "description": "15",
+            "x": 280,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "16",
+            "description": "16",
+            "x": 289.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "17",
+            "description": "17",
+            "x": 299,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "18",
+            "description": "18",
+            "x": 308.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "19",
+            "description": "19",
+            "x": 318.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "20",
+            "description": "20",
+            "x": 328,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "21",
+            "description": "21",
+            "x": 337.5,
+            "y": 9,
+            "type": "digital"
+        },
+        {
+            "id": "5V.1",
+            "description": "5V.1",
+            "x": 361,
+            "y": 8,
+            "type": "power"
+        },
+        {
+            "id": "5V.2",
+            "description": "5V.2",
+            "x": 371,
+            "y": 8,
+            "type": "power"
+        },
+        {
+            "id": "22",
+            "description": "22",
+            "x": 361,
+            "y": 17.5,
+            "type": "digital"
+        },
+        {
+            "id": "23",
+            "description": "23",
+            "x": 371,
+            "y": 17.5,
+            "type": "digital"
+        },
+        {
+            "id": "24",
+            "description": "24",
+            "x": 361,
+            "y": 27.25,
+            "type": "digital"
+        },
+        {
+            "id": "25",
+            "description": "25",
+            "x": 371,
+            "y": 27.25,
+            "type": "digital"
+        },
+        {
+            "id": "26",
+            "description": "26",
+            "x": 361,
+            "y": 36.75,
+            "type": "digital"
+        },
+        {
+            "id": "27",
+            "description": "27",
+            "x": 371,
+            "y": 36.75,
+            "type": "digital"
+        },
+        {
+            "id": "28",
+            "description": "28",
+            "x": 361,
+            "y": 46.25,
+            "type": "digital"
+        },
+        {
+            "id": "29",
+            "description": "29",
+            "x": 371,
+            "y": 46.25,
+            "type": "digital"
+        },
+        {
+            "id": "30",
+            "description": "30",
+            "x": 361,
+            "y": 56,
+            "type": "digital"
+        },
+        {
+            "id": "31",
+            "description": "31",
+            "x": 371,
+            "y": 56,
+            "type": "digital"
+        },
+        {
+            "id": "32",
+            "description": "32",
+            "x": 361,
+            "y": 65.5,
+            "type": "digital"
+        },
+        {
+            "id": "33",
+            "description": "33",
+            "x": 371,
+            "y": 65.5,
+            "type": "digital"
+        },
+        {
+            "id": "34",
+            "description": "34",
+            "x": 361,
+            "y": 75,
+            "type": "digital"
+        },
+        {
+            "id": "35",
+            "description": "35",
+            "x": 371,
+            "y": 75,
+            "type": "digital"
+        },
+        {
+            "id": "36",
+            "description": "36",
+            "x": 361,
+            "y": 84.5,
+            "type": "digital"
+        },
+        {
+            "id": "37",
+            "description": "37",
+            "x": 371,
+            "y": 84.5,
+            "type": "digital"
+        },
+        {
+            "id": "38",
+            "description": "38",
+            "x": 361,
+            "y": 94.25,
+            "type": "digital"
+        },
+        {
+            "id": "39",
+            "description": "39",
+            "x": 371,
+            "y": 94.25,
+            "type": "digital"
+        },
+        {
+            "id": "40",
+            "description": "40",
+            "x": 361,
+            "y": 103.75,
+            "type": "digital"
+        },
+        {
+            "id": "41",
+            "description": "41",
+            "x": 371,
+            "y": 103.75,
+            "type": "digital"
+        },
+        {
+            "id": "42",
+            "description": "42",
+            "x": 361,
+            "y": 113.5,
+            "type": "digital"
+        },
+        {
+            "id": "43",
+            "description": "43",
+            "x": 371,
+            "y": 113.5,
+            "type": "digital"
+        },
+        {
+            "id": "44",
+            "description": "44",
+            "x": 361,
+            "y": 123,
+            "type": "digital"
+        },
+        {
+            "id": "45",
+            "description": "45",
+            "x": 371,
+            "y": 123,
+            "type": "digital"
+        },
+        {
+            "id": "46",
+            "description": "46",
+            "x": 361,
+            "y": 132.75,
+            "type": "digital"
+        },
+        {
+            "id": "47",
+            "description": "47",
+            "x": 371,
+            "y": 132.75,
+            "type": "digital"
+        },
+        {
+            "id": "48",
+            "description": "48",
+            "x": 361,
+            "y": 142.25,
+            "type": "digital"
+        },
+        {
+            "id": "49",
+            "description": "49",
+            "x": 371,
+            "y": 142.25,
+            "type": "digital"
+        },
+        {
+            "id": "50",
+            "description": "50",
+            "x": 361,
+            "y": 152,
+            "type": "digital"
+        },
+        {
+            "id": "51",
+            "description": "51",
+            "x": 371,
+            "y": 152,
+            "type": "digital"
+        },
+        {
+            "id": "52",
+            "description": "52",
+            "x": 361,
+            "y": 161.5,
+            "type": "digital"
+        },
+        {
+            "id": "53",
+            "description": "53",
+            "x": 371,
+            "y": 161.5,
+            "type": "digital"
+        },
+        {
+            "id": "GND.4",
+            "description": "GND.4",
+            "x": 361,
+            "y": 171.25,
+            "type": "power"
+        },
+        {
+            "id": "GND.5",
+            "description": "GND.5",
+            "x": 371,
+            "y": 171.25,
+            "type": "power"
+        },
+        {
+            "id": "IOREF",
+            "description": "IOREF",
+            "x": 136,
+            "y": 184.5,
+            "type": "power"
+        },
+        {
+            "id": "RESET",
+            "description": "RESET",
+            "x": 145.5,
+            "y": 184.5,
+            "type": "power"
+        },
+        {
+            "id": "3.3V",
+            "description": "3.3V",
+            "x": 155,
+            "y": 184.5,
+            "type": "power"
+        },
+        {
+            "id": "5V",
+            "description": "5V",
+            "x": 164.5,
+            "y": 184.5,
+            "type": "power"
+        },
+        {
+            "id": "GND.2",
+            "description": "GND.2",
+            "x": 174.25,
+            "y": 184.5,
+            "type": "power"
+        },
+        {
+            "id": "GND.3",
+            "description": "GND.3",
+            "x": 183.75,
+            "y": 184.5,
+            "type": "power"
+        },
+        {
+            "id": "VIN",
+            "description": "VIN",
+            "x": 193.5,
+            "y": 184.5,
+            "type": "power"
+        },
+        {
+            "id": "A0",
+            "description": "A0",
+            "x": 208.5,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A1",
+            "description": "A1",
+            "x": 218,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A2",
+            "description": "A2",
+            "x": 227.5,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A3",
+            "description": "A3",
+            "x": 237.25,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A4",
+            "description": "A4",
+            "x": 246.75,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A5",
+            "description": "A5",
+            "x": 256.25,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A6",
+            "description": "A6",
+            "x": 266,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A7",
+            "description": "A7",
+            "x": 275.5,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A8",
+            "description": "A8",
+            "x": 290.25,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A9",
+            "description": "A9",
+            "x": 300,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A10",
+            "description": "A10",
+            "x": 309.5,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A11",
+            "description": "A11",
+            "x": 319.25,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A12",
+            "description": "A12",
+            "x": 328.75,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A13",
+            "description": "A13",
+            "x": 338.5,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A14",
+            "description": "A14",
+            "x": 348,
+            "y": 184.5,
+            "type": "analog"
+        },
+        {
+            "id": "A15",
+            "description": "A15",
+            "x": 357.75,
+            "y": 184.5,
+            "type": "analog"
+        }
+    ]
+}
