@@ -56,6 +56,7 @@ export { default as logicDFlipFlop } from './logic-d-flipflop';
 export { default as logicDFlipFlopR } from './logic-d-flipflop-r';
 export { default as logicDFlipFlopDsr } from './logic-d-flipflop-dsr';
 export { default as logicClockGenerator } from './logic-clock-generator';
+export { default as wokwiArduinoMega } from './wokwi-arduino-mega';
 
 
 
