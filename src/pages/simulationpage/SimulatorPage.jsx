@@ -164,6 +164,7 @@ const GROUP_COLORS = {
 
 const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
+  arduino_mega: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
@@ -171,6 +172,7 @@ const BOARD_BAUD_PRESETS = {
 
 const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
+  arduino_mega: '9600',
   esp32: '115200',
   stm32: '115200',
   rp2040: '115200',
@@ -178,6 +180,7 @@ const BOARD_DEFAULT_BAUD = {
 
 const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
+  arduino_mega: 'arduino:avr:mega:cpu=atmega2560',
   esp32: 'esp32:esp32:esp32',
   stm32: 'STMicroelectronics:stm32:GenF1',
   rp2040: 'rp2040:rp2040:rpipico',
@@ -185,6 +188,7 @@ const BOARD_FQBN = {
 
 function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
+  if (s.includes('mega')) return 'arduino_mega';
   if (s.includes('esp32')) return 'esp32';
   if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
@@ -1235,9 +1239,9 @@ export default function SimulatorPage() {
     if (!comp) return null;
     for (const group of CATALOG) {
       const item = group.items.find(i => i.type === comp.type);
-      if (item) return { ...item, group: group.group };
+      if (item) return { ...item, group: group.group, id: comp.id };
     }
-    return { type: comp.type, label: comp.label || comp.type, group: 'Custom' };
+    return { type: comp.type, label: comp.label || comp.type, group: 'Custom', id: comp.id };
   }, [selected, components]);
 
   // ── Serial auto-scroll ────────────────────────────────────────────────────────
@@ -3442,6 +3446,10 @@ export default function SimulatorPage() {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
+    } else if (comp.type === 'wokwi-stepper-motor') {
+      if (remoteState && remoteState.angle !== undefined) {
+        attrs.angle = remoteState.angle.toString();
+      }
     } else if (comp.type === 'wokwi-buzzer') {
       if (remoteState && remoteState.isBuzzing) {
         // Wokwi buzzer visual indicator (if supported) can be driven here
@@ -4407,29 +4415,105 @@ export default function SimulatorPage() {
             })}
           </div>{/* end zoom wrapper */}
 
-          {/* Component Description Panel — shows info of canvas-selected component */}
+          {/* Universal Component Wiring & Docs Panel */}
           {showComponentDesc && selectedComponentInfo && (
             <div
               data-export-ignore="true"
               onClick={e => e.stopPropagation()}
               onMouseDown={e => e.stopPropagation()}
-              style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 220, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden' }}
+              style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 240, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 100px)' }}
             >
               {/* Header */}
-              <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>{selectedComponentInfo.label}</div>
                 <div style={{ display: 'inline-block', fontSize: 10, color: 'var(--text3)', background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`, border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}55`, borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                   {selectedComponentInfo.group}
                 </div>
               </div>
 
-              {/* Description */}
-              <div style={{ padding: '10px 12px 8px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-                {COMPONENT_REGISTRY[selectedComponentInfo.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[selectedComponentInfo.type] || `${selectedComponentInfo.type} component`}
+              {/* Pin Wiring Dropdowns */}
+              <div className="panel-scroll" style={{ padding: '10px 12px', flex: 1, overflowY: 'auto' }}>
+                <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Pin Mapping</div>
+                {(() => {
+                  const compPins = LOCAL_PIN_DEFS[selectedComponentInfo.type] || [];
+                  if (compPins.length === 0) {
+                    return <div style={{ fontSize: 12, color: 'var(--text3)' }}>No pins exposed.</div>;
+                  }
+
+                  // Gather ALL components for destination endpoints (excluding self)
+                  const validTargets = components.filter(c => c.id !== selectedComponentInfo.id);
+                  const targetOptions = [];
+                  validTargets.forEach(b => {
+                    const bPins = LOCAL_PIN_DEFS[b.type] || [];
+                    bPins.forEach(p => targetOptions.push({ id: `${b.id}:${p.id}`, label: `${b.label || b.id} : ${p.id}` }));
+                  });
+
+                  return compPins.map(pin => {
+                    const pinIdStr = `${selectedComponentInfo.id}:${pin.id}`;
+                    // Find if any wire is connected to this pin specifically
+                    const connectedWire = wires.find(w => w.from === pinIdStr || w.to === pinIdStr);
+                    // Determine current dropdown value
+                    let currentVal = '';
+                    if (connectedWire) {
+                      currentVal = connectedWire.from === pinIdStr ? connectedWire.to : connectedWire.from;
+                    }
+
+                    return (
+                      <div key={pin.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, width: 44 }} title={pin.description || pin.id}>
+                          {pin.id}
+                        </span>
+                        <select
+                          value={currentVal}
+                          onChange={(e) => {
+                            const selectedTarget = e.target.value;
+                            setWires(prev => {
+                              // 1. Generate the exact same wire syntax as manual mapping
+                              const toPinLabel = selectedTarget ? (selectedTarget.includes(':') ? selectedTarget.split(':').slice(1).join(':') : '') : '';
+                              const newWire = selectedTarget ? {
+                                id: `w${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                                from: pinIdStr,
+                                to: selectedTarget,
+                                fromLabel: pin.id,
+                                toLabel: toPinLabel,
+                                color: wireColor(toPinLabel),
+                                waypoints: []
+                              } : null;
+
+                              // 2. Filter cleanly using a map proxy to avoid reference staleness
+                              const filtered = prev.filter(w => w.from !== pinIdStr && w.to !== pinIdStr);
+
+                              setWireStart(null); // Cancel manual wire draw
+                              return newWire ? [...filtered, newWire] : filtered;
+                            });
+                          }}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            padding: '3px 6px',
+                            background: 'var(--card)',
+                            border: '1px solid var(--border)',
+                            color: currentVal ? 'var(--accent)' : 'var(--text2)',
+                            borderRadius: 4,
+                            fontSize: 10,
+                            fontFamily: 'JetBrains Mono, monospace',
+                            cursor: 'pointer',
+                            outline: 'none'
+                          }}
+                        >
+                          <option value="">-- Disconnected --</option>
+                          {targetOptions.map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
 
               {/* Doc link */}
-              <div style={{ padding: '0 12px 10px' }}>
+              <div style={{ padding: '8px 12px 12px', flexShrink: 0, borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.1)' }}>
                 <button
                   onClick={() => {
                     const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
@@ -4440,8 +4524,12 @@ export default function SimulatorPage() {
                       window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
                     }
                   }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
-                  📖 Component Documentation
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, transition: 'all 0.15s ease' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'var(--card)'}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
+                  Documentation
                 </button>
               </div>
             </div>
