@@ -3,6 +3,7 @@ import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction
 import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
 import { LEDLogic } from '@openhw/emulator/src/components/wokwi-led/logic.ts';
 import { UnoLogic } from '@openhw/emulator/src/components/wokwi-arduino-uno/logic.ts';
+import { MegaLogic } from '@openhw/emulator/src/components/wokwi-arduino-mega/logic.ts';
 import { ResistorLogic } from '@openhw/emulator/src/components/wokwi-resistor/logic.ts';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/wokwi-pushbutton/logic.ts';
 import { PowerSupplyLogic } from '@openhw/emulator/src/components/wokwi-power-supply/logic.ts';
@@ -101,6 +102,7 @@ export function parse(data: string) {
 export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
+    'wokwi-arduino-mega': MegaLogic,
     'wokwi-resistor': ResistorLogic,
     'wokwi-pushbutton': PushbuttonLogic,
     'wokwi-power-supply': PowerSupplyLogic,
@@ -153,6 +155,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
 
 // Per-type pin lists so every component's pins are registered correctly
 export const COMPONENT_PINS: Record<string, { id: string }[]> = {
+    'wokwi-arduino-mega': Array.from({ length: 54 }, (_, i) => ({ id: String(i) })).concat(Array.from({ length: 16 }, (_, i) => ({ id: `A${i}` }))).concat([{ id: '5V' }, { id: '3V3' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'GND.3' }, { id: 'GND.4' }, { id: 'GND.5' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IOREF' }, { id: 'RESET' }, { id: '5V.1' }, { id: '5V.2' }, { id: '20.1' }, { id: '21.1' }]),
     'wokwi-led': [{ id: 'A' }, { id: 'K' }],
     'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],

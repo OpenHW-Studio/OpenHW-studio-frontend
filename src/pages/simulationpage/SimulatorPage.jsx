@@ -164,6 +164,7 @@ const GROUP_COLORS = {
 
 const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
+  arduino_mega: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
@@ -171,6 +172,7 @@ const BOARD_BAUD_PRESETS = {
 
 const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
+  arduino_mega: '9600',
   esp32: '115200',
   stm32: '115200',
   rp2040: '115200',
@@ -178,6 +180,7 @@ const BOARD_DEFAULT_BAUD = {
 
 const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
+  arduino_mega: 'arduino:avr:mega:cpu=atmega2560',
   esp32: 'esp32:esp32:esp32',
   stm32: 'STMicroelectronics:stm32:GenF1',
   rp2040: 'rp2040:rp2040:rpipico',
@@ -185,6 +188,7 @@ const BOARD_FQBN = {
 
 function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
+  if (s.includes('mega')) return 'arduino_mega';
   if (s.includes('esp32')) return 'esp32';
   if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
