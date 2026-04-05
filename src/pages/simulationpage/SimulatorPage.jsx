@@ -4341,10 +4341,16 @@ export default function SimulatorPage() {
                     const isHovered = hoveredPin === pinStrRef;
                     const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
 
+                    // GND Highlighting helper — supports gnd, vss, 0v, ground labels
+                    const gndRegex = /^(gnd|vss|0v|ground)(_\d+)?$/i;
+                    const isGnd = (pId, pDesc) => gndRegex.test(pId) || gndRegex.test(pDesc);
+                    const isGndStart = wireStart && isGnd(wireStart.pinId, wireStart.pinLabel);
+                    const isSuggested = isGndStart && isGnd(pin.id, pin.description) && !isWireStartPin;
+
                     // Check if a wire is connected to this pin
                     const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                    const pinColor = connectedWire ? connectedWire.color : (isWireStartPin || isHovered ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                    const pinBorder = connectedWire ? connectedWire.color : (isHovered || isWireStartPin ? '#fff' : 'rgba(255,255,255,0.8)');
+                    const pinColor = connectedWire ? connectedWire.color : (isWireStartPin || isHovered || isSuggested ? '#f1c40f' : 'rgba(255,255,255,0.2)');
+                    const pinBorder = connectedWire ? connectedWire.color : (isHovered || isWireStartPin || isSuggested ? '#fff' : 'rgba(255,255,255,0.8)');
 
                     return (
                       <div
@@ -4358,10 +4364,11 @@ export default function SimulatorPage() {
                           border: `1px solid ${pinBorder}`,
                           borderRadius: '0%', /* matching task3.html */
                           cursor: 'crosshair',
-                          zIndex: isHovered ? 30 : 20, /* matching task3.html hover and port z-index */
-                          transform: `translate(-50%, -50%)${isHovered ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                          zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
+                          transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
                           transition: '0.2s', /* matching task3.html transition */
                           pointerEvents: 'all', /* Fix hit detection */
+                          boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
                         }}
                         onMouseEnter={() => setHoveredPin(pinStrRef)}
                         onMouseLeave={() => setHoveredPin(null)}
