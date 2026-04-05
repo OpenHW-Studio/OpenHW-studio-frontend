@@ -1839,7 +1839,8 @@ export default function SimulatorPage() {
 
     if (!wireStart) {
       // Start wire
-      setWireStart({ compId, pinId, pinLabel, ...pos })
+      const comp = components.find(c => c.id === compId);
+      setWireStart({ compId, pinId, pinLabel, compType: comp?.type, ...pos })
     } else {
       // Complete wire — prevent self-loop
       if (wireStart.compId === compId && wireStart.pinId === pinId) {
@@ -1855,12 +1856,12 @@ export default function SimulatorPage() {
         toLabel: pinLabel,
         color: wireColor(wireStart.pinLabel),
         waypoints: wireStart.waypoints || [],
-        isBelow: false // Add z-index configuration
+        isBelow: false
       }
       setWires(prev => [...prev, newWire])
       setWireStart(null)
     }
-  }, [wireStart, getPinPos, saveHistory, isRunning])
+  }, [wireStart, components, getPinPos, saveHistory, isRunning])
 
   const updateWireColor = (id, color) => {
     setWires(prev => prev.map(w => w.id === id ? { ...w, color } : w));
@@ -4341,11 +4342,38 @@ export default function SimulatorPage() {
                     const isHovered = hoveredPin === pinStrRef;
                     const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
 
-                    // GND Highlighting helper — supports gnd, vss, 0v, ground, and com (common) labels
-                    const gndRegex = /^(gnd|vss|0v|ground|com)_?\d*$/i;
-                    const isGnd = (pId, pDesc) => gndRegex.test(pId) || gndRegex.test(pDesc);
-                    const isGndStart = wireStart && isGnd(wireStart.pinId, wireStart.pinLabel);
-                    const isSuggested = isGndStart && isGnd(pin.id, pin.description) && !isWireStartPin;
+                    // Multi-category pin highlighting logic — refined with board-aware mappings
+                    const getPinCategory = (pId, pDesc, compType) => {
+                      const sId = String(pId || '').toLowerCase();
+                      const sDesc = String(pDesc || '').toLowerCase();
+                      const matches = (regex) => regex.test(sId) || regex.test(sDesc);
+
+                      if (matches(/^(gnd|vss|0v|ground|com)_?\d*$/i)) return 'GND';
+
+                      // Power: Exclude VIN as it's unregulated input
+                      if (matches(/^(vcc|5v|3v3|3\.3v|v\+|power|vcc1|vcc2)_?\d*$/i) && !sId.includes('vin')) return 'POWER';
+
+                      // SDA Mapping (Arduino A4 on Uno/Nano)
+                      if (matches(/^sda_?\d*$/i)) return 'I2C_SDA';
+                      if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && sId === 'a4') return 'I2C_SDA';
+
+                      // SCL Mapping (Arduino A5 on Uno/Nano)
+                      if (matches(/^(scl|clk|clock)_?\d*$/i)) return 'I2C_SCL';
+                      if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && sId === 'a5') return 'I2C_SCL';
+
+                      // PWM Mapping (Board-specific hardcoding as labels are often missing in manifests)
+                      if (matches(/^(pwm|~)_?\d*$/i)) return 'PWM';
+                      if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) return 'PWM';
+                      if (compType === 'wokwi-arduino-mega') {
+                        const pinNum = parseInt(sId);
+                        if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) return 'PWM';
+                      }
+                      return null;
+                    };
+
+                    const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+                    const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+                    const isSuggested = startCat && currentCat && startCat === currentCat && !isWireStartPin;
 
                     // Check if a wire is connected to this pin
                     const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
