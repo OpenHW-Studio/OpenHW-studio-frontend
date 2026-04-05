@@ -4348,21 +4348,21 @@ export default function SimulatorPage() {
                       const sDesc = String(pDesc || '').toLowerCase();
                       const matches = (regex) => regex.test(sId) || regex.test(sDesc);
 
-                      if (matches(/^(gnd|vss|0v|ground|com)_?\d*$/i)) return 'GND';
+                      if (matches(/^(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) return 'GND';
 
                       // Power: Exclude VIN as it's unregulated input
-                      if (matches(/^(vcc|5v|3v3|3\.3v|v\+|power|vcc1|vcc2)_?\d*$/i) && !sId.includes('vin')) return 'POWER';
+                      if (matches(/^(vcc|5v|3v3|3\.3v|v\+|power|vcc1|vcc2)([._]?\d+)?$/i) && !sId.includes('vin')) return 'POWER';
 
                       // SDA Mapping (Arduino A4 on Uno/Nano)
-                      if (matches(/^sda_?\d*$/i)) return 'I2C_SDA';
+                      if (matches(/^sda([._]?\d+)?$/i)) return 'I2C_SDA';
                       if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && sId === 'a4') return 'I2C_SDA';
 
                       // SCL Mapping (Arduino A5 on Uno/Nano)
-                      if (matches(/^(scl|clk|clock)_?\d*$/i)) return 'I2C_SCL';
+                      if (matches(/^(scl|clk|clock)([._]?\d+)?$/i)) return 'I2C_SCL';
                       if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && sId === 'a5') return 'I2C_SCL';
 
                       // PWM Mapping (Board-specific hardcoding as labels are often missing in manifests)
-                      if (matches(/^(pwm|~)_?\d*$/i)) return 'PWM';
+                      if (matches(/^(pwm|~)([._]?\d+)?$/i)) return 'PWM';
                       if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) return 'PWM';
                       if (compType === 'wokwi-arduino-mega') {
                         const pinNum = parseInt(sId);
