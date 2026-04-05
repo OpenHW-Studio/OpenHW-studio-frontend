@@ -4458,6 +4458,7 @@ export default function SimulatorPage() {
             })}
           </div>{/* end zoom wrapper */}
 
+
           {/* Universal Component Wiring & Docs Panel */}
           {showComponentDesc && selectedComponentInfo && (
             <div
@@ -4469,8 +4470,27 @@ export default function SimulatorPage() {
               {/* Header */}
               <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>{selectedComponentInfo.label}</div>
-                <div style={{ display: 'inline-block', fontSize: 10, color: 'var(--text3)', background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`, border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}55`, borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {selectedComponentInfo.group}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'inline-block', fontSize: 10, color: 'var(--text3)', background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`, border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}55`, borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {selectedComponentInfo.group}
+                  </div>
+                  <button
+                    onClick={() => {
+                      const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
+                      if (doc) {
+                        const b = new Blob([doc], { type: 'text/html' });
+                        window.open(URL.createObjectURL(b), '_blank');
+                      } else {
+                        window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
+                      }
+                    }}
+                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: 0.8, textDecoration: 'underline' }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    Documentation
+                  </button>
                 </div>
               </div>
 
@@ -4554,59 +4574,40 @@ export default function SimulatorPage() {
                   });
                 })()}
               </div>
-
-              {/* Doc link */}
-              <div style={{ padding: '8px 12px 12px', flexShrink: 0, borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.1)' }}>
-                <button
-                  onClick={() => {
-                    const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
-                    if (doc) {
-                      const b = new Blob([doc], { type: 'text/html' });
-                      window.open(URL.createObjectURL(b), '_blank');
-                    } else {
-                      window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
-                    }
-                  }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, transition: 'all 0.15s ease' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'var(--card)'}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
-                  Documentation
-                </button>
-              </div>
             </div>
           )}
 
           {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
-          {validationToast && (
-            <div
-              className="validation-toast-canvas"
-              role="alert"
-              data-export-ignore="true"
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-            >
-              <div className="validation-toast-canvas__header">
-                <span>{validationToast.title}</span>
-                <button
-                  type="button"
-                  className="validation-toast-canvas__close"
-                  onClick={() => setValidationToast(null)}
-                  aria-label="Close validation notification"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-                  </svg>
-                </button>
+          {
+            validationToast && (
+              <div
+                className="validation-toast-canvas"
+                role="alert"
+                data-export-ignore="true"
+                onClick={e => e.stopPropagation()}
+                onMouseDown={e => e.stopPropagation()}
+              >
+                <div className="validation-toast-canvas__header">
+                  <span>{validationToast.title}</span>
+                  <button
+                    type="button"
+                    className="validation-toast-canvas__close"
+                    onClick={() => setValidationToast(null)}
+                    aria-label="Close validation notification"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+                <ul className="validation-toast-canvas__list">
+                  {validationToast.reasons.map((reason, idx) => (
+                    <li key={idx}>{reason}</li>
+                  ))}
+                </ul>
               </div>
-              <ul className="validation-toast-canvas__list">
-                {validationToast.reasons.map((reason, idx) => (
-                  <li key={idx}>{reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+            )
+          }
 
           <div
             data-export-ignore="true"
@@ -4704,101 +4705,103 @@ export default function SimulatorPage() {
           />
 
           {/* ── Quick-Add Popup (double-click on canvas) ── */}
-          {quickAdd && (() => {
-            const q = quickAddSearch.trim().toLowerCase();
-            const results = [];
-            if (q) {
-              outer: for (const group of LOCAL_CATALOG) {
-                for (const item of group.items) {
-                  if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
-                    results.push(item);
-                    if (results.length >= 4) break outer;
+          {
+            quickAdd && (() => {
+              const q = quickAddSearch.trim().toLowerCase();
+              const results = [];
+              if (q) {
+                outer: for (const group of LOCAL_CATALOG) {
+                  for (const item of group.items) {
+                    if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
+                      results.push(item);
+                      if (results.length >= 4) break outer;
+                    }
                   }
                 }
               }
-            }
-            const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
-            const VW = window.innerWidth, VH = window.innerHeight;
-            const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
-            const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
-            const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
-            return (
-              <div
-                data-quickadd="true"
-                onMouseDown={e => e.stopPropagation()}
-                style={{
-                  position: 'fixed', left, top, zIndex: 9999,
-                  width: menuW,
-                  background: 'var(--bg2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
-                  overflow: 'hidden',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                }}
-              >
-                {/* Search input */}
-                <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
-                  <input
-                    ref={quickAddInputRef}
-                    data-quickadd="true"
-                    value={quickAddSearch}
-                    onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
-                    onKeyDown={e => {
-                      if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
-                      else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
-                      else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
-                      else if (e.key === 'Enter' && results.length > 0) {
-                        e.preventDefault();
-                        addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
-                        setQuickAdd(null);
-                      }
-                    }}
-                    placeholder="Search component..."
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      background: 'var(--bg3)', border: '1px solid var(--border2)',
-                      color: 'var(--text)', padding: '7px 10px',
-                      borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
-                    }}
-                  />
-                </div>
-                {/* Result list */}
-                {results.map((item, i) => (
-                  <div
-                    key={`${item.type}-${i}`}
-                    data-quickadd="true"
-                    onMouseEnter={() => setQuickAddIdx(i)}
-                    onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      background: i === selIdx ? 'var(--accent)' : 'transparent',
-                      color: i === selIdx ? '#fff' : 'var(--text)',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
-                    {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+              const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
+              const VW = window.innerWidth, VH = window.innerHeight;
+              const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
+              const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
+              const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
+              return (
+                <div
+                  data-quickadd="true"
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{
+                    position: 'fixed', left, top, zIndex: 9999,
+                    width: menuW,
+                    background: 'var(--bg2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+                    overflow: 'hidden',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                  }}
+                >
+                  {/* Search input */}
+                  <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <input
+                      ref={quickAddInputRef}
+                      data-quickadd="true"
+                      value={quickAddSearch}
+                      onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
+                      onKeyDown={e => {
+                        if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
+                        else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
+                        else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
+                        else if (e.key === 'Enter' && results.length > 0) {
+                          e.preventDefault();
+                          addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
+                          setQuickAdd(null);
+                        }
+                      }}
+                      placeholder="Search component..."
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        background: 'var(--bg3)', border: '1px solid var(--border2)',
+                        color: 'var(--text)', padding: '7px 10px',
+                        borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
+                      }}
+                    />
                   </div>
-                ))}
-                {/* Empty state */}
-                {q && results.length === 0 && (
-                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
-                )}
-                {!q && (
-                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
-                )}
-              </div>
-            );
-          })()}
-        </main>
+                  {/* Result list */}
+                  {results.map((item, i) => (
+                    <div
+                      key={`${item.type}-${i}`}
+                      data-quickadd="true"
+                      onMouseEnter={() => setQuickAddIdx(i)}
+                      onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        background: i === selIdx ? 'var(--accent)' : 'transparent',
+                        color: i === selIdx ? '#fff' : 'var(--text)',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
+                      {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+                    </div>
+                  ))}
+                  {/* Empty state */}
+                  {q && results.length === 0 && (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
+                  )}
+                  {!q && (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
+                  )}
+                </div>
+              );
+            })()
+          }
+        </main >
 
 
         {/* RIGHT PANEL */}
-        <RightPanel
+        < RightPanel
           isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
           explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
           selected={selected} setSelected={setSelected}
@@ -4815,31 +4818,33 @@ export default function SimulatorPage() {
           plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
           showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
         />
-      </div>
+      </div >
 
       {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
-      {showSaveDialog && (
-        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
-          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-            <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
-            <input
-              autoFocus
-              className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
-              placeholder="Project name..."
-              value={saveDialogName}
-              onChange={e => setSaveDialogName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
-            />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
-              <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+      {
+        showSaveDialog && (
+          <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
+            <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+              <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
+              <input
+                autoFocus
+                className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
+                placeholder="Project name..."
+                value={saveDialogName}
+                onChange={e => setSaveDialogName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
+              />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
+                <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
 
-    </div>
+    </div >
   )
 }
 
