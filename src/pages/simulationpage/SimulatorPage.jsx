@@ -224,6 +224,96 @@ function endpointAliases(endpoint) {
   return Array.from(aliases);
 }
 
+
+/**
+ * Helper to check if two category sets (strings or arrays) have any common elements.
+ */
+function hasCategoryIntersection(cat1, cat2) {
+  if (!cat1 || !cat2) return false;
+  const arr1 = Array.isArray(cat1) ? cat1 : [cat1];
+  const arr2 = Array.isArray(cat2) ? cat2 : [cat2];
+  return arr1.some(c => arr2.includes(c));
+}
+
+/**
+ * Determines the logical category (or categories) of a pin.
+ * Returns an array of strings, or null if no category matches.
+ */
+function getPinCategory(pId, pDesc, compType) {
+  const sId = String(pId || '').toLowerCase();
+  const sDesc = String(pDesc || '').toLowerCase();
+  const matches = (regex) => regex.test(sId) || regex.test(sDesc);
+  const categories = [];
+
+  // 1. GND
+  if (matches(/^([a-z0-9]+[._])?(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) categories.push('GND');
+
+  // 2. POWER
+  if (matches(/^([a-z0-9]+[._])?(vcc|vdd|5v|3v3|3\.3v|v\+|power|vcc[12]|vbat|1\.8v|led|light|vout)([._]?\d+)?$/i)) {
+    if (compType?.includes('arduino') && (sId === 'vin' || sId.includes('vin.'))) {
+      categories.push('VIN');
+    } else {
+      categories.push('POWER');
+    }
+  }
+
+  // 3. I2C
+  if (matches(/^sda([._]?\d+)?$/i)) categories.push('I2C_SDA');
+  if (matches(/^scl([._]?\d+)?$/i)) categories.push('I2C_SCL');
+  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano')) {
+    if (sId === 'a4') categories.push('I2C_SDA');
+    if (sId === 'a5') categories.push('I2C_SCL');
+  }
+
+  // 4. SPI
+  if (matches(/^(mosi|din|dn|sdi)([._]?\d+)?$/i)) categories.push('SPI_MOSI');
+  if (matches(/^(miso|dout|sdo)([._]?\d+)?$/i)) categories.push('SPI_MISO');
+  if (matches(/^(sck|sclk|clk|clock)([._]?\d+)?$/i)) categories.push('SPI_SCK');
+
+  // 5. ANALOG
+  if (matches(/^(a\d+|vrx|vry|an|adc|out)([._]?\d+)?$/i)) {
+    if (sId === 'vrx' || (compType?.includes('arduino') && sId === 'a0')) categories.push('ANALOG_X');
+    if (sId === 'vry' || (compType?.includes('arduino') && sId === 'a1')) categories.push('ANALOG_Y');
+    categories.push('ANALOG');
+  }
+
+  // 6. PWM
+  if (matches(/^(pwm|~)([._]?\d+)?$/i)) categories.push('PWM');
+  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
+  if (compType === 'wokwi-arduino-mega') {
+    const pinNum = parseInt(sId);
+    if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
+  }
+
+  // 7. Motor Driver / EN Special (Enable can be PWM or POWER)
+  if (matches(/^en([._]?\d+(,\d+)?)?$/i)) {
+    if (!categories.includes('PWM')) categories.push('PWM');
+    if (!categories.includes('POWER')) categories.push('POWER');
+  }
+
+  // 8. MOTOR OUTPUT
+  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((compType === 'wokwi-motor' || compType === 'wokwi-stepper-motor') && /^\d+$/.test(sId))) {
+    categories.push('MOTOR');
+  }
+
+  // 9. DIGITAL
+  if (matches(/^(d\d+|io\d+|gpio\d+|sw|joy_sw|dc|rst|reset|cs|ce|sce|ss|rs|en|enable|in\d+|\d+)([._]?\d+)?$/i)) {
+    if (!(compType?.includes('arduino') && sId.startsWith('a'))) {
+      if (!categories.includes('DIGITAL')) categories.push('DIGITAL');
+    }
+  }
+
+  // 10. Breadboard
+  if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
+    const colNum = sId.match(/^\d+/)[0];
+    const rowLetter = sId.slice(-1);
+    const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
+    categories.push(`BB_${colNum}_${rowHalf}`);
+  }
+
+  return categories.length > 0 ? categories : null;
+}
+
 function validateCircuitLocally(components, wires) {
   const errors = [];
   const componentById = new Map((components || []).map((c) => [c.id, c]));
@@ -4342,51 +4432,24 @@ export default function SimulatorPage() {
                     const isHovered = hoveredPin === pinStrRef;
                     const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
 
-                    // Multi-category pin highlighting logic — refined with board-aware mappings
-                    const getPinCategory = (pId, pDesc, compType) => {
-                      const sId = String(pId || '').toLowerCase();
-                      const sDesc = String(pDesc || '').toLowerCase();
-                      const matches = (regex) => regex.test(sId) || regex.test(sDesc);
-
-                      if (matches(/^([a-z]+[._])?(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) return 'GND';
-
-                      // Power: Exclude VIN as it's unregulated input
-                      if (matches(/^([a-z]+[._])?(vcc|5v|3v3|3\.3v|v\+|power|vcc1|vcc2)([._]?\d+)?$/i) && !sId.includes('vin')) return 'POWER';
-
-                      // Breadboard Internal Row Highlighting (a-e or f-j)
-                      if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
-                        const colNum = sId.match(/^\d+/)[0];
-                        const rowLetter = sId.slice(-1);
-                        const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
-                        return `BB_${colNum}_${rowHalf}`; // Unique category per row segment
-                      }
-
-                      // SDA Mapping (Arduino A4 on Uno/Nano)
-                      if (matches(/^sda([._]?\d+)?$/i)) return 'I2C_SDA';
-                      if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && sId === 'a4') return 'I2C_SDA';
-
-                      // SCL Mapping (Arduino A5 on Uno/Nano)
-                      if (matches(/^(scl|clk|clock)([._]?\d+)?$/i)) return 'I2C_SCL';
-                      if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && sId === 'a5') return 'I2C_SCL';
-
-                      // PWM Mapping (Board-specific hardcoding as labels are often missing in manifests)
-                      if (matches(/^(pwm|~)([._]?\d+)?$/i)) return 'PWM';
-                      if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) return 'PWM';
-                      if (compType === 'wokwi-arduino-mega') {
-                        const pinNum = parseInt(sId);
-                        if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) return 'PWM';
-                      }
-                      return null;
-                    };
+                    // Hovered pin's category for passive highlighting
+                    const hoverCompId = hoveredPin?.split(':')[0];
+                    const hoverPinId = hoveredPin?.split(':')[1];
+                    const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+                    const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
 
                     const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
                     const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-                    const isSuggested = startCat && currentCat && startCat === currentCat && !isWireStartPin;
+
+                    const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+                    const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+                    const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
 
                     // Check if a wire is connected to this pin
                     const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                    const pinColor = connectedWire ? connectedWire.color : (isWireStartPin || isHovered || isSuggested ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                    const pinBorder = connectedWire ? connectedWire.color : (isHovered || isWireStartPin || isSuggested ? '#fff' : 'rgba(255,255,255,0.8)');
+                    const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
+                    const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
 
                     return (
                       <div
@@ -4508,11 +4571,25 @@ export default function SimulatorPage() {
                   const targetOptions = [];
                   validTargets.forEach(b => {
                     const bPins = LOCAL_PIN_DEFS[b.type] || [];
-                    bPins.forEach(p => targetOptions.push({ id: `${b.id}:${p.id}`, label: `${b.label || b.id} : ${p.id}` }));
+                    bPins.forEach(p => targetOptions.push({
+                      id: `${b.id}:${p.id}`,
+                      label: `${b.label || b.id} : ${p.id}`,
+                      type: b.type,
+                      description: p.description
+                    }));
                   });
 
                   return compPins.map(pin => {
                     const pinIdStr = `${selectedComponentInfo.id}:${pin.id}`;
+                    const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
+
+                    // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
+                    const filteredOptions = targetOptions.filter(opt => {
+                      if (!currentPinCat) return true; // Show all for unmapped/general pins
+                      const targetPinCat = getPinCategory(opt.id.split(':')[1], opt.description, opt.type);
+                      return hasCategoryIntersection(currentPinCat, targetPinCat);
+                    });
+
                     // Find if any wire is connected to this pin specifically
                     const connectedWire = wires.find(w => w.from === pinIdStr || w.to === pinIdStr);
                     // Determine current dropdown value
@@ -4565,7 +4642,7 @@ export default function SimulatorPage() {
                           }}
                         >
                           <option value="">-- Disconnected --</option>
-                          {targetOptions.map(opt => (
+                          {filteredOptions.map(opt => (
                             <option key={opt.id} value={opt.id}>{opt.label}</option>
                           ))}
                         </select>
