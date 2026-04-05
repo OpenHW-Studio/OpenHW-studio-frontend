@@ -4341,8 +4341,8 @@ export default function SimulatorPage() {
                     const isHovered = hoveredPin === pinStrRef;
                     const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
 
-                    // GND Highlighting helper — supports gnd, vss, 0v, ground labels
-                    const gndRegex = /^(gnd|vss|0v|ground)(_\d+)?$/i;
+                    // GND Highlighting helper — supports gnd, vss, 0v, ground, and com (common) labels
+                    const gndRegex = /^(gnd|vss|0v|ground|com)_?\d*$/i;
                     const isGnd = (pId, pDesc) => gndRegex.test(pId) || gndRegex.test(pDesc);
                     const isGndStart = wireStart && isGnd(wireStart.pinId, wireStart.pinLabel);
                     const isSuggested = isGndStart && isGnd(pin.id, pin.description) && !isWireStartPin;
