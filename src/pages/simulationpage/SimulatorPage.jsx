@@ -4348,10 +4348,18 @@ export default function SimulatorPage() {
                       const sDesc = String(pDesc || '').toLowerCase();
                       const matches = (regex) => regex.test(sId) || regex.test(sDesc);
 
-                      if (matches(/^(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) return 'GND';
+                      if (matches(/^([a-z]+[._])?(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) return 'GND';
 
                       // Power: Exclude VIN as it's unregulated input
-                      if (matches(/^(vcc|5v|3v3|3\.3v|v\+|power|vcc1|vcc2)([._]?\d+)?$/i) && !sId.includes('vin')) return 'POWER';
+                      if (matches(/^([a-z]+[._])?(vcc|5v|3v3|3\.3v|v\+|power|vcc1|vcc2)([._]?\d+)?$/i) && !sId.includes('vin')) return 'POWER';
+
+                      // Breadboard Internal Row Highlighting (a-e or f-j)
+                      if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
+                        const colNum = sId.match(/^\d+/)[0];
+                        const rowLetter = sId.slice(-1);
+                        const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
+                        return `BB_${colNum}_${rowHalf}`; // Unique category per row segment
+                      }
 
                       // SDA Mapping (Arduino A4 on Uno/Nano)
                       if (matches(/^sda([._]?\d+)?$/i)) return 'I2C_SDA';
