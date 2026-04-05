@@ -224,6 +224,96 @@ function endpointAliases(endpoint) {
   return Array.from(aliases);
 }
 
+
+/**
+ * Helper to check if two category sets (strings or arrays) have any common elements.
+ */
+function hasCategoryIntersection(cat1, cat2) {
+  if (!cat1 || !cat2) return false;
+  const arr1 = Array.isArray(cat1) ? cat1 : [cat1];
+  const arr2 = Array.isArray(cat2) ? cat2 : [cat2];
+  return arr1.some(c => arr2.includes(c));
+}
+
+/**
+ * Determines the logical category (or categories) of a pin.
+ * Returns an array of strings, or null if no category matches.
+ */
+function getPinCategory(pId, pDesc, compType) {
+  const sId = String(pId || '').toLowerCase();
+  const sDesc = String(pDesc || '').toLowerCase();
+  const matches = (regex) => regex.test(sId) || regex.test(sDesc);
+  const categories = [];
+
+  // 1. GND
+  if (matches(/^([a-z0-9]+[._])?(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) categories.push('GND');
+
+  // 2. POWER
+  if (matches(/^([a-z0-9]+[._])?(vcc|vdd|5v|3v3|3\.3v|v\+|power|vcc[12]|vbat|1\.8v|led|light|vout)([._]?\d+)?$/i)) {
+    if (compType?.includes('arduino') && (sId === 'vin' || sId.includes('vin.'))) {
+      categories.push('VIN');
+    } else {
+      categories.push('POWER');
+    }
+  }
+
+  // 3. I2C
+  if (matches(/^sda([._]?\d+)?$/i)) categories.push('I2C_SDA');
+  if (matches(/^scl([._]?\d+)?$/i)) categories.push('I2C_SCL');
+  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano')) {
+    if (sId === 'a4') categories.push('I2C_SDA');
+    if (sId === 'a5') categories.push('I2C_SCL');
+  }
+
+  // 4. SPI
+  if (matches(/^(mosi|din|dn|sdi)([._]?\d+)?$/i)) categories.push('SPI_MOSI');
+  if (matches(/^(miso|dout|sdo)([._]?\d+)?$/i)) categories.push('SPI_MISO');
+  if (matches(/^(sck|sclk|clk|clock)([._]?\d+)?$/i)) categories.push('SPI_SCK');
+
+  // 5. ANALOG
+  if (matches(/^(a\d+|vrx|vry|an|adc|out)([._]?\d+)?$/i)) {
+    if (sId === 'vrx' || (compType?.includes('arduino') && sId === 'a0')) categories.push('ANALOG_X');
+    if (sId === 'vry' || (compType?.includes('arduino') && sId === 'a1')) categories.push('ANALOG_Y');
+    categories.push('ANALOG');
+  }
+
+  // 6. PWM
+  if (matches(/^(pwm|~)([._]?\d+)?$/i)) categories.push('PWM');
+  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
+  if (compType === 'wokwi-arduino-mega') {
+    const pinNum = parseInt(sId);
+    if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
+  }
+
+  // 7. Motor Driver / EN Special (Enable can be PWM or POWER)
+  if (matches(/^en([._]?\d+(,\d+)?)?$/i)) {
+    if (!categories.includes('PWM')) categories.push('PWM');
+    if (!categories.includes('POWER')) categories.push('POWER');
+  }
+
+  // 8. MOTOR OUTPUT
+  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((compType === 'wokwi-motor' || compType === 'wokwi-stepper-motor') && /^\d+$/.test(sId))) {
+    categories.push('MOTOR');
+  }
+
+  // 9. DIGITAL
+  if (matches(/^(d\d+|io\d+|gpio\d+|sw|joy_sw|dc|rst|reset|cs|ce|sce|ss|rs|en|enable|in\d+|\d+)([._]?\d+)?$/i)) {
+    if (!(compType?.includes('arduino') && sId.startsWith('a'))) {
+      if (!categories.includes('DIGITAL')) categories.push('DIGITAL');
+    }
+  }
+
+  // 10. Breadboard
+  if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
+    const colNum = sId.match(/^\d+/)[0];
+    const rowLetter = sId.slice(-1);
+    const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
+    categories.push(`BB_${colNum}_${rowHalf}`);
+  }
+
+  return categories.length > 0 ? categories : null;
+}
+
 function validateCircuitLocally(components, wires) {
   const errors = [];
   const componentById = new Map((components || []).map((c) => [c.id, c]));
@@ -1839,7 +1929,8 @@ export default function SimulatorPage() {
 
     if (!wireStart) {
       // Start wire
-      setWireStart({ compId, pinId, pinLabel, ...pos })
+      const comp = components.find(c => c.id === compId);
+      setWireStart({ compId, pinId, pinLabel, compType: comp?.type, ...pos })
     } else {
       // Complete wire — prevent self-loop
       if (wireStart.compId === compId && wireStart.pinId === pinId) {
@@ -1855,12 +1946,12 @@ export default function SimulatorPage() {
         toLabel: pinLabel,
         color: wireColor(wireStart.pinLabel),
         waypoints: wireStart.waypoints || [],
-        isBelow: false // Add z-index configuration
+        isBelow: false
       }
       setWires(prev => [...prev, newWire])
       setWireStart(null)
     }
-  }, [wireStart, getPinPos, saveHistory, isRunning])
+  }, [wireStart, components, getPinPos, saveHistory, isRunning])
 
   const updateWireColor = (id, color) => {
     setWires(prev => prev.map(w => w.id === id ? { ...w, color } : w));
@@ -4341,10 +4432,24 @@ export default function SimulatorPage() {
                     const isHovered = hoveredPin === pinStrRef;
                     const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
 
+                    // Hovered pin's category for passive highlighting
+                    const hoverCompId = hoveredPin?.split(':')[0];
+                    const hoverPinId = hoveredPin?.split(':')[1];
+                    const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+                    const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
+
+                    const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+                    const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+
+                    const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+                    const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+                    const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
+
                     // Check if a wire is connected to this pin
                     const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                    const pinColor = connectedWire ? connectedWire.color : (isWireStartPin || isHovered ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                    const pinBorder = connectedWire ? connectedWire.color : (isHovered || isWireStartPin ? '#fff' : 'rgba(255,255,255,0.8)');
+                    const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
+                    const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
 
                     return (
                       <div
@@ -4358,10 +4463,11 @@ export default function SimulatorPage() {
                           border: `1px solid ${pinBorder}`,
                           borderRadius: '0%', /* matching task3.html */
                           cursor: 'crosshair',
-                          zIndex: isHovered ? 30 : 20, /* matching task3.html hover and port z-index */
-                          transform: `translate(-50%, -50%)${isHovered ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                          zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
+                          transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
                           transition: '0.2s', /* matching task3.html transition */
                           pointerEvents: 'all', /* Fix hit detection */
+                          boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
                         }}
                         onMouseEnter={() => setHoveredPin(pinStrRef)}
                         onMouseLeave={() => setHoveredPin(null)}
@@ -4415,6 +4521,7 @@ export default function SimulatorPage() {
             })}
           </div>{/* end zoom wrapper */}
 
+
           {/* Universal Component Wiring & Docs Panel */}
           {showComponentDesc && selectedComponentInfo && (
             <div
@@ -4426,8 +4533,27 @@ export default function SimulatorPage() {
               {/* Header */}
               <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>{selectedComponentInfo.label}</div>
-                <div style={{ display: 'inline-block', fontSize: 10, color: 'var(--text3)', background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`, border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}55`, borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {selectedComponentInfo.group}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ display: 'inline-block', fontSize: 10, color: 'var(--text3)', background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`, border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}55`, borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {selectedComponentInfo.group}
+                  </div>
+                  <button
+                    onClick={() => {
+                      const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
+                      if (doc) {
+                        const b = new Blob([doc], { type: 'text/html' });
+                        window.open(URL.createObjectURL(b), '_blank');
+                      } else {
+                        window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
+                      }
+                    }}
+                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: 0.8, textDecoration: 'underline' }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    Documentation
+                  </button>
                 </div>
               </div>
 
@@ -4445,11 +4571,25 @@ export default function SimulatorPage() {
                   const targetOptions = [];
                   validTargets.forEach(b => {
                     const bPins = LOCAL_PIN_DEFS[b.type] || [];
-                    bPins.forEach(p => targetOptions.push({ id: `${b.id}:${p.id}`, label: `${b.label || b.id} : ${p.id}` }));
+                    bPins.forEach(p => targetOptions.push({
+                      id: `${b.id}:${p.id}`,
+                      label: `${b.label || b.id} : ${p.id}`,
+                      type: b.type,
+                      description: p.description
+                    }));
                   });
 
                   return compPins.map(pin => {
                     const pinIdStr = `${selectedComponentInfo.id}:${pin.id}`;
+                    const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
+
+                    // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
+                    const filteredOptions = targetOptions.filter(opt => {
+                      if (!currentPinCat) return true; // Show all for unmapped/general pins
+                      const targetPinCat = getPinCategory(opt.id.split(':')[1], opt.description, opt.type);
+                      return hasCategoryIntersection(currentPinCat, targetPinCat);
+                    });
+
                     // Find if any wire is connected to this pin specifically
                     const connectedWire = wires.find(w => w.from === pinIdStr || w.to === pinIdStr);
                     // Determine current dropdown value
@@ -4502,7 +4642,7 @@ export default function SimulatorPage() {
                           }}
                         >
                           <option value="">-- Disconnected --</option>
-                          {targetOptions.map(opt => (
+                          {filteredOptions.map(opt => (
                             <option key={opt.id} value={opt.id}>{opt.label}</option>
                           ))}
                         </select>
@@ -4511,59 +4651,40 @@ export default function SimulatorPage() {
                   });
                 })()}
               </div>
-
-              {/* Doc link */}
-              <div style={{ padding: '8px 12px 12px', flexShrink: 0, borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.1)' }}>
-                <button
-                  onClick={() => {
-                    const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
-                    if (doc) {
-                      const b = new Blob([doc], { type: 'text/html' });
-                      window.open(URL.createObjectURL(b), '_blank');
-                    } else {
-                      window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
-                    }
-                  }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '6px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, transition: 'all 0.15s ease' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'var(--card)'}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path></svg>
-                  Documentation
-                </button>
-              </div>
             </div>
           )}
 
           {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
-          {validationToast && (
-            <div
-              className="validation-toast-canvas"
-              role="alert"
-              data-export-ignore="true"
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-            >
-              <div className="validation-toast-canvas__header">
-                <span>{validationToast.title}</span>
-                <button
-                  type="button"
-                  className="validation-toast-canvas__close"
-                  onClick={() => setValidationToast(null)}
-                  aria-label="Close validation notification"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-                  </svg>
-                </button>
+          {
+            validationToast && (
+              <div
+                className="validation-toast-canvas"
+                role="alert"
+                data-export-ignore="true"
+                onClick={e => e.stopPropagation()}
+                onMouseDown={e => e.stopPropagation()}
+              >
+                <div className="validation-toast-canvas__header">
+                  <span>{validationToast.title}</span>
+                  <button
+                    type="button"
+                    className="validation-toast-canvas__close"
+                    onClick={() => setValidationToast(null)}
+                    aria-label="Close validation notification"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+                <ul className="validation-toast-canvas__list">
+                  {validationToast.reasons.map((reason, idx) => (
+                    <li key={idx}>{reason}</li>
+                  ))}
+                </ul>
               </div>
-              <ul className="validation-toast-canvas__list">
-                {validationToast.reasons.map((reason, idx) => (
-                  <li key={idx}>{reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+            )
+          }
 
           <div
             data-export-ignore="true"
@@ -4661,101 +4782,103 @@ export default function SimulatorPage() {
           />
 
           {/* ── Quick-Add Popup (double-click on canvas) ── */}
-          {quickAdd && (() => {
-            const q = quickAddSearch.trim().toLowerCase();
-            const results = [];
-            if (q) {
-              outer: for (const group of LOCAL_CATALOG) {
-                for (const item of group.items) {
-                  if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
-                    results.push(item);
-                    if (results.length >= 4) break outer;
+          {
+            quickAdd && (() => {
+              const q = quickAddSearch.trim().toLowerCase();
+              const results = [];
+              if (q) {
+                outer: for (const group of LOCAL_CATALOG) {
+                  for (const item of group.items) {
+                    if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
+                      results.push(item);
+                      if (results.length >= 4) break outer;
+                    }
                   }
                 }
               }
-            }
-            const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
-            const VW = window.innerWidth, VH = window.innerHeight;
-            const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
-            const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
-            const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
-            return (
-              <div
-                data-quickadd="true"
-                onMouseDown={e => e.stopPropagation()}
-                style={{
-                  position: 'fixed', left, top, zIndex: 9999,
-                  width: menuW,
-                  background: 'var(--bg2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
-                  overflow: 'hidden',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                }}
-              >
-                {/* Search input */}
-                <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
-                  <input
-                    ref={quickAddInputRef}
-                    data-quickadd="true"
-                    value={quickAddSearch}
-                    onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
-                    onKeyDown={e => {
-                      if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
-                      else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
-                      else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
-                      else if (e.key === 'Enter' && results.length > 0) {
-                        e.preventDefault();
-                        addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
-                        setQuickAdd(null);
-                      }
-                    }}
-                    placeholder="Search component..."
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      background: 'var(--bg3)', border: '1px solid var(--border2)',
-                      color: 'var(--text)', padding: '7px 10px',
-                      borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
-                    }}
-                  />
-                </div>
-                {/* Result list */}
-                {results.map((item, i) => (
-                  <div
-                    key={`${item.type}-${i}`}
-                    data-quickadd="true"
-                    onMouseEnter={() => setQuickAddIdx(i)}
-                    onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      background: i === selIdx ? 'var(--accent)' : 'transparent',
-                      color: i === selIdx ? '#fff' : 'var(--text)',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
-                    {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+              const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
+              const VW = window.innerWidth, VH = window.innerHeight;
+              const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
+              const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
+              const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
+              return (
+                <div
+                  data-quickadd="true"
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{
+                    position: 'fixed', left, top, zIndex: 9999,
+                    width: menuW,
+                    background: 'var(--bg2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+                    overflow: 'hidden',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                  }}
+                >
+                  {/* Search input */}
+                  <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <input
+                      ref={quickAddInputRef}
+                      data-quickadd="true"
+                      value={quickAddSearch}
+                      onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
+                      onKeyDown={e => {
+                        if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
+                        else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
+                        else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
+                        else if (e.key === 'Enter' && results.length > 0) {
+                          e.preventDefault();
+                          addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
+                          setQuickAdd(null);
+                        }
+                      }}
+                      placeholder="Search component..."
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        background: 'var(--bg3)', border: '1px solid var(--border2)',
+                        color: 'var(--text)', padding: '7px 10px',
+                        borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
+                      }}
+                    />
                   </div>
-                ))}
-                {/* Empty state */}
-                {q && results.length === 0 && (
-                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
-                )}
-                {!q && (
-                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
-                )}
-              </div>
-            );
-          })()}
-        </main>
+                  {/* Result list */}
+                  {results.map((item, i) => (
+                    <div
+                      key={`${item.type}-${i}`}
+                      data-quickadd="true"
+                      onMouseEnter={() => setQuickAddIdx(i)}
+                      onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        background: i === selIdx ? 'var(--accent)' : 'transparent',
+                        color: i === selIdx ? '#fff' : 'var(--text)',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
+                      {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+                    </div>
+                  ))}
+                  {/* Empty state */}
+                  {q && results.length === 0 && (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
+                  )}
+                  {!q && (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
+                  )}
+                </div>
+              );
+            })()
+          }
+        </main >
 
 
         {/* RIGHT PANEL */}
-        <RightPanel
+        < RightPanel
           isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
           explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
           selected={selected} setSelected={setSelected}
@@ -4772,31 +4895,33 @@ export default function SimulatorPage() {
           plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
           showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
         />
-      </div>
+      </div >
 
       {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
-      {showSaveDialog && (
-        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
-          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-            <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
-            <input
-              autoFocus
-              className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
-              placeholder="Project name..."
-              value={saveDialogName}
-              onChange={e => setSaveDialogName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
-            />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
-              <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+      {
+        showSaveDialog && (
+          <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
+            <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+              <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
+              <input
+                autoFocus
+                className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
+                placeholder="Project name..."
+                value={saveDialogName}
+                onChange={e => setSaveDialogName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
+              />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
+                <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
 
-    </div>
+    </div >
   )
 }
 
