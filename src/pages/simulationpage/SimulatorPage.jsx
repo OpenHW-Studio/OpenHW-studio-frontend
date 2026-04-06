@@ -502,7 +502,9 @@ export default function SimulatorPage() {
   const canvasOffsetRef = useRef({ x: 0, y: 0 })
   const [isCanvasLocked, setIsCanvasLocked] = useState(false)
   const isCanvasLockedRef = useRef(false)
-  const [showGrid, setShowGrid] = useState(true)
+  const [showGrid, setShowGrid] = React.useState(true) // Ensure React is used if not imported as name
+  const [isPinMappingExpanded, setIsPinMappingExpanded] = useState(false)
+  const [pendingPinColors, setPendingPinColors] = useState({}) // { [pinIdStr]: color }
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [quickAdd, setQuickAdd] = useState(null)   // { screenX, screenY, canvasX, canvasY }
   const [quickAddSearch, setQuickAddSearch] = useState('')
@@ -612,6 +614,11 @@ export default function SimulatorPage() {
     const hasCurrent = hardwareBoardId && boardComponents.some((b) => b.id === hardwareBoardId);
     if (!hasCurrent) setHardwareBoardId(boardComponents[0].id);
   }, [boardComponents, hardwareBoardId]);
+
+  // Reset Pin Mapping expansion when a new component is selected
+  useEffect(() => {
+    setIsPinMappingExpanded(false);
+  }, [selected]);
 
   // PNG Export State
   const [isExporting, setIsExporting] = useState(false);
@@ -4531,12 +4538,49 @@ export default function SimulatorPage() {
               style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 240, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 100px)' }}
             >
               {/* Header */}
-              <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>{selectedComponentInfo.label}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ display: 'inline-block', fontSize: 10, color: 'var(--text3)', background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`, border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}55`, borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <div style={{
+                padding: '16px 16px 14px',
+                borderBottom: '1px solid var(--border)',
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                background: 'linear-gradient(to bottom, var(--bg2), var(--bg1))'
+              }}>
+                <div style={{
+                  fontSize: 15,
+                  fontWeight: 800,
+                  color: 'var(--text)',
+                  letterSpacing: '-0.02em',
+                  lineHeight: '1.1'
+                }}>
+                  {selectedComponentInfo.label}
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}>
+                  {/* Category Chip */}
+                  <div style={{
+                    height: 24,
+                    fontSize: 9,
+                    fontWeight: 800,
+                    color: GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)',
+                    background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}12`,
+                    borderRadius: 6,
+                    padding: '0 10px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`
+                  }}>
                     {selectedComponentInfo.group}
                   </div>
+
                   <button
                     onClick={() => {
                       const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
@@ -4547,11 +4591,42 @@ export default function SimulatorPage() {
                         window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
                       }
                     }}
-                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: 0.8, textDecoration: 'underline' }}
-                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                    onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}
+                    style={{
+                      height: 24,
+                      background: 'var(--bg3)',
+                      border: '1px solid var(--border)',
+                      padding: '0 12px',
+                      color: 'var(--text2)',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      borderRadius: 6,
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'var(--bg4)';
+                      e.currentTarget.style.borderColor = 'var(--accent)';
+                      e.currentTarget.style.color = 'var(--accent)';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'var(--bg3)';
+                      e.currentTarget.style.borderColor = 'var(--border)';
+                      e.currentTarget.style.color = 'var(--text2)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+                    }}
                   >
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                    <svg
+                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
                     Documentation
                   </button>
                 </div>
@@ -4559,8 +4634,38 @@ export default function SimulatorPage() {
 
               {/* Pin Wiring Dropdowns */}
               <div className="panel-scroll" style={{ padding: '10px 12px', flex: 1, overflowY: 'auto' }}>
-                <div style={{ fontSize: 11, fontWeight: 'bold', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Pin Mapping</div>
-                {(() => {
+                <div
+                  onClick={() => setIsPinMappingExpanded(!isPinMappingExpanded)}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                    color: 'var(--text3)',
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                    marginBottom: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    padding: '4px 0'
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--text2)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
+                >
+                  <span>Pin Mapping</span>
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                    style={{
+                      transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      transform: isPinMappingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                      opacity: 0.6
+                    }}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </div>
+                {isPinMappingExpanded && (() => {
                   const compPins = LOCAL_PIN_DEFS[selectedComponentInfo.type] || [];
                   if (compPins.length === 0) {
                     return <div style={{ fontSize: 12, color: 'var(--text3)' }}>No pins exposed.</div>;
@@ -4598,11 +4703,67 @@ export default function SimulatorPage() {
                       currentVal = connectedWire.from === pinIdStr ? connectedWire.to : connectedWire.from;
                     }
 
+                    const pinPreferredColor = pendingPinColors[pinIdStr] || (connectedWire ? connectedWire.color : wireColor(pin.id));
+
                     return (
-                      <div key={pin.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 8 }}>
+                      <div key={pin.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 4 }}>
                         <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, width: 44 }} title={pin.description || pin.id}>
                           {pin.id}
                         </span>
+
+                        {/* Interactive Arrow & Color Picker */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const picker = e.currentTarget.querySelector('input[type="color"]');
+                            if (picker) picker.click();
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            opacity: connectedWire ? 1 : 0.6,
+                            transition: 'all 0.2s ease',
+                            position: 'relative',
+                            padding: '0 4px',
+                            flexShrink: 0
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.opacity = '1';
+                            e.currentTarget.style.transform = 'scale(1.1)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.opacity = connectedWire ? '1' : '0.6';
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                          title={connectedWire ? "Change wire color" : "Set wire color before connecting"}
+                        >
+                          <svg
+                            width="14" height="14" viewBox="0 0 24 24" fill="none"
+                            stroke={pinPreferredColor}
+                            strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                          >
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
+                          </svg>
+                          <input
+                            type="color"
+                            value={pinPreferredColor}
+                            onChange={(e) => {
+                              const newColor = e.target.value;
+                              setPendingPinColors(prev => ({ ...prev, [pinIdStr]: newColor }));
+                              if (connectedWire) {
+                                updateWireColor(connectedWire.id, newColor);
+                              }
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: 0, left: 0, width: 0, height: 0, opacity: 0, padding: 0, border: 'none', pointerEvents: 'none'
+                            }}
+                          />
+                        </div>
+
                         <select
                           value={currentVal}
                           onChange={(e) => {
@@ -4610,13 +4771,15 @@ export default function SimulatorPage() {
                             setWires(prev => {
                               // 1. Generate the exact same wire syntax as manual mapping
                               const toPinLabel = selectedTarget ? (selectedTarget.includes(':') ? selectedTarget.split(':').slice(1).join(':') : '') : '';
+                              const finalColor = pendingPinColors[pinIdStr] || wireColor(toPinLabel);
+
                               const newWire = selectedTarget ? {
                                 id: `w${Date.now()}_${Math.floor(Math.random() * 1000)}`,
                                 from: pinIdStr,
                                 to: selectedTarget,
                                 fromLabel: pin.id,
                                 toLabel: toPinLabel,
-                                color: wireColor(toPinLabel),
+                                color: finalColor,
                                 waypoints: []
                               } : null;
 
