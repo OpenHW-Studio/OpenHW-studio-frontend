@@ -4,16 +4,28 @@
 
 [36mvite v5.4.21 [32mbuilding for production...[36m[39m
 transforming...
-[32mΓ£ô[39m 154 modules transformed.
-rendering chunks...
-computing gzip size...
-[2mdist/[22m[32mindex.html                            [39m[1m[2m  0.80 kB[22m[1m[22m[2m Γöé gzip:   0.48 kB[22m
-[2mdist/[22m[32massets/simulation.worker-BR4R6Rnj.js  [39m[1m[2m 58.45 kB[22m[1m[22m
-[2mdist/[22m[35massets/index-Cf_509xm.css             [39m[1m[2m 15.00 kB[22m[1m[22m[2m Γöé gzip:   3.84 kB[22m
-[2mdist/[22m[36massets/index-D6IXeaCH.js              [39m[1m[33m514.31 kB[39m[22m[2m Γöé gzip: 149.98 kB[22m
+[32mΓ£ô[39m 64 modules transformed.
+x Build failed in 1.10s
+error during build:
+[vite:esbuild] Transform failed with 1 error:
+C:/Users/Danish/Documents/simulator/OpenHW-studio-frontend-danish/src/pages/simulationpage/SimulatorPage.jsx:30:0: ERROR: Unexpected "<<"
+file: C:/Users/Danish/Documents/simulator/OpenHW-studio-frontend-danish/src/pages/simulationpage/SimulatorPage.jsx:30:0
 
-(!) Some chunks are larger than 500 kB after minification. Consider:
-- Using dynamic import() to code-split the application
-- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
-- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-[32mΓ£ô built in 1.33s[39m
+Unexpected "<<"
+28 |  import * as Babel from '@babel/standalone';
+29 |  
+30 |  <<<<<<< HEAD
+   |  ^
+31 |  import * as EmulatorComponents from "@openhw/emulator";
+32 |  =======
+
+    at failureErrorWithLog (C:\Users\Danish\Documents\simulator\OpenHW-studio-frontend-danish\node_modules\esbuild\lib\main.js:1472:15)
+    at C:\Users\Danish\Documents\simulator\OpenHW-studio-frontend-danish\node_modules\esbuild\lib\main.js:755:50
+    at responseCallbacks.<computed> (C:\Users\Danish\Documents\simulator\OpenHW-studio-frontend-danish\node_modules\esbuild\lib\main.js:622:9)
+    at handleIncomingPacket (C:\Users\Danish\Documents\simulator\OpenHW-studio-frontend-danish\node_modules\esbuild\lib\main.js:677:12)
+    at Socket.readFromStdout (C:\Users\Danish\Documents\simulator\OpenHW-studio-frontend-danish\node_modules\esbuild\lib\main.js:600:7)
+    at Socket.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+    at Readable.push (node:internal/streams/readable:390:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)

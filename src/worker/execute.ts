@@ -23,6 +23,60 @@ import {
     UNO_BOARD_PINS,
     UNO_DIGITAL_PINS,
 } from './board-profiles.ts';
+import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
+import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic.ts';
+import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic.ts';
+import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic.ts';
+import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic.ts';
+import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic.ts';
+import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic.ts';
+import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic.ts';
+import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
+import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
+import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
+import { DFlipFlopDsrLogic } from '@openhw/emulator/src/components/logic-d-flipflop-dsr/logic.ts';
+import { ClockGeneratorLogic } from '@openhw/emulator/src/components/logic-clock-generator/logic.ts';
+import { WokwiTM1637Logic } from '@openhw/emulator/src/components/wokwi-tm1637-7segment/logic.ts';
+import { RGBLEDLogic } from '@openhw/emulator/src/components/wokwi-rgb-led/logic.ts';
+import { Nokia5110Logic } from '@openhw/emulator/src/components/wokwi-nokia-5110/logic.ts';
+import { L293DLogic } from '@openhw/emulator/src/components/wokwi-l293d/logic.ts';
+import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/wokwi-lcd2004-i2c/logic.ts';
+import { SSD1306Logic } from '@openhw/emulator/src/components/wokwi-ssd1306-oled/logic.ts';
+import { PCA9685Logic } from '@openhw/emulator/src/components/wokwi-pca9685/logic.ts';
+import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic.ts';
+import { LdrModuleLogic } from '@openhw/emulator/src/components/wokwi-ldr-module/logic.ts';
+import { SoilMoistureSensorLogic } from '@openhw/emulator/src/components/wokwi-soil-moisture-sensor/logic.ts';
+import { PhotodiodeLogic } from '@openhw/emulator/src/components/wokwi-photodiode/logic.ts';
+import { DiodeLogic } from '@openhw/emulator/src/components/wokwi-diode/logic.ts';
+import { NPNTransistorLogic } from '@openhw/emulator/src/components/wokwi-npn-transistor/logic.ts';
+import { MAX7219Logic } from '@openhw/emulator/src/components/wokwi-max7219/logic.ts';
+import { A4988Logic } from '@openhw/emulator/src/components/wokwi-a4988/logic.ts';
+import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/wokwi-7segment/logic.ts';
+import { ILI9341Logic } from '@openhw/emulator/src/components/wokwi-ili9341/logic.ts';
+import { CD74HC4067Logic } from '@openhw/emulator/src/components/wokwi-cd74hc4067/logic.ts';
+import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/wokwi-logic-analyzer/logic.ts';
+import { MegaLogic } from '@openhw/emulator/src/components/wokwi-arduino-mega/logic.ts';
+
+class KeypadLogic extends BaseComponent {
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { pressedKey: null, connectedPair: null };
+    }
+    onEvent(event: string) {
+        if (event.startsWith('press:')) {
+            const key = event.split(':')[1];
+            const matrix: Record<string, [string, string]> = {
+                '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
+                '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
+                '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
+                '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
+            };
+            this.setState({ pressedKey: key, connectedPair: matrix[key] || null });
+        } else if (event === 'release') {
+            this.setState({ pressedKey: null, connectedPair: null });
+        }
+    }
+}
 
 export function parse(data: string) {
     const lines = data.split('\n');
@@ -1785,6 +1839,33 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-ili9341': ILI9341FallbackLogic,
     'wokwi-sd-card': SDCardLogic,
     'shift_register': ShiftRegisterLogic,
+    'wokwi-membrane-keypad': KeypadLogic,
+    'wokwi-analog-joystick': JoystickLogic,
+    'logic-and-gate': AndGateLogic,
+    'logic-or-gate': OrGateLogic,
+    'logic-not-gate': NotGateLogic,
+    'logic-nand-gate': NandGateLogic,
+    'logic-nor-gate': NorGateLogic,
+    'logic-xor-gate': XorGateLogic,
+    'logic-xnor-gate': XnorGateLogic,
+    'logic-mux-2to1': Mux2to1Logic,
+    'logic-d-flipflop': DFlipFlopLogic,
+    'logic-d-flipflop-r': DFlipFlopRLogic,
+    'logic-d-flipflop-dsr': DFlipFlopDsrLogic,
+    'logic-clock-generator': ClockGeneratorLogic,
+    'wokwi-tm1637-7segment': WokwiTM1637Logic,
+    'wokwi-rgb-led': RGBLEDLogic,
+    'wokwi-nokia-5110': Nokia5110Logic,
+    'wokwi-l293d': L293DLogic,
+    'wokwi-arduino-nano': UnoLogic,
+    'wokwi-pca9685': PCA9685Logic,
+    'wokwi-soil-moisture-sensor': SoilMoistureSensorLogic,
+    'wokwi-photodiode': PhotodiodeLogic,
+    'wokwi-diode': DiodeLogic,
+    'wokwi-npn-transistor': NPNTransistorLogic,
+    'wokwi-a4988': A4988Logic,
+    'wokwi-cd74hc4067': CD74HC4067Logic,
+    'wokwi-logic-analyzer': LogicAnalyzerLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -1814,6 +1895,34 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
     'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
+    'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
+    'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'logic-and-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-or-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-not-gate': [{ id: 'IN' }, { id: 'OUT' }],
+    'logic-nand-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-nor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-xor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-xnor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
+    'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-d-flipflop-dsr': [{ id: 'D' }, { id: 'CLK' }, { id: 'S' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-clock-generator': [{ id: 'OUT' }],
+    'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
+    'wokwi-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
+    'wokwi-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
+    'wokwi-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
+    'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
+    'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'wokwi-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'wokwi-photodiode': [{ id: 'A' }, { id: 'C' }],
+    'wokwi-diode': [{ id: 'A' }, { id: 'C' }],
+    'wokwi-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
+    'wokwi-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
+    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
+    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
 };
 
 type RP2040ExecutableRangeInput =
