@@ -1,0 +1,22 @@
+{
+    "type": "wokwi-diode",
+    "label": "Diode",
+    "group": "Basic",
+    "w": 30,
+    "h": 10,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "A",
+            "x": 0,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "C",
+            "x": 30,
+            "y": 5,
+            "type": "digital"
+        }
+    ]
+}

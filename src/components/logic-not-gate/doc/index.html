@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>NOT Gate – OpenHW Studio Docs</title>
+  <style>
+    :root {
+      --accent: #8b5cf6;
+      --bg: #0f172a;
+      --bg2: #1e293b;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --border: #334155;
+      --radius: 8px
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      max-width: 760px;
+      margin: 0 auto;
+      line-height: 1.6
+    }
+
+    h1 {
+      color: var(--accent);
+      font-size: 1.6rem;
+      margin-bottom: 4px
+    }
+
+    .badge {
+      display: inline-block;
+      background: var(--accent)22;
+      color: var(--accent);
+      border: 1px solid var(--accent)44;
+      border-radius: 4px;
+      padding: 2px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 16px
+    }
+
+    p {
+      color: var(--text2);
+      margin-bottom: 16px
+    }
+
+    h2 {
+      font-size: 1rem;
+      color: var(--text);
+      margin: 24px 0 10px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-bottom: 16px
+    }
+
+    th {
+      background: var(--bg2);
+      color: var(--text2);
+      text-align: left;
+      padding: 8px 10px;
+      border: 1px solid var(--border)
+    }
+
+    td {
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      color: var(--text)
+    }
+
+    pre {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      font-size: 13px;
+      overflow-x: auto;
+      margin-bottom: 16px
+    }
+
+    code {
+      color: #7dd3fc
+    }
+
+    .tip {
+      background: #8b5cf611;
+      border-left: 3px solid var(--accent);
+      padding: 10px 14px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      font-size: 13px;
+      color: var(--text2);
+      margin-bottom: 16px
+    }
+  </style>
+</head>
+
+<body>
+  <h1>NOT Gate (Inverter)</h1>
+  <span class="badge">Logic</span>
+  <p>A digital logic inverter that outputs the complement of its input. When the input is HIGH (≥ 2.5V), the output is
+    LOW (0V), and when the input is LOW (< 2.5V), the output is HIGH (5V). Equivalent to a 7404 TTL inverter IC.</p>
+
+      <h2>Truth Table</h2>
+      <table>
+        <tr>
+          <th>Input (IN)</th>
+          <th>Output (OUT)</th>
+        </tr>
+        <tr>
+          <td>LOW (0)</td>
+          <td>HIGH (1)</td>
+        </tr>
+        <tr>
+          <td>HIGH (1)</td>
+          <td>LOW (0)</td>
+        </tr>
+      </table>
+
+      <h2>Pins</h2>
+      <table>
+        <tr>
+          <th>Pin</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+        <tr>
+          <td>IN</td>
+          <td>Digital</td>
+          <td>Input signal</td>
+        </tr>
+        <tr>
+          <td>OUT</td>
+          <td>Digital</td>
+          <td>Inverted output signal</td>
+        </tr>
+
+      </table>
+
+      <h2>Wiring</h2>
+      <pre><code>
+Arduino D7  ── IN  (NOT Gate)
+NOT Gate OUT ── Resistor (220Ω) ── LED Anode
+LED Cathode ── GND</code></pre>
+
+      <h2>Example Code</h2>
+      <pre><code>#define INPUT_PIN 7
+
+void setup() {
+  pinMode(7, OUTPUT);
+  Serial.begin(9600);
+}
+
+void loop() {
+  digitalWrite(7, HIGH);
+  Serial.println("IN=HIGH → OUT=LOW (LED OFF)");
+  delay(3000);
+
+  digitalWrite(7, LOW);
+  Serial.println("IN=LOW → OUT=HIGH (LED ON)");
+  delay(1000);
+}</code></pre>
+
+      <div class="tip">Tip: The NOT gate uses TTL logic levels. Input voltages ≥ 2.5V are treated as HIGH; below 2.5V as
+        LOW. The output drives a full 5V when HIGH and 0V when LOW.</div>
+</body>
+
+</html>

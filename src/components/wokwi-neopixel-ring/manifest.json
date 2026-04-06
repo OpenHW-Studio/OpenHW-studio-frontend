@@ -1,0 +1,36 @@
+{
+    "type": "wokwi-neopixel-ring",
+    "label": "NeoPixel Ring",
+    "group": "Outputs",
+    "w": 80,
+    "h": 80,
+    "attrs": {
+        "pixels": "16"
+    },
+    "pins": [
+        {
+            "id": "VDD",
+            "x": 10,
+            "y": 80,
+            "type": "power"
+        },
+        {
+            "id": "VSS",
+            "x": 30,
+            "y": 80,
+            "type": "power"
+        },
+        {
+            "id": "DIN",
+            "x": 50,
+            "y": 80,
+            "type": "digital"
+        },
+        {
+            "id": "DOUT",
+            "x": 70,
+            "y": 80,
+            "type": "digital"
+        }
+    ]
+}

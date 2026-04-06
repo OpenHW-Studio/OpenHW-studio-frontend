@@ -1,0 +1,106 @@
+{
+    "type": "wokwi-l293d",
+    "label": "Motor Driver (L293D)",
+    "group": "Actuators",
+    "w": 30,
+    "h": 50,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "EN1,2",
+            "x": 5,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "IN1",
+            "x": 5,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "OUT1",
+            "x": 5,
+            "y": 15,
+            "type": "digital"
+        },
+        {
+            "id": "GND1",
+            "x": 5,
+            "y": 20,
+            "type": "power"
+        },
+        {
+            "id": "GND2",
+            "x": 5,
+            "y": 25,
+            "type": "power"
+        },
+        {
+            "id": "OUT2",
+            "x": 5,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "IN2",
+            "x": 5,
+            "y": 35,
+            "type": "digital"
+        },
+        {
+            "id": "VCC2",
+            "x": 5,
+            "y": 40,
+            "type": "power"
+        },
+        {
+            "id": "VCC1",
+            "x": 25,
+            "y": 5,
+            "type": "power"
+        },
+        {
+            "id": "IN4",
+            "x": 25,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "OUT4",
+            "x": 25,
+            "y": 15,
+            "type": "digital"
+        },
+        {
+            "id": "GND4",
+            "x": 25,
+            "y": 20,
+            "type": "power"
+        },
+        {
+            "id": "GND3",
+            "x": 25,
+            "y": 25,
+            "type": "power"
+        },
+        {
+            "id": "OUT3",
+            "x": 25,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "IN3",
+            "x": 25,
+            "y": 35,
+            "type": "digital"
+        },
+        {
+            "id": "EN3,4",
+            "x": 25,
+            "y": 40,
+            "type": "digital"
+        }
+    ]
+}

@@ -2,13 +2,13 @@
   "type": "wokwi-7segment",
   "label": "7-Segment Display",
   "group": "Outputs",
-  "w": 120,
+  "w": 260,
   "h": 70,
   "attrs": {
     "color": "red",
     "common": "cathode",
-    "digits": "2",
-    "colon": "0"
+    "digits": "4",
+    "colon": "1"
   },
   "pins": [
     {

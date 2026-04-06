@@ -1,0 +1,64 @@
+{
+    "type": "wokwi-logic-analyzer",
+    "label": "8-Ch Logic Analyzer",
+    "group": "Debug",
+    "w": 50,
+    "h": 30,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "GND",
+            "x": 5,
+            "y": 30,
+            "type": "power"
+        },
+        {
+            "id": "D0",
+            "x": 10,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "D1",
+            "x": 15,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "D2",
+            "x": 20,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "D3",
+            "x": 25,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "D4",
+            "x": 30,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "D5",
+            "x": 35,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "D6",
+            "x": 40,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "D7",
+            "x": 45,
+            "y": 30,
+            "type": "digital"
+        }
+    ]
+}

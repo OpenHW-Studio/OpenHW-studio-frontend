@@ -1,0 +1,39 @@
+{
+    "type": "logic-d-flipflop",
+    "label": "D Flip-Flop",
+    "description": "Edge-triggered D Flip-Flop. On the rising edge of CLK, Q captures the value of D. Qbar is the complement of Q.",
+    "group": "Logic",
+    "w": 90,
+    "h": 80,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "D",
+            "x": 0,
+            "y": 22,
+            "type": "digital",
+            "description": "Data input"
+        },
+        {
+            "id": "CLK",
+            "x": 0,
+            "y": 58,
+            "type": "digital",
+            "description": "Clock input (rising-edge triggered)"
+        },
+        {
+            "id": "Q",
+            "x": 90,
+            "y": 22,
+            "type": "digital",
+            "description": "Output"
+        },
+        {
+            "id": "Qbar",
+            "x": 90,
+            "y": 58,
+            "type": "digital",
+            "description": "Inverted output"
+        }
+    ]
+}

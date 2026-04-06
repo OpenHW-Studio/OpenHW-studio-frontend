@@ -1,0 +1,574 @@
+{
+    "type": "wokwi-arduino-sensor-shield",
+    "label": "Arduino Sensor Shield v5.0",
+    "group": "Modules",
+    "w": 220,
+    "h": 210,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "AREF_IN",
+            "x": 60,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "GND_TOP_IN",
+            "x": 70,
+            "y": 10,
+            "type": "power"
+        },
+        {
+            "id": "D13_IN",
+            "x": 80,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D12_IN",
+            "x": 90,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D11_IN",
+            "x": 100,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D10_IN",
+            "x": 110,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D9_IN",
+            "x": 120,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D8_IN",
+            "x": 130,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D7_IN",
+            "x": 150,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D6_IN",
+            "x": 160,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D5_IN",
+            "x": 170,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D4_IN",
+            "x": 180,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D3_IN",
+            "x": 190,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D2_IN",
+            "x": 200,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D1_IN",
+            "x": 210,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "D0_IN",
+            "x": 220,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "RST_IN",
+            "x": 80,
+            "y": 200,
+            "type": "digital"
+        },
+        {
+            "id": "3V3_IN",
+            "x": 90,
+            "y": 200,
+            "type": "power"
+        },
+        {
+            "id": "5V_IN",
+            "x": 100,
+            "y": 200,
+            "type": "power"
+        },
+        {
+            "id": "GND1_IN",
+            "x": 110,
+            "y": 200,
+            "type": "power"
+        },
+        {
+            "id": "GND2_IN",
+            "x": 120,
+            "y": 200,
+            "type": "power"
+        },
+        {
+            "id": "VIN_IN",
+            "x": 130,
+            "y": 200,
+            "type": "power"
+        },
+        {
+            "id": "A0_IN",
+            "x": 150,
+            "y": 200,
+            "type": "digital"
+        },
+        {
+            "id": "A1_IN",
+            "x": 160,
+            "y": 200,
+            "type": "digital"
+        },
+        {
+            "id": "A2_IN",
+            "x": 170,
+            "y": 200,
+            "type": "digital"
+        },
+        {
+            "id": "A3_IN",
+            "x": 180,
+            "y": 200,
+            "type": "digital"
+        },
+        {
+            "id": "A4_IN",
+            "x": 190,
+            "y": 200,
+            "type": "digital"
+        },
+        {
+            "id": "A5_IN",
+            "x": 200,
+            "y": 200,
+            "type": "digital"
+        },
+        {
+            "id": "S_AREF",
+            "x": 30,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_AREF",
+            "x": 30,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_AREF",
+            "x": 30,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_GND",
+            "x": 40,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_GND",
+            "x": 40,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_GND",
+            "x": 40,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_13",
+            "x": 50,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_13",
+            "x": 50,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_13",
+            "x": 50,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_12",
+            "x": 60,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_12",
+            "x": 60,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_12",
+            "x": 60,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_11",
+            "x": 80,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_11",
+            "x": 80,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_11",
+            "x": 80,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_10",
+            "x": 90,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_10",
+            "x": 90,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_10",
+            "x": 90,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_9",
+            "x": 100,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_9",
+            "x": 100,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_9",
+            "x": 100,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_8",
+            "x": 110,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_8",
+            "x": 110,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_8",
+            "x": 110,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_7",
+            "x": 130,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_7",
+            "x": 130,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_7",
+            "x": 130,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_6",
+            "x": 140,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_6",
+            "x": 140,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_6",
+            "x": 140,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_5",
+            "x": 150,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_5",
+            "x": 150,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_5",
+            "x": 150,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_4",
+            "x": 160,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_4",
+            "x": 160,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_4",
+            "x": 160,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_3",
+            "x": 180,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_3",
+            "x": 180,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_3",
+            "x": 180,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_2",
+            "x": 190,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_2",
+            "x": 190,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_2",
+            "x": 190,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_1",
+            "x": 200,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_1",
+            "x": 200,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_1",
+            "x": 200,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_0",
+            "x": 210,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "V_0",
+            "x": 210,
+            "y": 60,
+            "type": "power"
+        },
+        {
+            "id": "G_0",
+            "x": 210,
+            "y": 50,
+            "type": "power"
+        },
+        {
+            "id": "S_A0",
+            "x": 60,
+            "y": 130,
+            "type": "digital"
+        },
+        {
+            "id": "V_A0",
+            "x": 60,
+            "y": 120,
+            "type": "power"
+        },
+        {
+            "id": "G_A0",
+            "x": 60,
+            "y": 110,
+            "type": "power"
+        },
+        {
+            "id": "S_A1",
+            "x": 70,
+            "y": 130,
+            "type": "digital"
+        },
+        {
+            "id": "V_A1",
+            "x": 70,
+            "y": 120,
+            "type": "power"
+        },
+        {
+            "id": "G_A1",
+            "x": 70,
+            "y": 110,
+            "type": "power"
+        },
+        {
+            "id": "S_A2",
+            "x": 80,
+            "y": 130,
+            "type": "digital"
+        },
+        {
+            "id": "V_A2",
+            "x": 80,
+            "y": 120,
+            "type": "power"
+        },
+        {
+            "id": "G_A2",
+            "x": 80,
+            "y": 110,
+            "type": "power"
+        },
+        {
+            "id": "S_A3",
+            "x": 90,
+            "y": 130,
+            "type": "digital"
+        },
+        {
+            "id": "V_A3",
+            "x": 90,
+            "y": 120,
+            "type": "power"
+        },
+        {
+            "id": "G_A3",
+            "x": 90,
+            "y": 110,
+            "type": "power"
+        },
+        {
+            "id": "S_A4",
+            "x": 100,
+            "y": 130,
+            "type": "digital"
+        },
+        {
+            "id": "V_A4",
+            "x": 100,
+            "y": 120,
+            "type": "power"
+        },
+        {
+            "id": "G_A4",
+            "x": 100,
+            "y": 110,
+            "type": "power"
+        },
+        {
+            "id": "S_A5",
+            "x": 110,
+            "y": 130,
+            "type": "digital"
+        },
+        {
+            "id": "V_A5",
+            "x": 110,
+            "y": 120,
+            "type": "power"
+        },
+        {
+            "id": "G_A5",
+            "x": 110,
+            "y": 110,
+            "type": "power"
+        }
+    ]
+}

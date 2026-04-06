@@ -1,0 +1,154 @@
+{
+    "type": "wokwi-cd74hc4067",
+    "label": "16-Channel Mux (CD74HC4067)",
+    "group": "Logic",
+    "w": 60,
+    "h": 100,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "VCC",
+            "x": 5,
+            "y": 10,
+            "type": "power"
+        },
+        {
+            "id": "GND",
+            "x": 5,
+            "y": 20,
+            "type": "power"
+        },
+        {
+            "id": "EN",
+            "x": 5,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "S0",
+            "x": 5,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "S1",
+            "x": 5,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "S2",
+            "x": 5,
+            "y": 65,
+            "type": "digital"
+        },
+        {
+            "id": "S3",
+            "x": 5,
+            "y": 75,
+            "type": "digital"
+        },
+        {
+            "id": "SIG",
+            "x": 5,
+            "y": 90,
+            "type": "digital"
+        },
+        {
+            "id": "C0",
+            "x": 55,
+            "y": 10,
+            "type": "digital"
+        },
+        {
+            "id": "C1",
+            "x": 55,
+            "y": 15,
+            "type": "digital"
+        },
+        {
+            "id": "C2",
+            "x": 55,
+            "y": 20,
+            "type": "digital"
+        },
+        {
+            "id": "C3",
+            "x": 55,
+            "y": 25,
+            "type": "digital"
+        },
+        {
+            "id": "C4",
+            "x": 55,
+            "y": 30,
+            "type": "digital"
+        },
+        {
+            "id": "C5",
+            "x": 55,
+            "y": 35,
+            "type": "digital"
+        },
+        {
+            "id": "C6",
+            "x": 55,
+            "y": 40,
+            "type": "digital"
+        },
+        {
+            "id": "C7",
+            "x": 55,
+            "y": 45,
+            "type": "digital"
+        },
+        {
+            "id": "C8",
+            "x": 55,
+            "y": 50,
+            "type": "digital"
+        },
+        {
+            "id": "C9",
+            "x": 55,
+            "y": 55,
+            "type": "digital"
+        },
+        {
+            "id": "C10",
+            "x": 55,
+            "y": 60,
+            "type": "digital"
+        },
+        {
+            "id": "C11",
+            "x": 55,
+            "y": 65,
+            "type": "digital"
+        },
+        {
+            "id": "C12",
+            "x": 55,
+            "y": 70,
+            "type": "digital"
+        },
+        {
+            "id": "C13",
+            "x": 55,
+            "y": 75,
+            "type": "digital"
+        },
+        {
+            "id": "C14",
+            "x": 55,
+            "y": 80,
+            "type": "digital"
+        },
+        {
+            "id": "C15",
+            "x": 55,
+            "y": 85,
+            "type": "digital"
+        }
+    ]
+}
