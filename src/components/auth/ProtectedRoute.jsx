@@ -1,5 +1,4 @@
 import { Navigate } from 'react-router-dom';
-import { useAuthStore } from '../../store/authStore.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 
 export default function ProtectedRoute({ children, allowedRole }) {
@@ -11,7 +10,7 @@ export default function ProtectedRoute({ children, allowedRole }) {
     }
 
     if (!isAuthenticated) {
-        return <Navigate to="/signin" replace />;
+        return <Navigate to="/classroom/signin" replace />;
     }
 
     if (allowedRole === 'admin') {
@@ -21,8 +20,11 @@ export default function ProtectedRoute({ children, allowedRole }) {
         return children;
     }
 
-    // If route requires a specific role and it doesn't match
-    if (allowedRole && role !== allowedRole) {
+    // Allow any registered user (student, teacher, user) to access the 'user' routes
+    const isUserRoute = allowedRole === 'user';
+    const hasAccess = isUserRoute ? ['student', 'teacher', 'user'].includes(role) : role === allowedRole;
+
+    if (allowedRole && !hasAccess) {
         // Direct users to their appropriate dashboard based on their actual role
         return <Navigate to={`/${role || 'student'}/dashboard`} replace />;
     }

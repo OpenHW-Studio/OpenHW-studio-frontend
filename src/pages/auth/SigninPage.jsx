@@ -21,7 +21,9 @@ export default function SigninPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
+      if (role === 'teacher') navigate('/teacher/dashboard')
+      else if (role === 'student') navigate('/student/dashboard')
+      else navigate('/user/dashboard')
     }
   }, [isAuthenticated, role, navigate])
 
@@ -39,9 +41,14 @@ export default function SigninPage() {
     setLoading(true)
     setError('')
     try {
-      const data = await loginUser(formData)
+      const data = await loginUser({ ...formData, role: selectedRole })
       login(data.token, data.user)
-      navigate(data.user.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
+      const handleRedirect = (userRole) => {
+        if (userRole === 'teacher') navigate('/teacher/dashboard')
+        else if (userRole === 'student') navigate('/student/dashboard')
+        else navigate('/user/dashboard')
+      }
+      handleRedirect(data.user.role)
     } catch (err) {
       setError(err.message || 'Invalid email or password.')
     } finally {
@@ -61,7 +68,12 @@ export default function SigninPage() {
       try {
         const data = await googleLogin(tokenResponse.access_token, selectedRole)
         login(data.token, data.user)
-        navigate(data.user.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
+        const handleRedirect = (userRole) => {
+          if (userRole === 'teacher') navigate('/teacher/dashboard')
+          else if (userRole === 'student') navigate('/student/dashboard')
+          else navigate('/user/dashboard')
+        }
+        handleRedirect(data.user.role)
       } catch (err) {
         setError(err.message || 'Google authentication failed.')
       } finally {
@@ -94,14 +106,14 @@ export default function SigninPage() {
         </section>
 
         <section className="auth-panel">
-          <Link to="/" className="auth-panel__back">Back to Home</Link>
+          <Link to="/login" className="auth-panel__back">Back to User Login</Link>
 
           <div className="auth-panel__brand">
             <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
           </div>
 
           <header className="auth-panel__header">
-            <h2>Sign In</h2>
+            <h2>Classroom Sign In</h2>
             <p>Select your role and continue with email or Google.</p>
           </header>
 
@@ -153,16 +165,8 @@ export default function SigninPage() {
             Google
           </button>
 
-          <button
-            type="button"
-            onClick={() => navigate('/simulator')}
-            className="auth-alt-button auth-alt-button--ghost"
-          >
-            Continue as Guest
-          </button>
-
           <p className="auth-panel__footer">
-            Don't have an account? <Link to="/signup">Create one</Link>
+            Don't have an classroom account? <Link to="/login">User login</Link>
           </p>
         </section>
       </div>

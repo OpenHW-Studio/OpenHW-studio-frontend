@@ -1,30 +1,13 @@
-# 🎨 OpenHW-Studio: React Frontend
+# OpenHW Studio Frontend Notes
 
-> **Role:** The visually interactive UI serving as a lightweight render client for the Universal Simulator.
+This file is kept for backward compatibility.
 
----
+Use the main documentation in README.md for current setup and feature details.
 
-## 🚀 Key Integrations
+Recent frontend updates are documented there, including:
 
-*   **Simulator Service API**
-    *   Utilizes a clean Axios wrapper (`simulatorService.js`) to pipe editor code to the background compilation cluster.
-*   **Run/Stop State Transitions**
-    *   **Run:** Triggers background compilation, awaits `.hex` generation, and initiates a secure `ws://localhost:8085` emulator handshake.
-    *   **Stop:** Gracefully terminates the `wsRef` connection socket and safely garabage-collects the background CPU process.
-*   **Dynamic Visual Rendering**
-    *   Processes rapid JSON pin updates (60 FPS) streamed down the WebSocket.
-    *   Intercepts state mutations to dynamically re-evaluate visual styles.
-    *   Causes connected `wokwi-elements` custom HTML tags (like LEDs) to power on or off in exact sync with backend logic.
-*   **NeoPixel Matrix Support**
-    *   Added `wokwi-neopixel-matrix` to `PIN_DEFS` with `GND`, `VCC`, `DIN`, `DOUT` pin definitions.
-    *   Component palette includes two presets: **NeoPixel 8×8** and **NeoPixel 16×16**.
-    *   Uses a **ref-based rendering** approach to call `element.setPixel(row, col, {r,g,b})` directly on the Wokwi DOM element — unlike simple LEDs which use HTML attributes.
-    *   Sends NeoPixel wiring topology (component ID, Arduino pin, matrix size) to the emulator in the WebSocket `START` message.
-    *   Validation rules warn when DIN or GND pins are not connected.
-*   **Wokwi Component Glitches Fixed**
-    *   Discovered an inherent UI bug where Wokwi LEDs evaluate the `value="0"` attribute as truthy.
-    *   Overhauled the `getComponentStateAttrs` engine so the `value` property is actively injected or deleted from the DOM based on physical voltage rules.
-
----
-*Generated for the Universal Emulator Integration.*
+- Pico dual-source folder defaults (`<boardId>.ino` + `main.py`)
+- file disable/enable support with `.disabled` suffix
+- duplicate explorer file dedupe on refresh/load
+- RP2040 compile fallback to MicroPython when backend core is missing
 

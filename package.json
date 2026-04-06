@@ -7,7 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:protocol": "node src/worker/protocol-compliance.test.mjs"
+    "test:protocol": "npx --yes tsx src/worker/protocol-compliance.test.mjs",
+    "test:rp2040-smoke": "npx --yes tsx src/worker/rp2040-smoke-matrix.ts",
+    "test:rp2040-smoke:watchdog": "node scripts/rp2040-smoke-watchdog.mjs",
+    "test:cli-hw-matrix": "npx --yes tsx src/worker/cli-hardware-compat-matrix.ts",
+    "test:cli-hw-matrix:watchdog": "node scripts/cli-hw-matrix-watchdog.mjs",
+    "test:cli-hw-matrix:guard": "node scripts/cli-hw-matrix-guard.mjs",
+    "report:telemetry-coverage": "node scripts/cli-hw-telemetry-coverage.mjs"
   },
   "dependencies": {
     "@babel/standalone": "^7.29.1",
@@ -20,15 +26,18 @@
     "intel-hex": "^0.2.0",
     "jszip": "^3.10.1",
     "jwt-decode": "^4.0.0",
+    "littlefs": "^0.1.0",
     "lucide-react": "^0.577.0",
     "prismjs": "^1.30.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.22.0",
     "react-simple-code-editor": "^0.14.1",
+    "rp2040js": "^0.15.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.27",
     "postcss": "^8.5.8",

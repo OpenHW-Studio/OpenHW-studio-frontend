@@ -157,6 +157,15 @@ The **Arduino Uno Reset Button** is fully interactive inside the workspace SVG v
 ### Web Worker Simulation
 AVR simulation runs entirely in-browser via `src/worker/execute.ts` inside a Web Worker, keeping the UI thread completely unblocked.
 
+### Pico / RP2040 Workflow
+- Each Pico board folder now includes both `<boardId>.ino` and `main.py` starter files.
+- File menu supports **Disable file / Enable file** by renaming with `.disabled` suffix.
+- Disabled files are excluded from compile and MicroPython source selection.
+- If backend RP2040 Arduino core is missing, `.ino` compile failures automatically fall back to MicroPython UF2 + `main.py`.
+
+### Explorer Stability
+- Project files are normalized and deduplicated when loading saved projects to prevent duplicate file entries after refresh.
+
 ### Zero-Touch Component Sync
 The simulator polls the backend every 12 seconds for newly approved community components:
 - **Dynamic Injection**: New components are transpiled and injected into the registry and palette without a page refresh.
@@ -229,6 +238,7 @@ See **[OFFLINE_AND_STORAGE.md](../OFFLINE_AND_STORAGE.md)** for full technical d
 - Node.js 18+
 - npm 9+
 - The **Compiler Backend** running at `http://localhost:5001`
+- For Pico `.ino` compilation, backend must have `rp2040:rp2040` core installed.
 
 ### Installation
 
