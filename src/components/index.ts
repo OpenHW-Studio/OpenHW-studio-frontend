@@ -2,6 +2,8 @@
 export { BaseComponent } from './BaseComponent';
 export { default as wokwiLed } from './wokwi-led';
 export { default as wokwiArduinoUno } from './wokwi-arduino-uno';
+export { default as wokwiRaspberryPiPico } from './wokwi-raspberry-pi-pico/index.ts';
+export { default as wokwiRaspberryPiPicoW } from './wokwi-raspberry-pi-pico-w/index.ts';
 export { default as wokwiResistor } from './wokwi-resistor';
 export { default as wokwiPushbutton } from './wokwi-pushbutton';
 export { default as wokwiPowerSupply } from './wokwi-power-supply';
@@ -20,6 +22,7 @@ export { default as wokwiIli9341 } from './wokwi-ili9341';
 export { default as wokwiLcd2004I2C } from './wokwi-lcd2004-i2c';
 export { default as wokwiLdrModule } from './wokwi-ldr-module';
 export { default as max30102 } from './max30102';
+export { default as wokwiSdCard } from './wokwi-sd-card';
 
 
 

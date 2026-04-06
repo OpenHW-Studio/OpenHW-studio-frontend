@@ -14,6 +14,10 @@ The Emulator package is a shared library that defines how components behave and 
 - **Circuit Validation**: Implements a graph-based validation engine to detect wiring errors (e.g., short circuits, missing resistors) before simulation starts.
 - **Pin Logic**: Handles the digital and analog signal mapping between the CPU and virtual components.
 
+### Runtime Notes (March 2026)
+- RP2040/Pico simulation paths now use validated firmware vector loading to avoid invalid-memory execution loops from malformed firmware payloads.
+- Frontend code explorer supports per-file disable/enable via `.disabled` suffix; disabled files are ignored during source selection.
+
 ---
 
 ## Project Structure
