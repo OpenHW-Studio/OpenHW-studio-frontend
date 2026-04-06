@@ -1,6 +1,10 @@
+import { ImagePlus, Upload, X } from "lucide-react";
+
 export default function TeacherEditClassModal({
   editForm,
   onEditInputChange,
+  onImageUpload,
+  onRemoveImage,
   onClose,
   onSubmit,
   editError,
@@ -14,11 +18,14 @@ export default function TeacherEditClassModal({
       aria-label="Edit class details"
     >
       <div className="teacher-modal__backdrop" onClick={onClose} />
-      <section className="teacher-modal__content">
+      <section className="teacher-modal__content teacher-modal__content--class-editor">
         <header className="teacher-modal__header">
-          <h3>Edit Class Details</h3>
+          <div>
+            <p className="teacher-modal__eyebrow">Classroom Settings</p>
+            <h3>Edit Class Details</h3>
+          </div>
           <button type="button" onClick={onClose} aria-label="Close modal">
-            x
+            <X size={16} />
           </button>
         </header>
 
@@ -45,16 +52,50 @@ export default function TeacherEditClassModal({
             />
           </label>
 
-          <label>
-            <span>Header Image URL</span>
-            <input
-              type="url"
-              name="image"
-              value={editForm.image}
-              onChange={onEditInputChange}
-              placeholder="https://..."
-            />
-          </label>
+          <div className="teacher-upload-field">
+            <div className="teacher-upload-field__copy">
+              <span>Header Image</span>
+              <small>Upload a banner image for the classroom card and header.</small>
+            </div>
+
+            <label className="teacher-upload-dropzone teacher-upload-dropzone--image">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={onImageUpload}
+              />
+              {editForm.image ? (
+                <>
+                  <img
+                    src={editForm.image}
+                    alt="Class header preview"
+                    className="teacher-upload-dropzone__preview"
+                  />
+                  <span className="teacher-upload-dropzone__overlay">
+                    <ImagePlus size={16} />
+                    Replace image
+                  </span>
+                  <button
+                    type="button"
+                    className="teacher-upload-dropzone__remove"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onRemoveImage();
+                    }}
+                    aria-label="Remove image"
+                  >
+                    <X size={14} />
+                  </button>
+                </>
+              ) : (
+                <span className="teacher-upload-dropzone__empty">
+                  <Upload size={18} />
+                  Upload image
+                </span>
+              )}
+            </label>
+          </div>
 
           {editError ? (
             <p className="teacher-inline-state teacher-inline-state--error">

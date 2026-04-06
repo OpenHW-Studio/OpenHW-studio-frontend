@@ -90,6 +90,11 @@ export function AuthProvider({ children }) {
     setToken(null)
   }
 
+  const updateUserSession = (userProfile) => {
+    saveUser(userProfile)
+    setUser(userProfile)
+  }
+
   const adminLogout = () => {
     removeAdminToken()
     removeAdminUser()
@@ -112,7 +117,7 @@ export function AuthProvider({ children }) {
       adminUser, adminToken, isAdminAuthenticated, adminRole,
 
       // Actions
-      login, logout, adminLogout, loading
+      login, logout, adminLogout, updateUserSession, loading
     }}>
       {children}
     </AuthContext.Provider>

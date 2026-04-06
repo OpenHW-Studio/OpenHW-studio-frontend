@@ -145,6 +145,9 @@ export default function SigninPage() {
             <label className="auth-field">
               <span>Password</span>
               <input type="password" name="password" placeholder="Enter your password" value={formData.password} onChange={handleInputChange} required />
+              <div style={{ textAlign: 'right', marginTop: '0.25rem' }}>
+                <Link to="/forgot-password" style={{ fontSize: '0.875rem', color: '#3b82f6' }}>Forgot Password?</Link>
+              </div>
             </label>
 
             {error && <div className="auth-form__error">{error}</div>}

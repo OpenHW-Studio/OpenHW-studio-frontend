@@ -166,3 +166,50 @@ export const fetchProfile = async () => {
   
   return data;
 };
+
+export const updateProfile = async (profileData) => {
+  const token = getToken();
+  if (!token) throw new Error('No token found');
+
+  const response = await fetch(`${BASE_URL}/user/profile`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(profileData)
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to update profile');
+
+  if (data.user) {
+    saveUser(data.user);
+  }
+
+  return data;
+};
+
+export const forgotPassword = async (email) => {
+  const response = await fetch(`${BASE_URL}/user/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.message || 'Failed to send reset link');
+  return data;
+};
+
+export const resetPassword = async (token, password) => {
+  const response = await fetch(`${BASE_URL}/user/reset-password/${token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || data.message || 'Failed to reset password');
+  return data;
+};

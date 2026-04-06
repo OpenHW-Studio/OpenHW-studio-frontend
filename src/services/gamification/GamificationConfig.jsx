@@ -16,6 +16,26 @@ export const LEVELS = [
       'wokwi-arduino-uno',
       'wokwi-led',
       'wokwi-resistor',
+      'wokwi-breadboard',
+      'wokwi-breadboard-half',
+      'wokwi-breadboard-mini',
+      'wokwi-a4988',
+      'wokwi-stepper-motor',
+      'wokwi-nlsf595',
+      'wokwi-cd74hc4067',
+      'wokwi-l293d',
+      'wokwi-rgb-led',
+      'wokwi-rotary-encoder',
+      'wokwi-logic-analyzer',
+      'wokwi-nokia-5110',
+      'wokwi-soil-moisture-sensor',
+      'wokwi-npn-transistor',
+      'wokwi-diode',
+      'wokwi-photodiode',
+      'wokwi-pca9685',
+      'wokwi-pca9865',
+      'wokwi-arduino-sensor-shield',
+      'wokwi-arduino-nano',
     ],
     badge: {
       id: 'badge_hello_world',
@@ -123,6 +143,7 @@ export const LEVELS = [
     unlockedComponents: [
       'wokwi-rgb-led',
       'wokwi-neopixel-matrix',
+      'wokwi-neopixel-ring',
     ],
     badge: {
       id: 'badge_color_wizard',
@@ -150,6 +171,7 @@ export const LEVELS = [
     unlockedComponents: [
       'wokwi-lcd1602',
       'wokwi-7segment',
+      'wokwi-tm1637-7segment',
     ],
     badge: {
       id: 'badge_data_displayer',
@@ -274,10 +296,10 @@ export const LEVELS = [
 
 // Badge rarity colors and labels
 export const RARITY_CONFIG = {
-  common:    { color: '#9ca3af', glow: '#9ca3af44', label: 'Common' },
-  uncommon:  { color: '#22c55e', glow: '#22c55e44', label: 'Uncommon' },
-  rare:      { color: '#3b82f6', glow: '#3b82f644', label: 'Rare' },
-  epic:      { color: '#a855f7', glow: '#a855f744', label: 'Epic' },
+  common: { color: '#9ca3af', glow: '#9ca3af44', label: 'Common' },
+  uncommon: { color: '#22c55e', glow: '#22c55e44', label: 'Uncommon' },
+  rare: { color: '#3b82f6', glow: '#3b82f644', label: 'Rare' },
+  epic: { color: '#a855f7', glow: '#a855f744', label: 'Epic' },
   legendary: { color: '#fbbf24', glow: '#fbbf2444', label: 'Legendary' },
 };
 

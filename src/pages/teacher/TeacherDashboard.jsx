@@ -16,6 +16,7 @@ import { formatDateTime, getAvatarLetters } from '../../components/common/test.j
 import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 import ClassCard from '../../components/common/ClassCard.jsx'
 import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
+import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 
 const sidebarLinks = [
   { key: 'home', label: 'Home', icon: Home },
@@ -102,6 +103,29 @@ export default function TeacherDashboard() {
     }))
   }
 
+  const handleCreateImageUpload = async (event) => {
+    try {
+      const [image] = await uploadClassroomFiles(event.target.files, {
+        category: 'classes',
+        classId: 'new',
+        maxFiles: 1,
+        allowedTypes: ['image']
+      })
+
+      if (image) {
+        setNewClassForm((prev) => ({
+          ...prev,
+          image
+        }))
+        setCreateError('')
+      }
+    } catch (uploadError) {
+      setCreateError(uploadError.message || 'Failed to upload class image')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
   const handleCreateClass = async (event) => {
     event.preventDefault()
 
@@ -148,7 +172,12 @@ export default function TeacherDashboard() {
 
   return (
     <div className="teacher-dashboard-page">
-      <ClassroomSidebar links={navLinks} user={user} onLogout={handleLogout} />
+      <ClassroomSidebar
+        links={navLinks}
+        user={user}
+        onLogout={handleLogout}
+        onProfileClick={() => navigate('/teacher/profile')}
+      />
 
       <main className="teacher-dashboard-main teacher-dashboard-main--with-fixed-sidebar">
         <section className="teacher-hero">
@@ -172,7 +201,15 @@ export default function TeacherDashboard() {
           <div className="teacher-hero__badge" aria-hidden="true">
             <div className="teacher-hero__shape teacher-hero__shape--outer" />
             <div className="teacher-hero__shape teacher-hero__shape--inner" />
-            <span className="teacher-hero__monogram">OH</span>
+            {user?.image ? (
+              <img
+                src={user.image}
+                alt={user?.name || 'Teacher'}
+                className="teacher-hero__avatar-image"
+              />
+            ) : (
+              <span className="teacher-hero__monogram">{avatarInitials}</span>
+            )}
           </div>
         </section>
 
@@ -273,10 +310,7 @@ export default function TeacherDashboard() {
           <div className="teacher-modal__backdrop" onClick={() => setIsModalOpen(false)} />
           <section className="teacher-modal__content">
             <header className="teacher-modal__header">
-              <h3>
-                <Plus size={16} />
-                <span>Add New Class</span>
-              </h3>
+              <h3>Add New Class</h3>
               <button type="button" onClick={() => setIsModalOpen(false)} aria-label="Close modal">x</button>
             </header>
 
@@ -304,16 +338,51 @@ export default function TeacherDashboard() {
                 />
               </label>
 
-              <label>
-                <span>Header Image URL</span>
-                <input
-                  type="url"
-                  name="image"
-                  value={newClassForm.image}
-                  onChange={handleCreateInputChange}
-                  placeholder="https://..."
-                />
-              </label>
+              <div className="teacher-upload-field">
+                <div className="teacher-upload-field__copy">
+                  <span>Header Image</span>
+                  <small>Upload a cover image for the class card and hero section.</small>
+                </div>
+
+                <label className="teacher-upload-dropzone teacher-upload-dropzone--image">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCreateImageUpload}
+                  />
+                  {newClassForm.image ? (
+                    <>
+                      <img
+                        src={newClassForm.image}
+                        alt="Class cover preview"
+                        className="teacher-upload-dropzone__preview"
+                      />
+                      <span className="teacher-upload-dropzone__overlay">
+                        Upload another image
+                      </span>
+                      <button
+                        type="button"
+                        className="teacher-upload-dropzone__remove"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          setNewClassForm((prev) => ({
+                            ...prev,
+                            image: ''
+                          }))
+                        }}
+                        aria-label="Remove image"
+                      >
+                        x
+                      </button>
+                    </>
+                  ) : (
+                    <span className="teacher-upload-dropzone__empty">
+                      Upload image
+                    </span>
+                  )}
+                </label>
+              </div>
 
               {createError ? <p className="teacher-inline-state teacher-inline-state--error">{createError}</p> : null}
 
