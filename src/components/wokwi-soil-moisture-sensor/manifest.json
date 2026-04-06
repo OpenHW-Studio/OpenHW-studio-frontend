@@ -1,0 +1,28 @@
+{
+    "type": "wokwi-soil-moisture-sensor",
+    "label": "Soil Moisture",
+    "group": "Sensors",
+    "w": 180,
+    "h": 60,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "GND",
+            "x": 0,
+            "y": 20,
+            "type": "power"
+        },
+        {
+            "id": "VCC",
+            "x": 0,
+            "y": 30,
+            "type": "power"
+        },
+        {
+            "id": "SIG",
+            "x": 0,
+            "y": 40,
+            "type": "digital"
+        }
+    ]
+}

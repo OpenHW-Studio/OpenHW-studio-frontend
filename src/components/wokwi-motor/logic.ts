@@ -4,6 +4,8 @@ export class MotorLogic extends BaseComponent {
     private pinData: Record<string, { lastState: boolean, lastCycle: number, highCycles: number }> = {};
     private lastUpdateCycle = 0;
 
+    private actualSpeed = 0;
+
     constructor(id: string, manifest: any) {
         super(id, manifest);
         this.state = { speed: 0 };
@@ -70,17 +72,26 @@ export class MotorLogic extends BaseComponent {
         let v2 = this.getAverageVoltage('2', time, elapsedCycles);
         v2 = this.getConnectedVoltage('2', wires, instances, v2);
 
-        let speed = 0;
+        let targetSpeed = 0;
         if (v1 > v2 + 0.5) {
-            speed = (v1 - v2) / 5.0;
+            targetSpeed = (v1 - v2) / 5.0;
         } else if (v2 > v1 + 0.5) {
-            speed = -(v2 - v1) / 5.0;
+            targetSpeed = -(v2 - v1) / 5.0;
         }
 
-        speed = Math.max(-1, Math.min(1, speed));
+        targetSpeed = Math.max(-1, Math.min(1, targetSpeed));
 
-        if (Math.abs(this.state.speed - speed) > 0.1) {
-            this.state.speed = speed;
+        // Low-pass filter for realistic motor inertia
+        // Smoothing factor (0.0 to 1.0) - smaller is more inertia
+        const dt = elapsedCycles / 16000; // time in milliseconds at 16MHz
+        const factor = Math.min(1.0, 0.05 * dt);
+        this.actualSpeed = this.actualSpeed + (targetSpeed - this.actualSpeed) * factor;
+
+        // Snap to exactly zero if practically zero
+        if (Math.abs(this.actualSpeed) < 0.01) this.actualSpeed = 0;
+
+        if (Math.abs(this.state.speed - this.actualSpeed) > 0.05) {
+            this.state.speed = this.actualSpeed; // Export filtered speed to UI
             this.stateChanged = true;
         }
     }
