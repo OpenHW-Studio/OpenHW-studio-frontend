@@ -23,6 +23,7 @@
   "dependencies": {
     "avr8js": "^0.21.0",
     "intel-hex": "^0.2.0",
+    "littlefs": "github:wokwi/littlefs-wasm",
     "ws": "^8.19.0"
   }
 }

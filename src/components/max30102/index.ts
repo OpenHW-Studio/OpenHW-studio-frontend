@@ -4,6 +4,10 @@ import { MAX30102Logic } from './logic';
 import { validation } from './validation';
 import docHtml from './doc/index.html?raw';
 
+import uiRaw from './ui.tsx?raw';
+import logicRaw from './logic.ts?raw';
+import validationRaw from './validation.ts?raw';
+
 export default {
     manifest,
     UI:                       MAX30102UI,
@@ -14,4 +18,7 @@ export default {
     contextMenuOnlyDuringRun: true,   // hide the menu when simulation is stopped
     validation,
     doc: docHtml,
+    uiRaw,
+    logicRaw,
+    validationRaw,
 };
