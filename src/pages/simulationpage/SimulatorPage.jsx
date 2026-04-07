@@ -1607,6 +1607,10 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [isExporting, setIsExporting] = useState(false);
   const [showFirmwareDownloadDialog, setShowFirmwareDownloadDialog] = useState(false);
   const [firmwareDownloadTarget, setFirmwareDownloadTarget] = useState('');
+  const [showFirmwareUploadDialog, setShowFirmwareUploadDialog] = useState(false);
+  const [firmwareUploadTarget, setFirmwareUploadTarget] = useState('');
+  const [firmwareUploadFile, setFirmwareUploadFile] = useState(null);
+  const [isApplyingFirmwareUpload, setIsApplyingFirmwareUpload] = useState(false);
   const [runStartedAtMs, setRunStartedAtMs] = useState(null);
   const [runDurationSec, setRunDurationSec] = useState(0);
   const simulationSpeed = 1;
@@ -1630,6 +1634,14 @@ export default function SimulatorPage({ gamificationMode = false }) {
       setFirmwareDownloadTarget(firmwareBoardOptions[0]?.id || '__latest__');
     }
   }, [showFirmwareDownloadDialog, firmwareDownloadTarget, firmwareBoardOptions]);
+
+  useEffect(() => {
+    if (!showFirmwareUploadDialog) return;
+    const hasTarget = firmwareBoardOptions.some((opt) => opt.id === firmwareUploadTarget);
+    if (!hasTarget) {
+      setFirmwareUploadTarget(firmwareBoardOptions[0]?.id || '');
+    }
+  }, [showFirmwareUploadDialog, firmwareUploadTarget, firmwareBoardOptions]);
 
   const workerRef = useRef(null)
   const lastCompiledRef = useRef(null)
@@ -1663,6 +1675,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const dragPayload = useRef(null)
   const movingComp = useRef(null)
   const componentZipInputRef = useRef(null);
+  const firmwareUploadInputRef = useRef(null);
   // Reactive refs — kept current every render so async effects get fresh values
   const getPinPosRef = useRef(null);
   const componentsRef = useRef([]);
@@ -1687,6 +1700,14 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [projContextMenu, setProjContextMenu] = useState(null); // { proj, x, y }
   const [renamingProjectId, setRenamingProjectId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
+    try {
+      const val = localStorage.getItem('ohw_autosave_enabled');
+      return val === null ? true : val === 'true';
+    } catch {
+      return true;
+    }
+  });
   const backupRestoreInputRef = useRef(null);
 
   const handleUploadZip = async (event) => {
@@ -1965,6 +1986,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
+    // Don't trigger auto-save if disabled
+    if (!autoSaveEnabled) return;
+
     // Don't trigger an empty-project save on initial render
     if (components.length === 0 && wires.length === 0 && code.trim() === '') return;
 
@@ -1996,7 +2020,15 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
     return () => clearTimeout(autoSaveTimerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [components, wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, board, projectFiles, openCodeTabs, activeCodeFileId]);
+  }, [components, wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, board, projectFiles, openCodeTabs, activeCodeFileId, autoSaveEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ohw_autosave_enabled', String(autoSaveEnabled));
+    } catch {
+      // no-op
+    }
+  }, [autoSaveEnabled]);
 
   useEffect(() => { canvasZoomRef.current = canvasZoom; }, [canvasZoom]);
   useEffect(() => { canvasOffsetRef.current = canvasOffset; }, [canvasOffset]);
@@ -3795,18 +3827,129 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
   // ─── Project Save / Load Handlers ───────────────────────────────────────────
 
+  const sanitizeDownloadStem = useCallback((value, fallback = 'firmware') => {
+    const cleaned = String(value || '')
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return cleaned || fallback;
+  }, []);
+
+  const resolveFirmwareBoardFileStem = useCallback((boardId = '') => {
+    const normalizedBoardId = String(boardId || '').trim();
+    if (!normalizedBoardId) return '';
+
+    const boardComp = boardComponentMap.get(normalizedBoardId);
+    const boardLabel = String(boardComp?.label || '').trim();
+    return sanitizeDownloadStem(boardLabel || normalizedBoardId, 'firmware');
+  }, [boardComponentMap, sanitizeDownloadStem]);
+
+  const buildSimulationJsonPayload = useCallback(() => {
+    return buildProjectPayload({
+      name: currentProjectName,
+      board,
+      components,
+      wires,
+      code,
+      blocklyXml,
+      blocklyGeneratedCode,
+      useBlocklyCode,
+      projectFiles,
+      openCodeTabs,
+      activeCodeFileId,
+      exportedAt: new Date().toISOString(),
+    });
+  }, [
+    currentProjectName,
+    board,
+    components,
+    wires,
+    code,
+    blocklyXml,
+    blocklyGeneratedCode,
+    useBlocklyCode,
+    projectFiles,
+    openCodeTabs,
+    activeCodeFileId,
+  ]);
+
+  const downloadSimulationJson = useCallback(() => {
+    try {
+      const payload = buildSimulationJsonPayload();
+      const fileBase = sanitizeDownloadStem(currentProjectName || 'simulation', 'simulation');
+      const fileName = `${fileBase}.json`;
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fileName;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      appendConsoleEntry('info', `Simulation JSON downloaded: ${fileName}`, 'simulator');
+    } catch (err) {
+      appendConsoleEntry('error', `Simulation JSON download failed: ${err?.message || 'Unknown error'}`, 'simulator');
+    }
+  }, [appendConsoleEntry, buildSimulationJsonPayload, currentProjectName, sanitizeDownloadStem]);
+
+  const parseFirmwareUploadFile = useCallback((file) => {
+    return new Promise((resolve, reject) => {
+      if (!(file instanceof File)) {
+        reject(new Error('No firmware file selected.'));
+        return;
+      }
+
+      const rawExt = fileExt(file.name).toLowerCase();
+      if (rawExt !== '.hex' && rawExt !== '.uf2') {
+        reject(new Error('Unsupported firmware file. Use .hex (all boards) or .uf2 (RP2040).'));
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+      reader.onload = () => {
+        try {
+          if (rawExt === '.uf2') {
+            const buffer = reader.result;
+            if (!(buffer instanceof ArrayBuffer)) {
+              throw new Error('UF2 payload read failed.');
+            }
+            const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
+            resolve({ payload, ext: rawExt, fileName: file.name });
+            return;
+          }
+
+          const payload = String(reader.result || '').trim();
+          resolve({ payload, ext: rawExt, fileName: file.name });
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error('Failed to parse firmware file.'));
+        }
+      };
+
+      if (rawExt === '.uf2') reader.readAsArrayBuffer(file);
+      else reader.readAsText(file);
+    });
+  }, []);
+
   const normalizeFirmwareFileName = useCallback((artifactName, boardId, firmwarePayload) => {
     const cleaned = String(artifactName || '').trim();
     const isUf2 = typeof firmwarePayload === 'string' && firmwarePayload.startsWith(UF2_PAYLOAD_PREFIX);
     const defaultExt = isUf2 ? '.uf2' : '.hex';
 
-    if (cleaned) {
-      return /\.[a-z0-9]+$/i.test(cleaned) ? cleaned : `${cleaned}${defaultExt}`;
+    const boardStem = resolveFirmwareBoardFileStem(boardId);
+    if (boardStem) {
+      return `${boardStem}${defaultExt}`;
     }
 
-    const safeBoard = String(boardId || 'firmware').replace(/[^a-zA-Z0-9_-]/g, '_') || 'firmware';
-    return `${safeBoard}-firmware${defaultExt}`;
-  }, []);
+    if (cleaned) {
+      return /\.[a-z0-9]+$/i.test(cleaned)
+        ? sanitizeDownloadStem(cleaned, 'firmware') + cleaned.match(/\.[a-z0-9]+$/i)[0]
+        : `${sanitizeDownloadStem(cleaned, 'firmware')}${defaultExt}`;
+    }
+
+    return `firmware${defaultExt}`;
+  }, [resolveFirmwareBoardFileStem, sanitizeDownloadStem]);
 
   const triggerFirmwareDownload = useCallback((firmwarePayload, fileName) => {
     if (!firmwarePayload) return;
@@ -3955,6 +4098,86 @@ export default function SimulatorPage({ gamificationMode = false }) {
     setFirmwareDownloadTarget(firmwareBoardOptions[0]?.id || '__latest__');
     setShowFirmwareDownloadDialog(true);
   }, [firmwareBoardOptions]);
+
+  const openFirmwareUploadDialog = useCallback(() => {
+    setFirmwareUploadTarget(firmwareBoardOptions[0]?.id || '');
+    setFirmwareUploadFile(null);
+    setShowFirmwareUploadDialog(true);
+    if (firmwareUploadInputRef.current) {
+      firmwareUploadInputRef.current.value = '';
+    }
+  }, [firmwareBoardOptions]);
+
+  const applyUploadedFirmwareToBoard = useCallback(async () => {
+    const targetBoardId = String(firmwareUploadTarget || '').trim();
+    if (!targetBoardId) {
+      appendConsoleEntry('warn', 'Pick a board target before uploading firmware.', 'simulator');
+      return;
+    }
+    if (!(firmwareUploadFile instanceof File)) {
+      appendConsoleEntry('warn', 'Select a firmware file before uploading.', 'simulator');
+      return;
+    }
+
+    const targetBoardComp = boardComponentMap.get(targetBoardId);
+    if (!targetBoardComp) {
+      appendConsoleEntry('error', `Board ${targetBoardId} is no longer available on canvas.`, 'simulator');
+      return;
+    }
+
+    setIsApplyingFirmwareUpload(true);
+    try {
+      const parsed = await parseFirmwareUploadFile(firmwareUploadFile);
+      const boardKind = normalizeBoardKind(targetBoardComp.type);
+      if (boardKind !== 'rp2040' && parsed.ext !== '.hex') {
+        throw new Error('Only RP2040 boards support UF2 firmware uploads. Use .hex for this board.');
+      }
+      if (!parsed.payload) {
+        throw new Error('Firmware file is empty.');
+      }
+
+      saveHistory();
+      setComponents((prev) => prev.map((comp) => {
+        if (comp.id !== targetBoardId) return comp;
+        return {
+          ...comp,
+          attrs: {
+            ...(comp.attrs || {}),
+            firmwareHex: parsed.payload,
+            hex: parsed.payload,
+            firmwareArtifactName: String(parsed.fileName || ''),
+          },
+        };
+      }));
+
+      lastCompiledRef.current = null;
+
+      const boardLabel = boardCompToDisplayName(targetBoardComp, boardKind);
+      const firmwareKind = parsed.ext === '.uf2' ? 'UF2' : 'HEX';
+      appendConsoleEntry(
+        'info',
+        `Assigned ${firmwareKind} firmware (${parsed.fileName}) to ${boardLabel}. The next run will use this firmware.`,
+        'simulator',
+      );
+
+      setShowFirmwareUploadDialog(false);
+      setFirmwareUploadFile(null);
+      if (firmwareUploadInputRef.current) {
+        firmwareUploadInputRef.current.value = '';
+      }
+    } catch (err) {
+      appendConsoleEntry('error', `Firmware upload failed: ${err?.message || 'Unknown error'}`, 'simulator');
+    } finally {
+      setIsApplyingFirmwareUpload(false);
+    }
+  }, [
+    appendConsoleEntry,
+    boardComponentMap,
+    firmwareUploadTarget,
+    firmwareUploadFile,
+    parseFirmwareUploadFile,
+    saveHistory,
+  ]);
 
   const handleStartGDB = () => {
     appendConsoleEntry('info', 'Connecting to GDB Session...', 'simulator');
@@ -4496,6 +4719,27 @@ export default function SimulatorPage({ gamificationMode = false }) {
           boardBaudMap[boardComp.id] = selectedRunBoardId
             ? (boardComp.id === selectedRunBoardId ? selectedRunBaud : defaultBaud)
             : selectedRunBaud;
+
+          const uploadedFirmware = String(
+            resolveComponentAttrString(boardComp?.attrs, 'firmwareHex', '')
+            || resolveComponentAttrString(boardComp?.attrs, 'hex', ''),
+          ).trim();
+          if (uploadedFirmware) {
+            boardHexMap[boardComp.id] = uploadedFirmware;
+            const uploadKind = uploadedFirmware.startsWith(UF2_PAYLOAD_PREFIX) ? 'UF2' : 'HEX';
+            appendConsoleEntry(
+              'info',
+              `Using uploaded ${uploadKind} firmware for ${boardCompToDisplayName(boardComp, kind)}.`,
+              'simulator',
+            );
+            if (!result) {
+              result = {
+                hex: uploadedFirmware,
+                artifactName: normalizeFirmwareFileName('', boardComp.id, uploadedFirmware),
+              };
+            }
+            continue;
+          }
 
           const firmwareAssets = getBoardFirmwareAssets(boardComp.id);
           const activeFilePath = String(activeCodeFile?.path || '');
@@ -7836,7 +8080,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
           libQuery={libQuery} setLibQuery={setLibQuery} handleSearchLibraries={handleSearchLibraries} isSearchingLib={isSearchingLib} libMessage={libMessage} libInstalled={libInstalled} libResults={libResults} handleInstallLibrary={handleInstallLibrary} installingLib={installingLib}
           serialPaused={serialPaused} setSerialPaused={setSerialPaused} isRunning={isRunning} serialHistory={serialHistory} setSerialHistory={setSerialHistory} serialOutputRef={serialOutputRef} serialInput={serialInput} setSerialInput={setSerialInput} sendSerialInput={sendSerialInput} clearSerialMonitor={clearSerialMonitor}
           serialViewMode={serialViewMode} setSerialViewMode={setSerialViewMode} serialBoardFilter={serialBoardFilter} setSerialBoardFilter={setSerialBoardFilter} serialBoardOptions={serialBoardOptions} serialBoardLabels={serialBoardLabels} serialBoardKinds={serialBoardKinds} serialBoardSourceModes={rp2040BoardSourceModes} serialBaudRate={serialBaudRate} setSerialBaudRate={setSerialBaudRate} serialBaudOptions={serialBaudOptions} serialLineEnding={serialLineEnding} setSerialLineEnding={setSerialLineEnding}
-          rp2040DebugTelemetryEnabled={rp2040DebugTelemetryEnabled} setRp2040DebugTelemetryEnabled={setRp2040DebugTelemetryEnabled}
           hardwareConnected={hardwareConnected}
           plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
           showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
@@ -7975,6 +8218,21 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
                 {projectsSidebarTab === 'settings' && (
                   <div className="flex flex-col gap-2 py-1">
+                    <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Preferences</div>
+                    <div className="flex items-center justify-between bg-[var(--card)] border border-[var(--border)] rounded-lg px-3 py-2.5 shadow-sm">
+                      <div className="flex flex-col">
+                        <span className="text-[12px] font-bold text-[var(--text)]">Auto-save Projects</span>
+                        <span className="text-[9px] text-[var(--text3)]">Saves changes every 2.5s</span>
+                      </div>
+                      <button 
+                        onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
+                        className={`w-9 h-5 rounded-full relative transition-all duration-300 ${autoSaveEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--bg3)]'}`}
+                      >
+                        <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-300 ${autoSaveEnabled ? 'translate-x-4' : ''}`} />
+                      </button>
+                    </div>
+
+                    <div className="h-px bg-[var(--border)] my-1 opacity-50" />
                     <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Data Management</div>
                     <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleBackupWorkflow}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
@@ -8253,6 +8511,61 @@ export default function SimulatorPage({ gamificationMode = false }) {
         </div>
       )}
 
+      {/* ── FIRMWARE UPLOAD DIALOG ───────────────────────────────────────── */}
+      {showFirmwareUploadDialog && (
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareUploadDialog(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+            <div className="text-base font-bold mb-2 text-[var(--text)]">Upload Firmware to Board</div>
+            <div className="text-xs text-[var(--text3)] mb-4">
+              Upload a firmware artifact for a specific board on canvas. Use <strong>.hex</strong> for Arduino/ESP32/STM32 and <strong>.uf2</strong> (or .hex) for RP2040.
+              Uploaded firmware is used on the next simulation run for that board.
+            </div>
+
+            <label className="text-xs font-semibold text-[var(--text2)] block mb-2">Board target</label>
+            <select
+              className="w-full bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-3 py-2 rounded-lg text-sm mb-4"
+              value={firmwareUploadTarget}
+              onChange={(e) => setFirmwareUploadTarget(e.target.value)}
+              disabled={firmwareBoardOptions.length === 0}
+            >
+              {firmwareBoardOptions.length === 0 ? (
+                <option value="">No programmable board on canvas</option>
+              ) : firmwareBoardOptions.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+
+            <input
+              ref={firmwareUploadInputRef}
+              type="file"
+              accept=".hex,.uf2"
+              style={{ display: 'none' }}
+              onChange={(e) => setFirmwareUploadFile(e.target.files?.[0] || null)}
+            />
+
+            <div className="mb-4" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Btn onClick={() => firmwareUploadInputRef.current?.click()} disabled={firmwareBoardOptions.length === 0}>
+                Choose Firmware File
+              </Btn>
+              <div className="text-xs text-[var(--text3)]" style={{ minHeight: 18 }}>
+                {firmwareUploadFile?.name || 'No file selected'}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn onClick={() => setShowFirmwareUploadDialog(false)}>Cancel</Btn>
+              <Btn
+                color="var(--accent)"
+                disabled={!firmwareUploadTarget || !firmwareUploadFile || isApplyingFirmwareUpload}
+                onClick={applyUploadedFirmwareToBoard}
+              >
+                {isApplyingFirmwareUpload ? 'Applying...' : 'Upload & Use'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* F1 MENU */}
       {showF1Menu && (
         <div 
@@ -8260,11 +8573,20 @@ export default function SimulatorPage({ gamificationMode = false }) {
           onClick={() => setShowF1Menu(false)}
         >
           <div 
-            className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[380px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
+            className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
             onClick={e => e.stopPropagation()}
           >
             <div className="text-base font-bold mb-4 text-[var(--text)]">Quick Actions (F1)</div>
             <div className="flex flex-col gap-2">
+              <button 
+                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                onClick={() => {
+                  downloadSimulationJson();
+                  setShowF1Menu(false);
+                }}
+              >
+                🧾 Download Simulation JSON
+              </button>
               <button 
                 className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
                 onClick={() => {
@@ -8273,6 +8595,24 @@ export default function SimulatorPage({ gamificationMode = false }) {
                 }}
               >
                 📥 Download Firmware
+              </button>
+              <button 
+                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                onClick={() => {
+                  openFirmwareUploadDialog();
+                  setShowF1Menu(false);
+                }}
+              >
+                📤 Upload Firmware to Board
+              </button>
+              <button
+                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                onClick={() => {
+                  setRp2040DebugTelemetryEnabled((prev) => !prev);
+                  setShowF1Menu(false);
+                }}
+              >
+                {rp2040DebugTelemetryEnabled ? '🐞 Disable RP2040 dbg Telemetry' : '🐞 Enable RP2040 dbg Telemetry'}
               </button>
               <button 
                 className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"

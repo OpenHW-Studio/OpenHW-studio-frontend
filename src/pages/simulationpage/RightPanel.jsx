@@ -28,7 +28,6 @@ export function RightPanel(props) {
     libQuery, setLibQuery, handleSearchLibraries, isSearchingLib, libMessage, libInstalled, libResults, handleInstallLibrary, installingLib,
     serialPaused, setSerialPaused, isRunning, serialHistory, setSerialHistory, serialOutputRef, serialInput, setSerialInput, sendSerialInput, clearSerialMonitor,
     serialViewMode, setSerialViewMode, serialBoardFilter, setSerialBoardFilter, serialBoardOptions, serialBoardLabels, serialBoardKinds, serialBoardSourceModes, serialBaudRate, setSerialBaudRate, serialBaudOptions, serialLineEnding, setSerialLineEnding,
-    rp2040DebugTelemetryEnabled, setRp2040DebugTelemetryEnabled,
     hardwareConnected,
     plotterPaused, setPlotterPaused, plotData, setPlotData, selectedPlotPins, setSelectedPlotPins, plotterCanvasRef, serialPlotLabelsRef,
     showConnectionsPanel, wires, updateWireColor, deleteWire,
@@ -1041,6 +1040,10 @@ export function RightPanel(props) {
                     </button>
                   </div>
                 ) : (
+                  /* ── Block editor enabled ───────────────────────────── */
+                  /* NOTE: Performance is managed here by unmounting Blockly entirely. 
+                     Do not use global CSS (display: none) to hide Blockly elements, 
+                     as it breaks the editor's internal layout engine. */
                   <React.Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>Loading Block Editor...</div>}>
                     <BlocklyEditor
                       onExportCode={(generated) => { setCode(generated); setCodeTab('code'); }}
@@ -1202,17 +1205,6 @@ export function RightPanel(props) {
                     >
                       🗑 Clear
                     </button>
-                    {serialViewMode === 'monitor' && (
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text3)', cursor: 'pointer' }} title="RP2040 debug telemetry">
-                        <input
-                          type="checkbox"
-                          checked={!!rp2040DebugTelemetryEnabled}
-                          onChange={(e) => setRp2040DebugTelemetryEnabled(e.target.checked)}
-                          style={{ margin: 0 }}
-                        />
-                        RP2040 dbg
-                      </label>
-                    )}
                   </div>
                 </div>
                 {serialViewMode === 'monitor' ? (

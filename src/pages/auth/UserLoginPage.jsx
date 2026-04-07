@@ -22,7 +22,7 @@ export default function UserLoginPage() {
 
   const from = location.state?.from || null
 
-  const handleRedirect = (userRole) => {
+  const handleRedirect = () => {
     if (from) {
       navigate(from)
       return
@@ -47,9 +47,9 @@ export default function UserLoginPage() {
     setError('')
 
     try {
-      const data = await loginUser(formData)
+      const data = await loginUser({ ...formData, role: 'user' })
       login(data.token, data.user)
-      handleRedirect(data.user?.role)
+      handleRedirect()
     } catch (err) {
       setError(err.message || 'Invalid email or password.')
     } finally {
@@ -64,7 +64,7 @@ export default function UserLoginPage() {
       try {
         const data = await googleLogin(tokenResponse.access_token, 'user')
         login(data.token, data.user)
-        handleRedirect(data.user?.role)
+        handleRedirect()
       } catch (err) {
         setError(err.message || 'Google authentication failed.')
       } finally {

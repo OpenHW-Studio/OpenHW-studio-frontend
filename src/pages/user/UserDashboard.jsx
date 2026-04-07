@@ -39,7 +39,7 @@ export default function UserDashboard() {
             <p className="teacher-hero__eyebrow">Welcome Info</p>
             <h2 className="teacher-hero__title">{firstName}</h2>
             <p className="teacher-hero__summary">
-              Welcome to your dashboard. Start a new hardward simulation or explore available components.
+              Welcome to your dashboard. Start a new hardware simulation or explore available components.
             </p>
 
             <div className="teacher-hero__actions">

@@ -22,6 +22,10 @@ let syncSnapshotByBoard: Map<string, {
 let syncHeartbeatByBoard: Map<string, { frameId: number; hash: string; emittedAt: number }> = new Map();
 let syncMismatchCountByBoard: Map<string, number> = new Map();
 let syncFaultLatchedByBoard: Map<string, boolean> = new Map();
+let boardInjectSessions: Map<string, {
+    timers: any[];
+    restore?: () => void;
+}> = new Map();
 
 const RP2040_LOGICAL_FLASH_BYTES = 2 * 1024 * 1024;
 const RP2040_MICROPYTHON_FS_OFFSET = 0xA0000;
@@ -92,6 +96,43 @@ function fnv1aHash(input: string): string {
         hash = Math.imul(hash, 0x01000193) >>> 0;
     }
     return hash.toString(16).padStart(8, '0');
+}
+
+function clearInjectSession(boardId: string) {
+    const id = String(boardId || '').trim() || 'default';
+    const session = boardInjectSessions.get(id);
+    if (!session) return;
+
+    if (Array.isArray(session.timers)) {
+        for (const timerId of session.timers) {
+            clearInterval(timerId);
+            clearTimeout(timerId);
+        }
+    }
+    if (typeof session.restore === 'function') {
+        session.restore();
+    }
+    boardInjectSessions.delete(id);
+}
+
+function registerInjectTimer(boardId: string, timerId: any) {
+    const id = String(boardId || '').trim() || 'default';
+    let session = boardInjectSessions.get(id);
+    if (!session) {
+        session = { timers: [] };
+        boardInjectSessions.set(id, session);
+    }
+    session.timers.push(timerId);
+}
+
+function registerInjectRestore(boardId: string, restoreFn: () => void) {
+    const id = String(boardId || '').trim() || 'default';
+    let session = boardInjectSessions.get(id);
+    if (!session) {
+        session = { timers: [] };
+        boardInjectSessions.set(id, session);
+    }
+    session.restore = restoreFn;
 }
 
 function computeSyncHash(payload: unknown): string {
@@ -334,19 +375,20 @@ function scheduleCircuitPythonInject(
         if (bytes.length === 0) return;
 
         let index = 0;
-        const streamTimer = setInterval(() => {
+        const streamId = setInterval(() => {
             const end = Math.min(index + chunkSize, bytes.length);
             for (let i = index; i < end; i++) sendByte(bytes[i]);
             index = end;
             if (index >= bytes.length) {
-                clearInterval(streamTimer);
+                clearInterval(streamId);
             }
         }, Math.max(1, Number(everyMs || 1)));
+        registerInjectTimer(boardId, streamId);
     };
 
     const startAt = Date.now();
     let injected = false;
-    const pollTimer = setInterval(() => {
+    const pollId = setInterval(() => {
         if (injected) return;
 
         const usbReady = !!(target as any)?.usbCdcReady;
@@ -358,13 +400,14 @@ function scheduleCircuitPythonInject(
         transportSource = usbReady ? 'usb' : 'uart0';
 
         injected = true;
-        clearInterval(pollTimer);
+        clearInterval(pollId);
 
         // Enter raw REPL first; send script only after prompt appears.
         streamText('x\r\u0003\u0003', 1, 18);
-        setTimeout(() => {
+        const subId = setTimeout(() => {
             streamText('\u0001', 1, 18);
         }, 120);
+        registerInjectTimer(boardId, subId);
 
         const rawPromptStartedAt = Date.now();
         let scriptDispatched = false;
@@ -372,11 +415,15 @@ function scheduleCircuitPythonInject(
             if (scriptDispatched) return;
             scriptDispatched = true;
             streamText(`${script}\n\u0004`, 24, 4);
+            // On completion, we can clear the session tracking for this board
+            // but we use a small delay to ensure any remaining streams finish.
+            const doneId = setTimeout(() => clearInjectSession(boardId), 2000);
+            registerInjectTimer(boardId, doneId);
         };
 
-        const rawPromptPoll = setInterval(() => {
+        const rawPromptPollId = setInterval(() => {
             if (scriptDispatched) {
-                clearInterval(rawPromptPoll);
+                clearInterval(rawPromptPollId);
                 return;
             }
 
@@ -384,16 +431,18 @@ function scheduleCircuitPythonInject(
             const serialText = boardSerialOutput.get(String(boardId || '').trim()) || '';
             if (/raw REPL; CTRL-B to exit/.test(serialText)) {
                 dispatchScript();
-                clearInterval(rawPromptPoll);
+                clearInterval(rawPromptPollId);
                 return;
             }
 
             if (waitedMs >= 2200) {
                 dispatchScript();
-                clearInterval(rawPromptPoll);
+                clearInterval(rawPromptPollId);
             }
         }, 80);
+        registerInjectTimer(boardId, rawPromptPollId);
     }, 120);
+    registerInjectTimer(boardId, pollId);
 }
 
 async function buildRp2040FlashPartitions(
@@ -502,6 +551,8 @@ function scheduleMicroPythonInject(
             restoreUart0OnByte();
             restoreUart0OnByte = null;
         }
+        // Small delay to ensure any remaining logic finishes before clearing map
+        setTimeout(() => clearInjectSession(boardId), 100);
     };
 
     const sendProbe = () => {
@@ -567,6 +618,7 @@ function scheduleMicroPythonInject(
                 cpu.uart[0].onByte = prev;
             }
         };
+        registerInjectRestore(boardId, restoreUart0OnByte);
         return true;
     };
 
@@ -575,15 +627,19 @@ function scheduleMicroPythonInject(
     const tryPatch = () => {
         if (finalized) return;
         if (patchUart()) return; // success
-        if (++patchAttempts < 10) setTimeout(tryPatch, 50);
+        if (++patchAttempts < 10) {
+            const patchId = setTimeout(tryPatch, 50);
+            registerInjectTimer(boardId, patchId);
+        }
     };
     tryPatch();
 
     // Initial kick after boot; only probes here, no script payload yet.
-    setTimeout(() => {
+    const bootstrapId = setTimeout(() => {
         if (finalized) return;
         sendProbe();
     }, 1400);
+    registerInjectTimer(boardId, bootstrapId);
 
     // Repeat probe while waiting for prompt; inject once when detected.
     probeTimer = setInterval(() => {
@@ -597,6 +653,7 @@ function scheduleMicroPythonInject(
         }
         sendProbe();
     }, 2800);
+    registerInjectTimer(boardId, probeTimer);
 
     // Final guard: if prompt sniff fails, inject exactly once anyway.
     timeoutGuard = setTimeout(() => {
@@ -604,6 +661,7 @@ function scheduleMicroPythonInject(
             sendRawOnce();
         }
     }, timeoutMs);
+    registerInjectTimer(boardId, timeoutGuard);
 }
 
 function stopAllRunners() {
@@ -618,6 +676,12 @@ function stopAllRunners() {
     boardSerialOutput.clear();
     syncValidationEnabled = false;
     resetSyncValidationState();
+
+    // Clear all pending code injections and UART restorations
+    for (const boardId of boardInjectSessions.keys()) {
+        clearInjectSession(boardId);
+    }
+    boardInjectSessions.clear();
 }
 
 function endpointAliases(endpoint: string): string[] {
@@ -1057,6 +1121,13 @@ self.onmessage = async (e) => {
         }
         if (syncValidationEnabled) {
             resetSyncValidationState();
+        }
+
+        // Clear injection sessions on board reset
+        if (mode === 'single') {
+            clearInjectSession('default');
+        } else {
+            boardRunners.forEach((_, boardId) => clearInjectSession(boardId));
         }
     }
 };
