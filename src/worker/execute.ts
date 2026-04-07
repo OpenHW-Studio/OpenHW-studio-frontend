@@ -3,6 +3,7 @@ import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction
 import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
 import { LEDLogic } from '@openhw/emulator/src/components/wokwi-led/logic.ts';
 import { UnoLogic } from '@openhw/emulator/src/components/wokwi-arduino-uno/logic.ts';
+import { MegaLogic } from '@openhw/emulator/src/components/wokwi-arduino-mega/logic.ts';
 import { ResistorLogic } from '@openhw/emulator/src/components/wokwi-resistor/logic.ts';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/wokwi-pushbutton/logic.ts';
 import { PowerSupplyLogic } from '@openhw/emulator/src/components/wokwi-power-supply/logic.ts';
@@ -10,6 +11,8 @@ import { NeopixelLogic } from '@openhw/emulator/src/components/wokwi-neopixel-ma
 import { BuzzerLogic } from '@openhw/emulator/src/components/wokwi-buzzer/logic.ts';
 import { MotorLogic } from '@openhw/emulator/src/components/wokwi-motor/logic.ts';
 import { ServoLogic } from '@openhw/emulator/src/components/wokwi-servo/logic.ts';
+import { StepperMotorLogic } from '@openhw/emulator/src/components/wokwi-stepper-motor/logic.ts';
+import { RotaryEncoderLogic } from '@openhw/emulator/src/components/wokwi-rotary-encoder/logic.ts';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-driver/logic.ts';
 import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
@@ -27,6 +30,25 @@ import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop
 import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
 import { DFlipFlopDsrLogic } from '@openhw/emulator/src/components/logic-d-flipflop-dsr/logic.ts';
 import { ClockGeneratorLogic } from '@openhw/emulator/src/components/logic-clock-generator/logic.ts';
+import { WokwiTM1637Logic } from '@openhw/emulator/src/components/wokwi-tm1637-7segment/logic.ts';
+import { RGBLEDLogic } from '@openhw/emulator/src/components/wokwi-rgb-led/logic.ts';
+import { Nokia5110Logic } from '@openhw/emulator/src/components/wokwi-nokia-5110/logic.ts';
+import { L293DLogic } from '@openhw/emulator/src/components/wokwi-l293d/logic.ts';
+import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/wokwi-lcd2004-i2c/logic.ts';
+import { SSD1306Logic } from '@openhw/emulator/src/components/wokwi-ssd1306-oled/logic.ts';
+import { PCA9685Logic } from '@openhw/emulator/src/components/wokwi-pca9685/logic.ts';
+import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic.ts';
+import { LdrModuleLogic } from '@openhw/emulator/src/components/wokwi-ldr-module/logic.ts';
+import { SoilMoistureSensorLogic } from '@openhw/emulator/src/components/wokwi-soil-moisture-sensor/logic.ts';
+import { PhotodiodeLogic } from '@openhw/emulator/src/components/wokwi-photodiode/logic.ts';
+import { DiodeLogic } from '@openhw/emulator/src/components/wokwi-diode/logic.ts';
+import { NPNTransistorLogic } from '@openhw/emulator/src/components/wokwi-npn-transistor/logic.ts';
+import { MAX7219Logic } from '@openhw/emulator/src/components/wokwi-max7219/logic.ts';
+import { A4988Logic } from '@openhw/emulator/src/components/wokwi-a4988/logic.ts';
+import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/wokwi-7segment/logic.ts';
+import { ILI9341Logic } from '@openhw/emulator/src/components/wokwi-ili9341/logic.ts';
+import { CD74HC4067Logic } from '@openhw/emulator/src/components/wokwi-cd74hc4067/logic.ts';
+import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/wokwi-logic-analyzer/logic.ts';
 // ── Membrane Keypad Logic (defined inline to avoid Rollup web-worker resolution issues) ────
 class KeypadLogic extends BaseComponent {
     constructor(id: string, manifest: any) {
@@ -80,14 +102,18 @@ export function parse(data: string) {
 export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
+    'wokwi-arduino-mega': MegaLogic,
     'wokwi-resistor': ResistorLogic,
     'wokwi-pushbutton': PushbuttonLogic,
     'wokwi-power-supply': PowerSupplyLogic,
     'wokwi-neopixel-matrix': NeopixelLogic,
+    'wokwi-neopixel-ring': NeopixelLogic,
     'wokwi-buzzer': BuzzerLogic,
     'wokwi-motor': MotorLogic,
     'wokwi-servo': ServoLogic,
     'wokwi-motor-driver': MotorDriverLogic,
+    'wokwi-stepper-motor': StepperMotorLogic,
+    'wokwi-rotary-encoder': RotaryEncoderLogic,
     'wokwi-slide-potentiometer': SlidePotLogic,
     'wokwi-potentiometer': PotentiometerLogic,
     'shift_register': ShiftRegisterLogic,
@@ -105,18 +131,40 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'logic-d-flipflop-r': DFlipFlopRLogic,
     'logic-d-flipflop-dsr': DFlipFlopDsrLogic,
     'logic-clock-generator': ClockGeneratorLogic,
+    'wokwi-tm1637-7segment': WokwiTM1637Logic,
+    'wokwi-rgb-led': RGBLEDLogic,
+    'wokwi-nokia-5110': Nokia5110Logic,
+    'wokwi-l293d': L293DLogic,
+    'wokwi-arduino-nano': UnoLogic,
+    'wokwi-lcd2004-i2c': Lcd2004I2CLogic,
+    'wokwi-ssd1306-oled': SSD1306Logic,
+    'wokwi-pca9685': PCA9685Logic,
+    'max30102': MAX30102Logic,
+    'wokwi-ldr-module': LdrModuleLogic,
+    'wokwi-soil-moisture-sensor': SoilMoistureSensorLogic,
+    'wokwi-photodiode': PhotodiodeLogic,
+    'wokwi-diode': DiodeLogic,
+    'wokwi-npn-transistor': NPNTransistorLogic,
+    'wokwi-max7219': MAX7219Logic,
+    'wokwi-a4988': A4988Logic,
+    'wokwi-7segment': Wokwi7SegmentLogic,
+    'wokwi-ili9341': ILI9341Logic,
+    'wokwi-cd74hc4067': CD74HC4067Logic,
+    'wokwi-logic-analyzer': LogicAnalyzerLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
 export const COMPONENT_PINS: Record<string, { id: string }[]> = {
+    'wokwi-arduino-mega': Array.from({ length: 54 }, (_, i) => ({ id: String(i) })).concat(Array.from({ length: 16 }, (_, i) => ({ id: `A${i}` }))).concat([{ id: '5V' }, { id: '3V3' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'GND.3' }, { id: 'GND.4' }, { id: 'GND.5' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IOREF' }, { id: 'RESET' }, { id: '5V.1' }, { id: '5V.2' }, { id: '20.1' }, { id: '21.1' }]),
     'wokwi-led': [{ id: 'A' }, { id: 'K' }],
     'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],
     'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
-    'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
     'wokwi-motor': [{ id: '1' }, { id: '2' }],
     'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
+    'wokwi-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
+    'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
     'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
     'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
@@ -135,6 +183,28 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-d-flipflop-dsr': [{ id: 'D' }, { id: 'CLK' }, { id: 'S' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-clock-generator': [{ id: 'OUT' }],
+    'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
+    'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }, { id: 'DOUT' }],
+    'wokwi-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
+    'wokwi-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
+    'wokwi-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
+    'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
+    'wokwi-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
+    'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'max30102': [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }],
+    'wokwi-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'wokwi-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'wokwi-photodiode': [{ id: 'A' }, { id: 'C' }],
+    'wokwi-diode': [{ id: 'A' }, { id: 'C' }],
+    'wokwi-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
+    'wokwi-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
+    'wokwi-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
+    'wokwi-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
+    'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
+    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
+    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
 };
 
 export type AVRRunnerOptions = {
@@ -178,7 +248,7 @@ export class AVRRunner {
         this.currentWires = wiresDef || [];
         this.onStateUpdate = onStateUpdate;
         this.onByteTransmitCb = options.onByteTransmit;
-        this.boardId = options.boardId || (componentsDef || []).find((c: any) => c.type === 'wokwi-arduino-uno')?.id || 'wokwi-arduino-uno_0';
+        this.boardId = options.boardId || (componentsDef || []).find((c: any) => c.type.includes('arduino'))?.id || 'wokwi-arduino-uno_0';
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 
         // Setup memory and CPU
@@ -403,19 +473,28 @@ export class AVRRunner {
         if (compId !== this.boardId) return false;
 
         const pin = compPin.toUpperCase();
-        const target = targetPin.toUpperCase();
+        let target = targetPin.toUpperCase();
+
+        // Alias RX/TX
+        if (target === '0') target = 'RX';
+        if (target === '1') target = 'TX';
 
         return pin === target ||
             pin === `D${target}` ||
             pin === `A${target}` ||
             (pin.startsWith('D') && pin.substring(1) === target) ||
-            (pin.startsWith('A') && pin.substring(1) === target);
+            (pin.startsWith('A') && pin.substring(1) === target) ||
+            (target === 'RX' && pin === '0') ||
+            (target === 'TX' && pin === '1');
     }
 
     private pulseBoardLed(pinId: '0' | '1') {
         const boardInst = this.instances.get(this.boardId);
         if (!boardInst || !this.cpu) return;
         boardInst.onPinStateChange(pinId, true, this.cpu.cycles);
+        // Also pulse RX/TX if those pin IDs exist instead of 0/1
+        const alias = pinId === '0' ? 'RX' : 'TX';
+        boardInst.onPinStateChange(alias, true, this.cpu.cycles);
     }
 
     private isPinDrivenLow(compPin: string): boolean {
@@ -438,11 +517,10 @@ export class AVRRunner {
 
         if (port && bit !== -1 && this.cpu) {
             // DDR: 1 = output, 0 = input
-            // Check if it's an output AND driven LOW
-            const isOutput = (this.cpu.data[port.portConfig.DDR] & (1 << bit)) !== 0;
-            // The mapping in pinStates uses names like '0', '8', 'A0'
-            const searchKey = normalized;
-            return isOutput && (this.pinStates[searchKey] === false || this.pinStates[compPin] === false);
+            // DDR/PORT are I/O addresses; they need a 0x20 offset for Data space access on ATmega328P
+            const isOutput = (this.cpu.data[port.portConfig.DDR + 0x20] & (1 << bit)) !== 0;
+            const isPortLow = (this.cpu.data[port.portConfig.PORT + 0x20] & (1 << bit)) === 0;
+            return isOutput && isPortLow;
         }
         return false;
     }
@@ -452,12 +530,15 @@ export class AVRRunner {
 
         // All three GND pins on the Uno (gnd_1, gnd_2, gnd_3) are treated as the same ground net.
         const isArduinoGndPin = (compPin: string) =>
-            compPin === 'GND' || /^gnd(_\d+)?$/i.test(compPin);
+            compPin === 'GND' || /^gnd([._]\d+)?$/i.test(compPin);
 
         const isArduino5VPin = (compPin: string) =>
             compPin === '5V' || compPin === 'VCC';
 
         const updateOopPin = (arduinoPinStr: string, isHigh: boolean) => {
+            if (arduinoPinStr === '2' || arduinoPinStr === '3') {
+                console.log(`[AVRRunner] Pin ${arduinoPinStr} -> ${isHigh ? 'HIGH' : 'LOW'}`);
+            }
             const v = isHigh ? 5.0 : 0.0;
             const visitedWires = new Set();
 
@@ -590,6 +671,20 @@ export class AVRRunner {
                                     if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
                                         visitedWires.add(w);
                                         checkForGndInternal(w.from === forwardStr ? w.to : w.from);
+                                    }
+                                });
+                            }
+                        } else if (inst.type === 'wokwi-rotary-encoder') {
+                            const isGrounded = (compPin === 'SW' && inst.state.sw) ||
+                                (compPin === 'CLK' && inst.getPinVoltage('CLK') === 0) ||
+                                (compPin === 'DT' && inst.getPinVoltage('DT') === 0);
+                            if (isGrounded) {
+                                // Find the GND pin of this encoder
+                                const gndStr = `${compId}:GND`;
+                                this.currentWires.forEach(w => {
+                                    if (!visitedWires.has(w) && (w.from === gndStr || w.to === gndStr)) {
+                                        visitedWires.add(w);
+                                        checkForGndInternal(w.from === gndStr ? w.to : w.from);
                                     }
                                 });
                             }
@@ -728,6 +823,9 @@ export class AVRRunner {
                 avrInstruction(this.cpu);
                 this.cpu.tick();
             }
+            if (this.cpu.cycles % 160000 < 16000) {
+                console.log(`[AVRRunner] Cycles: ${this.cpu.cycles}. Running: ${this.running}`);
+            }
             this.lastTime = now;
 
             // Host/UART receive pacing: bytes per second = baud / 10 (8N1 frame)
@@ -746,6 +844,34 @@ export class AVRRunner {
 
             const instArray = Array.from(this.instances.values());
             instArray.forEach(inst => inst.update(this.cpu!.cycles, this.currentWires, instArray));
+
+            // Propagate voltages through wires from non-Arduino component outputs
+            // (e.g. motor driver OUT1-OUT4 → stepper motor A+/A-/B+/B-)
+            for (const w of this.currentWires) {
+                const [fromComp, fromPin] = w.from.split(':');
+                const [toComp, toPin] = w.to.split(':');
+
+                // Skip wires connecting to the Arduino board itself (already handled by updateOopPin)
+                if (fromComp === this.boardId || toComp === this.boardId) continue;
+
+                const fromInst = this.instances.get(fromComp);
+                const toInst = this.instances.get(toComp);
+                if (!fromInst || !toInst) continue;
+
+                // Propagate from → to
+                const fromV = fromInst.getPinVoltage(fromPin);
+                if (toInst.getPinVoltage(toPin) !== fromV) {
+                    toInst.setPinVoltage(toPin, fromV);
+                    toInst.onPinStateChange(toPin, fromV > 2.5, this.cpu!.cycles);
+                }
+
+                // Propagate to → from (bidirectional for cases like power supply connections)
+                const toV = toInst.getPinVoltage(toPin);
+                if (fromInst.getPinVoltage(fromPin) !== toV) {
+                    fromInst.setPinVoltage(fromPin, toV);
+                    fromInst.onPinStateChange(fromPin, toV > 2.5, this.cpu!.cycles);
+                }
+            }
 
             if (this.adc && this.cpu) {
                 // Poll analog voltages at ~60Hz or however often runLoop breaks, 

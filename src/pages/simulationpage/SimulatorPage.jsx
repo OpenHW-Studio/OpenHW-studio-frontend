@@ -164,6 +164,7 @@ const GROUP_COLORS = {
 
 const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
+  arduino_mega: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
@@ -171,6 +172,7 @@ const BOARD_BAUD_PRESETS = {
 
 const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
+  arduino_mega: '9600',
   esp32: '115200',
   stm32: '115200',
   rp2040: '115200',
@@ -178,6 +180,7 @@ const BOARD_DEFAULT_BAUD = {
 
 const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
+  arduino_mega: 'arduino:avr:mega:cpu=atmega2560',
   esp32: 'esp32:esp32:esp32',
   stm32: 'STMicroelectronics:stm32:GenF1',
   rp2040: 'rp2040:rp2040:rpipico',
@@ -185,6 +188,7 @@ const BOARD_FQBN = {
 
 function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
+  if (s.includes('mega')) return 'arduino_mega';
   if (s.includes('esp32')) return 'esp32';
   if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
@@ -218,6 +222,96 @@ function endpointAliases(endpoint) {
   if (/^gnd(_\d+)?$/i.test(pinId) || /^GND$/i.test(pinId)) aliases.add(`${compId}:gnd`);
   if (/^5v$/i.test(pinId) || /^VCC$/i.test(pinId)) aliases.add(`${compId}:5V`);
   return Array.from(aliases);
+}
+
+
+/**
+ * Helper to check if two category sets (strings or arrays) have any common elements.
+ */
+function hasCategoryIntersection(cat1, cat2) {
+  if (!cat1 || !cat2) return false;
+  const arr1 = Array.isArray(cat1) ? cat1 : [cat1];
+  const arr2 = Array.isArray(cat2) ? cat2 : [cat2];
+  return arr1.some(c => arr2.includes(c));
+}
+
+/**
+ * Determines the logical category (or categories) of a pin.
+ * Returns an array of strings, or null if no category matches.
+ */
+function getPinCategory(pId, pDesc, compType) {
+  const sId = String(pId || '').toLowerCase();
+  const sDesc = String(pDesc || '').toLowerCase();
+  const matches = (regex) => regex.test(sId) || regex.test(sDesc);
+  const categories = [];
+
+  // 1. GND
+  if (matches(/^([a-z0-9]+[._])?(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) categories.push('GND');
+
+  // 2. POWER
+  if (matches(/^([a-z0-9]+[._])?(vcc|vdd|5v|3v3|3\.3v|v\+|power|vcc[12]|vbat|1\.8v|led|light|vout)([._]?\d+)?$/i)) {
+    if (compType?.includes('arduino') && (sId === 'vin' || sId.includes('vin.'))) {
+      categories.push('VIN');
+    } else {
+      categories.push('POWER');
+    }
+  }
+
+  // 3. I2C
+  if (matches(/^sda([._]?\d+)?$/i)) categories.push('I2C_SDA');
+  if (matches(/^scl([._]?\d+)?$/i)) categories.push('I2C_SCL');
+  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano')) {
+    if (sId === 'a4') categories.push('I2C_SDA');
+    if (sId === 'a5') categories.push('I2C_SCL');
+  }
+
+  // 4. SPI
+  if (matches(/^(mosi|din|dn|sdi)([._]?\d+)?$/i)) categories.push('SPI_MOSI');
+  if (matches(/^(miso|dout|sdo)([._]?\d+)?$/i)) categories.push('SPI_MISO');
+  if (matches(/^(sck|sclk|clk|clock)([._]?\d+)?$/i)) categories.push('SPI_SCK');
+
+  // 5. ANALOG
+  if (matches(/^(a\d+|vrx|vry|an|adc|out)([._]?\d+)?$/i)) {
+    if (sId === 'vrx' || (compType?.includes('arduino') && sId === 'a0')) categories.push('ANALOG_X');
+    if (sId === 'vry' || (compType?.includes('arduino') && sId === 'a1')) categories.push('ANALOG_Y');
+    categories.push('ANALOG');
+  }
+
+  // 6. PWM
+  if (matches(/^(pwm|~)([._]?\d+)?$/i)) categories.push('PWM');
+  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
+  if (compType === 'wokwi-arduino-mega') {
+    const pinNum = parseInt(sId);
+    if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
+  }
+
+  // 7. Motor Driver / EN Special (Enable can be PWM or POWER)
+  if (matches(/^en([._]?\d+(,\d+)?)?$/i)) {
+    if (!categories.includes('PWM')) categories.push('PWM');
+    if (!categories.includes('POWER')) categories.push('POWER');
+  }
+
+  // 8. MOTOR OUTPUT
+  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((compType === 'wokwi-motor' || compType === 'wokwi-stepper-motor') && /^\d+$/.test(sId))) {
+    categories.push('MOTOR');
+  }
+
+  // 9. DIGITAL
+  if (matches(/^(d\d+|io\d+|gpio\d+|sw|joy_sw|dc|rst|reset|cs|ce|sce|ss|rs|en|enable|in\d+|\d+)([._]?\d+)?$/i)) {
+    if (!(compType?.includes('arduino') && sId.startsWith('a'))) {
+      if (!categories.includes('DIGITAL')) categories.push('DIGITAL');
+    }
+  }
+
+  // 10. Breadboard
+  if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
+    const colNum = sId.match(/^\d+/)[0];
+    const rowLetter = sId.slice(-1);
+    const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
+    categories.push(`BB_${colNum}_${rowHalf}`);
+  }
+
+  return categories.length > 0 ? categories : null;
 }
 
 function validateCircuitLocally(components, wires) {
@@ -408,7 +502,9 @@ export default function SimulatorPage() {
   const canvasOffsetRef = useRef({ x: 0, y: 0 })
   const [isCanvasLocked, setIsCanvasLocked] = useState(false)
   const isCanvasLockedRef = useRef(false)
-  const [showGrid, setShowGrid] = useState(true)
+  const [showGrid, setShowGrid] = React.useState(true) // Ensure React is used if not imported as name
+  const [isPinMappingExpanded, setIsPinMappingExpanded] = useState(false)
+  const [pendingPinColors, setPendingPinColors] = useState({}) // { [pinIdStr]: color }
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [quickAdd, setQuickAdd] = useState(null)   // { screenX, screenY, canvasX, canvasY }
   const [quickAddSearch, setQuickAddSearch] = useState('')
@@ -518,6 +614,11 @@ export default function SimulatorPage() {
     const hasCurrent = hardwareBoardId && boardComponents.some((b) => b.id === hardwareBoardId);
     if (!hasCurrent) setHardwareBoardId(boardComponents[0].id);
   }, [boardComponents, hardwareBoardId]);
+
+  // Reset Pin Mapping expansion when a new component is selected
+  useEffect(() => {
+    setIsPinMappingExpanded(false);
+  }, [selected]);
 
   // PNG Export State
   const [isExporting, setIsExporting] = useState(false);
@@ -1235,9 +1336,9 @@ export default function SimulatorPage() {
     if (!comp) return null;
     for (const group of CATALOG) {
       const item = group.items.find(i => i.type === comp.type);
-      if (item) return { ...item, group: group.group };
+      if (item) return { ...item, group: group.group, id: comp.id };
     }
-    return { type: comp.type, label: comp.label || comp.type, group: 'Custom' };
+    return { type: comp.type, label: comp.label || comp.type, group: 'Custom', id: comp.id };
   }, [selected, components]);
 
   // ── Serial auto-scroll ────────────────────────────────────────────────────────
@@ -1835,7 +1936,8 @@ export default function SimulatorPage() {
 
     if (!wireStart) {
       // Start wire
-      setWireStart({ compId, pinId, pinLabel, ...pos })
+      const comp = components.find(c => c.id === compId);
+      setWireStart({ compId, pinId, pinLabel, compType: comp?.type, ...pos })
     } else {
       // Complete wire — prevent self-loop
       if (wireStart.compId === compId && wireStart.pinId === pinId) {
@@ -1851,12 +1953,12 @@ export default function SimulatorPage() {
         toLabel: pinLabel,
         color: wireColor(wireStart.pinLabel),
         waypoints: wireStart.waypoints || [],
-        isBelow: false // Add z-index configuration
+        isBelow: false
       }
       setWires(prev => [...prev, newWire])
       setWireStart(null)
     }
-  }, [wireStart, getPinPos, saveHistory, isRunning])
+  }, [wireStart, components, getPinPos, saveHistory, isRunning])
 
   const updateWireColor = (id, color) => {
     setWires(prev => prev.map(w => w.id === id ? { ...w, color } : w));
@@ -3442,6 +3544,10 @@ export default function SimulatorPage() {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
+    } else if (comp.type === 'wokwi-stepper-motor') {
+      if (remoteState && remoteState.angle !== undefined) {
+        attrs.angle = remoteState.angle.toString();
+      }
     } else if (comp.type === 'wokwi-buzzer') {
       if (remoteState && remoteState.isBuzzing) {
         // Wokwi buzzer visual indicator (if supported) can be driven here
@@ -4333,10 +4439,24 @@ export default function SimulatorPage() {
                     const isHovered = hoveredPin === pinStrRef;
                     const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
 
+                    // Hovered pin's category for passive highlighting
+                    const hoverCompId = hoveredPin?.split(':')[0];
+                    const hoverPinId = hoveredPin?.split(':')[1];
+                    const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+                    const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
+
+                    const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+                    const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+
+                    const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+                    const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+                    const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
+
                     // Check if a wire is connected to this pin
                     const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                    const pinColor = connectedWire ? connectedWire.color : (isWireStartPin || isHovered ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                    const pinBorder = connectedWire ? connectedWire.color : (isHovered || isWireStartPin ? '#fff' : 'rgba(255,255,255,0.8)');
+                    const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
+                    const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
 
                     return (
                       <div
@@ -4350,10 +4470,11 @@ export default function SimulatorPage() {
                           border: `1px solid ${pinBorder}`,
                           borderRadius: '0%', /* matching task3.html */
                           cursor: 'crosshair',
-                          zIndex: isHovered ? 30 : 20, /* matching task3.html hover and port z-index */
-                          transform: `translate(-50%, -50%)${isHovered ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                          zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
+                          transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
                           transition: '0.2s', /* matching task3.html transition */
                           pointerEvents: 'all', /* Fix hit detection */
+                          boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
                         }}
                         onMouseEnter={() => setHoveredPin(pinStrRef)}
                         onMouseLeave={() => setHoveredPin(null)}
@@ -4407,75 +4528,326 @@ export default function SimulatorPage() {
             })}
           </div>{/* end zoom wrapper */}
 
-          {/* Component Description Panel — shows info of canvas-selected component */}
+
+          {/* Universal Component Wiring & Docs Panel */}
           {showComponentDesc && selectedComponentInfo && (
             <div
               data-export-ignore="true"
               onClick={e => e.stopPropagation()}
               onMouseDown={e => e.stopPropagation()}
-              style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 220, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden' }}
+              style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 240, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 100px)' }}
             >
               {/* Header */}
-              <div style={{ padding: '10px 12px 8px', borderBottom: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 3 }}>{selectedComponentInfo.label}</div>
-                <div style={{ display: 'inline-block', fontSize: 10, color: 'var(--text3)', background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`, border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}55`, borderRadius: 4, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  {selectedComponentInfo.group}
+              <div style={{
+                padding: '16px 16px 14px',
+                borderBottom: '1px solid var(--border)',
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                background: 'linear-gradient(to bottom, var(--bg2), var(--bg1))'
+              }}>
+                <div style={{
+                  fontSize: 15,
+                  fontWeight: 800,
+                  color: 'var(--text)',
+                  letterSpacing: '-0.02em',
+                  lineHeight: '1.1'
+                }}>
+                  {selectedComponentInfo.label}
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8
+                }}>
+                  {/* Category Chip */}
+                  <div style={{
+                    height: 24,
+                    fontSize: 9,
+                    fontWeight: 800,
+                    color: GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)',
+                    background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}12`,
+                    borderRadius: 6,
+                    padding: '0 10px',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`
+                  }}>
+                    {selectedComponentInfo.group}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
+                      if (doc) {
+                        const b = new Blob([doc], { type: 'text/html' });
+                        window.open(URL.createObjectURL(b), '_blank');
+                      } else {
+                        window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
+                      }
+                    }}
+                    style={{
+                      height: 24,
+                      background: 'var(--bg3)',
+                      border: '1px solid var(--border)',
+                      padding: '0 12px',
+                      color: 'var(--text2)',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      borderRadius: 6,
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.background = 'var(--bg4)';
+                      e.currentTarget.style.borderColor = 'var(--accent)';
+                      e.currentTarget.style.color = 'var(--accent)';
+                      e.currentTarget.style.transform = 'translateY(-1px)';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.background = 'var(--bg3)';
+                      e.currentTarget.style.borderColor = 'var(--border)';
+                      e.currentTarget.style.color = 'var(--text2)';
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
+                    }}
+                  >
+                    <svg
+                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    Documentation
+                  </button>
                 </div>
               </div>
 
-              {/* Description */}
-              <div style={{ padding: '10px 12px 8px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-                {COMPONENT_REGISTRY[selectedComponentInfo.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[selectedComponentInfo.type] || `${selectedComponentInfo.type} component`}
-              </div>
-
-              {/* Doc link */}
-              <div style={{ padding: '0 12px 10px' }}>
-                <button
-                  onClick={() => {
-                    const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
-                    if (doc) {
-                      const b = new Blob([doc], { type: 'text/html' });
-                      window.open(URL.createObjectURL(b), '_blank');
-                    } else {
-                      window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
-                    }
+              {/* Pin Wiring Dropdowns */}
+              <div className="panel-scroll" style={{ padding: '10px 12px', flex: 1, overflowY: 'auto' }}>
+                <div
+                  onClick={() => setIsPinMappingExpanded(!isPinMappingExpanded)}
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 'bold',
+                    color: 'var(--text3)',
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                    marginBottom: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    padding: '4px 0'
                   }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
-                  📖 Component Documentation
-                </button>
+                  onMouseEnter={e => e.currentTarget.style.color = 'var(--text2)'}
+                  onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
+                >
+                  <span>Pin Mapping</span>
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                    style={{
+                      transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                      transform: isPinMappingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                      opacity: 0.6
+                    }}
+                  >
+                    <path d="m6 9 6 6 6-6" />
+                  </svg>
+                </div>
+                {isPinMappingExpanded && (() => {
+                  const compPins = LOCAL_PIN_DEFS[selectedComponentInfo.type] || [];
+                  if (compPins.length === 0) {
+                    return <div style={{ fontSize: 12, color: 'var(--text3)' }}>No pins exposed.</div>;
+                  }
+
+                  // Gather ALL components for destination endpoints (excluding self)
+                  const validTargets = components.filter(c => c.id !== selectedComponentInfo.id);
+                  const targetOptions = [];
+                  validTargets.forEach(b => {
+                    const bPins = LOCAL_PIN_DEFS[b.type] || [];
+                    bPins.forEach(p => targetOptions.push({
+                      id: `${b.id}:${p.id}`,
+                      label: `${b.label || b.id} : ${p.id}`,
+                      type: b.type,
+                      description: p.description
+                    }));
+                  });
+
+                  return compPins.map(pin => {
+                    const pinIdStr = `${selectedComponentInfo.id}:${pin.id}`;
+                    const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
+
+                    // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
+                    const filteredOptions = targetOptions.filter(opt => {
+                      if (!currentPinCat) return true; // Show all for unmapped/general pins
+                      const targetPinCat = getPinCategory(opt.id.split(':')[1], opt.description, opt.type);
+                      return hasCategoryIntersection(currentPinCat, targetPinCat);
+                    });
+
+                    // Find if any wire is connected to this pin specifically
+                    const connectedWire = wires.find(w => w.from === pinIdStr || w.to === pinIdStr);
+                    // Determine current dropdown value
+                    let currentVal = '';
+                    if (connectedWire) {
+                      currentVal = connectedWire.from === pinIdStr ? connectedWire.to : connectedWire.from;
+                    }
+
+                    const pinPreferredColor = pendingPinColors[pinIdStr] || (connectedWire ? connectedWire.color : wireColor(pin.id));
+
+                    return (
+                      <div key={pin.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 4 }}>
+                        <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, width: 44 }} title={pin.description || pin.id}>
+                          {pin.id}
+                        </span>
+
+                        {/* Interactive Arrow & Color Picker */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const picker = e.currentTarget.querySelector('input[type="color"]');
+                            if (picker) picker.click();
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            opacity: connectedWire ? 1 : 0.6,
+                            transition: 'all 0.2s ease',
+                            position: 'relative',
+                            padding: '0 4px',
+                            flexShrink: 0
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.opacity = '1';
+                            e.currentTarget.style.transform = 'scale(1.1)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.opacity = connectedWire ? '1' : '0.6';
+                            e.currentTarget.style.transform = 'scale(1)';
+                          }}
+                          title={connectedWire ? "Change wire color" : "Set wire color before connecting"}
+                        >
+                          <svg
+                            width="14" height="14" viewBox="0 0 24 24" fill="none"
+                            stroke={pinPreferredColor}
+                            strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+                          >
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
+                          </svg>
+                          <input
+                            type="color"
+                            value={pinPreferredColor}
+                            onChange={(e) => {
+                              const newColor = e.target.value;
+                              setPendingPinColors(prev => ({ ...prev, [pinIdStr]: newColor }));
+                              if (connectedWire) {
+                                updateWireColor(connectedWire.id, newColor);
+                              }
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: 0, left: 0, width: 0, height: 0, opacity: 0, padding: 0, border: 'none', pointerEvents: 'none'
+                            }}
+                          />
+                        </div>
+
+                        <select
+                          value={currentVal}
+                          onChange={(e) => {
+                            const selectedTarget = e.target.value;
+                            setWires(prev => {
+                              // 1. Generate the exact same wire syntax as manual mapping
+                              const toPinLabel = selectedTarget ? (selectedTarget.includes(':') ? selectedTarget.split(':').slice(1).join(':') : '') : '';
+                              const finalColor = pendingPinColors[pinIdStr] || wireColor(toPinLabel);
+
+                              const newWire = selectedTarget ? {
+                                id: `w${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                                from: pinIdStr,
+                                to: selectedTarget,
+                                fromLabel: pin.id,
+                                toLabel: toPinLabel,
+                                color: finalColor,
+                                waypoints: []
+                              } : null;
+
+                              // 2. Filter cleanly using a map proxy to avoid reference staleness
+                              const filtered = prev.filter(w => w.from !== pinIdStr && w.to !== pinIdStr);
+
+                              setWireStart(null); // Cancel manual wire draw
+                              return newWire ? [...filtered, newWire] : filtered;
+                            });
+                          }}
+                          style={{
+                            flex: 1,
+                            minWidth: 0,
+                            padding: '3px 6px',
+                            background: 'var(--card)',
+                            border: '1px solid var(--border)',
+                            color: currentVal ? 'var(--accent)' : 'var(--text2)',
+                            borderRadius: 4,
+                            fontSize: 10,
+                            fontFamily: 'JetBrains Mono, monospace',
+                            cursor: 'pointer',
+                            outline: 'none'
+                          }}
+                        >
+                          <option value="">-- Disconnected --</option>
+                          {filteredOptions.map(opt => (
+                            <option key={opt.id} value={opt.id}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}
 
           {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
-          {validationToast && (
-            <div
-              className="validation-toast-canvas"
-              role="alert"
-              data-export-ignore="true"
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-            >
-              <div className="validation-toast-canvas__header">
-                <span>{validationToast.title}</span>
-                <button
-                  type="button"
-                  className="validation-toast-canvas__close"
-                  onClick={() => setValidationToast(null)}
-                  aria-label="Close validation notification"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-                  </svg>
-                </button>
+          {
+            validationToast && (
+              <div
+                className="validation-toast-canvas"
+                role="alert"
+                data-export-ignore="true"
+                onClick={e => e.stopPropagation()}
+                onMouseDown={e => e.stopPropagation()}
+              >
+                <div className="validation-toast-canvas__header">
+                  <span>{validationToast.title}</span>
+                  <button
+                    type="button"
+                    className="validation-toast-canvas__close"
+                    onClick={() => setValidationToast(null)}
+                    aria-label="Close validation notification"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+                <ul className="validation-toast-canvas__list">
+                  {validationToast.reasons.map((reason, idx) => (
+                    <li key={idx}>{reason}</li>
+                  ))}
+                </ul>
               </div>
-              <ul className="validation-toast-canvas__list">
-                {validationToast.reasons.map((reason, idx) => (
-                  <li key={idx}>{reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+            )
+          }
 
           <div
             data-export-ignore="true"
@@ -4573,101 +4945,103 @@ export default function SimulatorPage() {
           />
 
           {/* ── Quick-Add Popup (double-click on canvas) ── */}
-          {quickAdd && (() => {
-            const q = quickAddSearch.trim().toLowerCase();
-            const results = [];
-            if (q) {
-              outer: for (const group of LOCAL_CATALOG) {
-                for (const item of group.items) {
-                  if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
-                    results.push(item);
-                    if (results.length >= 4) break outer;
+          {
+            quickAdd && (() => {
+              const q = quickAddSearch.trim().toLowerCase();
+              const results = [];
+              if (q) {
+                outer: for (const group of LOCAL_CATALOG) {
+                  for (const item of group.items) {
+                    if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
+                      results.push(item);
+                      if (results.length >= 4) break outer;
+                    }
                   }
                 }
               }
-            }
-            const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
-            const VW = window.innerWidth, VH = window.innerHeight;
-            const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
-            const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
-            const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
-            return (
-              <div
-                data-quickadd="true"
-                onMouseDown={e => e.stopPropagation()}
-                style={{
-                  position: 'fixed', left, top, zIndex: 9999,
-                  width: menuW,
-                  background: 'var(--bg2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
-                  overflow: 'hidden',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                }}
-              >
-                {/* Search input */}
-                <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
-                  <input
-                    ref={quickAddInputRef}
-                    data-quickadd="true"
-                    value={quickAddSearch}
-                    onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
-                    onKeyDown={e => {
-                      if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
-                      else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
-                      else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
-                      else if (e.key === 'Enter' && results.length > 0) {
-                        e.preventDefault();
-                        addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
-                        setQuickAdd(null);
-                      }
-                    }}
-                    placeholder="Search component..."
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      background: 'var(--bg3)', border: '1px solid var(--border2)',
-                      color: 'var(--text)', padding: '7px 10px',
-                      borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
-                    }}
-                  />
-                </div>
-                {/* Result list */}
-                {results.map((item, i) => (
-                  <div
-                    key={`${item.type}-${i}`}
-                    data-quickadd="true"
-                    onMouseEnter={() => setQuickAddIdx(i)}
-                    onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                      background: i === selIdx ? 'var(--accent)' : 'transparent',
-                      color: i === selIdx ? '#fff' : 'var(--text)',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
-                    {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+              const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
+              const VW = window.innerWidth, VH = window.innerHeight;
+              const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
+              const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
+              const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
+              return (
+                <div
+                  data-quickadd="true"
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{
+                    position: 'fixed', left, top, zIndex: 9999,
+                    width: menuW,
+                    background: 'var(--bg2)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+                    overflow: 'hidden',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                  }}
+                >
+                  {/* Search input */}
+                  <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <input
+                      ref={quickAddInputRef}
+                      data-quickadd="true"
+                      value={quickAddSearch}
+                      onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
+                      onKeyDown={e => {
+                        if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
+                        else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
+                        else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
+                        else if (e.key === 'Enter' && results.length > 0) {
+                          e.preventDefault();
+                          addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
+                          setQuickAdd(null);
+                        }
+                      }}
+                      placeholder="Search component..."
+                      style={{
+                        width: '100%', boxSizing: 'border-box',
+                        background: 'var(--bg3)', border: '1px solid var(--border2)',
+                        color: 'var(--text)', padding: '7px 10px',
+                        borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
+                      }}
+                    />
                   </div>
-                ))}
-                {/* Empty state */}
-                {q && results.length === 0 && (
-                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
-                )}
-                {!q && (
-                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
-                )}
-              </div>
-            );
-          })()}
-        </main>
+                  {/* Result list */}
+                  {results.map((item, i) => (
+                    <div
+                      key={`${item.type}-${i}`}
+                      data-quickadd="true"
+                      onMouseEnter={() => setQuickAddIdx(i)}
+                      onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
+                      style={{
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        background: i === selIdx ? 'var(--accent)' : 'transparent',
+                        color: i === selIdx ? '#fff' : 'var(--text)',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
+                      {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+                    </div>
+                  ))}
+                  {/* Empty state */}
+                  {q && results.length === 0 && (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
+                  )}
+                  {!q && (
+                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
+                  )}
+                </div>
+              );
+            })()
+          }
+        </main >
 
 
         {/* RIGHT PANEL */}
-        <RightPanel
+        < RightPanel
           isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
           explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
           selected={selected} setSelected={setSelected}
@@ -4684,31 +5058,33 @@ export default function SimulatorPage() {
           plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
           showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
         />
-      </div>
+      </div >
 
       {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
-      {showSaveDialog && (
-        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
-          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-            <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
-            <input
-              autoFocus
-              className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
-              placeholder="Project name..."
-              value={saveDialogName}
-              onChange={e => setSaveDialogName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
-            />
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
-              <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+      {
+        showSaveDialog && (
+          <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
+            <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+              <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
+              <input
+                autoFocus
+                className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
+                placeholder="Project name..."
+                value={saveDialogName}
+                onChange={e => setSaveDialogName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
+              />
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
+                <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
 
-    </div>
+    </div >
   )
 }
 
