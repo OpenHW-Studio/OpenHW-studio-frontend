@@ -1,4 +1,3 @@
-
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
@@ -14,96 +13,89 @@ const WORLDS = [
 // Winding x-positions
 const PATH_X = [50, 75, 50, 25, 50, 75, 50, 25, 50, 75]
 
-// ─── Styles ─────────────────────────────────────────────────────────────────
-const css = {
-  page: {
-    minHeight: '100vh',
-    background: 'linear-gradient(180deg, #08101f 0%, #060c18 60%, #08101f 100%)',
-    fontFamily: "'Nunito', 'Rajdhani', system-ui, sans-serif",
-    color: '#e2e8f0',
-    overflowX: 'hidden',
-  },
-  header: {
-    position: 'sticky', top: 0, zIndex: 100,
-    background: 'rgba(8,16,31,0.95)',
-    backdropFilter: 'blur(16px)',
-    borderBottom: '1px solid rgba(255,255,255,0.07)',
-    padding: '0 20px',
-  },
-  headerInner: {
-    maxWidth: 900, margin: '0 auto',
-    display: 'flex', alignItems: 'center', gap: 16,
-    height: 60,
-  },
-  backBtn: {
-    background: 'rgba(255,255,255,0.06)',
-    border: '1px solid rgba(255,255,255,0.1)',
-    borderRadius: 8, padding: '6px 14px',
-    color: '#94a3b8', cursor: 'pointer',
-    fontSize: 13, fontWeight: 700,
-    fontFamily: 'inherit', transition: 'all .15s',
-  },
-  logoText: {
-    fontSize: 17, fontWeight: 900,
-    background: 'linear-gradient(90deg, #34d399, #3b82f6)',
-    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-  },
-  xpSection: {
-    marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10,
-  },
-  xpBarWrap: { width: 100 },
-  xpMeta: {
-    display: 'flex', justifyContent: 'space-between',
-    fontSize: 10, color: '#475569', marginBottom: 3,
-  },
-  xpBarTrack: { height: 5, borderRadius: 99, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' },
-  xpBarFill: { height: '100%', borderRadius: 99, transition: 'width .6s ease' },
-  lvlBadge: {
-    width: 34, height: 34, borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 13, fontWeight: 900,
-    border: '2px solid', flexShrink: 0,
-  },
-  mapContainer: {
-    maxWidth: 700, margin: '0 auto',
-    padding: '12px 20px 120px',
-  },
-  worldLabel: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    padding: '10px 18px', borderRadius: 10, marginBottom: 8,
-    fontSize: 13, fontWeight: 700,
-  },
-  progressPanel: {
-    position: 'fixed', bottom: 16, left: '50%',
-    transform: 'translateX(-50%)',
-    background: 'rgba(8,16,31,0.97)',
-    backdropFilter: 'blur(20px)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 16, padding: '10px 20px',
-    display: 'flex', alignItems: 'center', gap: 16,
-    zIndex: 200,
-    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-  },
-  progressStat: {
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
-  },
-  progressNum: { fontSize: 20, fontWeight: 900, lineHeight: 1 },
-  progressLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.06em' },
-  progressDivider: { width: 1, height: 32, background: 'rgba(255,255,255,0.06)' },
+// ─── Theme tokens ────────────────────────────────────────────────────────────
+function getT(theme) {
+  const D = theme === 'dark'
+  return {
+    pageBg:          D ? 'linear-gradient(180deg, #08101f 0%, #060c18 60%, #08101f 100%)' : 'linear-gradient(180deg, #f0f4ff 0%, #e8edf8 60%, #f0f4ff 100%)',
+    pageColor:       D ? '#e2e8f0' : '#1e293b',
+    headerBg:        D ? 'rgba(8,16,31,0.95)'   : 'rgba(248,250,252,0.97)',
+    headerBorder:    D ? 'rgba(255,255,255,0.07)': 'rgba(0,0,0,0.09)',
+    backBtnBg:       D ? 'rgba(255,255,255,0.06)': 'rgba(0,0,0,0.07)',
+    backBtnBorder:   D ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)',
+    backBtnColor:    D ? '#94a3b8'               : '#64748b',
+    xpMetaColor:     D ? '#475569'               : '#64748b',
+    xpBarTrack:      D ? 'rgba(255,255,255,0.06)': 'rgba(0,0,0,0.08)',
+    heroLabel:       D ? '#34d399'               : '#16a34a',
+    heroTitle:       D ? 'linear-gradient(135deg, #e2e8f0 30%, #64748b)' : 'linear-gradient(135deg, #1e293b 30%, #475569)',
+    heroSubText:     D ? '#475569'               : '#64748b',
+    starterChipBg:   D ? 'rgba(59,130,246,0.08)' : 'rgba(59,130,246,0.10)',
+    starterChipBorder: D ? 'rgba(59,130,246,0.2)': 'rgba(59,130,246,0.25)',
+    starterChipColor:D ? '#60a5fa'               : '#2563eb',
+    labelText:       D ? '#e2e8f0'               : '#1e293b',
+    labelLocked:     D ? '#2d3f5e'               : '#cbd5e1',
+    labelXp:         D ? '#3d5070'               : '#94a3b8',
+    rewardChipBg:    D ? 'rgba(52,211,153,0.08)' : 'rgba(52,211,153,0.10)',
+    rewardChipBorder: D ? 'rgba(52,211,153,0.2)' : 'rgba(52,211,153,0.25)',
+    connectorLocked: D ? 'rgba(255,255,255,0.07)': 'rgba(0,0,0,0.10)',
+    progressBg:      D ? 'rgba(8,16,31,0.97)'    : 'rgba(248,250,252,0.97)',
+    progressBorder:  D ? 'rgba(255,255,255,0.08)': 'rgba(0,0,0,0.10)',
+    progressDivider: D ? 'rgba(255,255,255,0.06)': 'rgba(0,0,0,0.08)',
+    progressLabel:   D ? '#64748b'               : '#94a3b8',
+    progressPct:     D ? '#334155'               : '#94a3b8',
+    progressBarTrack: D ? 'rgba(255,255,255,0.05)': 'rgba(0,0,0,0.07)',
+    worldClearText:  D ? '#475569'               : '#64748b',
+    allDoneText:     D ? '#475569'               : '#64748b',
+    // Modal
+    modalBg:         D ? 'linear-gradient(155deg, #0e1628, #080f1e)' : 'linear-gradient(155deg, #ffffff, #f1f5f9)',
+    modalSubtitle:   D ? '#64748b'               : '#94a3b8',
+    modalDesc:       D ? '#94a3b8'               : '#64748b',
+    modalTipBg:      D ? 'rgba(59,130,246,0.07)' : 'rgba(59,130,246,0.07)',
+    modalTipBorder:  D ? 'rgba(59,130,246,0.2)'  : 'rgba(59,130,246,0.2)',
+    modalTipColor:   D ? '#93c5fd'               : '#3b82f6',
+    conceptTagBg:    D ? 'rgba(255,255,255,0.05)': 'rgba(0,0,0,0.05)',
+    conceptTagColor: D ? '#94a3b8'               : '#64748b',
+    conceptTagBorder: D ? 'rgba(255,255,255,0.07)': 'rgba(0,0,0,0.08)',
+    lockedPanelBg:   D ? 'rgba(255,255,255,0.03)': 'rgba(0,0,0,0.03)',
+    lockedPanelBorder: D ? 'rgba(255,255,255,0.06)': 'rgba(0,0,0,0.06)',
+    lockedText:      D ? '#475569'               : '#94a3b8',
+    lockedStrong:    D ? '#94a3b8'               : '#64748b',
+    closeBtnBg:      D ? 'rgba(255,255,255,0.07)': 'rgba(0,0,0,0.07)',
+    closeBtnColor:   D ? '#64748b'               : '#94a3b8',
+    rewardBg:        D ? 'rgba(52,211,153,0.07)' : 'rgba(52,211,153,0.08)',
+    rewardBorder:    D ? 'rgba(52,211,153,0.2)'  : 'rgba(52,211,153,0.2)',
+    rewardLabel:     D ? '#34d399'               : '#16a34a',
+    rewardItemBg:    D ? 'rgba(52,211,153,0.05)' : 'rgba(52,211,153,0.06)',
+    rewardItemText:  D ? '#f0f4ff'               : '#0f172a',
+    rewardItemDesc:  D ? '#64748b'               : '#94a3b8',
+    earnedRewardBg:  D ? 'rgba(52,211,153,0.05)' : 'rgba(52,211,153,0.06)',
+    earnedRewardBorder: D ? 'rgba(52,211,153,0.15)': 'rgba(52,211,153,0.2)',
+    viewGuideBg:     D ? 'rgba(255,255,255,0.04)': 'rgba(0,0,0,0.04)',
+    viewGuideBorder: D ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+    viewGuideColor:  D ? '#94a3b8'               : '#64748b',
+    toggleBg:        D ? 'rgba(255,255,255,0.06)': 'rgba(0,0,0,0.07)',
+    toggleBorder:    D ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)',
+    toggleColor:     D ? '#94a3b8'               : '#64748b',
+    nodeLockedBorder: D ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)',
+    nodeLockedBg:    D ? 'rgba(255,255,255,0.02)': 'rgba(0,0,0,0.02)',
+    numberBadgeLocked: D ? '#1a2540'             : '#e2e8f0',
+    numberBadgeBorderLocked: D ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.1)',
+    numberBadgeColorLocked: D ? '#334155'        : '#94a3b8',
+  }
 }
 
 // ─── Reward Preview ──────────────────────────────────────────────────────────
-function RewardPreview({ rewards }) {
+function RewardPreview({ rewards, T }) {
   if (!rewards || rewards.length === 0) return null
   return (
     <div style={{
       marginBottom: 16,
-      background: 'rgba(52,211,153,0.07)',
-      border: '1px solid rgba(52,211,153,0.2)',
+      background: T.rewardBg,
+      border: `1px solid ${T.rewardBorder}`,
       borderRadius: 12, padding: '12px 14px',
     }}>
       <div style={{
-        fontSize: 11, fontWeight: 800, color: '#34d399',
+        fontSize: 11, fontWeight: 800, color: T.rewardLabel,
         textTransform: 'uppercase', letterSpacing: '.07em',
         marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5,
       }}>
@@ -113,13 +105,13 @@ function RewardPreview({ rewards }) {
         <div key={i} style={{
           display: 'flex', alignItems: 'flex-start', gap: 10,
           padding: '8px 10px', borderRadius: 8,
-          background: 'rgba(52,211,153,0.05)',
+          background: T.rewardItemBg,
           marginBottom: i < rewards.length - 1 ? 6 : 0,
         }}>
           <span style={{ fontSize: 22, flexShrink: 0 }}>{r.icon}</span>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#f0f4ff' }}>{r.name}</div>
-            <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>{r.description}</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: T.rewardItemText }}>{r.name}</div>
+            <div style={{ fontSize: 11, color: T.rewardItemDesc, lineHeight: 1.4 }}>{r.description}</div>
           </div>
         </div>
       ))}
@@ -128,7 +120,7 @@ function RewardPreview({ rewards }) {
 }
 
 // ─── Modal ─────────────────────────────────────────────────────────────────
-function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
+function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }) {
   const rewards = getProjectRewardComponents(project.slug)
   const fullProject = PROJECTS.find(p => p.slug === project.slug)
   if (!project) return null
@@ -145,7 +137,7 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
     >
       <div
         style={{
-          background: 'linear-gradient(155deg, #0e1628, #080f1e)',
+          background: T.modalBg,
           border: `1px solid ${project.color}44`,
           borderRadius: 20, padding: '28px 24px',
           maxWidth: 420, width: '100%',
@@ -160,9 +152,9 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
           onClick={onClose}
           style={{
             position: 'absolute', top: 12, right: 12,
-            background: 'rgba(255,255,255,0.07)', border: 'none',
+            background: T.closeBtnBg, border: 'none',
             borderRadius: 8, width: 30, height: 30,
-            color: '#64748b', cursor: 'pointer', fontSize: 18,
+            color: T.closeBtnColor, cursor: 'pointer', fontSize: 18,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >×</button>
@@ -180,10 +172,10 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
           }}>
             {project.difficulty} · Project {project.number}
           </div>
-          <div style={{ fontSize: 22, fontWeight: 900, color: '#f0f4ff', marginBottom: 4 }}>
+          <div style={{ fontSize: 22, fontWeight: 900, color: T.rewardItemText, marginBottom: 4 }}>
             {project.title}
           </div>
-          <div style={{ fontSize: 13, color: '#64748b' }}>{project.subtitle}</div>
+          <div style={{ fontSize: 13, color: T.modalSubtitle }}>{project.subtitle}</div>
         </div>
 
         {/* Completed stars */}
@@ -197,7 +189,7 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
 
         {/* Description */}
         <p style={{
-          fontSize: 14, color: '#94a3b8', lineHeight: 1.65,
+          fontSize: 14, color: T.modalDesc, lineHeight: 1.65,
           textAlign: 'center', marginBottom: 16,
         }}>
           {fullProject?.description || project.description}
@@ -206,10 +198,10 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
         {/* Kid-friendly tip */}
         {fullProject?.kidFriendlyTip && (
           <div style={{
-            background: 'rgba(59,130,246,0.07)',
-            border: '1px solid rgba(59,130,246,0.2)',
+            background: T.modalTipBg,
+            border: `1px solid ${T.modalTipBorder}`,
             borderRadius: 10, padding: '10px 14px', marginBottom: 16,
-            fontSize: 12, color: '#93c5fd', lineHeight: 1.5,
+            fontSize: 12, color: T.modalTipColor, lineHeight: 1.5,
           }}>
             {fullProject.kidFriendlyTip}
           </div>
@@ -218,15 +210,15 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
         {/* Concepts you'll learn */}
         {fullProject?.concepts && fullProject.concepts.length > 0 && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 7 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.xpMetaColor, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 7 }}>
               📚 You'll learn:
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
               {fullProject.concepts.map((c, i) => (
                 <span key={i} style={{
                   fontSize: 11, padding: '3px 9px', borderRadius: 6,
-                  background: 'rgba(255,255,255,0.05)', color: '#94a3b8',
-                  border: '1px solid rgba(255,255,255,0.07)',
+                  background: T.conceptTagBg, color: T.conceptTagColor,
+                  border: `1px solid ${T.conceptTagBorder}`,
                 }}>{c}</span>
               ))}
             </div>
@@ -253,12 +245,12 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
         </div>
 
         {/* Reward components preview */}
-        {!isCompleted && isAvailable && <RewardPreview rewards={rewards} />}
+        {!isCompleted && isAvailable && <RewardPreview rewards={rewards} T={T} />}
         {isCompleted && rewards.length > 0 && (
           <div style={{
             marginBottom: 16, padding: '10px 14px',
-            background: 'rgba(52,211,153,0.05)',
-            border: '1px solid rgba(52,211,153,0.15)',
+            background: T.earnedRewardBg,
+            border: `1px solid ${T.earnedRewardBorder}`,
             borderRadius: 10, fontSize: 12, color: '#34d399',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
@@ -283,28 +275,28 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
               {isCompleted ? '🔄 Play Again' : '🚀 Start Project!'}
             </button>
             <button
-              onClick={() => onStart(project.slug, 'simulator')}
+              onClick={() => onStart(project.slug, 'guide-simple')}
               style={{
                 padding: '10px 0', borderRadius: 10,
                 border: `1px solid ${project.color}33`,
-                background: 'rgba(255,255,255,0.04)',
-                color: '#94a3b8', fontWeight: 600, fontSize: 13,
+                background: T.viewGuideBg,
+                color: T.viewGuideColor, fontWeight: 600, fontSize: 13,
                 cursor: 'pointer', fontFamily: 'inherit',
               }}
             >
-              🔌 Open Simulator Only
+              📖 View Guide
             </button>
           </div>
         ) : (
           <div style={{
             padding: '16px', borderRadius: 12,
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: T.lockedPanelBg,
+            border: `1px solid ${T.lockedPanelBorder}`,
             textAlign: 'center',
           }}>
             <div style={{ fontSize: 20, marginBottom: 6 }}>🔒</div>
-            <div style={{ fontSize: 14, color: '#475569', lineHeight: 1.5 }}>
-              Complete <strong style={{ color: '#94a3b8' }}>
+            <div style={{ fontSize: 14, color: T.lockedText, lineHeight: 1.5 }}>
+              Complete <strong style={{ color: T.lockedStrong }}>
                 {PROJECTS.find(p => p.slug === fullProject?.prerequisite)?.title || 'the previous project'}
               </strong> first to unlock this one!
             </div>
@@ -316,7 +308,7 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart }) {
 }
 
 // ─── Project Node ───────────────────────────────────────────────────────────
-function ProjectNode({ project, status, onClick, isFirst, rewards }) {
+function ProjectNode({ project, status, onClick, isFirst, T }) {
   const isCompleted = status === 'completed'
   const isAvailable = status === 'available'
   const isLocked    = status === 'locked'
@@ -330,13 +322,13 @@ function ProjectNode({ project, status, onClick, isFirst, rewards }) {
       style={{
         width: size, height: size, borderRadius: '50%',
         border: `${isAvailable ? 3 : 2}px solid ${
-          isCompleted ? project.color : isAvailable ? project.color : 'rgba(255,255,255,0.1)'
+          isCompleted ? project.color : isAvailable ? project.color : T.nodeLockedBorder
         }`,
         background: isCompleted
           ? `radial-gradient(circle, ${project.color}30, ${project.color}10)`
           : isAvailable
           ? `radial-gradient(circle, ${project.color}18, transparent)`
-          : 'rgba(255,255,255,0.02)',
+          : T.nodeLockedBg,
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
         cursor: isLocked ? 'default' : 'pointer',
@@ -374,10 +366,10 @@ function ProjectNode({ project, status, onClick, isFirst, rewards }) {
       <div style={{
         position: 'absolute', top: -7, right: -7,
         width: 19, height: 19, borderRadius: '50%',
-        background: isCompleted ? project.color : isAvailable ? project.color : '#1a2540',
-        border: `2px solid ${isCompleted || isAvailable ? project.color : 'rgba(255,255,255,0.08)'}`,
+        background: isCompleted ? project.color : isAvailable ? project.color : T.numberBadgeLocked,
+        border: `2px solid ${isCompleted || isAvailable ? project.color : T.numberBadgeBorderLocked}`,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 8, fontWeight: 900, color: isCompleted || isAvailable ? '#fff' : '#334155',
+        fontSize: 8, fontWeight: 900, color: isCompleted || isAvailable ? '#fff' : T.numberBadgeColorLocked,
       }}>
         {project.number}
       </div>
@@ -405,15 +397,25 @@ export default function AdventureMapPage() {
     completedProjects = [],
   } = useGamification()
 
+  // ── Read initial theme from document (set by LandingPage) ──
+  const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const [selectedProject, setSelectedProject] = useState(null)
 
-  const getStatus = (project) => getProjectStatus(project.slug, completedProjects)
+  const T = getT(theme)
 
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    document.documentElement.setAttribute('data-theme', next)
+  }
+
+  const getStatus = (project) => getProjectStatus(project.slug, completedProjects)
   const handleNodeClick = (project) => setSelectedProject(project)
 
   const handleStart = (slug, mode) => {
     setSelectedProject(null)
-    if (mode === 'guide') navigate(`/${slug}/guide`)
+    if (mode === 'guide') navigate(`/${slug}/gamified-guide`)
+    else if (mode === 'guide-simple') navigate(`/${slug}/guide`)
     else navigate(`/gamification-simulator/${slug}`)
   }
 
@@ -426,7 +428,13 @@ export default function AdventureMapPage() {
   }))
 
   return (
-    <div style={css.page}>
+    <div style={{
+      minHeight: '100vh',
+      background: T.pageBg,
+      fontFamily: "'Nunito', 'Rajdhani', system-ui, sans-serif",
+      color: T.pageColor,
+      overflowX: 'hidden',
+    }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap');
 
@@ -446,32 +454,79 @@ export default function AdventureMapPage() {
       `}</style>
 
       {/* Header */}
-      <header style={css.header}>
-        <div style={css.headerInner}>
-          <button style={css.backBtn} onClick={() => navigate(-1)}>← Back</button>
-          <span style={css.logoText}>⚡ OpenHW Adventure</span>
-          <div style={css.xpSection}>
-            <div style={css.xpBarWrap}>
-              <div style={css.xpMeta}>
-                <span style={{ fontSize: 10, color: '#64748b' }}>{xp} XP</span>
-                {nextLevel && <span style={{ fontSize: 10, color: '#64748b' }}>{nextLevel.xpRequired}</span>}
+      <header style={{
+        position: 'sticky', top: 0, zIndex: 100,
+        background: T.headerBg,
+        backdropFilter: 'blur(16px)',
+        borderBottom: `1px solid ${T.headerBorder}`,
+        padding: '0 20px',
+      }}>
+        <div style={{
+          maxWidth: 900, margin: '0 auto',
+          display: 'flex', alignItems: 'center', gap: 16,
+          height: 60,
+        }}>
+          <button
+            style={{
+              background: T.backBtnBg,
+              border: `1px solid ${T.backBtnBorder}`,
+              borderRadius: 8, padding: '6px 14px',
+              color: T.backBtnColor, cursor: 'pointer',
+              fontSize: 13, fontWeight: 700,
+              fontFamily: 'inherit', transition: 'all .15s',
+            }}
+            onClick={() => navigate(-1)}
+          >← Back</button>
+
+          <span style={{
+            fontSize: 17, fontWeight: 900,
+            background: 'linear-gradient(90deg, #34d399, #3b82f6)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+          }}>⚡ OpenHW Adventure</span>
+
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* XP bar */}
+            <div style={{ width: 100 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: T.xpMetaColor, marginBottom: 3 }}>
+                <span>{xp} XP</span>
+                {nextLevel && <span>{nextLevel.xpRequired}</span>}
               </div>
-              <div style={css.xpBarTrack}>
+              <div style={{ height: 5, borderRadius: 99, background: T.xpBarTrack, overflow: 'hidden' }}>
                 <div style={{
-                  ...css.xpBarFill,
+                  height: '100%', borderRadius: 99, transition: 'width .6s ease',
                   width: `${xpProgress}%`,
                   background: `linear-gradient(90deg, ${currentLevelData?.color || '#34d399'}, ${currentLevelData?.color || '#34d399'}88)`,
                 }} />
               </div>
             </div>
+
             <div style={{
-              ...css.lvlBadge,
+              width: 34, height: 34, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 13, fontWeight: 900,
+              border: `2px solid ${currentLevelData?.color || '#34d399'}`,
               background: `${currentLevelData?.color || '#34d399'}22`,
-              borderColor: currentLevelData?.color || '#34d399',
               color: currentLevelData?.color || '#34d399',
+              flexShrink: 0,
             }}>
               {currentLevel}
             </div>
+
+            {/* Theme toggle */}
+            <button
+              onClick={toggleTheme}
+              title="Toggle light/dark mode"
+              style={{
+                background: T.toggleBg,
+                border: `1px solid ${T.toggleBorder}`,
+                borderRadius: 8, padding: '6px 10px',
+                color: T.toggleColor, cursor: 'pointer',
+                fontSize: 14, fontFamily: 'inherit',
+                transition: 'all .15s',
+              }}
+            >
+              {theme === 'dark' ? '☀️' : '🌙'}
+            </button>
           </div>
         </div>
       </header>
@@ -480,17 +535,17 @@ export default function AdventureMapPage() {
       <div style={{ textAlign: 'center', padding: '32px 20px 6px', animation: 'fadeSlideUp .5s ease both' }}>
         <div style={{
           fontSize: 11, fontWeight: 800, letterSpacing: '.14em', textTransform: 'uppercase',
-          color: '#34d399', marginBottom: 10,
+          color: T.heroLabel, marginBottom: 10,
         }}>🗺️ Your Learning Journey</div>
         <h1 style={{
           fontSize: 30, fontWeight: 900, margin: '0 0 8px',
-          background: 'linear-gradient(135deg, #e2e8f0 30%, #64748b)',
+          background: T.heroTitle,
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
           lineHeight: 1.2,
         }}>
           Adventure Map
         </h1>
-        <p style={{ color: '#475569', fontSize: 14, margin: '0 auto 6px', maxWidth: 380, lineHeight: 1.6 }}>
+        <p style={{ color: T.heroSubText, fontSize: 14, margin: '0 auto 6px', maxWidth: 380, lineHeight: 1.6 }}>
           🎁 Start with LED + Resistor. Complete projects to earn more components.<br/>
           No quizzes — just build and learn!
         </p>
@@ -499,22 +554,24 @@ export default function AdventureMapPage() {
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '7px 16px', borderRadius: 99, marginBottom: 4,
-          background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)',
-          fontSize: 12, color: '#60a5fa', fontWeight: 700,
+          background: T.starterChipBg, border: `1px solid ${T.starterChipBorder}`,
+          fontSize: 12, color: T.starterChipColor, fontWeight: 700,
         }}>
           🎒 Your Starter Kit: <strong>Arduino + LED + Resistor</strong>
         </div>
       </div>
 
       {/* Map */}
-      <div style={css.mapContainer}>
+      <div style={{ maxWidth: 700, margin: '0 auto', padding: '12px 20px 120px' }}>
         {worldGroups.map((world, wi) => {
           const allDone = world.projects.every(p => completedProjects.includes(p.slug))
           return (
             <div key={world.id} style={{ marginBottom: 10, animation: `fadeSlideUp .5s ease ${wi * 0.1}s both` }}>
               {/* World header */}
               <div style={{
-                ...css.worldLabel,
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 18px', borderRadius: 10, marginBottom: 8,
+                fontSize: 13, fontWeight: 700,
                 background: world.bg, border: `1px solid ${world.border}`, color: world.color,
               }}>
                 <span style={{ fontSize: 18 }}>{world.icon}</span>
@@ -529,11 +586,11 @@ export default function AdventureMapPage() {
 
               {/* Nodes */}
               {world.projects.map((project, pi) => {
-                const status     = getStatus(project)
-                const globalIdx  = PROJECTS.indexOf(project)
-                const xPct       = PATH_X[globalIdx] ?? 50
-                const isFirst    = project.number === 1
-                const rewards    = getProjectRewardComponents(project.slug)
+                const status    = getStatus(project)
+                const globalIdx = PROJECTS.indexOf(project)
+                const xPct      = PATH_X[globalIdx] ?? 50
+                const isFirst   = project.number === 1
+                const rewards   = getProjectRewardComponents(project.slug)
 
                 return (
                   <div key={project.slug}>
@@ -555,7 +612,7 @@ export default function AdventureMapPage() {
                         >
                           <line
                             x1="2" y1="0" x2="2" y2="30"
-                            stroke={status === 'locked' ? 'rgba(255,255,255,0.07)' : `${project.color}55`}
+                            stroke={status === 'locked' ? T.connectorLocked : `${project.color}55`}
                             strokeWidth="2" strokeDasharray="4 3"
                           />
                         </svg>
@@ -570,20 +627,20 @@ export default function AdventureMapPage() {
                       }}>
                         <div style={{
                           fontSize: 13, fontWeight: 800,
-                          color: status === 'locked' ? '#2d3f5e' : status === 'completed' ? project.color : '#e2e8f0',
+                          color: status === 'locked' ? T.labelLocked : status === 'completed' ? project.color : T.labelText,
                           lineHeight: 1.2, marginBottom: 2,
                         }}>
                           {project.title}
                         </div>
-                        <div style={{ fontSize: 11, color: '#3d5070', marginBottom: 3 }}>
+                        <div style={{ fontSize: 11, color: T.labelXp, marginBottom: 3 }}>
                           {status === 'completed' ? '✓ Done · ' : ''}⚡{project.xpReward}
                         </div>
                         {/* Reward preview chip */}
                         {status !== 'completed' && rewards.length > 0 && status === 'available' && (
                           <div style={{
-                            fontSize: 10, color: '#34d399',
-                            background: 'rgba(52,211,153,0.08)',
-                            border: '1px solid rgba(52,211,153,0.2)',
+                            fontSize: 10, color: T.rewardLabel,
+                            background: T.rewardChipBg,
+                            border: `1px solid ${T.rewardChipBorder}`,
                             padding: '2px 7px', borderRadius: 5,
                             display: 'inline-block', fontWeight: 700,
                           }}>
@@ -597,7 +654,7 @@ export default function AdventureMapPage() {
                         status={status}
                         onClick={handleNodeClick}
                         isFirst={isFirst}
-                        rewards={rewards}
+                        T={T}
                       />
                     </div>
                   </div>
@@ -632,40 +689,48 @@ export default function AdventureMapPage() {
             }}>
               All Projects Complete!
             </div>
-            <p style={{ color: '#475569', fontSize: 13, marginTop: 6 }}>
+            <p style={{ color: T.allDoneText, fontSize: 13, marginTop: 6 }}>
               You're a true Circuit Champion! 🎖️
             </p>
           </div>
         )}
       </div>
 
-      {/* Progress bar */}
-      <div style={css.progressPanel}>
-        <div style={css.progressStat}>
-          <span style={{ ...css.progressNum, color: '#fbbf24' }}>{xp}</span>
-          <span style={css.progressLabel}>XP</span>
+      {/* Progress panel */}
+      <div style={{
+        position: 'fixed', bottom: 16, left: '50%',
+        transform: 'translateX(-50%)',
+        background: T.progressBg,
+        backdropFilter: 'blur(20px)',
+        border: `1px solid ${T.progressBorder}`,
+        borderRadius: 16, padding: '10px 20px',
+        display: 'flex', alignItems: 'center', gap: 16,
+        zIndex: 200,
+        boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1, color: '#fbbf24' }}>{xp}</span>
+          <span style={{ fontSize: 10, color: T.progressLabel, textTransform: 'uppercase', letterSpacing: '.06em' }}>XP</span>
         </div>
-        <div style={css.progressDivider} />
-        <div style={css.progressStat}>
-          <span style={{ ...css.progressNum, color: '#34d399' }}>{completedCount}</span>
-          <span style={css.progressLabel}>Done</span>
+        <div style={{ width: 1, height: 32, background: T.progressDivider }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1, color: '#34d399' }}>{completedCount}</span>
+          <span style={{ fontSize: 10, color: T.progressLabel, textTransform: 'uppercase', letterSpacing: '.06em' }}>Done</span>
         </div>
-        <div style={css.progressDivider} />
-        <div style={css.progressStat}>
-          <span style={{ ...css.progressNum, color: '#94a3b8' }}>{totalProjects - completedCount}</span>
-          <span style={css.progressLabel}>Left</span>
+        <div style={{ width: 1, height: 32, background: T.progressDivider }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1, color: T.backBtnColor }}>{totalProjects - completedCount}</span>
+          <span style={{ fontSize: 10, color: T.progressLabel, textTransform: 'uppercase', letterSpacing: '.06em' }}>Left</span>
         </div>
-        <div style={css.progressDivider} />
-        <div style={css.progressStat}>
-          <span style={{ ...css.progressNum, color: currentLevelData?.color || '#34d399' }}>
+        <div style={{ width: 1, height: 32, background: T.progressDivider }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <span style={{ fontSize: 20, fontWeight: 900, lineHeight: 1, color: currentLevelData?.color || '#34d399' }}>
             {currentLevelData?.icon} {currentLevel}
           </span>
-          <span style={css.progressLabel}>Level</span>
+          <span style={{ fontSize: 10, color: T.progressLabel, textTransform: 'uppercase', letterSpacing: '.06em' }}>Level</span>
         </div>
-        <div style={{
-          width: 80, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4,
-        }}>
-          <div style={{ height: 4, borderRadius: 99, background: 'rgba(255,255,255,0.05)', overflow: 'hidden' }}>
+        <div style={{ width: 80, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4 }}>
+          <div style={{ height: 4, borderRadius: 99, background: T.progressBarTrack, overflow: 'hidden' }}>
             <div style={{
               height: '100%', borderRadius: 99,
               width: `${Math.round((completedCount / totalProjects) * 100)}%`,
@@ -673,7 +738,7 @@ export default function AdventureMapPage() {
               transition: 'width .6s ease',
             }} />
           </div>
-          <div style={{ fontSize: 10, color: '#334155', textAlign: 'center' }}>
+          <div style={{ fontSize: 10, color: T.progressPct, textAlign: 'center' }}>
             {Math.round((completedCount / totalProjects) * 100)}%
           </div>
         </div>
@@ -687,6 +752,7 @@ export default function AdventureMapPage() {
           isAvailable={getStatus(selectedProject) !== 'locked'}
           onClose={() => setSelectedProject(null)}
           onStart={handleStart}
+          T={T}
         />
       )}
     </div>

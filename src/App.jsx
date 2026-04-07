@@ -18,7 +18,6 @@ import SimulatorPage from "./pages/simulationpage/SimulationPage.jsx";
 import AdminPage from './pages/admin/AdminPage.jsx'
 import AdminLoginPage from './pages/admin/AdminLoginPage.jsx'
 import AdminLandingPage from './pages/admin/AdminLandingPage.jsx'
-import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
 import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx'
 import ProjectsGallery from './pages/ProjectsGallery.jsx'
 import ComponentsPage from './pages/ComponentsPage.jsx'
@@ -26,6 +25,10 @@ import TheoryPage from './pages/TheoryPage.jsx'
 import QuizPage from './pages/QuizPage.jsx'
 import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
 import AdventureMapPage from './pages/AdventureMapPage.jsx'
+import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
+import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage'
+import GuidedSimulatorPage from './pages/GuidedSimulatorPage'
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -53,7 +56,10 @@ export default function App() {
             <Route path="/simulator" element={<SimulatorPage />} />
             <Route path="/:projectName/demo" element={<SimulatorPage />} />
             <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
+            <Route path="/:projectName/gamified-guide" element={<GamifiedProjectGuidePage />} />
             <Route path="/:projectName/assessment" element={<ProjectAssessmentPage />} />
+            <Route path="/:projectName/guided" element={<GuidedSimulatorPage />} />
+
 
             {/* Protected: Student */}
             <Route
