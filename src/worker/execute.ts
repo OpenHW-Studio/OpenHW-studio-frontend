@@ -18,23 +18,19 @@ import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-poten
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
 import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
 import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
-import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic.ts';
-import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic.ts';
-import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic.ts';
-import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic.ts';
-import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic.ts';
-import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic.ts';
-import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic.ts';
+
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
 import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
 import { DFlipFlopDsrLogic } from '@openhw/emulator/src/components/logic-d-flipflop-dsr/logic.ts';
 import { ClockGeneratorLogic } from '@openhw/emulator/src/components/logic-clock-generator/logic.ts';
+import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic.ts';
 import { WokwiTM1637Logic } from '@openhw/emulator/src/components/wokwi-tm1637-7segment/logic.ts';
 import { RGBLEDLogic } from '@openhw/emulator/src/components/wokwi-rgb-led/logic.ts';
 import { Nokia5110Logic } from '@openhw/emulator/src/components/wokwi-nokia-5110/logic.ts';
 import { L293DLogic } from '@openhw/emulator/src/components/wokwi-l293d/logic.ts';
 import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/wokwi-lcd2004-i2c/logic.ts';
+import { Lcd1602I2CLogic } from '@openhw/emulator/src/components/wokwi-lcd1602-i2c/logic.ts';
 import { SSD1306Logic } from '@openhw/emulator/src/components/wokwi-ssd1306-oled/logic.ts';
 import { PCA9685Logic } from '@openhw/emulator/src/components/wokwi-pca9685/logic.ts';
 import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic.ts';
@@ -119,24 +115,20 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'shift_register': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
-    'logic-and-gate': AndGateLogic,
-    'logic-or-gate': OrGateLogic,
-    'logic-not-gate': NotGateLogic,
-    'logic-nand-gate': NandGateLogic,
-    'logic-nor-gate': NorGateLogic,
-    'logic-xor-gate': XorGateLogic,
-    'logic-xnor-gate': XnorGateLogic,
+
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
     'logic-d-flipflop-r': DFlipFlopRLogic,
     'logic-d-flipflop-dsr': DFlipFlopDsrLogic,
     'logic-clock-generator': ClockGeneratorLogic,
+    'logic-ic-74xx': LogicIC74xxLogic,
     'wokwi-tm1637-7segment': WokwiTM1637Logic,
     'wokwi-rgb-led': RGBLEDLogic,
     'wokwi-nokia-5110': Nokia5110Logic,
     'wokwi-l293d': L293DLogic,
     'wokwi-arduino-nano': UnoLogic,
     'wokwi-lcd2004-i2c': Lcd2004I2CLogic,
+    'wokwi-lcd1602-i2c': Lcd1602I2CLogic,
     'wokwi-ssd1306-oled': SSD1306Logic,
     'wokwi-pca9685': PCA9685Logic,
     'max30102': MAX30102Logic,
@@ -171,18 +163,13 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
-    'logic-and-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-or-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-not-gate': [{ id: 'IN' }, { id: 'OUT' }],
-    'logic-nand-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-nor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-xor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-xnor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+
     'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
     'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-d-flipflop-dsr': [{ id: 'D' }, { id: 'CLK' }, { id: 'S' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-clock-generator': [{ id: 'OUT' }],
+    'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
     'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
     'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }, { id: 'DOUT' }],
@@ -191,6 +178,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
     'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
     'wokwi-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
     'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
     'max30102': [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }],
