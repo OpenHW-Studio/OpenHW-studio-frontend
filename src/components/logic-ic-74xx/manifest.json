@@ -1,0 +1,27 @@
+{
+    "type": "logic-ic-74xx",
+    "label": "Logic IC",
+    "description": "Universal 74xx series logic IC. Supports 7400, 7402, 7404, 7407, 7408, 7432, 7486, 74266.",
+    "group": "Logic",
+    "w": 200,
+    "h": 120,
+    "attrs": {
+        "icType": "7408"
+    },
+    "pins": [
+        { "id": "p1",  "x": 28,  "y": 120, "type": "digital", "description": "Pin 1" },
+        { "id": "p2",  "x": 50,  "y": 120, "type": "digital", "description": "Pin 2" },
+        { "id": "p3",  "x": 72,  "y": 120, "type": "digital", "description": "Pin 3" },
+        { "id": "p4",  "x": 94,  "y": 120, "type": "digital", "description": "Pin 4" },
+        { "id": "p5",  "x": 116, "y": 120, "type": "digital", "description": "Pin 5" },
+        { "id": "p6",  "x": 138, "y": 120, "type": "digital", "description": "Pin 6" },
+        { "id": "p7",  "x": 160, "y": 120, "type": "digital", "description": "Pin 7 (GND)" },
+        { "id": "p8",  "x": 160, "y": 0,   "type": "digital", "description": "Pin 8" },
+        { "id": "p9",  "x": 138, "y": 0,   "type": "digital", "description": "Pin 9" },
+        { "id": "p10", "x": 116, "y": 0,   "type": "digital", "description": "Pin 10" },
+        { "id": "p11", "x": 94,  "y": 0,   "type": "digital", "description": "Pin 11" },
+        { "id": "p12", "x": 72,  "y": 0,   "type": "digital", "description": "Pin 12" },
+        { "id": "p13", "x": 50,  "y": 0,   "type": "digital", "description": "Pin 13" },
+        { "id": "p14", "x": 28,  "y": 0,   "type": "digital", "description": "Pin 14 (VCC)" }
+    ]
+}
