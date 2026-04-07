@@ -5,25 +5,28 @@ import { GamificationProvider } from './context/GamificationContext.jsx'
 import { GamificationToasts } from './services/gamification/Gamificationpanel.jsx'
 // Pages
 import LandingPage from './pages/LandingPage.jsx'
+import UserLoginPage from './pages/auth/UserLoginPage.jsx'
 import SigninPage from './pages/auth/SigninPage.jsx'
 import SignupPage from './pages/auth/signupPage.jsx'
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx'
 import ResetPasswordPage from './pages/auth/ResetPasswordPage.jsx'
 import RoleSelectPage from './pages/RoleSelectPage.jsx'
+import UserDashboard from './pages/user/UserDashboard.jsx'
 import StudentDashboard from './pages/student/StudentDashboard.jsx'
 import StudentProfilePage from './pages/student/StudentProfilePage.jsx'
 import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx'
 import TeacherProfilePage from './pages/teacher/TeacherProfilePage.jsx'
 import TeacherClassDetailPage from './pages/teacher/TeacherClassDetailPage.jsx'
 import StudentClassDetailPage from './pages/student/StudentClassDetailPage.jsx'
-import SimulatorPage from "./pages/simulationpage/SimulationPage.jsx";
+import SimulatorPage from "./pages/simulationpage/SimulatorPage.jsx";
 import AdminPage from './pages/admin/AdminPage.jsx'
 import AdminLoginPage from './pages/admin/AdminLoginPage.jsx'
 import AdminLandingPage from './pages/admin/AdminLandingPage.jsx'
 import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
 import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx'
 import ProjectsGallery from './pages/ProjectsGallery.jsx'
-import ComponentsPage from './pages/ComponentsPage.jsx'  // ⚠️ verify this exists
+import ComponentsPage from './pages/ComponentsPage.jsx'
+import ComponentEditorPage from './pages/ComponentEditorPage.jsx'
 import TheoryPage from './pages/TheoryPage.jsx'
 import QuizPage from './pages/QuizPage.jsx'
 import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
@@ -39,14 +42,18 @@ export default function App() {
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />
-            <Route path="/signin" element={<SigninPage />} />
-            <Route path="/signup" element={<SignupPage />} />
+            <Route path="/login" element={<UserLoginPage />} />
+            <Route path="/signin" element={<Navigate to="/classroom/signin" replace />} />
+            <Route path="/signup" element={<Navigate to="/classroom/signup" replace />} />
+            <Route path="/classroom/signin" element={<SigninPage />} />
+            <Route path="/classroom/signup" element={<SignupPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
             <Route path="/select-role" element={<RoleSelectPage />} />
 
             <Route path="/projects" element={<ProjectsGallery />} />
             <Route path="/components" element={<ComponentsPage />} />
+            <Route path="/component-editor" element={<ComponentEditorPage />} />
             <Route path="/components/:componentId/theory" element={<TheoryPage />} />
             <Route path="/components/:componentId/quiz" element={<QuizPage />} />
             <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
@@ -56,6 +63,16 @@ export default function App() {
             <Route path="/:projectName/demo" element={<SimulatorPage />} />
             <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
             <Route path="/:projectName/assessment" element={<ProjectAssessmentPage />} />
+
+            {/* Protected: General User */}
+            <Route
+              path="/user/dashboard"
+              element={
+                <ProtectedRoute allowedRole="user">
+                  <UserDashboard />
+                </ProtectedRoute>
+              }
+            />
 
             {/* Protected: Student */}
             <Route

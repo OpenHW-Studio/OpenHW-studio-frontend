@@ -251,7 +251,7 @@ function ProjectCard({ project, isLocked, isCompleted, missingComponents = [], c
 
   const cardS = {
     card: {
-      borderRadius: 14, border: '1px solid var(--border)',
+      borderRadius: 14, borderWidth: 1, borderStyle: 'solid', borderColor: 'var(--border)',
       background: 'var(--bg2)', overflow: 'hidden',
       display: 'flex', flexDirection: 'column',
       transition: 'all .2s', position: 'relative',
@@ -367,8 +367,8 @@ function ProjectCard({ project, isLocked, isCompleted, missingComponents = [], c
         <div style={cardS.cardComponents}>
           <div style={cardS.compLabel}>Components</div>
           <div style={cardS.compChips}>
-            {project.components.map(c => (
-              <span key={c.type} style={cardS.compChip}>
+            {project.components.map((c, index) => (
+              <span key={`${c.type}-${index}`} style={cardS.compChip}>
                 {c.qty > 1 ? `${c.qty}× ` : ''}{c.label}
               </span>
             ))}
