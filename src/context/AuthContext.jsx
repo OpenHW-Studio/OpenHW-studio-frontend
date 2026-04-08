@@ -103,7 +103,7 @@ export function AuthProvider({ children }) {
   }
 
   const isAuthenticated = !!user && !!token
-  const role = user?.role || null // 'student' | 'teacher'
+  const role = user?.role || null // 'student' | 'teacher' | 'user'
 
   const isAdminAuthenticated = !!adminUser && !!adminToken
   const adminRole = adminUser?.role || null // 'admin'

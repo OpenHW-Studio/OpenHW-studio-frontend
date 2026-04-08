@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LEVELS, getUnlockedComponents, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
 import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
 import { useAuth } from './AuthContext.jsx';
@@ -31,6 +32,7 @@ export function useGamification() {
 
 export function GamificationProvider({ children }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const storageKey = getStorageKey(user?.email);
 
   const [state, setState] = useState(() => {
@@ -306,8 +308,9 @@ export function GamificationProvider({ children }) {
 
   // ── Unlock check helpers (simulator component palette) ─────────────────────
   const isUnlocked = useCallback((componentType) => {
-    return isComponentUnlocked(componentType, state.currentLevel);
-  }, [state.currentLevel]);
+    // Check level-based unlocks OR manual/purchased unlocks
+    return isComponentUnlocked(componentType, state.currentLevel) || (state.unlockedComponents || []).includes(componentType);
+  }, [state.currentLevel, state.unlockedComponents]);
 
   const unlockedSet = getUnlockedComponents(state.currentLevel);
 

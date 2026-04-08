@@ -16,14 +16,30 @@ import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './Si
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation } from '../../services/simulatorService.js'
+import { useGamification } from '../../context/GamificationContext.jsx'
+import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
+import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
-import { saveProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
+import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
-import * as Babel from '@babel/standalone';
 
-import * as EmulatorComponents from "@local-emulator/components/index.ts";
+// ── Lazy loaders — heavy libs loaded on first use, NOT on page paint ──────────
+// @babel/standalone is ~800KB — loading it eagerly was causing the 3.73s LCP.
+// html2canvas is ~120KB — only needed for PNG export.
+let _babelMod = null;
+const getBabel = async () => {
+  if (!_babelMod) _babelMod = await import('@babel/standalone');
+  return _babelMod;
+};
+let _h2cMod = null;
+const getHtml2canvas = async () => {
+  if (!_h2cMod) _h2cMod = (await import('html2canvas')).default;
+  return _h2cMod;
+};
+
+import * as EmulatorComponents from "@openhw/emulator";
 
 // Web Editor features
 import Editor from 'react-simple-code-editor';
@@ -39,7 +55,6 @@ import 'prismjs/themes/prism-tomorrow.css';
 const COMPONENT_REGISTRY = {};
 
 Object.entries(EmulatorComponents).forEach(([key, module]) => {
-  // Skip the base class
   if (key === 'BaseComponent') return;
 
   if (module && module.manifest) {
@@ -47,6 +62,22 @@ Object.entries(EmulatorComponents).forEach(([key, module]) => {
     COMPONENT_REGISTRY[compId] = module;
   }
 });
+
+// Compatibility aliases: accept WS2812 naming variants used in imported diagrams.
+const neopixelBaseModule = COMPONENT_REGISTRY['wokwi-neopixel-matrix'];
+if (neopixelBaseModule?.manifest) {
+  ['wokwi-ws2812b', 'wokwi-ws2821b'].forEach((aliasType) => {
+    if (COMPONENT_REGISTRY[aliasType]) return;
+    COMPONENT_REGISTRY[aliasType] = {
+      ...neopixelBaseModule,
+      manifest: {
+        ...neopixelBaseModule.manifest,
+        type: aliasType,
+        hiddenAlias: true,
+      },
+    };
+  });
+}
 
 const LOCAL_CATALOG = [];
 const LOCAL_PIN_DEFS = {};
@@ -100,8 +131,119 @@ function resolveUiExport(exportsUI) {
   return null;
 }
 
+function toPascalCase(value) {
+  const safe = String(value || 'component');
+  return safe
+    .replace(/[^a-zA-Z0-9]+(.)/g, (_, c) => c.toUpperCase())
+    .replace(/^[a-z]/, c => c.toUpperCase())
+    .replace(/[^a-zA-Z0-9]/g, '') || 'Component';
+}
+
+function extractFunctionSource(fn) {
+  if (typeof fn !== 'function') return '';
+  try {
+    let src = String(fn).trim();
+    // Remove common fast-refresh signature calls that may appear in function bodies.
+    src = src.replace(/\b_s\s*\([^)]*\);?/g, '');
+    src = src.replace(/\$RefreshSig\$\s*\([^)]*\)/g, '(() => {})');
+    src = src.replace(/\$RefreshReg\$\s*\([^)]*\);?/g, '');
+    return src.trim();
+  } catch {
+    return '';
+  }
+}
+
+function buildUiSourceFromRegistry(registryInfo, fallbackType) {
+  if (registryInfo?.uiRaw) return registryInfo.uiRaw;
+
+  const manifest = registryInfo?.manifest || {};
+  const name = toPascalCase(manifest.type || fallbackType || 'component');
+  const uiFn = extractFunctionSource(registryInfo?.UI);
+  if (!uiFn) return '';
+
+  const b = registryInfo?.BOUNDS;
+  const bounds = (b && typeof b === 'object')
+    ? b
+    : { x: 5, y: 5, w: Math.max((manifest.w || 100) - 10, 10), h: Math.max((manifest.h || 80) - 10, 10) };
+
+  const lines = [
+    "import React from 'react';",
+    '',
+    `export const BOUNDS = { x: ${Number(bounds.x) || 0}, y: ${Number(bounds.y) || 0}, w: ${Number(bounds.w) || 10}, h: ${Number(bounds.h) || 10} };`,
+  ];
+
+  if (registryInfo?.contextMenuDuringRun || manifest.contextMenuDuringRun) {
+    lines.push('export const contextMenuDuringRun = true;');
+  }
+  if (registryInfo?.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun) {
+    lines.push('export const contextMenuOnlyDuringRun = true;');
+  }
+
+  lines.push('', `export const ${name}UI = ${uiFn};`);
+
+  const ctxFn = extractFunctionSource(registryInfo?.ContextMenu);
+  if (ctxFn) {
+    lines.push('', `export const ContextMenu = ${ctxFn};`);
+  }
+
+  return lines.join('\n');
+}
+
+function buildLogicSourceFromRegistry(registryInfo, fallbackType) {
+  if (registryInfo?.logicRaw) return registryInfo.logicRaw;
+
+  const logicClassSrc = extractFunctionSource(registryInfo?.LogicClass);
+  if (logicClassSrc.startsWith('class ')) {
+    return `import { BaseComponent } from '../BaseComponent';\n\nexport ${logicClassSrc}\n`;
+  }
+
+  const name = toPascalCase(registryInfo?.manifest?.type || fallbackType || 'component');
+  return `import { BaseComponent } from '../BaseComponent';\n\nexport class ${name}Logic extends BaseComponent {\n  reset() {}\n  update() {}\n}\n`;
+}
+
+function buildValidationSourceFromRegistry(registryInfo) {
+  if (registryInfo?.validationRaw) return registryInfo.validationRaw;
+  const validation = registryInfo?.validation;
+  if (Array.isArray(validation)) {
+    const rows = validation.map((rule) => {
+      const id = JSON.stringify(rule?.id || 'rule');
+      const description = JSON.stringify(rule?.description || '');
+      const check = typeof rule?.check === 'function'
+        ? String(rule.check)
+        : '() => ({ pass: true })';
+      return `  {\n    id: ${id},\n    description: ${description},\n    check: ${check},\n  }`;
+    });
+    return `export const validation = [\n${rows.join(',\n')}\n];\n`;
+  }
+  if (typeof validation === 'function') {
+    return `export const validation = ${String(validation)};\n`;
+  }
+  return 'export const validation = [];\n';
+}
+
+function buildIndexSourceFromRegistry(registryInfo, fallbackType) {
+  if (registryInfo?.indexRaw) return registryInfo.indexRaw;
+  const manifest = registryInfo?.manifest || {};
+  const name = toPascalCase(manifest.type || fallbackType || 'component');
+  const hasCtxMenu = typeof registryInfo?.ContextMenu === 'function';
+  const hasDuringRun = !!(registryInfo?.contextMenuDuringRun || manifest.contextMenuDuringRun);
+  const hasOnlyDuringRun = !!(registryInfo?.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun);
+
+  return `import manifest from './manifest.json';\nimport { ${name}UI, BOUNDS${hasDuringRun ? ', contextMenuDuringRun' : ''}${hasOnlyDuringRun ? ', contextMenuOnlyDuringRun' : ''}${hasCtxMenu ? ', ContextMenu' : ''} } from './ui';\nimport { ${name}Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n  manifest,\n  UI: ${name}UI,\n  LogicClass: ${name}Logic,\n  BOUNDS,\n  validation,${hasCtxMenu ? '\n  ContextMenu,' : ''}${hasDuringRun ? '\n  contextMenuDuringRun,' : ''}${hasOnlyDuringRun ? '\n  contextMenuOnlyDuringRun,' : ''}\n};\n`;
+}
+
 Object.values(COMPONENT_REGISTRY).forEach(module => {
   const manifest = module.manifest;
+  if (!manifest) return;
+
+  if (manifest.pins) {
+    LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
+  }
+
+  if (manifest.hiddenAlias) {
+    return;
+  }
+
   const groupName = normalizeGroupName(manifest.group);
   let group = LOCAL_CATALOG.find(g => g.group === groupName);
   if (!group) {
@@ -109,12 +251,8 @@ Object.values(COMPONENT_REGISTRY).forEach(module => {
     LOCAL_CATALOG.push(group);
   }
 
-  const { pins, group: _, ...catalogItem } = manifest;
+  const { pins: _pins, group: _, ...catalogItem } = manifest;
   group.items.push(catalogItem);
-
-  if (pins) {
-    LOCAL_PIN_DEFS[manifest.type] = pins;
-  }
 });
 
 sortCatalog(LOCAL_CATALOG);
@@ -123,18 +261,10 @@ sortCatalog(LOCAL_CATALOG);
 // Used by the polling loop to detect deletions and purge them from the registry.
 const BACKEND_INJECTED_TYPES = new Set();
 
-let nextId = 1
 let nextWireId = 1
 
-// ─── SYNC ID COUNTERS AFTER LOADING EXTERNAL DATA ──────────────────────────
-// Prevents duplicate keys when a saved project has IDs higher than the
-// current module-level counter (e.g. loading "wokwi-ili9341_2" with nextId=1
-// would let a subsequent add generate the same key again).
-function syncNextIds(comps, ws) {
-  for (const c of (comps || [])) {
-    const m = c.id && c.id.match(/_(\d+)$/);
-    if (m) nextId = Math.max(nextId, parseInt(m[1]) + 1);
-  }
+// ─── SYNC WIRE ID COUNTER AFTER LOADING EXTERNAL DATA ──────────────────────
+function syncNextIds(_comps, ws) {
   for (const w of (ws || [])) {
     const m = w.id && w.id.match(/^w(\d+)$/);
     if (m) nextWireId = Math.max(nextWireId, parseInt(m[1]) + 1);
@@ -142,6 +272,7 @@ function syncNextIds(comps, ws) {
 }
 
 const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api').replace(/\/$/, '');
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
 const GROUP_ICON_SVG = {
@@ -163,7 +294,6 @@ const GROUP_COLORS = {
 
 const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
-  arduino_mega: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
@@ -171,34 +301,279 @@ const BOARD_BAUD_PRESETS = {
 
 const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
-  arduino_mega: '9600',
   esp32: '115200',
   stm32: '115200',
   rp2040: '115200',
 };
 
+const SERIAL_LINE_ENDINGS = {
+  none: '',
+  nl: '\n',
+  crlf: '\r\n',
+  cr: '\r',
+};
+
 const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
-  arduino_mega: 'arduino:avr:mega:cpu=atmega2560',
   esp32: 'esp32:esp32:esp32',
   stm32: 'STMicroelectronics:stm32:GenF1',
   rp2040: 'rp2040:rp2040:rpipico',
 };
 
+const BOARD_DISPLAY_NAME = {
+  arduino_uno: 'Arduino Uno',
+  esp32: 'ESP32',
+  stm32: 'STM32',
+  rp2040: 'Raspberry Pi Pico',
+};
+
+const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
+const DEFAULT_PICO_MICROPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/micropython-uf2`;
+const DEFAULT_PICO_CIRCUITPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/circuitpython-uf2`;
+const DEFAULT_PICO_CIRCUITPYTHON_VERSION = '8.2.7';
+const DISABLED_FILE_SUFFIX = '.disabled';
+const GENERATED_ROOT_FILE_IDS = new Set(['project/diagram.png']);
+const ARDUINO_CODE_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
+const ROOT_UPLOADABLE_EXTENSIONS = new Set(['.ino', '.cpp', '.h', '.hpp', '.c', '.txt', '.json', '.xml', '.py', '.uf2']);
+const RP2040_NATIVE_ALLOWED_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp', '.txt', '.json', '.xml', '.uf2']);
+const RP2040_MICROPYTHON_ALLOWED_EXTENSIONS = new Set(['.py', '.txt', '.json', '.xml', '.uf2']);
+
+function boardKindToDisplayName(kind) {
+  const normalized = normalizeBoardKind(kind);
+  return BOARD_DISPLAY_NAME[normalized] || BOARD_DISPLAY_NAME.arduino_uno;
+}
+
+function boardCompToDisplayName(boardComp, fallbackKind = 'arduino_uno') {
+  if (!boardComp || typeof boardComp !== 'object') {
+    return boardKindToDisplayName(fallbackKind);
+  }
+
+  const boardLabel = String(boardComp.label || '').trim();
+  if (boardLabel) return boardLabel;
+  const boardId = String(boardComp.id || '').trim();
+  const kindLabel = boardKindToDisplayName(boardComp.type || fallbackKind);
+  return boardId ? `${kindLabel} (${boardId})` : kindLabel;
+}
+
+function extractCompileSummaryLines(stdoutText) {
+  const text = String(stdoutText || '');
+  if (!text.trim()) return [];
+
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const summaryPatterns = [
+    /^Sketch uses\s+/i,
+    /^Global variables use\s+/i,
+    /^Program\s+size\s*:/i,
+    /^Flash\s*:/i,
+    /^RAM\s*:/i,
+    /\btext\s+data\s+bss\s+dec\s+hex\b/i,
+    /^\d+\s+\d+\s+\d+\s+\d+\s+[0-9a-f]+\s+/i,
+  ];
+
+  const dedup = new Set();
+  const out = [];
+  lines.forEach((line) => {
+    if (!summaryPatterns.some((pattern) => pattern.test(line))) return;
+    if (dedup.has(line)) return;
+    dedup.add(line);
+    out.push(line);
+  });
+
+  return out.slice(0, 8);
+}
+
+function formatRunDuration(secondsValue) {
+  const totalSeconds = Math.max(0, Math.floor(Number(secondsValue || 0)));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function normalizeHashValue(value, depth = 0) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+
+  if (ArrayBuffer.isView(value)) {
+    const len = Number(value.length || 0);
+    return {
+      kind: 'typed-array',
+      length: len,
+      preview: Array.from(value).slice(0, 24),
+    };
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length > 64) {
+      return {
+        kind: 'array',
+        length: value.length,
+        preview: value.slice(0, 64).map((entry) => normalizeHashValue(entry, depth + 1)),
+      };
+    }
+    return value.map((entry) => normalizeHashValue(entry, depth + 1));
+  }
+
+  if (typeof value === 'object') {
+    const keys = Object.keys(value);
+    if (depth > 4 && keys.length > 24) {
+      return {
+        kind: 'object',
+        keys: keys.sort().slice(0, 24),
+        size: keys.length,
+      };
+    }
+
+    const out = {};
+    keys
+      .sort((a, b) => a.localeCompare(b))
+      .forEach((key) => {
+        out[key] = normalizeHashValue(value[key], depth + 1);
+      });
+    return out;
+  }
+
+  return String(value);
+}
+
+function fnv1aHash(input) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+function computeRenderSyncHash(payload) {
+  return fnv1aHash(JSON.stringify(normalizeHashValue(payload, 0)));
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function normalizeRp2040Env(source) {
+  const value = String(source || '').trim().toLowerCase();
+  if (!value || value === 'none' || value === 'native' || value === 'ino') return 'native';
+  if (value === 'cp' || value === 'circuitpy' || value === 'circuitpython') return 'circuitpython';
+  if (value.startsWith('circuitpython')) return 'circuitpython';
+  if (value === 'py' || value === 'python') return 'micropython';
+  if (value.startsWith('micropython')) return 'micropython';
+  return 'native';
+}
+
+function isRp2040PythonEnv(source) {
+  const env = normalizeRp2040Env(source);
+  return env === 'micropython' || env === 'circuitpython';
+}
+
+function getRp2040PythonEntryFileName(source) {
+  return normalizeRp2040Env(source) === 'circuitpython' ? 'code.py' : 'main.py';
+}
+
+function mapRp2040EnvForLegacyContextMenu(source) {
+  const env = normalizeRp2040Env(source);
+  if (env === 'micropython') return 'micropython-20241129-v1.24.1';
+  if (env === 'circuitpython') return `circuitpython-${DEFAULT_PICO_CIRCUITPYTHON_VERSION}`;
+  return '';
+}
+
+function resolveComponentIdFormat(type) {
+  const rawType = String(type || '').toLowerCase();
+
+  if (rawType.includes('arduino') && rawType.includes('uno')) {
+    return { prefix: 'uno', separator: '' };
+  }
+  if (rawType.includes('pico-w') || rawType.includes('picow')) {
+    return { prefix: 'picow', separator: '' };
+  }
+  if (rawType.includes('rp2040') || rawType.includes('pico')) {
+    return { prefix: 'pico', separator: '' };
+  }
+
+  const fallback = String(type || 'component')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase() || 'component';
+
+  return { prefix: fallback, separator: '_' };
+}
+
+function allocateComponentId(type, usedIdsInput) {
+  const usedIds = usedIdsInput instanceof Set
+    ? usedIdsInput
+    : new Set(Array.isArray(usedIdsInput) ? usedIdsInput : []);
+  const { prefix, separator } = resolveComponentIdFormat(type);
+  const pattern = new RegExp(`^${prefix}${separator}(\\d+)$`, 'i');
+
+  let maxIndex = 0;
+  usedIds.forEach((id) => {
+    const match = String(id || '').match(pattern);
+    if (!match) return;
+    const parsed = Number(match[1]);
+    if (Number.isFinite(parsed)) {
+      maxIndex = Math.max(maxIndex, parsed);
+    }
+  });
+
+  let index = Math.max(1, maxIndex + 1);
+  let candidate = `${prefix}${separator}${index}`;
+  while (usedIds.has(candidate)) {
+    index += 1;
+    candidate = `${prefix}${separator}${index}`;
+  }
+
+  usedIds.add(candidate);
+  return candidate;
+}
+
 function normalizeBoardKind(source) {
   const s = String(source || '').toLowerCase();
-  if (s.includes('mega')) return 'arduino_mega';
   if (s.includes('esp32')) return 'esp32';
   if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
   return 'arduino_uno';
 }
 
-function createDefaultMainCode(boardKind, boardId) {
+function resolveBoardFqbnForComponent(boardComp, boardKind) {
+  const type = String(boardComp?.type || '').toLowerCase();
+  if (type.includes('pico-w') || type.includes('picow')) {
+    return 'rp2040:rp2040:rpipicow';
+  }
+  return BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
+}
+
+function createDefaultMainCode(boardKind, boardId, options = {}) {
+  const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
+
+  if (boardKind === 'rp2040' && rp2040Mode === 'micropython') {
+    return `# ${boardId} MicroPython script\nfrom machine import Pin\nfrom time import sleep\n\nled = Pin('LED', Pin.OUT)\n\nwhile True:\n  led.toggle()\n  sleep(0.5)\n`;
+  }
+  if (boardKind === 'rp2040' && rp2040Mode === 'circuitpython') {
+    return `# ${boardId} CircuitPython script\nimport time\nimport board\nimport digitalio\n\nled = digitalio.DigitalInOut(board.LED)\nled.direction = digitalio.Direction.OUTPUT\n\nwhile True:\n  led.value = not led.value\n  time.sleep(0.5)\n`;
+  }
   if (boardKind === 'esp32' || boardKind === 'stm32' || boardKind === 'rp2040') {
     return `// ${boardId} main sketch\nvoid setup() {\n  // Serial.begin(${BOARD_DEFAULT_BAUD[boardKind] || 115200});\n}\n\nvoid loop() {\n  delay(1000);\n}\n`;
   }
   return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(13, OUTPUT);\n  // Serial.begin(${BOARD_DEFAULT_BAUD.arduino_uno});\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(500);\n  digitalWrite(13, LOW);\n  delay(500);\n}\n`;
+}
+
+function getDefaultMainFileName(boardKind, boardId, options = {}) {
+  if (boardKind === 'rp2040') {
+    const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
+    if (isRp2040PythonEnv(rp2040Mode)) {
+      return getRp2040PythonEntryFileName(rp2040Mode);
+    }
+    return `${boardId}.ino`;
+  }
+  return `${boardId}.ino`;
 }
 
 function fileExt(path) {
@@ -206,9 +581,506 @@ function fileExt(path) {
   return idx >= 0 ? path.substring(idx).toLowerCase() : '';
 }
 
+function toBoardRelativePath(boardId, fullPath) {
+  const prefix = `project/${boardId}/`;
+  const raw = String(fullPath || '').replace(/\\/g, '/');
+  if (!raw.startsWith(prefix)) {
+    return String(raw.split('/').pop() || '').trim();
+  }
+
+  const relative = raw.slice(prefix.length).trim();
+  const parts = relative
+    .split('/')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '.' && part !== '..');
+  return parts.join('/');
+}
+
+function isFileDisabled(pathLike) {
+  return String(pathLike || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX);
+}
+
+function baseFileExt(pathLike) {
+  const normalized = isFileDisabled(pathLike)
+    ? String(pathLike || '').slice(0, -DISABLED_FILE_SUFFIX.length)
+    : String(pathLike || '');
+  return fileExt(normalized);
+}
+
+function normalizeProjectFiles(files) {
+  const list = Array.isArray(files) ? files : [];
+  const seen = new Set();
+  const out = [];
+
+  list.forEach((entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const normalizedPath = String(entry.path || entry.id || '').trim();
+    if (!normalizedPath || GENERATED_ROOT_FILE_IDS.has(normalizedPath) || seen.has(normalizedPath)) return;
+    seen.add(normalizedPath);
+
+    out.push({
+      ...entry,
+      id: normalizedPath,
+      path: normalizedPath,
+      name: String(entry.name || normalizedPath.split('/').pop() || ''),
+    });
+  });
+
+  return out;
+}
+
+function normalizeOpenCodeTabs(tabs, projectFiles) {
+  const list = Array.isArray(tabs) ? tabs : [];
+  const fileIds = new Set((projectFiles || []).map((f) => f.id));
+  const seen = new Set();
+  const out = [];
+
+  list.forEach((tabId) => {
+    const id = String(tabId || '').trim();
+    if (!id || seen.has(id) || !fileIds.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  });
+
+  return out;
+}
+
+function buildProjectPayload({
+  name = '',
+  board = 'arduino_uno',
+  components = [],
+  wires = [],
+  code = '',
+  includeCode = true,
+  blocklyXml = '',
+  blocklyGeneratedCode = '',
+  useBlocklyCode = false,
+  projectFiles = [],
+  openCodeTabs = [],
+  activeCodeFileId = '',
+  exportedAt = '',
+} = {}) {
+  const normalizedFiles = normalizeProjectFiles(projectFiles)
+    .filter((file) => file.id !== 'project/diagram.json')
+    .map((file) => ({
+      ...file,
+      content: typeof file.content === 'string' ? file.content : String(file.content ?? ''),
+    }));
+  const normalizedTabs = normalizeOpenCodeTabs(openCodeTabs, normalizedFiles);
+  const preferredActive = String(activeCodeFileId || '').trim();
+  const resolvedActiveId = normalizedFiles.some((file) => file.id === preferredActive)
+    ? preferredActive
+    : (normalizedTabs[0] || normalizedFiles[0]?.id || '');
+
+  const payload = {
+    schemaVersion: 'openhw-project-v2',
+    board: String(board || 'arduino_uno'),
+    components: (Array.isArray(components) ? components : []).map((component) => ({
+      id: String(component?.id || ''),
+      type: String(component?.type || ''),
+      label: String(component?.label || ''),
+      x: Number(component?.x ?? 0),
+      y: Number(component?.y ?? 0),
+      w: Number(component?.w ?? 0),
+      h: Number(component?.h ?? 0),
+      rotation: Number(component?.rotation ?? 0),
+      attrs: component?.attrs && typeof component.attrs === 'object' ? component.attrs : {},
+    })),
+    connections: (Array.isArray(wires) ? wires : []).map((wire) => ({
+      id: String(wire?.id || ''),
+      from: String(wire?.from || ''),
+      to: String(wire?.to || ''),
+      color: String(wire?.color || ''),
+      waypoints: Array.isArray(wire?.waypoints) ? wire.waypoints : [],
+      isBelow: wire?.isBelow === true,
+      fromLabel: String(wire?.fromLabel || ''),
+      toLabel: String(wire?.toLabel || ''),
+    })),
+    blocklyXml: String(blocklyXml || ''),
+    blocklyGeneratedCode: String(blocklyGeneratedCode || ''),
+    useBlocklyCode: !!useBlocklyCode,
+    projectFiles: normalizedFiles,
+    openCodeTabs: normalizedTabs,
+    activeCodeFileId: resolvedActiveId,
+  };
+
+  if (includeCode) {
+    payload.code = String(code || '');
+  }
+
+  if (name) payload.name = String(name);
+  if (exportedAt) payload.exportedAt = String(exportedAt);
+  return payload;
+}
+
+function normalizeImportedCircuitData(rawComponents, rawConnections) {
+  const componentsInput = Array.isArray(rawComponents) ? rawComponents : [];
+  const wiresInput = Array.isArray(rawConnections) ? rawConnections : [];
+
+  const usedComponentIds = new Set();
+  let layoutSlot = 0;
+
+  const normalizedComponents = componentsInput
+    .map((component) => {
+      if (!component || typeof component !== 'object') return null;
+      const type = String(component.type || '').trim();
+      if (!type) return null;
+
+      const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
+
+      const rawId = String(component.id || '').trim();
+      const id = rawId && !usedComponentIds.has(rawId)
+        ? (usedComponentIds.add(rawId), rawId)
+        : allocateComponentId(type, usedComponentIds);
+
+      const defaultW = Number(regManifest.w ?? 80);
+      const defaultH = Number(regManifest.h ?? 60);
+      const width = Number(component.w);
+      const height = Number(component.h);
+
+      const hasX = Number.isFinite(Number(component.x));
+      const hasY = Number.isFinite(Number(component.y));
+      let x = Number(component.x);
+      let y = Number(component.y);
+      if (!hasX || !hasY) {
+        const col = layoutSlot % 4;
+        const row = Math.floor(layoutSlot / 4);
+        x = 120 + col * 220;
+        y = 80 + row * 170;
+        layoutSlot += 1;
+      }
+
+      const attrs = component.attrs && typeof component.attrs === 'object'
+        ? { ...component.attrs }
+        : {};
+      if (normalizeBoardKind(type) === 'rp2040') {
+        attrs.env = normalizeRp2040Env(resolveComponentAttrString(attrs, 'env', 'native'));
+      }
+
+      return {
+        ...component,
+        id,
+        type,
+        label: String(component.label || regManifest.label || type),
+        x,
+        y,
+        w: Number.isFinite(width) && width > 0
+          ? width
+          : (Number.isFinite(defaultW) && defaultW > 0 ? defaultW : 80),
+        h: Number.isFinite(height) && height > 0
+          ? height
+          : (Number.isFinite(defaultH) && defaultH > 0 ? defaultH : 60),
+        rotation: Number.isFinite(Number(component.rotation))
+          ? ((Number(component.rotation) % 360) + 360) % 360
+          : 0,
+        attrs,
+      };
+    })
+    .filter(Boolean);
+
+  const endpointLabel = (endpoint) => {
+    const parts = String(endpoint || '').split(':');
+    return parts.length > 1 ? parts.slice(1).join(':') : '';
+  };
+
+  const normalizeWaypoint = (point) => {
+    if (!point || typeof point !== 'object') return null;
+    const x = Number(point.x);
+    const y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y, ...(point._corner ? { _corner: true } : {}) };
+  };
+
+  const usedWireIds = new Set();
+  const allocateWireId = () => {
+    let idx = 1;
+    let candidate = `w${idx}`;
+    while (usedWireIds.has(candidate)) {
+      idx += 1;
+      candidate = `w${idx}`;
+    }
+    usedWireIds.add(candidate);
+    return candidate;
+  };
+
+  const normalizedWires = wiresInput
+    .map((wire) => {
+      if (!wire || typeof wire !== 'object') return null;
+      const from = String(wire.from || '').trim();
+      const to = String(wire.to || '').trim();
+      if (!from || !to) return null;
+
+      const rawWireId = String(wire.id || '').trim();
+      const id = rawWireId && !usedWireIds.has(rawWireId)
+        ? (usedWireIds.add(rawWireId), rawWireId)
+        : allocateWireId();
+
+      return {
+        ...wire,
+        id,
+        from,
+        to,
+        color: typeof wire.color === 'string' && wire.color.trim() ? wire.color : wireColor(),
+        waypoints: Array.isArray(wire.waypoints)
+          ? wire.waypoints.map(normalizeWaypoint).filter(Boolean)
+          : [],
+        isBelow: wire.isBelow === true,
+        fromLabel: String(wire.fromLabel || endpointLabel(from) || ''),
+        toLabel: String(wire.toLabel || endpointLabel(to) || ''),
+      };
+    })
+    .filter(Boolean);
+
+  return { components: normalizedComponents, wires: normalizedWires };
+}
+
+function isRp2040CoreMissingError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes("platform 'rp2040:rp2040' not found")
+    || msg.includes('platform rp2040:rp2040 is not found')
+    || msg.includes('platform not installed');
+}
+
+function looksLikeMicroPythonSource(source) {
+  const text = String(source || '').trim();
+  if (!text) return false;
+  const lower = text.toLowerCase();
+
+  return lower.includes('from machine import')
+    || lower.includes('import machine')
+    || lower.includes('machine.pin(')
+    || lower.includes('while true:')
+    || lower.includes('sleep_ms(')
+    || lower.includes('sleep_us(');
+}
+
+/**
+ * Best-effort converter: takes a simple Arduino blink sketch and returns
+ * a MicroPython equivalent. Extracts the LED pin from #define / const,
+ * and delay values from delay() calls. Falls back gracefully.
+ */
+function arduinoBlinkToMicroPython(sourceCode, boardId) {
+  const src = String(sourceCode || '');
+
+  // Extract LED pin number: #define LED <n> or const int LED = <n> or similar
+  const pinMatch =
+    src.match(/#define\s+\w*LED\w*\s+(\d+)/i) ||
+    src.match(/const\s+\w+\s+\w*LED\w*\s*=\s*(\d+)/i) ||
+    src.match(/int\s+\w*LED\w*\s*=\s*(\d+)/i) ||
+    src.match(/LED_BUILTIN\b/);
+
+  let pinExpr;
+  if (pinMatch && pinMatch[1]) {
+    pinExpr = pinMatch[1]; // bare numeric pin string, e.g. "20"
+  } else if (src.includes('LED_BUILTIN')) {
+    pinExpr = "'LED'"; // MicroPython Pico built-in LED
+  } else {
+    // Try to find any pin used with pinMode or digitalWrite
+    const pinModeMatch = src.match(/pinMode\s*\(\s*(\d+)/) ||
+                         src.match(/digitalWrite\s*\(\s*(\d+)/);
+    pinExpr = pinModeMatch ? pinModeMatch[1] : "'LED'";
+  }
+
+  // Extract delay values (ms) from delay() calls (skip delayMicroseconds)
+  const delayMatches = [...src.matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(m => Number(m[1]));
+  const delayOn  = delayMatches[0] ?? 1000;
+  const delayOff = delayMatches[1] ?? delayOn;
+
+  // Numeric pin → bare int; quoted string stays as is
+  const pinArg = /^\d+$/.test(String(pinExpr)) ? Number(pinExpr) : pinExpr;
+
+  return (
+    `# Auto-converted from Arduino sketch for ${boardId}\n` +
+    `from machine import Pin\n` +
+    `from time import sleep_ms\n` +
+    `\n` +
+    `led = Pin(${pinArg}, Pin.OUT)\n` +
+    `\n` +
+    `while True:\n` +
+    `    led.value(1)   # LED ON\n` +
+    `    sleep_ms(${delayOn})\n` +
+    `    led.value(0)   # LED OFF\n` +
+    `    sleep_ms(${delayOff})\n`
+  );
+}
+
+function arduinoSerialToMicroPython(sourceCode, boardId) {
+  const src = String(sourceCode || '');
+  if (!/\bSerial1?\s*\.\s*println\s*\(/.test(src)) return '';
+
+  const printMatches = [...src.matchAll(/\bSerial1?\s*\.\s*println\s*\(([^)]*)\)\s*;/g)]
+    .map((m) => String(m[1] || '').trim())
+    .filter(Boolean);
+  if (printMatches.length === 0) return '';
+
+  const pyLiteral = (expr) => {
+    const e = String(expr || '').trim();
+    if (/^"[\s\S]*"$/.test(e) || /^'[\s\S]*'$/.test(e)) return e;
+    if (/^[0-9.+\-*/ ()]+$/.test(e)) return `str(${e})`;
+    return `str(${JSON.stringify(e)})`;
+  };
+
+  const setupMsg = pyLiteral(printMatches[0]);
+  const loopMsg = pyLiteral(printMatches[1] || printMatches[0]);
+  const delayMatch = src.match(/\bdelay\s*\(\s*(\d+)\s*\)/i);
+  const loopDelay = delayMatch ? Math.max(1, Number(delayMatch[1])) : 1000;
+
+  return [
+    `# Auto-converted Serial sketch for ${boardId}`,
+    'from time import sleep_ms',
+    '',
+    `print(${setupMsg})`,
+    '',
+    'while True:',
+    `  print(${loopMsg})`,
+    `  sleep_ms(${loopDelay})`,
+    '',
+  ].join('\n');
+}
+
+function prepareRp2040SketchForSimulation(sourceCode) {
+  const source = String(sourceCode || '');
+  if (!source.trim()) return source;
+  if (!/\bSerial1?\b/.test(source)) return source;
+  if (/OPENHW_SIM_SERIAL_REWRITE/.test(source)) return source;
+
+  const hasBlockingSerialWaitCondition = (condition) => {
+    const cond = String(condition || '');
+    if (!/!\s*Serial1?\b/.test(cond)) return false;
+    // Keep loops like !Serial1.available() intact; only strip plain readiness waits.
+    if (/!\s*Serial1?\s*(?:\.|\[)/.test(cond)) return false;
+    return true;
+  };
+
+  const stripBlockingSerialWaits = (text) => String(text || '')
+    // Many Arduino RP2040 sketches block forever in simulation with
+    // while (!Serial) { ... } because USB CDC is not attached.
+    .replace(/\bwhile\s*\(([^)]*)\)\s*;/g, (match, condition) => (
+      hasBlockingSerialWaitCondition(condition)
+        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
+        : match
+    ))
+    .replace(/\bwhile\s*\(([^)]*)\)\s*\{/g, (match, condition) => (
+      hasBlockingSerialWaitCondition(condition)
+        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
+        : match
+    ))
+    .replace(/\bwhile\s*\(([^)]*)\)\s*(?!\{|;)[^;\n]*;/g, (match, condition) => (
+      hasBlockingSerialWaitCondition(condition)
+        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
+        : match
+    ))
+    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*\{/g, (match, condition) => (
+      hasBlockingSerialWaitCondition(condition)
+        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
+        : match
+    ))
+    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*;/g, (match, condition) => (
+      hasBlockingSerialWaitCondition(condition)
+        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
+        : match
+    ));
+
+  const rewritten = stripBlockingSerialWaits(source.replace(/\bSerial\b(?!1)/g, 'Serial1'));
+  if (rewritten === source) return source;
+
+  const serialShim = [
+    '#ifdef ARDUINO_ARCH_RP2040',
+    '// OPENHW_SIM_SERIAL_REWRITE: route Serial monitor traffic to UART0 (GP0/GP1)',
+    '// and prevent blocking while(!Serial...) waits in simulator mode.',
+    '#endif',
+    '',
+  ].join('\n');
+
+  return `${serialShim}${rewritten}`;
+}
+
+const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
+
+function resolveRp2040SourceMode({
+  configuredMode,
+  activePrefersIno,
+  activePrefersPy,
+  hasNativeSketch,
+  hasPythonSource,
+  prefersNativeFromSyntax = false,
+}) {
+  const mode = String(configuredMode || 'auto').toLowerCase();
+
+  if (mode === 'cp' || mode === 'circuitpy' || mode === 'circuitpython') {
+    return 'cp';
+  }
+
+  if (mode === 'py' || mode === 'python' || mode === 'micropython') {
+    return 'py';
+  }
+
+  if (mode === 'ino' || mode === 'native' || mode === 'none') return 'ino';
+
+  if (activePrefersIno) return 'ino';
+  if (activePrefersPy) return mode === 'cp' ? 'cp' : 'py';
+
+  if (hasNativeSketch || prefersNativeFromSyntax) return 'ino';
+  if (hasPythonSource) return mode === 'cp' ? 'cp' : 'py';
+  return 'ino';
+}
+
+function resolveComponentAttrString(attrs, key, fallback = '') {
+  const raw = attrs?.[key];
+  if (typeof raw === 'string') return raw;
+  if (raw && typeof raw === 'object') {
+    if (typeof raw.value === 'string') return raw.value;
+    if (typeof raw.default === 'string') return raw.default;
+    if (raw.value != null) return String(raw.value);
+    if (raw.default != null) return String(raw.default);
+  }
+  if (raw == null) return fallback;
+  return String(raw);
+}
+
+function ensureMicroPythonSerialProbe(sourceCode, boardId) {
+  const script = String(sourceCode || '').trim();
+  const marker = 'OpenHW RP2040 UART0 ready';
+  if (script.includes(marker)) return script;
+
+  const probe = `print("${marker}: ${boardId}")`;
+  if (!script) return `${probe}\n`;
+  return `${probe}\n${script}\n`;
+}
+
+function applyRp2040MicroPythonCompat(sourceCode) {
+  const script = String(sourceCode || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+  if (!script) return script;
+  if (script.includes('OPENHW_RP2040_SLEEP_COMPAT')) return script;
+
+  const needsSleepCompat = /\btime\.sleep_ms\s*\(|\bsleep_ms\s*\(/.test(script);
+  if (!needsSleepCompat) return script;
+
+  const prelude = [
+    '# OPENHW_RP2040_SLEEP_COMPAT',
+    'def _openhw_sleep_ms(ms):',
+    '    ms = int(ms)',
+    '    if ms <= 0:',
+    '        return',
+    '    for _ in range(ms * 500):',
+    '        pass',
+    '',
+  ].join('\n');
+
+  const rewritten = script
+    .replace(/\btime\.sleep_ms\s*\(/g, '_openhw_sleep_ms(')
+    .replace(/\bsleep_ms\s*\(/g, '_openhw_sleep_ms(');
+
+  return `${prelude}\n${rewritten}\n`;
+}
+
 function isProgrammableBoardType(type) {
   return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
 }
+
 
 function endpointAliases(endpoint) {
   const [compId, pinIdRaw] = String(endpoint || '').split(':');
@@ -223,6 +1095,87 @@ function endpointAliases(endpoint) {
   return Array.from(aliases);
 }
 
+function validateCircuitLocally(components, wires) {
+  const errors = [];
+  const componentById = new Map((components || []).map((c) => [c.id, c]));
+
+  const programmableBoards = (components || []).filter((c) => isProgrammableBoardType(c.type));
+  if (programmableBoards.length === 0) return errors;
+
+  const graph = new Map();
+  const addEdge = (a, b) => {
+    if (!graph.has(a)) graph.set(a, new Set());
+    if (!graph.has(b)) graph.set(b, new Set());
+    graph.get(a).add(b);
+    graph.get(b).add(a);
+  };
+
+  (wires || []).forEach((w) => {
+    const fromAliases = endpointAliases(w.from);
+    const toAliases = endpointAliases(w.to);
+    fromAliases.forEach((fa) => toAliases.forEach((ta) => addEdge(fa, ta)));
+  });
+
+  const isMcuDigitalEndpoint = (endpoint) => {
+    const [compId, pin] = String(endpoint || '').split(':');
+    const comp = componentById.get(compId);
+    if (!comp || !isProgrammableBoardType(comp.type)) return false;
+    if (!pin) return false;
+    return /^D?\d+$/i.test(pin) || /^A\d+$/i.test(pin);
+  };
+
+  const bfsReachable = (starts) => {
+    const q = [...starts];
+    const visited = new Set(starts);
+    while (q.length) {
+      const n = q.shift();
+      for (const nei of graph.get(n) || []) {
+        if (visited.has(nei)) continue;
+        visited.add(nei);
+        q.push(nei);
+      }
+    }
+    return visited;
+  };
+
+  programmableBoards.forEach((board) => {
+    const powerPins = [`${board.id}:5V`, `${board.id}:3v3`, `${board.id}:VCC`];
+    const gndPins = [`${board.id}:gnd`, `${board.id}:gnd_1`, `${board.id}:gnd_2`, `${board.id}:gnd_3`, `${board.id}:GND`];
+    const reachable = bfsReachable(powerPins);
+    const isShorted = gndPins.some((g) => reachable.has(g) || reachable.has(`${board.id}:gnd`));
+    if (isShorted) {
+      errors.push({
+        type: 'error',
+        message: `Potential short circuit on ${board.id}: power net is connected to GND.`,
+        compIds: [board.id],
+      });
+    }
+  });
+
+  // LED should not be directly connected between two MCU GPIO pins in this simulator.
+  const leds = (components || []).filter((c) => String(c.type || '').toLowerCase() === 'wokwi-led');
+  leds.forEach((led) => {
+    const anode = `${led.id}:A`;
+    const cathode = `${led.id}:K`;
+    const anodeN = [...(graph.get(anode) || [])];
+    const cathodeN = [...(graph.get(cathode) || [])];
+
+    const anodeMcu = anodeN.filter(isMcuDigitalEndpoint);
+    const cathodeMcu = cathodeN.filter(isMcuDigitalEndpoint);
+
+    if (anodeMcu.length > 0 && cathodeMcu.length > 0) {
+      const involved = new Set([led.id]);
+      [...anodeMcu, ...cathodeMcu].forEach((ep) => involved.add(String(ep).split(':')[0]));
+      errors.push({
+        type: 'error',
+        message: `Invalid LED wiring on ${led.id}: anode and cathode are tied to MCU GPIO pins. Connect LED through a resistor to VCC/GND instead of pin-to-pin drive.`,
+        compIds: [...involved],
+      });
+    }
+  });
+
+  return errors;
+}
 
 /**
  * Helper to check if two category sets (strings or arrays) have any common elements.
@@ -313,126 +1266,92 @@ function getPinCategory(pId, pDesc, compType) {
   return categories.length > 0 ? categories : null;
 }
 
-function validateCircuitLocally(components, wires) {
-  const errors = [];
-  const componentById = new Map((components || []).map((c) => [c.id, c]));
-
-  const programmableBoards = (components || []).filter((c) => isProgrammableBoardType(c.type));
-  if (programmableBoards.length === 0) return errors;
-
-  const graph = new Map();
-  const addEdge = (a, b) => {
-    if (!graph.has(a)) graph.set(a, new Set());
-    if (!graph.has(b)) graph.set(b, new Set());
-    graph.get(a).add(b);
-    graph.get(b).add(a);
-  };
-
-  (wires || []).forEach((w) => {
-    const fromAliases = endpointAliases(w.from);
-    const toAliases = endpointAliases(w.to);
-    fromAliases.forEach((fa) => toAliases.forEach((ta) => addEdge(fa, ta)));
-  });
-
-  (components || []).forEach((c) => {
-    if (c.type === 'wokwi-breadboard' || c.type === 'wokwi-breadboard-half' || c.type === 'wokwi-breadboard-mini') {
-      const connectAll = (arr) => {
-        for (let i = 0; i < arr.length - 1; i++) {
-          addEdge(arr[i], arr[i + 1]);
-        }
-      };
-
-      if (c.type !== 'wokwi-breadboard-mini') {
-        const topGnd = [], topVcc = [], bottomVcc = [], bottomGnd = [];
-        for (let i = 1; i <= 50; i++) {
-          topGnd.push(`${c.id}:top_gnd_${i}`);
-          topVcc.push(`${c.id}:top_vcc_${i}`);
-          bottomVcc.push(`${c.id}:bottom_vcc_${i}`);
-          bottomGnd.push(`${c.id}:bottom_gnd_${i}`);
-        }
-        connectAll(topGnd);
-        connectAll(topVcc);
-        connectAll(bottomVcc);
-        connectAll(bottomGnd);
-      }
-
-      const cols = c.type === 'wokwi-breadboard-half' ? 30 : (c.type === 'wokwi-breadboard-mini' ? 17 : 63);
-      for (let col = 1; col <= cols; col++) {
-        connectAll([`${c.id}:${col}a`, `${c.id}:${col}b`, `${c.id}:${col}c`, `${c.id}:${col}d`, `${c.id}:${col}e`]);
-        connectAll([`${c.id}:${col}f`, `${c.id}:${col}g`, `${c.id}:${col}h`, `${c.id}:${col}i`, `${c.id}:${col}j`]);
-      }
-    }
-  });
-
-  const isMcuDigitalEndpoint = (endpoint) => {
-    const [compId, pin] = String(endpoint || '').split(':');
-    const comp = componentById.get(compId);
-    if (!comp || !isProgrammableBoardType(comp.type)) return false;
-    if (!pin) return false;
-    return /^D?\d+$/i.test(pin) || /^A\d+$/i.test(pin);
-  };
-
-  const bfsReachable = (starts) => {
-    const q = [...starts];
-    const visited = new Set(starts);
-    while (q.length) {
-      const n = q.shift();
-      for (const nei of graph.get(n) || []) {
-        if (visited.has(nei)) continue;
-        visited.add(nei);
-        q.push(nei);
-      }
-    }
-    return visited;
-  };
-
-  programmableBoards.forEach((board) => {
-    const powerPins = [`${board.id}:5V`, `${board.id}:3v3`, `${board.id}:VCC`];
-    const gndPins = [`${board.id}:gnd`, `${board.id}:gnd_1`, `${board.id}:gnd_2`, `${board.id}:gnd_3`, `${board.id}:GND`];
-    const reachable = bfsReachable(powerPins);
-    const isShorted = gndPins.some((g) => reachable.has(g) || reachable.has(`${board.id}:gnd`));
-    if (isShorted) {
-      errors.push({
-        type: 'error',
-        message: `Potential short circuit on ${board.id}: power net is connected to GND.`,
-        compIds: [board.id],
-      });
-    }
-  });
-
-  // LED should not be directly connected between two MCU GPIO pins in this simulator.
-  const leds = (components || []).filter((c) => String(c.type || '').toLowerCase() === 'wokwi-led');
-  leds.forEach((led) => {
-    const anode = `${led.id}:A`;
-    const cathode = `${led.id}:K`;
-    const anodeN = [...(graph.get(anode) || [])];
-    const cathodeN = [...(graph.get(cathode) || [])];
-
-    const anodeMcu = anodeN.filter(isMcuDigitalEndpoint);
-    const cathodeMcu = cathodeN.filter(isMcuDigitalEndpoint);
-
-    if (anodeMcu.length > 0 && cathodeMcu.length > 0) {
-      const involved = new Set([led.id]);
-      [...anodeMcu, ...cathodeMcu].forEach((ep) => involved.add(String(ep).split(':')[0]));
-      errors.push({
-        type: 'error',
-        message: `Invalid LED wiring on ${led.id}: anode and cathode are tied to MCU GPIO pins. Connect LED through a resistor to VCC/GND instead of pin-to-pin drive.`,
-        compIds: [...involved],
-      });
-    }
-  });
-
-  return errors;
-}
-
-export default function SimulatorPage() {
-  const { isAuthenticated, user, loading: authLoading } = useAuth()
+export default function SimulatorPage({ gamificationMode = false }) {
+  const { isAuthenticated, user, logout, loading: authLoading } = useAuth()
   const navigate = useNavigate()
   const { projectName = '', shareId = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
+
+  // -- Gamification --
+  const { trackComponentPlaced, trackWireDrawn, trackSimulationRun, isUnlocked, coins = 0, currentLevel, currentLevelData, nextLevel, xpProgress } = typeof useGamification === 'function' ? useGamification() : {}
+  const gamProject = useMemo(() => gamificationMode && typeof PROJECTS !== 'undefined' ? (PROJECTS.find(p => p.slug === projectName) ?? null) : null, [gamificationMode, projectName])
+  const [gamPanelOpen, setGamPanelOpen] = useState(true)
+  const [gamTab, setGamTab] = useState('components')
+
+  const WOKWI_TO_COMP_ID = useMemo(() => ({
+    'wokwi-led':                    'led',
+    'wokwi-resistor':               'resistor',
+    'wokwi-pushbutton':             'button',
+    'wokwi-potentiometer':          'potentiometer',
+    'wokwi-buzzer':                 'buzzer',
+    'wokwi-rgb-led':                'rgb-led',
+    'wokwi-ntc-temperature-sensor': 'dht11',
+    'wokwi-hc-sr04':                'ultrasonic',
+    'wokwi-servo':                  'servo',
+    'wokwi-lcd1602':                'lcd',
+    'wokwi-analog-joystick':        'analog-joystick',
+    'wokwi-membrane-keypad':        'keypad',
+  }), [])
+
+  const isPaletteItemLocked = useCallback((itemType) => {
+    if (!gamificationMode) return false
+    const compId = WOKWI_TO_COMP_ID[itemType]
+    if (!compId) return false
+    return isUnlocked ? !isUnlocked(compId) : false
+  }, [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID])
+
+  const [lockToast, setLockToast] = useState(null)
+  const showLockToast = useCallback((label, compId) => {
+    setLockToast({ label, compId })
+    setTimeout(() => setLockToast(null), 3500)
+  }, [])
+
+  const gamProjectComponents = useMemo(() => {
+    if (!gamProject?.components) return []
+    return gamProject.components.map(c => {
+      const compId = WOKWI_TO_COMP_ID[c.type]
+      const compDef = compId && typeof COMPONENT_MAP !== 'undefined' ? COMPONENT_MAP[compId] : null
+      const isLocked = compId && isUnlocked ? !isUnlocked(compId) : false
+      return { ...c, compId, compDef, isLocked }
+    })
+  }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID])
+
+  const gamLockedCount = gamProjectComponents.filter(c => c.isLocked && c.compId).length
+  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : true
+
+  const handleAssessmentSubmit = async () => {
+    if (!assessmentMode && !gamificationMode) return;
+    const assessmentName = assessmentMode ? assessmentProjectName : projectName;
+    if (!assessmentName) {
+      alert('Assessment project is missing. Please open assessment from the project page.');
+      return;
+    }
+    setIsSubmittingAssessment(true);
+    try {
+      const payload = {
+        projectName: assessmentName,
+        submittedAt: new Date().toISOString(),
+        components,
+        wires,
+        code,
+      };
+      sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
+      navigate(`/${assessmentName}/assessment`);
+    } finally {
+      setIsSubmittingAssessment(false);
+    }
+  };
+
+  const handleGamificationSubmit = useCallback(() => {
+    if (!gamAllUnlocked) {
+      alert(`Unlock ${gamLockedCount} component${gamLockedCount > 1 ? 's' : ''} first!`)
+      return
+    }
+    handleAssessmentSubmit()
+  }, [gamAllUnlocked, gamLockedCount, handleAssessmentSubmit])
 
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(() => {
@@ -467,6 +1386,16 @@ export default function SimulatorPage() {
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
   const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
+  const [blocklyXml, setBlocklyXml] = useState('')
+  const [blocklyGeneratedCode, setBlocklyGeneratedCode] = useState('')
+  const [useBlocklyCode, setUseBlocklyCode] = useState(false)
+  const [blocklyDisabled, setBlocklyDisabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ohw_blockly_disabled');
+      // Default is DISABLED (true) if never explicitly set
+      return saved === null ? true : saved === 'true';
+    } catch (_) { return true; }
+  })
   const [projectFiles, setProjectFiles] = useState([])
   const [openCodeTabs, setOpenCodeTabs] = useState([])
   const [activeCodeFileId, setActiveCodeFileId] = useState('')
@@ -474,7 +1403,7 @@ export default function SimulatorPage() {
   const suppressCodeSyncRef = useRef(false)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [isPaletteHovered, setIsPaletteHovered] = useState(false)
-  const [panelWidth, setPanelWidth] = useState(470)
+  const [panelWidth, setPanelWidth] = useState(580)
   const [explorerWidth, setExplorerWidth] = useState(190)
   const [isDragging, setIsDragging] = useState(false)
   const [isExplorerDragging, setIsExplorerDragging] = useState(false)
@@ -501,10 +1430,15 @@ export default function SimulatorPage() {
   const canvasOffsetRef = useRef({ x: 0, y: 0 })
   const [isCanvasLocked, setIsCanvasLocked] = useState(false)
   const isCanvasLockedRef = useRef(false)
-  const [showGrid, setShowGrid] = React.useState(true) // Ensure React is used if not imported as name
+  const [showGrid, setShowGrid] = useState(true)
   const [isPinMappingExpanded, setIsPinMappingExpanded] = useState(false)
   const [pendingPinColors, setPendingPinColors] = useState({}) // { [pinIdStr]: color }
   const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // Reset Pin Mapping expansion when a new component is selected
+  useEffect(() => {
+    setIsPinMappingExpanded(false)
+  }, [selected])
   const [quickAdd, setQuickAdd] = useState(null)   // { screenX, screenY, canvasX, canvasY }
   const [quickAddSearch, setQuickAddSearch] = useState('')
   const [quickAddIdx, setQuickAddIdx] = useState(0)
@@ -529,12 +1463,32 @@ export default function SimulatorPage() {
   const [serialViewMode, setSerialViewMode] = useState('monitor'); // 'monitor' | 'plotter'
   const [serialBoardFilter, setSerialBoardFilter] = useState('all');
   const [serialBaudRate, setSerialBaudRate] = useState('9600');
+  const [serialLineEnding, setSerialLineEnding] = useState(() => {
+    try {
+      const saved = String(localStorage.getItem('openhw.serial.lineEnding') || '').toLowerCase();
+      return Object.prototype.hasOwnProperty.call(SERIAL_LINE_ENDINGS, saved) ? saved : 'nl';
+    } catch {
+      return 'nl';
+    }
+  });
+  const [rp2040DebugTelemetryEnabled, setRp2040DebugTelemetryEnabled] = useState(() => {
+    try {
+      const saved = String(localStorage.getItem('openhw.rp2040.debugTelemetry') || '').toLowerCase();
+      return saved === '1' || saved === 'true' || saved === 'on';
+    } catch {
+      return false;
+    }
+  });
   const [hardwareBoardId, setHardwareBoardId] = useState('');
   const [hardwareSerialTargetId, setHardwareSerialTargetId] = useState(null);
   const [hardwareStatus, setHardwareStatus] = useState('Not connected');
   const serialOutputRef = useRef(null);
   const lastHardwareStatusRef = useRef('');
   const hardwareSerialTargetRef = useRef(null);
+  const renderPinsByBoardRef = useRef({});
+  const renderAnalogByBoardRef = useRef({});
+  const renderComponentsByBoardRef = useRef({});
+  const renderNeopixelsByBoardRef = useRef({});
 
   const {
     consoleEntries,
@@ -546,6 +1500,8 @@ export default function SimulatorPage() {
     clearConsoleEntries,
     downloadConsoleLog,
   } = useSimulationConsole();
+
+  // Pinch-to-zoom state refs
 
   // Plotter State
   const [plotData, setPlotData] = useState([]);
@@ -576,6 +1532,16 @@ export default function SimulatorPage() {
     return labels;
   }, [serialBoardOptions]);
 
+  const serialBoardKinds = useMemo(() => {
+    const kinds = {};
+    components
+      .filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+      .forEach((c) => {
+        kinds[c.id] = normalizeBoardKind(c.type);
+      });
+    return kinds;
+  }, [components]);
+
   const serialBoardMap = useMemo(() => {
     const m = new Map();
     components.forEach((c) => m.set(c.id, c));
@@ -603,6 +1569,29 @@ export default function SimulatorPage() {
   const activeCodeFile = useMemo(() => projectFileMap.get(activeCodeFileId) || null, [projectFileMap, activeCodeFileId]);
 
   const boardComponents = useMemo(() => components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type)), [components]);
+  const boardComponentMap = useMemo(() => {
+    const map = new Map();
+    boardComponents.forEach((component) => {
+      map.set(component.id, component);
+    });
+    return map;
+  }, [boardComponents]);
+  const rp2040BoardSourceModes = useMemo(() => {
+    const modes = {};
+    boardComponents.forEach((component) => {
+      if (normalizeBoardKind(component.type) !== 'rp2040') return;
+      modes[component.id] = normalizeRp2040Env(resolveComponentAttrString(component?.attrs, 'env', 'native'));
+    });
+    return modes;
+  }, [boardComponents]);
+  const firmwareBoardOptions = useMemo(() => {
+    return boardComponents
+      .map((comp) => ({
+        id: comp.id,
+        label: boardCompToDisplayName(comp, normalizeBoardKind(comp.type)),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }, [boardComponents]);
   const webSerialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
 
   useEffect(() => {
@@ -614,13 +1603,18 @@ export default function SimulatorPage() {
     if (!hasCurrent) setHardwareBoardId(boardComponents[0].id);
   }, [boardComponents, hardwareBoardId]);
 
-  // Reset Pin Mapping expansion when a new component is selected
-  useEffect(() => {
-    setIsPinMappingExpanded(false);
-  }, [selected]);
-
   // PNG Export State
   const [isExporting, setIsExporting] = useState(false);
+  const [showFirmwareDownloadDialog, setShowFirmwareDownloadDialog] = useState(false);
+  const [firmwareDownloadTarget, setFirmwareDownloadTarget] = useState('');
+  const [showFirmwareUploadDialog, setShowFirmwareUploadDialog] = useState(false);
+  const [firmwareUploadTarget, setFirmwareUploadTarget] = useState('');
+  const [firmwareUploadFile, setFirmwareUploadFile] = useState(null);
+  const [isApplyingFirmwareUpload, setIsApplyingFirmwareUpload] = useState(false);
+  const [runStartedAtMs, setRunStartedAtMs] = useState(null);
+  const [runDurationSec, setRunDurationSec] = useState(0);
+  const simulationSpeed = 1;
+  const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
 
   // View Panel State
   const [showViewPanel, setShowViewPanel] = useState(false);
@@ -628,21 +1622,60 @@ export default function SimulatorPage() {
   const [schematicLoading, setSchematicLoading] = useState(false);
   const [schematicDataUrl, setSchematicDataUrl] = useState(null);
 
+  useEffect(() => {
+    if (!showFirmwareDownloadDialog) return;
+
+    if (firmwareDownloadTarget === '__all__' || firmwareDownloadTarget === '__latest__') {
+      return;
+    }
+
+    const hasTarget = firmwareBoardOptions.some((opt) => opt.id === firmwareDownloadTarget);
+    if (!hasTarget) {
+      setFirmwareDownloadTarget(firmwareBoardOptions[0]?.id || '__latest__');
+    }
+  }, [showFirmwareDownloadDialog, firmwareDownloadTarget, firmwareBoardOptions]);
+
+  useEffect(() => {
+    if (!showFirmwareUploadDialog) return;
+    const hasTarget = firmwareBoardOptions.some((opt) => opt.id === firmwareUploadTarget);
+    if (!hasTarget) {
+      setFirmwareUploadTarget(firmwareBoardOptions[0]?.id || '');
+    }
+  }, [showFirmwareUploadDialog, firmwareUploadTarget, firmwareBoardOptions]);
+
   const workerRef = useRef(null)
   const lastCompiledRef = useRef(null)
+  const micropythonUf2PayloadRef = useRef(null)
+  const circuitPythonUf2PayloadRef = useRef(null)
+  const rp2040DebugLastLogRef = useRef(new Map())
+  const rp2040WirelessLastLogRef = useRef(new Map())
+  const rp2040GdbLastLogRef = useRef(new Map())
+  const rp2040UartMicroPythonBoardsRef = useRef(new Set())
+  const rp2040UartSilentWarnedBoardsRef = useRef(new Set())
+  const runStartGuardRef = useRef(false)
+  const runComponentUpdateCountsRef = useRef({})
+  const runPinTransitionCountsRef = useRef({})
+  const runLastBoardPinsRef = useRef(new Map())
   const neopixelRefs = useRef({})
 
   const serialPlotBufferRef = useRef('');
   const serialPlotLabelsRef = useRef([]);
   const latestParsedSerialRef = useRef([]);
+  const serialIngressArbitrationRef = useRef(new Map());
+  const serialPausedRef = useRef(false);
+  const serialPausedQueueRef = useRef([]);
 
   const canvasRef = useRef(null)
+  const innerCanvasRef = useRef(null)   // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
+  const rafMoveRef = useRef(null)       // pending rAF id for mousemove throttle (Fixes #1-#4)
+  const pendingMoveRef = useRef(null)   // latest computed move data, read by the rAF callback
   const svgRef = useRef(null)
   const viewPanelRef = useRef(null)
   const schematicSvgRef = useRef(null)
   const dragPayload = useRef(null)
   const movingComp = useRef(null)
   const componentZipInputRef = useRef(null);
+  const firmwareUploadInputRef = useRef(null);
   // Reactive refs — kept current every render so async effects get fresh values
   const getPinPosRef = useRef(null);
   const componentsRef = useRef([]);
@@ -652,6 +1685,7 @@ export default function SimulatorPage() {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentProjectName, setCurrentProjectName] = useState('Untitled');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showF1Menu, setShowF1Menu] = useState(false);
   const [saveDialogName, setSaveDialogName] = useState('');
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -661,11 +1695,24 @@ export default function SimulatorPage() {
   const [isSharingSimulation, setIsSharingSimulation] = useState(false);
   const currentProjectIdRef = useRef(null);   // mirror for use inside async callbacks
   const autoSaveTimerRef = useRef(null);
-  // My Projects dropdown state
-  const [showProjectsDropdown, setShowProjectsDropdown] = useState(false);
+  // My Projects sidebar state
+  const [showProjectsSidebar, setShowProjectsSidebar] = useState(false);
+  const [projectsSidebarTab, setProjectsSidebarTab] = useState('projects'); // 'favourites' | 'projects' | 'custom' | 'settings'
+  const [favouriteProjectIds, setFavouriteProjectIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('ohw_favourite_projects') || '[]'); }
+    catch { return []; }
+  });
+  const [projContextMenu, setProjContextMenu] = useState(null); // { proj, x, y }
   const [renamingProjectId, setRenamingProjectId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
-  const projectsDropdownRef = useRef(null);
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
+    try {
+      const val = localStorage.getItem('ohw_autosave_enabled');
+      return val === null ? true : val === 'true';
+    } catch {
+      return true;
+    }
+  });
   const backupRestoreInputRef = useRef(null);
 
   const handleUploadZip = async (event) => {
@@ -711,6 +1758,7 @@ export default function SimulatorPage() {
       }
 
       // --- ZERO-TOUCH SANDBOX INJECTION ---
+      const Babel = await getBabel();
       const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
       const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
 
@@ -747,6 +1795,10 @@ export default function SimulatorPage() {
           contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
           contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
           logicCode: transpileLogic,
+          uiRaw: uiStr,
+          logicRaw: logicStr,
+          validationRaw: validationStr,
+          indexRaw: indexStr,
           ...(docHtml ? { doc: docHtml } : {})
         };
         if (manifest.pins) {
@@ -775,6 +1827,35 @@ export default function SimulatorPage() {
   const [isSearchingLib, setIsSearchingLib] = useState(false)
   const [installingLib, setInstallingLib] = useState(null)
   const [libMessage, setLibMessage] = useState(null)
+  const libSearchCache = useRef({});
+
+  useEffect(() => {
+    if (!libQuery.trim() || libQuery.trim().length < 2) {
+      setLibResults([]);
+      return;
+    }
+
+    // Check cache first
+    if (libSearchCache.current[libQuery.trim()]) {
+      setLibResults(libSearchCache.current[libQuery.trim()]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingLib(true);
+      try {
+        const results = await searchLibraries(libQuery);
+        libSearchCache.current[libQuery.trim()] = results;
+        setLibResults(results);
+      } catch (err) {
+        console.error('[Library Search Error]', err);
+      } finally {
+        setIsSearchingLib(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [libQuery]);
 
   const loadLibraries = async () => {
     try {
@@ -816,6 +1897,8 @@ export default function SimulatorPage() {
   }, []);
 
   useEffect(() => {
+    if (gamificationMode) return; // gamification simulator starts with clean canvas
+    
     let cancelled = false;
 
     const loadDemoProject = async () => {
@@ -881,14 +1964,24 @@ export default function SimulatorPage() {
     listProjects(owner).then((projects) => {
       if (projects.length === 0) return;
       const latest = projects[0]; // already sorted newest-first
+      const normalizedCircuit = normalizeImportedCircuitData(latest.components, latest.connections);
+      const normalizedFiles = normalizeProjectFiles(latest.projectFiles);
+      const normalizedTabs = normalizeOpenCodeTabs(latest.openCodeTabs, normalizedFiles);
+      const preferredActive = String(latest.activeCodeFileId || '').trim();
+      const activeId = normalizedFiles.some((f) => f.id === preferredActive)
+        ? preferredActive
+        : (normalizedTabs[0] || '');
       setBoard(latest.board || 'arduino_uno');
       setCode(latest.code || '');
-      setComponents(latest.components || []);
-      setWires(latest.connections || []);
-      setProjectFiles(Array.isArray(latest.projectFiles) ? latest.projectFiles : []);
-      setOpenCodeTabs(Array.isArray(latest.openCodeTabs) ? latest.openCodeTabs : []);
-      setActiveCodeFileId(latest.activeCodeFileId || '');
-      syncNextIds(latest.components, latest.connections);
+      setBlocklyXml(latest.blocklyXml || '');
+      setBlocklyGeneratedCode(latest.blocklyGeneratedCode || '');
+      setUseBlocklyCode(!!latest.useBlocklyCode);
+      setComponents(normalizedCircuit.components);
+      setWires(normalizedCircuit.wires);
+      setProjectFiles(normalizedFiles);
+      setOpenCodeTabs(normalizedTabs);
+      setActiveCodeFileId(activeId);
+      syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
       setCurrentProjectId(latest.id);
       currentProjectIdRef.current = latest.id;
       setCurrentProjectName(latest.name || 'Untitled');
@@ -933,6 +2026,9 @@ export default function SimulatorPage() {
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
+    // Don't trigger auto-save if disabled
+    if (!autoSaveEnabled) return;
+
     // Don't trigger an empty-project save on initial render
     if (components.length === 0 && wires.length === 0 && code.trim() === '') return;
 
@@ -952,6 +2048,9 @@ export default function SimulatorPage() {
         components,
         connections: wires,
         code,
+        blocklyXml,
+        blocklyGeneratedCode,
+        useBlocklyCode,
         projectFiles,
         openCodeTabs,
         activeCodeFileId,
@@ -961,7 +2060,15 @@ export default function SimulatorPage() {
 
     return () => clearTimeout(autoSaveTimerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [components, wires, code, board, projectFiles, openCodeTabs, activeCodeFileId]);
+  }, [components, wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, board, projectFiles, openCodeTabs, activeCodeFileId, autoSaveEnabled]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('ohw_autosave_enabled', String(autoSaveEnabled));
+    } catch {
+      // no-op
+    }
+  }, [autoSaveEnabled]);
 
   useEffect(() => { canvasZoomRef.current = canvasZoom; }, [canvasZoom]);
   useEffect(() => { canvasOffsetRef.current = canvasOffset; }, [canvasOffset]);
@@ -985,18 +2092,10 @@ export default function SimulatorPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, [quickAdd]);
 
-  // My Projects dropdown: close when clicking outside
+  // Persist favourite projects
   useEffect(() => {
-    if (!showProjectsDropdown) return;
-    const handler = (e) => {
-      if (projectsDropdownRef.current && !projectsDropdownRef.current.contains(e.target)) {
-        setShowProjectsDropdown(false);
-        setRenamingProjectId(null);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showProjectsDropdown]);
+    localStorage.setItem('ohw_favourite_projects', JSON.stringify(favouriteProjectIds));
+  }, [favouriteProjectIds]);
 
   // Fullscreen sync
   useEffect(() => {
@@ -1035,6 +2134,9 @@ export default function SimulatorPage() {
 
       const compType = manifest.type || comp.id;
 
+      // Use async IIFE so await getBabel() is valid inside useEffect
+      (async () => {
+      const Babel = await getBabel();
       const transpileUI = Babel.transform(uiRaw, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
       const transpileLogic = Babel.transform(logicRaw, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
 
@@ -1063,12 +2165,23 @@ export default function SimulatorPage() {
       group.items.push(newCatItem);
       sortCatalog(LOCAL_CATALOG);
 
-      COMPONENT_REGISTRY[compType] = { manifest, UI: uiComponent, BOUNDS: exportsUI.BOUNDS, logicCode: transpileLogic };
+      COMPONENT_REGISTRY[compType] = {
+        manifest,
+        UI: uiComponent,
+        BOUNDS: exportsUI.BOUNDS,
+        ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))],
+        contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+        contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+        logicCode: transpileLogic,
+        uiRaw,
+        logicRaw,
+      };
       if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
 
       setCustomCatalogCounter(c => c + 1);
       setPreviewBanner({ id: comp.id, label: manifest.label || comp.id });
       console.log(`[SimulatorPage] Admin preview: injected "${manifest.label}" (${compType}) into local registry.`);
+      })().catch(e => console.error('[SimulatorPage] Failed to inject admin preview component:', e.message));
     } catch (e) {
       console.error('[SimulatorPage] Failed to inject admin preview component:', e.message);
     }
@@ -1104,6 +2217,7 @@ export default function SimulatorPage() {
             // Already in registry — nothing to do this cycle
             if (COMPONENT_REGISTRY[compType]) continue;
 
+            const Babel = await getBabel();
             const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
             const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
 
@@ -1141,7 +2255,10 @@ export default function SimulatorPage() {
               contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
               logicCode: transpileLogic,
               uiRaw: uiStr,
-              logicRaw: logicStr
+              logicRaw: logicStr,
+              validationRaw: files['validation.ts'] || files['validation.js'] || '',
+              indexRaw: files['index.ts'] || files['index.js'] || '',
+              ...(files['docs/index.html'] ? { doc: files['docs/index.html'] } : {})
             };
             if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
 
@@ -1182,19 +2299,31 @@ export default function SimulatorPage() {
       }
     };
 
-    // Run once immediately on mount, then poll every 12 seconds
+    // Run once immediately on mount, then poll every 60 seconds.
+    // Skip polling when the browser tab is hidden to avoid wasted work.
     syncComponents();
-    const syncInterval = setInterval(syncComponents, 12000);
+    const syncInterval = setInterval(() => {
+      if (!document.hidden) syncComponents();
+    }, 60000);
     return () => clearInterval(syncInterval); // cleanup on unmount
   }, []);
 
   const handleSearchLibraries = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!libQuery.trim()) return;
+
+    // Check cache first
+    if (libSearchCache.current[libQuery.trim()]) {
+      setLibResults(libSearchCache.current[libQuery.trim()]);
+      setLibMessage(null);
+      return;
+    }
+
     setIsSearchingLib(true);
     setLibMessage(null);
     try {
       const libraries = await searchLibraries(libQuery);
+      libSearchCache.current[libQuery.trim()] = libraries;
       setLibResults(libraries);
       if (libraries.length === 0) setLibMessage({ type: 'error', text: 'No libraries found.' });
     } catch (err) {
@@ -1375,9 +2504,9 @@ export default function SimulatorPage() {
     if (!comp) return null;
     for (const group of CATALOG) {
       const item = group.items.find(i => i.type === comp.type);
-      if (item) return { ...item, group: group.group, id: comp.id };
+      if (item) return { ...item, group: group.group };
     }
-    return { type: comp.type, label: comp.label || comp.type, group: 'Custom', id: comp.id };
+    return { type: comp.type, label: comp.label || comp.type, group: 'Custom' };
   }, [selected, components]);
 
   // ── Serial auto-scroll ────────────────────────────────────────────────────────
@@ -1388,6 +2517,26 @@ export default function SimulatorPage() {
   }, [serialHistory, serialPaused]);
 
   useEffect(() => {
+    serialPausedRef.current = serialPaused;
+  }, [serialPaused]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('openhw.serial.lineEnding', serialLineEnding);
+    } catch {
+      // no-op: storage may be unavailable in restricted contexts
+    }
+  }, [serialLineEnding]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('openhw.rp2040.debugTelemetry', rp2040DebugTelemetryEnabled ? '1' : '0');
+    } catch {
+      // no-op: storage may be unavailable in restricted contexts
+    }
+  }, [rp2040DebugTelemetryEnabled]);
+
+  useEffect(() => {
     if (serialBoardFilter === 'all') return;
     if (!serialBoardOptions.includes(serialBoardFilter)) {
       setSerialBoardFilter(serialBoardOptions.length > 1 ? serialBoardOptions[1] : 'all');
@@ -1396,20 +2545,42 @@ export default function SimulatorPage() {
 
   useEffect(() => {
     setProjectFiles(prev => {
-      const next = [...prev];
-      const byId = new Map(next.map(f => [f.id, f]));
+      const normalized = normalizeProjectFiles(prev);
+      let changed = normalized.length !== prev.length;
+      let result = [...normalized];
 
       // Remove board files for boards no longer present
       const validBoardIds = new Set(boardComponents.map(b => b.id));
-      const pruned = next.filter(f => {
+      const pruned = result.filter(f => {
         const m = f.path.match(/^project\/([^/]+)\//);
         if (!m) return true;
         return validBoardIds.has(m[1]);
       });
 
-      let changed = pruned.length !== next.length;
-      const result = [...pruned];
-      const resultIds = new Set(result.map(f => f.id));
+      if (pruned.length !== result.length) changed = true;
+      result = [...pruned];
+
+      const replaceFilePath = (fromPath, toPath) => {
+        if (!fromPath || !toPath || fromPath === toPath) return;
+        const sourceIdx = result.findIndex((file) => file.id === fromPath);
+        if (sourceIdx === -1) return;
+
+        const duplicateIdx = result.findIndex((file, idx) => idx !== sourceIdx && file.id === toPath);
+        if (duplicateIdx !== -1) {
+          result.splice(sourceIdx, 1);
+          changed = true;
+          return;
+        }
+
+        const source = result[sourceIdx];
+        result[sourceIdx] = {
+          ...source,
+          id: toPath,
+          path: toPath,
+          name: toPath.split('/').pop() || source.name,
+        };
+        changed = true;
+      };
 
       const upsert = (fileObj) => {
         const idx = result.findIndex(f => f.id === fileObj.id);
@@ -1428,56 +2599,136 @@ export default function SimulatorPage() {
       boardComponents.forEach((bc) => {
         const kind = normalizeBoardKind(bc.type);
         const basePath = `project/${bc.id}`;
-        const files = [
-          { path: `${basePath}/${bc.id}.ino`, type: 'code', content: createDefaultMainCode(kind, bc.id) },
-        ];
-        files.forEach((ff) => {
-          upsert({
-            id: ff.path,
-            path: ff.path,
-            name: ff.path.split('/').pop(),
-            kind: ff.type,
-            boardId: bc.id,
-            boardKind: kind,
-            content: ff.content,
-            dirty: false,
-          });
-        });
-      });
+        const rp2040Mode = kind === 'rp2040'
+          ? normalizeRp2040Env(resolveComponentAttrString(bc?.attrs, 'env', 'native'))
+          : 'native';
 
-      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
-      const diagramJson = JSON.stringify({
-        board,
-        components: components.map(c => ({ id: c.id, type: c.type, attrs: c.attrs || {} })),
-        connections: wires.map(w => ({ id: w.id, from: w.from, to: w.to })),
-      }, null, 2);
-
-      const rootFiles = [
-        { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
-        { id: 'project/diagram.png', path: 'project/diagram.png', name: 'diagram.png', kind: 'root', content: '[binary png placeholder]', dirty: false },
-        { id: 'project/library.txt', path: 'project/library.txt', name: 'library.txt', kind: 'root', content: libraries.join('\n'), dirty: false },
-      ];
-
-      rootFiles.forEach((rf) => {
-        const idx = result.findIndex(f => f.id === rf.id);
-        if (idx === -1) {
-          result.push(rf);
-          changed = true;
-        } else if (result[idx].content !== rf.content) {
-          // keep manual edits only for library.txt; diagram files are generated
-          if (rf.id === 'project/library.txt' || rf.id === 'project/diagram.json') {
-            result[idx] = { ...result[idx], content: rf.content, dirty: false };
+        for (let i = 0; i < result.length; i += 1) {
+          const file = result[i];
+          if (!file.path.startsWith(`${basePath}/`)) continue;
+          if (file.boardId !== bc.id || file.boardKind !== kind) {
+            result[i] = { ...file, boardId: bc.id, boardKind: kind };
             changed = true;
           }
         }
+
+        const expectedMainName = getDefaultMainFileName(kind, bc.id, { rp2040Mode });
+        const expectedMainPath = `${basePath}/${expectedMainName}`;
+        const expectedMainDisabledPath = `${expectedMainPath}${DISABLED_FILE_SUFFIX}`;
+        if (!result.some((file) => file.id === expectedMainPath) && result.some((file) => file.id === expectedMainDisabledPath)) {
+          replaceFilePath(expectedMainDisabledPath, expectedMainPath);
+        }
+
+        const hasEnabledMainForMode = result.some((file) => {
+          if (!file.path.startsWith(`${basePath}/`)) return false;
+          if (isFileDisabled(file.path)) return false;
+          const ext = baseFileExt(file.path);
+          if (kind !== 'rp2040') return ext === '.ino';
+          return isRp2040PythonEnv(rp2040Mode) ? ext === '.py' : ext === '.ino';
+        });
+
+        if (!hasEnabledMainForMode) {
+          const defaultContent = createDefaultMainCode(kind, bc.id, { rp2040Mode });
+          upsert({
+            id: expectedMainPath,
+            path: expectedMainPath,
+            name: expectedMainName,
+            kind: 'code',
+            boardId: bc.id,
+            boardKind: kind,
+            content: defaultContent,
+            dirty: false,
+          });
+        }
+
+        if (kind === 'rp2040') {
+          const boardFilePaths = result
+            .filter((file) => file.path.startsWith(`${basePath}/`))
+            .map((file) => file.path);
+
+          boardFilePaths.forEach((pathLike) => {
+            const ext = baseFileExt(pathLike);
+            const disabled = isFileDisabled(pathLike);
+            const shouldDisable = isRp2040PythonEnv(rp2040Mode)
+              ? ARDUINO_CODE_EXTENSIONS.has(ext)
+              : ext === '.py';
+
+            if (shouldDisable && !disabled) {
+              replaceFilePath(pathLike, `${pathLike}${DISABLED_FILE_SUFFIX}`);
+            }
+          });
+        }
       });
 
-      return changed ? result : prev;
+      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
+      const diagramPayload = buildProjectPayload({
+        board,
+        components,
+        wires,
+        code,
+        includeCode: false,
+        blocklyXml,
+        blocklyGeneratedCode,
+        useBlocklyCode,
+        projectFiles: result,
+        openCodeTabs,
+        activeCodeFileId,
+      });
+      const diagramJson = JSON.stringify(diagramPayload, null, 2);
+
+      const generatedRootFiles = [
+        { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
+        { id: 'project/library.txt', path: 'project/library.txt', name: 'library.txt', kind: 'root', content: libraries.join('\n'), dirty: false },
+      ];
+
+      generatedRootFiles.forEach((rootFile) => {
+        const idx = result.findIndex((file) => file.id === rootFile.id);
+        if (idx === -1) {
+          result.push(rootFile);
+          changed = true;
+          return;
+        }
+
+        const current = result[idx];
+        if (
+          current.path !== rootFile.path
+          || current.name !== rootFile.name
+          || current.kind !== rootFile.kind
+          || current.content !== rootFile.content
+          || current.dirty !== false
+        ) {
+          result[idx] = {
+            ...current,
+            path: rootFile.path,
+            name: rootFile.name,
+            kind: rootFile.kind,
+            content: rootFile.content,
+            dirty: false,
+          };
+          changed = true;
+        }
+      });
+
+      return changed ? normalizeProjectFiles(result) : prev;
     });
-  }, [boardComponents, board, components, wires, libInstalled]);
+  }, [
+    boardComponents,
+    board,
+    components,
+    wires,
+    libInstalled,
+    code,
+    blocklyXml,
+    blocklyGeneratedCode,
+    useBlocklyCode,
+    openCodeTabs,
+    activeCodeFileId,
+  ]);
 
   useEffect(() => {
     if (projectFiles.length === 0) return;
+    // If activeCodeFileId is null, it means it was explicitly deselected
+    if (activeCodeFileId === null) return;
     if (activeCodeFileId && projectFileMap.has(activeCodeFileId)) return;
 
     const firstCodeFile = projectFiles.find(f => f.kind === 'code') || projectFiles[0];
@@ -1488,7 +2739,11 @@ export default function SimulatorPage() {
   }, [projectFiles, activeCodeFileId, projectFileMap]);
 
   useEffect(() => {
-    if (!activeCodeFile) return;
+    if (!activeCodeFile) {
+      suppressCodeSyncRef.current = true;
+      setCode('');
+      return;
+    }
     suppressCodeSyncRef.current = true;
     setCode(activeCodeFile.content || '');
   }, [activeCodeFile?.id]);
@@ -1511,6 +2766,18 @@ export default function SimulatorPage() {
     const nextDefault = BOARD_DEFAULT_BAUD[selectedSerialBoardKind] || BOARD_DEFAULT_BAUD.arduino_uno;
     setSerialBaudRate(nextDefault);
   }, [selectedSerialBoardKind]);
+
+  useEffect(() => {
+    if (!isRunning || !workerRef.current) return;
+    const parsedBaud = Number(serialBaudRate);
+    if (!Number.isFinite(parsedBaud)) return;
+
+    workerRef.current.postMessage({
+      type: 'SERIAL_SET_BAUD',
+      baudRate: parsedBaud,
+      targetBoardId: serialBoardFilter !== 'all' ? serialBoardFilter : undefined,
+    });
+  }, [isRunning, serialBaudRate, serialBoardFilter]);
 
   // ── Plotter Rendering Loop ───────────────────────────────────────────────────
   useEffect(() => {
@@ -1813,13 +3080,17 @@ export default function SimulatorPage() {
     const rect = canvasRef.current.getBoundingClientRect()
     const x = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current - (item.w || 60) / 2
     const y = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current - (item.h || 60) / 2
-    setComponents(prev => [...prev, {
-      id: `${item.type}_${nextId++}`,
-      type: item.type, label: item.label,
-      x: Math.max(8, x), y: Math.max(8, y),
-      w: item.w || 60, h: item.h || 60,
-      attrs: item.attrs || {},
-    }])
+    setComponents(prev => {
+      const usedIds = new Set(prev.map((comp) => String(comp.id || '')));
+      const id = allocateComponentId(item.type, usedIds);
+      return [...prev, {
+        id,
+        type: item.type, label: item.label,
+        x: Math.max(8, x), y: Math.max(8, y),
+        w: item.w || 60, h: item.h || 60,
+        attrs: item.attrs || {},
+      }];
+    })
     dragPayload.current = null
   }, [saveHistory])
 
@@ -1828,13 +3099,17 @@ export default function SimulatorPage() {
     saveHistory()
     const x = canvasX - (item.w || 60) / 2
     const y = canvasY - (item.h || 60) / 2
-    setComponents(prev => [...prev, {
-      id: `${item.type}_${nextId++}`,
-      type: item.type, label: item.label,
-      x: Math.max(8, x), y: Math.max(8, y),
-      w: item.w || 60, h: item.h || 60,
-      attrs: item.attrs || {},
-    }])
+    setComponents(prev => {
+      const usedIds = new Set(prev.map((comp) => String(comp.id || '')));
+      const id = allocateComponentId(item.type, usedIds);
+      return [...prev, {
+        id,
+        type: item.type, label: item.label,
+        x: Math.max(8, x), y: Math.max(8, y),
+        w: item.w || 60, h: item.h || 60,
+        attrs: item.attrs || {},
+      }];
+    })
   }, [saveHistory])
 
   // ── Palette click to add (adds to canvas center) ────────────────────────────
@@ -1847,6 +3122,84 @@ export default function SimulatorPage() {
     addComponentAt(item, cx, cy);
     setSelectedPaletteItem(item);
   }, [addComponentAt]);
+
+  // ── Enhanced Zooming (Pinch Only) ──────────────────────────────────────────
+  const initialTouchDistanceRef = useRef(null);
+  const initialCanvasZoomRef = useRef(null);
+  const initialTouchCenterCanvasRef = useRef(null);
+
+  const onTouchStart = useCallback((e) => {
+    if (isCanvasLockedRef.current || e.touches.length !== 2) {
+      initialTouchDistanceRef.current = null;
+      return;
+    }
+    const t1 = e.touches[0], t2 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    initialTouchDistanceRef.current = dist;
+    initialCanvasZoomRef.current = canvasZoomRef.current;
+    
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mx = (t1.clientX + t2.clientX) / 2 - rect.left;
+    const my = (t1.clientY + t2.clientY) / 2 - rect.top;
+    
+    // Position on canvas relative to 0,0
+    initialTouchCenterCanvasRef.current = {
+      x: (mx - canvasOffsetRef.current.x) / canvasZoomRef.current,
+      y: (my - canvasOffsetRef.current.y) / canvasZoomRef.current
+    };
+  }, []);
+
+  const onTouchMove = useCallback((e) => {
+    if (isCanvasLockedRef.current || e.touches.length !== 2 || !initialTouchDistanceRef.current) return;
+    if (e.cancelable) e.preventDefault();
+    
+    const t1 = e.touches[0], t2 = e.touches[1];
+    const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+    
+    const scale = dist / initialTouchDistanceRef.current;
+    const newZoom = Math.min(3, Math.max(0.25, initialCanvasZoomRef.current * scale));
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mx = (t1.clientX + t2.clientX) / 2 - rect.left;
+    const my = (t1.clientY + t2.clientY) / 2 - rect.top;
+
+    // We want initialTouchCenterCanvasRef.current to be at (mx, my) in screen space
+    const newOffsetX = mx - initialTouchCenterCanvasRef.current.x * newZoom;
+    const newOffsetY = my - initialTouchCenterCanvasRef.current.y * newZoom;
+
+    setCanvasZoom(newZoom);
+    canvasZoomRef.current = newZoom;
+    setCanvasOffset({ x: newOffsetX, y: newOffsetY });
+    canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    initialTouchDistanceRef.current = null;
+  }, []);
+
+  // Trackpad pinch (Ctrl + Wheel)
+  const onWheel = useCallback((e) => {
+    if (isCanvasLockedRef.current || !e.ctrlKey) return;
+    e.preventDefault();
+    const zoomSpeed = 0.001; 
+    const delta = -e.deltaY * zoomSpeed;
+    const newZoom = Math.min(3, Math.max(0.25, canvasZoomRef.current + delta));
+    
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    
+    const cx = (mx - canvasOffsetRef.current.x) / canvasZoomRef.current;
+    const cy = (my - canvasOffsetRef.current.y) / canvasZoomRef.current;
+    
+    const newOffsetX = mx - cx * newZoom;
+    const newOffsetY = my - cy * newZoom;
+    
+    setCanvasZoom(newZoom);
+    canvasZoomRef.current = newZoom;
+    setCanvasOffset({ x: newOffsetX, y: newOffsetY });
+    canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+  }, []);
 
   // ── Move and Select component ──────────────────────────────────────────────
   const onCompMouseDown = useCallback((e, id) => {
@@ -1863,76 +3216,121 @@ export default function SimulatorPage() {
   }, [])
 
   useEffect(() => {
+    // ───── RAF-throttled mousemove (Fixes #1 #2 #3 #4) ──────────────────────────
+    // Instead of calling React state setters on every raw mousemove (which can
+    // fire at 200Hz), we synchronously extract all needed data from the event,
+    // store it in a ref, then schedule one rAF callback to do all state updates.
+    // This caps React renders at 60fps regardless of mouse polling rate.
     const onMove = (e) => {
+      // ── Synchronously read event data (must happen in the event handler) ───
+      let compUpdate = null;
+      let wireUpdate = null;
+      let panUpdate = null;
+      let mousePosUpdate = null;
+
       if (movingComp.current) {
-        movingComp.current.moved = true
-        const { id, sx, sy, cx, cy } = movingComp.current
-        setComponents(prev => prev.map(c =>
-          c.id === id ? { ...c, x: cx + (e.clientX - sx) / canvasZoomRef.current, y: cy + (e.clientY - sy) / canvasZoomRef.current } : c
-        ))
+        // Fix #1 ─ component drag
+        movingComp.current.moved = true;
+        const { id, sx, sy, cx, cy } = movingComp.current;
+        const zoom = canvasZoomRef.current;
+        compUpdate = { id, newX: cx + (e.clientX - sx) / zoom, newY: cy + (e.clientY - sy) / zoom };
       }
-      // Segment handle drag
+
       const sd = segDragRef.current;
       if (sd && canvasRef.current) {
+        // Fix #2 ─ wire segment drag
         const rect = canvasRef.current.getBoundingClientRect();
         const mx = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
         const my = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
         const ddx = mx - sd.startMouseCanvas.x;
         const ddy = my - sd.startMouseCanvas.y;
-        if (Math.abs(ddx) < 1 && Math.abs(ddy) < 1) return; // ignore tiny jitter
-        sd.hasMoved = true;
-        const newPts = sd.startPts.map(pt => ({ ...pt }));
-        const { segIdx, isHoriz } = sd;
-        if (isHoriz) {
-          newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
-          newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
-        } else {
-          newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
-          newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+        if (Math.abs(ddx) >= 1 || Math.abs(ddy) >= 1) {
+          sd.hasMoved = true;
+          const newPts = sd.startPts.map(pt => ({ ...pt }));
+          const { segIdx, isHoriz } = sd;
+          if (isHoriz) {
+            newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
+            newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+          } else {
+            newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
+            newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+          }
+          wireUpdate = { wireId: sd.wireId, cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) };
         }
-        // Store internal corners (skip p1 and p2) as explicit corner waypoints
-        const cornerWaypoints = newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true }));
-        setWires(prev => prev.map(w => w.id === sd.wireId ? { ...w, waypoints: cornerWaypoints } : w));
-        return; // don't pan while segment-dragging
-      }
-      // Canvas panning
-      if (isPanningRef.current && !isCanvasLockedRef.current) {
-        const dx = e.clientX - panStartRef.current.x;
-        const dy = e.clientY - panStartRef.current.y;
-        if (!didPanRef.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
-          didPanRef.current = true;
-        }
-        if (didPanRef.current) {
-          const newOffset = { x: panStartRef.current.ox + dx, y: panStartRef.current.oy + dy };
-          setCanvasOffset(newOffset);
-          canvasOffsetRef.current = newOffset;
-        }
-      }
-      // Track mouse for wire preview (with pin snapping)
-      if (wireStart && canvasRef.current) {
-        const rect = canvasRef.current.getBoundingClientRect()
-        const rawX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-        const rawY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-        const snapRadius = 15;
-        let snapped = null;
-        const allComps = componentsRef.current;
-        const pinDefs = pinDefsRef.current;
-        const getPos = getPinPosRef.current;
-        if (getPos) {
-          for (let ci = 0; ci < allComps.length && !snapped; ci++) {
-            const c = allComps[ci];
-            if (c.id === wireStart.compId) continue;
-            const pins = pinDefs[c.type] || [];
-            for (let pi = 0; pi < pins.length && !snapped; pi++) {
-              const pp = getPos(c.id, pins[pi].id);
-              if (pp && Math.hypot(pp.x - rawX, pp.y - rawY) < snapRadius) snapped = pp;
+        // don't pan or track mouse while segment-dragging
+      } else {
+        // Fix #4 ─ canvas panning via direct DOM transform (zero React renders mid-pan)
+        if (isPanningRef.current && !isCanvasLockedRef.current) {
+          const dx = e.clientX - panStartRef.current.x;
+          const dy = e.clientY - panStartRef.current.y;
+          if (!didPanRef.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+            didPanRef.current = true;
+          }
+          if (didPanRef.current) {
+            const newOffset = { x: panStartRef.current.ox + dx, y: panStartRef.current.oy + dy };
+            canvasOffsetRef.current = newOffset;
+            // Apply transform directly to DOM — NO React state update mid-pan
+            if (innerCanvasRef.current) {
+              innerCanvasRef.current.style.transform =
+                `translate(${newOffset.x}px, ${newOffset.y}px) scale(${canvasZoomRef.current})`;
             }
+            panUpdate = newOffset; // stored so onUp can commit to React state
           }
         }
-        setMousePos(snapped || { x: rawX, y: rawY });
+
+        // Fix #3 ─ wire preview mouse tracking
+        if (wireStart && canvasRef.current) {
+          const rect = canvasRef.current.getBoundingClientRect();
+          const rawX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+          const rawY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+          const snapRadius = 15;
+          let snapped = null;
+          const allComps = componentsRef.current;
+          const pinDefs = pinDefsRef.current;
+          const getPos = getPinPosRef.current;
+          if (getPos) {
+            for (let ci = 0; ci < allComps.length && !snapped; ci++) {
+              const c = allComps[ci];
+              if (c.id === wireStart.compId) continue;
+              const pins = pinDefs[c.type] || [];
+              for (let pi = 0; pi < pins.length && !snapped; pi++) {
+                const pp = getPos(c.id, pins[pi].id);
+                if (pp && Math.hypot(pp.x - rawX, pp.y - rawY) < snapRadius) snapped = pp;
+              }
+            }
+          }
+          mousePosUpdate = snapped || { x: rawX, y: rawY };
+        }
       }
-    }
+
+      // ── Schedule a single rAF to flush state updates (cap at 60fps) ───────
+      pendingMoveRef.current = { compUpdate, wireUpdate, mousePosUpdate };
+      if (!rafMoveRef.current) {
+        rafMoveRef.current = requestAnimationFrame(() => {
+          rafMoveRef.current = null;
+          const { compUpdate, wireUpdate, mousePosUpdate } = pendingMoveRef.current || {};
+          if (compUpdate) {
+            const { id, newX, newY } = compUpdate;
+            setComponents(prev => prev.map(c => c.id === id ? { ...c, x: newX, y: newY } : c));
+          }
+          if (wireUpdate) {
+            const { wireId, cornerWaypoints } = wireUpdate;
+            setWires(prev => prev.map(w => w.id === wireId ? { ...w, waypoints: cornerWaypoints } : w));
+          }
+          if (mousePosUpdate) {
+            setMousePos(mousePosUpdate);
+          }
+          // Note: panUpdate is applied via direct DOM transform above — no setState here
+        });
+      }
+    };
     const onUp = () => {
+      // Cancel any pending rAF on mouse up to avoid a ghost render
+      if (rafMoveRef.current) { cancelAnimationFrame(rafMoveRef.current); rafMoveRef.current = null; }
+      // Fix #4 ─ commit final pan offset to React state once (1 render total for entire pan)
+      if (isPanningRef.current && canvasOffsetRef.current) {
+        setCanvasOffset({ ...canvasOffsetRef.current });
+      }
       if (movingComp.current?.moved) {
         const origComps = movingComp.current.originalComps;
         const movedId = movingComp.current.id;
@@ -1965,6 +3363,26 @@ export default function SimulatorPage() {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
   }, [wireStart, wires])
 
+  // ── Block default browser zoom/scroll with non-passive listeners ───────────
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const preventDefault = (e) => {
+      // Still prevent wheel zoom (Ctrl + Wheel)
+      if (e.ctrlKey) {
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
+    canvas.addEventListener('wheel', preventDefault, { passive: false });
+    // removed native touch blockers as touch-action: none handles it and preventDefault might break React events
+
+    return () => {
+      canvas.removeEventListener('wheel', preventDefault);
+    };
+  }, []);
+
   // ── Pin click — start or complete wire ─────────────────────────────────────
   const onPinClick = useCallback((e, compId, pinId, pinLabel) => {
     e.stopPropagation()
@@ -1975,8 +3393,7 @@ export default function SimulatorPage() {
 
     if (!wireStart) {
       // Start wire
-      const comp = components.find(c => c.id === compId);
-      setWireStart({ compId, pinId, pinLabel, compType: comp?.type, ...pos })
+      setWireStart({ compId, pinId, pinLabel, ...pos })
     } else {
       // Complete wire — prevent self-loop
       if (wireStart.compId === compId && wireStart.pinId === pinId) {
@@ -1992,12 +3409,12 @@ export default function SimulatorPage() {
         toLabel: pinLabel,
         color: wireColor(wireStart.pinLabel),
         waypoints: wireStart.waypoints || [],
-        isBelow: false
+        isBelow: false // Add z-index configuration
       }
       setWires(prev => [...prev, newWire])
       setWireStart(null)
     }
-  }, [wireStart, components, getPinPos, saveHistory, isRunning])
+  }, [wireStart, getPinPos, saveHistory, isRunning])
 
   const updateWireColor = (id, color) => {
     setWires(prev => prev.map(w => w.id === id ? { ...w, color } : w));
@@ -2014,13 +3431,16 @@ export default function SimulatorPage() {
       if (c.id === id) {
         let newW = c.w;
         let newH = c.h;
+        const nextValue = (key === 'env' && normalizeBoardKind(c.type) === 'rp2040')
+          ? normalizeRp2040Env(value)
+          : value;
         if (c.type === 'wokwi-neopixel-matrix') {
-          const rows = key === 'rows' ? (parseInt(value) || 1) : (parseInt(c.attrs?.rows) || 1);
-          const cols = key === 'cols' ? (parseInt(value) || 1) : (parseInt(c.attrs?.cols) || 1);
+          const rows = key === 'rows' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.rows) || 1);
+          const cols = key === 'cols' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.cols) || 1);
           newW = Math.max(30, cols * 30);
           newH = Math.max(30, rows * 30);
         }
-        return { ...c, w: newW, h: newH, attrs: { ...c.attrs, [key]: value } };
+        return { ...c, w: newW, h: newH, attrs: { ...c.attrs, [key]: nextValue } };
       }
       return c;
     }));
@@ -2029,6 +3449,11 @@ export default function SimulatorPage() {
   // Cancel wire on Escape / delete selected
   useEffect(() => {
     const onKey = (e) => {
+      if (e.key === 'F1') {
+        e.preventDefault();
+        setShowF1Menu(prev => !prev);
+        return;
+      }
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
       if (e.key === 'Escape') { setWireStart(null); setSelected(null); setWireClickPos(null); }
@@ -2069,7 +3494,7 @@ export default function SimulatorPage() {
     setOpenCodeTabs(prev => {
       const next = prev.filter(id => id !== fileId);
       if (activeCodeFileId === fileId) {
-        setActiveCodeFileId(next[next.length - 1] || '');
+        setActiveCodeFileId(next[next.length - 1] || null);
       }
       return next;
     });
@@ -2116,11 +3541,23 @@ export default function SimulatorPage() {
     }
   }, [activeCodeFileId, projectFileMap]);
 
+  const toggleCodeFileDisabled = useCallback((fileId) => {
+    const source = projectFileMap.get(fileId);
+    if (!source || source.kind !== 'code') return;
+
+    const currentlyDisabled = isFileDisabled(source.name);
+    const nextName = currentlyDisabled
+      ? source.name.slice(0, -DISABLED_FILE_SUFFIX.length)
+      : `${source.name}${DISABLED_FILE_SUFFIX}`;
+
+    renameCodeFile(fileId, nextName);
+  }, [projectFileMap, renameCodeFile]);
+
   const deleteCodeFile = useCallback((fileId) => {
     setProjectFiles(prev => prev.filter(f => f.id !== fileId));
     setOpenCodeTabs(prev => prev.filter(id => id !== fileId));
     if (activeCodeFileId === fileId) {
-      const next = openCodeTabs.find(id => id !== fileId) || '';
+      const next = openCodeTabs.find(id => id !== fileId) || null;
       setActiveCodeFileId(next);
     }
   }, [activeCodeFileId, openCodeTabs]);
@@ -2140,49 +3577,170 @@ export default function SimulatorPage() {
   const getBoardMainCode = useCallback((boardId) => {
     const preferred = `project/${boardId}/${boardId}.ino`;
     const prefFile = projectFileMap.get(preferred);
-    if (prefFile && prefFile.content) return prefFile.content;
+    if (prefFile && prefFile.content && !isFileDisabled(prefFile.path)) return prefFile.content;
 
-    const ino = projectFiles.find(f => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino');
+    const ino = projectFiles.find(
+      (f) => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino' && !isFileDisabled(f.path)
+    );
     if (ino?.content) return ino.content;
 
-    return code;
-  }, [projectFileMap, projectFiles, code]);
+    return '';
+  }, [projectFileMap, projectFiles]);
 
-  const getBoardCompileFiles = useCallback((boardId) => {
+  const getBoardCompileFiles = useCallback((boardId, preferredMainPath = '') => {
     const allowed = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
     const allFiles = projectFiles
       .filter((f) => f.path.startsWith(`project/${boardId}/`))
+      .filter((f) => !isFileDisabled(f.path))
       .filter((f) => allowed.has(fileExt(f.path)))
-      .map((f) => ({ name: f.name, content: f.content || '' }));
+      .map((f) => ({ path: f.path, name: f.name, content: f.id === activeCodeFileId ? code : (f.content || '') }));
 
     const preferredMainName = `${boardId}.ino`;
-    const main = allFiles.find((f) => f.name === preferredMainName)
+    const preferredPath = String(preferredMainPath || '').trim();
+    const main = allFiles.find((f) => f.path === preferredPath)
+      || allFiles.find((f) => f.name === preferredMainName)
       || allFiles.find((f) => fileExt(f.name) === '.ino')
       || null;
 
-    const files = allFiles.filter((f) => !(main && f.name === main.name));
+    const files = allFiles
+      .filter((f) => !(main && f.path === main.path))
+      .map((f) => ({ name: f.name, content: f.content }));
 
     return {
-      mainCode: main?.content || getBoardMainCode(boardId) || code,
+      mainCode: main?.content || getBoardMainCode(boardId) || '',
       sketchName: boardId,
       files,
+      hasMainFile: !!main,
+      mainFilePath: main?.path || '',
     };
-  }, [projectFiles, getBoardMainCode, code]);
+  }, [projectFiles, getBoardMainCode, activeCodeFileId, code]);
 
-  const createCodeFile = useCallback((requestedName, openAfterCreate = false) => {
+  const getBoardFirmwareAssets = useCallback((boardId) => {
+    const boardFiles = projectFiles
+      .filter((f) => f.path.startsWith(`project/${boardId}/`))
+      .filter((f) => !isFileDisabled(f.path));
+    const uf2File = boardFiles.find((f) => fileExt(f.path) === '.uf2' && typeof f.content === 'string' && f.content.trim());
+    const pyFiles = boardFiles
+      .filter((f) => fileExt(f.path) === '.py')
+      .map((f) => ({
+        path: toBoardRelativePath(boardId, f.path),
+        name: f.name,
+        content: String(f.content || ''),
+      }));
+
+    const mainPy = pyFiles.find((f) => f.name.toLowerCase() === 'main.py') || pyFiles[0] || null;
+
+    let uf2Payload = null;
+    if (uf2File?.content) {
+      const raw = String(uf2File.content).trim();
+      uf2Payload = raw.startsWith(UF2_PAYLOAD_PREFIX) ? raw : `${UF2_PAYLOAD_PREFIX}${raw}`;
+    }
+
+    return { uf2Payload, mainPy, pythonFiles: pyFiles };
+  }, [projectFiles]);
+
+  const fetchDefaultMicroPythonUf2Payload = useCallback(async () => {
+    if (micropythonUf2PayloadRef.current) return micropythonUf2PayloadRef.current;
+
+    const response = await fetch(`${DEFAULT_PICO_MICROPYTHON_UF2_URL}?v=uart0`, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`Unable to fetch default MicroPython UF2 (${response.status})`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
+    micropythonUf2PayloadRef.current = payload;
+    return payload;
+  }, []);
+
+  const fetchDefaultCircuitPythonUf2Payload = useCallback(async () => {
+    if (circuitPythonUf2PayloadRef.current) return circuitPythonUf2PayloadRef.current;
+
+    const version = encodeURIComponent(DEFAULT_PICO_CIRCUITPYTHON_VERSION);
+    const response = await fetch(`${DEFAULT_PICO_CIRCUITPYTHON_UF2_URL}?v=${version}`, { cache: 'no-store' });
+    if (!response.ok) {
+      throw new Error(`Unable to fetch default CircuitPython UF2 (${response.status})`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
+    circuitPythonUf2PayloadRef.current = payload;
+    return payload;
+  }, []);
+
+  const resolveFolderFilePolicy = useCallback((parentPath = 'project') => {
+    const normalizedParent = String(parentPath || 'project').trim() || 'project';
+    const boardMatch = normalizedParent.match(/^project\/([^/]+)(?:\/|$)/);
+    if (!boardMatch) {
+      return {
+        parent: normalizedParent,
+        boardId: '',
+        boardKind: 'root',
+        rp2040Mode: 'native',
+        defaultExt: '.ino',
+        allowedExtensions: ROOT_UPLOADABLE_EXTENSIONS,
+      };
+    }
+
+    const boardId = boardMatch[1];
+    const boardComp = boardComponentMap.get(boardId);
+    const boardKind = normalizeBoardKind(boardComp?.type || '');
+    if (boardKind !== 'rp2040') {
+      return {
+        parent: normalizedParent,
+        boardId,
+        boardKind,
+        rp2040Mode: 'native',
+        defaultExt: '.ino',
+        allowedExtensions: RP2040_NATIVE_ALLOWED_EXTENSIONS,
+      };
+    }
+
+    const rp2040Mode = rp2040BoardSourceModes[boardId] || 'native';
+    return {
+      parent: normalizedParent,
+      boardId,
+      boardKind,
+      rp2040Mode,
+      defaultExt: isRp2040PythonEnv(rp2040Mode) ? '.py' : '.ino',
+      allowedExtensions: isRp2040PythonEnv(rp2040Mode)
+        ? RP2040_MICROPYTHON_ALLOWED_EXTENSIONS
+        : RP2040_NATIVE_ALLOWED_EXTENSIONS,
+    };
+  }, [boardComponentMap, rp2040BoardSourceModes]);
+
+  const createCodeFile = useCallback((requestedName, openAfterCreate = false, customParent = null) => {
     const cleaned = String(requestedName || '').trim();
     if (!cleaned) return null;
 
-    const activePath = activeCodeFile?.path || '';
-    const parent = activePath.includes('/')
-      ? activePath.substring(0, activePath.lastIndexOf('/'))
-      : 'project';
+    let parent = 'project';
+    if (customParent) {
+      parent = customParent;
+    } else {
+      const activePath = activeCodeFile?.path || '';
+      parent = activePath.includes('/')
+        ? activePath.substring(0, activePath.lastIndexOf('/'))
+        : 'project';
+    }
 
+    const folderPolicy = resolveFolderFilePolicy(parent);
+
+    const defaultExt = folderPolicy.defaultExt || '.ino';
     const rawExt = fileExt(cleaned);
     const fileNameBase = rawExt ? cleaned.slice(0, -rawExt.length) : cleaned;
-    const ext = rawExt || '.ino';
+    const ext = rawExt || defaultExt;
     const safeBase = fileNameBase.replace(/[^a-zA-Z0-9._-]/g, '_') || 'new_file';
-    const safeExt = ext.replace(/[^a-zA-Z0-9.]/g, '') || '.ino';
+    const safeExt = (ext.replace(/[^a-zA-Z0-9.]/g, '') || defaultExt).toLowerCase();
+
+    if (!folderPolicy.allowedExtensions.has(safeExt)) {
+      if (folderPolicy.boardKind === 'rp2040') {
+        const modeLabel = isRp2040PythonEnv(folderPolicy.rp2040Mode) ? '.py' : '.ino';
+        alert(`RP2040 board ${folderPolicy.boardId} currently allows ${modeLabel} workflow files. "${safeExt}" is disabled for this env.`);
+      } else {
+        alert(`Unsupported file type: ${safeExt}`);
+      }
+      return null;
+    }
 
     let candidate = `${safeBase}${safeExt}`;
     let candidatePath = `${parent}/${candidate}`;
@@ -2201,6 +3759,8 @@ export default function SimulatorPage() {
         ? `#include "${safeBase}.h"\n\n// ${safeBase} implementation\n`
         : safeExt === '.ino'
           ? `void setup() {\n}\n\nvoid loop() {\n}\n`
+            : safeExt === '.py'
+              ? `from machine import Pin\nfrom time import sleep\n\nled = Pin('LED', Pin.OUT)\n\nwhile True:\n  led.toggle()\n  sleep(0.5)\n`
           : '';
 
     const nextFile = {
@@ -2209,6 +3769,7 @@ export default function SimulatorPage() {
       name: candidate,
       kind: 'code',
       boardId: boardMatch ? boardMatch[1] : undefined,
+      boardKind: boardMatch ? folderPolicy.boardKind : undefined,
       content,
       dirty: true,
     };
@@ -2220,13 +3781,450 @@ export default function SimulatorPage() {
     }
 
     return candidatePath;
-  }, [activeCodeFile, projectFileMap]);
+  }, [activeCodeFile, projectFileMap, resolveFolderFilePolicy]);
 
   const createCodeTab = useCallback((requestedName) => {
     return createCodeFile(requestedName, true);
   }, [createCodeFile]);
 
+  const uploadCodeFile = useCallback((customParent = null) => {
+    let parent = 'project';
+    if (customParent) {
+      parent = customParent;
+    } else {
+      const activePath = activeCodeFile?.path || '';
+      parent = activePath.includes('/')
+        ? activePath.substring(0, activePath.lastIndexOf('/'))
+        : 'project';
+    }
+
+    const folderPolicy = resolveFolderFilePolicy(parent);
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = Array.from(folderPolicy.allowedExtensions).join(',');
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const rawExt = fileExt(file.name);
+      const readAsBinary = rawExt === '.uf2';
+      const reader = new FileReader();
+      reader.onload = (re) => {
+        let content = re.target.result;
+        if (readAsBinary) {
+          const base64 = arrayBufferToBase64(content);
+          content = `${UF2_PAYLOAD_PREFIX}${base64}`;
+        }
+
+        const fileNameBase = rawExt ? file.name.slice(0, -rawExt.length) : file.name;
+        const ext = rawExt || folderPolicy.defaultExt || '.ino';
+        const safeBase = fileNameBase.replace(/[^a-zA-Z0-9._-]/g, '_') || 'uploaded';
+        const safeExt = (ext.replace(/[^a-zA-Z0-9.]/g, '') || '.ino').toLowerCase();
+
+        if (!folderPolicy.allowedExtensions.has(safeExt)) {
+          if (folderPolicy.boardKind === 'rp2040') {
+            const modeLabel = isRp2040PythonEnv(folderPolicy.rp2040Mode) ? '.py' : '.ino';
+            alert(`RP2040 board ${folderPolicy.boardId} currently allows ${modeLabel} workflow files. "${safeExt}" cannot be uploaded in this env.`);
+          } else {
+            alert(`Unsupported file type: ${safeExt}`);
+          }
+          return;
+        }
+
+        let candidate = `${safeBase}${safeExt}`;
+        let candidatePath = `${parent}/${candidate}`;
+        let i = 2;
+
+        while (projectFileMap.has(candidatePath)) {
+          candidate = `${safeBase}_${i}${safeExt}`;
+          candidatePath = `${parent}/${candidate}`;
+          i++;
+        }
+
+        const boardMatch = candidatePath.match(/^project\/([^/]+)\//);
+        const nextFile = {
+          id: candidatePath,
+          path: candidatePath,
+          name: candidate,
+          kind: 'code',
+          boardId: boardMatch ? boardMatch[1] : undefined,
+          boardKind: boardMatch ? folderPolicy.boardKind : undefined,
+          content,
+          dirty: true,
+        };
+
+        setProjectFiles(prev => [...prev, nextFile]);
+        setOpenCodeTabs(prev => prev.includes(candidatePath) ? prev : [...prev, candidatePath]);
+        setActiveCodeFileId(candidatePath);
+        
+        appendConsoleEntry('info', `File uploaded: ${candidate}`, 'code');
+      };
+      if (readAsBinary) reader.readAsArrayBuffer(file);
+      else reader.readAsText(file);
+    };
+    input.click();
+  }, [activeCodeFile, projectFileMap, appendConsoleEntry, resolveFolderFilePolicy]);
+
   // ─── Project Save / Load Handlers ───────────────────────────────────────────
+
+  const sanitizeDownloadStem = useCallback((value, fallback = 'firmware') => {
+    const cleaned = String(value || '')
+      .replace(/\.[a-z0-9]+$/i, '')
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+    return cleaned || fallback;
+  }, []);
+
+  const resolveFirmwareBoardFileStem = useCallback((boardId = '') => {
+    const normalizedBoardId = String(boardId || '').trim();
+    if (!normalizedBoardId) return '';
+
+    const boardComp = boardComponentMap.get(normalizedBoardId);
+    const boardLabel = String(boardComp?.label || '').trim();
+    return sanitizeDownloadStem(boardLabel || normalizedBoardId, 'firmware');
+  }, [boardComponentMap, sanitizeDownloadStem]);
+
+  const buildSimulationJsonPayload = useCallback(() => {
+    return buildProjectPayload({
+      name: currentProjectName,
+      board,
+      components,
+      wires,
+      code,
+      blocklyXml,
+      blocklyGeneratedCode,
+      useBlocklyCode,
+      projectFiles,
+      openCodeTabs,
+      activeCodeFileId,
+      exportedAt: new Date().toISOString(),
+    });
+  }, [
+    currentProjectName,
+    board,
+    components,
+    wires,
+    code,
+    blocklyXml,
+    blocklyGeneratedCode,
+    useBlocklyCode,
+    projectFiles,
+    openCodeTabs,
+    activeCodeFileId,
+  ]);
+
+  const downloadSimulationJson = useCallback(() => {
+    try {
+      const payload = buildSimulationJsonPayload();
+      const fileBase = sanitizeDownloadStem(currentProjectName || 'simulation', 'simulation');
+      const fileName = `${fileBase}.json`;
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = fileName;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      appendConsoleEntry('info', `Simulation JSON downloaded: ${fileName}`, 'simulator');
+    } catch (err) {
+      appendConsoleEntry('error', `Simulation JSON download failed: ${err?.message || 'Unknown error'}`, 'simulator');
+    }
+  }, [appendConsoleEntry, buildSimulationJsonPayload, currentProjectName, sanitizeDownloadStem]);
+
+  const parseFirmwareUploadFile = useCallback((file) => {
+    return new Promise((resolve, reject) => {
+      if (!(file instanceof File)) {
+        reject(new Error('No firmware file selected.'));
+        return;
+      }
+
+      const rawExt = fileExt(file.name).toLowerCase();
+      if (rawExt !== '.hex' && rawExt !== '.uf2') {
+        reject(new Error('Unsupported firmware file. Use .hex (all boards) or .uf2 (RP2040).'));
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+      reader.onload = () => {
+        try {
+          if (rawExt === '.uf2') {
+            const buffer = reader.result;
+            if (!(buffer instanceof ArrayBuffer)) {
+              throw new Error('UF2 payload read failed.');
+            }
+            const payload = `${UF2_PAYLOAD_PREFIX}${arrayBufferToBase64(buffer)}`;
+            resolve({ payload, ext: rawExt, fileName: file.name });
+            return;
+          }
+
+          const payload = String(reader.result || '').trim();
+          resolve({ payload, ext: rawExt, fileName: file.name });
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error('Failed to parse firmware file.'));
+        }
+      };
+
+      if (rawExt === '.uf2') reader.readAsArrayBuffer(file);
+      else reader.readAsText(file);
+    });
+  }, []);
+
+  const normalizeFirmwareFileName = useCallback((artifactName, boardId, firmwarePayload) => {
+    const cleaned = String(artifactName || '').trim();
+    const isUf2 = typeof firmwarePayload === 'string' && firmwarePayload.startsWith(UF2_PAYLOAD_PREFIX);
+    const defaultExt = isUf2 ? '.uf2' : '.hex';
+
+    const boardStem = resolveFirmwareBoardFileStem(boardId);
+    if (boardStem) {
+      return `${boardStem}${defaultExt}`;
+    }
+
+    if (cleaned) {
+      return /\.[a-z0-9]+$/i.test(cleaned)
+        ? sanitizeDownloadStem(cleaned, 'firmware') + cleaned.match(/\.[a-z0-9]+$/i)[0]
+        : `${sanitizeDownloadStem(cleaned, 'firmware')}${defaultExt}`;
+    }
+
+    return `firmware${defaultExt}`;
+  }, [resolveFirmwareBoardFileStem, sanitizeDownloadStem]);
+
+  const triggerFirmwareDownload = useCallback((firmwarePayload, fileName) => {
+    if (!firmwarePayload) return;
+
+    let content = firmwarePayload;
+    let mimeType = 'text/plain';
+
+    if (typeof firmwarePayload === 'string' && firmwarePayload.startsWith(UF2_PAYLOAD_PREFIX)) {
+      const base64 = firmwarePayload.substring(UF2_PAYLOAD_PREFIX.length);
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      content = bytes;
+      mimeType = 'application/octet-stream';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }, []);
+
+  const resolveStoredFirmwareArtifact = useCallback((targetBoardId = '') => {
+    const normalizedBoardId = String(targetBoardId || '').trim();
+
+    const readStoredArtifact = (storageKey) => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(storageKey) || 'null');
+        return parsed && typeof parsed === 'object' ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+
+    if (normalizedBoardId) {
+      const byBoard = readStoredArtifact(`openhw_gdb_artifact_${normalizedBoardId}`);
+      if (byBoard?.firmware) {
+        return {
+          boardId: normalizedBoardId,
+          firmware: byBoard.firmware,
+          artifactName: byBoard.artifactName || byBoard.elfName || '',
+        };
+      }
+    }
+
+    const latest = readStoredArtifact('openhw_gdb_last_artifact');
+    if (latest?.firmware) {
+      const latestBoardId = String(latest.boardId || '').trim();
+      if (!normalizedBoardId || !latestBoardId || latestBoardId === normalizedBoardId) {
+        return {
+          boardId: latestBoardId || normalizedBoardId,
+          firmware: latest.firmware,
+          artifactName: latest.artifactName || latest.elfName || '',
+        };
+      }
+    }
+
+    if (!normalizedBoardId) {
+      const fallback = lastCompiledRef.current?.result;
+      if (fallback?.hex) {
+        return {
+          boardId: 'latest',
+          firmware: fallback.hex,
+          artifactName: fallback.artifactName || '',
+        };
+      }
+    }
+
+    return null;
+  }, []);
+
+  const handleDownloadFirmware = useCallback(async (target = '__latest__') => {
+    try {
+      const normalizedTarget = String(target || '__latest__').trim() || '__latest__';
+
+      if (normalizedTarget === '__all__') {
+        const boardIds = firmwareBoardOptions.map((opt) => opt.id);
+
+        if (boardIds.length === 0) {
+          const latest = resolveStoredFirmwareArtifact('');
+          if (!latest?.firmware) {
+            appendConsoleEntry('error', 'No firmware available. Compile the project first.', 'simulator');
+            return;
+          }
+          const fileName = normalizeFirmwareFileName(latest.artifactName, latest.boardId || 'latest', latest.firmware);
+          triggerFirmwareDownload(latest.firmware, fileName);
+          appendConsoleEntry('info', `Firmware downloaded: ${fileName}`, 'simulator');
+          return;
+        }
+
+        const missingBoards = [];
+        let downloadedCount = 0;
+
+        boardIds.forEach((boardId, idx) => {
+          const artifact = resolveStoredFirmwareArtifact(boardId);
+          if (!artifact?.firmware) {
+            missingBoards.push(boardId);
+            return;
+          }
+
+          const fileName = normalizeFirmwareFileName(artifact.artifactName, boardId, artifact.firmware);
+          setTimeout(() => triggerFirmwareDownload(artifact.firmware, fileName), idx * 120);
+          downloadedCount += 1;
+        });
+
+        if (downloadedCount === 0) {
+          appendConsoleEntry('error', 'No board firmware found. Compile each board first.', 'simulator');
+          return;
+        }
+
+        appendConsoleEntry('info', `Downloaded firmware for ${downloadedCount} board(s).`, 'simulator');
+        if (missingBoards.length > 0) {
+          appendConsoleEntry('warn', `Missing firmware for: ${missingBoards.join(', ')}`, 'simulator');
+        }
+        return;
+      }
+
+      const targetBoardId = normalizedTarget === '__latest__' ? '' : normalizedTarget;
+      const artifact = resolveStoredFirmwareArtifact(targetBoardId);
+
+      if (!artifact?.firmware) {
+        const missingLabel = targetBoardId
+          ? `No firmware found for ${targetBoardId}. Compile this board first.`
+          : 'No firmware available. Compile the project first.';
+        appendConsoleEntry('error', missingLabel, 'simulator');
+        return;
+      }
+
+      const fileName = normalizeFirmwareFileName(
+        artifact.artifactName,
+        artifact.boardId || targetBoardId || 'firmware',
+        artifact.firmware,
+      );
+
+      triggerFirmwareDownload(artifact.firmware, fileName);
+      appendConsoleEntry('info', `Firmware downloaded: ${fileName}`, 'simulator');
+    } catch (err) {
+      appendConsoleEntry('error', `Download failed: ${err.message}`, 'simulator');
+    }
+  }, [appendConsoleEntry, firmwareBoardOptions, normalizeFirmwareFileName, resolveStoredFirmwareArtifact, triggerFirmwareDownload]);
+
+  const openFirmwareDownloadDialog = useCallback(() => {
+    setFirmwareDownloadTarget(firmwareBoardOptions[0]?.id || '__latest__');
+    setShowFirmwareDownloadDialog(true);
+  }, [firmwareBoardOptions]);
+
+  const openFirmwareUploadDialog = useCallback(() => {
+    setFirmwareUploadTarget(firmwareBoardOptions[0]?.id || '');
+    setFirmwareUploadFile(null);
+    setShowFirmwareUploadDialog(true);
+    if (firmwareUploadInputRef.current) {
+      firmwareUploadInputRef.current.value = '';
+    }
+  }, [firmwareBoardOptions]);
+
+  const applyUploadedFirmwareToBoard = useCallback(async () => {
+    const targetBoardId = String(firmwareUploadTarget || '').trim();
+    if (!targetBoardId) {
+      appendConsoleEntry('warn', 'Pick a board target before uploading firmware.', 'simulator');
+      return;
+    }
+    if (!(firmwareUploadFile instanceof File)) {
+      appendConsoleEntry('warn', 'Select a firmware file before uploading.', 'simulator');
+      return;
+    }
+
+    const targetBoardComp = boardComponentMap.get(targetBoardId);
+    if (!targetBoardComp) {
+      appendConsoleEntry('error', `Board ${targetBoardId} is no longer available on canvas.`, 'simulator');
+      return;
+    }
+
+    setIsApplyingFirmwareUpload(true);
+    try {
+      const parsed = await parseFirmwareUploadFile(firmwareUploadFile);
+      const boardKind = normalizeBoardKind(targetBoardComp.type);
+      if (boardKind !== 'rp2040' && parsed.ext !== '.hex') {
+        throw new Error('Only RP2040 boards support UF2 firmware uploads. Use .hex for this board.');
+      }
+      if (!parsed.payload) {
+        throw new Error('Firmware file is empty.');
+      }
+
+      saveHistory();
+      setComponents((prev) => prev.map((comp) => {
+        if (comp.id !== targetBoardId) return comp;
+        return {
+          ...comp,
+          attrs: {
+            ...(comp.attrs || {}),
+            firmwareHex: parsed.payload,
+            hex: parsed.payload,
+            firmwareArtifactName: String(parsed.fileName || ''),
+          },
+        };
+      }));
+
+      lastCompiledRef.current = null;
+
+      const boardLabel = boardCompToDisplayName(targetBoardComp, boardKind);
+      const firmwareKind = parsed.ext === '.uf2' ? 'UF2' : 'HEX';
+      appendConsoleEntry(
+        'info',
+        `Assigned ${firmwareKind} firmware (${parsed.fileName}) to ${boardLabel}. The next run will use this firmware.`,
+        'simulator',
+      );
+
+      setShowFirmwareUploadDialog(false);
+      setFirmwareUploadFile(null);
+      if (firmwareUploadInputRef.current) {
+        firmwareUploadInputRef.current.value = '';
+      }
+    } catch (err) {
+      appendConsoleEntry('error', `Firmware upload failed: ${err?.message || 'Unknown error'}`, 'simulator');
+    } finally {
+      setIsApplyingFirmwareUpload(false);
+    }
+  }, [
+    appendConsoleEntry,
+    boardComponentMap,
+    firmwareUploadTarget,
+    firmwareUploadFile,
+    parseFirmwareUploadFile,
+    saveHistory,
+  ]);
+
+  const handleStartGDB = () => {
+    appendConsoleEntry('info', 'Connecting to GDB Session...', 'simulator');
+    // Note: requires backend running wokwi-gdbserver (e.g. gdbserver.js) on port 3333
+    appendConsoleEntry('info', 'Opening local GDB session on http://localhost:3333...', 'simulator');
+    window.open('http://localhost:3333', '_blank');
+  };
 
   /** Open the save dialog. Pre-fills with the current project name. */
   const handleSave = () => {
@@ -2246,7 +4244,7 @@ export default function SimulatorPage() {
     }
     setCurrentProjectName(name);
     clearTimeout(autoSaveTimerRef.current);
-    await saveProject({ id, name, board, components, connections: wires, code, projectFiles, openCodeTabs, activeCodeFileId, owner });
+    await saveProject({ id, name, board, components, connections: wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, projectFiles, openCodeTabs, activeCodeFileId, owner });
     setShowSaveDialog(false);
   };
 
@@ -2263,6 +4261,7 @@ export default function SimulatorPage() {
     setCode('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n');
     setComponents([]);
     setWires([]);
+    setBlocklyXml('');
     setProjectFiles([]);
     setOpenCodeTabs([]);
     setActiveCodeFileId('');
@@ -2273,20 +4272,30 @@ export default function SimulatorPage() {
   /** Load a project from the My Projects modal. */
   const handleLoadProject = (proj) => {
     if (isRunning) return;
+    const normalizedCircuit = normalizeImportedCircuitData(proj.components, proj.connections);
+    const normalizedFiles = normalizeProjectFiles(proj.projectFiles);
+    const normalizedTabs = normalizeOpenCodeTabs(proj.openCodeTabs, normalizedFiles);
+    const preferredActive = String(proj.activeCodeFileId || '').trim();
+    const activeId = normalizedFiles.some((f) => f.id === preferredActive)
+      ? preferredActive
+      : (normalizedTabs[0] || '');
     setBoard(proj.board || 'arduino_uno');
     setCode(proj.code || '');
-    setComponents(proj.components || []);
-    setWires(proj.connections || []);
-    setProjectFiles(Array.isArray(proj.projectFiles) ? proj.projectFiles : []);
-    setOpenCodeTabs(Array.isArray(proj.openCodeTabs) ? proj.openCodeTabs : []);
-    setActiveCodeFileId(proj.activeCodeFileId || '');
-    syncNextIds(proj.components, proj.connections);
+    setBlocklyXml(proj.blocklyXml || '');
+    setBlocklyGeneratedCode(proj.blocklyGeneratedCode || '');
+    setUseBlocklyCode(!!proj.useBlocklyCode);
+    setComponents(normalizedCircuit.components);
+    setWires(normalizedCircuit.wires);
+    setProjectFiles(normalizedFiles);
+    setOpenCodeTabs(normalizedTabs);
+    setActiveCodeFileId(activeId);
+    syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
     setCurrentProjectId(proj.id);
     currentProjectIdRef.current = proj.id;
     setCurrentProjectName(proj.name || 'Untitled');
     setHistory({ past: [], future: [] });
     lastCompiledRef.current = null;
-    setShowProjectsDropdown(false);
+    setShowProjectsSidebar(false);
   };
 
   /** Delete a project from the My Projects modal. */
@@ -2316,10 +4325,35 @@ export default function SimulatorPage() {
     await refreshProjectList();
   };
 
+  const toggleFavourite = (id) => {
+    setFavouriteProjectIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handleCopyProject = async (proj) => {
+    const newId = generateProjectId();
+    const newName = (proj.name || 'Untitled') + ' Copy';
+    const projectData = { ...proj, id: newId, name: newName, savedAt: Date.now() };
+    await saveProject(projectData);
+    await refreshProjectList();
+  };
+
   // ─── Backup / Restore ──────────────────────────────────────────────────────
   const handleBackupWorkflow = async () => {
     const zip = new JSZip();
-    const data = { name: currentProjectName, board, components, connections: wires, code, projectFiles, openCodeTabs, activeCodeFileId, exportedAt: new Date().toISOString() };
+    const data = buildProjectPayload({
+      name: currentProjectName,
+      board,
+      components,
+      wires,
+      code,
+      blocklyXml,
+      blocklyGeneratedCode,
+      useBlocklyCode,
+      projectFiles,
+      openCodeTabs,
+      activeCodeFileId,
+      exportedAt: new Date().toISOString(),
+    });
     zip.file('workflow.json', JSON.stringify(data, null, 2));
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
@@ -2337,14 +4371,24 @@ export default function SimulatorPage() {
       if (!wf) { alert('Invalid backup: workflow.json not found.'); return; }
       const json = JSON.parse(await wf.async('string'));
       if ((components.length > 0 || wires.length > 0) && !window.confirm('Restore backup? Current unsaved changes will be replaced.')) return;
+      const normalizedCircuit = normalizeImportedCircuitData(json.components, Array.isArray(json.connections) ? json.connections : json.wires);
+      const normalizedFiles = normalizeProjectFiles(Array.isArray(json.projectFiles) ? json.projectFiles : []);
+      const normalizedTabs = normalizeOpenCodeTabs(Array.isArray(json.openCodeTabs) ? json.openCodeTabs : [], normalizedFiles);
+      const preferredActive = String(json.activeCodeFileId || '').trim();
+      const activeId = normalizedFiles.some((f) => f.id === preferredActive)
+        ? preferredActive
+        : (normalizedTabs[0] || normalizedFiles[0]?.id || '');
       setBoard(json.board || 'arduino_uno');
       setCode(json.code || '');
-      setComponents(json.components || []);
-      setWires(json.connections || []);
-      setProjectFiles(Array.isArray(json.projectFiles) ? json.projectFiles : []);
-      setOpenCodeTabs(Array.isArray(json.openCodeTabs) ? json.openCodeTabs : []);
-      setActiveCodeFileId(json.activeCodeFileId || '');
-      syncNextIds(json.components, json.connections);
+      setBlocklyXml(json.blocklyXml || '');
+      setBlocklyGeneratedCode(json.blocklyGeneratedCode || '');
+      setUseBlocklyCode(!!json.useBlocklyCode);
+      setComponents(normalizedCircuit.components);
+      setWires(normalizedCircuit.wires);
+      setProjectFiles(normalizedFiles);
+      setOpenCodeTabs(normalizedTabs);
+      setActiveCodeFileId(activeId);
+      syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
       setCurrentProjectName(json.name || 'Untitled');
       setHistory({ past: [], future: [] });
       lastCompiledRef.current = null;
@@ -2403,32 +4447,54 @@ export default function SimulatorPage() {
     }
   };
 
-  const handleAssessmentSubmit = async () => {
-    if (!assessmentMode) return;
-    if (!assessmentProjectName) {
-      alert('Assessment project is missing. Please open assessment from the project page.');
-      return;
-    }
-    setIsSubmittingAssessment(true);
-    try {
-      const payload = {
-        projectName: assessmentProjectName,
-        submittedAt: new Date().toISOString(),
-        components,
-        wires,
-        code,
-      };
-      sessionStorage.setItem(`openhw_assessment_submission:${assessmentProjectName}`, JSON.stringify(payload));
-      navigate(`/${assessmentProjectName}/assessment`);
-    } finally {
-      setIsSubmittingAssessment(false);
-    }
-  };
   // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
   const logSerial = (msg, color = 'var(--text)') => {
     // In a real implementation this would push to a serial console state array
     console.log(`[SIM]`, msg);
   };
+
+  const logCompileSummary = useCallback((compiledResult, boardComp, boardKind) => {
+    const summaryLines = extractCompileSummaryLines(compiledResult?.stdout || '');
+    if (summaryLines.length === 0) return;
+
+    const boardLabel = boardCompToDisplayName(boardComp, boardKind);
+    summaryLines.forEach((line) => {
+      appendConsoleEntry('info', `[${boardLabel}] ${line}`, 'simulator');
+    });
+  }, [appendConsoleEntry]);
+
+  const registerGdbArtifact = useCallback((boardId, boardKind, compiledResult) => {
+    const compiled = compiledResult && typeof compiledResult === 'object' ? compiledResult : null;
+    if (!compiled || !boardId) return;
+
+    const elfPayload = typeof compiled.elf === 'string' ? compiled.elf : '';
+    const gdbMeta = compiled.gdb && typeof compiled.gdb === 'object' ? compiled.gdb : null;
+    if (!elfPayload && !gdbMeta) return;
+
+    const artifact = {
+      boardId,
+      boardKind,
+      ts: Date.now(),
+      elf: elfPayload,
+      elfName: compiled.elfName || '',
+      firmware: compiled.hex || '',
+      artifactType: compiled.artifactType || '',
+      gdb: gdbMeta,
+    };
+
+    try {
+      localStorage.setItem(`openhw_gdb_artifact_${boardId}`, JSON.stringify(artifact));
+      localStorage.setItem('openhw_gdb_last_artifact', JSON.stringify(artifact));
+    } catch {
+      // ignore storage failures
+    }
+
+    const gdbName = gdbMeta?.gdb || 'gdb-multiarch';
+    const remoteTarget = gdbMeta?.targetRemote || 'localhost:3333';
+    const elfLabel = artifact.elfName ? ` (${artifact.elfName})` : '';
+    appendConsoleEntry('info', `GDB artifact ready for ${boardId}: ${gdbName} -> target remote ${remoteTarget}${elfLabel}`, 'debug');
+    appendConsoleEntry('info', 'Web GDB reference: https://wokwi.github.io/web-gdb/', 'debug');
+  }, [appendConsoleEntry]);
 
   const runCircuitValidation = useCallback(() => {
     try {
@@ -2500,24 +4566,76 @@ export default function SimulatorPage() {
     });
   }, []);
 
-  const pushSerialRxChunk = useCallback((chunk, boardId = 'default', source = 'sim') => {
+  const appendSerialRxChunk = useCallback((chunk, boardId = 'default', source = 'sim') => {
+    const normalizedBoardId = String(boardId || 'default');
+    const normalizedSource = String(source || 'sim');
+    const nowMs = Date.now();
+    const arbState = serialIngressArbitrationRef.current.get(normalizedBoardId) || { source: '', lastAcceptedAt: 0 };
+
+    if (!arbState.source) {
+      arbState.source = normalizedSource;
+    } else if (arbState.source !== normalizedSource) {
+      const recentlyAccepted = (nowMs - Number(arbState.lastAcceptedAt || 0)) <= 240;
+      // Keep one ingress stream active per board for a short window to avoid
+      // USB/UART mirrored duplicate output bursts from RP2040 firmware.
+      if (recentlyAccepted) {
+        return;
+      }
+      arbState.source = normalizedSource;
+    }
+
+    arbState.lastAcceptedAt = nowMs;
+    serialIngressArbitrationRef.current.set(normalizedBoardId, arbState);
+
     parseSerialForPlotter(chunk);
     const ts = getSerialTimestamp();
     setSerialHistory((prev) => {
       let next = prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
       if (next.length > 0) {
         const last = next[next.length - 1];
-        if (last.dir === 'rx' && last.boardId === boardId && last.source === source && !last.text.endsWith('\n')) {
+        if (last.dir === 'rx' && last.boardId === normalizedBoardId && last.source === normalizedSource && !last.text.endsWith('\n')) {
           next[next.length - 1] = { ...last, text: last.text + chunk };
           return next;
         }
       }
-      return [...next, { dir: 'rx', text: chunk, ts, boardId, source }];
+      return [...next, { dir: 'rx', text: chunk, ts, boardId: normalizedBoardId, source: normalizedSource }];
     });
   }, [parseSerialForPlotter]);
 
+  const pushSerialRxChunk = useCallback((chunk, boardId = 'default', source = 'sim') => {
+    if (serialPausedRef.current) {
+      const queue = serialPausedQueueRef.current;
+      queue.push({ chunk, boardId, source });
+      if (queue.length > 1000) {
+        queue.splice(0, queue.length - 1000);
+      }
+      return;
+    }
+    appendSerialRxChunk(chunk, boardId, source);
+  }, [appendSerialRxChunk]);
+
+  useEffect(() => {
+    if (serialPaused) return;
+    const queue = serialPausedQueueRef.current;
+    if (!queue.length) return;
+
+    const pending = queue.splice(0, queue.length);
+    pending.forEach((entry) => {
+      appendSerialRxChunk(entry.chunk, entry.boardId, entry.source);
+    });
+  }, [serialPaused, appendSerialRxChunk]);
+
   const pushSerialTxLine = useCallback((text, boardId = 'all', source = 'sim') => {
     setSerialHistory((prev) => [...prev, { dir: 'tx', text, ts: getSerialTimestamp(), boardId, source }]);
+  }, []);
+
+  const clearSerialMonitor = useCallback(() => {
+    setSerialHistory([]);
+    serialPlotBufferRef.current = '';
+    serialPlotLabelsRef.current = [];
+    latestParsedSerialRef.current = [];
+    serialIngressArbitrationRef.current.clear();
+    serialPausedQueueRef.current = [];
   }, []);
 
   const handleHardwareBoardChange = useCallback((nextBoardId) => {
@@ -2528,30 +4646,38 @@ export default function SimulatorPage() {
   const resolveBoardHex = useCallback(async (boardComp) => {
     if (!boardComp) throw new Error('No board selected for upload.');
     const kind = normalizeBoardKind(boardComp.type);
+    const fqbn = resolveBoardFqbnForComponent(boardComp, kind);
     const boardHex = boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
     if (typeof boardHex === 'string' && boardHex.trim()) return boardHex;
 
     const compileUnit = getBoardCompileFiles(boardComp.id);
-    const sourceCode = getBoardMainCode(boardComp.id) || code;
+    if (!compileUnit.hasMainFile) {
+      throw new Error(`No enabled .ino file found for ${boardComp.id}. Enable at least one .ino file before uploading.`);
+    }
+    const sourceCode = compileUnit.mainCode || '';
     const cacheKeyBoard = `${kind}:${boardComp.id}`;
+    const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
+    const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
     const cacheSource = [
-      compileUnit.mainCode || sourceCode,
+      sourceCode,
       ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
-      BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+      fqbn,
+      buildEngine,
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
       compiled = await compileCode({
-        code: compileUnit.mainCode || sourceCode,
+        code: sourceCode,
         files: compileUnit.files,
         sketchName: compileUnit.sketchName,
-        fqbn: BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+        fqbn,
+        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
       });
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
-  }, [code, getBoardCompileFiles, getBoardMainCode]);
+  }, [getBoardCompileFiles]);
 
   const {
     hardwareAvailablePorts,
@@ -2573,6 +4699,7 @@ export default function SimulatorPage() {
     boardComponents,
     resolveBoardHex,
     normalizeBoardKind,
+    resolveBoardFqbn: resolveBoardFqbnForComponent,
     boardFqbn: BOARD_FQBN,
     flashFirmware,
     pushSerialTxLine,
@@ -2629,67 +4756,323 @@ export default function SimulatorPage() {
 
   const handleRun = async () => {
     try {
+      if (runStartGuardRef.current || isRunning || isCompiling) {
+        appendConsoleEntry('info', 'Run is already in progress.', 'simulator');
+        return;
+      }
+
+      runStartGuardRef.current = true;
       appendConsoleEntry('info', 'Run requested.', 'simulator');
+      rp2040GdbLastLogRef.current.clear();
+      rp2040WirelessLastLogRef.current.clear();
+      rp2040UartMicroPythonBoardsRef.current.clear();
+      rp2040UartSilentWarnedBoardsRef.current.clear();
+      serialIngressArbitrationRef.current.clear();
+      serialPausedQueueRef.current = [];
+      runComponentUpdateCountsRef.current = {};
+      runPinTransitionCountsRef.current = {};
+      runLastBoardPinsRef.current = new Map();
+
       if (!runCircuitValidation()) {
         appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
+        runStartGuardRef.current = false;
         return;
       }
 
       setIsRunning(true);
       setIsCompiling(true);
+      setRunStartedAtMs(Date.now());
+      setRunDurationSec(0);
+      const parsedRunBaud = Number(serialBaudRate);
+      const selectedRunBaud = Number.isFinite(parsedRunBaud)
+        ? parsedRunBaud
+        : Number(BOARD_DEFAULT_BAUD[selectedSerialBoardKind] || BOARD_DEFAULT_BAUD.arduino_uno);
+      const selectedRunBoardId = serialBoardFilter !== 'all' && serialBoardMap.has(serialBoardFilter)
+        ? serialBoardFilter
+        : '';
       const boardHexMap = {};
+      const boardPythonMap = {};
+      const boardPythonFilesMap = {};
+      const boardRuntimeEnvMap = {};
       const boardBaudMap = {};
       const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+      const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
+      const boardsWithoutCompilableSketch = [];
       let result = null;
 
       if (programmableBoards.length > 0) {
         for (const boardComp of programmableBoards) {
           const kind = normalizeBoardKind(boardComp.type);
-          boardBaudMap[boardComp.id] = Number(BOARD_DEFAULT_BAUD[kind] || BOARD_DEFAULT_BAUD.arduino_uno);
+          const targetFqbn = resolveBoardFqbnForComponent(boardComp, kind);
+          const defaultBaud = Number(BOARD_DEFAULT_BAUD[kind] || BOARD_DEFAULT_BAUD.arduino_uno);
+          boardBaudMap[boardComp.id] = selectedRunBoardId
+            ? (boardComp.id === selectedRunBoardId ? selectedRunBaud : defaultBaud)
+            : selectedRunBaud;
 
-          const boardHex = boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
-          if (typeof boardHex === 'string' && boardHex.trim()) {
-            boardHexMap[boardComp.id] = boardHex;
-            if (!result) result = { hex: boardHex };
+          const uploadedFirmware = String(
+            resolveComponentAttrString(boardComp?.attrs, 'firmwareHex', '')
+            || resolveComponentAttrString(boardComp?.attrs, 'hex', ''),
+          ).trim();
+          if (uploadedFirmware) {
+            boardHexMap[boardComp.id] = uploadedFirmware;
+            const uploadKind = uploadedFirmware.startsWith(UF2_PAYLOAD_PREFIX) ? 'UF2' : 'HEX';
+            appendConsoleEntry(
+              'info',
+              `Using uploaded ${uploadKind} firmware for ${boardCompToDisplayName(boardComp, kind)}.`,
+              'simulator',
+            );
+            if (!result) {
+              result = {
+                hex: uploadedFirmware,
+                artifactName: normalizeFirmwareFileName('', boardComp.id, uploadedFirmware),
+              };
+            }
             continue;
           }
 
-          const sourceCode = getBoardMainCode(boardComp.id) || code;
-          const compileUnit = getBoardCompileFiles(boardComp.id);
+          const firmwareAssets = getBoardFirmwareAssets(boardComp.id);
+          const activeFilePath = String(activeCodeFile?.path || '');
+          const activeFileExt = fileExt(activeFilePath);
+          const activeFileContent = String(code || '');
+          const activeBoardFile = activeFilePath.startsWith(`project/${boardComp.id}/`) ? activeCodeFile : null;
+          const activeFileTargetsBoard = !!activeBoardFile || singleProgrammableBoardId === boardComp.id;
+          const activeBoardExt = activeBoardFile ? fileExt(activeBoardFile.path) : '';
+          const activePythonSource = activeFileExt === '.py'
+            && activeFileTargetsBoard
+            && !isFileDisabled(activeFilePath)
+            ? (activeBoardFile ? String(activeBoardFile.content || '') : activeFileContent)
+            : '';
+          const boardEnabledFiles = projectFiles
+            .filter((f) => f.path.startsWith(`project/${boardComp.id}/`))
+            .filter((f) => !isFileDisabled(f.path));
+          const boardEnabledPyFiles = boardEnabledFiles.filter((f) => fileExt(f.path) === '.py');
+          const pythonSource = activePythonSource || String(firmwareAssets.mainPy?.content || '');
+          const hasPythonSource = boardEnabledPyFiles.some((f) => String(f.content || '').trim()) || !!pythonSource.trim();
+          const activePrefersIno = activeFileExt === '.ino' && activeFileTargetsBoard;
+          const activePrefersPy = activeFileExt === '.py' && activeFileTargetsBoard;
+          const preferredMainPath = activeBoardExt === '.ino' && activeBoardFile && !isFileDisabled(activeBoardFile.path)
+            ? activeBoardFile.path : '';
+          const compileUnit = getBoardCompileFiles(boardComp.id, preferredMainPath);
+          const compileSource = useBlocklyCode
+            ? blocklyGeneratedCode
+            : (activeFileExt === '.py' && activeFileTargetsBoard
+              ? (String(activeCodeFile?.content || '') || String(code || ''))
+              : (compileUnit.mainCode || getBoardMainCode(boardComp.id) || String(code || '')));
+
+          if (kind !== 'rp2040' && !compileUnit.hasMainFile) {
+            boardsWithoutCompilableSketch.push(boardComp.id);
+            continue;
+          }
+
+          // ── RP2040: emulate UF2 on rp2040js and boot user files from flash filesystem ──
+          if (kind === 'rp2040') {
+            const configuredEnv = normalizeRp2040Env(resolveComponentAttrString(boardComp?.attrs, 'env', 'native'));
+            boardRuntimeEnvMap[boardComp.id] = configuredEnv;
+
+            const configuredMode = configuredEnv === 'native' ? 'ino' : configuredEnv;
+            const configuredBuilder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
+            const hasNativeSketch = compileUnit.hasMainFile || (activePrefersIno && !!compileSource.trim());
+            const hasExplicitPython = activePrefersPy || hasPythonSource;
+            const prefersNativeFromSyntax = /\bvoid\s+setup\s*\(|\bvoid\s+loop\s*\(|#include\s*</.test(String(compileSource || ''));
+            const selectedSourceMode = resolveRp2040SourceMode({
+              configuredMode,
+              activePrefersIno,
+              activePrefersPy,
+              hasNativeSketch,
+              hasPythonSource: hasExplicitPython,
+              prefersNativeFromSyntax,
+            });
+            const useMicroPythonPath = selectedSourceMode === 'py';
+            const useCircuitPythonPath = selectedSourceMode === 'cp';
+            const usePythonPath = useMicroPythonPath || useCircuitPythonPath;
+
+            if (selectedSourceMode === 'ino' && !hasNativeSketch) {
+              const msg = `RP2040 source mode is set to .ino for ${boardComp.id}, but no enabled .ino sketch was found.`;
+              appendConsoleEntry('warn', msg, 'simulator');
+              logSerial(msg, 'var(--orange)');
+              boardsWithoutCompilableSketch.push(boardComp.id);
+              continue;
+            }
+
+            if (usePythonPath) {
+              const runtimeEnv = useCircuitPythonPath ? 'circuitpython' : 'micropython';
+              const entryFileName = getRp2040PythonEntryFileName(runtimeEnv);
+              const firmwareEntryPy = runtimeEnv === 'circuitpython'
+                ? (firmwareAssets.pythonFiles || []).find((f) => String(f.name || '').toLowerCase() === 'code.py')
+                : firmwareAssets.mainPy;
+
+              let pyToRun = String(firmwareEntryPy?.content || '').trim() || pythonSource.trim();
+              if (!pyToRun && looksLikeMicroPythonSource(compileSource)) {
+                pyToRun = compileSource;
+              }
+              if (!pyToRun && runtimeEnv === 'micropython') {
+                pyToRun = arduinoSerialToMicroPython(compileSource, boardComp.id);
+              }
+              if (!pyToRun && runtimeEnv === 'micropython') {
+                pyToRun = arduinoBlinkToMicroPython(compileSource, boardComp.id);
+              }
+              if (!pyToRun) {
+                pyToRun = createDefaultMainCode('rp2040', boardComp.id, { rp2040Mode: runtimeEnv });
+              }
+
+              if (runtimeEnv === 'micropython') {
+                pyToRun = applyRp2040MicroPythonCompat(pyToRun);
+              }
+
+              const runtimeFiles = {};
+              boardEnabledFiles.forEach((fileObj) => {
+                const ext = fileExt(fileObj.path);
+                if (!ext) return;
+                if (ext === '.uf2') return;
+                if (ARDUINO_CODE_EXTENSIONS.has(ext)) return;
+
+                const relPath = toBoardRelativePath(boardComp.id, fileObj.path);
+                if (!relPath) return;
+
+                const fileContent = fileObj.id === activeCodeFileId
+                  ? String(code || '')
+                  : String(fileObj.content || '');
+                runtimeFiles[relPath] = fileContent;
+              });
+
+              if (!String(runtimeFiles[entryFileName] || '').trim()) {
+                runtimeFiles[entryFileName] = pyToRun;
+              }
+
+              const rp2040Firmware = firmwareAssets.uf2Payload
+                || (runtimeEnv === 'circuitpython'
+                  ? await fetchDefaultCircuitPythonUf2Payload()
+                  : await fetchDefaultMicroPythonUf2Payload());
+              boardHexMap[boardComp.id] = rp2040Firmware;
+              boardPythonMap[boardComp.id] = pyToRun;
+              boardPythonFilesMap[boardComp.id] = runtimeFiles;
+
+              const runtimeLabel = runtimeEnv === 'circuitpython' ? 'CircuitPython' : 'MicroPython';
+              appendConsoleEntry(
+                'info',
+                `RP2040 running via rp2040js + ${runtimeLabel} flash filesystem on ${boardComp.id} (env: ${configuredEnv}).`,
+                'simulator'
+              );
+              if (!result) result = { hex: rp2040Firmware || '' };
+              continue;
+            }
+
+            const nativeCompileSource = prepareRp2040SketchForSimulation(compileSource);
+            if (nativeCompileSource !== compileSource) {
+              appendConsoleEntry('info', `RP2040: routed Serial output to UART0 monitor for ${boardComp.id}.`, 'simulator');
+            }
+
+            const cacheKeyBoard = `${kind}:${boardComp.id}`;
+            const builder = configuredBuilder;
+            const cacheSource = [
+              RP2040_SIM_PROTOCOL_VERSION,
+              builder,
+              configuredMode,
+              targetFqbn,
+              nativeCompileSource,
+              ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+            ].join('\n/*__SPLIT__*/\n');
+
+            appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
+            let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
+            if (compiled) {
+              logSerial(`Using cached compilation for ${boardComp.id}...`);
+            } else {
+              logSerial(`Compiling ${boardComp.id}...`);
+              try {
+                compiled = await compileCode({
+                  code: nativeCompileSource,
+                  files: compileUnit.files,
+                  sketchName: compileUnit.sketchName,
+                  fqbn: targetFqbn,
+                  builder,
+                });
+                setCachedHex(cacheSource, cacheKeyBoard, compiled);
+              } catch (compileErr) {
+                if (isRp2040CoreMissingError(compileErr)) {
+                  appendConsoleEntry('error', `RP2040 core is not installed for ${boardComp.id}. Native .ino mode cannot run without Arduino-Pico core.`, 'simulator');
+                }
+                throw compileErr;
+              }
+            }
+
+            boardHexMap[boardComp.id] = compiled.hex;
+            logCompileSummary(compiled, boardComp, kind);
+            registerGdbArtifact(boardComp.id, kind, compiled);
+            appendConsoleEntry('info', `RP2040 native firmware compiled and running on ${boardComp.id}.`, 'simulator');
+            if (!result) result = compiled;
+            continue;
+          }
+
           const cacheKeyBoard = `${kind}:${boardComp.id}`;
           const cacheSource = [
-            compileUnit.mainCode || sourceCode,
+            compileSource,
+            targetFqbn,
             ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
           ].join('\n/*__SPLIT__*/\n');
 
+          appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
           let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
           if (compiled) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
-            compiled = await compileCode({
-              code: compileUnit.mainCode || sourceCode,
-              files: compileUnit.files,
-              sketchName: compileUnit.sketchName,
-            });
-            setCachedHex(cacheSource, cacheKeyBoard, compiled);
+            try {
+              compiled = await compileCode({
+                code: compileSource,
+                files: compileUnit.files,
+                sketchName: compileUnit.sketchName,
+                fqbn: targetFqbn,
+              });
+              setCachedHex(cacheSource, cacheKeyBoard, compiled);
+            } catch (compileErr) {
+              throw compileErr;
+            }
           }
 
           boardHexMap[boardComp.id] = compiled.hex;
+          logCompileSummary(compiled, boardComp, kind);
+          registerGdbArtifact(boardComp.id, kind, compiled);
           if (!result) result = compiled;
         }
       }
 
+      if (!result && programmableBoards.length > 0) {
+        const blockedMsg = boardsWithoutCompilableSketch.length > 0
+          ? `Run blocked: no enabled .ino sketch found for ${boardsWithoutCompilableSketch.join(', ')}.`
+          : 'Run blocked: no firmware was produced for programmable boards.';
+        appendConsoleEntry('warn', blockedMsg, 'simulator');
+        logSerial(blockedMsg, 'var(--orange)');
+        setIsCompiling(false);
+        setIsRunning(false);
+        setRunStartedAtMs(null);
+        setRunDurationSec(0);
+        runStartGuardRef.current = false;
+        return;
+      }
+
       if (!result) {
-        const cached = await getCachedHex(code, board);
+        const finalCode = useBlocklyCode ? blocklyGeneratedCode : code;
+        const fallbackKind = normalizeBoardKind(board);
+        const engine = fallbackKind === 'rp2040' ? 'arduino-pico' : 'arduino-cli';
+        const cacheStr = [finalCode, engine].join('\n/*__SPLIT__*/\n');
+        appendConsoleEntry('info', `Compiling for ${boardKindToDisplayName(fallbackKind)}...`, 'simulator');
+        
+        const cached = await getCachedHex(cacheStr, board);
         if (cached) {
           logSerial('Using locally cached compilation (offline cache)...');
           result = cached;
         } else {
           logSerial('Compiling...');
-          result = await compileCode(code);
-          setCachedHex(code, board, result);
+          result = await compileCode({
+            code: finalCode,
+            fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
+          });
+          setCachedHex(cacheStr, board, result);
+          registerGdbArtifact(board || 'default', fallbackKind, result);
         }
+        logCompileSummary(result, null, fallbackKind);
       }
 
       lastCompiledRef.current = { code, board, result };
@@ -2700,9 +5083,289 @@ export default function SimulatorPage() {
       const worker = new Worker(new URL('../../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
       workerRef.current = worker;
 
-      worker.onmessage = (event) => {
+      worker.onmessage = async (event) => {
         const msg = event.data;
+        if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
+          const incomingBoardId = String(msg.boardId || '').trim();
+          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
+          const resolvedBoardId = hasKnownBoard
+            ? incomingBoardId
+            : (singleBoardFallback || incomingBoardId || 'default');
+
+          const metrics = msg.metrics || {};
+          const reason = String(msg.reason || 'tick');
+          const pc = Number(metrics.pc);
+          const sp = Number(metrics.sp);
+          const gp20 = !!metrics.gp20;
+          const gp25 = !!metrics.gp25;
+          const tx = Number(metrics.serialTxBytes || 0);
+          const rx = Number(metrics.serialRxBytes || 0);
+          const inq = Number(metrics.serialInputQueue || 0);
+          const cycles = Number(metrics.cycles || 0);
+          const steps = Number(metrics.stepCount || 0);
+          const stall = Number(metrics.pcStallTicks || 0);
+          const running = !!metrics.running;
+          const entry = metrics.entry && typeof metrics.entry === 'object' ? metrics.entry : null;
+          const ledId = String(metrics.ledId || '').trim();
+          const ledOn = typeof metrics.ledOn === 'boolean' ? metrics.ledOn : null;
+          const ledAnodeV = Number.isFinite(Number(metrics.ledAnodeV)) ? Number(metrics.ledAnodeV) : null;
+          const ledCathodeV = Number.isFinite(Number(metrics.ledCathodeV)) ? Number(metrics.ledCathodeV) : null;
+          const ledDeltaV = Number.isFinite(Number(metrics.ledDeltaV)) ? Number(metrics.ledDeltaV) : null;
+          const primask = !!metrics.primask;
+          const stepsSinceLastEmit = Number(metrics.stepsSinceLastEmit || 0);
+
+          const pcHex = Number.isFinite(pc) ? `0x${(pc >>> 0).toString(16)}` : 'n/a';
+          const spHex = Number.isFinite(sp) ? `0x${(sp >>> 0).toString(16)}` : 'n/a';
+          const entryVectorHex = Number.isFinite(Number(entry?.vectorBase))
+            ? `0x${(Number(entry.vectorBase) >>> 0).toString(16)}`
+            : 'n/a';
+          const entryResolvedHex = Number.isFinite(Number(entry?.resolvedPC))
+            ? `0x${(Number(entry.resolvedPC) >>> 0).toString(16)}`
+            : 'n/a';
+
+          const debugBoardComp = components.find((c) => c.id === resolvedBoardId)
+            || boardComponents.find((b) => b.id === resolvedBoardId);
+          const isRp2040DebugBoard = normalizeBoardKind(debugBoardComp?.type || '') === 'rp2040';
+          const startupFallbackEntry = reason === 'start' && !!entry?.usedFallback;
+          if (startupFallbackEntry && isRp2040DebugBoard) {
+            appendConsoleEntry('warn', `RP2040 startup vector fallback detected on ${resolvedBoardId}; automatic recovery is disabled in deterministic mode.`, 'simulator');
+            logSerial(`RP2040 startup fallback on ${resolvedBoardId}. Automatic recovery is disabled in deterministic mode.`, 'var(--orange)');
+          }
+
+          const isUartMicroPythonBoard = rp2040UartMicroPythonBoardsRef.current.has(resolvedBoardId);
+          const queueDrained = inq <= 0;
+          const shouldWarnUartSilent = reason === 'tick'
+            && isUartMicroPythonBoard
+            && tx === 0
+            && rx >= 512
+            && (queueDrained || rx >= 2048)
+            && stall >= 3
+            && cycles >= 120_000_000
+            && !rp2040UartSilentWarnedBoardsRef.current.has(resolvedBoardId);
+
+          if (shouldWarnUartSilent) {
+            rp2040UartSilentWarnedBoardsRef.current.add(resolvedBoardId);
+            appendConsoleEntry(
+              'warn',
+              `RP2040 MicroPython UART injection appears silent on ${resolvedBoardId} (tx=0, rx=${rx}, inq=${inq}, stall=${stall}). Check script startup logs and wiring.`,
+              'simulator'
+            );
+            logSerial(
+              `RP2040 ${resolvedBoardId}: UART injection is silent (tx=0, rx=${rx}, inq=${inq}). Verify script startup and board wiring.`,
+              'var(--orange)'
+            );
+          }
+
+          const prev = rp2040DebugLastLogRef.current.get(resolvedBoardId) || null;
+          const now = Date.now();
+          const changed = !prev
+            || prev.pcHex !== pcHex
+            || prev.gp20 !== gp20
+            || prev.gp25 !== gp25
+            || prev.tx !== tx
+            || prev.rx !== rx
+            || prev.ledOn !== ledOn
+            || prev.ledDeltaV !== ledDeltaV
+            || reason !== 'tick';
+
+          const highPins = Array.isArray(metrics.highPins) ? metrics.highPins : [];
+          const highPinsLabel = highPins.length > 0
+            ? `${highPins.slice(0, 12).join(',')}${highPins.length > 12 ? ',+' : ''}`
+            : '-';
+          const pinBitmap = typeof metrics.pinBitmap === 'string' ? metrics.pinBitmap : '';
+
+          if (changed || now - (prev?.ts || 0) > 2500) {
+            const line = [
+              `RP2040 dbg ${resolvedBoardId}`,
+              `reason=${reason}`,
+              `run=${running ? '1' : '0'}`,
+              `pc=${pcHex}`,
+              `sp=${spHex}`,
+              `cyc=${cycles}`,
+              `steps=${steps}`,
+              `gp20=${gp20 ? 'H' : 'L'}`,
+              `gp25=${gp25 ? 'H' : 'L'}`,
+              `uart=${metrics.activeUart ?? 'n/a'}`,
+              `usb=${metrics.usbCdcReady ? '1' : '0'}`,
+              `tx=${tx}`,
+              `rx=${rx}`,
+              `inq=${inq}`,
+              `stall=${stall}`,
+              `pri=${primask ? '1' : '0'}`,
+              `dSteps=${stepsSinceLastEmit}`,
+              `high=${highPinsLabel}`,
+              pinBitmap ? `pins=${pinBitmap}` : '',
+              entry ? `entry=${entryVectorHex}->${entryResolvedHex}${entry.usedFallback ? ':fallback' : ''}${entry.strategy ? `:${entry.strategy}` : ''}` : '',
+              entry && Number.isFinite(Number(entry.probe0100SP))
+                ? `probe0100=sp:0x${(Number(entry.probe0100SP) >>> 0).toString(16)},pc:0x${(Number(entry.probe0100PC) >>> 0).toString(16)}`
+                : '',
+              entry && Number.isFinite(Number(entry.probe0000SP))
+                ? `probe0000=sp:0x${(Number(entry.probe0000SP) >>> 0).toString(16)},pc:0x${(Number(entry.probe0000PC) >>> 0).toString(16)}`
+                : '',
+              ledId ? `led=${ledId}:${ledOn === null ? 'n/a' : (ledOn ? 'on' : 'off')}` : '',
+              ledAnodeV !== null ? `vA=${ledAnodeV.toFixed(2)}` : '',
+              ledCathodeV !== null ? `vK=${ledCathodeV.toFixed(2)}` : '',
+              ledDeltaV !== null ? `dV=${ledDeltaV.toFixed(2)}` : '',
+              metrics.lastGpioPin ? `lastPin=${metrics.lastGpioPin}` : '',
+            ].filter(Boolean).join(' | ');
+
+            const warn = reason === 'fault' || stall > 180;
+            appendConsoleEntry(warn ? 'warn' : 'info', line, 'debug');
+            rp2040DebugLastLogRef.current.set(resolvedBoardId, {
+              ts: now,
+              pcHex,
+              gp20,
+              gp25,
+              tx,
+              rx,
+              ledOn,
+              ledDeltaV,
+            });
+          }
+
+          return;
+        }
+        if (msg.type === 'debug' && msg.category === 'rp2040-wireless-stub') {
+          const incomingBoardId = String(msg.boardId || '').trim();
+          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
+          const resolvedBoardId = hasKnownBoard
+            ? incomingBoardId
+            : (singleBoardFallback || incomingBoardId || 'default');
+
+          const wireless = msg.wireless && typeof msg.wireless === 'object' ? msg.wireless : {};
+          const mode = String(wireless.mode || 'compat-stub');
+          const status = String(wireless.status || (mode === 'off' ? 'off' : 'booting'));
+          const connected = !!wireless.connected;
+          const ssid = String(wireless.ssid || '');
+          const ip = String(wireless.ip || '');
+          const note = String(wireless.note || '');
+
+          setOopStates((prev) => ({
+            ...prev,
+            [resolvedBoardId]: {
+              ...(prev[resolvedBoardId] || {}),
+              wirelessMode: mode,
+              wirelessStatus: status,
+              wirelessConnected: connected,
+              wirelessSsid: ssid,
+              wirelessIp: ip,
+              wirelessNote: note,
+            },
+          }));
+
+          const signature = `${mode}:${status}:${connected ? '1' : '0'}:${ssid}:${ip}`;
+          const lastSignature = rp2040WirelessLastLogRef.current.get(resolvedBoardId);
+          if (lastSignature !== signature) {
+            const line = [
+              `Pico W wireless ${resolvedBoardId}`,
+              `mode=${mode}`,
+              `status=${status}`,
+              `connected=${connected ? '1' : '0'}`,
+              `ssid=${ssid || '-'}`,
+              `ip=${ip || '-'}`,
+              note,
+            ].filter(Boolean).join(' | ');
+            appendConsoleEntry(connected || status === 'off' ? 'info' : 'warn', line, 'debug');
+            rp2040WirelessLastLogRef.current.set(resolvedBoardId, signature);
+          }
+          return;
+        }
+        if (msg.type === 'debug' && msg.category === 'rp2040-gdb') {
+          const incomingBoardId = String(msg.boardId || '').trim();
+          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
+          const resolvedBoardId = hasKnownBoard
+            ? incomingBoardId
+            : (singleBoardFallback || incomingBoardId || 'default');
+
+          const gdb = msg.gdb && typeof msg.gdb === 'object' ? msg.gdb : {};
+          const status = String(gdb.status || 'unknown');
+          const reason = String(msg.reason || status);
+          const detail = String(gdb.detail || gdb.lastError || '').trim();
+          const signature = `${reason}:${status}:${detail}`;
+          const lastSignature = rp2040GdbLastLogRef.current.get(resolvedBoardId);
+
+          if (lastSignature !== signature) {
+            const line = [
+              `RP2040 GDB ${resolvedBoardId}`,
+              `status=${status}`,
+              `reason=${reason}`,
+              detail,
+            ].filter(Boolean).join(' | ');
+
+            const level = (status === 'error' || status === 'closed') ? 'warn' : 'info';
+            appendConsoleEntry(level, line, 'debug');
+            rp2040GdbLastLogRef.current.set(resolvedBoardId, signature);
+          }
+          return;
+        }
+        if (msg.type === 'sync_heartbeat') {
+          if (!rp2040DebugTelemetryEnabled) {
+            return;
+          }
+
+          const boardId = String(msg.boardId || 'default').trim() || 'default';
+          const frameId = Number(msg.frameId || 0);
+
+          const renderPayload = {
+            pins: renderPinsByBoardRef.current[boardId] || {},
+            analog: renderAnalogByBoardRef.current[boardId] || [],
+            components: renderComponentsByBoardRef.current[boardId] || {},
+            neopixels: renderNeopixelsByBoardRef.current[boardId] || {},
+          };
+
+          const renderedHash = computeRenderSyncHash(renderPayload);
+          workerRef.current?.postMessage({
+            type: 'RENDER_REPORT',
+            boardId,
+            frameId,
+            hash: renderedHash,
+            renderedAt: Date.now(),
+          });
+          return;
+        }
+        if (msg.type === 'sync_fault') {
+          const boardId = String(msg.boardId || 'default').trim() || 'default';
+          appendConsoleEntry(
+            'warn',
+            `SYNC_FAULT ${boardId}: expected=${String(msg.expectedHash || '')} rendered=${String(msg.renderedHash || '')} mismatches=${Number(msg.mismatches || 0)}`,
+            'simulator'
+          );
+          return;
+        }
+        if (msg.type === 'fault') {
+          const boardId = String(msg.boardId || '');
+          const pcHex = Number.isFinite(Number(msg.pc))
+            ? `0x${Number(msg.pc).toString(16)}`
+            : 'unknown';
+          appendConsoleEntry(
+            'error',
+            `RP2040 runtime fault on ${msg.boardId || 'board'} at ${pcHex}: ${msg.reason || 'invalid execution state'}`,
+            'simulator'
+          );
+          logSerial('Simulation stopped due to RP2040 runtime fault.', 'var(--red)');
+          handleStop();
+          return;
+        }
         if (msg.type === 'state' && msg.pins) {
+          const boardIdKey = String(msg.boardId || 'default');
+          const prevPins = runLastBoardPinsRef.current.get(boardIdKey) || {};
+          Object.keys(msg.pins).forEach((pinId) => {
+            const prevValue = !!prevPins[pinId];
+            const nextValue = !!msg.pins[pinId];
+            if (prevValue !== nextValue) {
+              const key = `${boardIdKey}:${pinId}`;
+              runPinTransitionCountsRef.current[key] = (runPinTransitionCountsRef.current[key] || 0) + 1;
+            }
+          });
+          runLastBoardPinsRef.current.set(boardIdKey, { ...msg.pins });
+          renderPinsByBoardRef.current[boardIdKey] = { ...msg.pins };
+          if (Object.prototype.hasOwnProperty.call(msg, 'analog')) {
+            renderAnalogByBoardRef.current[boardIdKey] = Array.isArray(msg.analog) ? [...msg.analog] : msg.analog;
+          }
+
           setPinStates(msg.pins);
           // Push to plotData history
           setPlotData(prev => {
@@ -2718,9 +5381,25 @@ export default function SimulatorPage() {
           });
         }
         if (msg.type === 'state' && msg.neopixels) {
+          const boardIdKey = String(msg.boardId || 'default');
+          renderNeopixelsByBoardRef.current[boardIdKey] = msg.neopixels;
           setNeopixelData(msg.neopixels);
         }
         if (msg.type === 'state' && msg.components) {
+          const boardIdKey = String(msg.boardId || 'default');
+          const boardComponentState = {
+            ...(renderComponentsByBoardRef.current[boardIdKey] || {}),
+          };
+
+          msg.components.forEach((c) => {
+            const compId = String(c?.id || '').trim();
+            if (!compId) return;
+            runComponentUpdateCountsRef.current[compId] = (runComponentUpdateCountsRef.current[compId] || 0) + 1;
+            boardComponentState[compId] = c.state;
+          });
+
+          renderComponentsByBoardRef.current[boardIdKey] = boardComponentState;
+
           setOopStates(prev => {
             const next = { ...prev };
             msg.components.forEach(c => {
@@ -2730,7 +5409,13 @@ export default function SimulatorPage() {
           });
         }
         if (msg.type === 'serial') {
-          pushSerialRxChunk(msg.data, msg.boardId || 'default', 'sim');
+          const incomingBoardId = String(msg.boardId || '').trim();
+          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
+          const resolvedBoardId = hasKnownBoard
+            ? incomingBoardId
+            : (singleBoardFallback || incomingBoardId || 'default');
+          pushSerialRxChunk(msg.data, resolvedBoardId, msg.source || 'sim');
         }
       };
 
@@ -2768,12 +5453,26 @@ export default function SimulatorPage() {
         components: components,
         customLogics: customLogics,
         boardHexMap: Object.keys(boardHexMap).length > 0 ? boardHexMap : undefined,
+        boardPythonMap: Object.keys(boardPythonMap).length > 0 ? boardPythonMap : undefined,
+        boardPythonFilesMap: Object.keys(boardPythonFilesMap).length > 0 ? boardPythonFilesMap : undefined,
+        boardRuntimeEnvMap: Object.keys(boardRuntimeEnvMap).length > 0 ? boardRuntimeEnvMap : undefined,
         boardBaudMap: Object.keys(boardBaudMap).length > 0 ? boardBaudMap : undefined,
-        baudRate: Number(serialBaudRate || BOARD_DEFAULT_BAUD[selectedSerialBoardKind] || BOARD_DEFAULT_BAUD.arduino_uno),
+        baudRate: selectedRunBaud,
+        debugRp2040: rp2040DebugTelemetryEnabled,
+        debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
       });
+
+      runStartGuardRef.current = false;
     } catch (err) {
+      runStartGuardRef.current = false;
+      rp2040GdbLastLogRef.current.clear();
+      rp2040WirelessLastLogRef.current.clear();
+      rp2040UartMicroPythonBoardsRef.current.clear();
+      rp2040UartSilentWarnedBoardsRef.current.clear();
       setIsRunning(false);
       setIsCompiling(false);
+      setRunStartedAtMs(null);
+      setRunDurationSec(0);
       appendConsoleEntry('error', `Run failed: ${err?.message || 'Unknown error'}`, 'simulator');
       console.error(err);
       alert(err.message);
@@ -2781,6 +5480,66 @@ export default function SimulatorPage() {
   };
 
   const handleStop = () => {
+    const wasRunning = isRunning;
+    runStartGuardRef.current = false;
+    rp2040GdbLastLogRef.current.clear();
+    rp2040WirelessLastLogRef.current.clear();
+    rp2040UartMicroPythonBoardsRef.current.clear();
+    rp2040UartSilentWarnedBoardsRef.current.clear();
+
+    if (wasRunning) {
+      const componentSummary = Object.entries(runComponentUpdateCountsRef.current)
+        .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+        .slice(0, 10)
+        .map(([id, count]) => `${id}:${count}`);
+      const pinSummary = Object.entries(runPinTransitionCountsRef.current)
+        .sort((a, b) => Number(b[1] || 0) - Number(a[1] || 0))
+        .slice(0, 12)
+        .map(([id, count]) => `${id}:${count}`);
+
+      if (componentSummary.length > 0) {
+        appendConsoleEntry('info', `Runtime verification (component updates): ${componentSummary.join(', ')}`, 'simulator');
+      }
+      if (pinSummary.length > 0) {
+        appendConsoleEntry('info', `Runtime verification (pin transitions): ${pinSummary.join(', ')}`, 'simulator');
+      }
+      if (componentSummary.length === 0 && pinSummary.length === 0) {
+        appendConsoleEntry('warn', 'Runtime verification: no component updates or pin transitions detected.', 'simulator');
+      }
+    }
+
+    runComponentUpdateCountsRef.current = {};
+    runPinTransitionCountsRef.current = {};
+    runLastBoardPinsRef.current = new Map();
+    renderPinsByBoardRef.current = {};
+    renderAnalogByBoardRef.current = {};
+    renderComponentsByBoardRef.current = {};
+    renderNeopixelsByBoardRef.current = {};
+
+    const neopixelOffStates = {};
+    const neopixelOffPixels = {};
+    components.forEach((comp) => {
+      if (!/(neopixel|ws2812|ws2821)/i.test(String(comp?.type || ''))) return;
+
+      const rows = Math.max(1, Number.parseInt(String(comp?.attrs?.rows ?? '8'), 10) || 1);
+      const cols = Math.max(1, Number.parseInt(String(comp?.attrs?.cols ?? '8'), 10) || 1);
+      const pixelCount = rows * cols;
+      const attrsState = (comp?.attrs && typeof comp.attrs === 'object') ? comp.attrs : {};
+
+      neopixelOffStates[comp.id] = {
+        ...attrsState,
+        rows: String(rows),
+        cols: String(cols),
+        pixels: new Array(pixelCount).fill(0),
+      };
+
+      const pixelTriples = [];
+      for (let index = 0; index < pixelCount; index++) {
+        pixelTriples.push([Math.floor(index / cols), index % cols, { r: 0, g: 0, b: 0 }]);
+      }
+      neopixelOffPixels[comp.id] = pixelTriples;
+    });
+
     if (workerRef.current) {
       workerRef.current.postMessage({ type: 'STOP' });
       workerRef.current.terminate();
@@ -2789,9 +5548,11 @@ export default function SimulatorPage() {
     setIsRunning(false);
     setIsCompiling(false);
     setIsPaused(false);
+    setRunStartedAtMs(null);
+    setRunDurationSec(0);
     setPinStates({});
-    setNeopixelData({});
-    setOopStates({});
+    setNeopixelData(neopixelOffPixels);
+    setOopStates(neopixelOffStates);
     setSerialHistory([]);
     setPlotData([]);
     setSerialPaused(false);
@@ -2799,8 +5560,22 @@ export default function SimulatorPage() {
     serialPlotBufferRef.current = '';
     serialPlotLabelsRef.current = [];
     latestParsedSerialRef.current = [];
+    serialIngressArbitrationRef.current.clear();
+    serialPausedQueueRef.current = [];
     appendConsoleEntry('info', 'Simulation stopped.', 'simulator');
   };
+
+  useEffect(() => {
+    if (!isRunning || !runStartedAtMs) return;
+
+    const updateElapsed = () => {
+      setRunDurationSec(Math.max(0, (Date.now() - runStartedAtMs) / 1000));
+    };
+
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 250);
+    return () => clearInterval(timer);
+  }, [isRunning, runStartedAtMs]);
 
   useEffect(() => {
     if (!hardwareStatus) return;
@@ -2831,27 +5606,32 @@ export default function SimulatorPage() {
     }
   };
 
-  const sendSerialInput = useCallback(() => {
-    const txt = serialInput.trim();
-    if (!txt) return;
+  const sendSerialInput = useCallback((targetBoardOverride) => {
+    const txt = String(serialInput || '');
+    if (!txt.trim()) return;
+    const lineEnding = SERIAL_LINE_ENDINGS[serialLineEnding] ?? '\n';
+    const payload = txt + lineEnding;
+
+    const requestedBoard = targetBoardOverride || serialBoardFilter;
+    const targetBoardId = requestedBoard !== 'all' ? requestedBoard : undefined;
 
     if (workerRef.current && isRunning) {
       workerRef.current.postMessage({
         type: 'SERIAL_INPUT',
-        data: txt + '\n',
-        targetBoardId: serialBoardFilter !== 'all' ? serialBoardFilter : undefined,
+        data: payload,
+        targetBoardId,
         baudRate: serialBaudRate,
       });
-      pushSerialTxLine(txt, serialBoardFilter !== 'all' ? serialBoardFilter : 'all', 'sim');
+      pushSerialTxLine(txt, targetBoardId || 'all', 'sim');
       setSerialInput('');
       return;
     }
 
     if (hardwareConnected) {
-      const targetBoard = serialBoardFilter !== 'all'
-        ? serialBoardFilter
+      const targetBoard = targetBoardId
+        ? targetBoardId
         : (hardwareSerialTargetRef.current || hardwareBoardId || 'hardware');
-      sendHardwareSerialLine(txt, targetBoard)
+      sendHardwareSerialLine(payload, targetBoard, txt)
         .then(() => setSerialInput(''))
         .catch((err) => {
           console.error('[WebSerial] TX failed:', err);
@@ -2861,7 +5641,15 @@ export default function SimulatorPage() {
     }
 
     alert('Run simulator or connect hardware serial before sending data.');
-  }, [serialInput, workerRef, isRunning, serialBoardFilter, serialBaudRate, pushSerialTxLine, hardwareConnected, hardwareBoardId, sendHardwareSerialLine]);
+  }, [serialInput, serialLineEnding, workerRef, isRunning, serialBoardFilter, serialBaudRate, pushSerialTxLine, hardwareConnected, hardwareBoardId, sendHardwareSerialLine]);
+
+  const openComponentEditor = useCallback(() => {
+    try {
+      navigate('/component-editor');
+    } catch (_) {
+      window.location.assign('/component-editor');
+    }
+  }, [navigate]);
 
   // ── PNG Export ────────────────────────────────────────────────────────────
   const downloadPng = async () => {
@@ -2965,6 +5753,7 @@ export default function SimulatorPage() {
 
       let circuitCanvas;
       try {
+        const html2canvas = await getHtml2canvas();
         circuitCanvas = await html2canvas(canvasEl, {
           backgroundColor: '#070b14',
           scale: SCALE,
@@ -3030,16 +5819,19 @@ export default function SimulatorPage() {
       ctx.fillText('Generated by OpenHW-Studio', CW - 240 * SCALE, CH - 8 * SCALE);
 
       // 3. Encode FULL metadata (no truncation) for machine-readable round-trip
-      const fullMetadata = {
+      const fullMetadata = buildProjectPayload({
         board,
-        components: components.map(c => ({ id: c.id, type: c.type, label: c.label, x: c.x, y: c.y, w: c.w, h: c.h, attrs: c.attrs })),
-        connections: wires.map(w => ({ id: w.id, from: w.from, to: w.to, color: w.color, waypoints: w.waypoints || [], isBelow: w.isBelow || false, fromLabel: w.fromLabel || '', toLabel: w.toLabel || '' })),
+        components,
+        wires,
         code,
+        blocklyXml,
+        blocklyGeneratedCode,
+        useBlocklyCode,
         projectFiles,
         openCodeTabs,
         activeCodeFileId,
-        exported: new Date().toISOString(),
-      };
+        exportedAt: new Date().toISOString(),
+      });
       const MARKER = '\x00OPENHW_META\x00';
       const jsonPayload = MARKER + JSON.stringify(fullMetadata);
 
@@ -3202,26 +5994,13 @@ export default function SimulatorPage() {
         }
       };
 
-      // DC Motor (TT Gear Motor)
+      // DC Motor
       SYMS['wokwi-motor'] = {
-        w: 100, h: 50, refPrefix: 'M',
-        // Schematic Pins mapped from manifest terminal distances
-        pins: { '1': { dx: 0, dy: 15 }, '2': { dx: 0, dy: 35 } },
+        w: 60, h: 52, refPrefix: 'M',
+        pins: { '1': { dx: 0, dy: 26 }, '2': { dx: 60, dy: 26 } },
         draw(x, y, comp, ref) {
-          return [
-            // Rear housing
-            bx(x, y + 5, 20, 40, undefined, 2),
-            // Yellow Body
-            bx(x + 20, y + 5, 60, 40, undefined, 2),
-            `<rect x="${x + 25}" y="${y + 10}" width="10" height="30" rx="2" fill="none" stroke="#1a1a1a" stroke-width="2"/>`,
-            `<rect x="${x + 65}" y="${y + 10}" width="10" height="30" rx="2" fill="none" stroke="#1a1a1a" stroke-width="2"/>`,
-            // Shaft
-            bx(x + 80, y + 18, 12, 14, undefined, 2),
-            // Tires Outline
-            `<rect x="${x + 60}" y="${y - 10}" width="15" height="70" rx="5" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-dasharray="2,2"/>`,
-            tx(x + 50, y + 30, 'M', 18, 'middle', true, '#1a1a1a', 'sans-serif', 'bold'),
-            tx(x + 50, y + 65, ref, 9, 'middle', true)
-          ].join('');
+          return [ln(x, y + 26, x + 8, y + 26), circ(x + 30, y + 26, 18), tx(x + 30, y + 30, 'M', 14, 'middle', true, '#1a1a1a', 'sans-serif'),
+          ln(x + 52, y + 26, x + 60, y + 26), tx(x + 30, y + 56, ref, 9, 'middle', true)].join('');
         }
       };
 
@@ -3522,106 +6301,162 @@ export default function SimulatorPage() {
   // ── PNG Import ────────────────────────────────────────────────────────────
   const importFileRef = useRef(null);
 
-  const importPng = (file) => {
-    if (!file || !file.name.toLowerCase().endsWith('.png')) {
-      alert('Please select a valid OpenHW-Studio PNG file.');
+  const applyImportedProjectMeta = (meta, sourceLabel = 'Import') => {
+    const importedComponents = Array.isArray(meta?.components) ? meta.components : [];
+    const importedConnections = Array.isArray(meta?.connections)
+      ? meta.connections
+      : (Array.isArray(meta?.wires) ? meta.wires : []);
+    const { components: normalizedComponents, wires: normalizedConnections } = normalizeImportedCircuitData(importedComponents, importedConnections);
+
+    const hasExisting = components.length > 0 || wires.length > 0;
+    if (hasExisting && !window.confirm(`Import will replace your current circuit (${components.length} components, ${wires.length} wires). Continue?`)) {
       return;
     }
+
+    saveHistory();
+    if (meta?.board) setBoard(meta.board);
+    if (Object.prototype.hasOwnProperty.call(meta || {}, 'code')) setCode(String(meta.code || ''));
+    if (Object.prototype.hasOwnProperty.call(meta || {}, 'blocklyXml')) setBlocklyXml(String(meta.blocklyXml || ''));
+    if (Object.prototype.hasOwnProperty.call(meta || {}, 'blocklyGeneratedCode')) setBlocklyGeneratedCode(String(meta.blocklyGeneratedCode || ''));
+    if (Object.prototype.hasOwnProperty.call(meta || {}, 'useBlocklyCode')) setUseBlocklyCode(!!meta.useBlocklyCode);
+
+    setComponents(normalizedComponents);
+    setWires(normalizedConnections);
+
+    const importedBoards = normalizedComponents.filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+    let normalizedFiles = normalizeProjectFiles(Array.isArray(meta?.projectFiles) ? meta.projectFiles : []);
+
+    // Backward compatibility: older exports stored only top-level `code`.
+    if (normalizedFiles.length === 0 && typeof meta?.code === 'string' && meta.code.trim()) {
+      if (importedBoards.length > 0) {
+        normalizedFiles = importedBoards.map((bc, idx) => {
+          const boardKind = normalizeBoardKind(bc.type);
+          const rp2040Mode = boardKind === 'rp2040'
+            ? normalizeRp2040Env(resolveComponentAttrString(bc?.attrs, 'env', 'native'))
+            : 'native';
+          const fileName = getDefaultMainFileName(boardKind, bc.id, { rp2040Mode });
+          const path = `project/${bc.id}/${fileName}`;
+          return {
+            id: path,
+            path,
+            name: fileName,
+            kind: 'code',
+            boardId: bc.id,
+            boardKind,
+            content: idx === 0 ? meta.code : createDefaultMainCode(boardKind, bc.id, { rp2040Mode }),
+            dirty: false,
+          };
+        });
+      }
+    }
+
+    if (normalizedFiles.length > 0 && typeof meta?.code === 'string' && meta.code.trim()) {
+      const codeFileIdx = normalizedFiles.findIndex((f) => f.kind === 'code' || /\.(ino|h|hpp|c|cpp|py)$/i.test(f.name || f.path || ''));
+      const hasCodeContent = normalizedFiles.some((f) => {
+        if (!(f.kind === 'code' || /\.(ino|h|hpp|c|cpp|py)$/i.test(f.name || f.path || ''))) return false;
+        return String(f.content || '').trim().length > 0;
+      });
+      if (!hasCodeContent && codeFileIdx >= 0) {
+        const target = normalizedFiles[codeFileIdx];
+        normalizedFiles[codeFileIdx] = { ...target, content: meta.code };
+      }
+    }
+
+    normalizedFiles = normalizeProjectFiles(normalizedFiles);
+    const normalizedTabs = normalizeOpenCodeTabs(Array.isArray(meta?.openCodeTabs) ? meta.openCodeTabs : [], normalizedFiles);
+    const preferredActive = typeof meta?.activeCodeFileId === 'string' ? meta.activeCodeFileId.trim() : '';
+    const activeId = normalizedFiles.some((f) => f.id === preferredActive)
+      ? preferredActive
+      : (normalizedTabs[0] || normalizedFiles[0]?.id || '');
+
+    setProjectFiles(normalizedFiles);
+    setOpenCodeTabs(normalizedTabs);
+    setActiveCodeFileId(activeId);
+
+    syncNextIds(normalizedComponents, normalizedConnections);
+    setSelected(null);
+    setWireStart(null);
+    lastCompiledRef.current = null;
+    appendConsoleEntry('info', `${sourceLabel} imported: ${normalizedComponents.length} components, ${normalizedConnections.length} connections.`, 'simulator');
+  };
+
+  const importPng = (file) => {
+    if (!file) return;
+    if (isRunning || isCompiling) {
+      alert('Stop the current simulation before importing a project file.');
+      if (importFileRef.current) importFileRef.current.value = '';
+      return;
+    }
+
+    const fileName = String(file.name || '').toLowerCase();
+    const isPng = fileName.endsWith('.png');
+    const isJson = fileName.endsWith('.json');
+
+    if (!isPng && !isJson) {
+      alert('Please select an OpenHW-Studio PNG or JSON file.');
+      if (importFileRef.current) importFileRef.current.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const bytes = new Uint8Array(e.target.result);
-        const MARKER = '\x00OPENHW_META\x00';
-        const markerBytes = new TextEncoder().encode(MARKER);
+        if (isPng) {
+          const bytes = new Uint8Array(e.target.result);
+          const marker = '\x00OPENHW_META\x00';
+          const markerBytes = new TextEncoder().encode(marker);
 
-        // Search full payload from the end so very large metadata remains importable.
-        let markerByteIdx = -1;
-        for (let i = bytes.length - markerBytes.length; i >= 0; i--) {
-          let ok = true;
-          for (let j = 0; j < markerBytes.length; j++) {
-            if (bytes[i + j] !== markerBytes[j]) {
-              ok = false;
+          // Search payload marker from the end so very large metadata remains importable.
+          let markerByteIdx = -1;
+          for (let i = bytes.length - markerBytes.length; i >= 0; i--) {
+            let ok = true;
+            for (let j = 0; j < markerBytes.length; j++) {
+              if (bytes[i + j] !== markerBytes[j]) {
+                ok = false;
+                break;
+              }
+            }
+            if (ok) {
+              markerByteIdx = i;
               break;
             }
           }
-          if (ok) {
-            markerByteIdx = i;
-            break;
-          }
-        }
 
-        if (markerByteIdx === -1) {
-          alert('This PNG does not contain OpenHW-Studio circuit data.\nOnly PNGs exported from this simulator can be imported.');
+          if (markerByteIdx === -1) {
+            alert('This PNG does not contain OpenHW-Studio circuit data.\nOnly PNGs exported from this simulator can be imported.');
+            return;
+          }
+
+          const payloadBytes = bytes.slice(markerByteIdx + markerBytes.length);
+          const jsonStr = new TextDecoder('utf-8', { fatal: false }).decode(payloadBytes);
+          const meta = JSON.parse(jsonStr);
+          applyImportedProjectMeta(meta, 'PNG project');
           return;
         }
 
-        const payloadBytes = bytes.slice(markerByteIdx + markerBytes.length);
-        const jsonStr = new TextDecoder('utf-8', { fatal: false }).decode(payloadBytes);
-        const meta = JSON.parse(jsonStr);
-
-        // Confirm before overwriting current circuit
-        const hasExisting = components.length > 0 || wires.length > 0;
-        if (hasExisting && !window.confirm(`Import will replace your current circuit (${components.length} components, ${wires.length} wires). Continue?`)) {
-          return;
-        }
-
-        // Restore state
-        saveHistory();
-        if (meta.board) setBoard(meta.board);
-        if (Object.prototype.hasOwnProperty.call(meta, 'code')) setCode(meta.code || '');
-        if (Array.isArray(meta.components)) setComponents(meta.components);
-        if (Array.isArray(meta.connections)) setWires(meta.connections);
-
-        const importedBoards = Array.isArray(meta.components)
-          ? meta.components.filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
-          : [];
-
-        let normalizedFiles = Array.isArray(meta.projectFiles) ? [...meta.projectFiles] : [];
-
-        // Backward compatibility: older PNG exports had only `code`.
-        if (normalizedFiles.length === 0 && typeof meta.code === 'string' && meta.code.trim()) {
-          if (importedBoards.length > 0) {
-            normalizedFiles = importedBoards.map((bc, idx) => ({
-              id: `project/${bc.id}/${bc.id}.ino`,
-              path: `project/${bc.id}/${bc.id}.ino`,
-              name: `${bc.id}.ino`,
-              kind: 'code',
-              boardId: bc.id,
-              boardKind: normalizeBoardKind(bc.type),
-              content: idx === 0 ? meta.code : createDefaultMainCode(normalizeBoardKind(bc.type), bc.id),
-              dirty: false,
-            }));
-          }
-        }
-
-        if (normalizedFiles.length > 0 && typeof meta.code === 'string' && meta.code.trim()) {
-          const codeFileIdx = normalizedFiles.findIndex((f) => f.kind === 'code' || /\.(ino|h|hpp|c|cpp)$/i.test(f.name || f.path || ''));
-          const hasCodeContent = normalizedFiles.some((f) => (f.kind === 'code' || /\.(ino|h|hpp|c|cpp)$/i.test(f.name || f.path || '')) && String(f.content || '').trim().length > 0);
-          if (!hasCodeContent && codeFileIdx >= 0) {
-            const target = normalizedFiles[codeFileIdx];
-            normalizedFiles[codeFileIdx] = { ...target, content: meta.code };
-          }
-        }
-
-        setProjectFiles(normalizedFiles);
-        setOpenCodeTabs(Array.isArray(meta.openCodeTabs) ? meta.openCodeTabs : []);
-        setActiveCodeFileId(typeof meta.activeCodeFileId === 'string' ? meta.activeCodeFileId : '');
-
-        syncNextIds(Array.isArray(meta.components) ? meta.components : [], Array.isArray(meta.connections) ? meta.connections : []);
-        setSelected(null);
-        setWireStart(null);
+        const jsonText = String(e.target.result || '');
+        const meta = JSON.parse(jsonText);
+        applyImportedProjectMeta(meta, 'JSON project');
       } catch (err) {
-        console.error('[PNG Import] Parse error:', err);
-        alert('Failed to parse circuit data from PNG: ' + err.message);
+        const sourceLabel = isPng ? 'PNG' : 'JSON';
+        console.error(`[${sourceLabel} Import] Parse error:`, err);
+        alert(`Failed to parse circuit data from ${sourceLabel}: ${err.message}`);
+      } finally {
+        // Reset the file input so the same file can be re-imported.
+        if (importFileRef.current) importFileRef.current.value = '';
       }
-      // Reset the file input so the same file can be re-imported
-      if (importFileRef.current) importFileRef.current.value = '';
     };
-    reader.readAsArrayBuffer(file);
+
+    if (isPng) reader.readAsArrayBuffer(file);
+    else reader.readAsText(file);
   };
 
   const getComponentStateAttrs = (comp) => {
     let attrs = { ...comp.attrs };
+
+    if (normalizeBoardKind(comp.type) === 'rp2040') {
+      attrs.env = mapRp2040EnvForLegacyContextMenu(resolveComponentAttrString(attrs, 'env', 'native'));
+    }
 
     // Remote OOP state takes priority
     const remoteState = oopStates[comp.id];
@@ -3647,8 +6482,8 @@ export default function SimulatorPage() {
     attrs.onInteract = (event) => {
       console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
 
-      // Handle physical Arduino board reset button presses
-      if (comp.type === 'wokwi-arduino-uno' && event === 'RESET') {
+      // Handle physical board reset button presses
+      if (isProgrammableBoardType(comp.type) && event === 'RESET') {
         if (isRunning) handleReset();
         return;
       }
@@ -3692,7 +6527,7 @@ export default function SimulatorPage() {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
 
 
 
@@ -3704,7 +6539,7 @@ export default function SimulatorPage() {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden" onClick={() => setProjContextMenu(null)}>
 
         {/* PALETTE — hover to expand */}
         <aside
@@ -3806,7 +6641,7 @@ export default function SimulatorPage() {
                   Upload ZIP
                 </button>
                 <button
-                  onClick={() => window.open('/component-editor', '_blank')}
+                  onClick={openComponentEditor}
                   style={{ flex: 1, padding: '7px 4px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontWeight: 600 }}>
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
                   Create
@@ -3902,18 +6737,28 @@ export default function SimulatorPage() {
                           const rawScale = Math.min(previewW / compW, previewH / compH);
                           const scale = Math.max(0.22, Math.min(1.6, rawScale));
                           const hasUI = !!COMPONENT_REGISTRY[item.type]?.UI;
+                          const locked = isPaletteItemLocked(item.type);
                           return (
                             <div
                               key={item.type}
-                              draggable
-                              onDragStart={e => onPaletteDragStart(e, item)}
-                              onClick={() => { addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group }); }}
+                              draggable={!locked}
+                              onDragStart={e => !locked && onPaletteDragStart(e, item)}
+                              onClick={() => {
+                                if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
+                                addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group });
+                              }}
                               onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
                               title={item.label}
-                              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative' }}
-                              onMouseEnter={e => { e.currentTarget.style.borderColor = groupColor; e.currentTarget.style.background = `${groupColor}14`; }}
-                              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--card)'; }}
+                              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
+                              onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = groupColor; e.currentTarget.style.background = `${groupColor}14`; } }}
+                              onMouseLeave={e => { if (!locked) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--card)'; } }}
                             >
+                              {/* Overlay for locked state */}
+                              {locked && (
+                                <div style={{ position: 'absolute', top: 5, right: 6, zIndex: 10, fontSize: 13, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 6, padding: '2px 4px', color: '#ef4444' }}>
+                                  🔒
+                                </div>
+                              )}
                               {/* Component SVG — absolutely centred in upper area, no inner box */}
                               {hasUI ? (
                                 <div style={{ position: 'absolute', top: 'calc(50% - 7px)', left: '50%', transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center', pointerEvents: 'none', lineHeight: 0, width: compW, height: compH }}>
@@ -3932,23 +6777,34 @@ export default function SimulatorPage() {
                       </div>
                     ) : (
                       /* LIST VIEW */
-                      filteredItems.map(item => (
-                        <div
-                          key={item.type}
-                          draggable
-                          onDragStart={e => onPaletteDragStart(e, item)}
-                          onClick={() => { addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group }); }}
-                          onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
-                          style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s' }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg3)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'var(--card)'; }}
-                        >
-                          <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>{item.label}</div>
-                          <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4 }}>
-                            {COMPONENT_REGISTRY[item.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[item.type] || `${item.type} component`}
+                      filteredItems.map(item => {
+                        const locked = isPaletteItemLocked(item.type);
+                        return (
+                          <div
+                            key={item.type}
+                            draggable={!locked}
+                            onDragStart={e => !locked && onPaletteDragStart(e, item)}
+                            onClick={() => {
+                              if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
+                              addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group });
+                            }}
+                            onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
+                            style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
+                            onMouseEnter={e => { if (!locked) e.currentTarget.style.background = 'var(--bg3)'; }}
+                            onMouseLeave={e => { if (!locked) e.currentTarget.style.background = 'var(--card)'; }}
+                          >
+                            {locked && (
+                              <div style={{ position: 'absolute', top: '50%', right: 10, transform: 'translateY(-50%)', fontSize: 13, color: '#ef4444' }}>
+                                🔒
+                              </div>
+                            )}
+                            <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text)', marginBottom: 2 }}>{item.label}</div>
+                            <div style={{ fontSize: 10, color: 'var(--text3)', lineHeight: 1.4 }}>
+                              {COMPONENT_REGISTRY[item.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[item.type] || `${item.type} component`}
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        )
+                      })
                     )}
                   </div>
                 );
@@ -4003,11 +6859,14 @@ export default function SimulatorPage() {
                     const registryInfo = COMPONENT_REGISTRY[item.type];
                     const editCopyData = {
                       manifest: registryInfo?.manifest || item,
-                      logic: registryInfo?.logicRaw || '',
-                      ui: registryInfo?.uiRaw || '',
+                      logic: buildLogicSourceFromRegistry(registryInfo, item.type),
+                      ui: buildUiSourceFromRegistry(registryInfo, item.type),
+                      validation: buildValidationSourceFromRegistry(registryInfo),
+                      index: buildIndexSourceFromRegistry(registryInfo, item.type),
+                      docs: registryInfo?.doc || '',
                     };
                     localStorage.setItem('openhw_edit_copy', JSON.stringify(editCopyData));
-                    window.open('/component-editor', '_blank');
+                    openComponentEditor();
                     setPaletteContextMenu(null);
                     setIsPaletteHovered(false);
                   }
@@ -4051,8 +6910,13 @@ export default function SimulatorPage() {
             backgroundImage: showGrid
               ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
               : 'none',
+            touchAction: 'none', // Block browser pinch-to-zoom
           }}
           ref={canvasRef}
+          onWheel={onWheel}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
           onDrop={onCanvasDrop}
           onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
           onMouseDown={e => {
@@ -4089,7 +6953,9 @@ export default function SimulatorPage() {
           }}
         >
           {/* Zoom Wrapper — scales all circuit content */}
-          <div style={{
+          {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
+               React state (canvasOffset) is only committed once on mouseup. */}
+          <div ref={innerCanvasRef} style={{
             position: 'absolute', top: 0, left: 0,
             width: '10000px', height: '8000px',
             transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
@@ -4616,14 +7482,49 @@ export default function SimulatorPage() {
             })}
           </div>{/* end zoom wrapper */}
 
+          {/* Runtime mini panel (top-left) */}
+          {isRunning && !isCompiling && (
+            <div
+              data-export-ignore="true"
+              onClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                top: 12,
+                left: 12,
+                zIndex: 90,
+                width: 188,
+                background: 'var(--bg2)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+                padding: '10px 12px',
+              }}
+            >
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
+                Simulation Runtime
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, marginBottom: 5 }}>
+                <span style={{ color: 'var(--text3)' }}>Speed</span>
+                <span style={{ color: 'var(--accent)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{simulationSpeedPercent}%</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                <span style={{ color: 'var(--text3)' }}>Duration</span>
+                <span style={{ color: 'var(--text)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{formatRunDuration(runDurationSec)}</span>
+              </div>
+              {isPaused && (
+                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--orange)', fontWeight: 600 }}>Paused</div>
+              )}
+            </div>
+          )}
 
-          {/* Universal Component Wiring & Docs Panel */}
+          {/* Component Description Panel — shows info of canvas-selected component */}
           {showComponentDesc && selectedComponentInfo && (
             <div
               data-export-ignore="true"
               onClick={e => e.stopPropagation()}
               onMouseDown={e => e.stopPropagation()}
-              style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 240, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 100px)' }}
+              style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 220, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden' }}
             >
               {/* Header */}
               <div style={{
@@ -4643,6 +7544,11 @@ export default function SimulatorPage() {
                   lineHeight: '1.1'
                 }}>
                   {selectedComponentInfo.label}
+                </div>
+
+                {/* Description - Preserved from Local */}
+                <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+                  {COMPONENT_REGISTRY[selectedComponentInfo.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[selectedComponentInfo.type] || `${selectedComponentInfo.type} component`}
                 </div>
 
                 <div style={{
@@ -4906,36 +7812,34 @@ export default function SimulatorPage() {
           )}
 
           {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
-          {
-            validationToast && (
-              <div
-                className="validation-toast-canvas"
-                role="alert"
-                data-export-ignore="true"
-                onClick={e => e.stopPropagation()}
-                onMouseDown={e => e.stopPropagation()}
-              >
-                <div className="validation-toast-canvas__header">
-                  <span>{validationToast.title}</span>
-                  <button
-                    type="button"
-                    className="validation-toast-canvas__close"
-                    onClick={() => setValidationToast(null)}
-                    aria-label="Close validation notification"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-                    </svg>
-                  </button>
-                </div>
-                <ul className="validation-toast-canvas__list">
-                  {validationToast.reasons.map((reason, idx) => (
-                    <li key={idx}>{reason}</li>
-                  ))}
-                </ul>
+          {validationToast && (
+            <div
+              className="validation-toast-canvas"
+              role="alert"
+              data-export-ignore="true"
+              onClick={e => e.stopPropagation()}
+              onMouseDown={e => e.stopPropagation()}
+            >
+              <div className="validation-toast-canvas__header">
+                <span>{validationToast.title}</span>
+                <button
+                  type="button"
+                  className="validation-toast-canvas__close"
+                  onClick={() => setValidationToast(null)}
+                  aria-label="Close validation notification"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+                  </svg>
+                </button>
               </div>
-            )
-          }
+              <ul className="validation-toast-canvas__list">
+                {validationToast.reasons.map((reason, idx) => (
+                  <li key={idx}>{reason}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div
             data-export-ignore="true"
@@ -5015,6 +7919,18 @@ export default function SimulatorPage() {
                   }}>{wirepointsEnabled ? 'Disable Wire Waypoints' : 'Enable Wire Waypoints'}</button>
                   <button className="canvas-menu-item" onClick={() => { setShowComponentDesc(d => !d); setShowCanvasMenu(false); }}>{showComponentDesc ? 'Hide Component Info' : 'Show Component Info'}</button>
                   <button className="canvas-menu-item" onClick={() => { setShowConnectionsPanel(p => !p); setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
+                  <button
+                    className="canvas-menu-item"
+                    onClick={() => {
+                      const next = !blocklyDisabled;
+                      setBlocklyDisabled(next);
+                      try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) {}
+                      setShowCanvasMenu(false);
+                    }}
+                    title={blocklyDisabled ? 'Re-enable block code editor (uses more CPU)' : 'Disable block code editor to improve canvas performance'}
+                  >
+                    {blocklyDisabled ? 'Enable Block Coding' : 'Disable Block Coding'}
+                  </button>
                   <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
                   <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
                 </div>
@@ -5033,198 +7949,730 @@ export default function SimulatorPage() {
           />
 
           {/* ── Quick-Add Popup (double-click on canvas) ── */}
-          {
-            quickAdd && (() => {
-              const q = quickAddSearch.trim().toLowerCase();
-              const results = [];
-              if (q) {
-                outer: for (const group of LOCAL_CATALOG) {
-                  for (const item of group.items) {
-                    if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
-                      results.push(item);
-                      if (results.length >= 4) break outer;
-                    }
+          {quickAdd && (() => {
+            const q = quickAddSearch.trim().toLowerCase();
+            const results = [];
+            if (q) {
+              outer: for (const group of LOCAL_CATALOG) {
+                for (const item of group.items) {
+                  if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
+                    results.push(item);
+                    if (results.length >= 4) break outer;
                   }
                 }
               }
-              const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
-              const VW = window.innerWidth, VH = window.innerHeight;
-              const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
-              const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
-              const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
-              return (
-                <div
-                  data-quickadd="true"
-                  onMouseDown={e => e.stopPropagation()}
-                  style={{
-                    position: 'fixed', left, top, zIndex: 9999,
-                    width: menuW,
-                    background: 'var(--bg2)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 10,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
-                    overflow: 'hidden',
-                    fontFamily: "'Space Grotesk', sans-serif",
-                  }}
-                >
-                  {/* Search input */}
-                  <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
-                    <input
-                      ref={quickAddInputRef}
-                      data-quickadd="true"
-                      value={quickAddSearch}
-                      onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
-                      onKeyDown={e => {
-                        if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
-                        else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
-                        else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
-                        else if (e.key === 'Enter' && results.length > 0) {
-                          e.preventDefault();
-                          addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
-                          setQuickAdd(null);
-                        }
-                      }}
-                      placeholder="Search component..."
-                      style={{
-                        width: '100%', boxSizing: 'border-box',
-                        background: 'var(--bg3)', border: '1px solid var(--border2)',
-                        color: 'var(--text)', padding: '7px 10px',
-                        borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
-                      }}
-                    />
-                  </div>
-                  {/* Result list */}
-                  {results.map((item, i) => (
-                    <div
-                      key={`${item.type}-${i}`}
-                      data-quickadd="true"
-                      onMouseEnter={() => setQuickAddIdx(i)}
-                      onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
-                      style={{
-                        padding: '8px 12px',
-                        fontSize: 13,
-                        cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        background: i === selIdx ? 'var(--accent)' : 'transparent',
-                        color: i === selIdx ? '#fff' : 'var(--text)',
-                        userSelect: 'none',
-                      }}
-                    >
-                      <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
-                      {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
-                    </div>
-                  ))}
-                  {/* Empty state */}
-                  {q && results.length === 0 && (
-                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
-                  )}
-                  {!q && (
-                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
-                  )}
+            }
+            const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
+            const VW = window.innerWidth, VH = window.innerHeight;
+            const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
+            const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
+            const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
+            return (
+              <div
+                data-quickadd="true"
+                onMouseDown={e => e.stopPropagation()}
+                style={{
+                  position: 'fixed', left, top, zIndex: 9999,
+                  width: menuW,
+                  background: 'var(--bg2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
+                  overflow: 'hidden',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                }}
+              >
+                {/* Search input */}
+                <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
+                  <input
+                    ref={quickAddInputRef}
+                    data-quickadd="true"
+                    value={quickAddSearch}
+                    onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
+                      else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
+                      else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
+                      else if (e.key === 'Enter' && results.length > 0) {
+                        e.preventDefault();
+                        addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
+                        setQuickAdd(null);
+                      }
+                    }}
+                    placeholder="Search component..."
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: 'var(--bg3)', border: '1px solid var(--border2)',
+                      color: 'var(--text)', padding: '7px 10px',
+                      borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
+                    }}
+                  />
                 </div>
-              );
-            })()
-          }
-        </main >
+                {/* Result list */}
+                {results.map((item, i) => (
+                  <div
+                    key={`${item.type}-${i}`}
+                    data-quickadd="true"
+                    onMouseEnter={() => setQuickAddIdx(i)}
+                    onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
+                    style={{
+                      padding: '8px 12px',
+                      fontSize: 13,
+                      cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      background: i === selIdx ? 'var(--accent)' : 'transparent',
+                      color: i === selIdx ? '#fff' : 'var(--text)',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
+                    {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+                  </div>
+                ))}
+                {/* Empty state */}
+                {q && results.length === 0 && (
+                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
+                )}
+                {!q && (
+                  <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
+                )}
+              </div>
+            );
+          })()}
+        </main>
 
 
         {/* RIGHT PANEL */}
-        < RightPanel
+        <RightPanel
           isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
           explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
           selected={selected} setSelected={setSelected}
           validationErrors={validationErrors} showValidation={showValidation} setShowValidation={setShowValidation}
           codeTab={codeTab} setCodeTab={setCodeTab} code={code} setCode={setCode}
+          blocklyXml={blocklyXml} setBlocklyXml={setBlocklyXml}
+          blocklyGeneratedCode={blocklyGeneratedCode} setBlocklyGeneratedCode={setBlocklyGeneratedCode}
+          useBlocklyCode={useBlocklyCode} setUseBlocklyCode={setUseBlocklyCode}
+          blocklyDisabled={blocklyDisabled} setBlocklyDisabled={setBlocklyDisabled}
           projectFiles={projectFiles} openCodeTabs={openCodeTabs} activeCodeFileId={activeCodeFileId} showCodeExplorer={showCodeExplorer}
           onToggleCodeExplorer={() => setShowCodeExplorer(v => !v)} onOpenCodeFile={openCodeFile} onCloseCodeTab={closeCodeTab}
           onSaveCodeFile={saveCodeFile} onDuplicateCodeFile={duplicateCodeFile} onRenameCodeFile={renameCodeFile} onDeleteCodeFile={deleteCodeFile} onDownloadCodeFile={downloadCodeFile}
-          onCreateCodeFile={createCodeFile} onCreateCodeTab={createCodeTab}
+          onToggleCodeFileDisabled={toggleCodeFileDisabled}
+          onCreateCodeFile={createCodeFile} onCreateCodeTab={createCodeTab} onUploadCodeFile={uploadCodeFile}
           libQuery={libQuery} setLibQuery={setLibQuery} handleSearchLibraries={handleSearchLibraries} isSearchingLib={isSearchingLib} libMessage={libMessage} libInstalled={libInstalled} libResults={libResults} handleInstallLibrary={handleInstallLibrary} installingLib={installingLib}
-          serialPaused={serialPaused} setSerialPaused={setSerialPaused} isRunning={isRunning} serialHistory={serialHistory} setSerialHistory={setSerialHistory} serialOutputRef={serialOutputRef} serialInput={serialInput} setSerialInput={setSerialInput} sendSerialInput={sendSerialInput}
-          serialViewMode={serialViewMode} setSerialViewMode={setSerialViewMode} serialBoardFilter={serialBoardFilter} setSerialBoardFilter={setSerialBoardFilter} serialBoardOptions={serialBoardOptions} serialBoardLabels={serialBoardLabels} serialBaudRate={serialBaudRate} setSerialBaudRate={setSerialBaudRate} serialBaudOptions={serialBaudOptions}
+          serialPaused={serialPaused} setSerialPaused={setSerialPaused} isRunning={isRunning} serialHistory={serialHistory} setSerialHistory={setSerialHistory} serialOutputRef={serialOutputRef} serialInput={serialInput} setSerialInput={setSerialInput} sendSerialInput={sendSerialInput} clearSerialMonitor={clearSerialMonitor}
+          serialViewMode={serialViewMode} setSerialViewMode={setSerialViewMode} serialBoardFilter={serialBoardFilter} setSerialBoardFilter={setSerialBoardFilter} serialBoardOptions={serialBoardOptions} serialBoardLabels={serialBoardLabels} serialBoardKinds={serialBoardKinds} serialBoardSourceModes={rp2040BoardSourceModes} serialBaudRate={serialBaudRate} setSerialBaudRate={setSerialBaudRate} serialBaudOptions={serialBaudOptions} serialLineEnding={serialLineEnding} setSerialLineEnding={setSerialLineEnding}
           hardwareConnected={hardwareConnected}
           plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
           showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
         />
-      </div >
 
-      {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
-      {
-        showSaveDialog && (
-          <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
-            <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-              <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
-              <input
-                autoFocus
-                className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
-                placeholder="Project name..."
-                value={saveDialogName}
-                onChange={e => setSaveDialogName(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
-              />
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
-                <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
-              </div>
-            </div>
-          </div>
-        )
-      }
-
-      {
-        showShareDialog && (
-          <div className="simulator-dialog-backdrop" onClick={() => setShowShareDialog(false)}>
-            <div className="simulator-dialog simulator-share-dialog" onClick={e => e.stopPropagation()}>
-              <div className="simulator-dialog__title">Share Simulation</div>
-              <div className="simulator-dialog__subtitle">
-                Choose whether this simulator is public or private, then copy the link to share it.
-              </div>
-              <div className="simulator-share-dialog__field">
-                <label className="simulator-dialog__label">
-                  Visibility
-                </label>
-                <select
-                  className="simulator-dialog__select"
-                  value={shareVisibility}
-                  onChange={(e) => {
-                    setShareVisibility(e.target.value);
-                    setShareUrl('');
-                    setShareCopied(false);
-                  }}
+        {/* MY PROJECTS SIDEBAR */}
+        <aside
+          className="bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden transition-[width] duration-200"
+          style={{ width: showProjectsSidebar ? 320 : 0, borderLeft: showProjectsSidebar ? '1px solid var(--border)' : 'none' }}
+        >
+          {showProjectsSidebar && (
+            <>
+              <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
+                <span className="text-sm font-bold text-[var(--text)] tracking-tight">My Projects</span>
+                <button 
+                  onClick={() => setShowProjectsSidebar(false)} 
+                  className="bg-[var(--card)] hover:bg-[var(--bg)] border border-[var(--border)] text-[var(--text3)] hover:text-[var(--text)] rounded-lg w-7 h-7 flex items-center justify-center transition-all active:scale-95"
                 >
-                  <option value="public">Public</option>
-                  <option value="private">Private</option>
-                </select>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
               </div>
-              <input
-                readOnly
-                value={shareUrl}
-                placeholder="Click Generate Link to generate a share URL"
-                className="simulator-dialog__input"
-                onFocus={(e) => e.target.select()}
-              />
-              <div className="simulator-share-dialog__footer">
-                <span className={`simulator-share-dialog__hint${shareCopied ? ' is-success' : ''}`}>
-                  {shareCopied
-                    ? 'Link copied to clipboard.'
-                    : !shareUrl
-                      ? 'Create a link after choosing the visibility.'
-                      : shareVisibility === 'public'
-                      ? 'Anyone with this link can open the shared simulation.'
-                      : 'This link stays private. Only you can open it while signed in.'}
-                </span>
-                <div className="simulator-share-dialog__actions">
-                  <Btn onClick={() => setShowShareDialog(false)}>Close</Btn>
-                  <Btn onClick={handleGenerateShareUrl} disabled={isSharingSimulation}>
-                    {isSharingSimulation ? 'Generating...' : 'Generate Link'}
-                  </Btn>
-                  <Btn color="var(--accent)" onClick={handleCopyShareUrl} disabled={!shareUrl}>Copy URL</Btn>
+
+              <div className="px-5 pb-4 shrink-0">
+                <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
+                  {[
+                    { id: 'favourites', label: 'Fav' },
+                    { id: 'projects', label: 'Projects' },
+                    { id: 'custom', label: 'Custom' },
+                    { id: 'settings', label: 'Settings' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setProjectsSidebarTab(tab.id)}
+                      className={`flex-1 py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all duration-200
+                        ${projectsSidebarTab === tab.id 
+                          ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm' 
+                          : 'text-[var(--text3)] hover:text-[var(--text2)]'
+                        }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
               </div>
+
+              <div className="flex-1 overflow-y-auto p-2">
+                {projectsSidebarTab === 'favourites' && (
+                  <div>
+                    <div className="text-[11px] text-[var(--text3)] px-1 py-1.5">Starred projects appear here.</div>
+                    {myProjects.filter(p => favouriteProjectIds.includes(p.id)).length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+                        </div>
+                        <div className="text-sm font-bold text-[var(--text)] mb-1">No Favourites Yet</div>
+                        <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Star a project from the Projects tab to see it here.</div>
+                      </div>
+                    ) : myProjects.filter(p => favouriteProjectIds.includes(p.id)).map(proj => (
+                      <ProjectCard
+                        key={proj.id}
+                        proj={proj}
+                        currentProjectId={currentProjectId}
+                        renamingProjectId={renamingProjectId}
+                        renameValue={renameValue}
+                        setRenameValue={setRenameValue}
+                        handleConfirmRename={handleConfirmRename}
+                        setRenamingProjectId={setRenamingProjectId}
+                        handleLoadProject={handleLoadProject}
+                        isRunning={isRunning}
+                        setShowProjectsSidebar={setShowProjectsSidebar}
+                        onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
+                        formatProjectDate={formatProjectDate}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {projectsSidebarTab === 'projects' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-4 px-1">
+                      <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Your Library</div>
+                      <button 
+                        onClick={() => { setShowProjectsSidebar(false); handleNewProject(); }}
+                        className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        NEW
+                      </button>
+                    </div>
+                    {myProjects.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-2xl bg-[var(--bg)]/30">
+                        <div className="w-14 h-14 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
+                        </div>
+                        <div className="text-sm font-bold text-[var(--text)] mb-1">No saved projects</div>
+                        <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Your circuits are auto-saved as you work.</div>
+                      </div>
+                    ) : myProjects.map(proj => (
+                      <ProjectCard
+                        key={proj.id}
+                        proj={proj}
+                        currentProjectId={currentProjectId}
+                        renamingProjectId={renamingProjectId}
+                        renameValue={renameValue}
+                        setRenameValue={setRenameValue}
+                        handleConfirmRename={handleConfirmRename}
+                        setRenamingProjectId={setRenamingProjectId}
+                        handleLoadProject={handleLoadProject}
+                        isRunning={isRunning}
+                        setShowProjectsSidebar={setShowProjectsSidebar}
+                        onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
+                        formatProjectDate={formatProjectDate}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {projectsSidebarTab === 'custom' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-4 px-1">
+                      <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Custom Parts</div>
+                      <button 
+                        onClick={() => setShowCreateComponentModal(true)}
+                        className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                        CREATE
+                      </button>
+                    </div>
+                    <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-xl">
+                       <div className="text-sm font-bold text-[var(--text)] mb-1 opacity-50">Nothing here yet</div>
+                       <div className="text-[11px] text-[var(--text3)] leading-normal">Custom components will appear here.</div>
+                    </div>
+                  </div>
+                )}
+
+                {projectsSidebarTab === 'settings' && (
+                  <div className="flex flex-col gap-2 py-1">
+                    <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Preferences</div>
+                    <div className="flex items-center justify-between bg-[var(--card)] border border-[var(--border)] rounded-lg px-3 py-2.5 shadow-sm">
+                      <div className="flex flex-col">
+                        <span className="text-[12px] font-bold text-[var(--text)]">Auto-save Projects</span>
+                        <span className="text-[9px] text-[var(--text3)]">Saves changes every 2.5s</span>
+                      </div>
+                      <button 
+                        onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
+                        className={`w-9 h-5 rounded-full relative transition-all duration-300 ${autoSaveEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--bg3)]'}`}
+                      >
+                        <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-300 ${autoSaveEnabled ? 'translate-x-4' : ''}`} />
+                      </button>
+                    </div>
+
+                    <div className="h-px bg-[var(--border)] my-1 opacity-50" />
+                    <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Data Management</div>
+                    <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleBackupWorkflow}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                      Backup
+                      <span className="ml-auto text-[11px] text-[var(--text3)]">Download ZIP</span>
+                    </button>
+                    <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => backupRestoreInputRef.current?.click()}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                      Restore
+                      <span className="ml-auto text-[11px] text-[var(--text3)]">From ZIP</span>
+                    </button>
+                    {isAuthenticated && (
+                      <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleSyncToCloud}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>
+                        Sync to Cloud
+                        <span className="ml-auto text-[11px] text-[var(--text3)]">Upload</span>
+                      </button>
+                    )}
+                    {isAuthenticated && (
+                      <>
+                        <div className="h-px bg-[var(--border)] my-1" />
+                        <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Account</div>
+                        <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--red)] text-[var(--red)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => { logout(); setShowProjectsSidebar(false); }}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                          Logout
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-[var(--border)] p-4 bg-[var(--bg2)] flex flex-col gap-3 shrink-0">
+                {!isAuthenticated ? (
+                  <button 
+                    onClick={() => { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); }}
+                    className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] text-white py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-[0.98] transition-all"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>
+                    Sign In to Sync
+                  </button>
+                ) : (
+                  <div 
+                    className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] group cursor-pointer hover:border-[var(--text3)] transition-all"
+                    onClick={() => {
+                      if (user?.role === 'teacher') navigate('/teacher/dashboard')
+                      else if (user?.role === 'student') navigate('/student/dashboard')
+                      else navigate('/user/dashboard')
+                    }}
+                    title="Go to dashboard"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold uppercase">
+                      {user?.name?.[0] || 'U'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-bold text-[var(--text)] truncate">{user?.name || 'User'}</div>
+                      <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{user?.role || 'Developer'}</div>
+                    </div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                  </div>
+                )}
+
+                <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)] shadow-inner">
+                  <button
+                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
+                      ${!isAuthenticated 
+                        ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm border border-[var(--border)]' 
+                        : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
+                    onClick={() => { if (isAuthenticated) { if (user?.email) localStorage.setItem('ohw_last_email', user.email); logout(); } }}
+                  >
+                    Local
+                  </button>
+                  <button
+                    className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
+                      ${isAuthenticated 
+                        ? 'bg-[var(--accent)] text-white shadow-md' 
+                        : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
+                    onClick={() => { if (!isAuthenticated) { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); } }}
+                  >
+                    Cloud
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </aside>
+
+        {/* GAMIFICATION GUIDE PANEL */}
+        {gamificationMode && gamPanelOpen && (
+          <aside style={{
+            width: 280, background: '#0a0d1a', borderLeft: '1px solid rgba(255,255,255,.07)',
+            display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
+            fontFamily: "'Space Grotesk', sans-serif",
+          }}>
+            {/* Tabs */}
+            <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,.07)', flexShrink: 0 }}>
+              {[{ id: 'components', label: '🔧 Parts' }, { id: 'wiring', label: '〰 Wiring' }, { id: 'concepts', label: '📚 Code' }].map(tab => (
+                <button key={tab.id} onClick={() => setGamTab(tab.id)} style={{
+                  flex: 1, padding: '9px 4px', background: 'none', border: 'none',
+                  borderBottom: `2px solid ${gamTab === tab.id ? '#00b4ff' : 'transparent'}`,
+                  color: gamTab === tab.id ? '#00b4ff' : 'rgba(255,255,255,.4)',
+                  fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                }}>{tab.label}</button>
+              ))}
+            </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 80px' }}>
+
+              {gamTab === 'components' && (
+                <div>
+                  <div style={{
+                    padding: '9px 12px', borderRadius: 9, marginBottom: 14,
+                    background: gamAllUnlocked ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)',
+                    border: `1px solid ${gamAllUnlocked ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)'}`,
+                    fontSize: 12, fontWeight: 600,
+                    color: gamAllUnlocked ? '#22c55e' : '#ef4444',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    {gamAllUnlocked ? '✅ All components unlocked' : `⚠️ ${gamLockedCount} need unlocking`}
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {(gamProjectComponents || []).map((c, i) => (
+                      <div key={i} style={{
+                        display: 'flex', alignItems: 'center', gap: 9,
+                        padding: '9px 11px', borderRadius: 9,
+                        background: c.isLocked ? 'rgba(239,68,68,.05)' : 'rgba(34,197,94,.05)',
+                        border: `1px solid ${c.isLocked ? 'rgba(239,68,68,.2)' : 'rgba(34,197,94,.18)'}`,
+                      }}>
+                        <span style={{ fontSize: 18, flexShrink: 0 }}>{c.isLocked ? '🔒' : (c.compDef?.icon || '✅')}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: c.isLocked ? 'rgba(255,255,255,.45)' : '#fff' }}>
+                            {c.qty > 1 ? `${c.qty}× ` : ''}{c.label}
+                          </div>
+                          <div style={{ fontSize: 9, color: c.isLocked ? '#ef4444' : '#22c55e', marginTop: 2 }}>
+                            {c.isLocked ? 'Study theory to unlock' : 'Available in palette'}
+                          </div>
+                        </div>
+                        {c.isLocked && c.compId && (
+                          <button
+                            onClick={() => navigate(`/components/${c.compId}/theory`)}
+                            style={{ background: 'rgba(239,68,68,.15)', border: '1px solid rgba(239,68,68,.35)', color: '#ef4444', borderRadius: 6, padding: '3px 7px', fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+                          >Unlock →</button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <button onClick={() => navigate('/components')} style={{ marginTop: 16, width: '100%', padding: '9px', background: 'rgba(0,180,255,.06)', border: '1px solid rgba(0,180,255,.2)', color: '#00b4ff', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                    🔓 Unlock More Components
+                  </button>
+                </div>
+              )}
+
+              {gamTab === 'wiring' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {gamProject?.wiring?.length > 0 ? gamProject.wiring.map((w, i) => (
+                    <div key={i} style={{ padding: '9px 11px', borderRadius: 8, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,180,255,.15)', border: '1px solid rgba(0,180,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#00b4ff', flexShrink: 0 }}>{i + 1}</div>
+                      <div style={{ flex: 1, fontSize: 10, color: 'rgba(255,255,255,.75)', lineHeight: 1.5 }}>
+                        <span style={{ color: '#00b4ff', fontFamily: 'monospace' }}>{w.from}</span>
+                        <span style={{ color: 'rgba(255,255,255,.3)', margin: '0 5px' }}>→</span>
+                        <span style={{ color: '#22c55e', fontFamily: 'monospace' }}>{w.to}</span>
+                      </div>
+                    </div>
+                  )) : (
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', textAlign: 'center', padding: '32px 0' }}>No wiring guide yet.</div>
+                  )}
+                </div>
+              )}
+
+              {gamTab === 'concepts' && gamProject && (
+                <div>
+                  {gamProject.concepts?.length > 0 && (
+                    <>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Concepts</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
+                        {gamProject.concepts.map((c, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 6, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
+                            <span style={{ color: gamProject.color || '#22c55e', fontSize: 11 }}>▸</span>
+                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,.65)', fontFamily: 'monospace' }}>{c}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {gamProject.starterCode && (
+                    <>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Starter Code</div>
+                      <div style={{ background: 'rgba(0,0,0,.4)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 9, padding: '11px', overflow: 'auto' }}>
+                        <pre style={{ margin: 0, fontSize: 10, color: '#a5f3fc', lineHeight: 1.7, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap' }}>{gamProject.starterCode}</pre>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {gamProject && (
+              <div style={{ flexShrink: 0, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.07)', background: 'rgba(0,0,0,.3)' }}>
+                <button
+                  onClick={handleGamificationSubmit}
+                  disabled={!gamAllUnlocked}
+                  style={{ width: '100%', padding: '10px', background: gamAllUnlocked ? (gamProject.color || '#22c55e') : 'rgba(255,255,255,.05)', border: gamAllUnlocked ? 'none' : '1px solid rgba(255,255,255,.1)', color: gamAllUnlocked ? '#fff' : 'rgba(255,255,255,.25)', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: gamAllUnlocked ? 'pointer' : 'not-allowed', marginBottom: 7 }}
+                  title={gamAllUnlocked ? '' : `Unlock ${gamLockedCount} component${gamLockedCount > 1 ? 's' : ''} first`}
+                >
+                  {gamAllUnlocked ? '▶ Submit Assessment' : `🔒 Unlock ${gamLockedCount} first`}
+                </button>
+                <button onClick={() => navigate(`/${gamProject.slug}/guide`)} style={{ width: '100%', padding: '7px', background: 'transparent', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(255,255,255,.35)', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                  📖 Full Guide
+                </button>
+              </div>
+            )}
+          </aside>
+        )}
+      </div>
+
+      {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
+      {showSaveDialog && (
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+            <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
+            <input
+              autoFocus
+              className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
+              placeholder="Project name..."
+              value={saveDialogName}
+              onChange={e => setSaveDialogName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
+              <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
             </div>
           </div>
-        )
-      }
+        </div>
+      )}
+
+      {/* ── FIRMWARE DOWNLOAD DIALOG ─────────────────────────────────────── */}
+      {showFirmwareDownloadDialog && (
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareDownloadDialog(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[390px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+            <div className="text-base font-bold mb-2 text-[var(--text)]">Download Firmware</div>
+            <div className="text-xs text-[var(--text3)] mb-4">
+              Choose a board firmware artifact to download, or download all compiled board firmwares.
+            </div>
+
+            <label className="text-xs font-semibold text-[var(--text2)] block mb-2">Target</label>
+            <select
+              className="w-full bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-3 py-2 rounded-lg text-sm mb-4"
+              value={firmwareDownloadTarget}
+              onChange={(e) => setFirmwareDownloadTarget(e.target.value)}
+            >
+              <option value="__latest__">Latest compiled firmware</option>
+              {firmwareBoardOptions.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+              <option value="__all__">All boards</option>
+            </select>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn onClick={() => setShowFirmwareDownloadDialog(false)}>Cancel</Btn>
+              <Btn
+                color="var(--accent)"
+                onClick={async () => {
+                  await handleDownloadFirmware(firmwareDownloadTarget || '__latest__');
+                  setShowFirmwareDownloadDialog(false);
+                }}
+              >
+                Download
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FIRMWARE UPLOAD DIALOG ───────────────────────────────────────── */}
+      {showFirmwareUploadDialog && (
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareUploadDialog(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+            <div className="text-base font-bold mb-2 text-[var(--text)]">Upload Firmware to Board</div>
+            <div className="text-xs text-[var(--text3)] mb-4">
+              Upload a firmware artifact for a specific board on canvas. Use <strong>.hex</strong> for Arduino/ESP32/STM32 and <strong>.uf2</strong> (or .hex) for RP2040.
+              Uploaded firmware is used on the next simulation run for that board.
+            </div>
+
+            <label className="text-xs font-semibold text-[var(--text2)] block mb-2">Board target</label>
+            <select
+              className="w-full bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-3 py-2 rounded-lg text-sm mb-4"
+              value={firmwareUploadTarget}
+              onChange={(e) => setFirmwareUploadTarget(e.target.value)}
+              disabled={firmwareBoardOptions.length === 0}
+            >
+              {firmwareBoardOptions.length === 0 ? (
+                <option value="">No programmable board on canvas</option>
+              ) : firmwareBoardOptions.map((option) => (
+                <option key={option.id} value={option.id}>{option.label}</option>
+              ))}
+            </select>
+
+            <input
+              ref={firmwareUploadInputRef}
+              type="file"
+              accept=".hex,.uf2"
+              style={{ display: 'none' }}
+              onChange={(e) => setFirmwareUploadFile(e.target.files?.[0] || null)}
+            />
+
+            <div className="mb-4" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Btn onClick={() => firmwareUploadInputRef.current?.click()} disabled={firmwareBoardOptions.length === 0}>
+                Choose Firmware File
+              </Btn>
+              <div className="text-xs text-[var(--text3)]" style={{ minHeight: 18 }}>
+                {firmwareUploadFile?.name || 'No file selected'}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Btn onClick={() => setShowFirmwareUploadDialog(false)}>Cancel</Btn>
+              <Btn
+                color="var(--accent)"
+                disabled={!firmwareUploadTarget || !firmwareUploadFile || isApplyingFirmwareUpload}
+                onClick={applyUploadedFirmwareToBoard}
+              >
+                {isApplyingFirmwareUpload ? 'Applying...' : 'Upload & Use'}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* F1 MENU */}
+      {showF1Menu && (
+        <div 
+          className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]"
+          onClick={() => setShowF1Menu(false)}
+        >
+          <div 
+            className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="text-base font-bold mb-4 text-[var(--text)]">Quick Actions (F1)</div>
+            <div className="flex flex-col gap-2">
+              <button 
+                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                onClick={() => {
+                  downloadSimulationJson();
+                  setShowF1Menu(false);
+                }}
+              >
+                🧾 Download Simulation JSON
+              </button>
+              <button 
+                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                onClick={() => {
+                  openFirmwareDownloadDialog();
+                  setShowF1Menu(false);
+                }}
+              >
+                📥 Download Firmware
+              </button>
+              <button 
+                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                onClick={() => {
+                  openFirmwareUploadDialog();
+                  setShowF1Menu(false);
+                }}
+              >
+                📤 Upload Firmware to Board
+              </button>
+              <button
+                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                onClick={() => {
+                  setRp2040DebugTelemetryEnabled((prev) => !prev);
+                  setShowF1Menu(false);
+                }}
+              >
+                {rp2040DebugTelemetryEnabled ? '🐞 Disable RP2040 dbg Telemetry' : '🐞 Enable RP2040 dbg Telemetry'}
+              </button>
+              <button 
+                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                onClick={() => {
+                  handleStartGDB();
+                  setShowF1Menu(false);
+                }}
+              >
+                🐛 Start GDB Session
+              </button>
+            </div>
+            <button 
+              className="mt-4 w-full px-3 py-2 text-xs text-[var(--text3)] hover:text-[var(--text)] transition-colors"
+              onClick={() => setShowF1Menu(false)}
+            >
+              Close (Esc)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Project right-click context menu */}
+      {projContextMenu && (
+        <div
+          className="fixed z-[9999] bg-[var(--bg2)] border border-[var(--border)] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] min-w-[200px] overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+          style={{ left: projContextMenu.x, top: Math.min(projContextMenu.y, window.innerHeight - 240) }}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="px-4 py-2.5 text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider border-b border-[var(--border)] bg-[var(--bg)]/40 flex items-center justify-between">
+            <span className="truncate mr-2">{projContextMenu.proj.name || 'Untitled Project'}</span>
+            <div className="flex gap-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]/30" />
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]/50" />
+            </div>
+          </div>
+          
+          <div className="p-1 flex flex-col gap-0.5">
+            <button 
+              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[var(--text2)] hover:text-[var(--text)] rounded-lg transition-all hover:bg-[var(--card)] group"
+              onClick={() => { toggleFavourite(projContextMenu.proj.id); setProjContextMenu(null); }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "none"} stroke={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "currentColor"} strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
+              {favouriteProjectIds.includes(projContextMenu.proj.id) ? 'Unfavourite' : 'Favourite'}
+            </button>
+            
+            <button 
+              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[var(--text2)] hover:text-[var(--text)] rounded-lg transition-all hover:bg-[var(--card)]"
+              onClick={() => { handleCopyProject(projContextMenu.proj); setProjContextMenu(null); }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+              Make a Copy
+            </button>
+            
+            <button 
+              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[var(--text2)] hover:text-[var(--text)] rounded-lg transition-all hover:bg-[var(--card)]"
+              onClick={() => { handleStartRename(projContextMenu.proj, { stopPropagation: () => {} }); setProjContextMenu(null); setProjectsSidebarTab('projects'); }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
+              Rename Project
+            </button>
+            
+            <div className="h-px bg-[var(--border)] my-1 mx-2 opacity-50" />
+            
+            <button 
+              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-red-500 hover:text-red-600 rounded-lg transition-all hover:bg-red-500/10"
+              onClick={() => { handleDeleteProject(projContextMenu.proj.id); setProjContextMenu(null); }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
+              Delete Project
+            </button>
+          </div>
+        </div>
+      )}
+
+
+    </div>
+  )
+}
 
 
     </div >

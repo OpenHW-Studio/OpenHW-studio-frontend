@@ -133,15 +133,17 @@ export function useWebSerialHardware({
     }
   }, [hardwareBoardId, hardwareSerialTargetRef, boardComponents, board, hardwareBaudRate, showAllHardwarePorts, normalizeBoardKind, boardDefaultBaud, pushSerialTxLine, startHardwareReadLoop]);
 
-  const sendHardwareSerialLine = useCallback(async (text, targetBoard) => {
+  const sendHardwareSerialLine = useCallback(async (text, targetBoard, previewText = null) => {
     if (!hardwareConnected || !hardwarePortRef.current?.writable) {
       throw new Error('Hardware serial is not connected.');
     }
 
+    const payload = String(text ?? '');
     const writer = hardwarePortRef.current.writable.getWriter();
     try {
-      await writer.write(new TextEncoder().encode(text + '\n'));
-      pushSerialTxLine(text, targetBoard || hardwareBoardId || 'hardware', 'hw');
+      await writer.write(new TextEncoder().encode(payload));
+      const txLabel = previewText == null ? payload : String(previewText);
+      pushSerialTxLine(txLabel, targetBoard || hardwareBoardId || 'hardware', 'hw');
     } finally {
       try { writer.releaseLock(); } catch { }
     }
