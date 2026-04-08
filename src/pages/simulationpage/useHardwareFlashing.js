@@ -6,6 +6,7 @@ export function useHardwareFlashing({
   boardComponents,
   resolveBoardHex,
   normalizeBoardKind,
+  resolveBoardFqbn,
   boardFqbn,
   flashFirmware,
   pushSerialTxLine,
@@ -67,7 +68,9 @@ export function useHardwareFlashing({
       const hexText = await resolveBoardHex(boardComp);
 
       const kind = normalizeBoardKind(boardComp.type);
-      const fqbn = boardFqbn[kind] || boardFqbn.arduino_uno;
+      const fqbn = typeof resolveBoardFqbn === 'function'
+        ? resolveBoardFqbn(boardComp, kind)
+        : (boardFqbn[kind] || boardFqbn.arduino_uno);
 
       setHardwareStatus(`Flashing ${hardwareBoardId} via ${cleanPort}...`);
       const flashResult = await flashFirmware({
@@ -96,6 +99,7 @@ export function useHardwareFlashing({
     boardComponents,
     resolveBoardHex,
     normalizeBoardKind,
+    resolveBoardFqbn,
     boardFqbn,
     flashFirmware,
     hardwareBaudRate,

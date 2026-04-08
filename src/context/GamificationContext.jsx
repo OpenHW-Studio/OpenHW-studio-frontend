@@ -1,6 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+<<<<<<< HEAD
 import { LEVELS, STARTING_COMPONENTS } from '../services/gamification/GamificationConfig.jsx';
 import { PROJECTS, getProjectStatus, getEarnedComponents } from '../services/gamification/ProjectsConfig.js';
+=======
+import { useNavigate } from 'react-router-dom';
+import { LEVELS, getUnlockedComponents, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
+import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
+>>>>>>> 71fce1055eac88017771cc905ddfaa5faa1deea5
 import { useAuth } from './AuthContext.jsx';
 
 const getStorageKey = (email) => `openhw_gamification_v3_${email || 'guest'}`;
@@ -30,6 +36,7 @@ export function useGamification() {
 
 export function GamificationProvider({ children }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const storageKey = getStorageKey(user?.email);
 
   const [state, setState] = useState(() => {
@@ -266,12 +273,18 @@ export function GamificationProvider({ children }) {
 
   // ── isUnlocked: checks unlockedComponentTypes in state ────────────────────
   const isUnlocked = useCallback((componentType) => {
+<<<<<<< HEAD
     if (state.unlockedComponentTypes === '*') return true;
     if (Array.isArray(state.unlockedComponentTypes)) {
       return state.unlockedComponentTypes.includes(componentType);
     }
     return STARTING_COMPONENTS.includes(componentType);
   }, [state.unlockedComponentTypes]);
+=======
+    // Check level-based unlocks OR manual/purchased unlocks
+    return isComponentUnlocked(componentType, state.currentLevel) || (state.unlockedComponents || []).includes(componentType);
+  }, [state.currentLevel, state.unlockedComponents]);
+>>>>>>> 71fce1055eac88017771cc905ddfaa5faa1deea5
 
   // ── isProjectUnlocked: sequential prerequisite chain ─────────────────────
   const isProjectUnlocked = useCallback((projectSlug) => {

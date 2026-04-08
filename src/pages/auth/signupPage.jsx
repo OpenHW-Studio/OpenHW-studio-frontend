@@ -23,7 +23,9 @@ export default function SignupPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate(role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
+      if (role === 'teacher') navigate('/teacher/dashboard')
+      else if (role === 'student') navigate('/student/dashboard')
+      else navigate('/user/dashboard')
     }
   }, [isAuthenticated, role, navigate])
 
@@ -39,7 +41,12 @@ export default function SignupPage() {
     try {
       const data = await signupUser(formData)
       login(data.token, data.user)
-      navigate(data.user.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
+      const handleRedirect = (userRole) => {
+        if (userRole === 'teacher') navigate('/teacher/dashboard')
+        else if (userRole === 'student') navigate('/student/dashboard')
+        else navigate('/user/dashboard')
+      }
+      handleRedirect(data.user.role)
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.')
     } finally {
@@ -59,14 +66,14 @@ export default function SignupPage() {
     <div className="auth-screen auth-screen--signup">
       <div className="auth-shell auth-shell--wide auth-shell--reverse">
         <section className="auth-panel">
-          <Link to="/" className="auth-panel__back">Back to Home</Link>
+          <Link to="/login" className="auth-panel__back">Back to User Login</Link>
 
           <div className="auth-panel__brand">
             <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
           </div>
 
           <header className="auth-panel__header">
-            <h2>Create an Account</h2>
+            <h2>Classroom Sign Up</h2>
             <p>Set up your role, profile, and access details.</p>
           </header>
 
@@ -185,7 +192,7 @@ export default function SignupPage() {
           </form>
 
           <p className="auth-panel__footer">
-            Already have an account? <Link to="/signin">Sign in</Link>
+            Already have an account? <Link to="/classroom/signin">Sign in</Link>
           </p>
         </section>
 

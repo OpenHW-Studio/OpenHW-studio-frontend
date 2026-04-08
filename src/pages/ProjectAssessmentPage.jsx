@@ -3,7 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5000/examples'
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
 
 // ─── Per-project guided steps (shown as flashcards) ───────────────────────
 const PROJECT_STEPS = {
