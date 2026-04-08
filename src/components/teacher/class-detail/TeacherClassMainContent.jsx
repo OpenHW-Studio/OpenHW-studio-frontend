@@ -85,7 +85,6 @@ function TeacherClassworkTab({
   onSelectAssignment,
   onDeleteAssignment,
   deletingAssignmentId,
-  submissionsState,
   onPreviewFile,
 }) {
   return (
@@ -218,6 +217,7 @@ function TeacherClassworkTab({
                         className="teacher-classwork-card__delete"
                         disabled={deletingAssignmentId === assignment._id}
                         onClick={(event) => {
+                          event.preventDefault();
                           event.stopPropagation();
                           onDeleteAssignment(assignment._id);
                         }}
@@ -232,104 +232,6 @@ function TeacherClassworkTab({
                     </div>
                   </div>
 
-                  {activeAssignmentId === assignment._id ? (
-                    <div className="teacher-classwork-card__submissions">
-                      <header className="teacher-classwork-card__submissions-header">
-                        <h4>
-                          Student solutions
-                        </h4>
-                        {submissionsState.data?.stats ? (
-                          <small className="teacher-classwork-card__submissions-badge">
-                            {submissionsState.data.stats.submittedCount}/
-                            {submissionsState.data.stats.classStudentCount}{" "}
-                            submitted
-                          </small>
-                        ) : null}
-                      </header>
-
-                      {submissionsState.loading ? (
-                        <p className="teacher-inline-state">
-                          Loading submissions...
-                        </p>
-                      ) : null}
-                      {submissionsState.error ? (
-                        <p className="teacher-inline-state teacher-inline-state--error">
-                          {submissionsState.error}
-                        </p>
-                      ) : null}
-
-                      {!submissionsState.loading &&
-                      !submissionsState.error &&
-                      submissionsState.data ? (
-                        <div className="teacher-submission-list">
-                          {submissionsState.data.submissions.length === 0 ? (
-                            <p className="teacher-inline-state">
-                              No student solutions yet.
-                            </p>
-                          ) : (
-                            submissionsState.data.submissions.map(
-                              (submission) => (
-                                <article
-                                  key={submission._id}
-                                  className="teacher-submission-item"
-                                >
-                                  <div className="teacher-submission-item__left">
-                                    <div className="teacher-notice-card__avatar">
-                                      {submission.studentId?.name
-                                        ? submission.studentId.name
-                                            .split(" ")
-                                            .slice(0, 2)
-                                            .map((part) => part[0])
-                                            .join("")
-                                            .toUpperCase()
-                                        : "S"}
-                                    </div>
-                                    <div>
-                                      <strong>
-                                        {submission.studentId?.name ||
-                                          "Student"}
-                                      </strong>
-                                      <small>
-                                        {submission.studentId?.email ||
-                                          "No email"}
-                                      </small>
-                                    </div>
-                                  </div>
-
-                                  <div className="teacher-submission-item__body">
-                                    <div className="teacher-submission-item__meta">
-                                      <small>
-                                        Updated{" "}
-                                        {formatDateTime(submission.updatedAt)}
-                                      </small>
-                                      <small>
-                                        {submission.attachments?.length ||
-                                        submission.files?.length ||
-                                        0}{" "}
-                                        files
-                                      </small>
-                                    </div>
-
-                                    {submission.notes ? (
-                                      <p className="teacher-submission-item__note">
-                                        {submission.notes}
-                                      </p>
-                                    ) : null}
-
-                                    <ClassroomAttachmentBlock
-                                      source={submission}
-                                      wrapperClassName="classroom-files--submission"
-                                      onPreviewFile={onPreviewFile}
-                                    />
-                                  </div>
-                                </article>
-                              ),
-                            )
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </article>
               );
             })

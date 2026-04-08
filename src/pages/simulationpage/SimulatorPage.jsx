@@ -15,11 +15,10 @@ import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './Si
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import axios from 'axios'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation } from '../../services/simulatorService.js'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
-import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
+import { saveProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
 import * as Babel from '@babel/standalone';
@@ -429,7 +428,7 @@ function validateCircuitLocally(components, wires) {
 export default function SimulatorPage() {
   const { isAuthenticated, user, loading: authLoading } = useAuth()
   const navigate = useNavigate()
-  const { projectName = '' } = useParams()
+  const { projectName = '', shareId = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
@@ -654,7 +653,12 @@ export default function SimulatorPage() {
   const [currentProjectName, setCurrentProjectName] = useState('Untitled');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveDialogName, setSaveDialogName] = useState('');
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
+  const [shareVisibility, setShareVisibility] = useState('public');
   const [myProjects, setMyProjects] = useState([]);
+  const [isSharingSimulation, setIsSharingSimulation] = useState(false);
   const currentProjectIdRef = useRef(null);   // mirror for use inside async callbacks
   const autoSaveTimerRef = useRef(null);
   // My Projects dropdown state
@@ -871,7 +875,7 @@ export default function SimulatorPage() {
   // ── Project: load most-recent project on first mount ─────────────────────
   useEffect(() => {
     // Don't auto-load a project if we're in assessment mode or loading a demo
-    if (assessmentMode || projectName) return;
+    if (assessmentMode || projectName || shareId) return;
 
     const owner = user?.email || 'guest';
     listProjects(owner).then((projects) => {
@@ -891,6 +895,41 @@ export default function SimulatorPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!shareId) return;
+
+    let cancelled = false;
+
+    const loadSharedProject = async () => {
+      try {
+        const sharedProject = await fetchSharedSimulation(shareId);
+        if (!sharedProject || cancelled) return;
+
+        setBoard(sharedProject.board || 'arduino_uno');
+        setCode(sharedProject.code || '');
+        setComponents(sharedProject.components || []);
+        setWires(sharedProject.connections || []);
+        setProjectFiles(Array.isArray(sharedProject.projectFiles) ? sharedProject.projectFiles : []);
+        setOpenCodeTabs(Array.isArray(sharedProject.openCodeTabs) ? sharedProject.openCodeTabs : []);
+        setActiveCodeFileId(sharedProject.activeCodeFileId || '');
+        syncNextIds(sharedProject.components || [], sharedProject.connections || []);
+        currentProjectIdRef.current = null;
+        setCurrentProjectId(null);
+        setCurrentProjectName(sharedProject.name || 'Shared Simulation');
+        setHistory({ past: [], future: [] });
+        lastCompiledRef.current = null;
+      } catch (error) {
+        console.error('Failed to load shared simulation', error);
+        if (!cancelled) {
+          alert(error?.response?.data?.message || error.message || 'Failed to load shared simulation.');
+        }
+      }
+    };
+
+    loadSharedProject();
+    return () => { cancelled = true; };
+  }, [shareId]);
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
@@ -2315,6 +2354,55 @@ export default function SimulatorPage() {
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
   const handleSyncToCloud = () => { alert('Sync feature coming soon!'); };
 
+  const handleShareSimulation = async () => {
+    if (!isAuthenticated) {
+      alert('Please sign in to share this simulation.');
+      navigate('/login');
+      return;
+    }
+
+    setShareUrl('');
+    setShareCopied(false);
+    setShowShareDialog(true);
+  };
+
+  const handleGenerateShareUrl = async () => {
+    setIsSharingSimulation(true);
+    try {
+      const response = await createSharedSimulation({
+        name: currentProjectName || 'Untitled',
+        isPublic: shareVisibility === 'public',
+        board,
+        components,
+        connections: wires,
+        code,
+        projectFiles,
+        openCodeTabs,
+        activeCodeFileId,
+      });
+
+      const url = `${window.location.origin}/simulator/share/${response.shareId}`;
+      setShareUrl(url);
+      setShareCopied(false);
+    } catch (error) {
+      console.error('Failed to share simulation', error);
+      alert(error?.response?.data?.message || error.message || 'Failed to share simulation.');
+    } finally {
+      setIsSharingSimulation(false);
+    }
+  };
+
+  const handleCopyShareUrl = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+    } catch (error) {
+      console.error('Failed to copy share URL', error);
+      alert('Failed to copy share URL.');
+    }
+  };
+
   const handleAssessmentSubmit = async () => {
     if (!assessmentMode) return;
     if (!assessmentProjectName) {
@@ -3604,7 +3692,7 @@ export default function SimulatorPage() {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
 
 
 
@@ -5077,6 +5165,61 @@ export default function SimulatorPage() {
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
                 <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {
+        showShareDialog && (
+          <div className="simulator-dialog-backdrop" onClick={() => setShowShareDialog(false)}>
+            <div className="simulator-dialog simulator-share-dialog" onClick={e => e.stopPropagation()}>
+              <div className="simulator-dialog__title">Share Simulation</div>
+              <div className="simulator-dialog__subtitle">
+                Choose whether this simulator is public or private, then copy the link to share it.
+              </div>
+              <div className="simulator-share-dialog__field">
+                <label className="simulator-dialog__label">
+                  Visibility
+                </label>
+                <select
+                  className="simulator-dialog__select"
+                  value={shareVisibility}
+                  onChange={(e) => {
+                    setShareVisibility(e.target.value);
+                    setShareUrl('');
+                    setShareCopied(false);
+                  }}
+                >
+                  <option value="public">Public</option>
+                  <option value="private">Private</option>
+                </select>
+              </div>
+              <input
+                readOnly
+                value={shareUrl}
+                placeholder="Click Generate Link to generate a share URL"
+                className="simulator-dialog__input"
+                onFocus={(e) => e.target.select()}
+              />
+              <div className="simulator-share-dialog__footer">
+                <span className={`simulator-share-dialog__hint${shareCopied ? ' is-success' : ''}`}>
+                  {shareCopied
+                    ? 'Link copied to clipboard.'
+                    : !shareUrl
+                      ? 'Create a link after choosing the visibility.'
+                      : shareVisibility === 'public'
+                      ? 'Anyone with this link can open the shared simulation.'
+                      : 'This link stays private. Only you can open it while signed in.'}
+                </span>
+                <div className="simulator-share-dialog__actions">
+                  <Btn onClick={() => setShowShareDialog(false)}>Close</Btn>
+                  <Btn onClick={handleGenerateShareUrl} disabled={isSharingSimulation}>
+                    {isSharingSimulation ? 'Generating...' : 'Generate Link'}
+                  </Btn>
+                  <Btn color="var(--accent)" onClick={handleCopyShareUrl} disabled={!shareUrl}>Copy URL</Btn>
+                </div>
               </div>
             </div>
           </div>

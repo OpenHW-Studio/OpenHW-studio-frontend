@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getToken } from './authService.js';
 
 const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5000/api';
 
@@ -142,4 +143,29 @@ export async function backupInstalledComponents() {
 export async function fetchInstalledComponentsWithFiles() {
     const response = await axios.get(`${COMPILER_URL}/admin/components/backup`);
     return response.data.components || [];
+}
+
+export async function createSharedSimulation(payload) {
+    const token = getToken();
+    if (!token) {
+        throw new Error('Please sign in to share this simulation.');
+    }
+
+    const response = await axios.post(`${COMPILER_URL}/simulations/share`, payload, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    return response.data;
+}
+
+export async function fetchSharedSimulation(shareId) {
+    const token = getToken();
+    const response = await axios.get(`${COMPILER_URL}/simulations/share/${shareId}`, {
+        headers: token ? {
+            Authorization: `Bearer ${token}`,
+        } : undefined,
+    });
+    return response.data?.project || null;
 }
