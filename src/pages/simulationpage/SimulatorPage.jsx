@@ -6528,7 +6528,112 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
       {/* TOP BAR */}
       <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
+      {gamificationMode && gamProject && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
+          background: 'rgba(7,8,15,0.97)', borderBottom: `2px solid ${gamProject.color || '#22c55e'}44`,
+          fontFamily: "'Space Grotesk', sans-serif", flexShrink: 0, flexWrap: 'wrap', zIndex: 50,
+        }}>
+          <button
+            onClick={() => navigate('/projects')}
+            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,.12)', color: 'rgba(255,255,255,.55)', borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+          >← Projects</button>
 
+          <span style={{ fontSize: 18, flexShrink: 0 }}>{gamProject.icon}</span>
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1 }}>{gamProject.title}</div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,.4)', marginTop: 1 }}>
+              Project {String(gamProject.number).padStart(2, '0')} ·{' '}
+              <span style={{ color: gamProject.color || '#22c55e' }}>{gamProject.difficultyLabel}</span>
+              {' '}· ⏱ {gamProject.estimatedTime}
+            </div>
+          </div>
+
+          <div style={{ flex: 1 }} />
+
+          {/* XP bar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <div style={{
+              width: 26, height: 26, borderRadius: '50%',
+              background: `${currentLevelData?.color || '#22c55e'}22`,
+              border: `2px solid ${currentLevelData?.color || '#22c55e'}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10, fontWeight: 800, color: currentLevelData?.color || '#22c55e',
+            }}>{currentLevel}</div>
+            <div style={{ width: 90 }}>
+              <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,.1)', overflow: 'hidden' }}>
+                <div style={{ height: '100%', borderRadius: 999, width: `${xpProgress}%`, background: `${currentLevelData?.color || '#22c55e'}` }} />
+              </div>
+              <div style={{ fontSize: 9, color: 'rgba(255,255,255,.3)', marginTop: 2 }}>{xpProgress}% to Lvl {nextLevel?.id ?? '—'}</div>
+            </div>
+          </div>
+
+          {/* Coins */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.2)', borderRadius: 7, padding: '4px 9px', flexShrink: 0 }}>
+            <span style={{ fontSize: 13 }}>🪙</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>{coins}</span>
+          </div>
+
+          {/* XP reward */}
+          <div style={{ fontSize: 10, color: '#22c55e', background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.2)', borderRadius: 7, padding: '4px 9px', flexShrink: 0, fontWeight: 700 }}>
+            +{gamProject.xpReward} XP on complete
+          </div>
+
+          {/* Component lock status */}
+          <div style={{
+            fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 7,
+            background: gamAllUnlocked ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)',
+            border: `1px solid ${gamAllUnlocked ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)'}`,
+            color: gamAllUnlocked ? '#22c55e' : '#ef4444', flexShrink: 0,
+          }}>
+            {gamAllUnlocked ? '✅ All unlocked' : `🔒 ${gamLockedCount} locked`}
+          </div>
+
+          {/* Toggle guide panel */}
+          <button
+            onClick={() => setGamPanelOpen(p => !p)}
+            style={{
+              background: gamPanelOpen ? 'rgba(0,180,255,.1)' : 'transparent',
+              border: `1px solid ${gamPanelOpen ? 'rgba(0,180,255,.3)' : 'rgba(255,255,255,.12)'}`,
+              color: gamPanelOpen ? '#00b4ff' : 'rgba(255,255,255,.5)',
+              borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+            }}
+          >{gamPanelOpen ? '⟩ Hide Guide' : '⟨ Guide'}</button>
+
+          {/* Submit assessment */}
+          <button
+            onClick={handleGamificationSubmit}
+            style={{
+              background: gamProject.color || '#22c55e', border: 'none', color: '#fff',
+              borderRadius: 7, padding: '5px 13px', fontSize: 12, fontWeight: 700,
+              cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+            }}
+          >Submit →</button>
+        </div>
+      )}
+
+      {/* GAMIFICATION LOCK TOAST */}
+      {lockToast && (
+        <div style={{
+          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(7, 11, 25, 0.95)', border: '1px solid rgba(239, 68, 68, 0.3)',
+          boxShadow: '0 8px 32px rgba(239, 68, 68, 0.2)', padding: '12px 20px', borderRadius: 12,
+          display: 'flex', alignItems: 'center', gap: 12, zIndex: 9999, animation: 'slideUp 0.3s ease-out'
+        }}>
+          <span style={{ fontSize: 24 }}>🔒</span>
+          <div>
+            <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 14 }}>{lockToast.label} is Locked</div>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>Study the theory and pass the quiz to unlock this component.</div>
+          </div>
+          {lockToast.compId && (
+            <button
+              onClick={() => navigate(`/components/${lockToast.compId}/theory`)}
+              style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontWeight: 600, cursor: 'pointer', fontSize: 12, marginLeft: 8 }}
+            >Study Now</button>
+          )}
+        </div>
+      )}
 
 
       {/* WIRING MODE HINT */}
@@ -8674,9 +8779,77 @@ export default function SimulatorPage({ gamificationMode = false }) {
   )
 }
 
+function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, setRenameValue, handleConfirmRename, setRenamingProjectId, handleLoadProject, isRunning, setShowProjectsSidebar, onContextMenu, formatProjectDate }) {
+  const isCurrent = proj.id === currentProjectId;
 
-    </div >
-  )
+  return (
+    <div
+      className={`group relative rounded-xl p-3.5 mb-3 cursor-pointer transition-all duration-200 border shadow-sm
+        ${isCurrent 
+          ? 'bg-[rgba(var(--accent-rgb,100,180,255),0.08)] border-[var(--accent)]' 
+          : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--text3)] hover:shadow-md'
+        }`}
+      onClick={() => { if (renamingProjectId !== proj.id) handleLoadProject(proj); }}
+      onContextMenu={(e) => { e.preventDefault(); onContextMenu(proj, e.clientX, e.clientY); }}
+    >
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            {renamingProjectId === proj.id ? (
+              <input
+                autoFocus
+                className="bg-[var(--bg)] border border-[var(--accent)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-sm w-full outline-none ring-2 ring-[var(--accent)]/20"
+                value={renameValue}
+                onChange={e => setRenameValue(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleConfirmRename(proj.id); if (e.key === 'Escape') setRenamingProjectId(null); }}
+                onClick={e => e.stopPropagation()}
+              />
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-[var(--text)] truncate block leading-tight">
+                  {proj.name || 'Untitled Project'}
+                </span>
+                {isCurrent && (
+                  <span className="flex h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] shrink-0 animate-pulse" title="Currently open" />
+                )}
+              </div>
+            )}
+          </div>
+          {!renamingProjectId && (
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity translate-x-1 group-hover:translate-x-0">
+              <button 
+                className="bg-[var(--accent)] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-sm hover:brightness-110 active:scale-95 transition-all"
+                onClick={(e) => { e.stopPropagation(); handleLoadProject(proj); setShowProjectsSidebar(false); }}
+                disabled={isRunning}
+              >
+                Load
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <div className="flex items-center gap-1.5 text-[11px] text-[var(--text3)] font-medium">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12L12 6L18 12" /><path d="M6 18L12 12L18 18" /></svg>
+            {proj.board === 'arduino_uno' ? 'Arduino Uno' : (proj.board || 'Custom Board')}
+          </div>
+          <div className="flex items-center gap-1.5 text-[11px] text-[var(--text3)] font-medium">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+            {proj.components?.length ?? 0} components
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] text-[var(--text3)] opacity-70 ml-auto">
+            {formatProjectDate(proj.savedAt)}
+          </div>
+        </div>
+      </div>
+
+      {renamingProjectId === proj.id && (
+        <div className="flex gap-2 mt-3 justify-end">
+          <button className="px-3 py-1.5 text-xs font-semibold text-[var(--text3)] hover:text-[var(--text)] transition-colors" onClick={(e) => { e.stopPropagation(); setRenamingProjectId(null); }}>Cancel</button>
+          <button className="px-4 py-1.5 bg-[var(--accent)] text-white text-xs font-bold rounded-lg shadow-md" onClick={(e) => { e.stopPropagation(); handleConfirmRename(proj.id); }}>Rename</button>
+        </div>
+      )}
+    </div>
+  );
 }
-
 
