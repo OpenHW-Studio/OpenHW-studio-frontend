@@ -5,7 +5,11 @@ import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
 import { useAuth } from './AuthContext.jsx';
 
 const getStorageKey = (email) => `openhw_gamification_v3_${email || 'guest'}`;
-
+const STARTING_COMPONENTS = [
+  'wokwi-arduino-uno',
+  'wokwi-led',
+  'wokwi-resistor'
+];
 const DEFAULT_STATE = {
   xp: 0,
   currentLevel: 1,
