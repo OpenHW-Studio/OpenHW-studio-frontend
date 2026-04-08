@@ -22,7 +22,6 @@ import SimulatorPage from "./pages/simulationpage/SimulatorPage.jsx";
 import AdminPage from './pages/admin/AdminPage.jsx'
 import AdminLoginPage from './pages/admin/AdminLoginPage.jsx'
 import AdminLandingPage from './pages/admin/AdminLandingPage.jsx'
-import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
 import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx'
 import ProjectsGallery from './pages/ProjectsGallery.jsx'
 import ComponentsPage from './pages/ComponentsPage.jsx'
@@ -30,6 +29,11 @@ import ComponentEditorPage from './pages/ComponentEditorPage.jsx'
 import TheoryPage from './pages/TheoryPage.jsx'
 import QuizPage from './pages/QuizPage.jsx'
 import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
+import AdventureMapPage from './pages/AdventureMapPage.jsx'
+import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
+import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage'
+import GuidedSimulatorPage from './pages/GuidedSimulatorPage'
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -56,13 +60,17 @@ export default function App() {
             <Route path="/component-editor" element={<ComponentEditorPage />} />
             <Route path="/components/:componentId/theory" element={<TheoryPage />} />
             <Route path="/components/:componentId/quiz" element={<QuizPage />} />
+            <Route path="/adventure" element={<AdventureMapPage />} />
             <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
                         <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} />
             {/* Guest accessible simulator */}
             <Route path="/simulator" element={<SimulatorPage />} />
             <Route path="/:projectName/demo" element={<SimulatorPage />} />
             <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
+            <Route path="/:projectName/gamified-guide" element={<GamifiedProjectGuidePage />} />
             <Route path="/:projectName/assessment" element={<ProjectAssessmentPage />} />
+            <Route path="/:projectName/guided" element={<GuidedSimulatorPage />} />
+
 
             {/* Protected: General User */}
             <Route

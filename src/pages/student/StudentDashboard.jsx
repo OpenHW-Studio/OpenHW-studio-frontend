@@ -35,7 +35,7 @@ export default function StudentDashboard() {
   } = useGamification()
 
   const completedCount = completedProjects.length
-  const unlockedCount = unlockedComponents.length
+  const totalProjects = PROJECTS.length
 
   const [classrooms, setClassrooms] = useState([])
   const [assignmentsByClass, setAssignmentsByClass] = useState({})
@@ -355,127 +355,74 @@ export default function StudentDashboard() {
               </div>
             </section>
 
-            {/* GAMIFIED PROGRESS — XP, level, completed projects */}
+            {/* GAMIFIED PROGRESS STATS BAR */}
             <section className="teacher-classes-panel projects-section student-dashboard__section-gap">
               <header className="teacher-section-heading teacher-section-heading--compact">
                 <div>
-                  <h3 className="student-dashboard__section-title">Your progress</h3>
+                  <h3 className="student-dashboard__section-title">Your Progress</h3>
                   <p className="section-sub student-dashboard__section-sub">
-                    Complete gamified projects to earn XP, coins, and badges
+                    Track your journey through the gamified projects
                   </p>
                 </div>
-                <button type="button" className="teacher-section-link" onClick={() => navigate('/projects')}>
-                  Full Project Gallery →
+                <button type="button" className="teacher-section-link" onClick={() => navigate('/adventure')}>
+                  Adventure Map →
                 </button>
               </header>
 
-              {/* XP + level bar */}
+              {/* Stats Bar */}
               <div style={{
-                display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
-                background: 'var(--card, #1a2236)', border: '1px solid var(--border)',
-                borderRadius: 12, padding: '14px 18px', margin: '1rem 0',
+                display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap',
+                background: 'var(--card, #1a2236)', border: '1px solid var(--border, rgba(255,255,255,0.1))',
+                borderRadius: 12, padding: '16px 24px', margin: '1rem 0',
+                justifyContent: 'space-between'
               }}>
-                <div style={{
-                  width: 44, height: 44, borderRadius: '50%', flexShrink: 0,
-                  background: `${currentLevelData?.color || '#22c55e'}22`,
-                  border: `2px solid ${currentLevelData?.color || '#22c55e'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 18, fontWeight: 800, color: currentLevelData?.color || '#22c55e',
-                }}>{currentLevel}</div>
-                <div style={{ flex: 1, minWidth: 140 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 5 }}>
-                    {currentLevelData?.title || 'Hello, World'}
-                    <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.5, marginLeft: 6 }}>
-                      Level {currentLevel}
-                    </span>
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 24, fontWeight: 900, lineHeight: 1, color: '#fbbf24' }}>{xp}</span>
+                    <span style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>XP</span>
                   </div>
-                  <div style={{ height: 6, borderRadius: 999, background: 'var(--border)', overflow: 'hidden', marginBottom: 3 }}>
+                  <div style={{ width: 1, height: 36, background: 'var(--border, rgba(255,255,255,0.1))' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 24, fontWeight: 900, lineHeight: 1, color: '#34d399' }}>{completedCount}</span>
+                    <span style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>Done</span>
+                  </div>
+                  <div style={{ width: 1, height: 36, background: 'var(--border, rgba(255,255,255,0.1))' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 24, fontWeight: 900, lineHeight: 1, color: '#64748b' }}>{totalProjects - completedCount}</span>
+                    <span style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>Left</span>
+                  </div>
+                  <div style={{ width: 1, height: 36, background: 'var(--border, rgba(255,255,255,0.1))' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 24, fontWeight: 900, lineHeight: 1, color: currentLevelData?.color || '#34d399' }}>
+                      {currentLevelData?.icon || '⭐'} {currentLevel}
+                    </span>
+                    <span style={{ fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>Level</span>
+                  </div>
+                </div>
+
+                <div style={{ width: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
+                  <div style={{ height: 6, borderRadius: 99, background: 'rgba(255,255,255,0.05)', overflow: 'hidden' }}>
                     <div style={{
-                      height: '100%', borderRadius: 999,
-                      width: `${xpProgress}%`,
-                      background: `linear-gradient(90deg, ${currentLevelData?.color || '#22c55e'}, ${nextLevel?.color || currentLevelData?.color || '#22c55e'})`,
-                      transition: 'width .5s',
+                      height: '100%', borderRadius: 99,
+                      width: `${Math.round((completedCount / totalProjects) * 100) || 0}%`,
+                      background: 'linear-gradient(90deg, #34d399, #3b82f6)',
+                      transition: 'width .6s ease',
                     }} />
                   </div>
-                  <div style={{ fontSize: 11, opacity: 0.5 }}>
-                    {xpProgress}% to Level {nextLevel?.id ?? '—'} · {xp.toLocaleString()} XP total
+                  <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', fontWeight: 700 }}>
+                    {Math.round((completedCount / totalProjects) * 100) || 0}% Map Clear
                   </div>
-                </div>
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  {[
-                    { icon: '✅', label: 'Completed', value: completedCount },
-                    { icon: '🔓', label: 'Components', value: unlockedCount },
-                    { icon: '🏅', label: 'Badges', value: earnedBadges.length },
-                    { icon: '🪙', label: 'Coins', value: coins },
-                  ].map(s => (
-                    <div key={s.label} style={{
-                      textAlign: 'center', padding: '6px 12px',
-                      background: 'var(--bg, #07080f)', border: '1px solid var(--border)',
-                      borderRadius: 8,
-                    }}>
-                      <div style={{ fontSize: 16 }}>{s.icon}</div>
-                      <div style={{ fontSize: 14, fontWeight: 800 }}>{s.value}</div>
-                      <div style={{ fontSize: 9, opacity: 0.45, textTransform: 'uppercase', letterSpacing: '.05em' }}>{s.label}</div>
-                    </div>
-                  ))}
                 </div>
               </div>
-
-              {/* Recent completed projects */}
-              {completedCount > 0 ? (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.4, textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>
-                    Recently completed
-                  </div>
-                  <div className="projects-grid">
-                    {PROJECTS.filter(p => completedProjects.includes(p.slug)).slice(0, 3).map(p => (
-                      <div
-                        key={p.slug}
-                        className="project-card"
-                        onClick={() => navigate(`/gamification-simulator/${p.slug}`)}
-                        style={{ cursor: 'pointer', borderColor: 'rgba(34,197,94,.3)', background: 'rgba(34,197,94,.04)' }}
-                      >
-                        <div className="project-icon">{p.icon}</div>
-                        <div className="project-info">
-                          <h4 style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <span style={{ fontSize: 11, color: '#22c55e' }}>✓</span>
-                            {p.title}
-                          </h4>
-                          <span className="project-board">{p.estimatedTime}</span>
-                        </div>
-                        <div className="project-meta">
-                          <span className="difficulty beginner">Done</span>
-                          <span className="points">+{p.xpReward} XP</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  textAlign: 'center', padding: '28px 0',
-                  opacity: 0.45, fontSize: 13,
-                }}>
-                  <div style={{ fontSize: 36, marginBottom: 8 }}>🎯</div>
-                  No projects completed yet. Go to the Full Project Gallery to start!
-                </div>
-              )}
 
               <div style={{ display: 'flex', gap: 10, marginTop: '1rem' }}>
                 <button
                   type="button"
                   className="teacher-button teacher-button--primary"
-                  onClick={() => navigate('/projects')}
+                  onClick={() => navigate('/adventure')}
                   style={{ flex: 1 }}
                 >
-                  🚀 Start a Gamified Project
-                </button>
-                <button
-                  type="button"
-                  className="teacher-button teacher-button--secondary"
-                  onClick={() => navigate('/components')}
-                >
-                  🔓 Unlock Components
+                  🗺️ View Adventure Map
                 </button>
               </div>
             </section>

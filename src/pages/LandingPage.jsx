@@ -53,8 +53,9 @@ export default function LandingPage() {
           classroom tools, and real hardware emulation. No hardware needed.
         </p>
         <div className="hero-actions">
+          
           <button className="btn btn-primary btn-lg" onClick={() => navigate('/simulator')}>
-            ▶ Try Simulator — No Login Required
+            ▶ Try Simulator
           </button>
           <button className="btn btn-outline btn-lg" onClick={() => navigate('/classroom/signup')}>
             Join as Student / Teacher
