@@ -1,9 +1,7 @@
 import {
-  Link2,
   BookOpenCheck,
   CalendarDays,
   FileImage,
-  Plus,
   FilePlus2,
   FileText,
   Upload,
@@ -18,9 +16,6 @@ export default function TeacherComposerModal({
   onCreateAssignment,
   assignmentForm,
   onAssignmentInputChange,
-  onAssignmentLinkChange,
-  onAddAssignmentLink,
-  onRemoveAssignmentLink,
   assignmentFiles,
   onAssignmentFilesChange,
   onRemoveAssignmentFile,
@@ -107,41 +102,6 @@ export default function TeacherComposerModal({
                 onChange={onAssignmentInputChange}
               />
             </label>
-            <div className="teacher-assignment-form__files-label">
-              <div className="teacher-assignment-form__files-copy">
-                <span>Reference Links</span>
-                <small>Add one or more URLs for students.</small>
-              </div>
-              <div className="teacher-link-input-list">
-                {(assignmentForm.links || []).map((link, idx) => (
-                  <div key={`assignment-link-input-${idx}`} className="teacher-link-input-row">
-                    <div className="teacher-link-input-wrap">
-                      <Link2 size={14} />
-                      <input
-                        type="url"
-                        value={link}
-                        onChange={(event) => onAssignmentLinkChange(idx, event.target.value)}
-                        placeholder="https://example.com/resource"
-                      />
-                    </div>
-                    {(assignmentForm.links || []).length > 1 ? (
-                      <button
-                        type="button"
-                        className="teacher-assignment-form__link-pill-remove"
-                        onClick={() => onRemoveAssignmentLink(idx)}
-                        aria-label={`Remove link ${idx + 1}`}
-                      >
-                        <X size={14} />
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
-                <button type="button" className="teacher-link-add-btn" onClick={onAddAssignmentLink}>
-                  <Plus size={14} />
-                  <span>Add link</span>
-                </button>
-              </div>
-            </div>
             <div className="teacher-assignment-form__files-label">
               <div className="teacher-assignment-form__files-copy">
                 <span>Assignment Attachments</span>
