@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Btn } from './Btn';
-import { useNavigate } from 'react-router-dom';
 
 export function TopToolbox(props) {
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, handleSave, isExporting, refreshProjectList, setShowProjectsSidebar, setProjectsSidebarTab, backupRestoreInputRef, handleRestoreWorkflow, user, navigate, isAuthenticated, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab } = props;
 
   const viewPanelRef = useRef(null);
   const connectPanelRef = useRef(null);
@@ -477,6 +476,14 @@ export function TopToolbox(props) {
           </Btn>
           {/* Save */}
           <Btn color="var(--accent)" onClick={handleSave} title="Save current project"> Save</Btn>
+          <Btn
+            color="var(--green)"
+            onClick={handleShareSimulation}
+            disabled={isSharingSimulation}
+            title={isAuthenticated ? 'Create a share link for this simulator page' : 'Sign in to share this simulator page'}
+          >
+            {isSharingSimulation ? 'Sharing...' : 'Share'}
+          </Btn>
 
           <Btn
             onClick={() => {

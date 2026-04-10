@@ -15,7 +15,6 @@ import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './Si
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import axios from 'axios'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
@@ -23,6 +22,7 @@ import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
 import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
+import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
 
 // ── Lazy loaders — heavy libs loaded on first use, NOT on page paint ──────────
@@ -1269,7 +1269,7 @@ function getPinCategory(pId, pDesc, compType) {
 export default function SimulatorPage({ gamificationMode = false }) {
   const { isAuthenticated, user, logout, loading: authLoading } = useAuth()
   const navigate = useNavigate()
-  const { projectName = '' } = useParams()
+  const { projectName = '', shareId = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
@@ -1687,7 +1687,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showF1Menu, setShowF1Menu] = useState(false);
   const [saveDialogName, setSaveDialogName] = useState('');
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
+  const [shareVisibility, setShareVisibility] = useState('public');
   const [myProjects, setMyProjects] = useState([]);
+  const [isSharingSimulation, setIsSharingSimulation] = useState(false);
   const currentProjectIdRef = useRef(null);   // mirror for use inside async callbacks
   const autoSaveTimerRef = useRef(null);
   // My Projects sidebar state
@@ -1953,7 +1958,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // ── Project: load most-recent project on first mount ─────────────────────
   useEffect(() => {
     // Don't auto-load a project if we're in assessment mode or loading a demo
-    if (assessmentMode || projectName) return;
+    if (assessmentMode || projectName || shareId) return;
 
     const owner = user?.email || 'guest';
     listProjects(owner).then((projects) => {
@@ -1983,6 +1988,41 @@ export default function SimulatorPage({ gamificationMode = false }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!shareId) return;
+
+    let cancelled = false;
+
+    const loadSharedProject = async () => {
+      try {
+        const sharedProject = await fetchSharedSimulation(shareId);
+        if (!sharedProject || cancelled) return;
+
+        setBoard(sharedProject.board || 'arduino_uno');
+        setCode(sharedProject.code || '');
+        setComponents(sharedProject.components || []);
+        setWires(sharedProject.connections || []);
+        setProjectFiles(Array.isArray(sharedProject.projectFiles) ? sharedProject.projectFiles : []);
+        setOpenCodeTabs(Array.isArray(sharedProject.openCodeTabs) ? sharedProject.openCodeTabs : []);
+        setActiveCodeFileId(sharedProject.activeCodeFileId || '');
+        syncNextIds(sharedProject.components || [], sharedProject.connections || []);
+        currentProjectIdRef.current = null;
+        setCurrentProjectId(null);
+        setCurrentProjectName(sharedProject.name || 'Shared Simulation');
+        setHistory({ past: [], future: [] });
+        lastCompiledRef.current = null;
+      } catch (error) {
+        console.error('Failed to load shared simulation', error);
+        if (!cancelled) {
+          alert(error?.response?.data?.message || error.message || 'Failed to load shared simulation.');
+        }
+      }
+    };
+
+    loadSharedProject();
+    return () => { cancelled = true; };
+  }, [shareId]);
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
@@ -4358,6 +4398,55 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
   const handleSyncToCloud = () => { alert('Sync feature coming soon!'); };
 
+  const handleShareSimulation = async () => {
+    if (!isAuthenticated) {
+      alert('Please sign in to share this simulation.');
+      navigate('/login');
+      return;
+    }
+
+    setShareUrl('');
+    setShareCopied(false);
+    setShowShareDialog(true);
+  };
+
+  const handleGenerateShareUrl = async () => {
+    setIsSharingSimulation(true);
+    try {
+      const response = await createSharedSimulation({
+        name: currentProjectName || 'Untitled',
+        isPublic: shareVisibility === 'public',
+        board,
+        components,
+        connections: wires,
+        code,
+        projectFiles,
+        openCodeTabs,
+        activeCodeFileId,
+      });
+
+      const url = `${window.location.origin}/simulator/share/${response.shareId}`;
+      setShareUrl(url);
+      setShareCopied(false);
+    } catch (error) {
+      console.error('Failed to share simulation', error);
+      alert(error?.response?.data?.message || error.message || 'Failed to share simulation.');
+    } finally {
+      setIsSharingSimulation(false);
+    }
+  };
+
+  const handleCopyShareUrl = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+    } catch (error) {
+      console.error('Failed to copy share URL', error);
+      alert('Failed to copy share URL.');
+    }
+  };
+
   // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
   const logSerial = (msg, color = 'var(--text)') => {
     // In a real implementation this would push to a serial console state array
@@ -6438,9 +6527,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
       )}
 
       {/* TOP BAR */}
-              <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} user={user} navigate={navigate} isAuthenticated={isAuthenticated} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
-
-      {/* GAMIFICATION PROJECT BAR */}
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
       {gamificationMode && gamProject && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
@@ -6547,7 +6634,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
           )}
         </div>
       )}
-
 
 
       {/* WIRING MODE HINT */}
@@ -8766,5 +8852,4 @@ function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, s
     </div>
   );
 }
-
 
