@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getToken } from './authService.js';
 
 const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5000/api';
 
@@ -16,8 +17,26 @@ export async function compileCode(input) {
         }
         throw new Error('No hex returned from compiler');
     } catch (error) {
+        if (error.response && error.response.data && error.response.data.diagnostics) {
+            const diagnostics = error.response.data.diagnostics || {};
+            const stage = diagnostics.stage ? ` stage=${diagnostics.stage}` : '';
+            const category = diagnostics.category ? ` category=${diagnostics.category}` : '';
+            const highlights = Array.isArray(diagnostics.highlights)
+                ? diagnostics.highlights.slice(0, 6).join('\n')
+                : '';
+            const hint = diagnostics.hint ? `\nHint: ${diagnostics.hint}` : '';
+            const details = (error.response.data.details || '').trim();
+            const body = highlights || details || error.response.data.error || 'Unknown compile failure';
+            throw new Error(`Compilation Failed:${stage}${category}\n${body}${hint}`);
+        }
         if (error.response && error.response.data && error.response.data.details) {
             throw new Error(`Compilation Failed:\n${error.response.data.details}`);
+        }
+        if (error.response && error.response.data && error.response.data.error) {
+            throw new Error(`Compilation Failed: ${error.response.data.error}`);
+        }
+        if (error.response && error.response.status) {
+            throw new Error(`Compilation request failed with status ${error.response.status}.`);
         }
         throw error;
     }
@@ -142,4 +161,29 @@ export async function backupInstalledComponents() {
 export async function fetchInstalledComponentsWithFiles() {
     const response = await axios.get(`${COMPILER_URL}/admin/components/backup`);
     return response.data.components || [];
+}
+
+export async function createSharedSimulation(payload) {
+    const token = getToken();
+    if (!token) {
+        throw new Error('Please sign in to share this simulation.');
+    }
+
+    const response = await axios.post(`${COMPILER_URL}/simulations/share`, payload, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    return response.data;
+}
+
+export async function fetchSharedSimulation(shareId) {
+    const token = getToken();
+    const response = await axios.get(`${COMPILER_URL}/simulations/share/${shareId}`, {
+        headers: token ? {
+            Authorization: `Bearer ${token}`,
+        } : undefined,
+    });
+    return response.data?.project || null;
 }

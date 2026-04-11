@@ -1,0 +1,14 @@
+ffd6264 Merge pull request #34 from OpenHW-Studio/k
+f4ae099 feat: implement SimulatorPage component with hardware integration and component registry logic
+M	src/pages/simulationpage/SimulatorPage.jsx
+22cae57 Merge pull request #33 from OpenHW-Studio/k
+f0d5c85 feat: implement SimulatorPage component with hardware emulation, code editing, and project management features
+M	src/pages/simulationpage/SimulatorPage.jsx
+1fca4f2 feat: implement SimulatorPage component with hardware simulation, code editing, and project management capabilities
+M	src/pages/simulationpage/SimulatorPage.jsx
+01c0ed1 feat: implement SimulatorPage component with integrated code editor, hardware simulation, and project management utilities
+M	src/pages/simulationpage/SimulatorPage.jsx
+9bf02fc feat: implement SimulatorPage component with hardware emulation, code editing, and project management features
+M	src/pages/simulationpage/SimulatorPage.jsx
+9cb02a1 feat: implement SimulatorPage component with hardware emulation, code editing, and project management features
+M	src/pages/simulationpage/SimulatorPage.jsx

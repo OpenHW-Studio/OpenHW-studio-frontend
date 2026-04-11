@@ -1,10 +1,15 @@
-# 🎨 OpenHW-Studio: React Frontend
+# OpenHW Studio Frontend Notes
 
-> **Role:** The visually interactive UI serving as a lightweight render client for the Universal Simulator.
+This file is kept for backward compatibility.
 
----
+Use the main documentation in README.md for current setup and feature details.
 
-## 🚀 Key Integrations
+Recent frontend updates are documented there, including:
+
+- Pico dual-source folder defaults (`<boardId>.ino` + `main.py`)
+- file disable/enable support with `.disabled` suffix
+- duplicate explorer file dedupe on refresh/load
+- RP2040 compile fallback to MicroPython when backend core is missing
 
 *   **Simulator Service API**
     *   Utilizes a clean Axios wrapper (`simulatorService.js`) to pipe editor code to the background compilation cluster.
