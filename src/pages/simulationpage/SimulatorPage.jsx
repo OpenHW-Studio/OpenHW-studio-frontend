@@ -1698,6 +1698,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // My Projects sidebar state
   const [showProjectsSidebar, setShowProjectsSidebar] = useState(false);
   const [projectsSidebarTab, setProjectsSidebarTab] = useState('projects'); // 'favourites' | 'projects' | 'custom' | 'settings'
+  const [showProjectsDropdown, setShowProjectsDropdown] = useState(false);
   const [favouriteProjectIds, setFavouriteProjectIds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ohw_favourite_projects') || '[]'); }
     catch { return []; }
@@ -6628,7 +6629,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
           </div>
           {lockToast.compId && (
             <button
-              onClick={() => navigate(`/components/${lockToast.compId}/theory`)}
+              onClick={() => navigate('/adventure')}
               style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontWeight: 600, cursor: 'pointer', fontSize: 12, marginLeft: 8 }}
             >Study Now</button>
           )}
@@ -8460,7 +8461,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                         </div>
                         {c.isLocked && c.compId && (
                           <button
-                            onClick={() => navigate(`/components/${c.compId}/theory`)}
+                            onClick={() => navigate('/adventure')}
                             style={{ background: 'rgba(239,68,68,.15)', border: '1px solid rgba(239,68,68,.35)', color: '#ef4444', borderRadius: 6, padding: '3px 7px', fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
                           >Unlock →</button>
                         )}

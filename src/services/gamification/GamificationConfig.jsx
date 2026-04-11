@@ -1,10 +1,6 @@
 
-// ── Starting components (always available from Day 1) ─────────────────────────
-export const STARTING_COMPONENTS = [
-  'wokwi-arduino-uno',
-  'wokwi-led',
-  'wokwi-resistor',
-];
+// ── Starting components (none - all unlocked via adventure) ───────────────────
+export const STARTING_COMPONENTS = [];
 
 // ── Level config (XP-based titles / badges, separate from component unlocking) ─
 export const LEVELS = [
@@ -110,18 +106,6 @@ export const LEVELS = [
     xpReward: 140,
     color: '#eab308',
     icon: '🌞',
-    title: 'Color Wizard',
-    subtitle: 'RGB & addressable LEDs',
-    description: 'Master color control with RGB LEDs and NeoPixel matrices.',
-    xpRequired: 1000,
-    xpReward: 500,
-    color: '#8b5cf6',
-    icon: '🌈',
-    unlockedComponents: [
-      'wokwi-rgb-led',
-      'wokwi-neopixel-matrix',
-      'wokwi-neopixel-ring',
-    ],
     badge: {
       id: 'badge_light_chaser',
       name: 'Light Chaser',
@@ -139,18 +123,6 @@ export const LEVELS = [
     xpReward: 200,
     color: '#3b82f6',
     icon: '⚙️',
-    title: 'Data Displayer',
-    subtitle: 'Show your data',
-    description: 'Display real-time sensor data on LCD and 7-segment displays.',
-    xpRequired: 1500,
-    xpReward: 600,
-    color: '#06b6d4',
-    icon: '📟',
-    unlockedComponents: [
-      'wokwi-lcd1602',
-      'wokwi-7segment',
-      'wokwi-tm1637-7segment',
-    ],
     badge: {
       id: 'badge_motion_master',
       name: 'Motion Master',

@@ -1,15 +1,12 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LEVELS, getUnlockedComponents, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
-import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
+import { LEVELS, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
+import { PROJECTS, getEarnedComponents } from '../services/gamification/ProjectsConfig.js';
+import { getUnlockComponents } from '../services/gamification/ProjectData';
 import { useAuth } from './AuthContext.jsx';
 
 const getStorageKey = (email) => `openhw_gamification_v3_${email || 'guest'}`;
-const STARTING_COMPONENTS = [
-  'wokwi-arduino-uno',
-  'wokwi-led',
-  'wokwi-resistor'
-];
+const STARTING_COMPONENTS = [];
 const DEFAULT_STATE = {
   xp: 0,
   currentLevel: 1,
@@ -17,7 +14,7 @@ const DEFAULT_STATE = {
   completedLevels: [],
   completedProjects: [],
   // unlockedComponentTypes: array of wokwi-type strings, or '*' for all
-  // Starts with just LED + Resistor + Arduino (given for free on Day 1)
+  // Starts with no components - unlocked through project completion
   unlockedComponentTypes: [...STARTING_COMPONENTS],
   totalComponentsPlaced: 0,
   totalWiresDrawn: 0,
@@ -168,32 +165,36 @@ export function GamificationProvider({ children }) {
       const earnedComponents = getEarnedComponents(newCompletedProjects);
 
       // Notify about new components earned
-      const rewardComponents = project.rewardComponents || [];
+      const rewardComponents = getUnlockComponents(projectSlug);
       if (rewardComponents.length > 0) {
-        setTimeout(() => {
-          for (const reward of rewardComponents) {
-            if (reward.type === '*') {
-              pushNotification({
-                type: 'unlock',
-                title: '🏆 All Components Unlocked!',
-                subtitle: 'You\'re a Circuit Champion! Build anything!',
-                icon: '🏆',
-                color: '#fbbf24',
-                duration: 7000,
-              });
-            } else {
+        const hasAllUnlock = rewardComponents.some(r => r.id === '*');
+        
+        if (hasAllUnlock) {
+          setTimeout(() => {
+            pushNotification({
+              type: 'unlock',
+              title: '🏆 All Components Unlocked!',
+              subtitle: 'You\'re a Circuit Champion! Build anything!',
+              icon: '🏆',
+              color: '#fbbf24',
+              duration: 7000,
+            });
+          }, 800);
+        } else {
+          setTimeout(() => {
+            for (const reward of rewardComponents) {
               pushNotification({
                 type: 'unlock',
                 title: `🔓 New Component Unlocked!`,
                 subtitle: `${reward.icon} ${reward.name}`,
-                description: reward.description,
+                description: reward.desc,
                 icon: reward.icon,
                 color: '#22c55e',
                 duration: 5000,
               });
             }
-          }
-        }, 800);
+          }, 800);
+        }
       }
 
       // Level-up check
@@ -273,8 +274,8 @@ export function GamificationProvider({ children }) {
   // ── isUnlocked: checks unlockedComponentTypes in state ────────────────────
   const isUnlocked = useCallback((componentType) => {
     // Check level-based unlocks OR manual/purchased unlocks
-    return isComponentUnlocked(componentType, state.currentLevel) || (state.unlockedComponents || []).includes(componentType);
-  }, [state.currentLevel, state.unlockedComponents]);
+    return isComponentUnlocked(componentType, state.unlockedComponentTypes) || (state.unlockedComponents || []).includes(componentType);
+  }, [state.unlockedComponentTypes, state.unlockedComponents]);
 
   // ── isProjectUnlocked: sequential prerequisite chain ─────────────────────
   const isProjectUnlocked = useCallback((projectSlug) => {

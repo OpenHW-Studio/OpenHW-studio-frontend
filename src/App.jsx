@@ -26,13 +26,13 @@ import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx'
 import ProjectsGallery from './pages/ProjectsGallery.jsx'
 import ComponentsPage from './pages/ComponentsPage.jsx'
 import ComponentEditorPage from './pages/ComponentEditorPage.jsx'
-import TheoryPage from './pages/TheoryPage.jsx'
-import QuizPage from './pages/QuizPage.jsx'
-import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
 import AdventureMapPage from './pages/AdventureMapPage.jsx'
 import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
-import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage'
-import GuidedSimulatorPage from './pages/GuidedSimulatorPage'
+import ProjectTheoryPage from './pages/ProjectTheoryPage.jsx'
+import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
+import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
+import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
+
 
 export default function App() {
   return (
@@ -55,23 +55,21 @@ export default function App() {
             <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
             <Route path="/select-role" element={<RoleSelectPage />} />
 
-            <Route path="/projects" element={<ProjectsGallery />} />
+<Route path="/projects" element={<ProjectsGallery />} />
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/component-editor" element={<ComponentEditorPage />} />
-            <Route path="/components/:componentId/theory" element={<TheoryPage />} />
-            <Route path="/components/:componentId/quiz" element={<QuizPage />} />
             <Route path="/adventure" element={<AdventureMapPage />} />
-            <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
-                        <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} />
+            <Route path="/gamification-simulator" element={<Navigate to="/adventure" replace />} />
             {/* Guest accessible simulator */}
             <Route path="/simulator" element={<SimulatorPage />} />
             <Route path="/simulator/share/:shareId" element={<SimulatorPage />} />
             <Route path="/:projectName/demo" element={<SimulatorPage />} />
             <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
-            <Route path="/:projectName/gamified-guide" element={<GamifiedProjectGuidePage />} />
+            <Route path="/:projectName/reading" element={<ProjectTheoryPage />} />
+            <Route path="/:projectName/quiz" element={<ProjectQuizPage />} />
+            <Route path="/:projectName/components" element={<ProjectComponentUnlockPage />} />
             <Route path="/:projectName/assessment" element={<ProjectAssessmentPage />} />
             <Route path="/:projectName/guided" element={<GuidedSimulatorPage />} />
-
 
             {/* Protected: General User */}
             <Route
@@ -135,6 +133,7 @@ export default function App() {
               }
             />
 
+
             {/* Admin */}
             <Route path="/admin" element={<AdminLandingPage />} />
             <Route path="/admin/login" element={<AdminLoginPage />} />
@@ -151,7 +150,7 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
 
-        </GamificationProvider>
+      </GamificationProvider>
       </AuthProvider>
     </BrowserRouter>
   )
