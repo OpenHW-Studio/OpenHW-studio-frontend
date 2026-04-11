@@ -9,6 +9,7 @@ import TeacherClassMainContent from "../../components/teacher/class-detail/Teach
 import TeacherClassSidebar from "../../components/teacher/class-detail/TeacherClassSidebar.jsx";
 import TeacherComposerModal from "../../components/teacher/class-detail/TeacherComposerModal.jsx";
 import TeacherEditClassModal from "../../components/teacher/class-detail/TeacherEditClassModal.jsx";
+import TeacherAssignmentSubmissionsModal from "../../components/teacher/class-detail/TeacherAssignmentSubmissionsModal.jsx";
 import ClassroomFilePreviewModal from "../../components/common/ClassroomFilePreviewModal.jsx";
 import { sidebarLinks } from "../../components/teacher/class-detail/helpers.js";
 import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
@@ -47,6 +48,7 @@ export default function TeacherClassDetailPage() {
     title: "",
     description: "",
     dueDate: "",
+    links: [""],
   });
 
   const [noticeFiles, setNoticeFiles] = useState([]);
@@ -392,10 +394,11 @@ export default function TeacherClassDetailPage() {
         title: assignmentForm.title,
         description: assignmentForm.description,
         dueDate: assignmentForm.dueDate || undefined,
+        links: (assignmentForm.links || []).filter((link) => link.trim()),
         attachments: assignmentFiles,
       });
 
-      setAssignmentForm({ title: "", description: "", dueDate: "" });
+      setAssignmentForm({ title: "", description: "", dueDate: "", links: [""] });
       setAssignmentFiles([]);
       setAssignments(await getClassAssignments(classId));
       setShowComposer(false);
@@ -420,18 +423,42 @@ export default function TeacherClassDetailPage() {
     }
   };
 
+  const handleAssignmentLinkChange = (index, value) => {
+    setAssignmentForm((current) => ({
+      ...current,
+      links: (current.links || []).map((link, idx) => (idx === index ? value : link)),
+    }));
+  };
+
+  const handleAddAssignmentLink = () => {
+    setAssignmentForm((current) => ({
+      ...current,
+      links: [...(current.links || []), ""],
+    }));
+  };
+
+  const handleRemoveAssignmentLink = (index) => {
+    setAssignmentForm((current) => {
+      const nextLinks = (current.links || []).filter((_, idx) => idx !== index);
+      return {
+        ...current,
+        links: nextLinks.length > 0 ? nextLinks : [""],
+      };
+    });
+  };
+
   const handleDeleteAssignment = async (assignmentId) => {
+    if (activeAssignmentId === assignmentId) {
+      setActiveAssignmentId(null);
+      setSubmissionsState({ loading: false, error: "", data: null });
+    }
+
     setDeletingAssignmentId(assignmentId);
 
     try {
       await deleteClassAssignment(classId, assignmentId);
       const refreshedAssignments = await getClassAssignments(classId);
       setAssignments(refreshedAssignments);
-
-      if (activeAssignmentId === assignmentId) {
-        setActiveAssignmentId(null);
-        setSubmissionsState({ loading: false, error: "", data: null });
-      }
     } catch (deleteError) {
       setError(deleteError.message || "Failed to delete assignment");
     } finally {
@@ -742,6 +769,9 @@ export default function TeacherClassDetailPage() {
           onCreateAssignment={handleCreateAssignment}
           assignmentForm={assignmentForm}
           onAssignmentInputChange={handleAssignmentInput}
+          onAssignmentLinkChange={handleAssignmentLinkChange}
+          onAddAssignmentLink={handleAddAssignmentLink}
+          onRemoveAssignmentLink={handleRemoveAssignmentLink}
           assignmentFiles={assignmentFiles}
           onAssignmentFilesChange={handleAssignmentFilesChange}
           onRemoveAssignmentFile={handleRemoveAssignmentFile}
@@ -775,6 +805,19 @@ export default function TeacherClassDetailPage() {
         <ClassroomFilePreviewModal
           file={previewFile}
           onClose={() => setPreviewFile(null)}
+        />
+      ) : null}
+
+      {activeAssignmentId ? (
+        <TeacherAssignmentSubmissionsModal
+          assignment={assignments.find((item) => item._id === activeAssignmentId) || null}
+          classroomName={classroom?.name}
+          submissionsState={submissionsState}
+          onClose={() => {
+            setActiveAssignmentId(null);
+            setSubmissionsState({ loading: false, error: "", data: null });
+          }}
+          onPreviewFile={setPreviewFile}
         />
       ) : null}
     </div>
