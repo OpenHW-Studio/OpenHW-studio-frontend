@@ -168,6 +168,7 @@ const BOARD_BAUD_PRESETS = {
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
+  attiny85: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
 };
 
 const BOARD_DEFAULT_BAUD = {
@@ -176,6 +177,7 @@ const BOARD_DEFAULT_BAUD = {
   esp32: '115200',
   stm32: '115200',
   rp2040: '115200',
+  attiny85: '9600',
 };
 
 const BOARD_FQBN = {
@@ -184,6 +186,7 @@ const BOARD_FQBN = {
   esp32: 'esp32:esp32:esp32',
   stm32: 'STMicroelectronics:stm32:GenF1',
   rp2040: 'rp2040:rp2040:rpipico',
+  attiny85: 'arduino:avr:digispark-tiny',
 };
 
 function normalizeBoardKind(source) {
@@ -192,12 +195,16 @@ function normalizeBoardKind(source) {
   if (s.includes('esp32')) return 'esp32';
   if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
+  if (s.includes('attiny85')) return 'attiny85';
   return 'arduino_uno';
 }
 
 function createDefaultMainCode(boardKind, boardId) {
   if (boardKind === 'esp32' || boardKind === 'stm32' || boardKind === 'rp2040') {
     return `// ${boardId} main sketch\nvoid setup() {\n  // Serial.begin(${BOARD_DEFAULT_BAUD[boardKind] || 115200});\n}\n\nvoid loop() {\n  delay(1000);\n}\n`;
+  }
+  if (boardKind === 'attiny85') {
+    return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(1, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(1, HIGH);\n  delay(500);\n  digitalWrite(1, LOW);\n  delay(500);\n}\n`;
   }
   return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(13, OUTPUT);\n  // Serial.begin(${BOARD_DEFAULT_BAUD.arduino_uno});\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(500);\n  digitalWrite(13, LOW);\n  delay(500);\n}\n`;
 }
@@ -208,7 +215,7 @@ function fileExt(path) {
 }
 
 function isProgrammableBoardType(type) {
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
+  return /(arduino|esp32|stm32|rp2040|pico|attiny85)/i.test(String(type || ''));
 }
 
 function endpointAliases(endpoint) {
@@ -556,7 +563,7 @@ export default function SimulatorPage() {
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
-      .filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+      .filter(c => /(arduino|esp32|stm32|rp2040|pico|attiny85)/i.test(c.type))
       .map(c => c.id)
       .sort((a, b) => a.localeCompare(b));
     if (hardwareBoardId && !ids.includes(hardwareBoardId)) ids.push(hardwareBoardId);
@@ -603,7 +610,7 @@ export default function SimulatorPage() {
 
   const activeCodeFile = useMemo(() => projectFileMap.get(activeCodeFileId) || null, [projectFileMap, activeCodeFileId]);
 
-  const boardComponents = useMemo(() => components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type)), [components]);
+  const boardComponents = useMemo(() => components.filter(c => /(arduino|esp32|stm32|rp2040|pico|attiny85)/i.test(c.type)), [components]);
   const webSerialSupported = typeof navigator !== 'undefined' && 'serial' in navigator;
 
   useEffect(() => {
@@ -2551,7 +2558,7 @@ export default function SimulatorPage() {
       setIsCompiling(true);
       const boardHexMap = {};
       const boardBaudMap = {};
-      const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+      const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico|attiny85)/i.test(c.type));
       let result = null;
 
       if (programmableBoards.length > 0) {
@@ -3343,7 +3350,7 @@ export default function SimulatorPage() {
 
       // ── Title block ───────────────────────────────────────────────────────
       const TBY = FY2, TBH2 = SH - OM - GL - FY2, divW = FW / 3;
-      const boardLabel = board === 'arduino_uno' ? 'Arduino Uno' : board === 'pico' ? 'Raspberry Pi Pico' : 'ESP32';
+      const boardLabel = board === 'arduino_uno' ? 'Arduino Uno' : board === 'pico' ? 'Raspberry Pi Pico' : board === 'attiny85' ? 'ATtiny85 (Digispark)' : 'ESP32';
       const dateStr = new Date().toISOString().slice(0, 10);
       borderSVG += `
         <rect x="${FX1}" y="${TBY}" width="${FW}" height="${TBH2}" fill="white" stroke="#cc0000" stroke-width="1"/>
@@ -3485,7 +3492,7 @@ export default function SimulatorPage() {
         if (Array.isArray(meta.connections)) setWires(meta.connections);
 
         const importedBoards = Array.isArray(meta.components)
-          ? meta.components.filter((c) => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type))
+          ? meta.components.filter((c) => /(arduino|esp32|stm32|rp2040|pico|attiny85)/i.test(c.type))
           : [];
 
         let normalizedFiles = Array.isArray(meta.projectFiles) ? [...meta.projectFiles] : [];
@@ -4465,15 +4472,15 @@ export default function SimulatorPage() {
                         style={{
                           position: 'absolute',
                           left: pin.x, top: pin.y,
-                          width: 5, height: 5,
+                          width: 6, height: 6,
                           background: pinColor,
                           border: `1px solid ${pinBorder}`,
-                          borderRadius: '0%', /* matching task3.html */
+                          borderRadius: '50%',
                           cursor: 'crosshair',
-                          zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
-                          transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                          transition: '0.2s', /* matching task3.html transition */
-                          pointerEvents: 'all', /* Fix hit detection */
+                          zIndex: isHovered || isSuggested ? 30 : 20,
+                          transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`,
+                          transition: '0.2s',
+                          pointerEvents: 'all',
                           boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
                         }}
                         onMouseEnter={() => setHoveredPin(pinStrRef)}

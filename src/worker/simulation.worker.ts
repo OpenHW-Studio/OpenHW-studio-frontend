@@ -2,7 +2,7 @@ import { AVRRunner, LOGIC_REGISTRY, COMPONENT_PINS } from './execute';
 import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
 
 function isProgrammableBoardType(type: string): boolean {
-    return /(arduino|esp32|stm32|rp2040|pico)/i.test(type || '');
+    return /(arduino|esp32|stm32|rp2040|pico|attiny85)/i.test(type || '');
 }
 
 let runner: AVRRunner | null = null;
@@ -138,10 +138,10 @@ self.onmessage = async (e) => {
             });
         }
 
-        const unoComponents = (components || []).filter((c: any) => c.type === 'wokwi-arduino-uno');
+        const programmableBoards = (components || []).filter((c: any) => isProgrammableBoardType(c.type));
         const sharedPeripheralComponents = (components || []).filter((c: any) => !isProgrammableBoardType(c.type));
 
-        if (unoComponents.length <= 1) {
+        if (programmableBoards.length <= 1) {
             mode = 'single';
             runner = new AVRRunner(
                 hex,
@@ -149,8 +149,8 @@ self.onmessage = async (e) => {
                 wires,
                 (stateObj) => postMessage(stateObj),
                 {
-                    boardId: unoComponents[0]?.id,
-                    serialBaudRate: Number(boardBaudMap?.[unoComponents[0]?.id] ?? baudRate ?? 9600),
+                    boardId: programmableBoards[0]?.id,
+                    serialBaudRate: Number(boardBaudMap?.[programmableBoards[0]?.id] ?? baudRate ?? 9600),
                 }
             );
             return;
@@ -159,18 +159,18 @@ self.onmessage = async (e) => {
         mode = 'multi';
         buildNetIndex(wires || []);
 
-        unoComponents.forEach((uno: any) => {
-            const fwHex = boardHexMap?.[uno.id] || uno?.attrs?.firmwareHex || uno?.attrs?.hex || hex;
-            const runnerComponents = [uno, ...sharedPeripheralComponents];
+        programmableBoards.forEach((board: any) => {
+            const fwHex = boardHexMap?.[board.id] || board?.attrs?.firmwareHex || board?.attrs?.hex || hex;
+            const runnerComponents = [board, ...sharedPeripheralComponents];
 
             const boardRunner = new AVRRunner(
                 fwHex,
                 runnerComponents,
                 wires,
-                (stateObj) => postRunnerState(stateObj, uno.id),
+                (stateObj) => postRunnerState(stateObj, board.id),
                 {
-                    boardId: uno.id,
-                    serialBaudRate: Number(boardBaudMap?.[uno.id] ?? baudRate ?? 9600),
+                    boardId: board.id,
+                    serialBaudRate: Number(boardBaudMap?.[board.id] ?? baudRate ?? 9600),
                     onByteTransmit: ({ boardId, value, char }) => {
                         postMessage({ type: 'serial', data: char, boardId, value });
                         routeUartByte(boardId, value);
@@ -178,7 +178,7 @@ self.onmessage = async (e) => {
                 }
             );
 
-            boardRunners.set(uno.id, boardRunner);
+            boardRunners.set(board.id, boardRunner);
         });
 
     } else if (data.type === 'STOP') {

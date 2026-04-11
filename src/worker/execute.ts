@@ -1,4 +1,4 @@
-import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portBConfig, portCConfig, portDConfig, PinState } from 'avr8js';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, ATtinyTimer1, attinyTimer1Config, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portBConfig, portCConfig, portDConfig, PinState } from 'avr8js';
 
 import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
 import { LEDLogic } from '@openhw/emulator/src/components/wokwi-led/logic.ts';
@@ -49,6 +49,7 @@ import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/wokwi-7segme
 import { ILI9341Logic } from '@openhw/emulator/src/components/wokwi-ili9341/logic.ts';
 import { CD74HC4067Logic } from '@openhw/emulator/src/components/wokwi-cd74hc4067/logic.ts';
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/wokwi-logic-analyzer/logic.ts';
+import { ATtiny85Logic } from '@openhw/emulator/src/components/wokwi-attiny85/logic.ts';
 // ── Membrane Keypad Logic (defined inline to avoid Rollup web-worker resolution issues) ────
 class KeypadLogic extends BaseComponent {
     constructor(id: string, manifest: any) {
@@ -72,10 +73,9 @@ class KeypadLogic extends BaseComponent {
 }
 
 
-export function parse(data: string) {
+export function parse(data: string, maxAddress: number = 32768) {
     const lines = data.split('\n');
     let highAddress = 0;
-    const maxAddress = 32768; // 32KB typical Uno size
     const result = new Uint8Array(maxAddress);
 
     for (const line of lines) {
@@ -151,6 +151,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-ili9341': ILI9341Logic,
     'wokwi-cd74hc4067': CD74HC4067Logic,
     'wokwi-logic-analyzer': LogicAnalyzerLogic,
+    'wokwi-attiny85': ATtiny85Logic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -205,6 +206,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
     'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
     'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
+    'wokwi-attiny85': [{ id: 'P0' }, { id: 'P1' }, { id: 'P2' }, { id: 'P3' }, { id: 'P4' }, { id: 'P5' }, { id: '5V' }, { id: 'GND' }, { id: 'VIN' }],
 };
 
 export type AVRRunnerOptions = {
@@ -223,7 +225,7 @@ export class AVRRunner {
     portC: AVRIOPort | null = null;
     portD: AVRIOPort | null = null;
     updatePhysics: (() => void) | null = null;
-    timers: AVRTimer[] = [];
+    timers: (AVRTimer | ATtinyTimer1)[] = [];
     running: boolean = false;
     pinStates: Record<string, boolean> = {};
     currentWires: any[] = [];
@@ -248,44 +250,62 @@ export class AVRRunner {
         this.currentWires = wiresDef || [];
         this.onStateUpdate = onStateUpdate;
         this.onByteTransmitCb = options.onByteTransmit;
-        this.boardId = options.boardId || (componentsDef || []).find((c: any) => c.type.includes('arduino'))?.id || 'wokwi-arduino-uno_0';
+        this.boardId = options.boardId || (componentsDef || []).find((c: any) => c.type.includes('arduino') || c.type.includes('attiny85'))?.id || 'wokwi-arduino-uno_0';
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
 
+        const isTiny = this.boardId?.includes('attiny85');
+        const flashSize = isTiny ? 8192 : 32768;
+        const sramStart = isTiny ? 0x60 : 0x2200;
+
         // Setup memory and CPU
-        const program = new Uint16Array(32768);
-        const { data } = parse(hexData);
+        const program = new Uint16Array(flashSize / 2);
+        const { data } = parse(hexData, flashSize);
         const u8 = new Uint8Array(program.buffer);
         u8.set(data);
 
-        this.cpu = new CPU(program, 0x2200);
+        this.cpu = new CPU(program, sramStart);
 
-        this.timers = [
-            new AVRTimer(this.cpu, timer0Config),
-            new AVRTimer(this.cpu, timer1Config),
-            new AVRTimer(this.cpu, timer2Config)
-        ];
+        if (isTiny) {
+            this.timers = [
+                new AVRTimer(this.cpu, timer0Config),
+                new ATtinyTimer1(this.cpu, attinyTimer1Config)
+            ];
+            // Setup Port B for ATtiny85 (different register addresses than ATmega328P)
+            const attiny85PortBConfig = {
+                PIN: 0x36,
+                DDR: 0x37,
+                PORT: 0x38,
+                externalInterrupts: [],
+            };
+            this.portB = new AVRIOPort(this.cpu, attiny85PortBConfig as any);
+        } else {
+            this.timers = [
+                new AVRTimer(this.cpu, timer0Config),
+                new AVRTimer(this.cpu, timer1Config),
+                new AVRTimer(this.cpu, timer2Config)
+            ];
+            this.adc = new AVRADC(this.cpu, adcConfig);
 
-        this.adc = new AVRADC(this.cpu, adcConfig);
+            this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
+            this.usart.onByteTransmit = (value) => {
+                const char = String.fromCharCode(value);
+                this.pulseBoardLed('1');
+                if (this.onByteTransmitCb) {
+                    this.onByteTransmitCb({ boardId: this.boardId, value, char });
+                } else {
+                    this.onStateUpdate({ type: 'serial', data: char, value, boardId: this.boardId });
+                }
+            };
 
-        this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
-        this.usart.onByteTransmit = (value) => {
-            const char = String.fromCharCode(value);
-            this.pulseBoardLed('1');
-            if (this.onByteTransmitCb) {
-                this.onByteTransmitCb({ boardId: this.boardId, value, char });
-            } else {
-                this.onStateUpdate({ type: 'serial', data: char, value, boardId: this.boardId });
-            }
-        };
+            this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
+            this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
 
-        this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
-        this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
+            this.portB = new AVRIOPort(this.cpu, portBConfig);
+            this.portC = new AVRIOPort(this.cpu, portCConfig);
+            this.portD = new AVRIOPort(this.cpu, portDConfig);
+        }
 
         this.buildNetlist();
-
-        this.portB = new AVRIOPort(this.cpu, portBConfig);
-        this.portC = new AVRIOPort(this.cpu, portCConfig);
-        this.portD = new AVRIOPort(this.cpu, portDConfig);
 
         // Instantiate components
         (componentsDef || []).forEach(cDef => {
@@ -365,59 +385,61 @@ export class AVRRunner {
             }
         }
 
-        this.twi.eventHandler = new TWIAdapter(this.twi, this.instances);
+        if (this.twi) {
+            this.twi.eventHandler = new TWIAdapter(this.twi, this.instances);
+        }
 
         // Setup SPI Hooks bridging AVRSPI to BaseComponents
-        this.spi.onByte = (value: number) => {
-            const instArray = Array.from(this.instances.values());
-            let returnByte = 0xFF; // Default MISO if nothing responds
+        if (this.spi) {
+            this.spi.onByte = (value: number) => {
+                const instArray = Array.from(this.instances.values());
+                let returnByte = 0xFF; // Default MISO if nothing responds
 
-            const unoId = this.boardId;
+                const unoId = this.boardId;
 
-            if (unoId) {
-                const misoNet = this.pinToNet.get(`${unoId}:12`);
-                if (misoNet !== undefined) {
-                    // 1. Direct Loopback (MISO connected to MOSI)
-                    if (misoNet === this.pinToNet.get(`${unoId}:11`)) {
-                        returnByte = value;
-                    }
-                    // 2. MISO connected to SCK (Clock pulses)
-                    else if (misoNet === this.pinToNet.get(`${unoId}:13`)) {
-                        returnByte = 0xAA; // Arbitrary pattern to show clock signal picked up
-                    }
-                    // 3. MISO connected to any other driven Pin (like 10/SS)
-                    else {
-                        // Check if the net is currently driven HIGH by another pin
-                        let drivenHigh = false;
-                        for (const [p, net] of this.pinToNet) {
-                            if (net === misoNet && !p.endsWith(':12')) {
-                                const [compId, pinId] = p.split(':');
-                                if (compId === unoId && this.pinStates[pinId]) {
-                                    drivenHigh = true;
-                                    break;
+                if (unoId) {
+                    const misoNet = this.pinToNet.get(`${unoId}:12`);
+                    if (misoNet !== undefined) {
+                        // 1. Direct Loopback (MISO connected to MOSI)
+                        if (misoNet === this.pinToNet.get(`${unoId}:11`)) {
+                            returnByte = value;
+                        }
+                        // 2. MISO connected to SCK (Clock pulses)
+                        else if (misoNet === this.pinToNet.get(`${unoId}:13`)) {
+                            returnByte = 0xAA; // Arbitrary pattern to show clock signal picked up
+                        }
+                        // 3. MISO connected to any other driven Pin (like 10/SS)
+                        else {
+                            // Check if the net is currently driven HIGH by another pin
+                            let drivenHigh = false;
+                            for (const [p, net] of this.pinToNet) {
+                                if (net === misoNet && !p.endsWith(':12')) {
+                                    const [compId, pinId] = p.split(':');
+                                    if (compId === unoId && this.pinStates[pinId]) {
+                                        drivenHigh = true;
+                                        break;
+                                    }
                                 }
                             }
+                            returnByte = drivenHigh ? 0xFF : 0x00;
                         }
-                        returnByte = drivenHigh ? 0xFF : 0x00;
                     }
                 }
-            }
 
-            for (const inst of instArray) {
-                if (inst.onSPIByte && this.isSPISelected(inst)) {
-                    const res = inst.onSPIByte(value);
-                    if (res !== undefined) {
-                        returnByte = res;
+                for (const inst of instArray) {
+                    if (inst.onSPIByte && this.isSPISelected(inst)) {
+                        const res = inst.onSPIByte(value);
+                        if (res !== undefined) {
+                            returnByte = res;
+                        }
                     }
                 }
-            }
 
-            // The SPI peripheral needs to be told when the transfer is physically complete 
-            // based on the clock divider speed.
-            this.cpu!.addClockEvent(() => {
-                this.spi!.completeTransfer(returnByte);
-            }, this.spi!.transferCycles);
-        };
+                this.cpu!.addClockEvent(() => {
+                    this.spi!.completeTransfer(returnByte);
+                }, this.spi!.transferCycles);
+            };
+        }
 
         // Setup IO Hooks
         this.setupHooks();
@@ -485,7 +507,9 @@ export class AVRRunner {
             (pin.startsWith('D') && pin.substring(1) === target) ||
             (pin.startsWith('A') && pin.substring(1) === target) ||
             (target === 'RX' && pin === '0') ||
-            (target === 'TX' && pin === '1');
+            (target === 'TX' && pin === '1') ||
+            (pin === `P${target}`) ||
+            (compId.includes('attiny85') && pin === target);
     }
 
     private pulseBoardLed(pinId: '0' | '1') {
