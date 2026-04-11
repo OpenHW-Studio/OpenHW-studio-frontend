@@ -4558,23 +4558,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
   const handleSyncToCloud = () => { alert('Sync feature coming soon!'); };
 
-  const handleShareSimulation = async () => {
-    if (user?.role !== 'teacher') {
-      alert('Only teachers can share simulator templates.');
-      return;
-    }
-
-    if (!isAuthenticated) {
-      alert('Please sign in to share this simulation.');
-      navigate('/login');
-      return;
-    }
-
-    setShareUrl('');
-    setShareCopied(false);
-    setShowShareDialog(true);
-  };
-
   const handleGenerateShareUrl = async () => {
     setIsSharingSimulation(true);
     try {
@@ -4593,12 +4576,32 @@ export default function SimulatorPage({ gamificationMode = false }) {
       const url = `${window.location.origin}/simulator/share/${response.shareId}`;
       setShareUrl(url);
       setShareCopied(false);
+      return url;
     } catch (error) {
       console.error('Failed to share simulation', error);
       alert(error?.response?.data?.message || error.message || 'Failed to share simulation.');
+      return '';
     } finally {
       setIsSharingSimulation(false);
     }
+  };
+
+  const handleShareSimulation = async () => {
+    if (!['teacher', 'user'].includes(user?.role)) {
+      alert('Only signed-in teachers and users can share simulator templates.');
+      return;
+    }
+
+    if (!isAuthenticated) {
+      alert('Please sign in to share this simulation.');
+      navigate('/login');
+      return;
+    }
+
+    setShareUrl('');
+    setShareCopied(false);
+    setShowShareDialog(true);
+    await handleGenerateShareUrl();
   };
 
   const handleCopyShareUrl = async () => {
@@ -6712,31 +6715,48 @@ export default function SimulatorPage({ gamificationMode = false }) {
         </div>
       )}
 
-      {showShareDialog && user?.role === 'teacher' && (
+      {showShareDialog && ['teacher', 'user'].includes(user?.role) && (
         <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Share simulation">
           <div className="teacher-modal__backdrop" onClick={() => setShowShareDialog(false)} />
           <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
             <header className="teacher-modal__header">
-              <div>
-                <p className="teacher-modal__eyebrow">Simulator Template</p>
-                <h3>Share Simulation</h3>
-              </div>
+              <h3>Share Simulation</h3>
               <button type="button" onClick={() => setShowShareDialog(false)} aria-label="Close share dialog">x</button>
             </header>
-            <p className="simulator-share-dialog__hint">Template links are public so students can open them from assignments.</p>
-            <div className="simulator-share-dialog__actions">
-              <Btn color="var(--green)" onClick={handleGenerateShareUrl} disabled={isSharingSimulation}>
-                {isSharingSimulation ? 'Creating...' : 'Create Link'}
-              </Btn>
-              <Btn onClick={handleCopyShareUrl} disabled={!shareUrl}>
-                {shareCopied ? 'Copied' : 'Copy Link'}
-              </Btn>
+            <p className="simulator-share-dialog__copy">
+              Distribute your interactive learning module by generating a secure link. Choose the visibility level to control who can access this curriculum asset.
+            </p>
+            <div className="simulator-share-dialog__label">Generated Access Link</div>
+            <div className="simulator-share-dialog__link-box">
+              <svg className="simulator-share-dialog__link-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.2 4.73" />
+                <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.63-1.63" />
+              </svg>
+              <span className="simulator-share-dialog__link-text">
+                {isSharingSimulation ? 'Creating secure link...' : (shareUrl || 'Unable to create link. Try Share again.')}
+              </span>
+              {shareUrl && (
+                <button type="button" className="simulator-share-dialog__inline-copy" onClick={handleCopyShareUrl} aria-label="Copy share URL">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </button>
+              )}
             </div>
-            {shareUrl ? (
-              <p className="simulator-share-dialog__hint is-success">{shareUrl}</p>
-            ) : (
-              <p className="simulator-share-dialog__hint">Create a link, then paste it into Add Template while creating an assignment.</p>
-            )}
+            <div className="simulator-share-dialog__footer">
+              <button type="button" className="simulator-share-dialog__secondary" onClick={() => setShowShareDialog(false)}>Close</button>
+              <button type="button" className="simulator-share-dialog__primary" onClick={handleCopyShareUrl} disabled={!shareUrl}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <path d="M8.59 13.51l6.83 3.98" />
+                  <path d="M15.41 6.51l-6.82 3.98" />
+                </svg>
+                {shareCopied ? 'Copied' : 'Copy URL'}
+              </button>
+            </div>
           </section>
         </div>
       )}
