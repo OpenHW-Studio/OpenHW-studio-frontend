@@ -1,4 +1,6 @@
 
+import { PROJECT_DATA, getWokwiType } from './ProjectData';
+
 export const PROJECTS = [
   // ── World 1: Circuit Basics ──────────────────────────────────────────────
   {
@@ -21,10 +23,6 @@ export const PROJECTS = [
     tags: ['LED', 'digital output', 'blinking'],
     // Components available at start (given for free — no unlock needed)
     startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor'],
-    // What you EARN when you finish this project
-    rewardComponents: [
-      { type: 'wokwi-rgb-led', name: 'RGB LED', icon: '🌈', description: 'A special LED that can glow red, green, blue, or any mix of colors!' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-led', label: 'LED (any color)', qty: 1 },
@@ -104,9 +102,6 @@ void loop() {
     world: 1,
     tags: ['PWM', 'RGB', 'color mixing'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-rgb-led'],
-    rewardComponents: [
-      { type: 'wokwi-buzzer', name: 'Buzzer', icon: '🔔', description: 'Makes sounds and tones — you can even play music with it!' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-rgb-led', label: 'RGB LED', qty: 1 },
@@ -183,9 +178,6 @@ void loop() {
     world: 1,
     tags: ['sound', 'buzzer', 'tone'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-rgb-led', 'wokwi-buzzer'],
-    rewardComponents: [
-      { type: 'wokwi-potentiometer', name: 'Potentiometer', icon: '🎛️', description: 'A knob you can turn! It lets you control things by rotating it.' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-buzzer', label: 'Passive Buzzer', qty: 1 },
@@ -259,9 +251,6 @@ void loop() {
     world: 1,
     tags: ['analog input', 'potentiometer', 'PWM'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-rgb-led', 'wokwi-buzzer', 'wokwi-potentiometer'],
-    rewardComponents: [
-      { type: 'wokwi-photoresistor-sensor', name: 'Light Sensor (LDR)', icon: '🌞', description: 'Detects how bright or dark the room is. Like eyes for your Arduino!' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-led', label: 'LED', qty: 1 },
@@ -332,9 +321,6 @@ void loop() {
     world: 1,
     tags: ['LDR', 'light sensor', 'analog input'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-photoresistor-sensor'],
-    rewardComponents: [
-      { type: 'wokwi-servo', name: 'Servo Motor', icon: '⚙️', description: 'A motor that can turn to any angle you set — like a robot arm!' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-photoresistor-sensor', label: 'Light Sensor (LDR)', qty: 1 },
@@ -407,9 +393,6 @@ void loop() {
     world: 2,
     tags: ['servo', 'motor', 'PWM', 'robotics'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-servo', 'wokwi-potentiometer'],
-    rewardComponents: [
-      { type: 'wokwi-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '✨', description: 'A strip of colorful LEDs you can control individually — make animations and patterns!' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-servo', label: 'Servo Motor', qty: 1 },
@@ -480,9 +463,6 @@ void loop() {
     world: 2,
     tags: ['NeoPixel', 'LED strip', 'FastLED', 'animation'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-neopixel-matrix'],
-    rewardComponents: [
-      { type: 'wokwi-pushbutton', name: 'Push Button', icon: '🔘', description: 'Press it to trigger things! Used in almost every electronic device.' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-neopixel-matrix', label: 'NeoPixel Strip (8 LEDs)', qty: 1 },
@@ -553,9 +533,6 @@ void loop() {
     world: 2,
     tags: ['button', 'debounce', 'millis', 'state machine'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-pushbutton'],
-    rewardComponents: [
-      { type: 'wokwi-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '🌡️', description: 'Measures how hot or cold it is! Used in thermostats, weather stations, and more.' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-pushbutton', label: 'Push Button', qty: 1 },
@@ -640,10 +617,6 @@ void loop() {
     world: 2,
     tags: ['temperature', 'NTC', 'sensor', 'Serial Monitor'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-ntc-temperature-sensor', 'wokwi-resistor', 'wokwi-led', 'wokwi-buzzer'],
-    rewardComponents: [
-      { type: 'wokwi-motor', name: 'DC Motor', icon: '🔩', description: 'Spins at any speed you want! Used in fans, robots, and toy cars.' },
-      { type: 'wokwi-l293d', name: 'Motor Driver (L293D)', icon: '🔌', description: 'Controls the motor — gives it the power it needs to spin fast.' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-ntc-temperature-sensor', label: 'NTC Temperature Sensor', qty: 1 },
@@ -729,10 +702,6 @@ void loop() {
     world: 3,
     tags: ['motor', 'PWM', 'H-bridge', 'robotics'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-motor', 'wokwi-l293d', 'wokwi-potentiometer'],
-    rewardComponents: [
-      // Completing this unlocks ALL remaining components — you're a Circuit Champion!
-      { type: '*', name: 'ALL Components Unlocked!', icon: '🏆', description: 'You completed every project! You now have access to the full component library!' },
-    ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'wokwi-l293d', label: 'L293D Motor Driver', qty: 1 },
@@ -829,9 +798,11 @@ export function getEarnedComponents(completedProjects = []) {
 
   for (const project of PROJECTS) {
     if (completedProjects.includes(project.slug)) {
-      for (const reward of (project.rewardComponents || [])) {
-        if (reward.type === '*') { allUnlocked = true; break; }
-        earned.add(reward.type);
+      const unlockComps = projectData[project.slug]?.unlockComponents || [];
+      for (const reward of unlockComps) {
+        if (reward.id === '*') { allUnlocked = true; break; }
+        const wokwiType = getWokwiType(reward.id);
+        if (wokwiType) earned.add(wokwiType);
       }
     }
     if (allUnlocked) break;
@@ -843,7 +814,7 @@ export function getEarnedComponents(completedProjects = []) {
 // ── Helper: what components will I earn from completing this project? ─────────
 export function getProjectRewardComponents(projectSlug) {
   const project = PROJECTS.find(p => p.slug === projectSlug);
-  return project?.rewardComponents || [];
+  return PROJECT_DATA[projectSlug]?.unlockComponents || [];
 }
 
 export function getLockedProjects(completedProjects = []) {
