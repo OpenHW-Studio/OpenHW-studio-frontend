@@ -107,6 +107,16 @@ export default function TeacherComposerModal({
                 onChange={onAssignmentInputChange}
               />
             </label>
+            <label className="teacher-assignment-form__field">
+              <span>Add Template</span>
+              <input
+                type="url"
+                name="templateUrl"
+                value={assignmentForm.templateUrl || ""}
+                onChange={onAssignmentInputChange}
+                placeholder="Paste simulator share link"
+              />
+            </label>
             <div className="teacher-assignment-form__files-label">
               <div className="teacher-assignment-form__files-copy">
                 <span>Reference Links</span>

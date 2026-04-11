@@ -476,14 +476,16 @@ export function TopToolbox(props) {
           </Btn>
           {/* Save */}
           <Btn color="var(--accent)" onClick={handleSave} title="Save current project"> Save</Btn>
-          <Btn
-            color="var(--green)"
-            onClick={handleShareSimulation}
-            disabled={isSharingSimulation}
-            title={isAuthenticated ? 'Create a share link for this simulator page' : 'Sign in to share this simulator page'}
-          >
-            {isSharingSimulation ? 'Sharing...' : 'Share'}
-          </Btn>
+          {user?.role === 'teacher' && (
+            <Btn
+              color="var(--green)"
+              onClick={handleShareSimulation}
+              disabled={isSharingSimulation}
+              title={isAuthenticated ? 'Create a share link for this simulator page' : 'Sign in to share this simulator page'}
+            >
+              {isSharingSimulation ? 'Sharing...' : 'Share'}
+            </Btn>
+          )}
 
           <Btn
             onClick={() => {
