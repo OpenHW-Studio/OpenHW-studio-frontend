@@ -798,7 +798,7 @@ export function getEarnedComponents(completedProjects = []) {
 
   for (const project of PROJECTS) {
     if (completedProjects.includes(project.slug)) {
-      const unlockComps = projectData[project.slug]?.unlockComponents || [];
+      const unlockComps = PROJECT_DATA[project.slug]?.unlockComponents || [];
       for (const reward of unlockComps) {
         if (reward.id === '*') { allUnlocked = true; break; }
         const wokwiType = getWokwiType(reward.id);
