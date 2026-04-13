@@ -302,6 +302,9 @@ export default function ProjectAssessmentPage() {
     if (result.passed) {
       if (!completedProjects.includes(projectName)) completeProject?.(projectName)
       else { const proj = PROJECTS.find(p => p.slug === projectName); awardXP?.(Math.round((proj?.xpReward || 100) * 0.25), 'Re-submission bonus') }
+      if (window.markAdventureStepComplete) {
+        window.markAdventureStepComplete(projectName, 'sim', 4)
+      }
     }
   }, [evalConfig, submission])
 

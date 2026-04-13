@@ -329,20 +329,21 @@ export default function AdventureMapPage() {
   const handleNodeClick = (project) => setSelectedProject(project)
   const handleStepNavigate = (project, step) => {
     if (!step?.route) return
-    const progress = getLocalStepProgress(project.slug) || { currentStepOrder: 1, completedSteps: [] }
-    const completedSteps = new Set(progress.completedSteps || [])
-
-    if (step.order) {
-      completedSteps.add(`${project.slug}:${step.key}`)
-      const nextOrder = Math.max(progress.currentStepOrder || 1, step.order + 1)
-      localStorage.setItem(
-        `adventureProgress:${project.slug}`,
-        JSON.stringify({ currentStepOrder: nextOrder, completedSteps: Array.from(completedSteps) })
-      )
-    }
-
     navigate(step.route(project.slug))
   }
+
+  const markStepComplete = (projectSlug, stepKey, stepOrder) => {
+    const progress = getLocalStepProgress(projectSlug) || { currentStepOrder: 1, completedSteps: [] }
+    const completedSteps = new Set(progress.completedSteps || [])
+    completedSteps.add(`${projectSlug}:${stepKey}`)
+    const nextOrder = Math.max(progress.currentStepOrder || 1, stepOrder + 1)
+    localStorage.setItem(
+      `adventureProgress:${projectSlug}`,
+      JSON.stringify({ currentStepOrder: nextOrder, completedSteps: Array.from(completedSteps) })
+    )
+  }
+
+  window.markAdventureStepComplete = markStepComplete
 
   const handleStart = (slug, mode) => {
     setSelectedProject(null)
