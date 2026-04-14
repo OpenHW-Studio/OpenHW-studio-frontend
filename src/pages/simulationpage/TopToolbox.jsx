@@ -6,6 +6,7 @@ export function TopToolbox(props) {
 
   const viewPanelRef = useRef(null);
   const connectPanelRef = useRef(null);
+  const projectsDropdownRef = useRef(null);
   const [showConnectPanel, setShowConnectPanel] = useState(false);
   const [showAdvancedFlash, setShowAdvancedFlash] = useState(false);
 
@@ -18,11 +19,15 @@ export function TopToolbox(props) {
       if (showConnectPanel && connectPanelRef.current && !connectPanelRef.current.contains(event.target)) {
         setShowConnectPanel(false);
       }
+
+      if (showProjectsDropdown && projectsDropdownRef.current && !projectsDropdownRef.current.contains(event.target)) {
+        setShowProjectsDropdown(false);
+      }
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showViewPanel, showConnectPanel, setShowViewPanel]);
+  }, [showViewPanel, showConnectPanel, showProjectsDropdown, setShowViewPanel, setShowProjectsDropdown]);
 
   return (
 <header className="flex items-center gap-2.5 px-4 py-2.5 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
@@ -476,23 +481,107 @@ export function TopToolbox(props) {
           </Btn>
           {/* Save */}
           <Btn color="var(--accent)" onClick={handleSave} title="Save current project"> Save</Btn>
-          <Btn
-            color="var(--green)"
-            onClick={handleShareSimulation}
-            disabled={isSharingSimulation}
-            title={isAuthenticated ? 'Create a share link for this simulator page' : 'Sign in to share this simulator page'}
-          >
-            {isSharingSimulation ? 'Sharing...' : 'Share'}
-          </Btn>
+          {['teacher', 'user'].includes(user?.role) && (
+            <Btn
+              color="var(--green)"
+              onClick={handleShareSimulation}
+              disabled={isSharingSimulation}
+              title={isAuthenticated ? 'Create a share link for this simulator page' : 'Sign in to share this simulator page'}
+            >
+              {isSharingSimulation ? 'Sharing...' : 'Share'}
+            </Btn>
+          )}
 
-          <Btn
-            onClick={() => {
-              refreshProjectList();
-              setProjectsSidebarTab('projects');
-              setShowProjectsSidebar(v => !v);
-            }}
-            title="View and manage your saved projects"
-          > {isAuthenticated ? (user?.name?.split(' ')[0] || 'User') : 'Local'}</Btn>
+          <div ref={projectsDropdownRef} style={{ position: 'relative' }}>
+            <Btn
+              onClick={() => {
+                refreshProjectList();
+                setShowProjectsDropdown(v => !v);
+              }}
+              title="View and manage your saved projects"
+            > My Projects</Btn>
+
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 340,
+              background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12,
+              boxShadow: '0 8px 32px rgba(0,0,0,.45)', zIndex: 9999,
+              overflow: 'hidden',
+              maxHeight: showProjectsDropdown ? 560 : 0,
+              opacity: showProjectsDropdown ? 1 : 0,
+              transition: 'max-height 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.2s ease',
+              pointerEvents: showProjectsDropdown ? 'auto' : 'none',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px 12px', borderBottom: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>My Projects</span>
+                <Btn color="var(--accent)" onClick={() => { setShowProjectsDropdown(false); handleNewProject(); }}>+ New</Btn>
+              </div>
+
+              <div style={{ overflowY: 'auto', maxHeight: 340, padding: '8px' }}>
+                {myProjects.length === 0 ? (
+                  <div style={{ color: 'var(--text3)', fontSize: 13, textAlign: 'center', padding: '28px 0' }}>
+                    No saved projects yet.<br />Your circuits are auto-saved as you work.
+                  </div>
+                ) : myProjects.map(proj => (
+                  <div key={proj.id} style={{
+                    background: proj.id === currentProjectId ? 'rgba(100,180,255,.1)' : 'var(--card)',
+                    border: `1px solid ${proj.id === currentProjectId ? 'var(--accent)' : 'var(--border)'}`,
+                    borderRadius: 8, padding: '9px 12px', marginBottom: 6,
+                    display: 'flex', alignItems: 'center', gap: 8,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {renamingProjectId === proj.id ? (
+                        <input
+                          autoFocus
+                          className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 0, fontSize: 13, padding: '4px 8px', width: '100%' }}
+                          value={renameValue}
+                          onChange={e => setRenameValue(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleConfirmRename(proj.id); if (e.key === 'Escape') setRenamingProjectId(null); }}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                          <span style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {proj.name || 'Untitled'}
+                          </span>
+                          {proj.id === currentProjectId && <span style={{ fontSize: 10, color: 'var(--accent)', flexShrink: 0 }}>● current</span>}
+                          <button
+                            onClick={e => handleStartRename(proj, e)}
+                            title="Rename project"
+                            style={{ background: 'none', border: 'none', color: 'var(--text3)', cursor: 'pointer', padding: '2px 4px', fontSize: 12, borderRadius: 4, flexShrink: 0, lineHeight: 1 }}
+                          >✎</button>
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+                        {proj.board || 'arduino_uno'} · {proj.components?.length ?? 0} components · {formatProjectDate(proj.savedAt)}
+                      </div>
+                    </div>
+                    {renamingProjectId === proj.id ? (
+                      <>
+                        <Btn color="var(--accent)" onClick={() => handleConfirmRename(proj.id)}>✓</Btn>
+                        <Btn onClick={() => setRenamingProjectId(null)}>✕</Btn>
+                      </>
+                    ) : (
+                      <>
+                        <Btn onClick={() => { handleLoadProject(proj); setShowProjectsDropdown(false); }} disabled={isRunning}>Load</Btn>
+                        <Btn color="var(--red)" onClick={() => handleDeleteProject(proj.id)}>Del</Btn>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Btn onClick={handleBackupWorkflow} title="Download current workflow as a backup ZIP">↓ Backup</Btn>
+                <Btn onClick={() => backupRestoreInputRef.current?.click()} title="Restore workflow from a backup ZIP">↑ Restore</Btn>
+                {isAuthenticated && (
+                  <Btn color="var(--accent)" onClick={handleSyncToCloud} title="Sync local projects with cloud"> Sync</Btn>
+                )}
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>
+                  {!isAuthenticated ? 'Sign in to sync' : `Signed in as ${user?.name?.split(' ')[0]}`}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
   );

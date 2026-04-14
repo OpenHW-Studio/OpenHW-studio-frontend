@@ -35,6 +35,12 @@ const isAssignmentClosed = (assignment) => (
   Boolean(assignment?.dueDate) && new Date(assignment.dueDate) < new Date()
 )
 
+const getAssignmentTemplateShareId = (assignment) => {
+  if (assignment?.templateShareId) return assignment.templateShareId
+  const templateUrl = assignment?.templateUrl || ''
+  return templateUrl.match(/\/simulator\/share\/([^/?#]+)/)?.[1] || ''
+}
+
 export default function StudentClassDetailPage() {
   const { classId } = useParams()
   const navigate = useNavigate()
@@ -252,7 +258,6 @@ export default function StudentClassDetailPage() {
     try {
       const response = await submitAssignment(classId, assignmentId, {
         notes: submissionForm.notes,
-        links: (submissionForm.links || []).filter((link) => link.trim()),
         attachments: submissionForm.attachments
       })
 
@@ -275,6 +280,17 @@ export default function StudentClassDetailPage() {
         error: submitError.message || 'Failed to submit assignment'
       }))
     }
+  }
+
+  const handleOpenTemplate = (assignment) => {
+    const templateShareId = getAssignmentTemplateShareId(assignment)
+
+    if (!templateShareId) {
+      setError('This assignment does not have a simulator template yet.')
+      return
+    }
+
+    navigate(`/simulator/share/${encodeURIComponent(templateShareId)}/assignment/${encodeURIComponent(classId)}/${encodeURIComponent(assignment._id)}`)
   }
 
   if (loading) {
@@ -376,6 +392,7 @@ export default function StudentClassDetailPage() {
                           const links = pickLinks(assignment)
                           const statusKey = getSubmissionStatus(assignment)
                           const isClosed = isAssignmentClosed(assignment)
+                          const templateShareId = getAssignmentTemplateShareId(assignment)
                           const resourceCount = attachments.length + links.length
 
                           return (
@@ -410,6 +427,20 @@ export default function StudentClassDetailPage() {
                                   <p className="teacher-classwork-card__meta">
                                     {assignment.dueDate ? `Due ${formatDateTime(assignment.dueDate)}` : `Posted ${formatDateTime(assignment.createdAt)}`}
                                   </p>
+
+                                  {templateShareId ? (
+                                    <button
+                                      type="button"
+                                      className="teacher-assignment-modal__resource-pill"
+                                      style={{ border: 0, borderRadius: 8, cursor: 'pointer' }}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        handleOpenTemplate(assignment)
+                                      }}
+                                    >
+                                      Open Template
+                                    </button>
+                                  ) : null}
 
                                   {attachments.length > 0 ? (
                                     <div

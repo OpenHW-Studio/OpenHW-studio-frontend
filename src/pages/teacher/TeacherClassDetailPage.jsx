@@ -48,6 +48,7 @@ export default function TeacherClassDetailPage() {
     title: "",
     description: "",
     dueDate: "",
+    templateUrl: "",
     links: [""],
   });
 
@@ -394,11 +395,12 @@ export default function TeacherClassDetailPage() {
         title: assignmentForm.title,
         description: assignmentForm.description,
         dueDate: assignmentForm.dueDate || undefined,
+        templateUrl: assignmentForm.templateUrl || undefined,
         links: (assignmentForm.links || []).filter((link) => link.trim()),
         attachments: assignmentFiles,
       });
 
-      setAssignmentForm({ title: "", description: "", dueDate: "", links: [""] });
+      setAssignmentForm({ title: "", description: "", dueDate: "", templateUrl: "", links: [""] });
       setAssignmentFiles([]);
       setAssignments(await getClassAssignments(classId));
       setShowComposer(false);

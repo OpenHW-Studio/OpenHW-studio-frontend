@@ -19,7 +19,10 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
 import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation } from '../../services/simulatorService.js'
+import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
+import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
+import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
@@ -1269,11 +1272,13 @@ function getPinCategory(pId, pDesc, compType) {
 export default function SimulatorPage({ gamificationMode = false }) {
   const { isAuthenticated, user, logout, loading: authLoading } = useAuth()
   const navigate = useNavigate()
-  const { projectName = '', shareId = '' } = useParams()
+  const { projectName = '', shareId = '', classId = '', assignmentId = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
+  const assignmentMode = Boolean(shareId && classId && assignmentId)
+  const studentAssignmentMode = assignmentMode && user?.role === 'student'
 
   // -- Gamification --
   const { trackComponentPlaced, trackWireDrawn, trackSimulationRun, isUnlocked, coins = 0, currentLevel, currentLevelData, nextLevel, xpProgress } = typeof useGamification === 'function' ? useGamification() : {}
@@ -1690,9 +1695,22 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   const [shareCopied, setShareCopied] = useState(false);
-  const [shareVisibility, setShareVisibility] = useState('public');
   const [myProjects, setMyProjects] = useState([]);
   const [isSharingSimulation, setIsSharingSimulation] = useState(false);
+  const [showProjectsDropdown, setShowProjectsDropdown] = useState(false);
+  const [assignmentSubmissionOpen, setAssignmentSubmissionOpen] = useState(false);
+  const [assignmentSubmissionAssignment, setAssignmentSubmissionAssignment] = useState(null);
+  const [assignmentSubmissionState, setAssignmentSubmissionState] = useState({
+    loading: false,
+    saving: false,
+    error: '',
+    data: null,
+  });
+  const [assignmentSubmissionForm, setAssignmentSubmissionForm] = useState({
+    notes: '',
+    links: [''],
+    attachments: [],
+  });
   const currentProjectIdRef = useRef(null);   // mirror for use inside async callbacks
   const autoSaveTimerRef = useRef(null);
   // My Projects sidebar state
@@ -2023,6 +2041,148 @@ export default function SimulatorPage({ gamificationMode = false }) {
     loadSharedProject();
     return () => { cancelled = true; };
   }, [shareId]);
+
+  const isAssignmentSubmissionClosed = useCallback((assignment) => (
+    Boolean(assignment?.dueDate) && new Date(assignment.dueDate) < new Date()
+  ), []);
+
+  useEffect(() => {
+    if (!assignmentMode || user?.role !== 'student') return;
+
+    let cancelled = false;
+
+    const loadAssignmentSubmission = async () => {
+      setAssignmentSubmissionState({ loading: true, saving: false, error: '', data: null });
+      try {
+        const response = await getMyAssignmentSubmission(classId, assignmentId);
+        if (cancelled) return;
+
+        const submission = response?.submission || null;
+        setAssignmentSubmissionAssignment(response?.assignment || null);
+        setAssignmentSubmissionState({ loading: false, saving: false, error: '', data: submission });
+        setAssignmentSubmissionForm({
+          notes: submission?.notes || '',
+          links: submission?.links?.length ? submission.links : [''],
+          attachments: submission?.attachments || submission?.files || [],
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setAssignmentSubmissionState({
+          loading: false,
+          saving: false,
+          error: error.message || 'Failed to load assignment submission.',
+          data: null,
+        });
+      }
+    };
+
+    loadAssignmentSubmission();
+    return () => { cancelled = true; };
+  }, [assignmentMode, classId, assignmentId, user?.role]);
+
+  const handleAssignmentSubmissionFilesChange = async (event) => {
+    if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
+      setAssignmentSubmissionState((current) => ({
+        ...current,
+        error: 'This assignment is closed. You can no longer upload files.',
+      }));
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      const uploadedFiles = await uploadClassroomFiles(event.target.files, {
+        classId,
+        category: 'submissions',
+        maxFiles: 8,
+        allowedTypes: ['application/pdf', 'image'],
+      });
+
+      setAssignmentSubmissionForm((current) => ({
+        ...current,
+        attachments: [...current.attachments, ...uploadedFiles],
+      }));
+      setAssignmentSubmissionState((current) => ({ ...current, error: '' }));
+    } catch (error) {
+      setAssignmentSubmissionState((current) => ({
+        ...current,
+        error: error.message || 'Failed to upload submission files.',
+      }));
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveAssignmentSubmissionFile = (index) => {
+    setAssignmentSubmissionForm((current) => ({
+      ...current,
+      attachments: current.attachments.filter((_, idx) => idx !== index),
+    }));
+  };
+
+  const handleSubmitClassAssignment = async () => {
+    if (!assignmentSubmissionAssignment) return;
+
+    if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
+      setAssignmentSubmissionState((current) => ({
+        ...current,
+        saving: false,
+        error: 'This assignment is closed. Submissions are no longer accepted.',
+      }));
+      return;
+    }
+
+    setAssignmentSubmissionState((current) => ({ ...current, saving: true, error: '' }));
+
+    try {
+      const shareResponse = await createSharedSimulation({
+        name: `${assignmentSubmissionAssignment.title || 'Assignment'} Submission`,
+        isPublic: true,
+        classId,
+        assignmentId,
+        board,
+        components,
+        connections: wires,
+        code,
+        projectFiles,
+        openCodeTabs,
+        activeCodeFileId,
+      });
+      const simulationShareId = shareResponse.shareId;
+      if (!simulationShareId) {
+        throw new Error('Failed to create simulation link for submission.');
+      }
+      const simulationUrl = `${window.location.origin}/simulator/share/${simulationShareId}`;
+
+      const response = await submitAssignment(classId, assignmentId, {
+        notes: assignmentSubmissionForm.notes,
+        attachments: assignmentSubmissionForm.attachments,
+        simulationShareId,
+        simulationUrl,
+      });
+
+      const submission = response?.submission || null;
+      setAssignmentSubmissionState({
+        loading: false,
+        saving: false,
+        error: '',
+        data: submission,
+      });
+      setAssignmentSubmissionForm({
+        notes: submission?.notes || '',
+        links: submission?.links?.length ? submission.links : [''],
+        attachments: submission?.attachments || submission?.files || [],
+      });
+      setAssignmentSubmissionOpen(false);
+      alert('Assignment submitted successfully.');
+    } catch (error) {
+      setAssignmentSubmissionState((current) => ({
+        ...current,
+        saving: false,
+        error: error.message || 'Failed to submit assignment.',
+      }));
+    }
+  };
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
@@ -4398,24 +4558,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
   const handleSyncToCloud = () => { alert('Sync feature coming soon!'); };
 
-  const handleShareSimulation = async () => {
-    if (!isAuthenticated) {
-      alert('Please sign in to share this simulation.');
-      navigate('/login');
-      return;
-    }
-
-    setShareUrl('');
-    setShareCopied(false);
-    setShowShareDialog(true);
-  };
-
   const handleGenerateShareUrl = async () => {
     setIsSharingSimulation(true);
     try {
       const response = await createSharedSimulation({
         name: currentProjectName || 'Untitled',
-        isPublic: shareVisibility === 'public',
+        isPublic: true,
         board,
         components,
         connections: wires,
@@ -4428,12 +4576,32 @@ export default function SimulatorPage({ gamificationMode = false }) {
       const url = `${window.location.origin}/simulator/share/${response.shareId}`;
       setShareUrl(url);
       setShareCopied(false);
+      return url;
     } catch (error) {
       console.error('Failed to share simulation', error);
       alert(error?.response?.data?.message || error.message || 'Failed to share simulation.');
+      return '';
     } finally {
       setIsSharingSimulation(false);
     }
+  };
+
+  const handleShareSimulation = async () => {
+    if (!['teacher', 'user'].includes(user?.role)) {
+      alert('Only signed-in teachers and users can share simulator templates.');
+      return;
+    }
+
+    if (!isAuthenticated) {
+      alert('Please sign in to share this simulation.');
+      navigate('/login');
+      return;
+    }
+
+    setShareUrl('');
+    setShareCopied(false);
+    setShowShareDialog(true);
+    await handleGenerateShareUrl();
   };
 
   const handleCopyShareUrl = async () => {
@@ -6527,7 +6695,94 @@ export default function SimulatorPage({ gamificationMode = false }) {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
+      {studentAssignmentMode && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
+          <div style={{ minWidth: 0 }}>
+            <strong style={{ display: 'block', fontSize: 13 }}>{assignmentSubmissionAssignment?.title || 'Assignment Template'}</strong>
+            <span style={{ color: 'var(--text3)', fontSize: 12 }}>
+              {isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Complete the simulation and submit your work here.'}
+            </span>
+          </div>
+          <Btn
+            color="var(--accent)"
+            onClick={() => setAssignmentSubmissionOpen(true)}
+            disabled={assignmentSubmissionState.loading || !assignmentSubmissionAssignment || isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
+            title={isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Submit assignment'}
+          >
+            {assignmentSubmissionState.data ? 'Update Submission' : 'Submit Assignment'}
+          </Btn>
+        </div>
+      )}
+
+      {showShareDialog && ['teacher', 'user'].includes(user?.role) && (
+        <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Share simulation">
+          <div className="teacher-modal__backdrop" onClick={() => setShowShareDialog(false)} />
+          <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
+            <header className="teacher-modal__header">
+              <h3>Share Simulation</h3>
+              <button type="button" onClick={() => setShowShareDialog(false)} aria-label="Close share dialog">x</button>
+            </header>
+            <p className="simulator-share-dialog__copy">
+              Distribute your interactive learning module by generating a secure link. Choose the visibility level to control who can access this curriculum asset.
+            </p>
+            <div className="simulator-share-dialog__label">Generated Access Link</div>
+            <div className="simulator-share-dialog__link-box">
+              <svg className="simulator-share-dialog__link-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.2 4.73" />
+                <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.63-1.63" />
+              </svg>
+              <span className="simulator-share-dialog__link-text">
+                {isSharingSimulation ? 'Creating secure link...' : (shareUrl || 'Unable to create link. Try Share again.')}
+              </span>
+              {shareUrl && (
+                <button type="button" className="simulator-share-dialog__inline-copy" onClick={handleCopyShareUrl} aria-label="Copy share URL">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            <div className="simulator-share-dialog__footer">
+              <button type="button" className="simulator-share-dialog__secondary" onClick={() => setShowShareDialog(false)}>Close</button>
+              <button type="button" className="simulator-share-dialog__primary" onClick={handleCopyShareUrl} disabled={!shareUrl}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <path d="M8.59 13.51l6.83 3.98" />
+                  <path d="M15.41 6.51l-6.82 3.98" />
+                </svg>
+                {shareCopied ? 'Copied' : 'Copy URL'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {assignmentSubmissionOpen && studentAssignmentMode && (
+        <StudentAssignmentModal
+          assignment={assignmentSubmissionAssignment}
+          submissionState={assignmentSubmissionState}
+          submissionForm={assignmentSubmissionForm}
+          onClose={() => setAssignmentSubmissionOpen(false)}
+          onNotesChange={(value) =>
+            setAssignmentSubmissionForm((current) => ({
+              ...current,
+              notes: value,
+            }))
+          }
+          onLinkChange={() => {}}
+          onAddLink={() => {}}
+          onRemoveLink={() => {}}
+          onFilesChange={handleAssignmentSubmissionFilesChange}
+          onRemoveFile={handleRemoveAssignmentSubmissionFile}
+          onSubmit={handleSubmitClassAssignment}
+          onPreviewFile={() => {}}
+          isClosed={isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
+        />
+      )}
       {gamificationMode && gamProject && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',

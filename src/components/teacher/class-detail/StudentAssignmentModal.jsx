@@ -106,47 +106,6 @@ export default function StudentAssignmentModal({
                 </label>
 
                 <div className="teacher-assignment-form__files-label">
-                  <div className="teacher-assignment-modal__section-head">
-                    <span>Links</span>
-                    <button type="button" className="teacher-assignment-modal__mini-link-btn" onClick={onAddLink} disabled={isClosed}>
-                      Add link
-                    </button>
-                  </div>
-
-                  <div className="teacher-link-input-list">
-                    {(submissionForm.links || []).map((link, idx) => (
-                      <div key={`submission-link-${idx}`} className="teacher-link-input-row">
-                        <div className="teacher-link-input-wrap">
-                          <Link2 size={14} />
-                          <input
-                            type="url"
-                            value={link}
-                            onChange={(event) => onLinkChange(idx, event.target.value)}
-                            placeholder="Paste submission link"
-                            disabled={isClosed}
-                          />
-                        </div>
-                        {(submissionForm.links || []).length > 1 ? (
-                          <button
-                            type="button"
-                            className="teacher-assignment-form__link-pill-remove"
-                            onClick={() => onRemoveLink(idx)}
-                            aria-label={`Remove link ${idx + 1}`}
-                            disabled={isClosed}
-                          >
-                            <X size={14} />
-                          </button>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-
-                  {!(submissionForm.links || []).some((link) => link.trim()) ? (
-                    <p className="teacher-assignment-modal__hint">No external links attached.</p>
-                  ) : null}
-                </div>
-
-                <div className="teacher-assignment-form__files-label">
                   <div className="teacher-assignment-form__files-copy">
                     <span>Submission Files</span>
                   </div>
