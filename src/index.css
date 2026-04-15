@@ -3170,6 +3170,58 @@ body {
   margin-bottom: 14px;
 }
 
+.student-live-join {
+  margin: 16px 0 0;
+  padding: 16px 18px;
+  border: 1px solid #dbe6f2;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.student-live-join strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 4px;
+  color: #0f172a;
+}
+
+.student-live-join p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.92rem;
+}
+
+.student-live-join__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.student-live-join__actions input {
+  min-width: 180px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+}
+
+.student-live-join__actions button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .teacher-detail-card h3 {
   font-size: 1rem;
   margin-bottom: 10px;
