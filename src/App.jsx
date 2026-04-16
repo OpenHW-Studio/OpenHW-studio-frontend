@@ -65,6 +65,7 @@ export default function App() {
                         <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} />
             {/* Guest accessible simulator */}
             <Route path="/simulator" element={<SimulatorPage />} />
+            <Route path="/simulator/live/:liveCode" element={<SimulatorPage />} />
             <Route path="/simulator/share/:shareId" element={<SimulatorPage />} />
             <Route path="/simulator/share/:shareId/assignment/:classId/:assignmentId" element={<SimulatorPage />} />
             <Route path="/:projectName/demo" element={<SimulatorPage />} />

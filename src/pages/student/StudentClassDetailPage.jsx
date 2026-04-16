@@ -36,6 +36,7 @@ const isAssignmentClosed = (assignment) => (
 )
 
 const getAssignmentTemplateShareId = (assignment) => {
+  console.log('Getting template share ID for assignment:', assignment.templateUrl)
   if (assignment?.templateShareId) return assignment.templateShareId
   const templateUrl = assignment?.templateUrl || ''
   return templateUrl.match(/\/simulator\/share\/([^/?#]+)/)?.[1] || ''
@@ -67,6 +68,7 @@ export default function StudentClassDetailPage() {
     attachments: []
   })
   const [previewFile, setPreviewFile] = useState(null)
+  const [liveMeetingCode, setLiveMeetingCode] = useState('')
 
   const avatarInitials = useMemo(() => getAvatarLetters(user?.name, 'S'), [user?.name])
 
@@ -284,13 +286,24 @@ export default function StudentClassDetailPage() {
 
   const handleOpenTemplate = (assignment) => {
     const templateShareId = getAssignmentTemplateShareId(assignment)
-
+    console.log(templateShareId)
     if (!templateShareId) {
       setError('This assignment does not have a simulator template yet.')
       return
     }
 
     navigate(`/simulator/share/${encodeURIComponent(templateShareId)}/assignment/${encodeURIComponent(classId)}/${encodeURIComponent(assignment._id)}`)
+  }
+
+  const handleJoinLiveSimulation = () => {
+    const normalizedCode = String(liveMeetingCode || '').trim().toUpperCase()
+    if (!normalizedCode) {
+      setError('Enter the live simulation code shared by your teacher.')
+      return
+    }
+
+    setError('')
+    navigate(`/simulator/live/${encodeURIComponent(normalizedCode)}?role=student`)
   }
 
   if (loading) {
@@ -338,6 +351,25 @@ export default function StudentClassDetailPage() {
               </button>
             ))}
           </nav>
+
+          <section className="student-live-join">
+            <div>
+              <strong>Join live simulation</strong>
+              <p>Enter the code from your teacher to open the shared simulator and watch changes in real time.</p>
+            </div>
+            <div className="student-live-join__actions">
+              <input
+                type="text"
+                value={liveMeetingCode}
+                onChange={(event) => setLiveMeetingCode(event.target.value.toUpperCase())}
+                placeholder="Enter code"
+                maxLength={12}
+              />
+              <button type="button" onClick={handleJoinLiveSimulation}>
+                Join
+              </button>
+            </div>
+          </section>
 
           <div className="teacher-class-layout is-stream">
             <section className="teacher-class-main">
