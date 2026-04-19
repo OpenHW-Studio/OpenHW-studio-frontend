@@ -28,7 +28,6 @@ import {
   removeClassroomStudent,
   updateClassroom,
 } from "../../services/classroomService.js";
-import { createLiveSimulationSession } from "../../services/simulatorService.js";
 
 export default function TeacherClassDetailPage() {
   const { classId } = useParams();
@@ -386,34 +385,19 @@ export default function TeacherClassDetailPage() {
   const handleCreateAssignment = async (event) => {
     event.preventDefault();
 
-    const normalizedTitle = String(assignmentForm.title || "").trim();
-    if (!normalizedTitle) return;
-
-    const normalizedDescription = String(assignmentForm.description || "").trim();
-    const normalizedDueDate = String(assignmentForm.dueDate || "").trim();
-    const normalizedTemplateUrl = String(assignmentForm.templateUrl || "").trim();
-    const normalizedTemplateShareId =
-      normalizedTemplateUrl.match(/\/simulator\/share\/([^/?#]+)/)?.[1] || undefined;
-    const normalizedLinks = (assignmentForm.links || [])
-      .map((link) => String(link || "").trim())
-      .filter(Boolean);
-    const normalizedAttachments = (assignmentFiles || [])
-      .map((file) => String(file || "").trim())
-      .filter(Boolean);
+    if (!assignmentForm.title.trim()) return;
 
     setPostingAssignment(true);
     setError("");
 
     try {
       await createClassAssignment(classId, {
-        title: normalizedTitle,
-        description: normalizedDescription || undefined,
-        dueDate: normalizedDueDate || undefined,
-        templateUrl: normalizedTemplateUrl || undefined,
-        templateShareId: normalizedTemplateShareId,
-        links: normalizedLinks,
-        attachments: normalizedAttachments,
-        files: normalizedAttachments,
+        title: assignmentForm.title,
+        description: assignmentForm.description,
+        dueDate: assignmentForm.dueDate || undefined,
+        templateUrl: assignmentForm.templateUrl || undefined,
+        links: (assignmentForm.links || []).filter((link) => link.trim()),
+        attachments: assignmentFiles,
       });
 
       setAssignmentForm({ title: "", description: "", dueDate: "", templateUrl: "", links: [""] });
@@ -650,45 +634,9 @@ export default function TeacherClassDetailPage() {
     }
   };
 
-  const handleOpenLiveMeeting = async () => {
-    if (!classroom?._id) return;
-
-    const popup = window.open("", "_blank", "noopener,noreferrer");
-
-    try {
-      const session = await createLiveSimulationSession({
-        classId: classroom._id,
-        name: `${classroom.name || "Class"} Live Simulation`,
-        board: "arduino_uno",
-        components: [],
-        connections: [],
-        code: "",
-        projectFiles: [],
-        openCodeTabs: [],
-        activeCodeFileId: "",
-      });
-
-      if (!session?.sessionCode) {
-        throw new Error("Live session code was not generated.");
-      }
-
-      const liveMeetingUrl = `${window.location.origin}/simulator/live/${encodeURIComponent(session.sessionCode)}?role=teacher`;
-      if (popup) {
-        popup.location.replace(liveMeetingUrl);
-      } else {
-        window.open(liveMeetingUrl, "_blank", "noopener,noreferrer");
-      }
-
-      try {
-        await navigator.clipboard.writeText(session.sessionCode);
-        setInfo(`Live simulator started. Join code ${session.sessionCode} copied.`);
-      } catch {
-        setInfo(`Live simulator started. Share join code ${session.sessionCode} with students.`);
-      }
-    } catch (liveMeetingError) {
-      if (popup) popup.close();
-      setError(liveMeetingError.message || "Failed to start live meeting.");
-    }
+  const handleOpenLiveMeeting = () => {
+    const liveMeetingUrl = `${window.location.origin}/simulator?classId=${encodeURIComponent(classId)}&liveMeeting=1`;
+    window.open(liveMeetingUrl, "_blank", "noopener,noreferrer");
   };
 
   if (loading) {
