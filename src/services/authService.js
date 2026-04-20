@@ -3,7 +3,7 @@
  * Handles API communication between the frontend and the Node.js backend.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
 // ─── Token & User Storage Helpers ───────────────────────────────────────────
 
@@ -131,7 +131,7 @@ export const logout = async () => {
   try {
     const token = getToken();
     // Calls logoutController in userController.js
-    await fetch(`${BASE_URL}/user/logout`, { 
+    await fetch(`${BASE_URL}/user/logout`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
     });
@@ -155,14 +155,14 @@ export const fetchProfile = async () => {
   const authUrl = BASE_URL.replace(/\/api$/, '') + '/auth/me';
 
   const response = await fetch(authUrl, {
-    headers: { 
+    headers: {
       'Authorization': `Bearer ${token}` // Handled by protectRoute in backend
     },
   });
 
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch profile');
-  
+
   return data;
 };
 
