@@ -74,7 +74,7 @@ export function RightPanel(props) {
   const availablePins = [...basePins, ...serialOnlyLabels];
 
   return (
-    <aside className="relative bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden transition-[width] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]" 
+    <aside className="relative bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden transition-[width] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)]"
       style={{ width: isPanelOpen ? panelWidth : 21, transition: isDragging ? 'none' : 'width 0.2s cubic-bezier(0.4, 0, 0.2, 1)' }}
       onDoubleClick={(e) => e.stopPropagation()}
     >
@@ -184,8 +184,8 @@ export function RightPanel(props) {
               {codeTab === 'code' && (
                 <button
                   className={`shrink-0 bg-transparent border-none font-inherit text-xs cursor-pointer border-b-2 transition-all duration-200 
-                    ${showCodeExplorer 
-                      ? 'text-[var(--accent)] border-b-[var(--accent)] bg-[rgba(0,212,255,0.06)]' 
+                    ${showCodeExplorer
+                      ? 'text-[var(--accent)] border-b-[var(--accent)] bg-[rgba(0,212,255,0.06)]'
                       : 'text-[var(--text3)] border-b-transparent hover:text-[var(--text2)] hover:bg-[rgba(255,255,255,0.02)]'
                     } 
                     active:scale-95 active:bg-[rgba(0,212,255,0.12)]`}
@@ -200,8 +200,8 @@ export function RightPanel(props) {
                 <button
                   key={t}
                   className={`shrink-0 bg-transparent border-none font-inherit text-xs cursor-pointer border-b-2 transition-all duration-200 
-                    ${codeTab === t 
-                      ? 'text-[var(--accent)] border-b-[var(--accent)] bg-[rgba(0,212,255,0.06)]' 
+                    ${codeTab === t
+                      ? 'text-[var(--accent)] border-b-[var(--accent)] bg-[rgba(0,212,255,0.06)]'
                       : 'text-[var(--text3)] border-b-transparent hover:text-[var(--text2)] hover:bg-[rgba(255,255,255,0.02)]'
                     } 
                     active:scale-95 active:bg-[rgba(0,212,255,0.12)]`}
@@ -221,119 +221,119 @@ export function RightPanel(props) {
                         if (setSelected) setSelected(null);
                         if (onOpenCodeFile) onOpenCodeFile(null);
                       }} style={{ width: explorerWidth, borderRight: '1px solid var(--border)', overflow: 'auto', background: 'var(--bg2)', cursor: 'default', flexShrink: 0 }}>
-                      <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.8 }}>project</div>
+                        <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.8 }}>project</div>
 
-                      {projectRootFiles.map((file) => (
-                        <div
-                          key={file.id}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenCodeFile(file.id);
-                            if (setSelected) setSelected(null);
-                          }}
-                          onContextMenu={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setFileMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
-                          }}
-                          style={{
-                            padding: '3px 10px',
-                            fontSize: (file.name === 'diagram.json' || file.name === 'diagram.png' || file.name === 'library.txt') ? 11 : 12,
-                            cursor: 'pointer',
-                            color: activeCodeFileId === file.id ? 'var(--accent)' : 'var(--text2)',
-                            background: activeCodeFileId === file.id ? 'rgba(0,255,255,0.08)' : 'transparent',
-                            borderLeft: activeCodeFileId === file.id ? '2px solid var(--accent)' : '2px solid transparent',
-                            fontFamily: 'JetBrains Mono, monospace',
-                          }}
-                        >
-                          {file.name}{file.dirty ? ' *' : ''}
-                        </div>
-                      ))}
-
-                      {projectBoardFiles.map((group) => (
-                        <div key={group.boardId}>
-                          <button
+                        {projectRootFiles.map((file) => (
+                          <div
+                            key={file.id}
                             onClick={(e) => {
                               e.stopPropagation();
-                              setCollapsedBoards((prev) => ({ ...prev, [group.boardId]: !prev[group.boardId] }));
-                              if (setSelected) {
-                                setSelected(group.boardId);
-                              }
-                              if (onOpenCodeFile) onOpenCodeFile(null);
+                              onOpenCodeFile(file.id);
+                              if (setSelected) setSelected(null);
+                            }}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setFileMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
                             }}
                             style={{
-                              width: '100%',
-                              textAlign: 'left',
-                              padding: '2px 0px 4px',
-                              fontSize: 12,
-                              color: selected === group.boardId ? 'var(--accent)' : 'var(--text3)',
-                              fontWeight: 700,
-                              fontFamily: 'JetBrains Mono, monospace',
-                              background: selected === group.boardId ? 'rgba(0,255,255,0.06)' : 'transparent',
-                              border: 'none',
+                              padding: '3px 10px',
+                              fontSize: (file.name === 'diagram.json' || file.name === 'diagram.png' || file.name === 'library.txt') ? 11 : 12,
                               cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 6,
-                              transition: 'all 0.2s'
+                              color: activeCodeFileId === file.id ? 'var(--accent)' : 'var(--text2)',
+                              background: activeCodeFileId === file.id ? 'rgba(0,255,255,0.08)' : 'transparent',
+                              borderLeft: activeCodeFileId === file.id ? '2px solid var(--accent)' : '2px solid transparent',
+                              fontFamily: 'JetBrains Mono, monospace',
                             }}
-                            title={collapsedBoards[group.boardId] ? 'Expand folder' : 'Collapse folder'}
                           >
-                            <span style={{ width: 14, display: 'inline-flex', justifyContent: 'center', opacity: 0.7 }}>
-                              {!collapsedBoards[group.boardId] ? (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
-                              ) : (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
-                              )}
-                            </span>
-                            <span>{group.boardId}</span>
-                          </button>
-                          {!collapsedBoards[group.boardId] && group.files.map((file) => (
-                            <div
-                              key={file.id}
+                            {file.name}{file.dirty ? ' *' : ''}
+                          </div>
+                        ))}
+
+                        {projectBoardFiles.map((group) => (
+                          <div key={group.boardId}>
+                            <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onOpenCodeFile(file.id);
-                                if (setSelected) setSelected(null);
-                              }}
-                              onContextMenu={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setFileMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
+                                setCollapsedBoards((prev) => ({ ...prev, [group.boardId]: !prev[group.boardId] }));
+                                if (setSelected) {
+                                  setSelected(group.boardId);
+                                }
+                                if (onOpenCodeFile) onOpenCodeFile(null);
                               }}
                               style={{
-                                padding: '3px 10px 1px 18px',
-                                fontSize: (file.name === 'diagram.json' || file.name === 'diagram.png' || file.name === 'library.txt') ? 10 : 12,
-                                cursor: 'pointer',
-                                color: activeCodeFileId === file.id ? 'var(--accent)' : 'var(--text2)',
-                                background: activeCodeFileId === file.id ? 'rgba(0,255,255,0.08)' : 'transparent',
-                                borderLeft: activeCodeFileId === file.id ? '2px solid var(--accent)' : '2px solid transparent',
+                                width: '100%',
+                                textAlign: 'left',
+                                padding: '2px 0px 4px',
+                                fontSize: 12,
+                                color: selected === group.boardId ? 'var(--accent)' : 'var(--text3)',
+                                fontWeight: 700,
                                 fontFamily: 'JetBrains Mono, monospace',
+                                background: selected === group.boardId ? 'rgba(0,255,255,0.06)' : 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                transition: 'all 0.2s'
                               }}
+                              title={collapsedBoards[group.boardId] ? 'Expand folder' : 'Collapse folder'}
                             >
-                              {file.name}{file.dirty ? ' *' : ''}
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                    {/* Internal Explorer Resize Handle */}
-                    <div
-                      onMouseDown={onMouseDownExplorerResize}
-                      style={{
-                        width: 4,
-                        cursor: 'col-resize',
-                        background: isExplorerDragging ? 'var(--accent)' : 'transparent',
-                        zIndex: 10,
-                        transition: 'background 0.2s',
-                        borderRight: '1px solid var(--border)',
-                        marginLeft: -2,
-                        marginRight: -2,
-                      }}
-                      className="hover:bg-[var(--accent)]"
-                    />
-                  </>
-                )}
+                              <span style={{ width: 14, display: 'inline-flex', justifyContent: 'center', opacity: 0.7 }}>
+                                {!collapsedBoards[group.boardId] ? (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+                                ) : (
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+                                )}
+                              </span>
+                              <span>{group.boardId}</span>
+                            </button>
+                            {!collapsedBoards[group.boardId] && group.files.map((file) => (
+                              <div
+                                key={file.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenCodeFile(file.id);
+                                  if (setSelected) setSelected(null);
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setFileMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
+                                }}
+                                style={{
+                                  padding: '3px 10px 1px 18px',
+                                  fontSize: (file.name === 'diagram.json' || file.name === 'diagram.png' || file.name === 'library.txt') ? 10 : 12,
+                                  cursor: 'pointer',
+                                  color: activeCodeFileId === file.id ? 'var(--accent)' : 'var(--text2)',
+                                  background: activeCodeFileId === file.id ? 'rgba(0,255,255,0.08)' : 'transparent',
+                                  borderLeft: activeCodeFileId === file.id ? '2px solid var(--accent)' : '2px solid transparent',
+                                  fontFamily: 'JetBrains Mono, monospace',
+                                }}
+                              >
+                                {file.name}{file.dirty ? ' *' : ''}
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                      {/* Internal Explorer Resize Handle */}
+                      <div
+                        onMouseDown={onMouseDownExplorerResize}
+                        style={{
+                          width: 4,
+                          cursor: 'col-resize',
+                          background: isExplorerDragging ? 'var(--accent)' : 'transparent',
+                          zIndex: 10,
+                          transition: 'background 0.2s',
+                          borderRight: '1px solid var(--border)',
+                          marginLeft: -2,
+                          marginRight: -2,
+                        }}
+                        className="hover:bg-[var(--accent)]"
+                      />
+                    </>
+                  )}
 
                   <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
                     <div className="panel-scroll" style={{ display: 'flex', gap: 2, overflowX: 'auto', borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
@@ -791,7 +791,7 @@ export function RightPanel(props) {
                             <span key={pin} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer' }}
                               onClick={() => setSelectedPlotPins(prev => prev.filter(p => p !== pin))}
                               title="Click to remove" >
-                              <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, flexShrink: 0 }} />
+                              <span style={{ width: 10, height: 10, borderRadius: 0, background: bg, flexShrink: 0 }} />
                               <span style={{ color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace' }}>{lbl}</span>
                             </span>
                           );
