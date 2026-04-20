@@ -2,7 +2,7 @@ import { validation } from './validation';
 import manifest from './manifest.json';
 import { ClockGeneratorLogic } from './logic';
 import { ClockGeneratorUI, ClockGeneratorContextMenu, BOUNDS } from './ui';
-import docHtml from './doc/index.html?raw';
+import { doc } from './doc';
 
 export default {
     manifest,
@@ -11,5 +11,5 @@ export default {
     ContextMenu: ClockGeneratorContextMenu,
     BOUNDS,
     validation,
-    doc: docHtml
+    doc: doc
 };
