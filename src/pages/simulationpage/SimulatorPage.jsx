@@ -4462,8 +4462,9 @@ export default function SimulatorPage() {
 
                     // Check if a wire is connected to this pin
                     const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+                    const isHCSR04 = comp.type === 'wokwi-hc-sr04';
                     const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                    const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
+                    const pinBorder = isHCSR04 ? '#000' : (connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)'));
 
                     return (
                       <div
