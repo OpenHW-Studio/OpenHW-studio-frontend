@@ -2966,8 +2966,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   }} onDoubleClick={e => e.stopPropagation()}>
                     <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
                     <path d={wirePath} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 2.5 : 1.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.6} />
-                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
-                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
+                    <rect x={p1.x - (isSelectedWire ? 4 : 3)} y={p1.y - (isSelectedWire ? 4 : 3)} width={(isSelectedWire ? 4 : 3) * 2} height={(isSelectedWire ? 4 : 3) * 2} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
+                    <rect x={p2.x - (isSelectedWire ? 4 : 3)} y={p2.y - (isSelectedWire ? 4 : 3)} width={(isSelectedWire ? 4 : 3) * 2} height={(isSelectedWire ? 4 : 3) * 2} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
                     {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, w.waypoints).reduce((acc, _, i, arr) => {
                       // Skip pin-stub segments (first: p1→e1, last: e2→p2) — only show on routing segments
                       if (i < 1 || i >= arr.length - 2) return acc;
@@ -2977,7 +2977,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                       const isHoriz = Math.abs(b.y - a.y) < 1;
                       const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
                       acc.push(
-                        <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelectedWire ? 6 : 4}
+                        <rect key={`sh-${i}`} x={midX - (isSelectedWire ? 6 : 4)} y={midY - (isSelectedWire ? 6 : 4)} width={(isSelectedWire ? 6 : 4) * 2} height={(isSelectedWire ? 6 : 4) * 2}
                           fill={isSelectedWire ? '#fff' : 'rgba(255,255,255,0.35)'}
                           stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={1.5}
                           opacity={isSelectedWire ? 1 : 0.55}
@@ -3037,8 +3037,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   }} onDoubleClick={e => e.stopPropagation()}>
                     <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
                     <path d={wirePath} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 2.3 : 1.3} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.9} />
-                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 3 : 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
-                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 3 : 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+                    <rect x={p1.x - (isSelectedWire ? 3 : 2)} y={p1.y - (isSelectedWire ? 3 : 2)} width={(isSelectedWire ? 3 : 2) * 2} height={(isSelectedWire ? 3 : 2) * 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
+                    <rect x={p2.x - (isSelectedWire ? 3 : 2)} y={p2.y - (isSelectedWire ? 3 : 2)} width={(isSelectedWire ? 3 : 2) * 2} height={(isSelectedWire ? 3 : 2) * 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
                     {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, w.waypoints).reduce((acc, _, i, arr) => {
                       // Skip pin-stub segments (first: p1→e1, last: e2→p2) — only show on routing segments
                       if (i < 1 || i >= arr.length - 2) return acc;
