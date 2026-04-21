@@ -7,6 +7,13 @@
   "attrs": {
     "color": "red"
   },
+  "telemetry": {
+    "template": "intensity=${state.intensity}, isShutdown=${state.shutdown}, decodeMode=${state.decodeMode}",
+    "criticalKeys": [
+      "state.intensity",
+      "state.shutdown"
+    ]
+  },
   "pins": [
     {
       "id": "VCC",

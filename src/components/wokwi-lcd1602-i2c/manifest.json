@@ -1,0 +1,41 @@
+{
+    "type": "wokwi-lcd1602-i2c",
+    "label": "LCD 16x2 (I2C)",
+    "description": "16x2 Character LCD Display with I2C Backpack",
+    "group": "Displays",
+    "w": 280,
+    "h": 110,
+    "attrs": {
+        "color": "blue"
+    },
+    "pins": [
+        {
+            "id": "GND",
+            "x": 4.5,
+            "y": 32,
+            "type": "power",
+            "description": "Ground"
+        },
+        {
+            "id": "VCC",
+            "x": 4.5,
+            "y": 41.5,
+            "type": "power",
+            "description": "Power (5V)"
+        },
+        {
+            "id": "SDA",
+            "x": 4.5,
+            "y": 51.5,
+            "type": "bidi",
+            "description": "I2C Data"
+        },
+        {
+            "id": "SCL",
+            "x": 4.5,
+            "y": 61,
+            "type": "bidi",
+            "description": "I2C Clock"
+        }
+    ]
+}
