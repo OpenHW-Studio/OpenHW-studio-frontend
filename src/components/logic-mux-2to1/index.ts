@@ -2,7 +2,7 @@ import { validation } from './validation';
 import manifest from './manifest.json';
 import { Mux2to1Logic } from './logic';
 import { Mux2to1UI, BOUNDS } from './ui';
-import docHtml from './doc/index.html?raw';
+import { doc } from './doc';
 
 export default {
     manifest,
@@ -10,5 +10,5 @@ export default {
     UI: Mux2to1UI,
     BOUNDS,
     validation,
-    doc: docHtml
+    doc: doc
 };
