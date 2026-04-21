@@ -5,6 +5,13 @@
   "w": 150,
   "h": 140,
   "attrs": {},
+  "telemetry": {
+    "template": "vramDirty=${state.vramDirty}, updateCount=${state.updateCount}, i2cBytes=${state.i2cBytes}",
+    "criticalKeys": [
+      "state.vramDirty",
+      "state.updateCount"
+    ]
+  },
   "pins": [
     {
       "id": "GND",
