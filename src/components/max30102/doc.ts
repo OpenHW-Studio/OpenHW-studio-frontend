@@ -125,7 +125,7 @@ function openSimulator() {
     board: "arduino_uno",
     components: [
       { id: "uno", type: "wokwi-arduino-uno", x: 0, y: 0 },
-      { id: "max", type: "wokwi-max30102", x: 300, y: 50 }
+      { id: "max", type: "max30102", x: 300, y: 50 }
     ],
     connections: [
       [ "uno:A4", "max:SDA", "green", [] ],
