@@ -56,6 +56,9 @@ export { default as logicDFlipFlopDsr } from './logic-d-flipflop-dsr';
 export { default as logicClockGenerator } from './logic-clock-generator';
 export { default as logicIc74xx } from './logic-ic-74xx';
 export { default as wokwiArduinoMega } from './wokwi-arduino-mega';
+export { default as wokwiAttiny85 } from './wokwi-attiny85';
+export { default as wokwiHcSr04 } from './wokwi-hc-sr04';
+
 
 
 

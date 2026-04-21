@@ -10,11 +10,11 @@ import validationRaw from './validation.ts?raw';
 
 export default {
     manifest,
-    UI:                       MAX30102UI,
-    LogicClass:               MAX30102Logic,
+    UI: MAX30102UI,
+    LogicClass: MAX30102Logic,
     BOUNDS,
-    ContextMenu:              MAX30102ContextMenu,
-    contextMenuDuringRun:     true,   // slider is live-usable while running
+    ContextMenu: MAX30102ContextMenu,
+    contextMenuDuringRun: true,   // slider is live-usable while running
     contextMenuOnlyDuringRun: true,   // hide the menu when simulation is stopped
     validation,
     doc: docHtml,

@@ -2,7 +2,7 @@ import manifest from './manifest.json';
 import { LdrModuleUI, LdrContextMenu, BOUNDS } from './ui';
 import { LdrModuleLogic } from './logic';
 import { validation } from './validation';
-import docHtml from './doc/index.html?raw';
+import { doc } from './doc';
 
 export default {
     manifest,
@@ -13,5 +13,5 @@ export default {
     contextMenuDuringRun: true,
     contextMenuOnlyDuringRun: true,
     validation,
-    doc: docHtml
+    doc: doc
 };

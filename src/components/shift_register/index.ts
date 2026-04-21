@@ -2,7 +2,7 @@ import manifest from './manifest.json';
 import { ShiftRegisterLogic } from './logic';
 import { ShiftRegisterUI, BOUNDS } from './ui';
 import { validation } from './validation';
-import docHtml from './doc/index.html?raw';
+import { doc } from './doc';
 
 export default {
     manifest,
@@ -10,5 +10,5 @@ export default {
     UI: ShiftRegisterUI,
     BOUNDS,
     validation,
-    doc: docHtml
+    doc: doc
 };
