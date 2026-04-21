@@ -877,6 +877,101 @@ export default function SimulatorPage() {
   // ── Project: load most-recent project on first mount ─────────────────────
   // ── Project: load most-recent project on first mount ─────────────────────
   useEffect(() => {
+    // 1. Check for ?circuit= in URL (dynamic sample injection from documentation)
+    const params = new URLSearchParams(window.location.search);
+    const circuitRaw = params.get('circuit');
+
+    if (circuitRaw) {
+      try {
+        const payload = JSON.parse(decodeURIComponent(circuitRaw));
+        const { board: b, code: c, components: comps, connections: conns } = payload;
+
+        if (b) setBoard(b);
+        if (c) setCode(c);
+        if (comps) {
+          const processedComps = comps.map(c => {
+            const reg = COMPONENT_REGISTRY[c.type];
+            let defaultW = 64, defaultH = 64;
+            if (reg?.BOUNDS && typeof reg.BOUNDS !== 'function') {
+              defaultW = reg.BOUNDS.w;
+              defaultH = reg.BOUNDS.h;
+            }
+            return {
+              ...c,
+              w: c.w || defaultW,
+              h: c.h || defaultH,
+              attrs: c.attrs || {},
+            };
+          });
+          setComponents(processedComps);
+
+          // Initialize project files so the editor shows the injected code
+          if (c) {
+            const mainBoard = processedComps.find(cp => cp.id === 'uno' || cp.type === 'wokwi-arduino-uno');
+            const boardId = mainBoard ? mainBoard.id : 'uno';
+            const boardType = mainBoard ? mainBoard.type : 'wokwi-arduino-uno';
+
+            const initialFiles = [{
+              id: `project/${boardId}/${boardId}.ino`,
+              path: `project/${boardId}/${boardId}.ino`,
+              name: `${boardId}.ino`,
+              kind: 'code',
+              boardId: boardId,
+              boardKind: (boardType.includes('uno') ? 'arduino' : 'esp32'),
+              content: c,
+              dirty: false
+            }];
+            setProjectFiles(initialFiles);
+            setOpenCodeTabs([initialFiles[0].id]);
+            setActiveCodeFileId(initialFiles[0].id);
+          }
+        }
+        if (conns) {
+          const mappedWires = conns.map((w, i) => {
+            // Normalize pin names (e.g., uno:GND.1 -> uno:gnd_1)
+            let from = w[0];
+            let to = w[1];
+
+            const normalize = (p) => {
+              const parts = p.split(':');
+              if (parts.length === 2) {
+                const [compId, pinId] = parts;
+                const comp = (comps || []).find(cp => cp.id === compId);
+                if (comp && comp.type === 'wokwi-arduino-uno') {
+                  let normalizedPin = pinId;
+                  if (pinId === 'GND.1') normalizedPin = 'gnd_1';
+                  if (pinId === 'GND.2') normalizedPin = 'gnd_2';
+                  if (pinId === 'GND.3') normalizedPin = 'gnd_3';
+                  if (pinId === 'AREF') normalizedPin = 'aref';
+                  if (pinId === 'RESET') normalizedPin = 'rst';
+                  return `${compId}:${normalizedPin}`;
+                }
+              }
+              return p;
+            };
+
+            return {
+              id: `w${i + 1}`,
+              from: normalize(from),
+              to: normalize(to),
+              color: w[2] || 'red'
+            };
+          });
+          setWires(mappedWires);
+          syncNextIds(comps || [], mappedWires);
+        } else {
+          syncNextIds(comps || [], []);
+        }
+
+        setCurrentProjectId(null);
+        currentProjectIdRef.current = null;
+        setCurrentProjectName('Sample Circuit');
+        return; // Skip loading the last project from backend
+      } catch (e) {
+        console.error('[SimulatorPage] Failed to parse circuit parameter:', e);
+      }
+    }
+
     // Don't auto-load a project if we're in assessment mode or loading a demo
     if (assessmentMode || projectName) return;
 
