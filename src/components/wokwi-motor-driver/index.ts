@@ -2,7 +2,7 @@ import { validation } from './validation';
 import manifest from './manifest.json';
 import { MotorDriverLogic } from './logic';
 import { MotorDriverUI, BOUNDS } from './ui';
-import docHtml from './doc/index.html?raw';
+import { doc } from './doc';
 
 export default {
     manifest,
@@ -10,5 +10,5 @@ export default {
     UI: MotorDriverUI,
     BOUNDS,
     validation,
-    doc: docHtml
+    doc: doc
 };
