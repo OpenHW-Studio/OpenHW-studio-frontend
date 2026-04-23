@@ -25,6 +25,8 @@ export class ILI9341Logic extends BaseComponent {
     private vramDirty = false;
     private lastSync = 0;
     private powerOn = true;
+    private writeCount = 0;
+    private madctl = 0x48;
 
     constructor(id: string, manifest: any) {
         super(id, manifest);
@@ -108,6 +110,13 @@ export class ILI9341Logic extends BaseComponent {
                 }
                 break;
 
+            case 0x36: // MADCTL
+                this.params.push(data);
+                if (this.params.length === 1) {
+                    this.madctl = this.params[0] & 0xff;
+                }
+                break;
+
             case 0x2C: // RAMWR - RGB565
                 if (!this.secondByte) {
                     this.firstByteValue = data;
@@ -126,6 +135,7 @@ export class ILI9341Logic extends BaseComponent {
                         this.vram[idx + 1] = g;
                         this.vram[idx + 2] = b;
                         this.vramDirty = true;
+                        this.writeCount += 1;
                     }
 
                     this.currentX++;
@@ -147,5 +157,24 @@ export class ILI9341Logic extends BaseComponent {
             powerOn: this.powerOn,
             t: Date.now()
         };
+    }
+
+    onCustomTelemetry() {
+        let activeCount = 0;
+        // sampling every 3 bytes (RGB)
+        for (let i = 0; i < this.vram.length; i += 3) {
+            if (this.vram[i] > 0 || this.vram[i + 1] > 0 || this.vram[i + 2] > 0) activeCount++;
+        }
+        const total = 240 * 320;
+        const fillPercent = (activeCount / total) * 100;
+        const orientation = (this.madctl & 0x20) !== 0 ? 'landscape' : 'portrait';
+
+        this.setCustomTelemetry({
+            powerStatus: this.powerOn ? "On" : "Off",
+            resolution: "240x320",
+            orientation,
+            writeCount: this.writeCount,
+            vramFillPercentage: Number(fillPercent.toFixed(1)),
+        });
     }
 }

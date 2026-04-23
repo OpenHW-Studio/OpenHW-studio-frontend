@@ -81,4 +81,22 @@ export class Nokia5110Logic extends BaseComponent {
         this.state.fbStr = str;
         this.stateChanged = true;
     }
+
+    onCustomTelemetry() {
+        let activeBits = 0;
+        for (let i = 0; i < 504; i++) {
+            let b = this.fb[i];
+            while (b > 0) {
+                if (b & 1) activeBits++;
+                b >>= 1;
+            }
+        }
+        const totalBits = 84 * 48; // 4032
+        const fillPercent = (activeBits / totalBits) * 100;
+        
+        this.setCustomTelemetry({
+            resolution: "84x48 monochrome",
+            vramFillPercentage: Number(fillPercent.toFixed(1)),
+        });
+    }
 }
