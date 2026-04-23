@@ -51,6 +51,13 @@ export class BaseComponent {
         lastIoAtMs: 0,
         stateFingerprint: '',
         lastStateFingerprintAtMs: 0,
+        updateStartAtMs: 0,
+        updateStartPerfMs: 0,
+        lastUpdateAtMs: 0,
+        totalUpdateTimeMs: 0,
+        maxUpdateTimeMs: 0,
+        customTelemetry: {} as Record<string, any>,
+        lastHeuristicStatus: null as TelemetryHeuristicResult | null,
     };
 
     constructor(id: string, manifest: any) {
@@ -125,10 +132,29 @@ export class BaseComponent {
         this.wrapTelemetryMethod(
             'update',
             (cpuCycles: number) => {
+                const startMs = Date.now();
+                const startPerfMs = this.getPerfNowMs();
                 this.telemetryRuntime.updateCount += 1;
+                this.telemetryRuntime.updateStartAtMs = startMs;
+                this.telemetryRuntime.updateStartPerfMs = startPerfMs;
                 this.captureCpuCycles(cpuCycles);
             },
             (_result, cpuCycles: number) => {
+                const endMs = Date.now();
+                const startMs = Number(this.telemetryRuntime.updateStartAtMs || 0);
+                const endPerfMs = this.getPerfNowMs();
+                const startPerfMs = Number(this.telemetryRuntime.updateStartPerfMs || 0);
+                if (startMs > 0 || startPerfMs > 0) {
+                    const duration = Math.max(
+                        0,
+                        startPerfMs > 0 ? (endPerfMs - startPerfMs) : (endMs - startMs)
+                    );
+                    this.telemetryRuntime.totalUpdateTimeMs += duration;
+                    if (duration > this.telemetryRuntime.maxUpdateTimeMs) {
+                        this.telemetryRuntime.maxUpdateTimeMs = duration;
+                    }
+                }
+                this.telemetryRuntime.lastUpdateAtMs = endMs;
                 this.observeStateMutation('update', cpuCycles, false);
             }
         );
@@ -259,6 +285,18 @@ export class BaseComponent {
         if (prev === !!isHigh) return;
 
         this.telemetryRuntime.pinToggles[key] = Number(this.telemetryRuntime.pinToggles[key] || 0) + 1;
+    }
+
+    private getPerfNowMs(): number {
+        try {
+            const perf = (globalThis as any).performance;
+            if (perf && typeof perf.now === 'function') {
+                return Number(perf.now());
+            }
+        } catch {
+            // Fallback to wall-clock below.
+        }
+        return Date.now();
     }
 
     private isVccLikePin(pinId: string): boolean {
@@ -504,7 +542,16 @@ export class BaseComponent {
         const path = String(pathLike || '').trim();
         if (!path) return undefined;
 
-        const parts = path.split('.').map((p) => p.trim()).filter(Boolean);
+        const rawParts = path.split('.').map((p) => p.trim()).filter(Boolean);
+        if (rawParts.length === 0) return undefined;
+
+        // Support manifest-style "state.foo.bar" keys where source is already the state object.
+        const parts = String(rawParts[0] || '').toLowerCase() === 'state'
+            ? rawParts.slice(1)
+            : rawParts;
+
+        if (parts.length === 0) return source;
+
         let current: any = source;
         for (const part of parts) {
             if (!current || typeof current !== 'object') return undefined;
@@ -591,18 +638,70 @@ export class BaseComponent {
             addFinding('warn', `State payload is large (${stateSize} bytes).`);
         }
 
-        if (findings.length === 0) {
-            return {
-                status: 'ok',
-                summary: 'OK: No anomalies detected.',
-                findings: [],
-            };
+        const avgMs = this.telemetryRuntime.updateCount > 0 ? this.telemetryRuntime.totalUpdateTimeMs / this.telemetryRuntime.updateCount : 0;
+        if (avgMs > 20.0) {
+            addFinding('error', `Critical update latency: ${avgMs.toFixed(2)}ms avg.`);
+        } else if (avgMs > 5.0) {
+            addFinding('warn', `High update latency: ${avgMs.toFixed(2)}ms avg.`);
         }
 
-        return {
+        if (this.telemetryRuntime.updateCount > 30 && this.telemetryRuntime.lastUpdateAtMs > 0) {
+            const sinceLastUpdateMs = Math.max(0, Date.now() - this.telemetryRuntime.lastUpdateAtMs);
+            if (sinceLastUpdateMs > 2000) {
+                addFinding('warn', `Component updates appear infrequent (last update ${Math.round(sinceLastUpdateMs)}ms ago).`);
+            }
+        }
+
+        if (this.telemetryRuntime.updateCount > 30 && this.calcFreq() > 0 && this.calcFreq() < 2) {
+            addFinding('warn', `Component update frequency appears low (${this.calcFreq().toFixed(2)}Hz).`);
+        }
+
+        if (
+            this.telemetryRuntime.updateCount > 120 &&
+            this.telemetryRuntime.onEventCount === 0 &&
+            this.telemetryRuntime.stateMutationCount === 0
+        ) {
+            addFinding('warn', 'No events or state changes observed during runtime; component may be stale/inactive.');
+        }
+
+        const result: TelemetryHeuristicResult = findings.length === 0 ? {
+            status: 'ok',
+            summary: 'OK: No anomalies detected.',
+            findings: [],
+        } : {
             status,
             summary: `${String(status).toUpperCase()}: ${findings[0]}`,
             findings,
+        };
+        this.telemetryRuntime.lastHeuristicStatus = result;
+        return result;
+    }
+
+    onCustomTelemetry(): void {
+        // Override in subclasses
+    }
+
+    protected setCustomTelemetry(payload: Record<string, any> | null | undefined): void {
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            this.telemetryRuntime.customTelemetry = {};
+            return;
+        }
+        this.telemetryRuntime.customTelemetry = { ...payload };
+    }
+
+    protected getStateIdleMs(): number {
+        return Math.max(0, Date.now() - Number(this.telemetryRuntime.lastStateChangeAtMs || Date.now()));
+    }
+
+    protected getUpdateTimingMetrics(): { avgMs: number; maxMs: number; totalMs: number; count: number } {
+        const count = Number(this.telemetryRuntime.updateCount || 0);
+        const totalMs = Number(this.telemetryRuntime.totalUpdateTimeMs || 0);
+        const maxMs = Number(this.telemetryRuntime.maxUpdateTimeMs || 0);
+        return {
+            avgMs: count > 0 ? totalMs / count : 0,
+            maxMs,
+            totalMs,
+            count,
         };
     }
 
@@ -610,8 +709,24 @@ export class BaseComponent {
         const stateSize = this.safeSerializeState().length;
         const stateAgeMs = Math.max(0, Date.now() - Number(this.telemetryRuntime.lastStateChangeAtMs || Date.now()));
 
+        this.telemetryRuntime.customTelemetry = {};
+        try {
+            this.onCustomTelemetry();
+        } catch {
+            // Non-fatal telemetry hook.
+        }
+
+        const timing = this.getUpdateTimingMetrics();
+
         return {
             updateFreq: this.calcFreq(),
+            timing: {
+                totalMs: timing.totalMs,
+                maxMs: timing.maxMs,
+                avgMs: timing.avgMs,
+                count: timing.count,
+                lastUpdateAtMs: this.telemetryRuntime.lastUpdateAtMs,
+            },
             pinToggles: { ...this.telemetryRuntime.pinToggles },
             stateSize,
             stateStability: {
@@ -647,6 +762,7 @@ export class BaseComponent {
                 },
                 railDelta: Number((this.telemetryRuntime.power.vccCurrent - this.telemetryRuntime.power.gndCurrent).toFixed(4)),
             },
+            custom: this.telemetryRuntime.customTelemetry || {},
         };
     }
 
@@ -663,10 +779,13 @@ export class BaseComponent {
         const source = this.state && typeof this.state === 'object' && !Array.isArray(this.state)
             ? this.state
             : { value: this.state };
+        const metrics = this.getUniversalMetrics();
+        const metricsRecord = metrics as Record<string, any>;
 
         return {
             ...source,
-            _metrics: this.getUniversalMetrics(),
+            customTelemetry: (metricsRecord.custom && typeof metricsRecord.custom === 'object') ? metricsRecord.custom : {},
+            _metrics: metrics,
             _heuristics: heuristics,
             _manifestTelemetry: this.telemetryManifest || undefined,
             _capturedAt: new Date().toISOString(),

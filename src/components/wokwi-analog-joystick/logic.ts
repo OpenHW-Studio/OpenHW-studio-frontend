@@ -31,4 +31,13 @@ export class JoystickLogic extends BaseComponent {
         this.setPinVoltage('VRX', vx);
         this.setPinVoltage('VRY', vy);
     }
+
+    onCustomTelemetry() {
+        this.setCustomTelemetry({
+            position: `(${this.state.x.toFixed(2)}, ${this.state.y.toFixed(2)})`,
+            buttonPressed: !!this.state.pressed,
+            vrxVoltage: Number((this.getPinVoltage('VRX') || 0).toFixed(2)),
+            vryVoltage: Number((this.getPinVoltage('VRY') || 0).toFixed(2))
+        });
+    }
 }
