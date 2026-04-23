@@ -136,6 +136,7 @@ export default function AdminPage() {
         addLog(`Sending ${comp.id} to backend for permanent integration...`);
         try {
             const payload = {
+                submissionId: comp.submissionId,
                 id: comp.id,
                 manifest: comp.manifest,
                 ui: comp.uiRaw,
@@ -145,7 +146,7 @@ export default function AdminPage() {
             };
             await approveCustomComponent(payload);
             addLog(`Successfully merged ${comp.id} into backend openhw-studio-emulator!`, 'success');
-            setPendingComponents(prev => prev.filter(p => p.id !== comp.id));
+            setPendingComponents(prev => prev.filter(p => p.submissionId !== comp.submissionId));
             setInstalledComponents(prev => {
                 if (prev.some(c => c.id === comp.id)) return prev;
                 return [...prev, { id: comp.id, manifest: comp.manifest }];

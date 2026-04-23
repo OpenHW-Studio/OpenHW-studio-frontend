@@ -18,17 +18,20 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const handleInitialLoad = async () => {
       // 1. Check if returning from Google OAuth with a token in URL
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const hashToken = hashParams.get('token');
       const urlParams = new URLSearchParams(window.location.search);
       const urlToken = urlParams.get('token');
+      const oauthToken = hashToken || urlToken;
 
-      if (urlToken) {
+      if (oauthToken) {
         // Save token temporarily to fetch profile
-        saveToken(urlToken);
+        saveToken(oauthToken);
         try {
           // Fetch the user's profile using the new token
           const data = await fetchProfile();
           if (data && data.user) {
-            login(urlToken, data.user); // Save to context and local storage
+            login(oauthToken, data.user); // Save to context and local storage
           }
         } catch (error) {
           console.error("Failed to fetch profile with OAuth token:", error);

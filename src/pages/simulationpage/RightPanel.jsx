@@ -1,5 +1,6 @@
 import React from 'react';
-import Editor from 'react-simple-code-editor';
+import EditorComponent from 'react-simple-code-editor';
+const Editor = EditorComponent.default || EditorComponent;
 import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
@@ -33,6 +34,7 @@ export function RightPanel(props) {
     showConnectionsPanel, wires, updateWireColor, deleteWire,
     selected, setSelected,
     blocklyDisabled, setBlocklyDisabled,
+    boardComponentMap, onToggleBoardFirmwareSource,
   } = props;
 
   const [fileMenu, setFileMenu] = React.useState(null); // { x, y, fileId }
@@ -764,12 +766,12 @@ export function RightPanel(props) {
                             e.preventDefault();
                             setFileMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
                           }}
-                          className={`group transition-all duration-150 ${activeCodeFileId === file.id ? 'bg-[rgba(0,255,255,0.04)]' : 'hover:bg-[rgba(255,255,255,0.02)]'}`}
+                          className={`group transition-all duration-200 ${activeCodeFileId === file.id ? 'bg-[rgba(0,255,255,0.06)]' : 'hover:bg-[rgba(255,255,255,0.03)]'}`}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 6,
-                            padding: '7px 12px',
+                            gap: 7,
+                            padding: '8px 16px',
                             fontSize: 11,
                             cursor: 'pointer',
                             borderBottom: activeCodeFileId === file.id ? '2px solid var(--accent)' : '2px solid transparent',
@@ -777,8 +779,9 @@ export function RightPanel(props) {
                             fontFamily: 'JetBrains Mono, monospace',
                             whiteSpace: 'nowrap',
                             userSelect: 'none',
+                            fontWeight: activeCodeFileId === file.id ? 600 : 400,
                             textDecoration: String(file.name || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX) ? 'line-through' : 'none',
-                            opacity: String(file.name || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX) ? 0.75 : 1,
+                            opacity: activeCodeFileId === file.id ? 1 : (String(file.name || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX) ? 0.6 : 0.85),
                           }}
                         >
                           <span>{file.name}{file.dirty ? ' *' : ''}</span>
@@ -810,7 +813,35 @@ export function RightPanel(props) {
                       </div>
                     </div>
 
-                    <div className="panel-scroll" style={{ flex: 1, overflow: 'auto' }}>
+                    <div className="panel-scroll hide-scrollbar" style={{ flex: 1, overflowY: 'auto' }}>
+                      {(() => {
+                        if (!activeFile || !boardComponentMap) return null;
+                        const pathParts = activeFile.path.split('/');
+                        if (pathParts.length < 3 || pathParts[0] !== 'project') return null;
+                        
+                        const boardId = pathParts[1];
+                        const boardComp = boardComponentMap.get(boardId);
+                        if (!boardComp || !boardComp.attrs?.useUploadedFirmware) return null;
+                        
+                        const firmwareName = boardComp.attrs.firmwareArtifactName || 'custom binary';
+                        
+                        return (
+                          <div className="bg-[var(--accent)]/5 border-b border-[var(--accent)]/20 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 animate-in slide-in-from-top-2 duration-300">
+                            <div className="flex items-center gap-2.5 text-[11px] text-[var(--accent)] font-semibold">
+                              <div className="bg-[var(--accent)]/20 p-1 rounded-md">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                              </div>
+                              <span className="tracking-tight">Override Active: <strong className="text-[var(--text)] uppercase opacity-80">{boardId}</strong> is using <strong>{firmwareName}</strong></span>
+                            </div>
+                            <Btn 
+                              onClick={() => onToggleBoardFirmwareSource?.(boardId, false)}
+                              color="var(--accent)"
+                            >
+                              <span className="text-[10px] font-bold px-1">Switch to Code</span>
+                            </Btn>
+                          </div>
+                        );
+                      })()}
                       <Editor
                         value={code}
                         onValueChange={v => {
@@ -830,7 +861,8 @@ export function RightPanel(props) {
                           outline: 'none',
                           resize: 'none',
                           // Add a subtle opacity change if read only
-                          opacity: (!activeCodeFileId || activeCodeFileId === 'project/diagram.json') ? 0.7 : 1
+                          opacity: (!activeCodeFileId || activeCodeFileId === 'project/diagram.json') ? 0.7 : 1,
+                          overflow: 'hidden'
                         }}
                         textareaClassName="editor-textarea"
                       />

@@ -1,6 +1,17 @@
 import axios from 'axios';
+import { getAdminToken, getToken } from './authService.js';
 
-const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5000/api';
+const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5001/api';
+
+const getUserAuthConfig = () => {
+    const token = getToken();
+    return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+};
+
+const getAdminAuthConfig = () => {
+    const token = getAdminToken() || getToken();
+    return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+};
 
 /**
  * Sends Arduino C++ code to the backend compiler.
@@ -10,7 +21,7 @@ const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE
 export async function compileCode(input) {
     try {
         const payload = typeof input === 'string' ? { code: input } : (input || {});
-        const response = await axios.post(`${COMPILER_URL}/compile`, payload);
+        const response = await axios.post(`${COMPILER_URL}/compile`, payload, getUserAuthConfig());
         if (response.data && response.data.hex) {
             return response.data;
         }
@@ -46,7 +57,7 @@ export async function compileCode(input) {
  */
 export async function flashFirmware({ port, fqbn, hex, baudRate, resetMethod }) {
     try {
-        const response = await axios.post(`${COMPILER_URL}/compile/flash`, { port, fqbn, hex, baudRate, resetMethod });
+        const response = await axios.post(`${COMPILER_URL}/compile/flash`, { port, fqbn, hex, baudRate, resetMethod }, getUserAuthConfig());
         return response.data;
     } catch (error) {
         if (error.response && error.response.data && error.response.data.details) {
@@ -63,6 +74,7 @@ export async function listHardwarePorts(showAll = false) {
     try {
         const response = await axios.get(`${COMPILER_URL}/compile/ports`, {
             params: { showAll: showAll ? 'true' : 'false' },
+            ...(getUserAuthConfig()),
         });
         return response.data?.ports || [];
     } catch (error) {
@@ -77,7 +89,7 @@ export async function listHardwarePorts(showAll = false) {
  * Fetches the list of installed libraries from the backend.
  */
 export async function fetchInstalledLibraries() {
-    const response = await axios.get(`${COMPILER_URL}/lib-list`);
+    const response = await axios.get(`${COMPILER_URL}/lib-list`, getUserAuthConfig());
     return response.data.libraries || [];
 }
 
@@ -85,7 +97,7 @@ export async function fetchInstalledLibraries() {
  * Searches for libraries in the Arduino registry.
  */
 export async function searchLibraries(query) {
-    const response = await axios.get(`${COMPILER_URL}/lib-search?q=${encodeURIComponent(query)}`);
+    const response = await axios.get(`${COMPILER_URL}/lib-search?q=${encodeURIComponent(query)}`, getUserAuthConfig());
     return response.data.libraries || [];
 }
 
@@ -93,7 +105,7 @@ export async function searchLibraries(query) {
  * Installs a library on the backend.
  */
 export async function installLibrary(name) {
-    const response = await axios.post(`${COMPILER_URL}/lib-install`, { name });
+    const response = await axios.post(`${COMPILER_URL}/lib-install`, { name }, getAdminAuthConfig());
     return response.data;
 }
 
@@ -101,7 +113,7 @@ export async function installLibrary(name) {
  * Uninstalls a library from the backend.
  */
 export async function uninstallLibrary(name) {
-    const response = await axios.post(`${COMPILER_URL}/lib-uninstall`, { name });
+    const response = await axios.post(`${COMPILER_URL}/lib-uninstall`, { name }, getAdminAuthConfig());
     return response.data;
 }
 
@@ -109,7 +121,7 @@ export async function uninstallLibrary(name) {
  * Sends a custom component to the backend to be permanently installed.
  */
 export async function approveCustomComponent(componentPayload) {
-    const response = await axios.post(`${COMPILER_URL}/admin/components/approve`, componentPayload);
+    const response = await axios.post(`${COMPILER_URL}/admin/components/approve`, componentPayload, getAdminAuthConfig());
     return response.data;
 }
 
@@ -118,7 +130,7 @@ export async function approveCustomComponent(componentPayload) {
  * Uses submissionId (not component id) so only that one upload is removed.
  */
 export async function rejectCustomComponent(submissionId) {
-    const response = await axios.delete(`${COMPILER_URL}/admin/components/reject/${submissionId}`);
+    const response = await axios.delete(`${COMPILER_URL}/admin/components/reject/${submissionId}`, getAdminAuthConfig());
     return response.data;
 }
 
@@ -126,7 +138,7 @@ export async function rejectCustomComponent(submissionId) {
  * Admins fetching the pending components
  */
 export async function fetchPendingComponents() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/pending`);
+    const response = await axios.get(`${COMPILER_URL}/admin/components/pending`, getAdminAuthConfig());
     return response.data.components || [];
 }
 
@@ -134,22 +146,22 @@ export async function fetchPendingComponents() {
  * Users submitting a component for admin review
  */
 export async function submitCustomComponent(payload) {
-    const response = await axios.post(`${COMPILER_URL}/components/submit`, payload);
+    const response = await axios.post(`${COMPILER_URL}/components/submit`, payload, getUserAuthConfig());
     return response.data;
 }
 
 export async function getInstalledComponents() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/installed`);
+    const response = await axios.get(`${COMPILER_URL}/admin/components/installed`, getAdminAuthConfig());
     return response.data.components || [];
 }
 
 export async function deleteInstalledComponent(id) {
-    const response = await axios.delete(`${COMPILER_URL}/admin/components/installed/${id}`);
+    const response = await axios.delete(`${COMPILER_URL}/admin/components/installed/${id}`, getAdminAuthConfig());
     return response.data;
 }
 
 export async function backupInstalledComponents() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/backup`);
+    const response = await axios.get(`${COMPILER_URL}/admin/components/backup`, getAdminAuthConfig());
     return response.data.components || [];
 }
 
@@ -158,6 +170,6 @@ export async function backupInstalledComponents() {
  * Used by SimulatorPage to inject approved components into the local runtime registry.
  */
 export async function fetchInstalledComponentsWithFiles() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/backup`);
+    const response = await axios.get(`${COMPILER_URL}/admin/components/backup`, getAdminAuthConfig());
     return response.data.components || [];
 }
