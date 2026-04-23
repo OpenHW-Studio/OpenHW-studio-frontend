@@ -38,6 +38,8 @@ export default function TeacherAssignmentSubmissionsModal({
   );
   const selectedSubmissionLinks = selectedSubmission ? pickLinks(selectedSubmission) : [];
   const selectedSubmissionFiles = selectedSubmission ? pickAttachments(selectedSubmission) : [];
+  const selectedSimulationUrl = selectedSubmission?.simulationUrl ||
+    (selectedSubmission?.simulationShareId ? `${window.location.origin}/simulator/share/${selectedSubmission.simulationShareId}` : "");
 
   if (!assignment) return null;
 
@@ -90,7 +92,7 @@ export default function TeacherAssignmentSubmissionsModal({
                     {submissions.map((submission) => {
                       const attachmentCount =
                         submission.attachments?.length || submission.files?.length || 0;
-                      const linkCount = pickLinks(submission).length;
+                      const linkCount = submission.simulationUrl || submission.simulationShareId ? 1 : pickLinks(submission).length;
                       const studentInitials = submission.studentId?.name
                         ? submission.studentId.name
                             .split(" ")
@@ -157,7 +159,7 @@ export default function TeacherAssignmentSubmissionsModal({
                               0)}{" "}
                             files
                           </span>
-                          <span>{selectedSubmissionLinks.length} links</span>
+                          <span>{selectedSimulationUrl ? 1 : selectedSubmissionLinks.length} links</span>
                         </div>
                       </div>
 
@@ -170,8 +172,23 @@ export default function TeacherAssignmentSubmissionsModal({
                         </div>
 
                         <div className="teacher-assignment-modal__section">
-                          <h4>Links</h4>
-                          {selectedSubmissionLinks.length > 0 ? (
+                          <h4>Simulation Link</h4>
+                          {selectedSimulationUrl ? (
+                            <div className="teacher-assignment-modal__links">
+                              <a
+                                href={selectedSimulationUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="teacher-assignment-modal__link"
+                              >
+                                <span>
+                                  <Link2 size={14} />
+                                  {selectedSimulationUrl}
+                                </span>
+                                <ExternalLink size={14} />
+                              </a>
+                            </div>
+                          ) : selectedSubmissionLinks.length > 0 ? (
                             <div className="teacher-assignment-modal__links">
                               {selectedSubmissionLinks.map((link, idx) => (
                                 <a
@@ -192,7 +209,7 @@ export default function TeacherAssignmentSubmissionsModal({
                           ) : (
                             <div className="teacher-review-empty">
                               <Link2 size={16} />
-                              <span>No links submitted.</span>
+                              <span>No simulation link submitted.</span>
                             </div>
                           )}
                         </div>
