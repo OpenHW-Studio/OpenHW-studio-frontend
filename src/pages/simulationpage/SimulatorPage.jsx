@@ -1734,7 +1734,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // My Projects sidebar state
   const [showProjectsSidebar, setShowProjectsSidebar] = useState(false);
   const [projectsSidebarTab, setProjectsSidebarTab] = useState('projects'); // 'favourites' | 'projects' | 'custom' | 'settings'
-  const [showProjectsDropdown, setShowProjectsDropdown] = useState(false);
   const [favouriteProjectIds, setFavouriteProjectIds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ohw_favourite_projects') || '[]'); }
     catch { return []; }
