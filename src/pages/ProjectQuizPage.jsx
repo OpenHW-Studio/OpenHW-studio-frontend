@@ -14,14 +14,18 @@ export default function ProjectQuizPage() {
 
   const [idx, setIdx] = useState(0)
   const [quizPick, setQuizPick] = useState(null)
-  const [correctCount, setCorrectCount] = useState(0)
   const [allDone, setAllDone] = useState(false)
-  const [wrongMsg, setWrongMsg] = useState(null)
+  const [selectedAnswers, setSelectedAnswers] = useState(() => Array(getProjectFlashcards(projectName).length).fill(null))
 
   const flashcards = getProjectFlashcards(projectName)
   const total = flashcards.length
   const card = flashcards[idx]
   const quiz = card?.quiz
+
+  const correctCount = selectedAnswers.filter((ans, i) => {
+    const correct = flashcards[i]?.quiz?.correctAnswer
+    return ans === correct
+  }).length
 
   useEffect(() => {
     if (allDone && correctCount >= total * 0.7 && window.markAdventureStepComplete) {
@@ -29,21 +33,33 @@ export default function ProjectQuizPage() {
     }
   }, [allDone, correctCount, total, projectName])
 
+  useEffect(() => {
+    setQuizPick(selectedAnswers[idx])
+  }, [idx, selectedAnswers])
+
   const pickAnswer = (i) => {
-    if (quizPick !== null) return
+    if (allDone) return
+    if (quizPick === i) return
+
     setQuizPick(i)
-    const isCorrect = i === quiz?.correctAnswer
-    if (isCorrect) {
-      setTimeout(() => {
-        setCorrectCount(c => c + 1)
-        if (idx + 1 >= total) { setAllDone(true); return }
-        setIdx(n => n + 1)
-        setQuizPick(null)
-        setWrongMsg(null)
-      }, 900)
+    setSelectedAnswers(prev => {
+      const next = [...prev]
+      next[idx] = i
+      return next
+    })
+  }
+
+  const goNext = () => {
+    if (idx + 1 < total) {
+      setIdx(n => n + 1)
     } else {
-      setWrongMsg(`Wrong! The correct answer is: "${quiz?.options[quiz?.correctAnswer]}" — try again!`)
-      setTimeout(() => setQuizPick(null), 1500)
+      setAllDone(true)
+    }
+  }
+
+  const goPrev = () => {
+    if (idx > 0) {
+      setIdx(n => n - 1)
     }
   }
 
@@ -93,10 +109,17 @@ export default function ProjectQuizPage() {
         @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap');
       `}</style>
 
-      <div className="gamification-topbar">
-        <button className="btn-back" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8' }} onClick={() => navigate('/adventure')}>
-          ← Map
-        </button>
+        <div className="gamification-topbar">
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-back" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8' }} onClick={() => navigate('/adventure')}>
+            ← Map
+          </button>
+          {idx > 0 && (
+            <button style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8', border: 'none', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 13 }} onClick={goPrev}>
+              ← Prev
+            </button>
+          )}
+        </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 11, color, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>
             🎯 {project.title}
@@ -117,11 +140,14 @@ export default function ProjectQuizPage() {
             <div style={{ height: '100%', borderRadius: 99, width: `${((idx + 1) / total) * 100}%`, background: color, transition: 'width .4s ease' }} />
           </div>
           <div className="progress-dots">
-            {flashcards.map((_, i) => (
-              <div key={i} className="progress-dot" style={{
-                background: i < idx ? color : (theme === 'dark' ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'),
-              }} />
-            ))}
+            {flashcards.map((_, i) => {
+              const isAnswered = selectedAnswers[i] !== null
+              return (
+                <div key={i} className="progress-dot" style={{
+                  background: i < idx ? color : isAnswered ? '#60a5fa' : (theme === 'dark' ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'),
+                }} />
+              )
+            })}
           </div>
         </div>
 
@@ -138,33 +164,62 @@ export default function ProjectQuizPage() {
           {quiz?.options.map((opt, i) => {
             const isCorrect = i === quiz?.correctAnswer
             const isPicked = quizPick === i
-            const showResult = quizPick !== null
+            const showResult = allDone && quizPick !== null
             return (
-              <button
-                key={i}
-                onClick={() => pickAnswer(i)}
-                className={`quiz-option ${showResult && isCorrect && isPicked ? 'quiz-option--correct' : ''} ${showResult && isPicked && !isCorrect ? 'quiz-option--wrong' : ''}`}
-                style={{
-                  background: showResult && isCorrect && isPicked ? 'rgba(34,197,94,.14)' : showResult && isPicked && !isCorrect ? 'rgba(239,68,68,.14)' : (theme === 'dark' ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.04)'),
-                  borderColor: showResult && isCorrect && isPicked ? '#22c55e' : showResult && isPicked && !isCorrect ? '#ef4444' : (theme === 'dark' ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)'),
-                  color: showResult && isCorrect && isPicked ? '#34d399' : showResult && isPicked && !isCorrect ? '#f87171' : (theme === 'dark' ? '#94a3b8' : '#64748b'),
-                  cursor: (quizPick && !isPicked) ? 'default' : 'pointer',
-                }}
-              >
-                {showResult && isCorrect && isPicked ? '✅ ' : showResult && isPicked && !isCorrect ? '❌ ' : `${['A','B','C','D'][i]}. `}
+               <button
+                 key={i}
+                 onClick={() => pickAnswer(i)}
+                 className={`quiz-option ${showResult && isCorrect && isPicked ? 'quiz-option--correct' : ''} ${showResult && isPicked && !isCorrect ? 'quiz-option--wrong' : ''}`}
+                 style={{
+                   background: showResult && isCorrect && isPicked ? 'rgba(34,197,94,.14)' : showResult && isPicked && !isCorrect ? 'rgba(239,68,68,.14)' : isPicked && !allDone ? 'rgba(59,130,246,.14)' : (theme === 'dark' ? 'rgba(255,255,255,.04)' : 'rgba(0,0,0,.04)'),
+                   borderColor: showResult && isCorrect && isPicked ? '#22c55e' : showResult && isPicked && !isCorrect ? '#ef4444' : isPicked && !allDone ? '#3b82f6' : (theme === 'dark' ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)'),
+                   color: showResult && isCorrect && isPicked ? '#34d399' : showResult && isPicked && !isCorrect ? '#f87171' : isPicked && !allDone ? '#60a5fa' : (theme === 'dark' ? '#94a3b8' : '#64748b'),
+                   cursor: quizPick && !isPicked ? 'default' : 'pointer',
+                 }}
+               >
+                {allDone && showResult && isCorrect && isPicked ? '✅ ' : allDone && showResult && isPicked && !isCorrect ? '❌ ' : `${['A','B','C','D'][i]}. `}
                 {opt}
               </button>
             )
           })}
         </div>
 
-        {wrongMsg && (
-          <div className="wrong-message" style={{
-            background: 'rgba(239,68,68,.12)', border: '1px solid rgba(239,68,68,.35)',
-            color: '#f87171',
-          }}>
-            <span className="wrong-message-icon">💡</span>
-            <span>{wrongMsg}</span>
+        {!allDone && (
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            {idx > 0 && (
+              <button
+                onClick={goPrev}
+                style={{
+                  flex: 1,
+                  padding: '10px 24px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)',
+                  color: theme === 'dark' ? '#e2e8f0' : '#1e293b',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  fontSize: 14,
+                }}
+              >
+                ← Prev
+              </button>
+            )}
+            <button
+              onClick={goNext}
+              style={{
+                flex: idx > 0 ? 1 : 'auto',
+                padding: '10px 24px',
+                borderRadius: 8,
+                border: 'none',
+                background: color,
+                color: '#fff',
+                fontWeight: 700,
+                cursor: 'pointer',
+                fontSize: 14,
+              }}
+            >
+              {idx + 1 === total ? 'Finish' : 'Next'}
+            </button>
           </div>
         )}
       </div>
