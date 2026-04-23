@@ -15,31 +15,28 @@ export default function ProjectComponentUnlockPage() {
   const components = getUnlockComponents(projectName)
   const total = components.length
 
-  const [revealedCount, setRevealedCount] = useState(0)
-  const [revealedCards, setRevealedCards] = useState(new Set())
-  const [allRevealed, setAllRevealed] = useState(false)
+  const [unlockedComponents, setUnlockedComponents] = useState(new Set())
+  const [allUnlocked, setAllUnlocked] = useState(false)
 
   useEffect(() => {
-    if (revealedCount >= total) {
-      setAllRevealed(true)
+    if (unlockedComponents.size >= total) {
+      setAllUnlocked(true)
       if (window.markAdventureStepComplete) {
         window.markAdventureStepComplete(projectName, 'unlock', 3)
       }
     }
-  }, [revealedCount, total, projectName])
+  }, [unlockedComponents, total, projectName])
 
-  const handleReveal = (index) => {
-    if (!revealedCards.has(index)) {
-      setRevealedCards(prev => new Set([...prev, index]))
-      setRevealedCount(c => c + 1)
-    }
-  }
+   const handleUnlock = (index) => {
+     if (!unlockedComponents.has(index)) {
+       setUnlockedComponents(prev => new Set([...prev, index]))
+     }
+   }
 
-  const handleRevealAll = () => {
-    const allIndices = new Set(components.map((_, i) => i))
-    setRevealedCards(allIndices)
-    setRevealedCount(total)
-  }
+   const handleUnlockAll = () => {
+     const allIndices = new Set(components.map((_, i) => i))
+     setUnlockedComponents(allIndices)
+   }
 
   if (!project) {
     return (
@@ -54,7 +51,7 @@ export default function ProjectComponentUnlockPage() {
     )
   }
 
-  if (allRevealed) {
+  if (allUnlocked) {
     return (
       <div className="gamification-page completion-screen" style={{ background: theme === 'dark' ? 'linear-gradient(160deg,#080e1e 0%,#0c1528 55%,#07101f 100%)' : 'linear-gradient(160deg,#f0f4ff 0%,#e8edf8 55%,#f0f4ff 100%)', color: theme === 'dark' ? '#e2e8f0' : '#1e293b' }}>
         <style>{`
@@ -62,21 +59,25 @@ export default function ProjectComponentUnlockPage() {
         `}</style>
         <div className="completion-icon">🎉</div>
         <div className="completion-title" style={{ color: '#34d399', marginBottom: 8 }}>
-          Unlocked!
+          All Unlocked!
         </div>
         <div className="completion-subtitle" style={{ color: theme === 'dark' ? '#64748b' : '#94a3b8', marginBottom: 24 }}>
-          You earned {total} new components!
+          You earned all {total} new components!
         </div>
         
-        <div className="component-unlock-list">
+        <div className="component-unlock-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 24 }}>
           {components.map((comp, i) => (
             <div key={i} className="component-unlock-item" style={{
-              background: 'linear-gradient(145deg,#111e35,#0d1728)',
-              border: `2px solid ${comp.color}44`,
-              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 12px',
+              background: `linear-gradient(145deg,${comp.color}22,${comp.color}11)`,
+              border: `1px solid ${comp.color}44`,
+              borderRadius: 8,
             }}>
-              <span style={{ fontSize: 24 }}>{comp.icon}</span>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#f0f4ff' }}>{comp.name}</span>
+              <span style={{ fontSize: 20 }}>{comp.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: theme === 'dark' ? '#f0f4ff' : '#0f172a' }}>{comp.name}</span>
             </div>
           ))}
         </div>
@@ -92,150 +93,151 @@ export default function ProjectComponentUnlockPage() {
     )
   }
 
-  return (
-    <div className="gamification-page" style={{ background: theme === 'dark' ? 'linear-gradient(160deg,#080e1e 0%,#0c1528 55%,#07101f 100%)' : 'linear-gradient(160deg,#f0f4ff 0%,#e8edf8 55%,#f0f4ff 100%)', color: theme === 'dark' ? '#e2e8f0' : '#1e293b' }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap');
-        .reveal-card { perspective:1200px; }
-        .reveal-inner { position:relative; width:100%; height:100%; transition:transform .6s cubic-bezier(.4,0,.2,1); transform-style:preserve-3d; }
-        .reveal-inner.revealed { transform:rotateY(180deg); }
-      `}</style>
+    return (
+      <div className="gamification-page" style={{ background: theme === 'dark' ? 'linear-gradient(160deg,#080e1e 0%,#0c1528 55%,#07101f 100%)' : 'linear-gradient(160deg,#f0f4ff 0%,#e8edf8 55%,#f0f4ff 100%)', color: theme === 'dark' ? '#e2e8f0' : '#1e293b' }}>
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap');
+        `}</style>
 
-      <div className="gamification-topbar">
-        <button className="btn-back" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8' }} onClick={() => navigate('/adventure')}>
-          ← Map
-        </button>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 11, color, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>
-            🎁 {project.title}
+        <div className="gamification-topbar">
+          <button className="btn-back" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8' }} onClick={() => navigate('/adventure')}>
+            ← Map
+          </button>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>
+              🎁 {project.title}
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: theme === 'dark' ? '#f0f4ff' : '#0f172a' }}>Component Unlock</div>
           </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: theme === 'dark' ? '#f0f4ff' : '#0f172a' }}>Component Unlock</div>
+          <div style={{ fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
+            {unlockedComponents.size}/{total} unlocked
+          </div>
         </div>
-        <div style={{ fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
-          {revealedCount}/{total} revealed
+
+        <div className="gamification-content" style={{ animation: 'fadeUp .35s ease' }}>
+          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: theme === 'dark' ? '#f0f4ff' : '#0f172a', marginBottom: 8 }}>
+              New Components!
+            </div>
+            <div style={{ fontSize: 14, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
+              Complete the project to earn these parts
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 14, color: theme === 'dark' ? '#94a3b8' : '#64748b', marginBottom: 8 }}>
+              {unlockedComponents.size} of {total} components unlocked
+            </div>
+            <div className="progress-bar-track" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)', height: 6, borderRadius: 99, overflow: 'hidden' }}>
+              <div style={{ height: '100%', borderRadius: 99, width: `${(unlockedComponents.size / total) * 100}%`, background: color, transition: 'width .4s ease' }} />
+            </div>
+          </div>
+
+          <div className="component-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {components.map((comp, index) => {
+              const isUnlocked = unlockedComponents.has(index)
+              return (
+                <div
+                  key={index}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: 16,
+                    background: theme === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+                    borderRadius: 12,
+                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                    opacity: isUnlocked ? 1 : 0.7,
+                  }}
+                >
+                  <div style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 12,
+                    background: isUnlocked ? comp.color : (theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'),
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 28,
+                    flexShrink: 0,
+                  }}>
+                    {isUnlocked ? comp.icon : '🔒'}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: theme === 'dark' ? '#f0f4ff' : '#0f172a', marginBottom: 2 }}>
+                      {comp.name}
+                    </div>
+                     <div style={{ fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b', lineHeight: 1.4 }}>
+                       {comp.desc}
+                     </div>
+                  </div>
+                  {!isUnlocked && (
+                    <button
+                      onClick={() => handleUnlock(index)}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: 8,
+                        border: 'none',
+                        background: `linear-gradient(135deg, ${comp.color}, ${comp.color}cc)`,
+                        color: '#fff',
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                      }}
+                    >
+                      Unlock
+                    </button>
+                  )}
+                  {isUnlocked && (
+                    <div style={{
+                      padding: '8px 16px',
+                      borderRadius: 8,
+                      background: 'rgba(34,197,94,0.15)',
+                      color: '#22c55e',
+                      fontWeight: 700,
+                      fontSize: 13,
+                    }}>
+                      Unlocked
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {unlockedComponents.size < total && (
+            <div style={{ textAlign: 'center', marginTop: 8 }}>
+              <button
+                onClick={handleUnlockAll}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: 8,
+                  border: 'none',
+                  background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+                  color: '#fff',
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: 'pointer',
+                }}
+              >
+                Unlock All ({total - unlockedComponents.size} remaining)
+              </button>
+            </div>
+          )}
+
+          {allUnlocked && (
+            <div style={{ textAlign: 'center', marginTop: 20 }}>
+              <button onClick={() => navigate('/adventure')} className="btn-secondary-gradient" style={{
+                background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+                color: '#fff',
+              }}>
+                ← Back to Adventure Map
+              </button>
+            </div>
+          )}
         </div>
       </div>
-
-      <div className="gamification-content" style={{ animation: 'fadeUp .35s ease' }}>
-        <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ fontSize: 24, fontWeight: 800, color: theme === 'dark' ? '#f0f4ff' : '#0f172a', marginBottom: 8 }}>
-            New Components!
-          </div>
-          <div style={{ fontSize: 14, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
-            Complete the project to earn these parts
-          </div>
-        </div>
-
-        <div style={{ marginBottom: 24 }}>
-          <div className="progress-bar-track" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)', height: 6, borderRadius: 99, overflow: 'hidden', marginBottom: 10 }}>
-            <div style={{ height: '100%', borderRadius: 99, width: `${(revealedCount / total) * 100}%`, background: color, transition: 'width .4s ease' }} />
-          </div>
-          <div className="progress-dots">
-            {components.map((_, i) => (
-              <div key={i} className="progress-dot" style={{
-                background: revealedCount > i ? color : (theme === 'dark' ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'),
-                transform: i === revealedCount ? 'scale(1.3)' : 'scale(1)',
-              }} />
-            ))}
-          </div>
-        </div>
-
-        <div className="unlock-cards-grid">
-          {components.map((comp, index) => (
-            <RevealCard
-              key={index}
-              component={comp}
-              color={comp.color}
-              isRevealed={revealedCards.has(index)}
-              onReveal={() => handleReveal(index)}
-            />
-          ))}
-        </div>
-
-        {revealedCount > 0 && revealedCount < total && (
-          <div style={{ textAlign: 'center', marginBottom: 16 }}>
-            <button onClick={handleRevealAll} className="btn-reveal-all" style={{ color: '#94a3b8' }}>
-              Reveal All
-            </button>
-          </div>
-        )}
-
-        {revealedCount === 0 && (
-          <div style={{ textAlign: 'center', fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
-            👆 Tap each card to reveal your new components!
-          </div>
-        )}
-
-        {allRevealed && (
-          <div style={{ textAlign: 'center', marginTop: 20 }}>
-            <button onClick={() => navigate('/adventure')} className="btn-secondary-gradient" style={{
-              background: `linear-gradient(135deg, ${color}, ${color}cc)`,
-              color: '#fff',
-            }}>
-              ← Back to Adventure Map
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
+    )
 }
 
-function RevealCard({ component, color, isRevealed, onReveal }) {
-  return (
-    <div className="reveal-card">
-      <div 
-        className={`reveal-inner ${isRevealed ? 'revealed' : ''}`}
-        onClick={() => !isRevealed && onReveal()}
-        style={{
-          position: 'relative',
-          width: '100%',
-          height: '100%',
-          cursor: isRevealed ? 'default' : 'pointer',
-        }}
-      >
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          backfaceVisibility: 'hidden',
-          WebkitBackfaceVisibility: 'hidden',
-          borderRadius: 16,
-          background: color,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexDirection: 'column',
-          gap: 12,
-          boxShadow: `0 8px 32px ${color}44`,
-        }}>
-          <div style={{ fontSize: 48 }}>❓</div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.8)', textTransform: 'uppercase', letterSpacing: '.1em' }}>
-            {isRevealed ? 'Unlocked!' : 'Tap to reveal'}
-          </div>
-        </div>
-
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          backfaceVisibility: 'hidden',
-          WebkitBackfaceVisibility: 'hidden',
-          borderRadius: 16,
-          transform: 'rotateY(180deg)',
-          background: 'linear-gradient(145deg, #111e35, #0d1728)',
-          border: `2px solid ${color}44`,
-          padding: 24,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexDirection: 'column',
-          gap: 8,
-          textAlign: 'center',
-        }}>
-          <div style={{ fontSize: 56 }}>{component.icon}</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#f0f4ff' }}>{component.name}</div>
-          <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5 }}>{component.desc}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
