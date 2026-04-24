@@ -16,6 +16,7 @@ export const sidebarLinks = [
 export const tabs = [
   { key: "stream", label: "Stream" },
   { key: "classwork", label: "Classwork" },
+  { key: "adventure", label: "Adventure" },
   { key: "people", label: "People" },
   { key: "marks", label: "Marks" },
 ];

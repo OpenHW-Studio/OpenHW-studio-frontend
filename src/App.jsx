@@ -32,6 +32,7 @@ import ProjectTheoryPage from './pages/ProjectTheoryPage.jsx'
 import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
 import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
 import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
+import TeacherProjectContentEditor from './pages/teacher/TeacherProjectContentEditor.jsx'
 
 
 export default function App() {
@@ -131,6 +132,14 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRole="teacher">
                   <TeacherProfilePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/classes/:classId/projects/:projectSlug/edit"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherProjectContentEditor />
                 </ProtectedRoute>
               }
             />

@@ -15,6 +15,7 @@ import {
   getAvatarLetters,
 } from "../../common/test.js";
 import { pickAttachments } from "./helpers.js";
+import { PROJECTS } from "../../../services/gamification/ProjectsConfig.js";
 
 function TeacherStreamTab({
   noticeInput,
@@ -390,6 +391,218 @@ function TeacherMarksTab({ markStats }) {
   );
 }
 
+function TeacherAdventureTab({
+  adventureContent,
+  studentAdventureProgress,
+  onAdventureContentChange,
+  onAddWorld,
+  onMoveWorld,
+  onDeleteWorld,
+  onAddProject,
+  onMoveProject,
+  onDeleteProject,
+  onSaveAdventureConfig,
+  savingAdventureConfig,
+  onOpenClassAdventure,
+  onOpenProjectEditor,
+}) {
+  const worlds = (adventureContent?.worlds || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  const projects = (adventureContent?.projects || []);
+
+  const updateWorld = (worldId, field, value) => {
+    onAdventureContentChange({
+      ...adventureContent,
+      worlds: worlds.map((world) => (world.id === worldId ? { ...world, [field]: value } : world)),
+    });
+  };
+  const updateProject = (projectId, field, value) => {
+    onAdventureContentChange({
+      ...adventureContent,
+      projects: projects.map((project) => (project.id === projectId ? { ...project, [field]: value } : project)),
+    });
+  };
+  const updateProjectArrayField = (projectId, field, value) => updateProject(projectId, field, value);
+
+  return (
+    <section className="teacher-list-block">
+      <div className="teacher-list-block__heading">
+        <h3>Class Adventure</h3>
+        <small>Worlds, projects, nodes, theory, quiz, rewards</small>
+      </div>
+
+       <div style={{ display: "grid", gap: 12 }}>
+         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+           <button type="button" onClick={onAddWorld}>Add World</button>
+         </div>
+        {worlds.map((world, worldIndex) => (
+          <article key={world.id} className="teacher-classwork-card" style={{
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 12,
+            background: "rgba(255,255,255,0.02)",
+            overflow: "hidden",
+          }}>
+            <div style={{ display: "grid", gap: 8, padding: 16 }}>
+               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                 <strong>{world.title}</strong>
+                 <div style={{ display: "flex", gap: 6 }}>
+                   <button type="button" onClick={() => onMoveWorld(world.id, -1)} disabled={worldIndex === 0}>Up</button>
+                   <button type="button" onClick={() => onMoveWorld(world.id, 1)} disabled={worldIndex === worlds.length - 1}>Down</button>
+                   <button
+                     type="button"
+                     onClick={() => onDeleteWorld(world.id)}
+                     style={{
+                       background: "rgba(239,68,68,.14)",
+                       border: "none",
+                       borderRadius: 6,
+                       color: "#f87171",
+                       cursor: "pointer",
+                       padding: "4px 10px",
+                       fontSize: 12,
+                       fontWeight: 700,
+                     }}
+                     title="Delete world"
+                   >
+                     Delete
+                   </button>
+                 </div>
+               </div>
+               <div style={{ display: "flex", gap: 6 }}>
+                 <button
+                   type="button"
+                   onClick={() => onAddProject(world.id)}
+                   style={{
+                     padding: "6px 12px",
+                     fontSize: 12,
+                     fontWeight: 700,
+                     background: "rgba(255,255,255,.06)",
+                     border: "none",
+                     borderRadius: 6,
+                     cursor: "pointer",
+                   }}
+                 >
+                   + Add Project
+                 </button>
+               </div>
+              <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+                <label>Title<input type="text" value={world.title || ""} onChange={(event) => updateWorld(world.id, "title", event.target.value)} /></label>
+                <label>Theme<input type="text" value={world.theme || ""} onChange={(event) => updateWorld(world.id, "theme", event.target.value)} /></label>
+                <label>Color<input type="text" value={world.color || ""} onChange={(event) => updateWorld(world.id, "color", event.target.value)} /></label>
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                 {projects.filter((project) => project.worldId === world.id).sort((a, b) => (a.order || 0) - (b.order || 0)).map((project, projectIndex, arr) => (
+                   <div key={project.id} style={{ border: "1px solid #dbe4ff", borderRadius: 10, padding: 10, display: "grid", gap: 8 }}>
+                     <div style={{ display: "flex", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+                       <strong>{project.title || project.slug}</strong>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button type="button" onClick={() => onMoveProject(project.id, -1)} disabled={projectIndex === 0}>Up</button>
+                          <button type="button" onClick={() => onMoveProject(project.id, 1)} disabled={projectIndex === arr.length - 1}>Down</button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteProject(project.id)}
+                            style={{
+                              background: "rgba(239,68,68,.14)",
+                              border: "none",
+                              borderRadius: 6,
+                              color: "#f87171",
+                              cursor: "pointer",
+                              padding: "4px 10px",
+                              fontSize: 12,
+                              fontWeight: 700,
+                            }}
+                            title="Delete project"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                     </div>
+                     <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+                       <label>Title<input type="text" value={project.title || ""} onChange={(event) => updateProject(project.id, "title", event.target.value)} /></label>
+                       <label>XP<input type="number" min="0" value={project.xpReward || 0} onChange={(event) => updateProject(project.id, "xpReward", Number(event.target.value || 0))} /></label>
+                      </div>
+                     {/* Replace raw JSON editing with dedicated editor page */}
+                     <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                       <button
+                         type="button"
+                         onClick={(event) => {
+                           event.preventDefault();
+                           onOpenProjectEditor(project.id, project.slug);
+                         }}
+                         style={{
+                           padding: "8px 14px",
+                           borderRadius: 8,
+                           border: "none",
+                           background: PROJECTS.find(p => p.slug === project.slug)?.color || "#3b82f6",
+                           color: "#fff",
+                           fontWeight: 700,
+                           cursor: "pointer",
+                           fontSize: 13,
+                         }}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                       {(project.nodes || [])
+                         .sort((a, b) => (a.order || 0) - (b.order || 0))
+                         .map((node) => (
+                           <span
+                             key={node.id}
+                             style={{
+                               padding: "4px 10px",
+                               borderRadius: 6,
+                               background: "rgba(255,255,255,.06)",
+                               border: "1px solid rgba(255,255,255,.08)",
+                               fontSize: 12,
+                               fontWeight: 600,
+                               color: "#94a3b8",
+                             }}
+                           >
+                             {node.title || `Node ${node.order}`}
+                           </span>
+                         ))}
+                     </div>
+                   </div>
+                ))}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button type="button" onClick={onSaveAdventureConfig} disabled={savingAdventureConfig}>
+          {savingAdventureConfig ? "Saving..." : "Save Adventure Config"}
+        </button>
+        <button type="button" onClick={onOpenClassAdventure}>
+          Open Class Adventure View
+        </button>
+      </div>
+
+      <div style={{ marginTop: 18 }}>
+        <h4 style={{ marginBottom: 8 }}>Student Progress</h4>
+        {studentAdventureProgress?.students?.length ? (
+          <div style={{ display: "grid", gap: 8 }}>
+            {studentAdventureProgress.students.map((row) => (
+              <div key={row.student._id} className="teacher-classwork-card">
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <strong>{row.student.name}</strong>
+                  <span>{row.progress.completedProjectsCount} projects completed</span>
+                  <span>{row.progress.xp} XP</span>
+                  <span>{row.progress.lastActivityAt ? new Date(row.progress.lastActivityAt).toLocaleString() : "No activity yet"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="teacher-inline-state">
+            No student progress yet for this class.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export default function TeacherClassMainContent(props) {
   const { activeTab, error } = props;
 
@@ -403,6 +616,7 @@ export default function TeacherClassMainContent(props) {
 
       {activeTab === "stream" ? <TeacherStreamTab {...props} /> : null}
       {activeTab === "classwork" ? <TeacherClassworkTab {...props} /> : null}
+      {activeTab === "adventure" ? <TeacherAdventureTab {...props} /> : null}
       {activeTab === "people" ? <TeacherPeopleTab {...props} /> : null}
       {activeTab === "marks" ? <TeacherMarksTab {...props} /> : null}
     </section>
