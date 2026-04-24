@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
+import { getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
+import { getProjectContentBySlug } from '../services/classAdventureAdapter'
 
 const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
 
@@ -258,9 +260,30 @@ export default function ProjectAssessmentPage() {
   const navigate  = useNavigate()
   const { projectName = '' } = useParams()
   const location  = useLocation()
+  const classId = new URLSearchParams(location.search).get('classId')
   const { completedProjects = [], completeProject, awardXP, xp = 0, coins = 0 } = useGamification?.() || {}
+  const [classProjectContent, setClassProjectContent] = useState(null)
 
   const projectTitle  = useMemo(() => titleFromSlug(projectName), [projectName])
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      if (!classId) {
+        setClassProjectContent(null)
+        return
+      }
+      try {
+        const response = await getResolvedClassAdventure(classId)
+        if (cancelled) return
+        setClassProjectContent(getProjectContentBySlug(response?.resolved, projectName))
+      } catch {
+        if (!cancelled) setClassProjectContent(null)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [classId, projectName])
+
   const projectColor  = location.state?.projectColor || '#22c55e'
   const steps         = PROJECT_STEPS[projectName] || []
 
@@ -305,8 +328,16 @@ export default function ProjectAssessmentPage() {
       if (window.markAdventureStepComplete) {
         window.markAdventureStepComplete(projectName, 'sim', 4)
       }
+      if (classId) {
+        const proj = PROJECTS.find(p => p.slug === projectName)
+        postClassAdventureProgressEvent(classId, {
+          eventType: 'PROJECT_COMPLETED',
+          projectSlug: projectName,
+          payload: { xpEarned: classProjectContent?.xpReward || proj?.xpReward || 0 },
+        }).catch(() => {})
+      }
     }
-  }, [evalConfig, submission])
+  }, [evalConfig, submission, classId, completedProjects, completeProject, awardXP, projectName, classProjectContent])
 
   const clearResult = () => {
     sessionStorage.removeItem(`openhw_assessment_result:${projectName}`)
@@ -337,12 +368,12 @@ export default function ProjectAssessmentPage() {
         padding: '0 20px',
       }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12, height: 56 }}>
-          <button onClick={() => navigate(`/adventure`)} style={{ background: isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.07)', border: `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'}`, borderRadius: 8, padding: '6px 12px', color: isDark ? '#94a3b8' : '#64748b', cursor: 'pointer', fontSize: 12, fontWeight: 800, fontFamily: 'Nunito,sans-serif', flexShrink: 0 }}>← Map</button>
+          <button onClick={() => navigate(classId ? `/adventure?classId=${encodeURIComponent(classId)}` : `/adventure`)} style={{ background: isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.07)', border: `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'}`, borderRadius: 8, padding: '6px 12px', color: isDark ? '#94a3b8' : '#64748b', cursor: 'pointer', fontSize: 12, fontWeight: 800, fontFamily: 'Nunito,sans-serif', flexShrink: 0 }}>← Map</button>
 
           <div style={{ flex:1, display:'flex', alignItems:'center', gap:10 }}>
             <div style={{ width:30, height:30, borderRadius:8, background:`${projectColor}20`, border:`1px solid ${projectColor}40`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📋</div>
             <div>
-              <div style={{ fontSize:14, fontWeight:900, color: isDark ? '#f0f4ff' : '#1e293b' }}>{projectTitle} — Assessment</div>
+              <div style={{ fontSize:14, fontWeight:900, color: isDark ? '#f0f4ff' : '#1e293b' }}>{classProjectContent?.title || projectTitle} — Assessment</div>
               <div style={{ fontSize:10, fontWeight:700, color: isDark ? '#475569' : '#94a3b8', textTransform:'uppercase', letterSpacing:'.07em' }}>Build · Submit · Get Scored</div>
             </div>
           </div>
@@ -364,7 +395,7 @@ export default function ProjectAssessmentPage() {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, fontWeight:800, color:projectColor, letterSpacing:'.1em', textTransform:'uppercase', marginBottom:5 }}>Project Assessment</div>
-            <div style={{ fontSize:26, fontWeight:900, color: isDark?'#f0f4ff':'#1e293b', marginBottom:6 }}>{projectTitle}</div>
+            <div style={{ fontSize:26, fontWeight:900, color: isDark?'#f0f4ff':'#1e293b', marginBottom:6 }}>{classProjectContent?.title || projectTitle}</div>
             <div style={{ fontSize:13, color: isDark?'#64748b':'#94a3b8' }}>Follow the steps below, open the simulator, build your circuit, then submit for automatic scoring.</div>
           </div>
           {completedProjects.includes(projectName) && (
@@ -498,7 +529,7 @@ export default function ProjectAssessmentPage() {
                   🔄 Try Again in Simulator
                 </button>
                 {result.passed && (
-                  <button onClick={() => navigate('/adventure')} style={{ background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:12, padding:'13px', fontSize:14, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'Nunito,sans-serif', boxShadow:'0 4px 20px rgba(34,197,94,.35)' }}>
+                  <button onClick={() => navigate(classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure')} style={{ background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:12, padding:'13px', fontSize:14, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'Nunito,sans-serif', boxShadow:'0 4px 20px rgba(34,197,94,.35)' }}>
                     🗺️ Back to Adventure Map
                   </button>
                 )}

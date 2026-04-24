@@ -1,7 +1,9 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../services/gamification/ProjectsConfig'
+import { getMyClassAdventureProgress, getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
+import { buildFallbackClassAdventureContent } from '../services/classAdventureAdapter'
 
 // ─── World groupings ────────────────────────────────────────────────────────
 const WORLDS = [
@@ -121,7 +123,7 @@ function RewardPreview({ rewards, T }) {
 
 // ─── Modal ─────────────────────────────────────────────────────────────────
 function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }) {
-  const rewards = getProjectRewardComponents(project.slug)
+  const rewards = project.rewardComponents || getProjectRewardComponents(project.slug)
   const fullProject = PROJECTS.find(p => p.slug === project.slug)
   if (!project) return null
 
@@ -309,10 +311,14 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }
 // --- Main Page -----------------------------------------------------------
 export default function AdventureMapPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const classId = searchParams.get('classId')
   const {
     xp, currentLevel, currentLevelData, nextLevel, xpProgress,
     completedProjects = [],
   } = useGamification()
+  const [classAdventure, setClassAdventure] = useState(null)
+  const [classProgress, setClassProgress] = useState(null)
 
   // ── Read initial theme from document (set by LandingPage) ──
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
@@ -325,14 +331,68 @@ export default function AdventureMapPage() {
     document.documentElement.setAttribute('data-theme', next)
   }
 
-  const getStatus = (project) => getProjectStatus(project.slug, completedProjects)
+  useEffect(() => {
+    let cancelled = false
+    const loadClassAdventure = async () => {
+      if (!classId) {
+        setClassAdventure(null)
+        setClassProgress(null)
+        return
+      }
+      try {
+        const [adventureResponse, progressResponse] = await Promise.all([
+          getResolvedClassAdventure(classId),
+          getMyClassAdventureProgress(classId),
+        ])
+        if (cancelled) return
+        setClassAdventure(adventureResponse?.resolved || null)
+        setClassProgress(progressResponse?.progress || null)
+      } catch {
+        if (!cancelled) {
+          setClassAdventure(null)
+          setClassProgress(null)
+        }
+      }
+    }
+    loadClassAdventure()
+    return () => {
+      cancelled = true
+    }
+  }, [classId])
+
+  const resolvedProjects = useMemo(() => {
+    const source = [...PROJECTS]
+    if (!classId) return source
+    const content = classAdventure || buildFallbackClassAdventureContent()
+    const projectRows = Array.isArray(content?.projects) ? content.projects : []
+    if (!projectRows.length) return source
+    return projectRows
+      .filter((project) => project.enabled !== false)
+      .map((project, index) => ({
+        ...source.find((base) => base.slug === project.slug),
+        ...project,
+        number: Number.isFinite(project.order) ? project.order : index + 1,
+        world: Number(String(project.worldId || '').replace('world-', '')) || 1,
+        color: project.color || source.find((base) => base.slug === project.slug)?.color || '#3b82f6',
+        icon: project.icon || source.find((base) => base.slug === project.slug)?.icon || '🧩',
+      }))
+      .sort((a, b) => (a.world - b.world) || (a.number - b.number))
+  }, [classAdventure])
+
+  const getStatus = (project) => {
+    if (!classAdventure) return getProjectStatus(project.slug, completedProjects)
+    if (completedProjects.includes(project.slug)) return 'completed'
+    if (!project.prerequisite) return 'available'
+    return completedProjects.includes(project.prerequisite) ? 'available' : 'locked'
+  }
   const handleNodeClick = (project) => setSelectedProject(project)
   const handleStepNavigate = (project, step) => {
     if (!step?.route) return
-    navigate(step.route(project.slug))
+    const route = step.route(project.slug)
+    navigate(classId ? `${route}?classId=${encodeURIComponent(classId)}` : route)
   }
 
-  const markStepComplete = (projectSlug, stepKey, stepOrder) => {
+  const markStepComplete = async (projectSlug, stepKey, stepOrder) => {
     const progress = getLocalStepProgress(projectSlug) || { currentStepOrder: 1, completedSteps: [] }
     const completedSteps = new Set(progress.completedSteps || [])
     completedSteps.add(`${projectSlug}:${stepKey}`)
@@ -341,24 +401,50 @@ export default function AdventureMapPage() {
       `adventureProgress:${projectSlug}`,
       JSON.stringify({ currentStepOrder: nextOrder, completedSteps: Array.from(completedSteps) })
     )
+    if (classId) {
+      try {
+        await postClassAdventureProgressEvent(classId, {
+          eventType: 'STEP_COMPLETED',
+          projectSlug,
+          payload: { stepKey, stepOrder },
+        })
+      } catch {}
+    }
   }
 
   window.markAdventureStepComplete = markStepComplete
 
   const handleStart = (slug, mode) => {
     setSelectedProject(null)
-    if (mode === 'guide') navigate(`/${slug}/reading`)
-    else if (mode === 'guide-simple') navigate(`/${slug}/guide`)
-    else navigate(`/${slug}/assessment`)
+    const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+    if (mode === 'guide') navigate(`/${slug}/reading${suffix}`)
+    else if (mode === 'guide-simple') navigate(`/${slug}/guide${suffix}`)
+    else navigate(`/${slug}/assessment${suffix}`)
   }
 
   const completedCount = completedProjects.length
-  const totalProjects  = PROJECTS.length
+  const totalProjects  = resolvedProjects.length
 
-  const worldGroups = WORLDS.map(w => ({
-    ...w,
-    projects: PROJECTS.filter(p => w.slugs.includes(p.slug)).sort((a, b) => a.number - b.number),
-  }))
+  const worldGroups = useMemo(() => {
+    if (!classId || !classAdventure?.worlds?.length) {
+      return WORLDS.map(w => ({
+        ...w,
+        projects: resolvedProjects.filter(p => w.slugs.includes(p.slug)).sort((a, b) => a.number - b.number),
+      }))
+    }
+    return classAdventure.worlds
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .map((world, worldIdx) => ({
+        id: world.id || `world-${worldIdx + 1}`,
+        name: world.title || `World ${worldIdx + 1}`,
+        theme: world.theme || '',
+        color: world.color || '#3b82f6',
+        bg: `${world.color || '#3b82f6'}14`,
+        border: `${world.color || '#3b82f6'}44`,
+        icon: world.icon || '🧭',
+        projects: resolvedProjects.filter((project) => project.worldId === world.id).sort((a, b) => (a.order || 0) - (b.order || 0)),
+      }))
+  }, [classId, classAdventure, resolvedProjects])
 
   const stepGap = 80
   const stepTopPad = 36
@@ -441,7 +527,7 @@ export default function AdventureMapPage() {
               fontSize: 13, fontWeight: 700,
               fontFamily: 'inherit', transition: 'all .15s',
             }}
-            onClick={() => navigate('/student/dashboard')}
+            onClick={() => navigate(classId ? `/student/classes/${encodeURIComponent(classId)}` : '/student/dashboard')}
           >← Back</button>
 
           <span style={{
@@ -532,6 +618,11 @@ export default function AdventureMapPage() {
           Complete projects to earn more components.<br/>
           Short quizzes help lock in what you learn.
         </p>
+        {classId && (
+          <p style={{ color: T.heroSubText, fontSize: 12, margin: '0 auto', maxWidth: 420 }}>
+            Class mode active {classProgress?.lastActivityAt ? `- Last activity ${new Date(classProgress.lastActivityAt).toLocaleString()}` : ''}
+          </p>
+        )}
 
 
       </div>
@@ -747,7 +838,7 @@ export default function AdventureMapPage() {
         })}
 
         {/* All done! */}
-        {completedCount === totalProjects && (
+        {totalProjects > 0 && completedCount === totalProjects && (
           <div style={{ textAlign: 'center', padding: '32px 20px', animation: 'fadeSlideUp .6s ease both' }}>
             <div style={{ fontSize: 56, marginBottom: 12, animation: 'starSpin 3s linear infinite' }}>🏆</div>
             <div style={{
@@ -806,8 +897,8 @@ export default function AdventureMapPage() {
               transition: 'width .6s ease',
             }} />
           </div>
-          <div style={{ fontSize: 10, color: T.progressPct, textAlign: 'center' }}>
-            {Math.round((completedCount / totalProjects) * 100)}%
+            <div style={{ fontSize: 10, color: T.progressPct, textAlign: 'center' }}>
+            {totalProjects > 0 ? Math.round((completedCount / totalProjects) * 100) : 0}%
           </div>
         </div>
       </div>

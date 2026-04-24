@@ -1,12 +1,18 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getProjectFlashcards } from '../services/gamification/ProjectData'
+import { getResolvedClassAdventure } from '../services/classAdventureService'
+import { getProjectContentBySlug } from '../services/classAdventureAdapter'
 
 export default function ProjectTheoryPage() {
   const { projectName } = useParams()
+  const location = useLocation()
   const navigate = useNavigate()
+  const classId = new URLSearchParams(location.search).get('classId')
+  const mapPath = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure'
+  const [classTheoryCards, setClassTheoryCards] = useState(null)
   const { theme = 'dark' } = useGamification()
 
   const project = PROJECTS.find(p => p.slug === projectName)
@@ -17,7 +23,27 @@ export default function ProjectTheoryPage() {
   const [doneCount, setDoneCount] = useState(0)
   const [allDone, setAllDone] = useState(false)
 
-  const flashcards = getProjectFlashcards(projectName)
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      if (!classId) {
+        setClassTheoryCards(null)
+        return
+      }
+      try {
+        const response = await getResolvedClassAdventure(classId)
+        if (cancelled) return
+        const projectContent = getProjectContentBySlug(response?.resolved, projectName)
+        setClassTheoryCards(Array.isArray(projectContent?.theory) && projectContent.theory.length ? projectContent.theory : null)
+      } catch {
+        if (!cancelled) setClassTheoryCards(null)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [classId, projectName])
+
+  const flashcards = classTheoryCards || getProjectFlashcards(projectName)
   const total = flashcards.length
   const card = flashcards[currentIdx]
 
@@ -48,7 +74,7 @@ export default function ProjectTheoryPage() {
         <div style={{ fontSize: 48, marginBottom: 16 }}>🔍</div>
         <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Project Not Found</div>
         <div style={{ color: theme === 'dark' ? '#94a3b8' : '#64748b', marginBottom: 24 }}>Could not find project: {projectName}</div>
-        <button onClick={() => navigate('/adventure')} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: color, color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+        <button onClick={() => navigate(mapPath)} style={{ padding: '12px 24px', borderRadius: 10, border: 'none', background: color, color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
           ← Back to Adventure Map
         </button>
       </div>
@@ -68,7 +94,7 @@ export default function ProjectTheoryPage() {
         <div className="completion-subtitle" style={{ color: theme === 'dark' ? '#64748b' : '#94a3b8', marginBottom: 36 }}>
           You've reviewed all {total} cards for {project.title}
         </div>
-        <button onClick={() => navigate('/adventure')} className="btn-primary-gradient" style={{
+        <button onClick={() => navigate(mapPath)} className="btn-primary-gradient" style={{
           background: 'linear-gradient(135deg,#22c55e,#16a34a)',
           color: '#fff',
           boxShadow: '0 4px 24px rgba(34,197,94,.45)',
@@ -86,7 +112,7 @@ export default function ProjectTheoryPage() {
       `}</style>
 
       <div className="gamification-topbar">
-        <button className="btn-back" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8' }} onClick={() => navigate('/adventure')}>
+        <button className="btn-back" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8' }} onClick={() => navigate(mapPath)}>
           ← Map
         </button>
         <div style={{ flex: 1 }}>
