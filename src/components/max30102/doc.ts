@@ -8,139 +8,44 @@ export const doc = `
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; line-height: 1.7; padding: 48px 64px; }
-  a { color: #63b3ed; text-decoration: none; }
   .content { max-width: 860px; margin: 0 auto; }
   h1 { font-size: 36px; font-weight: 800; color: #fff; margin-bottom: 8px; }
   .subtitle { font-size: 16px; color: #718096; margin-bottom: 36px; border-bottom: 1px solid #2d3748; padding-bottom: 24px; }
   .component-preview { display: flex; gap: 40px; align-items: flex-start; margin-bottom: 40px; background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 32px; }
-  .component-svg-wrap { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; }
-  .component-info p { color: #a0aec0; font-size: 15px; margin-bottom: 16px; }
-  .tag { display: inline-block; background: #1a2035; border: 1px solid #2d4a8a; color: #63b3ed; padding: 3px 10px; border-radius: 20px; font-size: 12px; margin-right: 6px; margin-bottom: 6px; }
   h2 { font-size: 22px; font-weight: 700; color: #fff; margin: 36px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #2d3748; }
   .pin-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
   .pin-table th { background: #1a1f2e; color: #63b3ed; padding: 10px 14px; text-align: left; border: 1px solid #2d3748; }
   .pin-table td { padding: 10px 14px; border: 1px solid #2d3748; color: #a0aec0; }
-  .pin-table tr:nth-child(even) td { background: #141824; }
-  .pin-name { font-family: monospace; color: #68d391; font-weight: 600; }
-  .pin-type { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
-  .pin-type.i2c { background: #2c5282; color: #bee3f8; }
-  .pin-type.power { background: #742a2a; color: #fff5f5; }
-  .pin-type.output { background: #276749; color: #c6f6d5; }
-  .code-block { background: #141824; border: 1px solid #2d3748; border-radius: 8px; padding: 20px 24px; font-family: 'Courier New', monospace; font-size: 13px; color: #e2e8f0; overflow-x: auto; margin-bottom: 20px; position: relative; }
-  .copy-btn { position: absolute; top: 10px; right: 10px; background: #2d3748; border: none; color: #a0aec0; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; }
-  .note { background: #2a2a1a; border-left: 4px solid #ecc94b; padding: 14px 18px; border-radius: 0 8px 8px 0; margin-bottom: 20px; font-size: 14px; color: #faf089; }
-  .try-section { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 28px 32px; margin: 36px 0; }
-  .try-btn { display: inline-flex; align-items: center; gap: 8px; background: #2b6cb0; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 16px; }
-  .try-btn:hover { background: #3182ce; }
 </style>
 </head>
 <body>
 <div class="content">
-    <h1>MAX30102 Pulse Oximeter</h1>
-    <p class="subtitle">A high-sensitivity optical sensor for pulse oximetry and heart-rate monitoring via I2C interface.</p>
+    <h1>MAX30102 Heart Rate Sensor</h1>
+    <p class="subtitle">An optical pulse oximetry and heart-rate sensor module.</p>
 
     <div class="component-preview">
-      <div class="component-svg-wrap">
-        <svg width="120" height="80" viewBox="0 0 60 40">
-          <rect x="0" y="0" width="60" height="40" fill="#2d3748" rx="2"/>
-          <rect x="22" y="12" width="16" height="16" fill="#111" rx="1"/>
-          <circle cx="27" cy="20" r="3" fill="#400" /> <!-- IR LED -->
-          <circle cx="33" cy="20" r="3" fill="#111" /> <!-- PD -->
-          <circle cx="5" cy="5" r="2" fill="#cbd5e0"/>
-          <circle cx="55" cy="5" r="2" fill="#cbd5e0"/>
-        </svg>
-        <span style="font-size:11px;color:#4a5568;">MAX30102 Breakout</span>
-      </div>
-      <div class="component-info">
-        <p>The MAX30102 integrates internal LEDs, photodetectors, optical elements, and low-noise electronics with ambient light rejection. It uses optical reflection to measure heart rate and blood oxygen levels (SpO2).</p>
-        <p><strong>I2C Communication:</strong> Uses the standard I2C address 0x57. It requires a stable 3.3V or 5V supply (depending on the breakout board).</p>
-        <div>
-          <span class="tag">I2C Interface</span>
-          <span class="tag">Pulse Oximetry</span>
-          <span class="tag">Heart Rate</span>
-          <span class="tag">1.8V - 5V Compatible</span>
-        </div>
+      <svg width="60" height="40" viewBox="0 0 60 40">
+        <rect x="0" y="0" width="60" height="40" fill="#2d3748" rx="2"/>
+        <rect x="25" y="15" width="10" height="10" fill="#111"/> <!-- Sensor eye -->
+        <circle cx="5" cy="5" r="2" fill="#cbd5e0"/> <!-- Mounting hole -->
+      </svg>
+      <div>
+        <p>The MAX30102 integrates internal LEDs, photodetectors, optical elements, and low-noise electronics with ambient light rejection. It communicates over I2C and is widely used for fitness and medical applications to measure heart rate and blood oxygen levels (SpO2) using optical reflection.</p>
+        <p>It operates internally on 1.8V but breakout boards typically include a 3.3V or 5V regulator and level shifters.</p>
       </div>
     </div>
 
     <h2>Pin Reference</h2>
     <table class="pin-table">
-      <tr><th>Pin Name</th><th>Type</th><th>Description</th></tr>
-      <tr><td><span class="pin-name">VIN</span></td><td><span class="pin-type power">Power</span></td><td>Main power supply (typically 3.3V - 5V).</td></tr>
-      <tr><td><span class="pin-name">GND</span></td><td><span class="pin-type power">Power</span></td><td>Ground.</td></tr>
-      <tr><td><span class="pin-name">SCL</span></td><td><span class="pin-type i2c">I2C Clock</span></td><td>Serial Clock line. Connect to A5 on Arduino Uno.</td></tr>
-      <tr><td><span class="pin-name">SDA</span></td><td><span class="pin-type i2c">I2C Data</span></td><td>Serial Data line. Connect to A4 on Arduino Uno.</td></tr>
-      <tr><td><span class="pin-name">INT</span></td><td><span class="pin-type output">Output</span></td><td>Active-low interrupt pin (optional).</td></tr>
+      <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+      <tr><td>VIN</td><td>Power</td><td>Power supply input.</td></tr>
+      <tr><td>SDA</td><td>I2C</td><td>Serial Data Line. Connects to A4 on an Arduino Uno.</td></tr>
+      <tr><td>SCL</td><td>I2C</td><td>Serial Clock Line. Connects to A5 on an Arduino Uno.</td></tr>
+      <tr><td>GND</td><td>Power</td><td>Ground reference.</td></tr>
+      <tr><td>INT</td><td>Output</td><td>Interrupt output. Active low.</td></tr>
+      <tr><td>IRD, RD</td><td>Digital</td><td>Additional LED control pins on some breakout boards. Often left unconnected.</td></tr>
     </table>
-
-    <div class="note">⚠️ <strong>Note:</strong> Ensure you use a library such as "SparkFun MAX3010x" for easy integration with Arduino.</div>
-
-    <h2>Example Code</h2>
-    <div class="code-block">
-      <button class="copy-btn" onclick="copyCode(this)">Copy</button>
-<pre>#include &lt;Wire.h&gt;
-#include "MAX30105.h"
-
-MAX30105 particleSensor;
-
-void setup() {
-  Serial.begin(115200);
-  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {
-    Serial.println("MAX30102 not found!");
-    while (1);
-  }
-  particleSensor.setup(); 
-}
-
-void loop() {
-  Serial.print(" IR: ");
-  Serial.println(particleSensor.getIR());
-  delay(100);
-}</pre>
-    </div>
-
-    <div class="try-section">
-      <h3>▶ Try it in the Simulator</h3>
-      <p>Test the MAX30102 sensor with an Arduino Uno. Open the sample circuit to see real-time IR readings in the Serial Monitor.</p>
-      <button class="try-btn" onclick="openSimulator()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        Open Sample Circuit
-      </button>
-    </div>
 </div>
-
-<script>
-function copyCode(btn) {
-  const pre = btn.nextElementSibling;
-  navigator.clipboard.writeText(pre.textContent).then(function() {
-    btn.textContent = 'Copied!';
-    setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
-  });
-}
-
-function openSimulator() {
-  var code = \`#include <Wire.h>\\n#include "MAX30105.h"\\n\\nMAX30105 particleSensor;\\n\\nvoid setup() {\\n  Serial.begin(115200);\\n  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {\\n    Serial.println("MAX30102 not found!");\\n    while (1);\\n  }\\n  particleSensor.setup();\\n}\\n\\nvoid loop() {\\n  Serial.print("IR: ");\\n  Serial.println(particleSensor.getIR());\\n  delay(500);\\n}\`;
-
-  var payload = {
-    board: "arduino_uno",
-    components: [
-      { id: "uno", type: "wokwi-arduino-uno", x: 0, y: 0 },
-      { id: "max", type: "max30102", x: 300, y: 50 }
-    ],
-    connections: [
-      [ "uno:A4", "max:SDA", "green", [] ],
-      [ "uno:A5", "max:SCL", "yellow", [] ],
-      [ "uno:5V", "max:VIN", "red", [] ],
-      [ "uno:GND.1", "max:GND", "black", [] ]
-    ],
-    code: code
-  };
-
-  var encoded = encodeURIComponent(JSON.stringify(payload));
-  var localUrl = window.location.origin + "/simulator?circuit=" + encoded;
-  window.open(localUrl, "_blank");
-}
-</script>
 </body>
 </html>
 `;
