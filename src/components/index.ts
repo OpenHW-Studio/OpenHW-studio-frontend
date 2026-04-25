@@ -20,6 +20,7 @@ export { default as wokwiSSD1306Oled } from './wokwi-ssd1306-oled';
 export { default as wokwi7Segment } from './wokwi-7segment';
 export { default as wokwiIli9341 } from './wokwi-ili9341';
 export { default as wokwiLcd2004I2C } from './wokwi-lcd2004-i2c';
+export { default as wokwiLcd1602I2C } from './wokwi-lcd1602-i2c';
 export { default as wokwiLdrModule } from './wokwi-ldr-module';
 export { default as max30102 } from './max30102';
 export { default as wokwiSdCard } from './wokwi-sd-card';
@@ -47,19 +48,17 @@ export { default as wokwiPCA9685 } from './wokwi-pca9685';
 export { default as wokwiPCA9865 } from './wokwi-pca9865';
 export { default as wokwiArduinoSensorShield } from './wokwi-arduino-sensor-shield';
 export { default as wokwiArduinoNano } from './wokwi-arduino-nano';
-export { default as logicNotGate } from './logic-not-gate';
-export { default as logicAndGate } from './logic-and-gate';
-export { default as logicOrGate } from './logic-or-gate';
-export { default as logicNorGate } from './logic-nor-gate';
-export { default as logicNandGate } from './logic-nand-gate';
-export { default as logicXorGate } from './logic-xor-gate';
-export { default as logicXnorGate } from './logic-xnor-gate';
+
 export { default as logicMux2to1 } from './logic-mux-2to1';
 export { default as logicDFlipFlop } from './logic-d-flipflop';
 export { default as logicDFlipFlopR } from './logic-d-flipflop-r';
 export { default as logicDFlipFlopDsr } from './logic-d-flipflop-dsr';
 export { default as logicClockGenerator } from './logic-clock-generator';
+export { default as logicIc74xx } from './logic-ic-74xx';
 export { default as wokwiArduinoMega } from './wokwi-arduino-mega';
+export { default as wokwiAttiny85 } from './wokwi-attiny85';
+export { default as wokwiHcSr04 } from './wokwi-hc-sr04';
+
 
 
 
