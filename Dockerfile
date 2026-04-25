@@ -1,34 +1,32 @@
-# Build stage
-FROM node:18-bullseye-slim AS build
+FROM node:20-alpine AS build
+
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+COPY openhw-studio-emulator/ ./openhw-studio-emulator/
+COPY OpenHW-studio-frontend/ ./OpenHW-studio-frontend/
+
+WORKDIR /app/openhw-studio-emulator
 RUN npm install
 
-# Copy source code
-COPY . .
+WORKDIR /app/OpenHW-studio-frontend
+RUN npm install
 
-# Build-time environment variable for backend API
+RUN rm -rf /app/OpenHW-studio-frontend/node_modules/@openhw/emulator && \
+    ln -sf /app/openhw-studio-emulator /app/OpenHW-studio-frontend/node_modules/@openhw/emulator
+
 ARG VITE_API_BASE_URL
+ARG VITE_EXAMPLES_BASE_URL
+ARG VITE_GOOGLE_CLIENT_ID
+ARG VITE_ADMIN_EMAILS
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ENV VITE_EXAMPLES_BASE_URL=$VITE_EXAMPLES_BASE_URL
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+ENV VITE_ADMIN_EMAILS=$VITE_ADMIN_EMAILS
 
-# Build the app
 RUN npm run build
 
-# Production stage
 FROM nginx:stable-alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-
-# Custom nginx config to handle SPA routing
-RUN printf "server { \n\
-    listen 80; \n\
-    location / { \n\
-        root /usr/share/nginx/html; \n\
-        index index.html index.htm; \n\
-        try_files \$uri \$uri/ /index.html; \n\
-    } \n\
-}" > /etc/nginx/conf.d/default.conf
-
+COPY --from=build /app/OpenHW-studio-frontend/dist /usr/share/nginx/html
+COPY --from=build /app/OpenHW-studio-frontend/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

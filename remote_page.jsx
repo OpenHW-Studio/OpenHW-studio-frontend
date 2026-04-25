@@ -127,10 +127,8 @@ const BACKEND_INJECTED_TYPES = new Set();
 let nextId = 1
 let nextWireId = 1
 
-// ─── SYNC ID COUNTERS AFTER LOADING EXTERNAL DATA ──────────────────────────
-// Prevents duplicate keys when a saved project has IDs higher than the
-// current module-level counter (e.g. loading "wokwi-ili9341_2" with nextId=1
-// would let a subsequent add generate the same key again).
+// syncs the module-level id counters after loading external data
+// prevents duplicate keys when saved projects have higher IDs than the current counter
 function syncNextIds(comps, ws) {
   for (const c of (comps || [])) {
     const m = c.id && c.id.match(/_(\d+)$/);
