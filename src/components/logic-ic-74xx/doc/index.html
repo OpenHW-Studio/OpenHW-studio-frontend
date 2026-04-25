@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Universal 74xx Logic IC – OpenHW Studio Docs</title>
+  <style>
+    :root { --accent:#6366f1; --bg:#0f172a; --bg2:#1e293b; --text:#e2e8f0; --text2:#94a3b8; --border:#334155; --radius:8px }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:780px;margin:0 auto;line-height:1.6}
+    h1{color:var(--accent);font-size:1.6rem;margin-bottom:4px}
+    .badge{display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;margin-bottom:16px}
+    p{color:var(--text2);margin-bottom:16px}
+    h2{font-size:1rem;color:var(--text);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+    th{background:var(--bg2);color:var(--text2);text-align:left;padding:8px 10px;border:1px solid var(--border)}
+    td{padding:8px 10px;border:1px solid var(--border);color:var(--text)}
+    pre{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;overflow-x:auto;margin-bottom:16px}
+    code{color:#7dd3fc}
+    .tip{background:var(--accent)11;border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 var(--radius) var(--radius) 0;font-size:13px;color:var(--text2);margin-bottom:16px}
+  </style>
+</head>
+<body>
+  <h1>Universal 74xx Logic IC</h1>
+  <span class="badge">Logic</span>
+  <p>A configurable 14-pin DIP IC that emulates any standard 74-series logic gate. Select the IC type via the right-click context menu, and the pinout and internal logic adjust automatically.</p>
+
+  <h2>Supported IC Types</h2>
+  <table>
+    <tr><th>IC Number</th><th>Type</th><th>Gates</th><th>Description</th></tr>
+    <tr><td>7400</td><td>NAND</td><td>4 × 2-input</td><td>Quad 2-input NAND gate</td></tr>
+    <tr><td>7402</td><td>NOR</td><td>4 × 2-input</td><td>Quad 2-input NOR gate (different pinout!)</td></tr>
+    <tr><td>7404</td><td>NOT</td><td>6 × 1-input</td><td>Hex Inverter</td></tr>
+    <tr><td>7407</td><td>Buffer</td><td>6 × 1-input</td><td>Hex Buffer (open-collector)</td></tr>
+    <tr><td>7408</td><td>AND</td><td>4 × 2-input</td><td>Quad 2-input AND gate</td></tr>
+    <tr><td>7432</td><td>OR</td><td>4 × 2-input</td><td>Quad 2-input OR gate</td></tr>
+    <tr><td>7486</td><td>XOR</td><td>4 × 2-input</td><td>Quad 2-input XOR gate</td></tr>
+    <tr><td>74266</td><td>XNOR</td><td>4 × 2-input</td><td>Quad 2-input XNOR gate</td></tr>
+  </table>
+
+  <h2>Pinout – Standard Quad 2-Input (7408/7432/7400/7486/74266)</h2>
+  <table>
+    <tr><th>Pin</th><th>Name</th><th>Pin</th><th>Name</th></tr>
+    <tr><td>1</td><td>1A (input)</td><td>14</td><td>VCC (+5V)</td></tr>
+    <tr><td>2</td><td>1B (input)</td><td>13</td><td>4A (input)</td></tr>
+    <tr><td>3</td><td>1Y (output)</td><td>12</td><td>4B (input)</td></tr>
+    <tr><td>4</td><td>2A (input)</td><td>11</td><td>4Y (output)</td></tr>
+    <tr><td>5</td><td>2B (input)</td><td>10</td><td>3A (input)</td></tr>
+    <tr><td>6</td><td>2Y (output)</td><td>9</td><td>3B (input)</td></tr>
+    <tr><td>7</td><td>GND</td><td>8</td><td>3Y (output)</td></tr>
+  </table>
+
+  <h2>Pinout – Hex Inverter / Buffer (7404/7407)</h2>
+  <table>
+    <tr><th>Pin</th><th>Name</th><th>Pin</th><th>Name</th></tr>
+    <tr><td>1</td><td>1A (input)</td><td>14</td><td>VCC (+5V)</td></tr>
+    <tr><td>2</td><td>1Y (output)</td><td>13</td><td>6A (input)</td></tr>
+    <tr><td>3</td><td>2A (input)</td><td>12</td><td>6Y (output)</td></tr>
+    <tr><td>4</td><td>2Y (output)</td><td>11</td><td>5A (input)</td></tr>
+    <tr><td>5</td><td>3A (input)</td><td>10</td><td>5Y (output)</td></tr>
+    <tr><td>6</td><td>3Y (output)</td><td>9</td><td>4A (input)</td></tr>
+    <tr><td>7</td><td>GND</td><td>8</td><td>4Y (output)</td></tr>
+  </table>
+
+  <h2>Pinout – Quad 2-Input NOR (7402) <span style="color:#ef4444; font-size:12px;">⚠️ UNIQUE LAYOUT</span></h2>
+  <p>Unlike other quad gates, the 7402 NOR gate outputs are on pins 1, 4, 10, and 13. You cannot just swap a 7408 for a 7402 without rewiring!</p>
+  <table>
+    <tr><th>Pin</th><th>Name</th><th>Pin</th><th>Name</th></tr>
+    <tr><td>1</td><td>1Y (output)</td><td>14</td><td>VCC (+5V)</td></tr>
+    <tr><td>2</td><td>1A (input)</td><td>13</td><td>4Y (output)</td></tr>
+    <tr><td>3</td><td>1B (input)</td><td>12</td><td>4B (input)</td></tr>
+    <tr><td>4</td><td>2Y (output)</td><td>11</td><td>4A (input)</td></tr>
+    <tr><td>5</td><td>2A (input)</td><td>10</td><td>3Y (output)</td></tr>
+    <tr><td>6</td><td>2B (input)</td><td>9</td><td>3B (input)</td></tr>
+    <tr><td>7</td><td>GND</td><td>8</td><td>3A (input)</td></tr>
+  </table>
+
+  <h2>Wiring Example – AND Gate (7408)</h2>
+  <pre><code>
+Arduino 5V  ────► p14 (VCC)
+Arduino GND ────► p7  (GND)
+
+Arduino D2  ────► p1  (1A input)
+Arduino D3  ────► p2  (1B input)
+
+p3 (1Y output) ──► Resistor ──► LED ──► GND
+  </code></pre>
+
+  <div class="tip">Tip: The IC requires both VCC (pin 14) and GND (pin 7) to be connected. Without power, all outputs will be LOW regardless of inputs.</div>
+</body>
+</html>
