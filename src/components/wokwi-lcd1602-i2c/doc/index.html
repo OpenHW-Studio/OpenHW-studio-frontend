@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>I2C LCD 16x2 – OpenHW Studio Docs</title>
+  <style>
+    :root { --accent:#6366f1; --bg:#0f172a; --bg2:#1e293b; --text:#e2e8f0; --text2:#94a3b8; --border:#334155; --radius:8px }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:780px;margin:0 auto;line-height:1.6}
+    h1{color:var(--accent);font-size:1.6rem;margin-bottom:4px}
+    .badge{display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;margin-bottom:16px}
+    p{color:var(--text2);margin-bottom:16px}
+    h2{font-size:1rem;color:var(--text);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+    td{padding:8px 10px;border:1px solid var(--border);color:var(--text)}
+    pre{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;overflow-x:auto;margin-bottom:16px}
+    code{color:#7dd3fc}
+  </style>
+</head>
+<body>
+  <h1>I2C LCD 16x2</h1>
+  <span class="badge">Display</span>
+  <p>A 16-column by 2-row Liquid Crystal Display module equipped with an I2C backpack. It matches standard real-world I2C LCD modules and works natively with Arduino <code>LiquidCrystal_I2C</code> libraries.</p>
+
+  <h2>Default Configuration</h2>
+  <table>
+    <tr><td><b>I2C Address</b></td><td><code>0x27</code></td></tr>
+    <tr><td><b>Dimensions</b></td><td>16 columns, 2 rows</td></tr>
+  </table>
+
+  <h2>Wiring with Arduino</h2>
+  <pre><code>
+Arduino 5V  ────► VCC
+Arduino GND ────► GND
+Arduino A4  ────► SDA
+Arduino A5  ────► SCL
+  </code></pre>
+
+  <h2>Example Code (Arduino)</h2>
+  <pre><code>
+#include &lt;Wire.h&gt;
+#include &lt;LiquidCrystal_I2C.h&gt;
+
+// Initialize the LCD at address 0x27, 16 cols, 2 rows
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0); // 0th col, 0th row
+  lcd.print("OpenHW Studio!");
+  
+  lcd.setCursor(0, 1); // 0th col, 1st row
+  lcd.print("Simulation OK");
+}
+
+void loop() {
+  // Application loop
+}
+  </code></pre>
+</body>
+</html>

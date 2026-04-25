@@ -2,7 +2,11 @@ import { validation } from './validation';
 import manifest from './manifest.json';
 import { LEDLogic } from './logic';
 import { LEDUI, LEDContextMenu, BOUNDS } from './ui';
-import { doc } from './doc';
+import docHtml from './doc/index.html?raw';
+
+import uiRaw from './ui.tsx?raw';
+import logicRaw from './logic.ts?raw';
+import validationRaw from './validation.ts?raw';
 
 export default {
     manifest,
@@ -12,5 +16,8 @@ export default {
     contextMenuDuringRun: false,
     BOUNDS,
     validation,
-    doc: doc
+    doc: docHtml,
+    uiRaw,
+    logicRaw,
+    validationRaw,
 };

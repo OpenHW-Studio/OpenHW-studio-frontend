@@ -9,6 +9,14 @@
         "rows": "1",
         "cols": "1"
     },
+    "telemetry": {
+        "template": "pixels=${state.pixels}, rows=${attr.rows}, cols=${attr.cols}",
+        "criticalKeys": [
+            "state.pixels",
+            "attr.rows",
+            "attr.cols"
+        ]
+    },
     "pins": [
         {
             "id": "DIN",

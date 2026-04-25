@@ -8,6 +8,13 @@
     "color": "blue",
     "pins": "i2c"
   },
+  "telemetry": {
+    "template": "line0=${state.lines.0}, illuminated=${state.illuminated}",
+    "criticalKeys": [
+      "state.lines",
+      "state.illuminated"
+    ]
+  },
   "pins": [
     {
       "id": "GND",
