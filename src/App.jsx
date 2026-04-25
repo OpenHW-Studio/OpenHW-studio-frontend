@@ -32,7 +32,7 @@ import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
 import AdventureMapPage from './pages/AdventureMapPage.jsx'
 import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
 import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage'
-import GuidedSimulatorPage from './pages/GuidedSimulatorPage'
+import GuidedSimulatorPage from './pages/GuidedsimulatorPage'
 
 export default function App() {
   return (
