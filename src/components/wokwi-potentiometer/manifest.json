@@ -8,6 +8,12 @@
     "attrs": {
         "value": "50"
     },
+    "telemetry": {
+        "template": "value=${state.value}",
+        "criticalKeys": [
+            "state.value"
+        ]
+    },
     "pins": [
         {
             "id": "1",

@@ -1,0 +1,66 @@
+{
+  "type": "wokwi-sd-card",
+  "label": "MicroSD Card",
+  "description": "SPI microSD card module with virtual storage backed by an in-memory filesystem and optional littlefs-wasm runtime.",
+  "group": "Memory",
+  "w": 84,
+  "h": 56,
+  "attrs": {
+    "mounted": "true",
+    "capacityKB": "2048"
+  },
+  "telemetry": {
+    "template": "mounted=${state.mounted}, fsReady=${state.fsReady}, fileCount=${state.fileCount}, usedBytes=${state.usedBytes}, lastOp=${state.lastOp}",
+    "criticalKeys": [
+      "state.mounted",
+      "state.fsReady",
+      "state.fileCount",
+      "state.usedBytes",
+      "state.lastOp"
+    ]
+  },
+  "pins": [
+    {
+      "id": "VCC",
+      "x": 8,
+      "y": 56,
+      "type": "power",
+      "description": "Power"
+    },
+    {
+      "id": "GND",
+      "x": 20,
+      "y": 56,
+      "type": "power",
+      "description": "Ground"
+    },
+    {
+      "id": "CS",
+      "x": 36,
+      "y": 56,
+      "type": "digital",
+      "description": "Chip Select (active low)"
+    },
+    {
+      "id": "SCK",
+      "x": 48,
+      "y": 56,
+      "type": "digital",
+      "description": "SPI Clock"
+    },
+    {
+      "id": "MOSI",
+      "x": 60,
+      "y": 56,
+      "type": "digital",
+      "description": "Master Out / Slave In"
+    },
+    {
+      "id": "MISO",
+      "x": 72,
+      "y": 56,
+      "type": "digital",
+      "description": "Master In / Slave Out"
+    }
+  ]
+}
