@@ -5,7 +5,6 @@
     "group": "Sensors",
     "w": 172.5,
     "h": 114,
-    "contextMenuDuringRun": true,
     "attrs": {
         "distance": "100"
     },

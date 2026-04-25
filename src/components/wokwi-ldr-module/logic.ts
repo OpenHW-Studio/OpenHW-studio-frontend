@@ -10,9 +10,6 @@ export class LdrModuleLogic extends BaseComponent {
             pwrLed: false,
             doLed: false
         };
-        // Set outputs
-        if (this.pins['AO']) this.pins['AO'].mode = 'OUTPUT';
-        if (this.pins['DO']) this.pins['DO'].mode = 'OUTPUT';
     }
 
     // This handles updates from the Context Menu's onUpdate call

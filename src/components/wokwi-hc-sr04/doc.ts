@@ -157,7 +157,7 @@ function openSimulator() {
   };
 
   var encoded = encodeURIComponent(JSON.stringify(payload));
-  var localUrl = window.location.origin + "/simulator?circuit=" + encoded;
+  var localUrl = "http://localhost:5173/simulator?circuit=" + encoded;
   window.open(localUrl, "_blank");
 }
 </script>
