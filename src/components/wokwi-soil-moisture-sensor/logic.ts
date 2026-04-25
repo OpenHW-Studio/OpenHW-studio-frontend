@@ -4,7 +4,6 @@ export class SoilMoistureSensorLogic extends BaseComponent {
     constructor(id: string, manifest: any) {
         super(id, manifest);
         this.state = { moisture: 50 }; // Default 50%
-        if (this.pins['SIG']) this.pins['SIG'].mode = 'OUTPUT';
     }
 
     onPinStateChange() {
