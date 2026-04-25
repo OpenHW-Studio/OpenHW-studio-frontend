@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { BookOpen, ClipboardList, FileQuestion, Home, Loader2, Monitor, Search, Upload, X } from 'lucide-react'
+import { BookOpen, ClipboardList, FileQuestion, Home, Monitor, Search } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
   getClassAssignments,
@@ -16,8 +16,9 @@ import ClassroomAttachmentBlock from '../../components/common/ClassroomAttachmen
 import ClassroomFilePreviewModal from '../../components/common/ClassroomFilePreviewModal.jsx'
 import StreamCard from '../../components/common/StreamCard.jsx'
 import { ClassDetailSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
-import { getAttachmentLabel, pickAttachments } from '../../components/teacher/class-detail/helpers.js'
+import { pickAttachments, pickLinks } from '../../components/teacher/class-detail/helpers.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
+import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
 
 const tabs = [
   { key: 'stream', label: 'Stream' },
@@ -33,6 +34,13 @@ const getSubmissionStatus = (assignment) => {
 const isAssignmentClosed = (assignment) => (
   Boolean(assignment?.dueDate) && new Date(assignment.dueDate) < new Date()
 )
+
+const getAssignmentTemplateShareId = (assignment) => {
+  console.log('Getting template share ID for assignment:', assignment.templateUrl)
+  if (assignment?.templateShareId) return assignment.templateShareId
+  const templateUrl = assignment?.templateUrl || ''
+  return templateUrl.match(/\/simulator\/share\/([^/?#]+)/)?.[1] || ''
+}
 
 export default function StudentClassDetailPage() {
   const { classId } = useParams()
@@ -56,9 +64,11 @@ export default function StudentClassDetailPage() {
   })
   const [submissionForm, setSubmissionForm] = useState({
     notes: '',
+    links: [''],
     attachments: []
   })
   const [previewFile, setPreviewFile] = useState(null)
+  const [liveMeetingCode, setLiveMeetingCode] = useState('')
 
   const avatarInitials = useMemo(() => getAvatarLetters(user?.name, 'S'), [user?.name])
 
@@ -136,7 +146,7 @@ export default function StudentClassDetailPage() {
     if (!forceOpen && activeAssignmentId === assignmentId) {
       setActiveAssignmentId(null)
       setSubmissionState({ loading: false, saving: false, error: '', data: null })
-      setSubmissionForm({ notes: '', attachments: [] })
+      setSubmissionForm({ notes: '', links: [''], attachments: [] })
       return
     }
 
@@ -149,6 +159,7 @@ export default function StudentClassDetailPage() {
       setSubmissionState({ loading: false, saving: false, error: '', data: submission })
       setSubmissionForm({
         notes: submission?.notes || '',
+        links: submission?.links?.length ? submission.links : [''],
         attachments: submission?.attachments || submission?.files || []
       })
     } catch (submissionError) {
@@ -208,6 +219,30 @@ export default function StudentClassDetailPage() {
     }))
   }
 
+  const handleSubmissionLinkChange = (index, value) => {
+    setSubmissionForm((current) => ({
+      ...current,
+      links: (current.links || []).map((link, idx) => (idx === index ? value : link))
+    }))
+  }
+
+  const handleAddSubmissionLink = () => {
+    setSubmissionForm((current) => ({
+      ...current,
+      links: [...(current.links || []), '']
+    }))
+  }
+
+  const handleRemoveSubmissionLink = (index) => {
+    setSubmissionForm((current) => {
+      const nextLinks = (current.links || []).filter((_, idx) => idx !== index)
+      return {
+        ...current,
+        links: nextLinks.length > 0 ? nextLinks : ['']
+      }
+    })
+  }
+
   const handleSubmitAssignment = async (assignmentId) => {
     const currentAssignment = assignments.find((assignment) => assignment._id === assignmentId)
 
@@ -237,6 +272,7 @@ export default function StudentClassDetailPage() {
       })
       setSubmissionForm({
         notes: submission?.notes || '',
+        links: submission?.links?.length ? submission.links : [''],
         attachments: submission?.attachments || submission?.files || []
       })
     } catch (submitError) {
@@ -246,6 +282,28 @@ export default function StudentClassDetailPage() {
         error: submitError.message || 'Failed to submit assignment'
       }))
     }
+  }
+
+  const handleOpenTemplate = (assignment) => {
+    const templateShareId = getAssignmentTemplateShareId(assignment)
+    console.log(templateShareId)
+    if (!templateShareId) {
+      setError('This assignment does not have a simulator template yet.')
+      return
+    }
+
+    navigate(`/simulator/share/${encodeURIComponent(templateShareId)}/assignment/${encodeURIComponent(classId)}/${encodeURIComponent(assignment._id)}`)
+  }
+
+  const handleJoinLiveSimulation = () => {
+    const normalizedCode = String(liveMeetingCode || '').trim().toUpperCase()
+    if (!normalizedCode) {
+      setError('Enter the live simulation code shared by your teacher.')
+      return
+    }
+
+    setError('')
+    navigate(`/simulator/live/${encodeURIComponent(normalizedCode)}?role=student`)
   }
 
   if (loading) {
@@ -293,6 +351,25 @@ export default function StudentClassDetailPage() {
               </button>
             ))}
           </nav>
+
+          <section className="student-live-join">
+            <div>
+              <strong>Join live simulation</strong>
+              <p>Enter the code from your teacher to open the shared simulator and watch changes in real time.</p>
+            </div>
+            <div className="student-live-join__actions">
+              <input
+                type="text"
+                value={liveMeetingCode}
+                onChange={(event) => setLiveMeetingCode(event.target.value.toUpperCase())}
+                placeholder="Enter code"
+                maxLength={12}
+              />
+              <button type="button" onClick={handleJoinLiveSimulation}>
+                Join
+              </button>
+            </div>
+          </section>
 
           <div className="teacher-class-layout is-stream">
             <section className="teacher-class-main">
@@ -344,26 +421,26 @@ export default function StudentClassDetailPage() {
                       <div className="teacher-classwork-shell__list">
                         {assignments.map((assignment) => {
                           const attachments = pickAttachments(assignment)
-                          const isExpanded = activeAssignmentId === assignment._id
-                          const submission = isExpanded ? submissionState.data : null
+                          const links = pickLinks(assignment)
                           const statusKey = getSubmissionStatus(assignment)
                           const isClosed = isAssignmentClosed(assignment)
-                          const resourceCount = attachments.length
+                          const templateShareId = getAssignmentTemplateShareId(assignment)
+                          const resourceCount = attachments.length + links.length
 
                           return (
                             <article
                               key={assignment._id}
-                              className={`teacher-classwork-card teacher-classwork-card--student${isExpanded ? ' is-active' : ''}`}
+                              className={`teacher-classwork-card teacher-classwork-card--student${activeAssignmentId === assignment._id ? ' is-active' : ''}`}
                             >
                               <div
                                 className="teacher-classwork-card__row"
                                 role="button"
                                 tabIndex={0}
-                                onClick={() => handleSelectAssignment(assignment._id)}
+                                onClick={() => handleSelectAssignment(assignment._id, { forceOpen: true })}
                                 onKeyDown={(event) => {
                                   if (event.key === 'Enter' || event.key === ' ') {
                                     event.preventDefault()
-                                    handleSelectAssignment(assignment._id)
+                                    handleSelectAssignment(assignment._id, { forceOpen: true })
                                   }
                                 }}
                               >
@@ -382,6 +459,20 @@ export default function StudentClassDetailPage() {
                                   <p className="teacher-classwork-card__meta">
                                     {assignment.dueDate ? `Due ${formatDateTime(assignment.dueDate)}` : `Posted ${formatDateTime(assignment.createdAt)}`}
                                   </p>
+
+                                  {templateShareId ? (
+                                    <button
+                                      type="button"
+                                      className="teacher-assignment-modal__resource-pill"
+                                      style={{ border: 0, borderRadius: 8, cursor: 'pointer' }}
+                                      onClick={(event) => {
+                                        event.stopPropagation()
+                                        handleOpenTemplate(assignment)
+                                      }}
+                                    >
+                                      Open Template
+                                    </button>
+                                  ) : null}
 
                                   {attachments.length > 0 ? (
                                     <div
@@ -408,115 +499,6 @@ export default function StudentClassDetailPage() {
                                 </div>
                               </div>
 
-                              {isExpanded ? (
-                                <div className="teacher-classwork-card__submissions student-assignment-submit">
-                                  {submission?.updatedAt ? (
-                                    <div className="student-assignment-submit__meta">
-                                      <span className="student-assignment-submit__status">Updated {formatDateTime(submission.updatedAt)}</span>
-                                    </div>
-                                  ) : null}
-
-                                  {isClosed ? (
-                                    <p className="teacher-inline-state teacher-inline-state--error">
-                                      This assignment is closed. Submissions are no longer accepted.
-                                    </p>
-                                  ) : null}
-
-                                  {submissionState.loading ? (
-                                    <p className="teacher-inline-state">Loading submission...</p>
-                                  ) : null}
-                                  {submissionState.error ? (
-                                    <p className="teacher-inline-state teacher-inline-state--error">{submissionState.error}</p>
-                                  ) : null}
-
-                                  {!submissionState.loading ? (
-                                    <>
-                                      <label className="teacher-assignment-form__field">
-                                        <span>Submission Notes</span>
-                                        <textarea
-                                          value={submissionForm.notes}
-                                          onChange={(event) =>
-                                            setSubmissionForm((current) => ({
-                                              ...current,
-                                              notes: event.target.value
-                                            }))
-                                          }
-                                          rows={3}
-                                          placeholder="Add a short note for your teacher"
-                                        />
-                                      </label>
-
-                                      <div className="teacher-assignment-form__files-label">
-                                        <div className="teacher-assignment-form__files-copy">
-                                          <span>Submission Files</span>
-                                          <small>Upload PDFs or images for your assignment work.</small>
-                                        </div>
-
-                                        <label className="teacher-upload-dropzone student-assignment-submit__dropzone">
-                                          <input
-                                            type="file"
-                                            accept="application/pdf,image/*"
-                                            multiple
-                                            onChange={handleSubmissionFilesChange}
-                                            disabled={isClosed}
-                                          />
-                                          <span className="teacher-upload-dropzone__empty">
-                                            <Upload size={18} />
-                                            {isClosed ? 'Submission closed' : 'Upload files'}
-                                          </span>
-                                        </label>
-
-                                        {submissionForm.attachments.length > 0 ? (
-                                          <div className="teacher-assignment-form__link-list">
-                                            {submissionForm.attachments.map((file, idx) => (
-                                              <div key={`submission-file-${idx}`} className="teacher-assignment-form__link-pill">
-                                                <button
-                                                  type="button"
-                                                  className="teacher-assignment-form__link-pill-copy student-assignment-submit__file"
-                                                  onClick={() =>
-                                                    setPreviewFile({
-                                                      url: file,
-                                                      name: getAttachmentLabel(file, idx)
-                                                    })
-                                                  }
-                                                >
-                                                  <span>{getAttachmentLabel(file, idx)}</span>
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  className="teacher-assignment-form__link-pill-remove"
-                                                  onClick={() => handleRemoveSubmissionFile(idx)}
-                                                  aria-label={`Remove file ${idx + 1}`}
-                                                >
-                                                  <X size={14} />
-                                                </button>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        ) : null}
-                                      </div>
-
-                                      <div className="student-assignment-submit__actions">
-                                        <button
-                                          type="button"
-                                          className="teacher-button teacher-button--primary"
-                                          onClick={() => handleSubmitAssignment(assignment._id)}
-                                          disabled={submissionState.saving || isClosed}
-                                        >
-                                          {submissionState.saving ? (
-                                            <>
-                                              <Loader2 size={16} className="teacher-spin" />
-                                              <span>Saving...</span>
-                                            </>
-                                          ) : (
-                                            <span>{isClosed ? 'Submission Closed' : submission ? 'Update Submission' : 'Submit Assignment'}</span>
-                                          )}
-                                        </button>
-                                      </div>
-                                    </>
-                                  ) : null}
-                                </div>
-                              ) : null}
                             </article>
                           )
                         })}
@@ -620,6 +602,32 @@ export default function StudentClassDetailPage() {
         </section>
       </main>
       {previewFile ? <ClassroomFilePreviewModal file={previewFile} onClose={() => setPreviewFile(null)} /> : null}
+      {activeAssignmentId ? (
+        <StudentAssignmentModal
+          assignment={assignments.find((assignment) => assignment._id === activeAssignmentId) || null}
+          submissionState={submissionState}
+          submissionForm={submissionForm}
+          onClose={() => {
+            setActiveAssignmentId(null)
+            setSubmissionState({ loading: false, saving: false, error: '', data: null })
+            setSubmissionForm({ notes: '', links: [''], attachments: [] })
+          }}
+          onNotesChange={(value) =>
+            setSubmissionForm((current) => ({
+              ...current,
+              notes: value
+            }))
+          }
+          onLinkChange={handleSubmissionLinkChange}
+          onAddLink={handleAddSubmissionLink}
+          onRemoveLink={handleRemoveSubmissionLink}
+          onFilesChange={handleSubmissionFilesChange}
+          onRemoveFile={handleRemoveSubmissionFile}
+          onSubmit={() => handleSubmitAssignment(activeAssignmentId)}
+          onPreviewFile={setPreviewFile}
+          isClosed={isAssignmentClosed(assignments.find((assignment) => assignment._id === activeAssignmentId))}
+        />
+      ) : null}
     </div>
   )
 }

@@ -9,6 +9,7 @@ import TeacherClassMainContent from "../../components/teacher/class-detail/Teach
 import TeacherClassSidebar from "../../components/teacher/class-detail/TeacherClassSidebar.jsx";
 import TeacherComposerModal from "../../components/teacher/class-detail/TeacherComposerModal.jsx";
 import TeacherEditClassModal from "../../components/teacher/class-detail/TeacherEditClassModal.jsx";
+import TeacherAssignmentSubmissionsModal from "../../components/teacher/class-detail/TeacherAssignmentSubmissionsModal.jsx";
 import ClassroomFilePreviewModal from "../../components/common/ClassroomFilePreviewModal.jsx";
 import { sidebarLinks } from "../../components/teacher/class-detail/helpers.js";
 import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
@@ -27,6 +28,7 @@ import {
   removeClassroomStudent,
   updateClassroom,
 } from "../../services/classroomService.js";
+import { createLiveSimulationSession } from "../../services/simulatorService.js";
 
 export default function TeacherClassDetailPage() {
   const { classId } = useParams();
@@ -47,6 +49,8 @@ export default function TeacherClassDetailPage() {
     title: "",
     description: "",
     dueDate: "",
+    templateUrl: "",
+    links: [""],
   });
 
   const [noticeFiles, setNoticeFiles] = useState([]);
@@ -382,20 +386,37 @@ export default function TeacherClassDetailPage() {
   const handleCreateAssignment = async (event) => {
     event.preventDefault();
 
-    if (!assignmentForm.title.trim()) return;
+    const normalizedTitle = String(assignmentForm.title || "").trim();
+    if (!normalizedTitle) return;
+
+    const normalizedDescription = String(assignmentForm.description || "").trim();
+    const normalizedDueDate = String(assignmentForm.dueDate || "").trim();
+    const normalizedTemplateUrl = String(assignmentForm.templateUrl || "").trim();
+    const normalizedTemplateShareId =
+      normalizedTemplateUrl.match(/\/simulator\/share\/([^/?#]+)/)?.[1] || undefined;
+    const normalizedLinks = (assignmentForm.links || [])
+      .map((link) => String(link || "").trim())
+      .filter(Boolean);
+    const normalizedAttachments = (assignmentFiles || [])
+      .map((file) => String(file || "").trim())
+      .filter(Boolean);
 
     setPostingAssignment(true);
     setError("");
 
     try {
       await createClassAssignment(classId, {
-        title: assignmentForm.title,
-        description: assignmentForm.description,
-        dueDate: assignmentForm.dueDate || undefined,
-        attachments: assignmentFiles,
+        title: normalizedTitle,
+        description: normalizedDescription || undefined,
+        dueDate: normalizedDueDate || undefined,
+        templateUrl: normalizedTemplateUrl || undefined,
+        templateShareId: normalizedTemplateShareId,
+        links: normalizedLinks,
+        attachments: normalizedAttachments,
+        files: normalizedAttachments,
       });
 
-      setAssignmentForm({ title: "", description: "", dueDate: "" });
+      setAssignmentForm({ title: "", description: "", dueDate: "", templateUrl: "", links: [""] });
       setAssignmentFiles([]);
       setAssignments(await getClassAssignments(classId));
       setShowComposer(false);
@@ -420,18 +441,42 @@ export default function TeacherClassDetailPage() {
     }
   };
 
+  const handleAssignmentLinkChange = (index, value) => {
+    setAssignmentForm((current) => ({
+      ...current,
+      links: (current.links || []).map((link, idx) => (idx === index ? value : link)),
+    }));
+  };
+
+  const handleAddAssignmentLink = () => {
+    setAssignmentForm((current) => ({
+      ...current,
+      links: [...(current.links || []), ""],
+    }));
+  };
+
+  const handleRemoveAssignmentLink = (index) => {
+    setAssignmentForm((current) => {
+      const nextLinks = (current.links || []).filter((_, idx) => idx !== index);
+      return {
+        ...current,
+        links: nextLinks.length > 0 ? nextLinks : [""],
+      };
+    });
+  };
+
   const handleDeleteAssignment = async (assignmentId) => {
+    if (activeAssignmentId === assignmentId) {
+      setActiveAssignmentId(null);
+      setSubmissionsState({ loading: false, error: "", data: null });
+    }
+
     setDeletingAssignmentId(assignmentId);
 
     try {
       await deleteClassAssignment(classId, assignmentId);
       const refreshedAssignments = await getClassAssignments(classId);
       setAssignments(refreshedAssignments);
-
-      if (activeAssignmentId === assignmentId) {
-        setActiveAssignmentId(null);
-        setSubmissionsState({ loading: false, error: "", data: null });
-      }
     } catch (deleteError) {
       setError(deleteError.message || "Failed to delete assignment");
     } finally {
@@ -605,9 +650,45 @@ export default function TeacherClassDetailPage() {
     }
   };
 
-  const handleOpenLiveMeeting = () => {
-    const liveMeetingUrl = `${window.location.origin}/simulator?classId=${encodeURIComponent(classId)}&liveMeeting=1`;
-    window.open(liveMeetingUrl, "_blank", "noopener,noreferrer");
+  const handleOpenLiveMeeting = async () => {
+    if (!classroom?._id) return;
+
+    const popup = window.open("", "_blank", "noopener,noreferrer");
+
+    try {
+      const session = await createLiveSimulationSession({
+        classId: classroom._id,
+        name: `${classroom.name || "Class"} Live Simulation`,
+        board: "arduino_uno",
+        components: [],
+        connections: [],
+        code: "",
+        projectFiles: [],
+        openCodeTabs: [],
+        activeCodeFileId: "",
+      });
+
+      if (!session?.sessionCode) {
+        throw new Error("Live session code was not generated.");
+      }
+
+      const liveMeetingUrl = `${window.location.origin}/simulator/live/${encodeURIComponent(session.sessionCode)}?role=teacher`;
+      if (popup) {
+        popup.location.replace(liveMeetingUrl);
+      } else {
+        window.open(liveMeetingUrl, "_blank", "noopener,noreferrer");
+      }
+
+      try {
+        await navigator.clipboard.writeText(session.sessionCode);
+        setInfo(`Live simulator started. Join code ${session.sessionCode} copied.`);
+      } catch {
+        setInfo(`Live simulator started. Share join code ${session.sessionCode} with students.`);
+      }
+    } catch (liveMeetingError) {
+      if (popup) popup.close();
+      setError(liveMeetingError.message || "Failed to start live meeting.");
+    }
   };
 
   if (loading) {
@@ -742,6 +823,9 @@ export default function TeacherClassDetailPage() {
           onCreateAssignment={handleCreateAssignment}
           assignmentForm={assignmentForm}
           onAssignmentInputChange={handleAssignmentInput}
+          onAssignmentLinkChange={handleAssignmentLinkChange}
+          onAddAssignmentLink={handleAddAssignmentLink}
+          onRemoveAssignmentLink={handleRemoveAssignmentLink}
           assignmentFiles={assignmentFiles}
           onAssignmentFilesChange={handleAssignmentFilesChange}
           onRemoveAssignmentFile={handleRemoveAssignmentFile}
@@ -775,6 +859,19 @@ export default function TeacherClassDetailPage() {
         <ClassroomFilePreviewModal
           file={previewFile}
           onClose={() => setPreviewFile(null)}
+        />
+      ) : null}
+
+      {activeAssignmentId ? (
+        <TeacherAssignmentSubmissionsModal
+          assignment={assignments.find((item) => item._id === activeAssignmentId) || null}
+          classroomName={classroom?.name}
+          submissionsState={submissionsState}
+          onClose={() => {
+            setActiveAssignmentId(null);
+            setSubmissionsState({ loading: false, error: "", data: null });
+          }}
+          onPreviewFile={setPreviewFile}
         />
       ) : null}
     </div>

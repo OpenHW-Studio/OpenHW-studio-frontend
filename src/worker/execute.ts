@@ -24,13 +24,7 @@ import {
     UNO_DIGITAL_PINS,
 } from './board-profiles.ts';
 import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
-import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic.ts';
-import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic.ts';
-import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic.ts';
-import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic.ts';
-import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic.ts';
-import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic.ts';
-import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic.ts';
+import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic.ts';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
 import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
@@ -1847,13 +1841,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'shift_register': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
-    'logic-and-gate': AndGateLogic,
-    'logic-or-gate': OrGateLogic,
-    'logic-not-gate': NotGateLogic,
-    'logic-nand-gate': NandGateLogic,
-    'logic-nor-gate': NorGateLogic,
-    'logic-xor-gate': XorGateLogic,
-    'logic-xnor-gate': XnorGateLogic,
+    'logic-ic-74xx': LogicIC74xxLogic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
     'logic-d-flipflop-r': DFlipFlopRLogic,
@@ -1903,13 +1891,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
-    'logic-and-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-or-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-not-gate': [{ id: 'IN' }, { id: 'OUT' }],
-    'logic-nand-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-nor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-xor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-xnor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
     'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
     'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],

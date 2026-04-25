@@ -35,6 +35,8 @@ export function RightPanel(props) {
     selected, setSelected,
     blocklyDisabled, setBlocklyDisabled,
     boardComponentMap, onToggleBoardFirmwareSource,
+    editingDisabled = false,
+    editingDisabledMessage = 'Editing is disabled.',
   } = props;
 
   const [fileMenu, setFileMenu] = React.useState(null); // { x, y, fileId }
@@ -424,7 +426,7 @@ export function RightPanel(props) {
               </div>
             </div>
             {codeTab === 'code' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, background: 'var(--bg)', position: 'relative' }}>
                 <div style={{ display: 'flex', minHeight: 0, flex: 1 }}>
                   {showCodeExplorer && (
                     <>
@@ -756,7 +758,7 @@ export function RightPanel(props) {
                   </div>
                 )}
 
-                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, pointerEvents: editingDisabled ? 'none' : 'auto' }}>
                     <div className="panel-scroll hide-scrollbar" style={{ display: 'flex', gap: 2, overflowX: 'auto', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                       {openFiles.map((file) => (
                         <div
@@ -846,9 +848,10 @@ export function RightPanel(props) {
                         value={code}
                         onValueChange={v => {
                           if (!activeCodeFileId || activeCodeFileId === 'project/diagram.json') return;
+                          if (editingDisabled) return;
                           setCode(v);
                         }}
-                        readOnly={!activeCodeFileId || activeCodeFileId === 'project/diagram.json'}
+                        readOnly={editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json'}
                         highlight={highlightCode}
                         padding={14}
                         style={{
@@ -861,7 +864,7 @@ export function RightPanel(props) {
                           outline: 'none',
                           resize: 'none',
                           // Add a subtle opacity change if read only
-                          opacity: (!activeCodeFileId || activeCodeFileId === 'project/diagram.json') ? 0.7 : 1,
+                          opacity: (editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json') ? 0.7 : 1,
                           overflow: 'hidden'
                         }}
                         textareaClassName="editor-textarea"
@@ -1036,61 +1039,67 @@ export function RightPanel(props) {
                     </div>
                   );
                 })()}
-              </div>
-            )}
-            {codeTab === 'block' && (
-              <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
-                {blocklyDisabled ? (
-                  /* ── Block editor disabled placeholder ─────────────── */
-                  <div style={{
-                    flex: 1, display: 'flex', flexDirection: 'column',
-                    alignItems: 'center', justifyContent: 'center',
-                    gap: 12, padding: 24, textAlign: 'center',
-                    background: 'var(--bg)',
-                  }}>
-                    <span style={{ fontSize: 36, opacity: 0.4 }}>🧱</span>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>Block Editor is disabled</div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)', maxWidth: 220, lineHeight: 1.5 }}>
-                      Block coding is turned off to improve canvas performance.
-                    </div>
-                    <button
-                      onClick={toggleBlocklyDisabled}
-                      style={{
-                        marginTop: 4,
-                        padding: '7px 18px',
-                        background: 'var(--accent)',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Enable Block Editor
-                    </button>
+                {editingDisabled && (
+                  <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 5, background: 'rgba(15,23,42,0.92)', color: '#fff', border: '1px solid rgba(148,163,184,0.35)', borderRadius: 10, padding: '8px 10px', fontSize: 11, maxWidth: 220 }}>
+                    {editingDisabledMessage}
                   </div>
-                ) : (
-                  /* ── Block editor enabled ───────────────────────────── */
-                  /* NOTE: Performance is managed here by unmounting Blockly entirely. 
-                     Do not use global CSS (display: none) to hide Blockly elements, 
-                     as it breaks the editor's internal layout engine. */
-                  <React.Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>Loading Block Editor...</div>}>
-                    <BlocklyEditor
-                      onExportCode={(generated) => { setCode(generated); setCodeTab('code'); }}
-                      onChange={(generated) => setBlocklyGeneratedCode(generated)}
-                      xml={blocklyXml}
-                      onXmlChange={setBlocklyXml}
-                      useBlocklyCode={useBlocklyCode}
-                      onToggleUseBlocklyCode={() => setUseBlocklyCode(!useBlocklyCode)}
-                      visible={true}
-                      boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
-                    />
-                  </React.Suspense>
                 )}
               </div>
             )}
+            {codeTab === 'block' && editingDisabled && (
+                  <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 5, background: 'rgba(15,23,42,0.92)', color: '#fff', border: '1px solid rgba(148,163,184,0.35)', borderRadius: 10, padding: '8px 10px', fontSize: 11, maxWidth: 220 }}>
+                    {editingDisabledMessage}
+                  </div>
+                )}
+            {/* Block editor — always mounted to preserve workspace state, hidden via CSS when not active */}
+            <div style={{ display: codeTab === 'block' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', position: 'relative', pointerEvents: editingDisabled ? 'none' : 'auto' }}>
+              {blocklyDisabled ? (
+                /* ── Block editor disabled placeholder ─────────────── */
+                <div style={{
+                  flex: 1, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  gap: 12, padding: 24, textAlign: 'center',
+                  background: 'var(--bg)',
+                }}>
+                  <span style={{ fontSize: 36, opacity: 0.4 }}>🧱</span>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>Block Editor is disabled</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', maxWidth: 220, lineHeight: 1.5 }}>
+                    Block coding is turned off to improve canvas performance.
+                  </div>
+                  <button
+                    onClick={toggleBlocklyDisabled}
+                    style={{
+                      marginTop: 4,
+                      padding: '7px 18px',
+                      background: 'var(--accent)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Enable Block Editor
+                  </button>
+                </div>
+              ) : (
+                /* ── Block editor enabled — kept mounted to preserve state ── */
+                <React.Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>Loading Block Editor...</div>}>
+                  <BlocklyEditor
+                    onExportCode={(generated) => { if (!editingDisabled) { setCode(generated); setCodeTab('code'); } }}
+                    onChange={(generated) => { if (!editingDisabled) setBlocklyGeneratedCode(generated); }}
+                    xml={blocklyXml}
+                    onXmlChange={(nextXml) => { if (!editingDisabled) setBlocklyXml(nextXml); }}
+                    useBlocklyCode={useBlocklyCode}
+                    onToggleUseBlocklyCode={() => { if (!editingDisabled) setUseBlocklyCode(!useBlocklyCode); }}
+                    visible={codeTab === 'block'}
+                    boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
+                  />
+                </React.Suspense>
+              )}
+            </div>
             {codeTab === 'serial' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden' }}>
                 {/* Serial panel toolbar */}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx' 
 
@@ -6,6 +6,14 @@ export default function LandingPage() {
   const navigate = useNavigate()
   const { isAuthenticated, role } = useAuth()
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      if (role === 'teacher') navigate('/teacher/dashboard')
+      else if (role === 'student') navigate('/student/dashboard')
+      else navigate('/user/dashboard')
+    }
+  }, [isAuthenticated, role, navigate])
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark'
@@ -53,8 +61,9 @@ export default function LandingPage() {
           classroom tools, and real hardware emulation. No hardware needed.
         </p>
         <div className="hero-actions">
+          
           <button className="btn btn-primary btn-lg" onClick={() => navigate('/simulator')}>
-            ▶ Try Simulator — No Login Required
+            ▶ Try Simulator
           </button>
           <button className="btn btn-outline btn-lg" onClick={() => navigate('/classroom/signup')}>
             Join as Student / Teacher

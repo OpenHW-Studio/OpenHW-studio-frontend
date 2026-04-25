@@ -2,6 +2,7 @@ import axios from 'axios';
 import { getAdminToken, getToken } from './authService.js';
 
 const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5001/api';
+const API_ORIGIN = COMPILER_URL.replace(/\/api$/, '');
 
 const getUserAuthConfig = () => {
     const token = getToken();
@@ -172,4 +173,71 @@ export async function backupInstalledComponents() {
 export async function fetchInstalledComponentsWithFiles() {
     const response = await axios.get(`${COMPILER_URL}/admin/components/backup`, getAdminAuthConfig());
     return response.data.components || [];
+}
+
+export async function createSharedSimulation(payload) {
+    const token = getToken();
+    if (!token) {
+        throw new Error('Please sign in to share this simulation.');
+    }
+
+    const response = await axios.post(`${COMPILER_URL}/simulations/share`, payload, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    return response.data;
+}
+
+export async function fetchSharedSimulation(shareId) {
+    const token = getToken();
+    const response = await axios.get(`${COMPILER_URL}/simulations/share/${shareId}`, {
+        headers: token ? {
+            Authorization: `Bearer ${token}`,
+        } : undefined,
+    });
+    return response.data?.project || null;
+}
+
+export async function createLiveSimulationSession(payload) {
+    const token = getToken();
+    if (!token) {
+        throw new Error('Please sign in to start a live simulation.');
+    }
+
+    const response = await axios.post(`${COMPILER_URL}/live-simulations`, payload, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    return response.data?.session || null;
+}
+
+export async function fetchLiveSimulationSession(sessionCode) {
+    const token = getToken();
+    if (!token) {
+        throw new Error('Please sign in to join this live simulation.');
+    }
+
+    const response = await axios.get(`${COMPILER_URL}/live-simulations/${encodeURIComponent(sessionCode)}`, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    return response.data?.session || null;
+}
+
+export function buildLiveSimulationWsUrl(sessionCode, role = 'student') {
+    const token = getToken();
+    const wsOrigin = API_ORIGIN.replace(/^http/i, 'ws');
+    const url = new URL('/api/live-simulations/ws', `${wsOrigin}/`);
+    url.searchParams.set('sessionCode', sessionCode);
+    url.searchParams.set('role', role);
+    if (token) {
+        url.searchParams.set('token', token);
+    }
+    return url.toString();
 }

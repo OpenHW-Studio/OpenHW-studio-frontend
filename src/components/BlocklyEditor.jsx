@@ -1417,6 +1417,8 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      {/* Hide Blockly's built-in scrollbars */}
+      <style>{`.blocklyScrollbarHorizontal, .blocklyScrollbarVertical { display: none !important; }`}</style>
 
       {/* ── Toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', flexShrink: 0, background: tok.toolbar, borderBottom: `1px solid ${tok.border}` }}>

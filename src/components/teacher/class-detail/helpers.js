@@ -26,6 +26,11 @@ export const pickAttachments = (item) => {
   return [];
 };
 
+export const pickLinks = (item) => {
+  if (Array.isArray(item?.links)) return item.links;
+  return [];
+};
+
 export const isImageAttachment = (url) =>
   /^data:image\//i.test(url || "") ||
   /\.(png|jpe?g|gif|webp|svg)(\?.*)?$/i.test(url || "");

@@ -15,14 +15,17 @@ import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './Si
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import axios from 'axios'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
 import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl } from '../../services/simulatorService.js'
+import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
+import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
+import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
+import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
 
 // ── Lazy loaders — heavy libs loaded on first use, NOT on page paint ──────────
@@ -1379,13 +1382,21 @@ function getPinCategory(pId, pDesc, compType) {
 }
 
 export default function SimulatorPage({ gamificationMode = false }) {
-  const { isAuthenticated, user, logout, loading: authLoading } = useAuth()
+  const { isAuthenticated, user, token, logout, loading: authLoading } = useAuth()
   const navigate = useNavigate()
-  const { projectName = '' } = useParams()
+  const { projectName = '', shareId = '', classId = '', assignmentId = '', liveCode = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
+  const assignmentMode = Boolean(shareId && classId && assignmentId)
+  const studentAssignmentMode = assignmentMode && user?.role === 'student'
+  const liveSessionCode = String(liveCode || '').trim().toUpperCase()
+  const currentLiveUserId = String(user?._id || user?.id || '')
+  const liveRoleParam = String(assessmentParams.get('role') || '').trim().toLowerCase()
+  const liveMeetingMode = Boolean(liveSessionCode)
+  const isLiveTeacher = liveMeetingMode && liveRoleParam === 'teacher'
+  const isLiveStudent = liveMeetingMode && !isLiveTeacher
 
   // -- Gamification --
   const { trackComponentPlaced, trackWireDrawn, trackSimulationRun, isUnlocked, coins = 0, currentLevel, currentLevelData, nextLevel, xpProgress } = typeof useGamification === 'function' ? useGamification() : {}
@@ -1800,9 +1811,39 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
   const [showSpeedDialog, setShowSpeedDialog] = useState(false);
   const [saveDialogName, setSaveDialogName] = useState('');
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
+  const [liveMeetingShareCode, setLiveMeetingShareCode] = useState(liveSessionCode);
+  const [liveMeetingStatus, setLiveMeetingStatus] = useState(liveMeetingMode ? 'Connecting…' : '');
+  const [liveMeetingMeta, setLiveMeetingMeta] = useState(null);
+  const [liveMeetingParticipantCounts, setLiveMeetingParticipantCounts] = useState({ total: 0, teachers: 0, students: 0, others: 0 });
+  const [liveGrantedEditorIds, setLiveGrantedEditorIds] = useState([]);
+  const [liveGrantedEditors, setLiveGrantedEditors] = useState([]);
+  const [livePendingEditRequests, setLivePendingEditRequests] = useState([]);
+  const [liveEditRequestPending, setLiveEditRequestPending] = useState(false);
   const [myProjects, setMyProjects] = useState([]);
+  const [isSharingSimulation, setIsSharingSimulation] = useState(false);
+  const [showProjectsDropdown, setShowProjectsDropdown] = useState(false);
+  const [assignmentSubmissionOpen, setAssignmentSubmissionOpen] = useState(false);
+  const [assignmentSubmissionAssignment, setAssignmentSubmissionAssignment] = useState(null);
+  const [assignmentSubmissionState, setAssignmentSubmissionState] = useState({
+    loading: false,
+    saving: false,
+    error: '',
+    data: null,
+  });
+  const [assignmentSubmissionForm, setAssignmentSubmissionForm] = useState({
+    notes: '',
+    links: [''],
+    attachments: [],
+  });
   const currentProjectIdRef = useRef(null);   // mirror for use inside async callbacks
   const autoSaveTimerRef = useRef(null);
+  const liveSocketRef = useRef(null);
+  const liveSyncTimerRef = useRef(null);
+  const liveApplyingRemoteRef = useRef(false);
+  const lastLiveSyncPayloadRef = useRef('');
   // My Projects sidebar state
   const [showProjectsSidebar, setShowProjectsSidebar] = useState(false);
   const [projectsSidebarTab, setProjectsSidebarTab] = useState('projects'); // 'favourites' | 'projects' | 'custom' | 'settings'
@@ -2063,12 +2104,81 @@ export default function SimulatorPage({ gamificationMode = false }) {
     const projects = await listProjects(getOwner());
     setMyProjects(projects);
   };
+  const buildLiveMeetingSnapshot = useCallback(() => ({
+    name: currentProjectName || 'Live Simulation',
+    board,
+    components,
+    connections: wires,
+    code,
+    projectFiles,
+    openCodeTabs,
+    activeCodeFileId,
+  }), [activeCodeFileId, board, code, components, currentProjectName, openCodeTabs, projectFiles, wires]);
+  const applyLiveMeetingSnapshot = useCallback((snapshot) => {
+    const normalizedSnapshot = snapshot && typeof snapshot === 'object' ? snapshot : {};
+    lastLiveSyncPayloadRef.current = JSON.stringify(normalizedSnapshot);
+    const normalizedCircuit = normalizeImportedCircuitData(
+      Array.isArray(normalizedSnapshot.components) ? normalizedSnapshot.components : [],
+      Array.isArray(normalizedSnapshot.connections) ? normalizedSnapshot.connections : [],
+    );
+    const normalizedFiles = normalizeProjectFiles(Array.isArray(normalizedSnapshot.projectFiles) ? normalizedSnapshot.projectFiles : []);
+    const normalizedTabs = normalizeOpenCodeTabs(Array.isArray(normalizedSnapshot.openCodeTabs) ? normalizedSnapshot.openCodeTabs : [], normalizedFiles);
+    const preferredActive = String(normalizedSnapshot.activeCodeFileId || '').trim();
+    const activeId = normalizedFiles.some((file) => file.id === preferredActive)
+      ? preferredActive
+      : (normalizedTabs[0] || normalizedFiles[0]?.id || '');
+    liveApplyingRemoteRef.current = true;
+    setBoard(normalizedSnapshot.board || 'arduino_uno');
+    setCode(normalizedSnapshot.code || '');
+    setComponents(normalizedCircuit.components);
+    setWires(normalizedCircuit.wires);
+    setProjectFiles(normalizedFiles);
+    setOpenCodeTabs(normalizedTabs);
+    setActiveCodeFileId(activeId);
+    setCurrentProjectName(normalizedSnapshot.name || 'Live Simulation');
+    currentProjectIdRef.current = null;
+    setCurrentProjectId(null);
+    setHistory({ past: [], future: [] });
+    lastCompiledRef.current = null;
+    syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
+    window.clearTimeout(liveSyncTimerRef.current);
+    liveSyncTimerRef.current = window.setTimeout(() => {
+      liveApplyingRemoteRef.current = false;
+    }, 60);
+  }, []);
+  const liveCanEdit = !liveMeetingMode || isLiveTeacher || liveGrantedEditorIds.includes(currentLiveUserId);
+  const liveEditingDisabled = liveMeetingMode && !liveCanEdit;
+  const handleRequestLiveEditAccess = useCallback(() => {
+    if (!liveMeetingMode || isLiveTeacher || liveCanEdit) return;
+    if (!liveSocketRef.current || liveSocketRef.current.readyState !== WebSocket.OPEN) return;
+    liveSocketRef.current.send(JSON.stringify({ type: 'student:request-edit' }));
+    setLiveEditRequestPending(true);
+    setLiveMeetingStatus('Edit request sent');
+  }, [isLiveTeacher, liveCanEdit, liveMeetingMode]);
+
+  const handleRespondToLiveEditRequest = useCallback((requestUserId, decision) => {
+    if (!isLiveTeacher) return;
+    if (!liveSocketRef.current || liveSocketRef.current.readyState !== WebSocket.OPEN) return;
+    liveSocketRef.current.send(JSON.stringify({
+      type: 'teacher:set-student-edit-access',
+      userId: requestUserId,
+      decision,
+    }));
+  }, [isLiveTeacher]);
+
+  const handleEndLiveEditAccess = useCallback(() => {
+    if (!liveCanEdit || isLiveTeacher) return;
+    if (!liveSocketRef.current || liveSocketRef.current.readyState !== WebSocket.OPEN) return;
+    liveSocketRef.current.send(JSON.stringify({ type: 'student:end-edit-access' }));
+    setLiveMeetingStatus('Edit access ended');
+  }, [isLiveTeacher, liveCanEdit]);
+
 
   // ── Project: load most-recent project on first mount ─────────────────────
   // ── Project: load most-recent project on first mount ─────────────────────
   useEffect(() => {
     // Don't auto-load a project if we're in assessment mode or loading a demo
-    if (assessmentMode || projectName) return;
+    if (assessmentMode || projectName || shareId || liveSessionCode) return;
 
     const owner = user?.email || 'guest';
     listProjects(owner).then((projects) => {
@@ -2098,6 +2208,310 @@ export default function SimulatorPage({ gamificationMode = false }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!shareId) return;
+
+    let cancelled = false;
+
+    const loadSharedProject = async () => {
+      try {
+        const sharedProject = await fetchSharedSimulation(shareId);
+        if (!sharedProject || cancelled) return;
+
+        setBoard(sharedProject.board || 'arduino_uno');
+        setCode(sharedProject.code || '');
+        setComponents(sharedProject.components || []);
+        setWires(sharedProject.connections || []);
+        setProjectFiles(Array.isArray(sharedProject.projectFiles) ? sharedProject.projectFiles : []);
+        setOpenCodeTabs(Array.isArray(sharedProject.openCodeTabs) ? sharedProject.openCodeTabs : []);
+        setActiveCodeFileId(sharedProject.activeCodeFileId || '');
+        syncNextIds(sharedProject.components || [], sharedProject.connections || []);
+        currentProjectIdRef.current = null;
+        setCurrentProjectId(null);
+        setCurrentProjectName(sharedProject.name || 'Shared Simulation');
+        setHistory({ past: [], future: [] });
+        lastCompiledRef.current = null;
+      } catch (error) {
+        console.error('Failed to load shared simulation', error);
+        if (!cancelled) {
+          alert(error?.response?.data?.message || error.message || 'Failed to load shared simulation.');
+        }
+      }
+    };
+
+    loadSharedProject();
+    return () => { cancelled = true; };
+  }, [shareId]);
+
+  useEffect(() => {
+    if (!liveSessionCode || !token) return;
+
+    let cancelled = false;
+
+    const loadLiveSession = async () => {
+      try {
+        const session = await fetchLiveSimulationSession(liveSessionCode);
+        if (!session || cancelled) return;
+
+        setLiveMeetingShareCode(session.sessionCode || liveSessionCode);
+        setLiveMeetingMeta(session);
+        setLiveMeetingParticipantCounts(session.participantCounts || { total: 0, teachers: 0, students: 0, others: 0 });
+        setLiveGrantedEditorIds(session.permissions?.grantedEditorIds || []);
+        setLiveGrantedEditors(session.permissions?.grantedEditors || []);
+        setLivePendingEditRequests(session.permissions?.pendingEditRequests || []);
+        setLiveMeetingStatus(isLiveTeacher ? 'Hosting live session' : 'Connected to live session');
+        applyLiveMeetingSnapshot(session.snapshot || {});
+      } catch (error) {
+        console.error('Failed to load live simulation', error);
+        if (!cancelled) {
+          setLiveMeetingStatus('Connection failed');
+          alert(error?.response?.data?.message || error.message || 'Failed to load live simulation.');
+        }
+      }
+    };
+
+    loadLiveSession();
+    return () => { cancelled = true; };
+  }, [applyLiveMeetingSnapshot, isLiveTeacher, liveSessionCode, token]);
+
+  useEffect(() => {
+    if (!liveMeetingMode || !token) return;
+
+    const socketUrl = buildLiveSimulationWsUrl(liveSessionCode, isLiveTeacher ? 'teacher' : 'student');
+    const socket = new WebSocket(socketUrl);
+    liveSocketRef.current = socket;
+    setLiveMeetingStatus(isLiveTeacher ? 'Connecting teacher session…' : 'Joining live session…');
+
+    socket.onopen = () => {
+      setLiveMeetingStatus(isLiveTeacher ? 'Hosting live session' : 'Watching teacher updates');
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === 'session:welcome' && payload.session) {
+          setLiveMeetingMeta(payload.session);
+          setLiveMeetingShareCode(payload.session.sessionCode || liveSessionCode);
+          setLiveMeetingParticipantCounts(payload.session.participantCounts || { total: 0, teachers: 0, students: 0, others: 0 });
+          setLiveGrantedEditorIds(payload.session.permissions?.grantedEditorIds || []);
+          setLiveGrantedEditors(payload.session.permissions?.grantedEditors || []);
+          setLivePendingEditRequests(payload.session.permissions?.pendingEditRequests || []);
+          applyLiveMeetingSnapshot(payload.session.snapshot || {});
+        }
+
+        if (payload.type === 'session:update') {
+          const sourceRole = String(payload.sourceRole || '').trim();
+          const sourceUserId = String(payload.sourceUserId || '').trim();
+          setLiveMeetingStatus(sourceRole === 'student' ? 'Receiving collaborator updates' : 'Receiving live updates');
+          if (sourceUserId !== currentLiveUserId) {
+            applyLiveMeetingSnapshot(payload.snapshot || {});
+          }
+        }
+
+        if (payload.type === 'session:participants') {
+          setLiveMeetingParticipantCounts(payload.participantCounts || { total: 0, teachers: 0, students: 0, others: 0 });
+        }
+
+        if (payload.type === 'permissions:update') {
+          setLiveGrantedEditorIds(payload.permissions?.grantedEditorIds || []);
+          setLiveGrantedEditors(payload.permissions?.grantedEditors || []);
+          setLivePendingEditRequests(payload.permissions?.pendingEditRequests || []);
+          if (!isLiveTeacher && String(payload.userId || '') === currentLiveUserId) {
+            setLiveEditRequestPending(false);
+            setLiveMeetingStatus(payload.decision === 'approve' ? 'Edit access granted' : payload.decision === 'deny' ? 'Edit request declined' : liveMeetingStatus);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to parse live simulation message', error);
+      }
+    };
+
+    socket.onerror = () => {
+      setLiveMeetingStatus('WebSocket error');
+    };
+
+    socket.onclose = () => {
+      if (liveSocketRef.current === socket) {
+        liveSocketRef.current = null;
+      }
+      setLiveMeetingStatus('Disconnected');
+    };
+
+    return () => {
+      if (liveSocketRef.current === socket) {
+        liveSocketRef.current = null;
+      }
+      socket.close();
+    };
+  }, [applyLiveMeetingSnapshot, currentLiveUserId, isLiveTeacher, liveMeetingMode, liveSessionCode, token]);
+
+  useEffect(() => {
+    if (!liveMeetingMode || !liveCanEdit) return;
+    if (!liveSocketRef.current || liveSocketRef.current.readyState !== WebSocket.OPEN) return;
+    if (liveApplyingRemoteRef.current) return;
+
+    const nextSnapshot = buildLiveMeetingSnapshot();
+    const serializedSnapshot = JSON.stringify(nextSnapshot);
+    if (serializedSnapshot === lastLiveSyncPayloadRef.current) return;
+    lastLiveSyncPayloadRef.current = serializedSnapshot;
+
+    const timeoutId = window.setTimeout(() => {
+      try {
+        liveSocketRef.current?.send(JSON.stringify({
+          type: isLiveTeacher ? 'teacher:sync' : 'student:sync',
+          snapshot: nextSnapshot,
+        }));
+        setLiveMeetingStatus(isLiveTeacher ? 'Broadcasting updates' : 'Sharing your edits');
+      } catch (error) {
+        console.error('Failed to send live simulation update', error);
+      }
+    }, 120);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [activeCodeFileId, board, buildLiveMeetingSnapshot, code, components, currentProjectName, isLiveTeacher, liveCanEdit, liveMeetingMode, openCodeTabs, projectFiles, wires]);
+
+  const isAssignmentSubmissionClosed = useCallback((assignment) => (
+    Boolean(assignment?.dueDate) && new Date(assignment.dueDate) < new Date()
+  ), []);
+
+  useEffect(() => {
+    if (!assignmentMode || user?.role !== 'student') return;
+
+    let cancelled = false;
+
+    const loadAssignmentSubmission = async () => {
+      setAssignmentSubmissionState({ loading: true, saving: false, error: '', data: null });
+      try {
+        const response = await getMyAssignmentSubmission(classId, assignmentId);
+        if (cancelled) return;
+
+        const submission = response?.submission || null;
+        setAssignmentSubmissionAssignment(response?.assignment || null);
+        setAssignmentSubmissionState({ loading: false, saving: false, error: '', data: submission });
+        setAssignmentSubmissionForm({
+          notes: submission?.notes || '',
+          links: submission?.links?.length ? submission.links : [''],
+          attachments: submission?.attachments || submission?.files || [],
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setAssignmentSubmissionState({
+          loading: false,
+          saving: false,
+          error: error.message || 'Failed to load assignment submission.',
+          data: null,
+        });
+      }
+    };
+
+    loadAssignmentSubmission();
+    return () => { cancelled = true; };
+  }, [assignmentMode, classId, assignmentId, user?.role]);
+
+  const handleAssignmentSubmissionFilesChange = async (event) => {
+    if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
+      setAssignmentSubmissionState((current) => ({
+        ...current,
+        error: 'This assignment is closed. You can no longer upload files.',
+      }));
+      event.target.value = '';
+      return;
+    }
+
+    try {
+      const uploadedFiles = await uploadClassroomFiles(event.target.files, {
+        classId,
+        category: 'submissions',
+        maxFiles: 8,
+        allowedTypes: ['application/pdf', 'image'],
+      });
+
+      setAssignmentSubmissionForm((current) => ({
+        ...current,
+        attachments: [...current.attachments, ...uploadedFiles],
+      }));
+      setAssignmentSubmissionState((current) => ({ ...current, error: '' }));
+    } catch (error) {
+      setAssignmentSubmissionState((current) => ({
+        ...current,
+        error: error.message || 'Failed to upload submission files.',
+      }));
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveAssignmentSubmissionFile = (index) => {
+    setAssignmentSubmissionForm((current) => ({
+      ...current,
+      attachments: current.attachments.filter((_, idx) => idx !== index),
+    }));
+  };
+
+  const handleSubmitClassAssignment = async () => {
+    if (!assignmentSubmissionAssignment) return;
+
+    if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
+      setAssignmentSubmissionState((current) => ({
+        ...current,
+        saving: false,
+        error: 'This assignment is closed. Submissions are no longer accepted.',
+      }));
+      return;
+    }
+
+    setAssignmentSubmissionState((current) => ({ ...current, saving: true, error: '' }));
+
+    try {
+      const shareResponse = await createSharedSimulation({
+        name: `${assignmentSubmissionAssignment.title || 'Assignment'} Submission`,
+        isPublic: true,
+        classId,
+        assignmentId,
+        board,
+        components,
+        connections: wires,
+        code,
+        projectFiles,
+        openCodeTabs,
+        activeCodeFileId,
+      });
+      const simulationShareId = shareResponse.shareId;
+      if (!simulationShareId) {
+        throw new Error('Failed to create simulation link for submission.');
+      }
+      const simulationUrl = `${window.location.origin}/simulator/share/${simulationShareId}`;
+
+      const response = await submitAssignment(classId, assignmentId, {
+        notes: assignmentSubmissionForm.notes,
+        attachments: assignmentSubmissionForm.attachments,
+        simulationShareId,
+        simulationUrl,
+      });
+
+      const submission = response?.submission || null;
+      setAssignmentSubmissionState({
+        loading: false,
+        saving: false,
+        error: '',
+        data: submission,
+      });
+      setAssignmentSubmissionForm({
+        notes: submission?.notes || '',
+        links: submission?.links?.length ? submission.links : [''],
+        attachments: submission?.attachments || submission?.files || [],
+      });
+      setAssignmentSubmissionOpen(false);
+      alert('Assignment submitted successfully.');
+    } catch (error) {
+      setAssignmentSubmissionState((current) => ({
+        ...current,
+        saving: false,
+        error: error.message || 'Failed to submit assignment.',
+      }));
+    }
+  };
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
@@ -2753,7 +3167,20 @@ export default function SimulatorPage({ gamificationMode = false }) {
         openCodeTabs,
         activeCodeFileId,
       });
-      const diagramJson = JSON.stringify(diagramPayload, null, 2);
+      const diagramJsonPayload = { ...diagramPayload };
+      // Omit noisy/default fields — keep diagram.json clean in the explorer
+      delete diagramJsonPayload.schemaVersion;
+      if (diagramJsonPayload.board === 'arduino_uno') delete diagramJsonPayload.board;
+      if (!diagramJsonPayload.components || diagramJsonPayload.components.length === 0) delete diagramJsonPayload.components;
+      if (!diagramJsonPayload.connections || diagramJsonPayload.connections.length === 0) delete diagramJsonPayload.connections;
+      if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
+      if (!diagramJsonPayload.blocklyGeneratedCode) delete diagramJsonPayload.blocklyGeneratedCode;
+      if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
+      // Always strip file-tree / tab state — not useful to display
+      delete diagramJsonPayload.projectFiles;
+      delete diagramJsonPayload.openCodeTabs;
+      delete diagramJsonPayload.activeCodeFileId;
+      const diagramJson = JSON.stringify(diagramJsonPayload, null, 2);
 
       const generatedRootFiles = [
         { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
@@ -3152,6 +3579,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
   // ── Canvas drop ────────────────────────────────────────────────────────────
   const onCanvasDrop = useCallback((e) => {
+    if (liveEditingDisabled) return;
     e.preventDefault()
     const item = dragPayload.current
     if (!item) return
@@ -3171,10 +3599,11 @@ export default function SimulatorPage({ gamificationMode = false }) {
       }];
     })
     dragPayload.current = null
-  }, [saveHistory])
+  }, [liveEditingDisabled, saveHistory])
 
   // ── Quick-add: place component at explicit canvas coordinates ──────────────
   const addComponentAt = useCallback((item, canvasX, canvasY) => {
+    if (liveEditingDisabled) return;
     saveHistory()
     const x = canvasX - (item.w || 60) / 2
     const y = canvasY - (item.h || 60) / 2
@@ -3189,7 +3618,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
         attrs: item.attrs || {},
       }];
     })
-  }, [saveHistory])
+  }, [liveEditingDisabled, saveHistory])
 
   // ── Palette click to add (adds to canvas center) ────────────────────────────
   const addComponentAtCenter = useCallback((item) => {
@@ -3283,10 +3712,10 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // ── Move and Select component ──────────────────────────────────────────────
   const onCompMouseDown = useCallback((e, id) => {
     e.stopPropagation()
-    if (isRunning) return; // Restrict movement while running
+    if (isRunning || liveEditingDisabled) return; // Restrict movement while running
     const comp = components.find(c => c.id === id)
     movingComp.current = { id, sx: e.clientX, sy: e.clientY, cx: comp.x, cy: comp.y, moved: false, originalComps: JSON.parse(JSON.stringify(components)) }
-  }, [components, isRunning])
+  }, [components, isRunning, liveEditingDisabled])
 
   const onCompClick = useCallback((e, id) => {
     e.stopPropagation()
@@ -3465,7 +3894,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // ── Pin click — start or complete wire ─────────────────────────────────────
   const onPinClick = useCallback((e, compId, pinId, pinLabel) => {
     e.stopPropagation()
-    if (isRunning) return; // Restrict wiring while running
+    if (isRunning || liveEditingDisabled) return; // Restrict wiring while running
 
     const pos = getPinPos(compId, pinId)
     if (!pos) return
@@ -3493,7 +3922,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
       setWires(prev => [...prev, newWire])
       setWireStart(null)
     }
-  }, [wireStart, getPinPos, saveHistory, isRunning])
+  }, [wireStart, getPinPos, saveHistory, isRunning, liveEditingDisabled])
 
   const updateWireColor = (id, color) => {
     setWires(prev => prev.map(w => w.id === id ? { ...w, color } : w));
@@ -3505,6 +3934,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   };
 
   const updateComponentAttr = (id, key, value) => {
+    if (liveEditingDisabled) return;
     saveHistory();
     setComponents(prev => prev.map(c => {
       if (c.id === id) {
@@ -3536,7 +3966,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
       if (e.key === 'Escape') { setWireStart(null); setSelected(null); setWireClickPos(null); }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning && !liveEditingDisabled) {
         saveHistory();
         if (selected.match(/^w\d+$/)) {
           setWires(prev => prev.filter(w => w.id !== selected))
@@ -3549,17 +3979,17 @@ export default function SimulatorPage({ gamificationMode = false }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selected, isRunning, saveHistory])
+  }, [selected, isRunning, liveEditingDisabled, saveHistory])
 
   const deleteWire = (id) => {
-    if (isRunning) return;
+    if (isRunning || liveEditingDisabled) return;
     saveHistory();
     setWires(prev => prev.filter(w => w.id !== id))
     if (selected === id) setSelected(null);
   }
 
   const rotateComponent = (id) => {
-    if (isRunning) return;
+    if (isRunning || liveEditingDisabled) return;
     saveHistory();
     setComponents(prev => prev.map(c => c.id === id ? { ...c, rotation: ((c.rotation || 0) + 90) % 360 } : c));
   };
@@ -4493,6 +4923,64 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
   const handleSyncToCloud = () => { alert('Sync feature coming soon!'); };
+
+  const handleGenerateShareUrl = async () => {
+    setIsSharingSimulation(true);
+    try {
+      const response = await createSharedSimulation({
+        name: currentProjectName || 'Untitled',
+        isPublic: true,
+        board,
+        components,
+        connections: wires,
+        code,
+        projectFiles,
+        openCodeTabs,
+        activeCodeFileId,
+      });
+
+      const url = `${window.location.origin}/simulator/share/${response.shareId}`;
+      setShareUrl(url);
+      setShareCopied(false);
+      return url;
+    } catch (error) {
+      console.error('Failed to share simulation', error);
+      alert(error?.response?.data?.message || error.message || 'Failed to share simulation.');
+      return '';
+    } finally {
+      setIsSharingSimulation(false);
+    }
+  };
+
+  const handleShareSimulation = async () => {
+    if (!['teacher', 'user'].includes(user?.role)) {
+      alert('Only signed-in teachers and users can share simulator templates.');
+      return;
+    }
+
+    if (!isAuthenticated) {
+      alert('Please sign in to share this simulation.');
+      navigate('/login');
+      return;
+    }
+
+    setShareUrl('');
+    setShareCopied(false);
+    setShowShareDialog(true);
+    await handleGenerateShareUrl();
+  };
+
+  const handleCopyShareUrl = async () => {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+    } catch (error) {
+      console.error('Failed to copy share URL', error);
+      alert('Failed to copy share URL.');
+    }
+  };
+
 
   // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
   const logSerial = (msg, color = 'var(--text)') => {
@@ -6579,9 +7067,184 @@ export default function SimulatorPage({ gamificationMode = false }) {
       )}
 
       {/* TOP BAR */}
-              <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} refreshProjectList={refreshProjectList} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} user={user} navigate={navigate} isAuthenticated={isAuthenticated} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
+      {studentAssignmentMode && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
+          <div style={{ minWidth: 0 }}>
+            <strong style={{ display: 'block', fontSize: 13 }}>{assignmentSubmissionAssignment?.title || 'Assignment Template'}</strong>
+            <span style={{ color: 'var(--text3)', fontSize: 12 }}>
+              {isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Complete the simulation and submit your work here.'}
+            </span>
+          </div>
+          <Btn
+            color="var(--accent)"
+            onClick={() => setAssignmentSubmissionOpen(true)}
+            disabled={assignmentSubmissionState.loading || !assignmentSubmissionAssignment || isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
+            title={isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Submit assignment'}
+          >
+            {assignmentSubmissionState.data ? 'Update Submission' : 'Submit Assignment'}
+          </Btn>
+        </div>
+      )}
 
-      {/* GAMIFICATION PROJECT BAR */}
+      {liveMeetingMode && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(90deg, rgba(37,99,235,0.12), rgba(14,165,233,0.08))', flexShrink: 0 }}>
+          <div style={{ minWidth: 0 }}>
+            <strong style={{ display: 'block', fontSize: 13 }}>
+              {isLiveTeacher ? 'Live simulation host' : (liveCanEdit ? 'Live simulation editor' : 'Live simulation viewer')}
+            </strong>
+            <span style={{ color: 'var(--text3)', fontSize: 12 }}>
+              Code {liveMeetingShareCode || liveSessionCode} • {liveMeetingStatus || 'Connecting'}
+              {liveMeetingParticipantCounts.students ? ` • ${liveMeetingParticipantCounts.students} student${liveMeetingParticipantCounts.students > 1 ? 's' : ''} connected` : ''}
+            </span>
+          </div>
+          {isLiveTeacher && (
+            <Btn
+              color="var(--accent)"
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(liveMeetingShareCode || liveSessionCode);
+                } catch (error) {
+                  console.error('Failed to copy live meeting code', error);
+                }
+              }}
+              title="Copy the live meeting code"
+            >
+              Copy Code
+            </Btn>
+          )}
+          {!isLiveTeacher && !liveCanEdit && (
+            <Btn
+              color="var(--orange)"
+              onClick={handleRequestLiveEditAccess}
+              disabled={liveEditRequestPending}
+              title="Ask the teacher for edit access"
+            >
+              {liveEditRequestPending ? 'Request Sent' : 'Request Edit Access'}
+            </Btn>
+          )}
+          {!isLiveTeacher && liveCanEdit && (
+            <Btn
+              color="var(--red)"
+              onClick={handleEndLiveEditAccess}
+              title="End your edit permission"
+            >
+              End Edit Access
+            </Btn>
+          )}
+        </div>
+      )}
+
+      {isLiveTeacher && liveGrantedEditors.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
+          <strong style={{ fontSize: 12 }}>Editors with access:</strong>
+          {liveGrantedEditors.map((editor) => (
+            <div key={editor.userId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--card)' }}>
+              <span style={{ fontSize: 12 }}>{editor.userName || 'Student'}</span>
+              <button type="button" onClick={() => handleRespondToLiveEditRequest(editor.userId, 'revoke')} style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isLiveTeacher && livePendingEditRequests.length > 0 && (
+        <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Live edit requests">
+          <div className="teacher-modal__backdrop" />
+          <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
+            <header className="teacher-modal__header">
+              <h3>Simulation Edit Request</h3>
+            </header>
+            <p className="simulator-share-dialog__copy">
+              Students are read-only by default. Approve a request to temporarily let that student update the shared simulation.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {livePendingEditRequests.map((request) => (
+                <div key={request.userId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg)' }}>
+                  <div>
+                    <strong style={{ display: 'block', fontSize: 13 }}>{request.userName || 'Student'}</strong>
+                    <span style={{ color: 'var(--text3)', fontSize: 12 }}>Wants permission to edit the live simulation.</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button type="button" className="simulator-share-dialog__secondary" onClick={() => handleRespondToLiveEditRequest(request.userId, 'deny')}>Deny</button>
+                    <button type="button" className="simulator-share-dialog__primary" onClick={() => handleRespondToLiveEditRequest(request.userId, 'approve')}>Allow</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showShareDialog && ['teacher', 'user'].includes(user?.role) && (
+        <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Share simulation">
+          <div className="teacher-modal__backdrop" onClick={() => setShowShareDialog(false)} />
+          <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
+            <header className="teacher-modal__header">
+              <h3>Share Simulation</h3>
+              <button type="button" onClick={() => setShowShareDialog(false)} aria-label="Close share dialog">x</button>
+            </header>
+            <p className="simulator-share-dialog__copy">
+              Distribute your interactive learning module by generating a secure link. Choose the visibility level to control who can access this curriculum asset.
+            </p>
+            <div className="simulator-share-dialog__label">Generated Access Link</div>
+            <div className="simulator-share-dialog__link-box">
+              <svg className="simulator-share-dialog__link-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.2 4.73" />
+                <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.63-1.63" />
+              </svg>
+              <span className="simulator-share-dialog__link-text">
+                {isSharingSimulation ? 'Creating secure link...' : (shareUrl || 'Unable to create link. Try Share again.')}
+              </span>
+              {shareUrl && (
+                <button type="button" className="simulator-share-dialog__inline-copy" onClick={handleCopyShareUrl} aria-label="Copy share URL">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="9" y="9" width="13" height="13" rx="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            <div className="simulator-share-dialog__footer">
+              <button type="button" className="simulator-share-dialog__secondary" onClick={() => setShowShareDialog(false)}>Close</button>
+              <button type="button" className="simulator-share-dialog__primary" onClick={handleCopyShareUrl} disabled={!shareUrl}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <path d="M8.59 13.51l6.83 3.98" />
+                  <path d="M15.41 6.51l-6.82 3.98" />
+                </svg>
+                {shareCopied ? 'Copied' : 'Copy URL'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {assignmentSubmissionOpen && studentAssignmentMode && (
+        <StudentAssignmentModal
+          assignment={assignmentSubmissionAssignment}
+          submissionState={assignmentSubmissionState}
+          submissionForm={assignmentSubmissionForm}
+          onClose={() => setAssignmentSubmissionOpen(false)}
+          onNotesChange={(value) =>
+            setAssignmentSubmissionForm((current) => ({
+              ...current,
+              notes: value,
+            }))
+          }
+          onLinkChange={() => {}}
+          onAddLink={() => {}}
+          onRemoveLink={() => {}}
+          onFilesChange={handleAssignmentSubmissionFilesChange}
+          onRemoveFile={handleRemoveAssignmentSubmissionFile}
+          onSubmit={handleSubmitClassAssignment}
+          onPreviewFile={() => {}}
+          isClosed={isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
+        />
+      )}
       {gamificationMode && gamProject && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
@@ -6690,7 +7353,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
       )}
 
 
-
       {/* WIRING MODE HINT */}
       {wireStart && (
         <div className="bg-[rgba(255,145,0,.1)] border-b border-[rgba(255,145,0,.25)] text-[var(--orange)] px-5 py-2 text-[13px] flex items-center shrink-0" style={{ background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
@@ -6708,7 +7370,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
             width: isPaletteHovered ? 340 : 38,
             transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
             position: 'relative',
-            zIndex: 10
+            zIndex: 10,
+            pointerEvents: liveEditingDisabled ? 'none' : 'auto',
+            opacity: liveEditingDisabled ? 0.65 : 1,
           }}
           onMouseEnter={() => setIsPaletteHovered(true)}
           onMouseLeave={() => { if (!paletteContextMenu) { setIsPaletteHovered(false); setShowFilterDropdown(false); } }}
@@ -7079,6 +7743,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
               ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
               : 'none',
             touchAction: 'none', // Block browser pinch-to-zoom
+            pointerEvents: liveEditingDisabled ? 'none' : 'auto',
+            opacity: liveEditingDisabled ? 0.8 : 1,
           }}
           ref={canvasRef}
           onWheel={onWheel}
@@ -8275,6 +8941,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
           plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
           showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
           boardComponentMap={boardComponentMap} onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
+          editingDisabled={liveEditingDisabled}
+          editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required before you can edit this live simulation.' : 'Editing is disabled.'}
         />
 
         {/* MY PROJECTS SIDEBAR */}
@@ -9104,3 +9772,4 @@ function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, s
     </div>
   );
 }
+
