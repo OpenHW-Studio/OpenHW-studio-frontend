@@ -5,7 +5,7 @@ import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
 import { getProjectContentBySlug } from '../services/classAdventureAdapter'
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples'
 
 // ─── Per-project guided steps (shown as flashcards) ───────────────────────
 const PROJECT_STEPS = {
