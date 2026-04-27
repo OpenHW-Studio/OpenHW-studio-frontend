@@ -33,6 +33,8 @@ import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
 import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
 import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
 import TeacherProjectContentEditor from './pages/teacher/TeacherProjectContentEditor.jsx'
+import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage'
+import GuidedSimulatorPage from './pages/GuidedsimulatorPage'
 
 
 export default function App() {
