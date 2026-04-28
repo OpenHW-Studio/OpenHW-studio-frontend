@@ -197,24 +197,20 @@ export default function SignupPage() {
         </section>
 
         <section className="auth-showcase auth-showcase--signup">
-          <div className="auth-showcase__badge">Normal CSS powered UI</div>
-          <h1 className="auth-showcase__title">Build a clean onboarding flow that matches the rest of the product.</h1>
+          <div className="auth-showcase__badge">Teacher &amp; Student Access</div>
+          <h1 className="auth-showcase__title">Join the classroom and start learning or teaching with hardware simulation.</h1>
           <p className="auth-showcase__copy">
-            The signup experience now uses custom classes instead of Tailwind utilities, so the styling is consistent even when utility generation is unavailable.
+            Create your classroom account to access assignments, track progress, manage classes, and collaborate on real circuit simulations — all in one place.
           </p>
 
-          <div className="auth-showcase__metrics">
-            <div>
-              <strong>4</strong>
-              <span>sample classes</span>
+          <div className="auth-showcase__highlights">
+            <div className="auth-showcase__card">
+              <strong>For Teachers</strong>
+              <span>Create classes, set assignments, review student submissions, and monitor progress in real time.</span>
             </div>
-            <div>
-              <strong>3</strong>
-              <span>views refreshed</span>
-            </div>
-            <div>
-              <strong>100%</strong>
-              <span>custom CSS</span>
+            <div className="auth-showcase__card">
+              <strong>For Students</strong>
+              <span>Join classes, submit simulation projects, and track your coursework from a single dashboard.</span>
             </div>
           </div>
         </section>
