@@ -48,7 +48,9 @@ export async function compileCode(input) {
  */
 export async function flashFirmware({ port, fqbn, hex, baudRate, resetMethod }) {
     try {
-        const response = await axios.post(`${COMPILER_URL}/compile/flash`, { port, fqbn, hex, baudRate, resetMethod });
+        const response = await axios.post(`${COMPILER_URL}/compile/flash`, { port, fqbn, hex, baudRate, resetMethod }, {
+            withCredentials: true
+        });
         return response.data;
     } catch (error) {
         if (error.response && error.response.data && error.response.data.details) {
@@ -65,6 +67,7 @@ export async function listHardwarePorts(showAll = false) {
     try {
         const response = await axios.get(`${COMPILER_URL}/compile/ports`, {
             params: { showAll: showAll ? 'true' : 'false' },
+            withCredentials: true
         });
         return response.data?.ports || [];
     } catch (error) {
@@ -103,7 +106,9 @@ export async function installLibrary(name) {
  * Uninstalls a library from the backend.
  */
 export async function uninstallLibrary(name) {
-    const response = await axios.post(`${COMPILER_URL}/lib-uninstall`, { name });
+    const response = await axios.post(`${COMPILER_URL}/lib-uninstall`, { name }, {
+        withCredentials: true
+    });
     return response.data;
 }
 
@@ -141,12 +146,16 @@ export async function submitCustomComponent(payload) {
 }
 
 export async function getInstalledComponents() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/installed`);
+    const response = await axios.get(`${COMPILER_URL}/admin/components/installed`, {
+        withCredentials: true
+    });
     return response.data.components || [];
 }
 
 export async function deleteInstalledComponent(id) {
-    const response = await axios.delete(`${COMPILER_URL}/admin/components/installed/${id}`);
+    const response = await axios.delete(`${COMPILER_URL}/admin/components/installed/${id}`, {
+        withCredentials: true
+    });
     return response.data;
 }
 
@@ -214,6 +223,7 @@ export async function fetchLiveSimulationSession(sessionCode) {
         headers: {
             Authorization: `Bearer ${token}`,
         },
+        withCredentials: true
     });
 
     return response.data?.session || null;

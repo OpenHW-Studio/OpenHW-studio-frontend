@@ -31,11 +31,8 @@ import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
 import ProjectTheoryPage from './pages/ProjectTheoryPage.jsx'
 import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
 import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
-import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
+import GuidedSimulatorPage from './pages/GuidedsimulatorPage.jsx'
 import TeacherProjectContentEditor from './pages/teacher/TeacherProjectContentEditor.jsx'
-import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage'
-import GuidedSimulatorPage from './pages/GuidedsimulatorPage'
-
 
 export default function App() {
   return (
