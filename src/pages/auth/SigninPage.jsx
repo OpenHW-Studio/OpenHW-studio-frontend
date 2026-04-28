@@ -169,7 +169,10 @@ export default function SigninPage() {
           </button>
 
           <p className="auth-panel__footer">
-            Don't have an classroom account? <Link to="/login">User login</Link>
+            Don't have a classroom account? <Link to="/classroom/signup">Create one</Link>
+          </p>
+          <p className="auth-panel__footer">
+            Want to login with user account? <Link to="/login">User login</Link>
           </p>
         </section>
       </div>

@@ -45,7 +45,8 @@ const getHtml2canvas = async () => {
 import * as EmulatorComponents from "@openhw/emulator";
 
 // Web Editor features
-import Editor from 'react-simple-code-editor';
+import EditorComponent from 'react-simple-code-editor';
+const Editor = EditorComponent.default || EditorComponent;
 import BlocklyEditor from '../../components/BlocklyEditor.jsx';
 import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
@@ -53,6 +54,52 @@ import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
 // Import a Prism theme (or we can inject our own CSS wrapper)
 import 'prismjs/themes/prism-tomorrow.css';
+
+const EDIT_COPY_KEY = 'openhw_edit_copy';
+const EDIT_COPY_PAYLOAD_PREFIX = 'openhw_edit_copy_payload_';
+const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
+
+function assertSafeDynamicModule(code, label) {
+  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
+    throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
+  }
+}
+
+function collectRawComponentSources() {
+  const rawFiles = {
+    ...import.meta.glob('@openhw/emulator/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('@openhw/emulator/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('@openhw/emulator/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('@openhw/emulator/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('@openhw/emulator/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
+  };
+
+  const out = {};
+  Object.entries(rawFiles).forEach(([filePath, raw]) => {
+    const normalized = String(filePath || '').replace(/\\/g, '/').replace(/\?raw$/, '');
+    const match = normalized.match(/\/components\/([^/]+)\/(.+)$/);
+    if (!match) return;
+
+    const [, componentType, leaf] = match;
+    if (!out[componentType]) out[componentType] = {};
+    const text = String(raw || '');
+
+    if (leaf === 'ui.tsx') out[componentType].uiRaw = text;
+    if (leaf === 'logic.ts') out[componentType].logicRaw = text;
+    if (leaf === 'validation.ts') out[componentType].validationRaw = text;
+    if (leaf === 'index.ts') out[componentType].indexRaw = text;
+    if (leaf === 'doc/index.html') out[componentType].docRaw = text;
+  });
+
+  return out;
+}
+
+const COMPONENT_RAW_SOURCES = collectRawComponentSources();
 
 // Build Catalog & UI Registry dynamically from local backend imports
 const COMPONENT_REGISTRY = {};
@@ -62,7 +109,14 @@ Object.entries(EmulatorComponents).forEach(([key, module]) => {
 
   if (module && module.manifest) {
     const compId = module.manifest.type || module.manifest.id || key;
-    COMPONENT_REGISTRY[compId] = module;
+    const raw = COMPONENT_RAW_SOURCES[compId] || COMPONENT_RAW_SOURCES[key];
+    COMPONENT_REGISTRY[compId] = raw
+      ? {
+        ...module,
+        ...raw,
+        ...(raw.docRaw ? { doc: raw.docRaw } : {}),
+      }
+      : module;
   }
 });
 
@@ -233,6 +287,64 @@ function buildIndexSourceFromRegistry(registryInfo, fallbackType) {
   const hasOnlyDuringRun = !!(registryInfo?.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun);
 
   return `import manifest from './manifest.json';\nimport { ${name}UI, BOUNDS${hasDuringRun ? ', contextMenuDuringRun' : ''}${hasOnlyDuringRun ? ', contextMenuOnlyDuringRun' : ''}${hasCtxMenu ? ', ContextMenu' : ''} } from './ui';\nimport { ${name}Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n  manifest,\n  UI: ${name}UI,\n  LogicClass: ${name}Logic,\n  BOUNDS,\n  validation,${hasCtxMenu ? '\n  ContextMenu,' : ''}${hasDuringRun ? '\n  contextMenuDuringRun,' : ''}${hasOnlyDuringRun ? '\n  contextMenuOnlyDuringRun,' : ''}\n};\n`;
+}
+
+function cleanupEditCopyPayloadStorage() {
+  const removeMatching = (storageLike) => {
+    try {
+      const keys = [];
+      for (let i = 0; i < storageLike.length; i += 1) {
+        const k = storageLike.key(i);
+        if (k && k.startsWith(EDIT_COPY_PAYLOAD_PREFIX)) keys.push(k);
+      }
+      keys.forEach((k) => storageLike.removeItem(k));
+    } catch (_) {
+      // Ignore storage access failures (private mode, disabled storage, etc.)
+    }
+  };
+
+  removeMatching(sessionStorage);
+  removeMatching(localStorage);
+}
+
+function writeEditCopyPayload(data) {
+  const serialized = JSON.stringify(data || {});
+  const payloadKey = `${EDIT_COPY_PAYLOAD_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const pointer = JSON.stringify({
+    __openhwEditCopyPointer: true,
+    version: 2,
+    storage: 'session',
+    key: payloadKey,
+    createdAt: Date.now(),
+  });
+
+  const writePointerPayload = () => {
+    sessionStorage.setItem(payloadKey, serialized);
+    localStorage.setItem(EDIT_COPY_KEY, pointer);
+  };
+
+  try {
+    writePointerPayload();
+    return { ok: true };
+  } catch (_) {
+    // Fall through to next strategy
+  }
+
+  try {
+    localStorage.setItem(EDIT_COPY_KEY, serialized);
+    return { ok: true };
+  } catch (_) {
+    // Fall through to cleanup + retry
+  }
+
+  cleanupEditCopyPayloadStorage();
+
+  try {
+    writePointerPayload();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  }
 }
 
 Object.values(COMPONENT_REGISTRY).forEach(module => {
@@ -1624,8 +1736,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [isApplyingFirmwareUpload, setIsApplyingFirmwareUpload] = useState(false);
   const [runStartedAtMs, setRunStartedAtMs] = useState(null);
   const [runDurationSec, setRunDurationSec] = useState(0);
-  const simulationSpeed = 1;
-  const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
 
   // View Panel State
   const [showViewPanel, setShowViewPanel] = useState(false);
@@ -1697,6 +1807,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [currentProjectName, setCurrentProjectName] = useState('Untitled');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showF1Menu, setShowF1Menu] = useState(false);
+  const [simulationSpeed, setSimulationSpeed] = useState(1.0);
+  const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
+  const [showSpeedDialog, setShowSpeedDialog] = useState(false);
   const [saveDialogName, setSaveDialogName] = useState('');
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -1764,8 +1877,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
         if (relativePath.endsWith('logic.ts') || relativePath.endsWith('logic.js')) logicStr = await zip.files[relativePath].async('string');
         if (relativePath.endsWith('validation.ts') || relativePath.endsWith('validation.js')) validationStr = await zip.files[relativePath].async('string');
         if (relativePath.endsWith('index.ts') || relativePath.endsWith('index.js')) indexStr = await zip.files[relativePath].async('string');
-        // Doc folder — any HTML file inside doc/ directory
-        if (/\/doc\/.*\.html$/i.test(relativePath) || /^doc\/.*\.html$/i.test(relativePath)) {
+        // Doc folder — any HTML file inside doc/ or docs/ directory
+        if (/\/(?:doc|docs)\/.*\.html$/i.test(relativePath) || /^(?:doc|docs)\/.*\.html$/i.test(relativePath)) {
           docHtml = await zip.files[relativePath].async('string');
         }
       }
@@ -1797,6 +1910,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
       const Babel = await getBabel();
       const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
       const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+      assertSafeDynamicModule(transpileUI, 'ui.tsx');
+      assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
       const exportsUI = {};
       const evalUI = new Function('exports', 'require', 'React', transpileUI);
@@ -2513,6 +2628,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
       const Babel = await getBabel();
       const transpileUI = Babel.transform(uiRaw, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
       const transpileLogic = Babel.transform(logicRaw, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+      assertSafeDynamicModule(transpileUI, 'ui.tsx');
+      assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
       const exportsUI = {};
       const evalUI = new Function('exports', 'require', 'React', transpileUI);
@@ -2594,6 +2711,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
             const Babel = await getBabel();
             const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
             const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+            assertSafeDynamicModule(transpileUI, 'ui.tsx');
+            assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
             const exportsUI = {};
             const evalUI = new Function('exports', 'require', 'React', transpileUI);
@@ -3048,7 +3167,20 @@ export default function SimulatorPage({ gamificationMode = false }) {
         openCodeTabs,
         activeCodeFileId,
       });
-      const diagramJson = JSON.stringify(diagramPayload, null, 2);
+      const diagramJsonPayload = { ...diagramPayload };
+      // Omit noisy/default fields — keep diagram.json clean in the explorer
+      delete diagramJsonPayload.schemaVersion;
+      if (diagramJsonPayload.board === 'arduino_uno') delete diagramJsonPayload.board;
+      if (!diagramJsonPayload.components || diagramJsonPayload.components.length === 0) delete diagramJsonPayload.components;
+      if (!diagramJsonPayload.connections || diagramJsonPayload.connections.length === 0) delete diagramJsonPayload.connections;
+      if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
+      if (!diagramJsonPayload.blocklyGeneratedCode) delete diagramJsonPayload.blocklyGeneratedCode;
+      if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
+      // Always strip file-tree / tab state — not useful to display
+      delete diagramJsonPayload.projectFiles;
+      delete diagramJsonPayload.openCodeTabs;
+      delete diagramJsonPayload.activeCodeFileId;
+      const diagramJson = JSON.stringify(diagramJsonPayload, null, 2);
 
       const generatedRootFiles = [
         { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
@@ -3349,7 +3481,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
-    const pin = pins.find(p => p.id === pinId)
+    const pin = pins.find(p => String(p.id) === String(pinId))
     if (!pin) return null
     const rotation = comp.rotation || 0;
     if (rotation === 0) return { x: comp.x + pin.x, y: comp.y + pin.y }
@@ -3368,7 +3500,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
-    const pin = pins.find(p => p.id === pinId)
+    const pin = pins.find(p => String(p.id) === String(pinId))
     if (!pin) return null
     const stub = 20;
     // Determine dominant exit direction from unrotated pin position relative to component center
@@ -4525,13 +4657,29 @@ export default function SimulatorPage({ gamificationMode = false }) {
     }
   }, [firmwareBoardOptions]);
 
-  const applyUploadedFirmwareToBoard = useCallback(async () => {
-    const targetBoardId = String(firmwareUploadTarget || '').trim();
+  const toggleBoardFirmwareSource = useCallback((boardId, useUploaded) => {
+    saveHistory();
+    setComponents((prev) => prev.map((comp) => {
+      if (comp.id !== boardId) return comp;
+      return {
+        ...comp,
+        attrs: {
+          ...(comp.attrs || {}),
+          useUploadedFirmware: !!useUploaded,
+        },
+      };
+    }));
+    
+    const label = boardComponentMap.get(boardId)?.id || boardId;
+    appendConsoleEntry('info', `Board ${label} set to use ${useUploaded ? 'uploaded firmware override' : 'code editor source'}.`, 'simulator');
+  }, [saveHistory, setComponents, appendConsoleEntry, boardComponentMap]);
+
+  const applyUploadedFirmwareToBoard = useCallback(async (targetBoardId, file) => {
     if (!targetBoardId) {
       appendConsoleEntry('warn', 'Pick a board target before uploading firmware.', 'simulator');
       return;
     }
-    if (!(firmwareUploadFile instanceof File)) {
+    if (!(file instanceof File)) {
       appendConsoleEntry('warn', 'Select a firmware file before uploading.', 'simulator');
       return;
     }
@@ -4544,10 +4692,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
     setIsApplyingFirmwareUpload(true);
     try {
-      const parsed = await parseFirmwareUploadFile(firmwareUploadFile);
+      const parsed = await parseFirmwareUploadFile(file);
       const boardKind = normalizeBoardKind(targetBoardComp.type);
-      if (boardKind !== 'rp2040' && parsed.ext !== '.hex') {
-        throw new Error('Only RP2040 boards support UF2 firmware uploads. Use .hex for this board.');
+      
+      // Format validation
+      if (boardKind !== 'rp2040' && parsed.ext === '.uf2') {
+        throw new Error(`Board ${targetBoardId} (${boardKind}) does not support .uf2 files. Please use a .hex file.`);
       }
       if (!parsed.payload) {
         throw new Error('Firmware file is empty.');
@@ -4563,6 +4713,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
             firmwareHex: parsed.payload,
             hex: parsed.payload,
             firmwareArtifactName: String(parsed.fileName || ''),
+            useUploadedFirmware: true, // Auto-enable on upload
           },
         };
       }));
@@ -4573,11 +4724,10 @@ export default function SimulatorPage({ gamificationMode = false }) {
       const firmwareKind = parsed.ext === '.uf2' ? 'UF2' : 'HEX';
       appendConsoleEntry(
         'info',
-        `Assigned ${firmwareKind} firmware (${parsed.fileName}) to ${boardLabel}. The next run will use this firmware.`,
+        `Assigned ${firmwareKind} firmware (${parsed.fileName}) to ${boardLabel}. Now using uploaded override.`,
         'simulator',
       );
 
-      setShowFirmwareUploadDialog(false);
       setFirmwareUploadFile(null);
       if (firmwareUploadInputRef.current) {
         firmwareUploadInputRef.current.value = '';
@@ -4590,10 +4740,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
   }, [
     appendConsoleEntry,
     boardComponentMap,
-    firmwareUploadTarget,
-    firmwareUploadFile,
     parseFirmwareUploadFile,
     saveHistory,
+    setComponents,
   ]);
 
   const handleStartGDB = () => {
@@ -5195,11 +5344,13 @@ export default function SimulatorPage({ gamificationMode = false }) {
             ? (boardComp.id === selectedRunBoardId ? selectedRunBaud : defaultBaud)
             : selectedRunBaud;
 
-          const uploadedFirmware = String(
+          const useUploaded = !!boardComp?.attrs?.useUploadedFirmware;
+          const uploadedFirmware = useUploaded ? String(
             resolveComponentAttrString(boardComp?.attrs, 'firmwareHex', '')
             || resolveComponentAttrString(boardComp?.attrs, 'hex', ''),
-          ).trim();
-          if (uploadedFirmware) {
+          ).trim() : '';
+
+          if (useUploaded && uploadedFirmware) {
             boardHexMap[boardComp.id] = uploadedFirmware;
             const uploadKind = uploadedFirmware.startsWith(UF2_PAYLOAD_PREFIX) ? 'UF2' : 'HEX';
             appendConsoleEntry(
@@ -5214,6 +5365,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
               };
             }
             continue;
+          } else if (useUploaded && !uploadedFirmware) {
+            appendConsoleEntry('warn', `Board ${boardComp.id} is set to use uploaded firmware, but none is assigned. Falling back to code editor.`, 'simulator');
           }
 
           const firmwareAssets = getBoardFirmwareAssets(boardComp.id);
@@ -5846,6 +5999,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
         baudRate: selectedRunBaud,
         debugRp2040: rp2040DebugTelemetryEnabled,
         debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
+        speed: simulationSpeed,
       });
 
       runStartGuardRef.current = false;
@@ -6913,7 +7067,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -7533,9 +7687,17 @@ export default function SimulatorPage({ gamificationMode = false }) {
                       ui: buildUiSourceFromRegistry(registryInfo, item.type),
                       validation: buildValidationSourceFromRegistry(registryInfo),
                       index: buildIndexSourceFromRegistry(registryInfo, item.type),
-                      docs: registryInfo?.doc || '',
+                      docs: registryInfo?.docRaw || registryInfo?.doc || '',
                     };
-                    localStorage.setItem('openhw_edit_copy', JSON.stringify(editCopyData));
+
+                    const writeResult = writeEditCopyPayload(editCopyData);
+                    if (!writeResult.ok) {
+                      alert(`Unable to prepare Edit a Copy payload. ${writeResult.error?.message || 'Please clear browser storage and retry.'}`);
+                      setPaletteContextMenu(null);
+                      setIsPaletteHovered(false);
+                      return;
+                    }
+
                     openComponentEditor();
                     setPaletteContextMenu(null);
                     setIsPaletteHovered(false);
@@ -7634,16 +7796,16 @@ export default function SimulatorPage({ gamificationMode = false }) {
           }}>
             {/* BOTTOM SVG layer for wires (Below Components) */}
             <svg
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
             >
               {wires.filter(w => w.isBelow === true).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts[1])
-                const p2 = getPinPos(toParts[0], toParts[1])
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
                 const isSelectedWire = selected === w.id;
                 const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
 
@@ -7704,17 +7866,17 @@ export default function SimulatorPage({ gamificationMode = false }) {
             {/* TOP SVG layer for wires (Above Components) & Context Menu */}
             <svg
               ref={svgRef}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
             >
               {/* Placed wires (Top layer) */}
               {wires.filter(w => w.isBelow !== true).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts[1])
-                const p2 = getPinPos(toParts[0], toParts[1])
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
                 const isSelectedWire = selected === w.id;
                 const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
 
@@ -7828,8 +7990,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
               const fromParts = w.from.split(':')
               const toParts = w.to.split(':')
-              const p1 = getPinPos(fromParts[0], fromParts[1])
-              const p2 = getPinPos(toParts[0], toParts[1])
+              const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+              const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
               if (!p1 || !p2) return null
 
               // Use click position, fall back to wire midpoint
@@ -8052,10 +8214,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
                             neopixelRefs.current[comp.id] = el;
                           }
                         }}
-                        dangerouslySetInnerHTML={{
-                          __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
-                        }}
-                      />
+                      >
+                        {React.createElement(comp.type, getComponentStateAttrs(comp))}
+                      </div>
                     )}
                   </div>
 
@@ -8154,7 +8315,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
             })}
           </div>{/* end zoom wrapper */}
 
-          {/* Runtime mini panel (top-left) */}
+          {/* Minimalist Runtime panel (top-left) */}
           {isRunning && !isCompiling && (
             <div
               data-export-ignore="true"
@@ -8162,30 +8323,73 @@ export default function SimulatorPage({ gamificationMode = false }) {
               onMouseDown={e => e.stopPropagation()}
               style={{
                 position: 'absolute',
-                top: 12,
-                left: 12,
+                top: 14,
+                left: 14,
                 zIndex: 90,
-                width: 188,
-                background: 'var(--bg2)',
-                border: '1px solid var(--border)',
-                borderRadius: 12,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                background: 'rgba(25, 25, 25, 0.65)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '10px',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                padding: '6px 12px',
+                pointerEvents: 'auto'
               }}
             >
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
-                Simulation Runtime
+              {/* Duration Segment */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 2h4" /><path d="M12 14v-4" /><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6V13z" />
+                  </svg>
+                </div>
+                <span style={{ 
+                  color: 'var(--text)', 
+                  fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', 
+                  fontSize: '11px', 
+                  fontWeight: 600,
+                  letterSpacing: '0.02em',
+                  minWidth: '65px'
+                }}>
+                  {formatRunDuration(runDurationSec)}
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, marginBottom: 5 }}>
-                <span style={{ color: 'var(--text3)' }}>Speed</span>
-                <span style={{ color: 'var(--accent)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{simulationSpeedPercent}%</span>
+
+              {/* Divider */}
+              <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.1)' }} />
+
+              {/* Speed Segment */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />
+                  </svg>
+                </div>
+                <span style={{ 
+                  color: 'var(--accent)', 
+                  fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', 
+                  fontSize: '11px', 
+                  fontWeight: 700,
+                  minWidth: '35px'
+                }}>
+                  {simulationSpeedPercent}%
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-                <span style={{ color: 'var(--text3)' }}>Duration</span>
-                <span style={{ color: 'var(--text)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{formatRunDuration(runDurationSec)}</span>
-              </div>
+
+              {/* Paused Indicator Overlay */}
               {isPaused && (
-                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--orange)', fontWeight: 600 }}>Paused</div>
+                <div style={{ 
+                  position: 'absolute', 
+                  inset: 0, 
+                  background: 'rgba(245, 158, 11, 0.15)', 
+                  borderRadius: '10px', 
+                  border: '1px solid var(--orange)',
+                  zIndex: -1,
+                  animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                }} />
               )}
             </div>
           )}
@@ -8338,7 +8542,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   }
 
                   // Gather ALL components for destination endpoints (excluding self)
-                  const validTargets = components.filter(c => c.id !== selectedComponentInfo.id);
+                  const validTargets = components.filter(c => c.id !== selected);
                   const targetOptions = [];
                   validTargets.forEach(b => {
                     const bPins = LOCAL_PIN_DEFS[b.type] || [];
@@ -8351,7 +8555,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   });
 
                   return compPins.map(pin => {
-                    const pinIdStr = `${selectedComponentInfo.id}:${pin.id}`;
+                    const pinIdStr = `${selected}:${pin.id}`;
                     const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
 
                     // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
@@ -8736,6 +8940,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
           hardwareConnected={hardwareConnected}
           plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
           showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
+          boardComponentMap={boardComponentMap} onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
           editingDisabled={liveEditingDisabled}
           editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required before you can edit this live simulation.' : 'Editing is disabled.'}
         />
@@ -9166,60 +9371,111 @@ export default function SimulatorPage({ gamificationMode = false }) {
         </div>
       )}
 
-      {/* ── FIRMWARE UPLOAD DIALOG ───────────────────────────────────────── */}
+      {/* ── BOARD FIRMWARE MANAGER ─────────────────────────────────────── */}
       {showFirmwareUploadDialog && (
         <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareUploadDialog(false)}>
-          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-            <div className="text-base font-bold mb-2 text-[var(--text)]">Upload Firmware to Board</div>
-            <div className="text-xs text-[var(--text3)] mb-4">
-              Upload a firmware artifact for a specific board on canvas. Use <strong>.hex</strong> for Arduino/ESP32/STM32 and <strong>.uf2</strong> (or .hex) for RP2040.
-              Uploaded firmware is used on the next simulation run for that board.
-            </div>
-
-            <label className="text-xs font-semibold text-[var(--text2)] block mb-2">Board target</label>
-            <select
-              className="w-full bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-3 py-2 rounded-lg text-sm mb-4"
-              value={firmwareUploadTarget}
-              onChange={(e) => setFirmwareUploadTarget(e.target.value)}
-              disabled={firmwareBoardOptions.length === 0}
-            >
-              {firmwareBoardOptions.length === 0 ? (
-                <option value="">No programmable board on canvas</option>
-              ) : firmwareBoardOptions.map((option) => (
-                <option key={option.id} value={option.id}>{option.label}</option>
-              ))}
-            </select>
-
-            <input
-              ref={firmwareUploadInputRef}
-              type="file"
-              accept=".hex,.uf2"
-              style={{ display: 'none' }}
-              onChange={(e) => setFirmwareUploadFile(e.target.files?.[0] || null)}
-            />
-
-            <div className="mb-4" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Btn onClick={() => firmwareUploadInputRef.current?.click()} disabled={firmwareBoardOptions.length === 0}>
-                Choose Firmware File
-              </Btn>
-              <div className="text-xs text-[var(--text3)]" style={{ minHeight: 18 }}>
-                {firmwareUploadFile?.name || 'No file selected'}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn onClick={() => setShowFirmwareUploadDialog(false)}>Cancel</Btn>
-              <Btn
-                color="var(--accent)"
-                disabled={!firmwareUploadTarget || !firmwareUploadFile || isApplyingFirmwareUpload}
-                onClick={applyUploadedFirmwareToBoard}
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[580px] max-w-[90vw] shadow-[0_12px_50px_rgba(0,0,0,.5)] max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <div className="text-lg font-bold text-[var(--text)]">Board Firmware Manager</div>
+              <button 
+                onClick={() => setShowFirmwareUploadDialog(false)}
+                className="text-[var(--text3)] hover:text-[var(--text)] transition-colors p-1"
               >
-                {isApplyingFirmwareUpload ? 'Applying...' : 'Upload & Use'}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            <div className="text-xs text-[var(--text3)] mb-8 leading-relaxed">
+              Toggle between using the online code editor or a custom uploaded firmware binary (.hex/.uf2).
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              {firmwareBoardOptions.length === 0 ? (
+                <div className="text-center py-12 border-2 border-dashed border-[var(--border)] rounded-xl opacity-60">
+                  <div className="text-[var(--text3)] text-sm">No programmable boards found on canvas.</div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-5">
+                  {firmwareBoardOptions.map((option) => {
+                    const boardComp = boardComponentMap.get(option.id);
+                    const attrs = boardComp?.attrs || {};
+                    const useUploaded = !!attrs.useUploadedFirmware;
+                    const firmwareName = attrs.firmwareArtifactName || '';
+                    const hasFirmware = !!(attrs.firmwareHex || attrs.hex);
+                    const kind = normalizeBoardKind(boardComp?.type || '');
+                    
+                    return (
+                      <div key={option.id} className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-xl flex items-center justify-between gap-6 transition-all hover:border-[var(--accent)]/30 group">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="font-bold text-[13px] text-[var(--text)] truncate">{option.id}</span>
+                            <span className="px-1.5 py-0.5 bg-[var(--bg2)] border border-[var(--border)] rounded text-[9px] uppercase text-[var(--text3)] font-bold tracking-wider">
+                              {kind}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full ${useUploaded && hasFirmware ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-blue-500 op-40'}`} />
+                            <span className="text-[10px] text-[var(--text2)]">
+                              Source: <strong className={useUploaded && hasFirmware ? "text-[var(--accent)]" : "text-[var(--text)]"}>{useUploaded && hasFirmware ? 'Uploaded Binary' : 'Code Editor'}</strong>
+                            </span>
+                          </div>
+                          {hasFirmware && (
+                            <div className="mt-2 text-[9px] text-[var(--text3)] flex items-center gap-1.5 bg-[var(--bg)]/40 px-2 py-1 rounded inline-flex">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                              <span className="truncate max-w-[180px]">{firmwareName || 'Custom Upload'}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <Btn
+                            onClick={() => toggleBoardFirmwareSource(option.id, !useUploaded)}
+                            disabled={!hasFirmware}
+                            color={useUploaded ? 'var(--accent)' : ''}
+                            title={!hasFirmware ? 'Upload a binary first to use this source override' : (useUploaded ? 'Switch to Code Editor' : 'Use Uploaded Binary')}
+                          >
+                            <span className="text-[11px] font-bold">{useUploaded ? 'Using Upload' : 'Use Upload'}</span>
+                          </Btn>
+                          
+                          <Btn
+                            onClick={() => {
+                              setFirmwareUploadTarget(option.id);
+                              firmwareUploadInputRef.current?.click();
+                            }}
+                            iconOnly
+                            title="Upload New Binary"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path><polyline points="16 16 12 12 8 16"></polyline></svg>
+                          </Btn>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-8 flex justify-end gap-3 pt-5 border-t border-[var(--border)]">
+              <Btn onClick={() => setShowFirmwareUploadDialog(false)}>
+                Close
               </Btn>
             </div>
           </div>
         </div>
       )}
+
+      {/* Hidden file input for manager */}
+      <input
+        ref={firmwareUploadInputRef}
+        type="file"
+        accept=".hex,.uf2"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file && firmwareUploadTarget) {
+            applyUploadedFirmwareToBoard(firmwareUploadTarget, file);
+          }
+        }}
+      />
 
       {/* F1 MENU */}
       {showF1Menu && (
@@ -9231,60 +9487,155 @@ export default function SimulatorPage({ gamificationMode = false }) {
             className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
             onClick={e => e.stopPropagation()}
           >
-            <div className="text-base font-bold mb-4 text-[var(--text)]">Quick Actions (F1)</div>
-            <div className="flex flex-col gap-2">
-              <button 
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+            <div className="text-base font-bold mb-5 text-[var(--text)] tracking-tight">Quick Actions (F1)</div>
+            <div className="flex flex-col gap-3">
+              <Btn 
                 onClick={() => {
                   downloadSimulationJson();
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                🧾 Download Simulation JSON
-              </button>
-              <button 
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                Download Simulation JSON
+              </Btn>
+              <Btn 
                 onClick={() => {
                   openFirmwareDownloadDialog();
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                📥 Download Firmware
-              </button>
-              <button 
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                Download Firmware
+              </Btn>
+              <Btn 
                 onClick={() => {
                   openFirmwareUploadDialog();
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                📤 Upload Firmware to Board
-              </button>
-              <button
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                Board Firmware Manager
+              </Btn>
+              <Btn 
                 onClick={() => {
                   setRp2040DebugTelemetryEnabled((prev) => !prev);
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                {rp2040DebugTelemetryEnabled ? '🐞 Disable RP2040 dbg Telemetry' : '🐞 Enable RP2040 dbg Telemetry'}
-              </button>
-              <button 
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                {rp2040DebugTelemetryEnabled ? 'Disable RP2040 dbg Telemetry' : 'Enable RP2040 dbg Telemetry'}
+              </Btn>
+              <Btn 
+                onClick={() => {
+                  setShowSpeedDialog(true);
+                  setShowF1Menu(false);
+                }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
+              >
+                Simulation Speed ({simulationSpeed.toFixed(1)}x)
+              </Btn>
+              <Btn 
+                onClick={() => {
+                  const resetSpeed = 1.0;
+                  setSimulationSpeed(resetSpeed);
+                  if (isRunning && workerRef.current) {
+                    workerRef.current.postMessage({ type: 'SET_SPEED', speed: resetSpeed });
+                  }
+                  setShowF1Menu(false);
+                }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
+              >
+                Reset Simulation Speed (1.0x)
+              </Btn>
+              <Btn 
                 onClick={() => {
                   handleStartGDB();
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                🐛 Start GDB Session
-              </button>
+                Start GDB Session
+              </Btn>
             </div>
             <button 
-              className="mt-4 w-full px-3 py-2 text-xs text-[var(--text3)] hover:text-[var(--text)] transition-colors"
+              className="mt-6 w-full px-3 py-2 text-xs font-bold text-[var(--text3)] hover:text-[var(--text)] transition-colors uppercase tracking-widest"
               onClick={() => setShowF1Menu(false)}
             >
               Close (Esc)
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── SIMULATION SPEED DIALOG ─────────────────────────────────────── */}
+      {showSpeedDialog && (
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSpeedDialog(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[380px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+            <div className="text-base font-bold mb-2 text-[var(--text)]">Simulation Speed</div>
+            <div className="text-xs text-[var(--text3)] mb-6 leading-relaxed">
+              Adjust how fast the simulation runs relative to real-time. Higher speeds may impact UI responsiveness.
+            </div>
+
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[10px] font-bold text-[var(--text2)] uppercase tracking-wider">Current Rate</span>
+                <span className="text-sm font-mono font-bold text-[var(--accent)]">{simulationSpeed.toFixed(1)}x</span>
+              </div>
+              <input 
+                type="range"
+                min="0.1"
+                max="10"
+                step="0.1"
+                value={simulationSpeed}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setSimulationSpeed(val);
+                  if (isRunning && workerRef.current) {
+                    workerRef.current.postMessage({ type: 'SET_SPEED', speed: val });
+                  }
+                }}
+                className="w-full accent-[var(--accent)] h-1.5 bg-[var(--border)] rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between mt-2 text-[9px] text-[var(--text3)] font-mono">
+                <span>0.1x</span>
+                <span>1.0x</span>
+                <span>5.0x</span>
+                <span>10.0x</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-6">
+              {[0.1, 0.5, 1.0, 2.0, 5.0, 10.0].map(val => (
+                <Btn 
+                  key={val}
+                  onClick={() => {
+                    setSimulationSpeed(val);
+                    if (isRunning && workerRef.current) {
+                      workerRef.current.postMessage({ type: 'SET_SPEED', speed: val });
+                    }
+                  }}
+                  color={simulationSpeed === val ? 'var(--accent)' : ''}
+                  style={{ fontSize: '11px', padding: '6px 0' }}
+                >
+                  {val === 1.0 ? 'Normal' : `${val}x`}
+                </Btn>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              <Btn 
+                onClick={() => {
+                  const resetSpeed = 1.0;
+                  setSimulationSpeed(resetSpeed);
+                  if (isRunning && workerRef.current) {
+                    workerRef.current.postMessage({ type: 'SET_SPEED', speed: resetSpeed });
+                  }
+                }}
+              >
+                Reset
+              </Btn>
+              <Btn color="var(--accent)" onClick={() => setShowSpeedDialog(false)}>Done</Btn>
+            </div>
           </div>
         </div>
       )}

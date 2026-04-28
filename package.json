@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@babel/standalone": "^7.29.1",
-    "@openhw/emulator": "file:../openhw-studio-emulator",
+    "@openhw/emulator": "file:../openhw-studio-emulator-danish",
     "@react-oauth/google": "^0.13.4",
     "@tailwindcss/postcss": "^4.2.1",
     "avr8js": "^0.21.0",
@@ -42,6 +42,6 @@
     "autoprefixer": "^10.4.27",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
-    "vite": "^5.1.0"
+    "vite": "^8.0.10"
   }
 }

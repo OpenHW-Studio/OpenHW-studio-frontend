@@ -24,13 +24,7 @@ import {
     UNO_DIGITAL_PINS,
 } from './board-profiles.ts';
 import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
-import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic.ts';
-import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic.ts';
-import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic.ts';
-import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic.ts';
-import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic.ts';
-import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic.ts';
-import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic.ts';
+import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic.ts';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
 import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
@@ -1289,6 +1283,7 @@ class SSD1306FallbackLogic extends BaseComponent {
     private args: number[] = [];
 
     private vramDirty = false;
+    private stateUpdateCount = 0;
     private cycleCount = 0;
 
     constructor(id: string, manifest: any) {
@@ -1313,6 +1308,8 @@ class SSD1306FallbackLogic extends BaseComponent {
             segmentRemap: false,
             comScanDir: false,
             displayOffset: 0,
+            vramDirty: false,
+            updateCount: 0,
         };
     }
 
@@ -1322,6 +1319,7 @@ class SSD1306FallbackLogic extends BaseComponent {
             this.cycleCount = 0;
             if (this.vramDirty) {
                 this.vramDirty = false;
+                this.stateUpdateCount += 1;
                 this.setState({
                     vram: [...this.vram],
                     invert: this.invert,
@@ -1331,6 +1329,8 @@ class SSD1306FallbackLogic extends BaseComponent {
                     segmentRemap: this.segmentRemap,
                     comScanDir: this.comScanDir,
                     displayOffset: this.displayOffset,
+                    vramDirty: false,
+                    updateCount: this.stateUpdateCount,
                 });
             }
         }
@@ -1841,13 +1841,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'shift_register': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
-    'logic-and-gate': AndGateLogic,
-    'logic-or-gate': OrGateLogic,
-    'logic-not-gate': NotGateLogic,
-    'logic-nand-gate': NandGateLogic,
-    'logic-nor-gate': NorGateLogic,
-    'logic-xor-gate': XorGateLogic,
-    'logic-xnor-gate': XnorGateLogic,
+    'logic-ic-74xx': LogicIC74xxLogic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
     'logic-d-flipflop-r': DFlipFlopRLogic,
@@ -1897,13 +1891,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
-    'logic-and-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-or-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-not-gate': [{ id: 'IN' }, { id: 'OUT' }],
-    'logic-nand-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-nor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-xor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
-    'logic-xnor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
     'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
     'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
@@ -2108,6 +2096,7 @@ export type AVRRunnerOptions = {
     serialBaudRate?: number;
     debugEnabled?: boolean;
     debugIntervalMs?: number;
+    speed?: number;
     rp2040ExecutableRanges?: RP2040ExecutableRangeInput[];
     rp2040LogicalFlashBytes?: number | string;
     rp2040FlashPartitions?: RP2040FlashPartitionInput[];
@@ -2125,6 +2114,7 @@ export type BoardRunner = {
     softSerialRxByte?: (value: number) => void;
     setSerialBaudRate: (baud: number) => void;
     getSerialBaudRate: () => number;
+    setSpeed: (speed: number) => void;
 };
 
 const RP2040_FLASH_BASE = 0x10000000;
@@ -2221,6 +2211,27 @@ const RP2040_I2C_SOURCE_PINS = {
         sda: ['SDA1', 'GP2', 'GPIO2', 'D2', '2', 'GP6', 'GPIO6', 'D6', '6', 'GP10', 'GPIO10', 'D10', '10', 'GP14', 'GPIO14', 'D14', '14', 'GP18', 'GPIO18', 'D18', '18', 'GP22', 'GPIO22', 'D22', '22', 'GP26', 'GPIO26', 'D26', '26'],
         scl: ['SCL1', 'GP3', 'GPIO3', 'D3', '3', 'GP7', 'GPIO7', 'D7', '7', 'GP11', 'GPIO11', 'D11', '11', 'GP15', 'GPIO15', 'D15', '15', 'GP19', 'GPIO19', 'D19', '19', 'GP23', 'GPIO23', 'D23', '23', 'GP27', 'GPIO27', 'D27', '27'],
     },
+};
+
+type RP2040I2CBus = 'i2c0' | 'i2c1';
+
+type RP2040I2CBusPins = {
+    sda: string;
+    scl: string;
+};
+
+type RP2040I2CBitBangState = {
+    initialized: boolean;
+    prevSdaHigh: boolean;
+    prevSclHigh: boolean;
+    inFrame: boolean;
+    phase: number;
+    shift: number;
+    byteIndex: number;
+    read: boolean;
+    activeSlave: BaseComponent | null;
+    ackShouldBeLow: boolean;
+    ackDriveActive: boolean;
 };
 
 const RP2040_SPI_SOURCE_PINS = {
@@ -3063,6 +3074,7 @@ export class AVRRunner {
     lastTime: number = 0;
     statusInterval: any;
     pinsChanged: boolean = true;
+    speed: number = 1.0;
     boardId: string;
     private serialBaudRate: number = 9600;
     private softSerialBaudRate: number = 9600;
@@ -3096,6 +3108,7 @@ export class AVRRunner {
         this.currentWires = wiresDef || [];
         this.onStateUpdate = onStateUpdate;
         this.onByteTransmitCb = options.onByteTransmit;
+        this.speed = options.speed ?? 1.0;
         const fallbackBoard = (componentsDef || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
         this.boardId = options.boardId || fallbackBoard?.id || 'wokwi-arduino-uno_0';
         this.setSerialBaudRate(options.serialBaudRate ?? 9600);
@@ -3641,8 +3654,9 @@ export class AVRRunner {
         const deltaTime = now - this.lastTime;
 
         if (deltaTime > 0) {
-            const cyclesToRun = deltaTime * 16000;
-            const targetObj = this.cpu.cycles + Math.min(cyclesToRun, 1600000);
+            const cyclesPerMs = 16000 * this.speed;
+            const cyclesToRun = deltaTime * cyclesPerMs;
+            const targetObj = this.cpu.cycles + Math.min(cyclesToRun, 1600000 * Math.max(1, this.speed));
 
             if (this.updatePhysics) this.updatePhysics();
 
@@ -3738,6 +3752,13 @@ export class AVRRunner {
 
     getSerialBaudRate(): number {
         return this.serialBaudRate;
+    }
+
+    setSpeed(speed: number) {
+        const s = Number(speed);
+        if (Number.isFinite(s) && s > 0) {
+            this.speed = s;
+        }
     }
 
     stop() {
@@ -4164,6 +4185,7 @@ export class RP2040Runner implements BoardRunner {
     lastTime: number = 0;
     statusInterval: any;
     pinsChanged: boolean = true;
+    speed: number = 1.0;
     boardId: string;
     private serialBaudRate: number = 115200;
     private softSerialBaudRate: number = 9600;
@@ -4194,6 +4216,9 @@ export class RP2040Runner implements BoardRunner {
     private gpioUnsubscribers: Array<() => boolean> = [];
     private protocolEndpointsCache = new Map<string, ConnectedComponentPin[]>();
     private i2cDeviceCache = new Map<'i2c0' | 'i2c1', BaseComponent[]>();
+    private i2cBusPinPairs = new Map<RP2040I2CBus, RP2040I2CBusPins>();
+    private i2cBitBangState = new Map<RP2040I2CBus, RP2040I2CBitBangState>();
+    private i2cHardwareSeen = new Map<RP2040I2CBus, boolean>([['i2c0', false], ['i2c1', false]]);
     private spiDeviceCache = new Map<'spi0' | 'spi1', BaseComponent[]>();
     private peripheralDeviceCacheReady: boolean = false;
     private pwmState = new Map<string, { lastRiseCycle: number; lastFallCycle: number; lastPeriodCycles: number }>();
@@ -4258,6 +4283,7 @@ export class RP2040Runner implements BoardRunner {
         this.onStateUpdate = onStateUpdate;
         this.onByteTransmitCb = options.onByteTransmit;
         this.firmwareHex = String(hexData || '');
+        this.speed = options.speed ?? 1.0;
 
         const fallbackBoard = (componentsDef || []).find((c: any) => /(rp2040|pico)/i.test(String(c.type || '')));
         this.boardId = options.boardId || fallbackBoard?.id || 'wokwi-raspberry-pi-pico_0';
@@ -4997,6 +5023,14 @@ export class RP2040Runner implements BoardRunner {
     private rebuildPeripheralDeviceCache() {
         this.i2cDeviceCache.set('i2c0', this.scanRp2040ConnectedI2CDevices('i2c0'));
         this.i2cDeviceCache.set('i2c1', this.scanRp2040ConnectedI2CDevices('i2c1'));
+        this.i2cBusPinPairs.clear();
+        const i2c0Pins = this.scanRp2040I2CBusPins('i2c0');
+        const i2c1Pins = this.scanRp2040I2CBusPins('i2c1');
+        if (i2c0Pins) this.i2cBusPinPairs.set('i2c0', i2c0Pins);
+        if (i2c1Pins) this.i2cBusPinPairs.set('i2c1', i2c1Pins);
+        this.i2cHardwareSeen.set('i2c0', false);
+        this.i2cHardwareSeen.set('i2c1', false);
+        this.i2cBitBangState.clear();
         this.spiDeviceCache.set('spi0', this.scanRp2040ConnectedSPIDevices('spi0'));
         this.spiDeviceCache.set('spi1', this.scanRp2040ConnectedSPIDevices('spi1'));
         this.peripheralDeviceCacheReady = true;
@@ -5031,6 +5065,42 @@ export class RP2040Runner implements BoardRunner {
             }
         }
         return devices;
+    }
+
+    private scanRp2040I2CBusPins(bus: RP2040I2CBus): RP2040I2CBusPins | null {
+        const pinMap = RP2040_I2C_SOURCE_PINS[bus];
+        if (!pinMap) return null;
+
+        const sdaAliases = this.buildBoardAliasSet(pinMap.sda);
+        const sclAliases = this.buildBoardAliasSet(pinMap.scl);
+
+        for (const inst of this.instances.values()) {
+            const hasI2cCallbacks = !!(
+                inst.onI2CStart
+                || inst.onI2CByte
+                || inst.onI2CStop
+                || typeof (inst as any).onI2CReadByte === 'function'
+                || typeof (inst as any).readByte === 'function'
+            );
+            if (!hasI2cCallbacks) continue;
+
+            const sdaPin = this.findExistingPinName(inst, ['SDA', 'SDA1']);
+            const sclPin = this.findExistingPinName(inst, ['SCL', 'SCL1']);
+            if (!sdaPin || !sclPin) continue;
+
+            const boardSda = this.resolveBoardPinForComponentPin(inst.id, sdaPin);
+            const boardScl = this.resolveBoardPinForComponentPin(inst.id, sclPin);
+            if (!boardSda || !boardScl) continue;
+
+            const sda = this.normalizeToGpPin(boardSda);
+            const scl = this.normalizeToGpPin(boardScl);
+            if (sda === scl) continue;
+            if (!sdaAliases.has(sda) || !sclAliases.has(scl)) continue;
+
+            return { sda, scl };
+        }
+
+        return null;
     }
 
     private scanRp2040ConnectedI2CDevices(bus: 'i2c0' | 'i2c1'): BaseComponent[] {
@@ -5176,6 +5246,7 @@ export class RP2040Runner implements BoardRunner {
             };
 
             i2c.onConnect = (address: number, mode: number) => {
+                this.i2cHardwareSeen.set(bus, true);
                 const isRead = Number(mode) === 1;
                 const devices = this.getRp2040ConnectedI2CDevices(bus);
                 let ack = false;
@@ -5241,6 +5312,17 @@ export class RP2040Runner implements BoardRunner {
                     if (inst.onI2CStop) inst.onI2CStop();
                 }
                 activeSlave = null;
+                const bitBang = this.i2cBitBangState.get(bus);
+                if (bitBang) {
+                    bitBang.inFrame = false;
+                    bitBang.phase = 0;
+                    bitBang.shift = 0;
+                    bitBang.byteIndex = 0;
+                    bitBang.read = false;
+                    bitBang.activeSlave = null;
+                    bitBang.ackShouldBeLow = false;
+                    bitBang.ackDriveActive = false;
+                }
                 i2c.completeStop();
             };
         };
@@ -5586,10 +5668,180 @@ export class RP2040Runner implements BoardRunner {
         }
     }
 
+    private getRp2040I2CBitBangState(bus: RP2040I2CBus, pins: RP2040I2CBusPins): RP2040I2CBitBangState {
+        let state = this.i2cBitBangState.get(bus);
+        const currentSdaHigh = !!this.pinStates[pins.sda];
+        const currentSclHigh = !!this.pinStates[pins.scl];
+
+        if (!state) {
+            state = {
+                initialized: true,
+                prevSdaHigh: currentSdaHigh,
+                prevSclHigh: currentSclHigh,
+                inFrame: false,
+                phase: 0,
+                shift: 0,
+                byteIndex: 0,
+                read: false,
+                activeSlave: null,
+                ackShouldBeLow: false,
+                ackDriveActive: false,
+            };
+            this.i2cBitBangState.set(bus, state);
+            return state;
+        }
+
+        if (!state.initialized) {
+            state.initialized = true;
+            state.prevSdaHigh = currentSdaHigh;
+            state.prevSclHigh = currentSclHigh;
+        }
+
+        return state;
+    }
+
+    private setRp2040I2CFallbackSdaInput(pin: string, isHigh: boolean) {
+        if (!this.cpu) return;
+        const idx = this.parseGpIndex(pin);
+        if (idx == null) return;
+        this.cpu.gpio[idx].setInputValue(!!isHigh);
+    }
+
+    private consumeRp2040I2CBitBangByte(bus: RP2040I2CBus, state: RP2040I2CBitBangState, value: number): boolean {
+        const byte = value & 0xff;
+        let ack = false;
+
+        if (state.byteIndex === 0) {
+            const address = (byte >>> 1) & 0x7f;
+            const isRead = (byte & 0x01) !== 0;
+            const devices = this.getRp2040ConnectedI2CDevices(bus);
+
+            let activeSlave: BaseComponent | null = null;
+            for (const inst of devices) {
+                if (!inst.onI2CStart) continue;
+                if (inst.onI2CStart(address, isRead)) {
+                    if (!activeSlave) activeSlave = inst;
+                }
+            }
+
+            state.activeSlave = activeSlave;
+            state.read = isRead;
+            ack = !!activeSlave;
+
+            if (this.debugEnabled) {
+                this.onStateUpdate({
+                    type: 'debug',
+                    boardId: this.boardId,
+                    category: 'rp2040-i2c',
+                    reason: 'connect-bitbang',
+                    i2c: {
+                        bus,
+                        address,
+                        isRead,
+                        ack,
+                        deviceCount: devices.length,
+                        activeSlaveId: activeSlave?.id || '',
+                    },
+                });
+            }
+        } else if (state.activeSlave && !state.read && state.activeSlave.onI2CByte) {
+            ack = !!state.activeSlave.onI2CByte(-1, byte);
+        } else if (state.activeSlave) {
+            ack = true;
+        }
+
+        state.byteIndex += 1;
+        return ack;
+    }
+
+    private dispatchOptionalI2CFallback(gpPin: string) {
+        const pin = this.normalizeToGpPin(gpPin);
+        const buses: RP2040I2CBus[] = ['i2c0', 'i2c1'];
+
+        for (const bus of buses) {
+            if (this.i2cHardwareSeen.get(bus)) continue;
+
+            const pins = this.i2cBusPinPairs.get(bus);
+            if (!pins) continue;
+            if (pin !== pins.sda && pin !== pins.scl) continue;
+
+            const state = this.getRp2040I2CBitBangState(bus, pins);
+            const sdaNow = !!this.pinStates[pins.sda];
+            const sclNow = !!this.pinStates[pins.scl];
+
+            const startCondition = state.prevSdaHigh && !sdaNow && state.prevSclHigh && sclNow;
+            const stopCondition = !state.prevSdaHigh && sdaNow && state.prevSclHigh && sclNow;
+            const fallingScl = state.prevSclHigh && !sclNow;
+
+            if (startCondition) {
+                if (state.ackDriveActive) {
+                    this.setRp2040I2CFallbackSdaInput(pins.sda, true);
+                    state.ackDriveActive = false;
+                }
+                state.inFrame = true;
+                state.phase = 0;
+                state.shift = 0;
+                state.byteIndex = 0;
+                state.read = false;
+                state.activeSlave = null;
+                state.ackShouldBeLow = false;
+            }
+
+            const risingScl = !state.prevSclHigh && sclNow;
+            if (state.inFrame && risingScl) {
+                const bit = sdaNow ? 1 : 0;
+                if (state.phase < 8) {
+                    state.shift = ((state.shift << 1) | bit) & 0xff;
+                    state.phase += 1;
+                    if (state.phase === 8) {
+                        state.ackShouldBeLow = this.consumeRp2040I2CBitBangByte(bus, state, state.shift);
+                    }
+                } else {
+                    // ACK/NACK bit sampled by master.
+                    state.phase = 0;
+                    state.shift = 0;
+                    state.ackShouldBeLow = false;
+                }
+            }
+
+            if (fallingScl) {
+                if (state.phase === 8 && state.ackShouldBeLow && !state.ackDriveActive) {
+                    // Drive ACK while SCL is low so SDA is stable before master's rising-edge sample.
+                    this.setRp2040I2CFallbackSdaInput(pins.sda, false);
+                    state.ackDriveActive = true;
+                } else if (state.phase === 0 && state.ackDriveActive) {
+                    this.setRp2040I2CFallbackSdaInput(pins.sda, true);
+                    state.ackDriveActive = false;
+                }
+            }
+
+            if (stopCondition) {
+                if (state.activeSlave && state.activeSlave.onI2CStop) {
+                    state.activeSlave.onI2CStop();
+                }
+                if (state.ackDriveActive) {
+                    this.setRp2040I2CFallbackSdaInput(pins.sda, true);
+                    state.ackDriveActive = false;
+                }
+                state.inFrame = false;
+                state.phase = 0;
+                state.shift = 0;
+                state.byteIndex = 0;
+                state.read = false;
+                state.activeSlave = null;
+                state.ackShouldBeLow = false;
+            }
+
+            state.prevSdaHigh = sdaNow;
+            state.prevSclHigh = sclNow;
+        }
+    }
+
     private dispatchOptionalProtocols(gpPin: string, isHigh: boolean, cycles: number, functionSelect: number) {
         this.dispatchOptionalPwm(gpPin, isHigh, cycles, functionSelect);
         this.dispatchOptionalPio(gpPin, isHigh, cycles, functionSelect);
         this.dispatchOptionalOneWire(gpPin, isHigh, cycles);
+        this.dispatchOptionalI2CFallback(gpPin);
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string) => void) {
@@ -5735,11 +5987,10 @@ export class RP2040Runner implements BoardRunner {
         if (!this.running || !this.cpu) return;
 
         const { core } = this.cpu;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const clock = (this.cpu as any).clock;
         const F_CPU = 125_000_000;
         const CYCLE_NANOS = 1e9 / F_CPU;
-        const CYCLES_PER_FRAME = Math.floor(F_CPU / 60); // 2,083,333 cycles @ 125MHz/60fps
+        const CYCLES_PER_FRAME = Math.floor((F_CPU / 60) * this.speed);
 
         let cyclesDone = 0;
         const now = performance.now();
@@ -5985,6 +6236,13 @@ export class RP2040Runner implements BoardRunner {
 
     getSerialBaudRate(): number {
         return this.serialBaudRate;
+    }
+
+    setSpeed(speed: number) {
+        const s = Number(speed);
+        if (Number.isFinite(s) && s > 0) {
+            this.speed = s;
+        }
     }
 
     reset() {
