@@ -3481,7 +3481,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
-    const pin = pins.find(p => p.id === pinId)
+    const pin = pins.find(p => String(p.id) === String(pinId))
     if (!pin) return null
     const rotation = comp.rotation || 0;
     if (rotation === 0) return { x: comp.x + pin.x, y: comp.y + pin.y }
@@ -3500,7 +3500,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
-    const pin = pins.find(p => p.id === pinId)
+    const pin = pins.find(p => String(p.id) === String(pinId))
     if (!pin) return null
     const stub = 20;
     // Determine dominant exit direction from unrotated pin position relative to component center
@@ -7801,11 +7801,11 @@ export default function SimulatorPage({ gamificationMode = false }) {
               {wires.filter(w => w.isBelow === true).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts[1])
-                const p2 = getPinPos(toParts[0], toParts[1])
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
                 const isSelectedWire = selected === w.id;
                 const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
 
@@ -7872,11 +7872,11 @@ export default function SimulatorPage({ gamificationMode = false }) {
               {wires.filter(w => w.isBelow !== true).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts[1])
-                const p2 = getPinPos(toParts[0], toParts[1])
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
                 const isSelectedWire = selected === w.id;
                 const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
 
@@ -7990,8 +7990,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
               const fromParts = w.from.split(':')
               const toParts = w.to.split(':')
-              const p1 = getPinPos(fromParts[0], fromParts[1])
-              const p2 = getPinPos(toParts[0], toParts[1])
+              const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+              const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
               if (!p1 || !p2) return null
 
               // Use click position, fall back to wire midpoint
@@ -8542,7 +8542,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   }
 
                   // Gather ALL components for destination endpoints (excluding self)
-                  const validTargets = components.filter(c => c.id !== selectedComponentInfo.id);
+                  const validTargets = components.filter(c => c.id !== selected);
                   const targetOptions = [];
                   validTargets.forEach(b => {
                     const bPins = LOCAL_PIN_DEFS[b.type] || [];
@@ -8555,7 +8555,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   });
 
                   return compPins.map(pin => {
-                    const pinIdStr = `${selectedComponentInfo.id}:${pin.id}`;
+                    const pinIdStr = `${selected}:${pin.id}`;
                     const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
 
                     // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
