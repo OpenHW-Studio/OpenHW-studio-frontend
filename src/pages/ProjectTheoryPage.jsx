@@ -15,7 +15,55 @@ export default function ProjectTheoryPage() {
   const [classTheoryCards, setClassTheoryCards] = useState(null)
   const { theme = 'dark' } = useGamification()
 
-  const project = PROJECTS.find(p => p.slug === projectName)
+  const baseProject = PROJECTS.find(p => p.slug === projectName)
+  const [customProject, setCustomProject] = useState(null)
+  const [loadingCustom, setLoadingCustom] = useState(() => !!classId && !baseProject)
+
+  // Load custom project metadata from class adventure if needed
+
+  // Load custom project metadata from class adventure if needed
+  useEffect(() => {
+    if (!classId) {
+      setCustomProject(null)
+      setLoadingCustom(false)
+      return
+    }
+    if (baseProject) {
+      setCustomProject(null)
+      setLoadingCustom(false)
+      return
+    }
+    let cancelled = false
+    setLoadingCustom(true)
+    const load = async () => {
+      try {
+        const response = await getResolvedClassAdventure(classId)
+        if (cancelled) return
+        const classProject = getProjectContentBySlug(response?.resolved, projectName)
+        if (classProject) {
+          setCustomProject({
+            slug: classProject.slug,
+            id: classProject.id,
+            title: classProject.title,
+            color: classProject.color || '#3b82f6',
+            xpReward: classProject.xpReward || 100,
+          })
+        } else {
+          setCustomProject(null)
+        }
+      } catch (err) {
+        console.error('Failed to load custom project:', err)
+        setCustomProject(null)
+      } finally {
+        if (!cancelled) setLoadingCustom(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [classId, projectName, baseProject])
+
+  const project = baseProject || customProject
+  const loading = loadingCustom && !baseProject
   const color = project?.color || '#3b82f6'
 
   const [currentIdx, setCurrentIdx] = useState(0)
@@ -66,6 +114,15 @@ export default function ProjectTheoryPage() {
     }
     setCurrentIdx(n => n + 1)
     setFlipped(false)
+  }
+
+  if (loading) {
+    return (
+      <div className="gamification-page" style={{ background: theme === 'dark' ? 'linear-gradient(160deg,#080e1e 0%,#0c1528 55%,#07101f 100%)' : 'linear-gradient(160deg,#f0f4ff 0%,#e8edf8 55%,#f0f4ff 100%)', color: theme === 'dark' ? '#e2e8f0' : '#1e293b', padding: 40, textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Loading project…</div>
+      </div>
+    )
   }
 
   if (!project) {
@@ -170,36 +227,36 @@ function FlipCard({ card, color, theme, flipped, onFlip }) {
   return (
     <div className="flip-card">
       <div className={`flip-inner ${flipped ? 'flipped' : ''}`}>
-        <div className="flip-face" onClick={() => !flipped && onFlip()} style={{
+         <div className="flip-face" onClick={() => !flipped && onFlip()} style={{
           background: `linear-gradient(145deg,${color}18,${color}07)`,
           border: `2px solid ${color}45`,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           textAlign: 'center', padding: 32, cursor: flipped ? 'default' : 'pointer',
-        }}>
-          <div style={{ fontSize: 64, marginBottom: 14 }}>{card.emoji}</div>
+         }}>
+           <div style={{ fontSize: 64, marginBottom: 14 }}>{card.emoji}</div>
           <div style={{ fontSize: 21, fontWeight: 900, color: theme === 'dark' ? '#f0f4ff' : '#0f172a', marginBottom: 10 }}>{card.front}</div>
           <div style={{ fontSize: 15, color: theme === 'dark' ? '#94a3b8' : '#64748b', lineHeight: 1.65, maxWidth: 480 }}>{card.simple}</div>
-          {!flipped && (
+           {!flipped && (
             <div style={{ marginTop: 20, fontSize: 11, fontWeight: 800, color, letterSpacing: '.08em', background: color + '18', padding: '5px 14px', borderRadius: 20, border: `1px solid ${color}33` }}>
-              TAP TO FLIP ▶
-            </div>
-          )}
-        </div>
-        <div className="flip-face flip-back" style={{
-          background: theme === 'dark' ? 'linear-gradient(145deg,#111e35,#0d1728)' : 'linear-gradient(145deg,#ffffff,#f1f5f9)',
+               TAP TO FLIP ▶
+             </div>
+           )}
+         </div>
+         <div className="flip-face flip-back" style={{
+           background: theme === 'dark' ? 'linear-gradient(145deg,#111e35,#0d1728)' : 'linear-gradient(145deg,#ffffff,#f1f5f9)',
           border: `2px solid ${color}45`,
-          padding: 28, overflow: 'auto',
-        }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 14 }}>
-            📚 Here's How It Works
-          </div>
+           padding: 28, overflow: 'auto',
+         }}>
+           <div style={{ fontSize: 12, fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: '.1em', marginBottom: 14 }}>
+             📚 Here's How It Works
+           </div>
           <div style={{ fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b', lineHeight: 1.85, marginBottom: 16, whiteSpace: 'pre-line', fontFamily: 'monospace' }}>
-            {card.detail}
-          </div>
+             {card.detail}
+           </div>
           <div style={{ background: color + '14', border: `1px solid ${color}33`, borderRadius: 10, padding: '10px 14px', fontSize: 13, color, fontWeight: 700, lineHeight: 1.5 }}>
-            {card.funFact}
-          </div>
-        </div>
+             {card.funFact}
+           </div>
+         </div>
       </div>
     </div>
   )

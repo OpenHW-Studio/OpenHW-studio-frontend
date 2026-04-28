@@ -5,7 +5,7 @@
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
 
-// ─── Token & User Storage Helpers ───────────────────────────────────────────
+// ─── Token & User Storage Helpers ────────────────────────────────────────────
 
 export const saveToken = (token) => localStorage.setItem('openhw_token', token);
 export const getToken = () => localStorage.getItem('openhw_token');
@@ -22,7 +22,7 @@ export const getUser = () => {
 };
 export const removeUser = () => localStorage.removeItem('openhw_user');
 
-// ─── Admin session Helpers ───────────────────────────────────────────────────
+// ─── Admin session Helpers ────────────────────────────────────────────────────
 export const saveAdminToken = (token) => localStorage.setItem('openhw_admin_token', token)
 export const getAdminToken = () => localStorage.getItem('openhw_admin_token')
 export const removeAdminToken = () => localStorage.removeItem('openhw_admin_token')
@@ -37,7 +37,7 @@ export const getAdminUser = () => {
 }
 export const removeAdminUser = () => localStorage.removeItem('openhw_admin_user')
 
-// ─── API Calls ───────────────────────────────────────────────────────────────
+// ─── API Calls ────────────────────────────────────────────────────────────────
 /**
  * Register a new user
  * Connects to 'signupUser' in userController.js
@@ -57,6 +57,7 @@ export const signupUser = async (userData) => {
       bio: userData.bio,
       image: userData.image
     }),
+    credentials: 'include'
   });
 
   const data = await response.json();
@@ -86,6 +87,7 @@ export const loginUser = async (credentials) => {
       password: credentials.password,
       role: credentials.role
     }),
+    credentials: 'include'
   });
 
   const data = await response.json();
@@ -110,6 +112,7 @@ export const googleLogin = async (accessToken, role) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ access_token: accessToken, role }),
+    credentials: 'include'
   });
 
   const data = await response.json();
@@ -132,9 +135,10 @@ export const logout = async () => {
   try {
     const token = getToken();
     // Calls logoutController in userController.js
-    await fetch(`${BASE_URL}/user/logout`, { 
+    await fetch(`${BASE_URL}/user/logout`, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${token}` },
+      credentials: 'include'
     });
   } catch (err) {
     console.error("Backend logout failed", err);
@@ -156,14 +160,15 @@ export const fetchProfile = async () => {
   const authUrl = BASE_URL.replace(/\/api$/, '') + '/auth/me';
 
   const response = await fetch(authUrl, {
-    headers: { 
+    headers: {
       'Authorization': `Bearer ${token}` // Handled by protectRoute in backend
     },
+    credentials: 'include'
   });
 
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch profile');
-  
+
   return data;
 };
 
@@ -177,7 +182,8 @@ export const updateProfile = async (profileData) => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify(profileData)
+    body: JSON.stringify(profileData),
+    credentials: 'include'
   });
 
   const data = await response.json();
@@ -195,6 +201,7 @@ export const forgotPassword = async (email) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
+    credentials: 'include'
   });
 
   const data = await response.json();
@@ -207,6 +214,7 @@ export const resetPassword = async (token, password) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),
+    credentials: 'include'
   });
 
   const data = await response.json();

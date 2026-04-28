@@ -345,7 +345,10 @@ export default function ProjectAssessmentPage() {
     setSubmission(null); setEvalResult(null)
   }
 
-  const openSimulator = () => navigate(`/${projectName}/guided`, { state: { projectColor } })
+   const openSimulator = () => {
+     const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+     navigate(`/${projectName}/guided${suffix}`, { state: { projectColor } })
+   }
 
   const result = evalResult?.result
   const isDark = theme === 'dark'

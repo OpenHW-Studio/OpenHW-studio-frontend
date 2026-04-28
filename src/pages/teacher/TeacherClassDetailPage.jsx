@@ -781,26 +781,24 @@ export default function TeacherClassDetailPage() {
     });
   };
 
-  const handleAddProject = (worldId) => {
-    if (!worldId) return;
-    setAdventureContent((current) => {
-      const projects = current?.projects || [];
-      const index = projects.length + 1;
-      return {
-        ...current,
-        projects: [
-          ...projects,
-          {
-            id: `project-${index}-${Date.now()}`,
-            slug: `custom-project-${index}`,
-            worldId: worldId,
-            order: index,
-            enabled: true,
-            title: `Custom Project ${index}`,
-            subtitle: "",
-            description: "",
-            prerequisite: null,
-            xpReward: 100,
+   const handleAddProject = (worldId) => {
+     if (!worldId) return;
+     setAdventureContent((current) => {
+       const projects = current?.projects || [];
+       const index = projects.length + 1;
+       return {
+         ...current,
+         projects: [
+           ...projects,
+           {
+             id: `project-${index}-${Date.now()}`,
+             slug: `custom-project-${index}`,
+             worldId: worldId,
+             order: index,
+             enabled: true,
+             title: `Custom Project ${index}`,
+             prerequisite: null,
+             xpReward: 100,
              rewardComponents: [],
              theory: [],
              quizQuestions: [],
@@ -811,10 +809,10 @@ export default function TeacherClassDetailPage() {
                { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
              ],
            },
-        ],
-      };
-    });
-  };
+         ],
+       };
+     });
+   };
 
   const handleDeleteWorld = (worldId) => {
     if (!window.confirm("Delete this world and all its projects?")) return;

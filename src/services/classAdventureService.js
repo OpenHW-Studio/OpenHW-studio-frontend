@@ -21,6 +21,7 @@ export const getClassAdventureConfig = async (classId) => {
   const response = await fetch(`${BASE_URL}/classroom/${classId}/adventure/config`, {
     method: "GET",
     headers: authHeaders(),
+    credentials: 'include'
   });
   return parseResponse(response, "Failed to fetch adventure configuration");
 };
@@ -30,6 +31,7 @@ export const updateClassAdventureConfig = async (classId, content) => {
     method: "PUT",
     headers: authHeaders(),
     body: JSON.stringify({ content }),
+    credentials: 'include'
   });
   return parseResponse(response, "Failed to save adventure configuration");
 };
@@ -55,6 +57,7 @@ export const postClassAdventureProgressEvent = async (classId, eventPayload) => 
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify(eventPayload),
+    credentials: 'include'
   });
   return parseResponse(response, "Failed to save progress event");
 };
@@ -63,6 +66,7 @@ export const getClassAdventureStudentProgress = async (classId) => {
   const response = await fetch(`${BASE_URL}/classroom/${classId}/adventure/progress/students`, {
     method: "GET",
     headers: authHeaders(),
+    credentials: 'include'
   });
   return parseResponse(response, "Failed to fetch student progress");
 };

@@ -24,13 +24,13 @@ import {
     UNO_DIGITAL_PINS,
 } from './board-profiles.ts';
 import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
-import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic.ts';
-import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic.ts';
-import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic.ts';
-import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic.ts';
-import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic.ts';
-import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic.ts';
-import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic.ts';
+// import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic.ts';
+// import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic.ts';
+// import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic.ts';
+// import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic.ts';
+// import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic.ts';
+// import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic.ts';
+// import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic.ts';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
 import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
@@ -138,7 +138,8 @@ async function tryLoadLittleFsFactory(): Promise<((options?: any) => Promise<any
 }
 
 function isNodeRuntime(): boolean {
-    return typeof process !== 'undefined' && !!(process as any)?.versions?.node;
+    const nodeProcess = (globalThis as any).process;
+    return typeof nodeProcess !== 'undefined' && !!(nodeProcess?.versions?.node);
 }
 
 async function dynamicImportModule(specifier: string): Promise<any> {
@@ -1841,13 +1842,13 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'shift_register': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
-    'logic-and-gate': AndGateLogic,
-    'logic-or-gate': OrGateLogic,
-    'logic-not-gate': NotGateLogic,
-    'logic-nand-gate': NandGateLogic,
-    'logic-nor-gate': NorGateLogic,
-    'logic-xor-gate': XorGateLogic,
-    'logic-xnor-gate': XnorGateLogic,
+    // 'logic-and-gate': AndGateLogic,
+    // 'logic-or-gate': OrGateLogic,
+    // 'logic-not-gate': NotGateLogic,
+    // 'logic-nand-gate': NandGateLogic,
+    // 'logic-nor-gate': NorGateLogic,
+    // 'logic-xor-gate': XorGateLogic,
+    // 'logic-xnor-gate': XnorGateLogic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
     'logic-d-flipflop-r': DFlipFlopRLogic,
@@ -4314,8 +4315,7 @@ export class RP2040Runner implements BoardRunner {
                 }
             };
         }
-        this.pioStepAccum = 0;
-
+        
         try {
             const gdbWs = new WebSocket('ws://localhost:3333');
             this.gdbStatus = 'connecting';
@@ -5867,7 +5867,8 @@ export class RP2040Runner implements BoardRunner {
                             }
                         }
                     } else {
-                        delivered = ((packet.source === 1 ? uart1 : uart0) || uart0).feedByte(packet.value & 0xff);
+                       ((packet.source === 1 ? uart1 : uart0) || uart0).feedByte(packet.value & 0xff);
+                        delivered = true;
                     }
                     if (!delivered) break;
                     this.serialBuffer.shift();

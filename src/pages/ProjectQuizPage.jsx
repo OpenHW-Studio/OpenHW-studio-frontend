@@ -15,7 +15,55 @@ export default function ProjectQuizPage() {
   const [classQuizQuestions, setClassQuizQuestions] = useState(null)
   const { theme = 'dark' } = useGamification()
 
-  const project = PROJECTS.find(p => p.slug === projectName)
+  const baseProject = PROJECTS.find(p => p.slug === projectName)
+  const [customProject, setCustomProject] = useState(null)
+  const [loadingCustom, setLoadingCustom] = useState(() => !!classId && !baseProject)
+
+  // Load custom project metadata from class adventure if needed
+
+  // Load custom project metadata from class adventure if needed
+  useEffect(() => {
+    if (!classId) {
+      setCustomProject(null)
+      setLoadingCustom(false)
+      return
+    }
+    if (baseProject) {
+      setCustomProject(null)
+      setLoadingCustom(false)
+      return
+    }
+    let cancelled = false
+    setLoadingCustom(true)
+    const load = async () => {
+      try {
+        const response = await getResolvedClassAdventure(classId)
+        if (cancelled) return
+        const classProject = getProjectContentBySlug(response?.resolved, projectName)
+        if (classProject) {
+          setCustomProject({
+            slug: classProject.slug,
+            id: classProject.id,
+            title: classProject.title,
+            color: classProject.color || '#3b82f6',
+            xpReward: classProject.xpReward || 100,
+          })
+        } else {
+          setCustomProject(null)
+        }
+      } catch (err) {
+        console.error('Failed to load custom project:', err)
+        setCustomProject(null)
+      } finally {
+        if (!cancelled) setLoadingCustom(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [classId, projectName, baseProject])
+
+  const project = baseProject || customProject
+  const loading = loadingCustom && !baseProject
   const color = project?.color || '#3b82f6'
 
   const [idx, setIdx] = useState(0)
@@ -104,6 +152,15 @@ export default function ProjectQuizPage() {
     if (idx > 0) {
       setIdx(n => n - 1)
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="gamification-page" style={{ background: theme === 'dark' ? 'linear-gradient(160deg,#080e1e 0%,#0c1528 55%,#07101f 100%)' : 'linear-gradient(160deg,#f0f4ff 0%,#e8edf8 55%,#f0f4ff 100%)', color: theme === 'dark' ? '#e2e8f0' : '#1e293b', padding: 40, textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Loading project…</div>
+      </div>
+    )
   }
 
   if (!project) {
@@ -196,12 +253,12 @@ export default function ProjectQuizPage() {
 
         <div style={{ marginBottom: 24, padding: '16px 20px', borderRadius: 12, background: color + '12', border: `1px solid ${color}33` }}>
           <div style={{ fontSize: 12, color, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
-            {card?.front}
-          </div>
+             {card?.front}
+           </div>
           <div style={{ fontSize: 18, fontWeight: 800, color: theme === 'dark' ? '#f0f4ff' : '#0f172a' }}>
-            {quiz?.question}
-          </div>
-        </div>
+             {quiz?.question}
+           </div>
+         </div>
 
         <div className="quiz-options-grid">
           {quiz?.options.map((opt, i) => {
@@ -218,53 +275,53 @@ export default function ProjectQuizPage() {
                    borderColor: showResult && isCorrect && isPicked ? '#22c55e' : showResult && isPicked && !isCorrect ? '#ef4444' : isPicked && !allDone ? '#3b82f6' : (theme === 'dark' ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.1)'),
                    color: showResult && isCorrect && isPicked ? '#34d399' : showResult && isPicked && !isCorrect ? '#f87171' : isPicked && !allDone ? '#60a5fa' : (theme === 'dark' ? '#94a3b8' : '#64748b'),
                    cursor: quizPick && !isPicked ? 'default' : 'pointer',
-                 }}
+                                    }}
                >
-                {allDone && showResult && isCorrect && isPicked ? '✅ ' : allDone && showResult && isPicked && !isCorrect ? '❌ ' : `${['A','B','C','D'][i]}. `}
-                {opt}
-              </button>
-            )
-          })}
-        </div>
+                 {allDone && showResult && isCorrect && isPicked ? '✅ ' : allDone && showResult && isPicked && !isCorrect ? '❌ ' : `${['A','B','C','D'][i]}. `}
+                 {opt}
+               </button>
+             )
+           })}
+         </div>
 
-        {!allDone && (
+         {!allDone && (
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            {idx > 0 && (
-              <button
-                onClick={goPrev}
-                style={{
-                  flex: 1,
+             {idx > 0 && (
+               <button
+                 onClick={goPrev}
+                 style={{
+                   flex: 1,
                   padding: '10px 24px',
                   borderRadius: 8,
-                  border: 'none',
-                  background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)',
-                  color: theme === 'dark' ? '#e2e8f0' : '#1e293b',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  fontSize: 14,
-                }}
-              >
-                ← Prev
-              </button>
-            )}
-            <button
-              onClick={goNext}
-              style={{
-                flex: idx > 0 ? 1 : 'auto',
+                   border: 'none',
+                   background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)',
+                   color: theme === 'dark' ? '#e2e8f0' : '#1e293b',
+                   fontWeight: 700,
+                   cursor: 'pointer',
+                   fontSize: 14,
+                 }}
+               >
+                 ← Prev
+               </button>
+             )}
+             <button
+               onClick={goNext}
+               style={{
+                 flex: idx > 0 ? 1 : 'auto',
                 padding: '10px 24px',
                 borderRadius: 8,
-                border: 'none',
+                 border: 'none',
                 background: color,
-                color: '#fff',
-                fontWeight: 700,
-                cursor: 'pointer',
-                fontSize: 14,
-              }}
-            >
-              {idx + 1 === total ? 'Finish' : 'Next'}
-            </button>
-          </div>
-        )}
+                 color: '#fff',
+                 fontWeight: 700,
+                 cursor: 'pointer',
+                 fontSize: 14,
+               }}
+             >
+               {idx + 1 === total ? 'Finish' : 'Next'}
+             </button>
+           </div>
+         )}
       </div>
     </div>
   )

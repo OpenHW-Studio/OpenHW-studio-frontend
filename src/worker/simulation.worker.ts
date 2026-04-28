@@ -45,7 +45,7 @@ function normalizeHashValue(value: any, depth = 0): any {
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
 
     if (ArrayBuffer.isView(value)) {
-        const view = value as ArrayLike<number> & { length?: number };
+        const view = value as unknown as ArrayLike<number> & { length?: number };
         const len = Number(view?.length || 0);
         const preview: number[] = [];
         for (let i = 0; i < Math.min(len, 24); i++) {
@@ -1017,14 +1017,15 @@ self.onmessage = async (e) => {
         console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
 
         if (mode === 'single' && runner) {
-            runner.onEvent(data.compId, data.event);
+            const inst = runner.instances.get(data.compId);
+            inst?.onEvent(data.event);
         } else {
             let delivered = false;
             for (const boardRunner of boardRunners.values()) {
                 const inst = boardRunner.instances.get(data.compId);
                 if (inst) {
-                    boardRunner.onEvent(data.compId, data.event);
-                    delivered = true;
+                        inst.onEvent(data.event);
+                        delivered = true;
                 }
             }
             if (!delivered) {

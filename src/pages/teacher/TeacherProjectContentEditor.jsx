@@ -222,29 +222,27 @@ export default function TeacherProjectContentEditor() {
           quizQuestions: quizQuestions,
           rewardComponents: selectedRewardComponents,
         };
-      } else {
-        updatedProject = {
-          id: `custom-${projectSlug}-${Date.now()}`,
-          slug: projectSlug,
-          worldId: `world-1`,
-          order: (currentConfig.projects?.length || 0) + 1,
-          enabled: true,
-          title: projectMeta?.title || projectSlug,
-          subtitle: "",
-          description: projectMeta?.description || "",
-          prerequisite: null,
-          xpReward: 100,
-          rewardComponents: selectedRewardComponents,
-          theory: theoryCards,
-          quizQuestions: quizQuestions,
-          nodes: [
-            { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
-            { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
-            { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
-            { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
-          ],
-        };
-      }
+       } else {
+         updatedProject = {
+           id: `custom-${projectSlug}-${Date.now()}`,
+           slug: projectSlug,
+           worldId: `world-1`,
+           order: (currentConfig.projects?.length || 0) + 1,
+           enabled: true,
+           title: projectMeta?.title || projectSlug,
+           prerequisite: null,
+           xpReward: 100,
+           rewardComponents: selectedRewardComponents,
+           theory: theoryCards,
+           quizQuestions: quizQuestions,
+           nodes: [
+             { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
+             { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
+             { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
+             { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
+           ],
+         };
+       }
 
       const mergedProjects = existingIndex >= 0
         ? currentConfig.projects.map((p, i) => (i === existingIndex ? updatedProject : p))
