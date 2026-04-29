@@ -65,11 +65,11 @@ jobs:
   deploy:
     name: Deploy to Production
     needs: test_and_build
-    if: "${{ secrets.SERVER_HOST != '' }}"
+    if: vars.SERVER_HOST != ''
     runs-on: ubuntu-latest
     environment:
       name: production # This environment requires manual approval in GitHub
-      url: http://${{ secrets.SERVER_HOST }}
+      url: http://${{ vars.SERVER_HOST }}
     steps:
       - name: Trigger Server Deployment
         uses: appleboy/ssh-action@master
