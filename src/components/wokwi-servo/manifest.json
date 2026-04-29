@@ -1,0 +1,34 @@
+{
+    "type": "wokwi-servo",
+    "label": "Servo Motor",
+    "description": "Hobby servo motor with precise angular position control (0–180°) via PWM signal. Operates at 5 V; signal pulse width of 1–2 ms controls the shaft angle.",
+    "group": "Actuators",
+    "w": 165,
+    "h": 120,
+    "attrs": {
+        "angle": "0"
+    },
+    "pins": [
+        {
+            "id": "GND",
+            "x": 7,
+            "y": 50,
+            "type": "power",
+            "description": "Ground"
+        },
+        {
+            "id": "V+",
+            "x": 7,
+            "y": 59.5,
+            "type": "power",
+            "description": "5V Power"
+        },
+        {
+            "id": "PWM",
+            "x": 7,
+            "y": 69,
+            "type": "digital",
+            "description": "PWM Input"
+        }
+    ]
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@openhw/emulator",
+  "version": "1.0.1",
+  "description": "",
+  "main": "src/components/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "validate:smoke": "node src/circuit-validation/smoke-test.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OpenHW-Studio/openhw-studio-emulator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/OpenHW-Studio/openhw-studio-emulator/issues"
+  },
+  "homepage": "https://github.com/OpenHW-Studio/openhw-studio-emulator#readme",
+  "dependencies": {
+    "avr8js": "^0.21.0",
+    "intel-hex": "^0.2.0",
+    "littlefs": "github:wokwi/littlefs-wasm",
+    "ws": "^8.19.0"
+  }
+}

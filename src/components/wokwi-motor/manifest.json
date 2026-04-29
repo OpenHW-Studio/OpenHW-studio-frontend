@@ -1,0 +1,25 @@
+{
+    "type": "wokwi-motor",
+    "label": "DC Motor",
+    "description": "DC motor that converts electrical energy to rotational motion. Requires an H-bridge driver (e.g., L298N) for direction control and speed modulation via PWM.",
+    "group": "Outputs",
+    "w": 100,
+    "h": 50,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "1",
+            "x": -1,
+            "y": 21,
+            "type": "power",
+            "description": "Terminal 1"
+        },
+        {
+            "id": "2",
+            "x": -1,
+            "y": 41,
+            "type": "power",
+            "description": "Terminal 2"
+        }
+    ]
+}

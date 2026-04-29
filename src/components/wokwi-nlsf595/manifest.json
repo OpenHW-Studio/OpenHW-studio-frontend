@@ -1,0 +1,58 @@
+{
+    "type": "wokwi-nlsf595",
+    "label": "SPI LED Driver (NLSF595)",
+    "group": "Outputs",
+    "w": 60,
+    "h": 30,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "VCC",
+            "x": 5,
+            "y": 5,
+            "type": "power"
+        },
+        {
+            "id": "GND",
+            "x": 5,
+            "y": 12,
+            "type": "power"
+        },
+        {
+            "id": "MOSI",
+            "x": 5,
+            "y": 19,
+            "type": "digital"
+        },
+        {
+            "id": "SCK",
+            "x": 5,
+            "y": 26,
+            "type": "digital"
+        },
+        {
+            "id": "CS",
+            "x": 12,
+            "y": 26,
+            "type": "digital"
+        },
+        {
+            "id": "R1",
+            "x": 55,
+            "y": 5,
+            "type": "digital"
+        },
+        {
+            "id": "G1",
+            "x": 55,
+            "y": 12,
+            "type": "digital"
+        },
+        {
+            "id": "B1",
+            "x": 55,
+            "y": 19,
+            "type": "digital"
+        }
+    ]
+}

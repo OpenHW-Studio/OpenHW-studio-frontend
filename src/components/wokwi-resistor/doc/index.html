@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Resistor – OpenHW Studio Docs</title>
+<style>
+  :root{--accent:#f59e0b;--bg:#0f172a;--bg2:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--border:#334155;--radius:8px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:760px;margin:0 auto;line-height:1.6}
+  h1{color:var(--accent);font-size:1.6rem;margin-bottom:4px}
+  .badge{display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;margin-bottom:16px}
+  p{color:var(--text2);margin-bottom:16px}
+  h2{font-size:1rem;color:var(--text);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+  th{background:var(--bg2);color:var(--text2);text-align:left;padding:8px 10px;border:1px solid var(--border)}
+  td{padding:8px 10px;border:1px solid var(--border);color:var(--text)}
+  pre{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;overflow-x:auto;margin-bottom:16px}
+  code{color:#7dd3fc}
+  .tip{background:#f59e0b11;border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 var(--radius) var(--radius) 0;font-size:13px;color:var(--text2);margin-bottom:16px}
+</style>
+</head>
+<body>
+<h1>Resistor</h1>
+<span class="badge">Basic</span>
+<p>A resistor is a passive two-terminal component that limits current flow by opposing electrical current. It is described by Ohm's Law: <strong>V = I × R</strong>. The resistance value is configurable via the context menu.</p>
+
+<h2>Pins</h2>
+<table>
+  <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+  <tr><td>p1</td><td>Passive</td><td>Terminal 1 (polarity-independent)</td></tr>
+  <tr><td>p2</td><td>Passive</td><td>Terminal 2</td></tr>
+</table>
+
+<h2>Attributes</h2>
+<table>
+  <tr><th>Attribute</th><th>Default</th><th>Description</th></tr>
+  <tr><td>value</td><td>220</td><td>Resistance in Ohms (Ω). Set via context menu.</td></tr>
+</table>
+
+<h2>Common Values</h2>
+<table>
+  <tr><th>Value</th><th>Use Case</th></tr>
+  <tr><td>220 Ω</td><td>Current-limiting for 5 V LED (≈14 mA)</td></tr>
+  <tr><td>330 Ω</td><td>Current-limiting for 5 V LED (≈9.5 mA)</td></tr>
+  <tr><td>1 kΩ</td><td>Pull-up / pull-down for digital inputs</td></tr>
+  <tr><td>10 kΩ</td><td>High-impedance pull-up for buttons/sensors</td></tr>
+</table>
+
+<h2>LED Current-Limiting Formula</h2>
+<pre><code>R = (Vsupply – Vforward) / I_desired
+
+Example (red LED at 5V, 20 mA):
+R = (5V – 2V) / 0.02A = 150 Ω → use 220 Ω (next standard value)</code></pre>
+
+<div class="tip">Tip: Right-click the resistor on the canvas to open the context menu and change the resistance value in real time.</div>
+</body></html>

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Power Supply – OpenHW Studio Docs</title>
+<style>
+  :root{--accent:#ef4444;--bg:#0f172a;--bg2:#1e293b;--text:#e2e8f0;--text2:#94a3b8;--border:#334155;--radius:8px}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:24px;max-width:760px;margin:0 auto;line-height:1.6}
+  h1{color:var(--accent);font-size:1.6rem;margin-bottom:4px}
+  .badge{display:inline-block;background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)44;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;margin-bottom:16px}
+  p{color:var(--text2);margin-bottom:16px}
+  h2{font-size:1rem;color:var(--text);margin:24px 0 10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px}
+  th{background:var(--bg2);color:var(--text2);text-align:left;padding:8px 10px;border:1px solid var(--border)}
+  td{padding:8px 10px;border:1px solid var(--border);color:var(--text)}
+  pre{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:13px;overflow-x:auto;margin-bottom:16px}
+  code{color:#7dd3fc}
+  .tip{background:#ef444411;border-left:3px solid var(--accent);padding:10px 14px;border-radius:0 var(--radius) var(--radius) 0;font-size:13px;color:var(--text2);margin-bottom:16px}
+</style>
+</head>
+<body>
+<h1>Power Supply</h1>
+<span class="badge">Basic</span>
+<p>A standalone regulated DC power supply component. Use it to power components (sensors, displays, motors) that need a dedicated voltage rail independent of the Arduino. The output voltage is configurable via the component attributes.</p>
+
+<h2>Pins</h2>
+<table>
+  <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+  <tr><td>5V</td><td>Power</td><td>Positive voltage output (configurable)</td></tr>
+  <tr><td>GND</td><td>Power</td><td>Ground reference</td></tr>
+</table>
+
+<h2>Attributes</h2>
+<table>
+  <tr><th>Attribute</th><th>Default</th><th>Options</th></tr>
+  <tr><td>voltage</td><td>5V</td><td>3.3V, 5V, or any custom value (e.g., 12V)</td></tr>
+</table>
+
+<h2>Typical Use Cases</h2>
+<table>
+  <tr><th>Voltage</th><th>Use Case</th></tr>
+  <tr><td>3.3 V</td><td>ESP-series modules, many sensors, logic level translation</td></tr>
+  <tr><td>5 V</td><td>Servo motors, NeoPixels, relay modules, most Arduino shields</td></tr>
+  <tr><td>12 V</td><td>DC motors, solenoids, LED strips (non-addressable)</td></tr>
+</table>
+
+<div class="tip">Tip: Always share a common GND between the Power Supply and the Arduino, otherwise signals will not reference the same ground potential and the circuit will behave unpredictably.</div>
+</body></html>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Membrane Keypad (4x4) – Documentation</title></head>
+<body>
+<h2>Membrane Keypad (4x4)</h2>
+<p>A standard 4×4 matrix keypad with 16 keys (0–9, A–D, *, #). Connect <strong>Row pins (R1–R4)</strong> to Arduino digital output pins, and <strong>Column pins (C1–C4)</strong> to Arduino digital input pins configured as <code>INPUT_PULLUP</code>.</p>
+<h3>Usage</h3>
+<p>In your sketch, drive rows LOW one at a time and read which column goes LOW to detect the pressed key. A popular library is <code>Keypad.h</code> by Mark Stanley &amp; Alexander Brevig.</p>
+<h3>Pin Map</h3>
+<table border="1" cellpadding="4">
+<tr><th>Pin</th><th>Role</th><th>Key Row / Col</th></tr>
+<tr><td>R1</td><td>Row 1</td><td>1, 2, 3, A</td></tr>
+<tr><td>R2</td><td>Row 2</td><td>4, 5, 6, B</td></tr>
+<tr><td>R3</td><td>Row 3</td><td>7, 8, 9, C</td></tr>
+<tr><td>R4</td><td>Row 4</td><td>*, 0, #, D</td></tr>
+<tr><td>C1</td><td>Column 1</td><td>1, 4, 7, *</td></tr>
+<tr><td>C2</td><td>Column 2</td><td>2, 5, 8, 0</td></tr>
+<tr><td>C3</td><td>Column 3</td><td>3, 6, 9, #</td></tr>
+<tr><td>C4</td><td>Column 4</td><td>A, B, C, D</td></tr>
+</table>
+</body>
+</html>
