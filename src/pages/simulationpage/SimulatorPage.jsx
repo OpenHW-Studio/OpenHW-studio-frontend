@@ -67,16 +67,11 @@ function assertSafeDynamicModule(code, label) {
 
 function collectRawComponentSources() {
   const rawFiles = {
-    ...import.meta.glob('@openhw/emulator/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('@openhw/emulator/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('@openhw/emulator/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('@openhw/emulator/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('@openhw/emulator/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../../openhw-studio-emulator-danish/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
   };
 
   const out = {};
@@ -1382,7 +1377,9 @@ function getPinCategory(pId, pDesc, compType) {
 }
 
 export default function SimulatorPage({ gamificationMode = false }) {
-  const { isAuthenticated, user, token, logout, loading: authLoading } = useAuth()
+  const { isAuthenticated, isAdminAuthenticated, user, adminUser, token, logout, loading: authLoading } = useAuth()
+  const activeUser = user || adminUser;
+  const isAnyAuthenticated = isAuthenticated || isAdminAuthenticated;
   const navigate = useNavigate()
   const { projectName = '', shareId = '', classId = '', assignmentId = '', liveCode = '' } = useParams()
   const location = useLocation()
@@ -1390,9 +1387,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
   const assignmentMode = Boolean(shareId && classId && assignmentId)
-  const studentAssignmentMode = assignmentMode && user?.role === 'student'
+  const studentAssignmentMode = assignmentMode && activeUser?.role === 'student'
   const liveSessionCode = String(liveCode || '').trim().toUpperCase()
-  const currentLiveUserId = String(user?._id || user?.id || '')
+  const currentLiveUserId = String(activeUser?._id || activeUser?.id || '')
   const liveRoleParam = String(assessmentParams.get('role') || '').trim().toLowerCase()
   const liveMeetingMode = Boolean(liveSessionCode)
   const isLiveTeacher = liveMeetingMode && liveRoleParam === 'teacher'
@@ -1844,6 +1841,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const liveSyncTimerRef = useRef(null);
   const liveApplyingRemoteRef = useRef(false);
   const lastLiveSyncPayloadRef = useRef('');
+  const lastLiveSyncTimeRef = useRef(0);
   // My Projects sidebar state
   const [showProjectsSidebar, setShowProjectsSidebar] = useState(false);
   const [projectsSidebarTab, setProjectsSidebarTab] = useState('projects'); // 'favourites' | 'projects' | 'custom' | 'settings'
@@ -2355,19 +2353,31 @@ export default function SimulatorPage({ gamificationMode = false }) {
     if (serializedSnapshot === lastLiveSyncPayloadRef.current) return;
     lastLiveSyncPayloadRef.current = serializedSnapshot;
 
-    const timeoutId = window.setTimeout(() => {
+    const now = Date.now();
+    const timeSinceLastSync = now - lastLiveSyncTimeRef.current;
+    const syncInterval = 100; // Throttle to 10Hz for smooth real-time drag/sync
+
+    const sendUpdate = () => {
       try {
-        liveSocketRef.current?.send(JSON.stringify({
-          type: isLiveTeacher ? 'teacher:sync' : 'student:sync',
-          snapshot: nextSnapshot,
-        }));
-        setLiveMeetingStatus(isLiveTeacher ? 'Broadcasting updates' : 'Sharing your edits');
+        if (liveSocketRef.current?.readyState === WebSocket.OPEN) {
+          liveSocketRef.current.send(JSON.stringify({
+            type: isLiveTeacher ? 'teacher:sync' : 'student:sync',
+            snapshot: nextSnapshot,
+          }));
+          lastLiveSyncTimeRef.current = Date.now();
+          setLiveMeetingStatus(isLiveTeacher ? 'Broadcasting updates' : 'Sharing your edits');
+        }
       } catch (error) {
         console.error('Failed to send live simulation update', error);
       }
-    }, 120);
+    };
 
-    return () => window.clearTimeout(timeoutId);
+    if (timeSinceLastSync >= syncInterval) {
+      sendUpdate();
+    } else {
+      const timeoutId = window.setTimeout(sendUpdate, syncInterval - timeSinceLastSync);
+      return () => window.clearTimeout(timeoutId);
+    }
   }, [activeCodeFileId, board, buildLiveMeetingSnapshot, code, components, currentProjectName, isLiveTeacher, liveCanEdit, liveMeetingMode, openCodeTabs, projectFiles, wires]);
 
   const isAssignmentSubmissionClosed = useCallback((assignment) => (
@@ -4978,7 +4988,7 @@ useEffect(() => {
   };
 
   const handleShareSimulation = async () => {
-    if (!['teacher', 'user'].includes(user?.role)) {
+    if (!['teacher', 'user', 'admin'].includes(activeUser?.role)) {
       alert('Only signed-in teachers and users can share simulator templates.');
       return;
     }
@@ -7092,7 +7102,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -7202,7 +7212,7 @@ useEffect(() => {
         </div>
       )}
 
-      {showShareDialog && ['teacher', 'user'].includes(user?.role) && (
+      {showShareDialog && ['teacher', 'user', 'admin'].includes(activeUser?.role) && (
         <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Share simulation">
           <div className="teacher-modal__backdrop" onClick={() => setShowShareDialog(false)} />
           <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
@@ -9153,7 +9163,7 @@ useEffect(() => {
               </div>
 
               <div className="border-t border-[var(--border)] p-4 bg-[var(--bg2)] flex flex-col gap-3 shrink-0">
-                {!isAuthenticated ? (
+                {!isAnyAuthenticated ? (
                   <button 
                     onClick={() => { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); }}
                     className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] text-white py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-[0.98] transition-all"
@@ -9165,18 +9175,19 @@ useEffect(() => {
                   <div 
                     className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] group cursor-pointer hover:border-[var(--text3)] transition-all"
                     onClick={() => {
-                      if (user?.role === 'teacher') navigate('/teacher/dashboard')
-                      else if (user?.role === 'student') navigate('/student/dashboard')
+                      if (activeUser?.role === 'teacher') navigate('/teacher/dashboard')
+                      else if (activeUser?.role === 'student') navigate('/student/dashboard')
+                      else if (activeUser?.role === 'admin') navigate('/admin/dashboard')
                       else navigate('/user/dashboard')
                     }}
                     title="Go to dashboard"
                   >
                     <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold uppercase">
-                      {user?.name?.[0] || 'U'}
+                      {activeUser?.name?.[0] || 'U'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold text-[var(--text)] truncate">{user?.name || 'User'}</div>
-                      <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{user?.role || 'Developer'}</div>
+                      <div className="text-[11px] font-bold text-[var(--text)] truncate">{activeUser?.name || 'User'}</div>
+                      <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{activeUser?.role || 'Developer'}</div>
                     </div>
                     <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
                   </div>
@@ -9188,7 +9199,7 @@ useEffect(() => {
                       ${!isAuthenticated 
                         ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm border border-[var(--border)]' 
                         : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
-                    onClick={() => { if (isAuthenticated) { if (user?.email) localStorage.setItem('ohw_last_email', user.email); logout(); } }}
+                    onClick={() => { if (isAnyAuthenticated) { if (activeUser?.email) localStorage.setItem('ohw_last_email', activeUser.email); logout(); } }}
                   >
                     Local
                   </button>

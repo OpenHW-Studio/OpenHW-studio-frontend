@@ -31,7 +31,9 @@ export function AuthProvider({ children }) {
           // Fetch the user's profile using the new token
           const data = await fetchProfile();
           if (data && data.user) {
-            login(oauthToken, data.user); // Save to context and local storage
+            // For OAuth, we assume standard login unless we're on /admin
+            const isAdm = window.location.pathname.startsWith('/admin');
+            login(oauthToken, data.user, isAdm); 
           }
         } catch (error) {
           console.error("Failed to fetch profile with OAuth token:", error);
@@ -45,12 +47,8 @@ export function AuthProvider({ children }) {
         const storedUser = getUser()
         const storedToken = getToken()
         if (storedUser && storedToken) {
-          if (storedUser.role === 'admin') {
-            logoutService()
-          } else {
             setUser(storedUser)
             setToken(storedToken)
-          }
         }
       }
 
@@ -73,8 +71,8 @@ export function AuthProvider({ children }) {
    * @param {string} jwtToken - JWT from your backend
    * @param {object} userProfile - { id, name, email, role, points, coins, level }
    */
-  const login = (jwtToken, userProfile) => {
-    if (userProfile.role === 'admin') {
+  const login = (jwtToken, userProfile, isAdminPortal = false) => {
+    if (isAdminPortal) {
       saveAdminToken(jwtToken)
       saveAdminUser(userProfile)
       setAdminToken(jwtToken)
