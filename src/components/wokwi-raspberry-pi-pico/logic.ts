@@ -11,6 +11,8 @@ function normalizePicoPin(pinId: string): string {
 export class PicoLogic extends BaseComponent {
   private txTimeout: any = null;
   private rxTimeout: any = null;
+  private irqEventCount = 0;
+  private irqByPin: Record<string, number> = {};
 
   constructor(id: string, manifest: any) {
     super(id, manifest);
@@ -24,6 +26,8 @@ export class PicoLogic extends BaseComponent {
 
   onPinStateChange(pinId: string, isHigh: boolean, cpuCycles: number) {
     const pin = normalizePicoPin(pinId);
+    this.irqEventCount += 1;
+    this.irqByPin[pin] = Number(this.irqByPin[pin] || 0) + 1;
 
     // Default UART0 on Pico is GP0 (TX) and GP1 (RX)
     if (pin === 'GP1' || pin === 'GP5') {
@@ -47,5 +51,15 @@ export class PicoLogic extends BaseComponent {
 
   update(cpuCycles: number, currentWires: any[], allComponentsInstances: BaseComponent[]) {
     // Runtime CPU integration for RP2040 is handled in worker runners.
+  }
+
+  onCustomTelemetry() {
+    this.setCustomTelemetry({
+        txActive: this.state.txActive,
+        rxActive: this.state.rxActive,
+        builtInLed: this.state.builtInLed,
+        irqEventsTotal: this.irqEventCount,
+        irqEventsByPin: { ...this.irqByPin },
+    });
   }
 }

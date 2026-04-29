@@ -16,6 +16,18 @@ export class SlidePotLogic extends BaseComponent {
         this.setPinVoltage('SIG', sigV);
     }
 
+    onCustomTelemetry() {
+        const val = Number(this.state.value) || 0;
+        const vcc = this.getPinVoltage('VCC');
+        const gnd = this.getPinVoltage('GND');
+        const sigV = gnd + (vcc - gnd) * (val / 100.0);
+
+        this.setCustomTelemetry({
+            resistanceRatio: Number((val / 100).toFixed(4)),
+            signalVoltage: Number(sigV.toFixed(4)),
+        });
+    }
+
     getSyncState() {
         return { value: this.state.value };
     }

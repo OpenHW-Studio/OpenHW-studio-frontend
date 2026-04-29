@@ -46,4 +46,17 @@ export class LEDLogic extends BaseComponent {
             this.setState({ illuminated: false, brightness: 0 });
         }
     }
+
+    onCustomTelemetry() {
+        let status = 'off';
+        if (this.state.burnedOut) status = 'burnedOut';
+        else if (this.state.illuminated && this.state.brightness > 200) status = 'fully lit';
+        else if (this.state.illuminated) status = 'dim';
+
+        this.setCustomTelemetry({
+            status,
+            color: this.state.color,
+            brightness: this.state.brightness
+        });
+    }
 }

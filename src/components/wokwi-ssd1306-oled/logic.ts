@@ -35,6 +35,7 @@ export class SSD1306Logic extends BaseComponent {
   private args: number[] = [];
 
   private vramDirty = false;
+  private stateUpdateCount = 0;
   private cycleCount = 0;
 
   constructor(id: string, manifest: any) {
@@ -53,7 +54,9 @@ export class SSD1306Logic extends BaseComponent {
       displayStartLine: 0,
       segmentRemap: false,
       comScanDir: false,
-      displayOffset: 0
+      displayOffset: 0,
+      vramDirty: false,
+      updateCount: 0,
     };
   }
 
@@ -64,6 +67,7 @@ export class SSD1306Logic extends BaseComponent {
       this.cycleCount = 0;
       if (this.vramDirty) {
         this.vramDirty = false;
+        this.stateUpdateCount += 1;
         this.setState({
           vram: [...this.vram],
           invert: this.invert,
@@ -72,7 +76,9 @@ export class SSD1306Logic extends BaseComponent {
           displayStartLine: this.displayStartLine,
           segmentRemap: this.segmentRemap,
           comScanDir: this.comScanDir,
-          displayOffset: this.displayOffset
+          displayOffset: this.displayOffset,
+          vramDirty: false,
+          updateCount: this.stateUpdateCount,
         });
       }
     }
@@ -229,4 +235,26 @@ export class SSD1306Logic extends BaseComponent {
   }
 
   getSyncState() { return { ...this.state }; }
+
+  onCustomTelemetry() {
+    let activePixels = 0;
+    const totalPixels = 128 * 64;
+    // vram usually 1 byte per 8 pixels
+    for (let i = 0; i < this.vram.length; i++) {
+        let b = this.vram[i];
+        while (b > 0) {
+            if (b & 1) activePixels++;
+            b >>= 1;
+        }
+    }
+
+    const fillPercent = (activePixels / totalPixels) * 100;
+    this.setCustomTelemetry({
+        powerStatus: this.displayOn ? "On" : "Off",
+        displayMode: this.invert ? "Inverted" : "Normal",
+        contrast: this.contrast,
+        vramFillPercentage: Number(fillPercent.toFixed(1)),
+        addressingMode: this.addressingMode
+    });
+  }
 }
