@@ -241,3 +241,21 @@ export function buildLiveSimulationWsUrl(sessionCode, role = 'student') {
     }
     return url.toString();
 }
+
+/**
+ * CI/CD Deployment functions
+ */
+export async function fetchPendingDeployments() {
+    const response = await axios.get(`${COMPILER_URL}/admin/deployments/pending`, getAdminAuthConfig());
+    return response.data.pending || [];
+}
+
+export async function approveDeploymentAction(runId, repo, env) {
+    const response = await axios.post(`${COMPILER_URL}/admin/deployments/approve`, { run_id: runId, repo, environment: env }, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function rollbackDeploymentAction(repo, branch = 'develop') {
+    const response = await axios.post(`${COMPILER_URL}/admin/deployments/rollback`, { repo, branch }, getAdminAuthConfig());
+    return response.data;
+}

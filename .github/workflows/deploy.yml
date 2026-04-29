@@ -1,0 +1,64 @@
+name: Frontend CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  test_and_build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Protocol Compliance Tests
+        run: npm run test:protocol
+        continue-on-error: false # Fail pipeline if tests fail
+
+      - name: Run RP2040 Smoke Tests
+        run: npm run test:rp2040-smoke
+        continue-on-error: false
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:develop
+          build-args: |
+            VITE_API_BASE_URL=http://localhost:5001/api
+
+  deploy:
+    name: Deploy to Production
+    needs: test_and_build
+    runs-on: ubuntu-latest
+    environment:
+      name: production # This environment requires manual approval in GitHub
+      url: http://${{ secrets.SERVER_HOST }}
+    steps:
+      - name: Trigger Server Deployment
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /path/to/your/simulator # Replace with actual server path
+            ./deploy.sh main

@@ -2175,10 +2175,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
 
   // ── Project: load most-recent project on first mount ─────────────────────
-  // ── Project: load most-recent project on first mount ─────────────────────
   useEffect(() => {
-    // Don't auto-load a project if we're in assessment mode or loading a demo
-    if (assessmentMode || projectName || shareId || liveSessionCode) return;
+    // Don't auto-load a project if we're in assessment mode or loading a demo or circuit from URL
+    if (assessmentMode || projectName || shareId || liveSessionCode || assessmentParams.get('circuit')) return;
 
     const owner = user?.email || 'guest';
     listProjects(owner).then((projects) => {
@@ -2408,6 +2407,32 @@ export default function SimulatorPage({ gamificationMode = false }) {
     loadAssignmentSubmission();
     return () => { cancelled = true; };
   }, [assignmentMode, classId, assignmentId, user?.role]);
+
+// ── Auto-load circuit from URL (?circuit=JSON_ENCODED) ──────────────────────
+useEffect(() => {
+  const urlCircuit = assessmentParams.get('circuit');
+  if (!urlCircuit) return;
+
+  try {
+    const payload = JSON.parse(decodeURIComponent(urlCircuit));
+    if (!payload || typeof payload !== 'object') return;
+
+    const normalized = normalizeImportedCircuitData(payload.components || [], payload.connections || []);
+    setBoard(payload.board || 'arduino_uno');
+    setComponents(normalized.components);
+    setWires(normalized.wires);
+    setCode(payload.code || '');
+    syncNextIds(normalized.components, normalized.wires);
+    
+    // Clear project state so we don't accidentally overwrite the user's project
+    setCurrentProjectName('Sample Circuit');
+    setCurrentProjectId(null);
+    currentProjectIdRef.current = null;
+    setHistory({ past: [], future: [] });
+  } catch (e) {
+    console.error('[URL Circuit] Failed to parse circuit from URL:', e);
+  }
+}, [assessmentParams]);
 
   const handleAssignmentSubmissionFilesChange = async (event) => {
     if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
@@ -8455,7 +8480,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
                     onClick={() => {
                       const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
                       if (doc) {
-                        const b = new Blob([doc], { type: 'text/html' });
+                        // Replace hardcoded localhost URLs with current origin
+                        const finalDoc = doc.replace(/http:\/\/localhost:5173/g, window.location.origin);
+                        const b = new Blob([finalDoc], { type: 'text/html' });
                         window.open(URL.createObjectURL(b), '_blank');
                       } else {
                         window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');

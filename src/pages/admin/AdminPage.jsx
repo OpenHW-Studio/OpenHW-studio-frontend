@@ -11,7 +11,10 @@ import {
     getInstalledComponents,
     deleteInstalledComponent,
     backupInstalledComponents,
-    submitCustomComponent
+    submitCustomComponent,
+    fetchPendingDeployments,
+    approveDeploymentAction,
+    rollbackDeploymentAction
 } from '../../services/simulatorService.js';
 import { useAuth } from '../../context/AuthContext';
 
@@ -21,10 +24,41 @@ export default function AdminPage() {
     const [libraries, setLibraries] = useState([]);
     const [pendingComponents, setPendingComponents] = useState([]);
     const [installedComponents, setInstalledComponents] = useState([]);
+    const [deployments, setDeployments] = useState([]);
     const [logs, setLogs] = useState([]);
     const [transpileModal, setTranspileModal] = useState(null);
     const fileInputRef = useRef();
     const restoreInputRef = useRef(null);
+
+    const loadDeployments = async () => {
+        try {
+            const deps = await fetchPendingDeployments();
+            setDeployments(deps);
+        } catch (e) {
+            addLog(`Error loading deployments: ${e.message}`, 'error');
+        }
+    };
+
+    const handleApproveDeployment = async (dep) => {
+        addLog(`Approving deployment for ${dep.repo}...`);
+        try {
+            await approveDeploymentAction(dep.id, dep.repo, 'production');
+            addLog(`Successfully approved deployment for ${dep.repo}`, 'success');
+            loadDeployments();
+        } catch (e) {
+            addLog(`Failed to approve deployment: ${e.message}`, 'error');
+        }
+    };
+
+    const handleRollback = async (repo) => {
+        addLog(`Triggering rollback for ${repo}...`);
+        try {
+            await rollbackDeploymentAction(repo);
+            addLog(`Successfully triggered rollback for ${repo}`, 'success');
+        } catch (e) {
+            addLog(`Failed to trigger rollback: ${e.message}`, 'error');
+        }
+    };
 
     const loadLibrariesAndComponents = async () => {
         try {
@@ -34,6 +68,7 @@ export default function AdminPage() {
             setPendingComponents(comps);
             const instComps = await getInstalledComponents();
             setInstalledComponents(instComps);
+            await loadDeployments();
         } catch (e) {
             addLog(`Error loading data: ${e.message}`, 'error');
         }
@@ -408,8 +443,54 @@ export default function AdminPage() {
                     </div>
                 </section>
 
+                {/* ── System Deployments (CI/CD) ─────────────────────────────── */}
+                <section className="col-span-1 md:col-span-3 bg-slate-800 p-6 rounded-xl flex flex-col mt-4">
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-lg m-0">System Deployments (CI/CD)</h2>
+                        <button onClick={loadDeployments} className="px-3 py-1 bg-slate-700 text-white rounded text-xs hover:bg-slate-600">Refresh</button>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                        {deployments.length === 0 && <div className="text-slate-500 text-sm text-center p-5">No pending or recent deployments found.</div>}
+                        {deployments.map(dep => (
+                            <div key={dep.id} className="bg-slate-900 p-4 rounded-lg border border-slate-700 flex justify-between items-start gap-4">
+                                <div>
+                                    <div className="font-bold text-sm mb-1">{dep.name} <span className="text-slate-500 font-normal">({dep.repo})</span></div>
+                                    <div className="text-xs text-slate-400 mb-2">Branch: {dep.head_branch} · Commit: {dep.head_commit}</div>
+                                    <div className="text-xs">
+                                        <span className={`px-2 py-0.5 rounded font-bold ${dep.status === 'waiting' ? 'bg-amber-500 text-black' : 'bg-slate-700 text-white'}`}>
+                                            Status: {dep.status}
+                                        </span>
+                                    </div>
+                                    
+                                    {/* Smoke Test Results UI */}
+                                    {dep.jobs && dep.jobs.length > 0 && (
+                                        <div className="mt-3 flex gap-2 flex-wrap">
+                                            {dep.jobs.map((job, idx) => (
+                                                <a key={idx} href={job.html_url} target="_blank" rel="noreferrer" 
+                                                   className={`text-xs px-2 py-1 rounded border ${job.conclusion === 'success' ? 'border-emerald-500 text-emerald-400' : job.conclusion === 'failure' ? 'border-red-500 text-red-400' : 'border-slate-600 text-slate-400'} no-underline hover:opacity-80`}>
+                                                    {job.name}: {job.conclusion || job.status}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    {dep.status === 'waiting' && (
+                                        <button onClick={() => handleApproveDeployment(dep)} className="px-3 py-1.5 rounded bg-emerald-500 text-white font-bold border-none cursor-pointer text-xs hover:bg-emerald-600">
+                                            Approve & Deploy
+                                        </button>
+                                    )}
+                                    <button onClick={() => handleRollback(dep.repo)} className="px-3 py-1.5 rounded bg-red-500 text-white border-none cursor-pointer text-xs hover:bg-red-600">
+                                        Rollback (Restart)
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
                 {/* ── Admin Logs (full width) ──────────────────────────────────── */}
-                <section className="panel-scroll col-span-1 md:col-span-3 bg-slate-900 border border-slate-800 p-4 rounded-lg font-mono h-[200px] overflow-y-auto">
+                <section className="panel-scroll col-span-1 md:col-span-3 bg-slate-900 border border-slate-800 p-4 rounded-lg font-mono h-[200px] overflow-y-auto mt-4">
                     <div className="text-slate-500 mb-2.5">-- System Event Logs --</div>
                     {logs.map((L, i) => (
                         <div key={i} className={`mb-1 text-sm ${L.type === 'error' ? 'text-red-500' : L.type === 'success' ? 'text-emerald-500' : 'text-slate-300'}`}>
