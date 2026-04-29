@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd OpenHW-studio-frontend
-          npm ci
+          npm install
 
       - name: Run Protocol Compliance Tests
         run: |
