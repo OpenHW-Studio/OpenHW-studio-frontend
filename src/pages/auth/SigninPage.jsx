@@ -21,11 +21,11 @@ export default function SigninPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      if (role === 'teacher') navigate('/teacher/dashboard')
-      else if (role === 'student') navigate('/student/dashboard')
+      if (selectedRole === 'teacher') navigate('/teacher/dashboard')
+      else if (selectedRole === 'student') navigate('/student/dashboard')
       else navigate('/user/dashboard')
     }
-  }, [isAuthenticated, role, navigate])
+  }, [isAuthenticated, navigate, selectedRole])
 
   const handleInputChange = (e) => {
     const value = e.target.type === 'email' ? e.target.value.trim() : e.target.value
@@ -43,12 +43,12 @@ export default function SigninPage() {
     try {
       const data = await loginUser({ ...formData, role: selectedRole })
       login(data.token, data.user)
-      const handleRedirect = (userRole) => {
-        if (userRole === 'teacher') navigate('/teacher/dashboard')
-        else if (userRole === 'student') navigate('/student/dashboard')
+      const handleRedirect = () => {
+        if (selectedRole === 'teacher') navigate('/teacher/dashboard')
+        else if (selectedRole === 'student') navigate('/student/dashboard')
         else navigate('/user/dashboard')
       }
-      handleRedirect(data.user.role)
+      handleRedirect()
     } catch (err) {
       setError(err.message || 'Invalid email or password.')
     } finally {
@@ -68,12 +68,12 @@ export default function SigninPage() {
       try {
         const data = await googleLogin(tokenResponse.access_token, selectedRole)
         login(data.token, data.user)
-        const handleRedirect = (userRole) => {
-          if (userRole === 'teacher') navigate('/teacher/dashboard')
-          else if (userRole === 'student') navigate('/student/dashboard')
+        const handleRedirect = () => {
+          if (selectedRole === 'teacher') navigate('/teacher/dashboard')
+          else if (selectedRole === 'student') navigate('/student/dashboard')
           else navigate('/user/dashboard')
         }
-        handleRedirect(data.user.role)
+        handleRedirect()
       } catch (err) {
         setError(err.message || 'Google authentication failed.')
       } finally {

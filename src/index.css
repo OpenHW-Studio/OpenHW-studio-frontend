@@ -7762,50 +7762,85 @@ body {
   color: #93c5fd;
 }
 
-[data-theme="dark"] .teacher-classwork-card__metrics,
-[data-theme="dark"] .teacher-classwork-shell__stat,
-[data-theme="dark"] .classroom-preview-modal__frame,
-[data-theme="dark"] .classroom-preview-modal__empty {
-  background: #0f172a;
-  border-color: #22314f;
+.classroom-preview-modal__open {
+  background: rgba(13, 21, 37, 0.4);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
 }
 
-[data-theme="dark"] .teacher-classwork-card__submissions,
-[data-theme="dark"] .classroom-preview-modal__body {
-  background: #0b1220;
+.admin-glass-panel {
+  background: rgba(13, 21, 37, 0.7);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-[data-theme="dark"] .student-assignment-submit__status {
-  background: rgba(34, 197, 94, 0.16);
-  color: #86efac;
+.admin-glass-card {
+  background: rgba(30, 41, 59, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-[data-theme="dark"] .teacher-classwork-shell {
+.admin-status-chip {
+  @apply flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-300;
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.admin-status-chip:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: rgba(59, 130, 246, 0.3);
+  transform: translateY(-2px);
+}
+
+.admin-glow-button {
+  @apply relative overflow-hidden transition-all duration-300;
+}
+
+.admin-glow-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.4);
+}
+
+@keyframes admin-fade-in-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-admin-entry {
+  animation: admin-fade-in-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes admin-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.animate-admin-float {
+  animation: admin-float 6s ease-in-out infinite;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
-  border: none;
-  box-shadow: none;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
-[data-theme="dark"] .teacher-classwork-shell__header {
-  border-bottom-color: #22314f;
-}
 
-[data-theme="dark"] .teacher-classwork-card {
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid #22314f;
-  box-shadow: none;
-}
 
-[data-theme="dark"] .teacher-classwork-card.is-active {
-  background: rgba(26, 42, 71, 0.58);
-}
 
-[data-theme="dark"] .classroom-preview-modal__open {
-  background: #0f172a;
-  border-color: #22314f;
-  color: #e2e8f0;
-}
+
 
 @media (max-width: 900px) {
   .student-profile-grid,
@@ -7889,3 +7924,5 @@ body {
     justify-content: space-between;
   }
 }
+
+
