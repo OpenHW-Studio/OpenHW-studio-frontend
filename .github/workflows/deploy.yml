@@ -13,13 +13,13 @@ jobs:
       - name: Checkout frontend code
         uses: actions/checkout@v4
         with:
-          path: OpenHW-studio-frontend-danish
+          path: OpenHW-studio-frontend
 
       - name: Checkout emulator code
         uses: actions/checkout@v4
         with:
           repository: danish9661/openhw-studio-emulator
-          path: openhw-studio-emulator-danish
+          path: openhw-studio-emulator
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
@@ -27,22 +27,22 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: OpenHW-studio-frontend-danish/package-lock.json
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
       - name: Install dependencies
         run: |
-          cd OpenHW-studio-frontend-danish
+          cd OpenHW-studio-frontend
           npm ci
 
       - name: Run Protocol Compliance Tests
         run: |
-          cd OpenHW-studio-frontend-danish
+          cd OpenHW-studio-frontend
           npm run test:protocol
         continue-on-error: false
 
       - name: Run RP2040 Smoke Tests
         run: |
-          cd OpenHW-studio-frontend-danish
+          cd OpenHW-studio-frontend
           npm run test:rp2040-smoke
         continue-on-error: false
 
@@ -56,7 +56,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./OpenHW-studio-frontend-danish/Dockerfile
+          file: ./OpenHW-studio-frontend/Dockerfile
           push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:develop
           build-args: |

@@ -3,21 +3,21 @@ FROM node:20 AS build
 WORKDIR /app/frontend
 
 # Copy frontend package files
-COPY OpenHW-studio-frontend-danish/package*.json ./
+COPY OpenHW-studio-frontend/package*.json ./
 
 # 1. Copy the emulator into src/emulator first
-COPY openhw-studio-emulator-danish ./src/emulator
+COPY openhw-studio-emulator ./src/emulator
 RUN rm -rf ./src/emulator/node_modules ./src/emulator/dist
 
 # 2. Update package.json to point to the new local path
-RUN sed -i 's|"@openhw/emulator": "file:../openhw-studio-emulator-danish"|"@openhw/emulator": "file:./src/emulator"|' package.json
+RUN sed -i 's|"@openhw/emulator": "file:../openhw-studio-emulator"|"@openhw/emulator": "file:./src/emulator"|' package.json
 
 # 3. Install dependencies and force Vite 5
 RUN npm install --legacy-peer-deps && \
     npm install vite@5 --save-dev --legacy-peer-deps
 
 # Copy frontend source code
-COPY OpenHW-studio-frontend-danish/ .
+COPY OpenHW-studio-frontend/ .
 
 # Build-time environment variables
 ARG VITE_API_BASE_URL
