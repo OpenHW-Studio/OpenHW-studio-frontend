@@ -48,7 +48,7 @@ const __dirname = path.dirname(__filename);
 const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..', '..');
 const BACKEND_DEFAULT_UF2 = path.join(
   WORKSPACE_ROOT,
-  'openhw-studio-backend-danish',
+  'openhw-studio-backend',
   'data',
   'firmware',
   'pico-micropython-uart0.uf2'
