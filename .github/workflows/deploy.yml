@@ -32,7 +32,7 @@ jobs:
       - name: Checkout cli code
         uses: actions/checkout@v4
         with:
-          repository: danish9661/openhw-studio-cli
+          repository: danish9661/OpenHW-studio--cli
           path: openhw-studio-cli
           token: ${{ secrets.GITHUB_TOKEN }}
 
