@@ -60,7 +60,7 @@ The simulation itself runs entirely **in the browser** via a Web Worker powered 
 ## Project Structure
 
 ```
-OpenHW-studio-frontend-danish/
+OpenHW-studio-frontend/
 ├── index.html                  # App entry HTML
 ├── vite.config.js              # Vite configuration
 ├── package.json
@@ -243,7 +243,7 @@ See **[OFFLINE_AND_STORAGE.md](../OFFLINE_AND_STORAGE.md)** for full technical d
 ### Installation
 
 ```bash
-cd OpenHW-studio-frontend-danish
+cd OpenHW-studio-frontend
 npm install
 ```
 
@@ -339,4 +339,4 @@ POST /api/compile  ──►  Compiler Backend (port 5001)
 
 ---
 
-*Part of the OpenHW Studio platform. See also: [openhw-studio-backend-danish](../openhw-studio-backend-danish) and [openhw-studio-emulator-danish](../openhw-studio-emulator-danish).*
+*Part of the OpenHW Studio platform. See also: [openhw-studio-backend](../openhw-studio-backend) and [openhw-studio-emulator](../openhw-studio-emulator).*

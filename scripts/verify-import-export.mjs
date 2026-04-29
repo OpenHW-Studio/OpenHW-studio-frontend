@@ -171,7 +171,7 @@ function writeEditCopyPayload(data, localStorageLike, sessionStorageLike) {
 
 async function readComponentBundle(componentType) {
   const workspaceRoot = path.resolve(process.cwd(), '..');
-  const componentRoot = path.join(workspaceRoot, 'openhw-studio-emulator-danish', 'src', 'components', componentType);
+  const componentRoot = path.join(workspaceRoot, 'openhw-studio-emulator', 'src', 'components', componentType);
 
   const manifestRaw = await fs.readFile(path.join(componentRoot, 'manifest.json'), 'utf8');
   const uiRaw = await fs.readFile(path.join(componentRoot, 'ui.tsx'), 'utf8');
