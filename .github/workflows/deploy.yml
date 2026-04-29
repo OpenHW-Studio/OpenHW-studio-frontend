@@ -48,6 +48,7 @@ jobs:
   deploy:
     name: Deploy to Production
     needs: test_and_build
+    if: "${{ secrets.SERVER_HOST != '' }}"
     runs-on: ubuntu-latest
     environment:
       name: production # This environment requires manual approval in GitHub
