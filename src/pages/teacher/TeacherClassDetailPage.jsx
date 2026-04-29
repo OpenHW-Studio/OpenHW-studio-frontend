@@ -653,7 +653,19 @@ export default function TeacherClassDetailPage() {
   const handleOpenLiveMeeting = async () => {
     if (!classroom?._id) return;
 
-    const popup = window.open("", "_blank", "noopener,noreferrer");
+    const popup = window.open("about:blank", "_blank");
+    if (popup) {
+      popup.opener = null;
+      popup.document.title = "Starting live meeting";
+      popup.document.body.style.margin = "0";
+      popup.document.body.style.fontFamily = "Inter, system-ui, sans-serif";
+      popup.document.body.style.display = "grid";
+      popup.document.body.style.minHeight = "100vh";
+      popup.document.body.style.placeItems = "center";
+      popup.document.body.style.background = "#f8fafc";
+      popup.document.body.style.color = "#0f172a";
+      popup.document.body.textContent = "Starting live meeting...";
+    }
 
     try {
       const session = await createLiveSimulationSession({
@@ -674,7 +686,7 @@ export default function TeacherClassDetailPage() {
 
       const liveMeetingUrl = `${window.location.origin}/simulator/live/${encodeURIComponent(session.sessionCode)}?role=teacher`;
       if (popup) {
-        popup.location.replace(liveMeetingUrl);
+        popup.location.href = liveMeetingUrl;
       } else {
         window.open(liveMeetingUrl, "_blank", "noopener,noreferrer");
       }
