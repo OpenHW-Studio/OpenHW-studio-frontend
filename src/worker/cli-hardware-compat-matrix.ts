@@ -689,7 +689,7 @@ function compileArduinoSketch({
     sketchDir,
   ];
 
-  const proc = spawnSync('arduino-cli', args, { encoding: 'utf8' });
+  const proc = spawnSync('arduino-cli', args, { encoding: 'utf8', timeout: 120_000 });
   if (proc.status !== 0) {
     throw new Error(
       `arduino-cli compile failed (exit=${proc.status})\nSTDOUT:\n${proc.stdout || ''}\nSTDERR:\n${proc.stderr || ''}`
