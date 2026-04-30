@@ -23,7 +23,7 @@ The Emulator package is a shared library that defines how components behave and 
 ## Project Structure
 
 ```
-openhw-studio-emulator-danish/
+openhw-studio-emulator/
 ├── src/
 │   ├── components/         # Manifests and logic for all virtual components (Entry Point)
 │   │   └── index.ts        # Library exports
@@ -58,13 +58,13 @@ To use this local package in the frontend during development:
 
 1. **Register the link**:
    ```bash
-   cd openhw-studio-emulator-danish
+   cd openhw-studio-emulator
    npm link
    ```
 
 2. **Link from frontend**:
    ```bash
-   cd ../OpenHW-studio-frontend-danish
+   cd ../OpenHW-studio-frontend
    npm link @openhw/emulator
    ```
 
@@ -80,12 +80,12 @@ For **Docker** environments, you can mount the local emulator folder to the cont
 services:
   backend:
     environment:
-      - EMULATOR_PATH=/usr/src/openhw-studio-emulator-danish
+      - EMULATOR_PATH=/usr/src/openhw-studio-emulator
     volumes:
-      - ./openhw-studio-emulator-danish:/usr/src/openhw-studio-emulator-danish
+      - ./openhw-studio-emulator:/usr/src/openhw-studio-emulator
 ```
 
 ---
 
-*Part of the OpenHW Studio platform. See also: [OpenHW-studio-frontend-danish](../OpenHW-studio-frontend-danish) and [openhw-studio-backend-danish](../openhw-studio-backend-danish).*
+*Part of the OpenHW Studio platform. See also: [OpenHW-studio-frontend](../OpenHW-studio-frontend) and [openhw-studio-backend](../openhw-studio-backend).*
 
