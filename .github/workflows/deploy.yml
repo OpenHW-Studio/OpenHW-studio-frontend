@@ -19,28 +19,28 @@ jobs:
       - name: Checkout emulator code
         uses: actions/checkout@v4
         with:
-          repository: danish9661/openhw-studio-emulator
+          repository: OpenHW-Studio/openhw-studio-emulator
           path: openhw-studio-emulator
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout examples code
         uses: actions/checkout@v4
         with:
-          repository: danish9661/openhw-studio-examples
+          repository: OpenHW-Studio/openhw-studio-examples
           path: openhw-studio-examples
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout cli code
         uses: actions/checkout@v4
         with:
-          repository: danish9661/OpenHW-studio--cli
+          repository: OpenHW-Studio/OpenHW-studio--cli
           path: openhw-studio-cli
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout backend code
         uses: actions/checkout@v4
         with:
-          repository: danish9661/openhw-studio-backend
+          repository: OpenHW-Studio/openhw-studio-backend
           path: openhw-studio-backend
           token: ${{ secrets.GITHUB_TOKEN }}
 
