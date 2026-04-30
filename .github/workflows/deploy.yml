@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - develop
+  workflow_dispatch:
 
 jobs:
   test_and_build:
@@ -34,6 +35,13 @@ jobs:
         with:
           repository: danish9661/OpenHW-studio--cli
           path: openhw-studio-cli
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout backend code
+        uses: actions/checkout@v4
+        with:
+          repository: danish9661/openhw-studio-backend
+          path: openhw-studio-backend
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
@@ -93,14 +101,18 @@ jobs:
           context: .
           file: ./OpenHW-studio-frontend/Dockerfile
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:develop
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:develop
+            ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:${{ github.sha }}
           build-args: |
-            VITE_API_BASE_URL=http://localhost:5001/api
+            VITE_API_BASE_URL=https://openhw-studio.fossee.in/api
+            VITE_EXAMPLES_BASE_URL=https://openhw-studio.fossee.in/examples
+            VITE_GOOGLE_CLIENT_ID=330028772877-csjlu9u6nam4bq6i1ergcrs4oetkhnqv.apps.googleusercontent.com
+            VITE_ADMIN_EMAILS=${{ secrets.VITE_ADMIN_EMAILS }}
 
   deploy:
     name: Deploy to Production
     needs: test_and_build
-    if: vars.SERVER_HOST != ''
     runs-on: ubuntu-latest
     environment:
       name: production # This environment requires manual approval in GitHub
@@ -113,6 +125,16 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /path/to/your/simulator # Replace with actual server path
-            git pull origin main
-            ./deploy.sh main
+            cd /opt/openhw/backend
+            git pull origin develop
+            
+            # Ensure variables are available
+            export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
+            export FRONTEND_TAG=${{ github.sha }}
+            
+            # Update the local .env file with the new frontend tag for persistence
+            sed -i '/^FRONTEND_TAG=/d' .env || true
+            echo "FRONTEND_TAG=${{ github.sha }}" >> .env
+            
+            docker compose -f docker-compose.prod.yml pull frontend
+            docker compose -f docker-compose.prod.yml up -d frontend
