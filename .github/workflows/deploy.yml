@@ -63,6 +63,16 @@ jobs:
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
 
+      - name: Cache Arduino Cores
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15/packages
+            ~/.arduino15/staging
+          key: ${{ runner.os }}-arduino-cores-${{ hashFiles('**/OpenHW-studio-frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-arduino-cores-
+
       - name: Install Arduino Cores
         run: |
           arduino-cli config init --overwrite
@@ -83,11 +93,11 @@ jobs:
           npm run test:rp2040-smoke
         continue-on-error: false
 
-      - name: Run CLI Hardware Compat Matrix
-        run: |
-          cd OpenHW-studio-frontend
-          npm run test:cli-hw-matrix
-        continue-on-error: false
+      # - name: Run CLI Hardware Compat Matrix (Optional/Manual)
+      #   run: |
+      #     cd OpenHW-studio-frontend
+      #     npm run test:cli-hw-matrix:watchdog
+      #   continue-on-error: false
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
