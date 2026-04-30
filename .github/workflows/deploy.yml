@@ -123,28 +123,27 @@ jobs:
   deploy:
     name: Deploy to Production
     needs: test_and_build
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     environment:
       name: production # This environment requires manual approval in GitHub
-      url: http://${{ vars.SERVER_HOST }}
+      url: https://openhw-studio.fossee.in
     steps:
-      - name: Trigger Server Deployment
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            cd /opt/openhw/backend
-            git pull origin develop
-            
-            # Ensure variables are available
-            export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
-            export FRONTEND_TAG=${{ github.sha }}
-            
-            # Update the local .env file with the new frontend tag for persistence
-            sed -i '/^FRONTEND_TAG=/d' .env || true
-            echo "FRONTEND_TAG=${{ github.sha }}" >> .env
-            
-            docker compose -f docker-compose.prod.yml pull frontend
-            docker compose -f docker-compose.prod.yml up -d frontend
+      - name: Pull and Restart Container Locally
+        run: |
+          cd /opt/openhw/backend
+          
+          # Update the local .env file with the new frontend tag for persistence
+          sed -i '/^FRONTEND_TAG=/d' .env || true
+          echo "FRONTEND_TAG=${{ github.sha }}" >> .env
+          
+          # Ensure Docker Hub credentials are available
+          export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
+          
+          # Log in to Docker Hub (required if your images are private or to avoid rate limits)
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          
+          docker compose -f docker-compose.prod.yml pull frontend
+          docker compose -f docker-compose.prod.yml up -d frontend
+          
+          # Clean up old images to save disk space
+          docker image prune -af
