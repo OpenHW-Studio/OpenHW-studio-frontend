@@ -1603,13 +1603,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showFavorites, setShowFavorites] = useState(true)
   const [paletteContextMenu, setPaletteContextMenu] = useState(null) // { x, y, item }
-  const [selectedPaletteItem, setSelectedPaletteItem] = useState(null) // item for description panel
   const [showComponentDesc, setShowComponentDesc] = useState(true) // description panel visible
   const [showCreateComponentModal, setShowCreateComponentModal] = useState(false)
   const paletteContextMenuRef = useRef(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [showCanvasMenu, setShowCanvasMenu] = useState(false)
-  const [showConnectionsPanel, setShowConnectionsPanel] = useState(true)
+  const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
   const [wirepointsEnabled, setWirepointsEnabled] = useState(false)
   const canvasZoomRef = useRef(1)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
@@ -7415,7 +7414,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -7943,7 +7942,7 @@ useEffect(() => {
                               onDragStart={e => !locked && onPaletteDragStart(e, item)}
                               onClick={() => {
                                 if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
-                                addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group });
+                                addComponentAtCenter(item);
                               }}
                               onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
                               title={item.label}
@@ -7984,7 +7983,7 @@ useEffect(() => {
                             onDragStart={e => !locked && onPaletteDragStart(e, item)}
                             onClick={() => {
                               if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
-                              addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group });
+                              addComponentAtCenter(item);
                             }}
                             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
                             style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
@@ -8467,245 +8466,239 @@ useEffect(() => {
               const hasError = errorCompIds.has(comp.id)
               const isSelected = selected === comp.id
               const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
+
+              const rad = ((comp.rotation || 0) * Math.PI) / 180;
+              const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
+              const visualHalfHeight = visualH / 2;
+
               return (
-                <div
-                  key={comp.id}
-                  style={{
-                    position: 'absolute',
-                    left: comp.x, top: comp.y,
-                    width: comp.w, height: comp.h,
-                    zIndex: isSelected ? 5 : 2,
-                    userSelect: 'none',
-                    pointerEvents: 'none', // Clicks pass through the manifest wrapper
-                    transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-                    transformOrigin: 'center center',
-                  }}
-                >
-                  {/* Hit Box — captures selection and drag only within BOUNDS */}
-                  {(() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: b.x, top: b.y,
-                          width: b.w, height: b.h,
-                          cursor: wireStart ? 'crosshair' : 'move',
-                          pointerEvents: 'auto',
-                          zIndex: 0, // Below pins and interactive UI elements
-                        }}
-                        onMouseDown={e => onCompMouseDown(e, comp.id)}
-                        onClick={e => onCompClick(e, comp.id)}
-                        onDoubleClick={e => e.stopPropagation()}
-                      />
-                    );
-                  })()}
+                <React.Fragment key={comp.id}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: comp.x, top: comp.y,
+                      width: comp.w, height: comp.h,
+                      zIndex: isSelected ? 5 : 2,
+                      userSelect: 'none',
+                      pointerEvents: 'none', // Clicks pass through the manifest wrapper
+                      transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
+                      transformOrigin: 'center center',
+                    }}
+                  >
+                    {/* Hit Box — captures selection and drag only within BOUNDS */}
+                    {(() => {
+                      const getBounds = () => {
+                        const reg = COMPONENT_REGISTRY[comp.type];
+                        if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                        if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                        return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                      };
+                      const b = getBounds();
+                      return (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            left: b.x, top: b.y,
+                            width: b.w, height: b.h,
+                            cursor: wireStart ? 'crosshair' : 'move',
+                            pointerEvents: 'auto',
+                            zIndex: 0, // Below pins and interactive UI elements
+                          }}
+                          onMouseDown={e => onCompMouseDown(e, comp.id)}
+                          onClick={e => onCompClick(e, comp.id)}
+                          onDoubleClick={e => e.stopPropagation()}
+                        />
+                      );
+                    })()}
 
-                  {/* Selection ring — uses BOUNDS from ui.tsx for precise sizing */}
-                  {isSelected && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div style={{
-                        position: 'absolute',
-                        left: b.x - 6, top: b.y - 6,
-                        width: b.w + 12, height: b.h + 12,
-                        borderRadius: 8,
-                        border: '2px solid var(--accent)',
-                        boxShadow: '0 0 16px var(--glow)',
-                        pointerEvents: 'none', zIndex: 10,
-                      }} />
-                    );
-                  })()}
-                  {/* Error ring — uses BOUNDS from ui.tsx for precise sizing */}
-                  {hasError && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div style={{
-                        position: 'absolute',
-                        left: b.x - 6, top: b.y - 6,
-                        width: b.w + 12, height: b.h + 12,
-                        borderRadius: 8,
-                        border: '2px solid var(--red)',
-                        boxShadow: '0 0 16px rgba(255,68,68,.4)',
-                        pointerEvents: 'none', zIndex: 10,
-                      }} />
-                    );
-                  })()}
-
-                  {/* Serial-target board ring */}
-                  {isSerialBoardSelected && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <>
+                    {/* Selection ring — uses BOUNDS from ui.tsx for precise sizing */}
+                    {isSelected && (() => {
+                      const getBounds = () => {
+                        const reg = COMPONENT_REGISTRY[comp.type];
+                        if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                        if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                        return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                      };
+                      const b = getBounds();
+                      return (
                         <div style={{
                           position: 'absolute',
-                          left: b.x - 10, top: b.y - 10,
-                          width: b.w + 20, height: b.h + 20,
-                          borderRadius: 10,
-                          border: '2px dashed #38bdf8',
-                          boxShadow: '0 0 18px rgba(56,189,248,.45)',
-                          pointerEvents: 'none', zIndex: 9,
+                          left: b.x - 6, top: b.y - 6,
+                          width: b.w + 12, height: b.h + 12,
+                          borderRadius: 8,
+                          border: '2px solid var(--accent)',
+                          boxShadow: '0 0 16px var(--glow)',
+                          pointerEvents: 'none', zIndex: 10,
                         }} />
+                      );
+                    })()}
+                    {/* Error ring — uses BOUNDS from ui.tsx for precise sizing */}
+                    {hasError && (() => {
+                      const getBounds = () => {
+                        const reg = COMPONENT_REGISTRY[comp.type];
+                        if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                        if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                        return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                      };
+                      const b = getBounds();
+                      return (
                         <div style={{
                           position: 'absolute',
-                          left: b.x - 10,
-                          top: b.y - 26,
-                          background: '#0c4a6e',
-                          color: '#e0f2fe',
-                          border: '1px solid #38bdf8',
-                          borderRadius: 6,
-                          fontSize: 9,
-                          padding: '1px 6px',
-                          letterSpacing: '0.04em',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          pointerEvents: 'none',
-                          zIndex: 11,
-                        }}>
-                          SERIAL TARGET
-                        </div>
-                      </>
-                    );
-                  })()}
+                          left: b.x - 6, top: b.y - 6,
+                          width: b.w + 12, height: b.h + 12,
+                          borderRadius: 8,
+                          border: '2px solid var(--red)',
+                          boxShadow: '0 0 16px rgba(255,68,68,.4)',
+                          pointerEvents: 'none', zIndex: 10,
+                        }} />
+                      );
+                    })()}
 
-                  {/* Component Render — wrapped to allow pass-through to Hit Box */}
-                  <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
-                    {COMPONENT_REGISTRY[comp.type] ? (
-                      // Local UI component rendering SVG
-                      React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                        state: oopStates[comp.id] || {},
-                        attrs: getComponentStateAttrs(comp),
-                        isRunning: isRunning
-                      })
-                    ) : (
-                      // Fallback for unsupported components (if any left)
-                      <div
-                        style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                        ref={el => {
-                          if (comp.type === 'wokwi-neopixel-matrix' && el) {
-                            neopixelRefs.current[comp.id] = el;
-                          }
-                        }}
-                      >
-                        {React.createElement(comp.type, getComponentStateAttrs(comp))}
-                      </div>
-                    )}
+                    {/* Serial-target board ring */}
+                    {isSerialBoardSelected && (() => {
+                      const getBounds = () => {
+                        const reg = COMPONENT_REGISTRY[comp.type];
+                        if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                        if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                        return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                      };
+                      const b = getBounds();
+                      return (
+                        <>
+                          <div style={{
+                            position: 'absolute',
+                            left: b.x - 10, top: b.y - 10,
+                            width: b.w + 20, height: b.h + 20,
+                            borderRadius: 10,
+                            border: '2px dashed #38bdf8',
+                            boxShadow: '0 0 18px rgba(56,189,248,.45)',
+                            pointerEvents: 'none', zIndex: 9,
+                          }} />
+                          <div style={{
+                            position: 'absolute',
+                            left: b.x - 10,
+                            top: b.y - 26,
+                            background: '#0c4a6e',
+                            color: '#e0f2fe',
+                            border: '1px solid #38bdf8',
+                            borderRadius: 6,
+                            fontSize: 9,
+                            padding: '1px 6px',
+                            letterSpacing: '0.04em',
+                            fontFamily: 'JetBrains Mono, monospace',
+                            pointerEvents: 'none',
+                            zIndex: 11,
+                          }}>
+                            SERIAL TARGET
+                          </div>
+                        </>
+                      );
+                    })()}
+
+                    {/* Component Render — wrapped to allow pass-through to Hit Box */}
+                    <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
+                      {COMPONENT_REGISTRY[comp.type] ? (
+                        // Local UI component rendering SVG
+                        React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+                          state: oopStates[comp.id] || {},
+                          attrs: getComponentStateAttrs(comp),
+                          isRunning: isRunning
+                        })
+                      ) : (
+                        // Fallback for unsupported components (if any left)
+                        <div
+                          style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+                          ref={el => {
+                            if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                              neopixelRefs.current[comp.id] = el;
+                            }
+                          }}
+                        >
+                          {React.createElement(comp.type, getComponentStateAttrs(comp))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Pins */}
+                    {pins.map(pin => {
+                      const pinStrRef = `${comp.id}:${pin.id}`;
+                      const isHovered = hoveredPin === pinStrRef;
+                      const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
+
+                      // Hovered pin's category for passive highlighting
+                      const hoverCompId = hoveredPin?.split(':')[0];
+                      const hoverPinId = hoveredPin?.split(':')[1];
+                      const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+                      const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
+
+                      const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+                      const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+
+                      const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+                      const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+                      const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
+
+                      // Check if a wire is connected to this pin
+                      const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+                      const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
+                      const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
+
+                      return (
+                        <div
+                          key={pin.id}
+                          title={`${pin.description || pin.id} — click to wire`}
+                          style={{
+                            position: 'absolute',
+                            left: pin.x, top: pin.y,
+                            width: 5, height: 5,
+                            background: pinColor,
+                            border: `1px solid ${pinBorder}`,
+                            borderRadius: '0%', /* matching task3.html */
+                            cursor: 'crosshair',
+                            zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
+                            transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                            transition: '0.2s', /* matching task3.html transition */
+                            pointerEvents: 'all', /* Fix hit detection */
+                            boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
+                          }}
+                          onMouseEnter={() => setHoveredPin(pinStrRef)}
+                          onMouseLeave={() => setHoveredPin(null)}
+                          onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
+                        >
+                          {/* Pin label tooltip */}
+                          {isHovered && (
+                            <div style={{
+                              position: 'absolute', bottom: 18, left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: '#111', color: '#fff',
+                              padding: '4px 8px', borderRadius: 4,
+                              fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                              pointerEvents: 'none', border: '1px solid #444',
+                              boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                            }}>
+                              {pin.description || pin.id}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
 
-                  {/* Pins */}
-                  {pins.map(pin => {
-                    const pinStrRef = `${comp.id}:${pin.id}`;
-                    const isHovered = hoveredPin === pinStrRef;
-                    const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-
-                    // Hovered pin's category for passive highlighting
-                    const hoverCompId = hoveredPin?.split(':')[0];
-                    const hoverPinId = hoveredPin?.split(':')[1];
-                    const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
-                    const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
-
-                    const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
-                    const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-
-                    const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                    const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
-
-                    const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
-
-                    // Check if a wire is connected to this pin
-                    const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                    const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                    const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
-
-                    return (
-                      <div
-                        key={pin.id}
-                        title={`${pin.description || pin.id} — click to wire`}
-                        style={{
-                          position: 'absolute',
-                          left: pin.x, top: pin.y,
-                          width: 5, height: 5,
-                          background: pinColor,
-                          border: `1px solid ${pinBorder}`,
-                          borderRadius: '0%', /* matching task3.html */
-                          cursor: 'crosshair',
-                          zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
-                          transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                          transition: '0.2s', /* matching task3.html transition */
-                          pointerEvents: 'all', /* Fix hit detection */
-                          boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
-                        }}
-                        onMouseEnter={() => setHoveredPin(pinStrRef)}
-                        onMouseLeave={() => setHoveredPin(null)}
-                        onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                      >
-                        {/* Pin label tooltip */}
-                        {isHovered && (
-                          <div style={{
-                            position: 'absolute', bottom: 18, left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: '#111', color: '#fff',
-                            padding: '4px 8px', borderRadius: 4,
-                            fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                            pointerEvents: 'none', border: '1px solid #444',
-                            boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                          }}>
-                            {pin.description || pin.id}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-
-                  {/* Component label */}
+                  {/* Component label (Outside rotated container) */}
                   <div style={{
                     position: 'absolute',
-                    top: (() => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      const b = typeof reg?.BOUNDS === 'function'
-                        ? reg.BOUNDS(getComponentStateAttrs(comp))
-                        : (reg?.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h });
-                      return b.y + b.h + 4;
-                    })(),
-                    left: (() => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      const b = typeof reg?.BOUNDS === 'function'
-                        ? reg.BOUNDS(getComponentStateAttrs(comp))
-                        : (reg?.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h });
-                      return b.x + b.w / 2;
-                    })(),
+                    top: comp.y + comp.h / 2 + visualHalfHeight + 4,
+                    left: comp.x + comp.w / 2,
                     transform: 'translateX(-50%)',
                     fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
                     whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
                     pointerEvents: 'none',
+                    zIndex: 5,
                   }}>
                     {comp.label}
                   </div>
-
-                </div>
+                </React.Fragment>
               )
             })}
           </div>{/* end zoom wrapper */}
@@ -8817,10 +8810,6 @@ useEffect(() => {
                   {selectedComponentInfo.label}
                 </div>
 
-                {/* Description - Preserved from Local */}
-                <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-                  {COMPONENT_REGISTRY[selectedComponentInfo.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[selectedComponentInfo.type] || `${selectedComponentInfo.type} component`}
-                </div>
 
                 <div style={{
                   display: 'flex',
@@ -9357,6 +9346,7 @@ useEffect(() => {
           isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
           explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
           selected={selected} setSelected={setSelected} theme={theme}
+          projectName={currentProjectName}
           validationErrors={validationErrors} showValidation={showValidation} setShowValidation={setShowValidation}
           codeTab={codeTab} setCodeTab={setCodeTab} code={code} setCode={setCode}
           blocklyXml={blocklyXml} setBlocklyXml={setBlocklyXml}

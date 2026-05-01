@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Btn } from './Btn';
 
-export function TopToolbox(props) {
+function TopToolboxInternal(props) {
   // --- UI CONFIG ---
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false } = props;
 
   const viewPanelRef = useRef(null);
   const connectPanelRef = useRef(null);
@@ -38,7 +38,7 @@ export function TopToolbox(props) {
   }, [showViewPanel, showConnectPanel, showProjectsDropdown, activeMenu, setShowViewPanel, setShowProjectsDropdown]);
 
   const currentProject = (myProjects || []).find(p => p.id === currentProjectId);
-  const projectName = currentProject ? (currentProject.name || currentProject.id) : (currentProjectId || 'Untitled Project');
+  const projectName = projectNameProp || (currentProject ? (currentProject.name || currentProject.id) : (currentProjectId || 'Untitled Project'));
 
   const Logo = () => (
     <img
@@ -662,3 +662,4 @@ export function TopToolbox(props) {
     </header>
   );
 }
+export const TopToolbox = React.memo(TopToolboxInternal);
