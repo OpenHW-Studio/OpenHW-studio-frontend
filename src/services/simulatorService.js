@@ -161,6 +161,16 @@ export async function deleteInstalledComponent(id) {
     return response.data;
 }
 
+export const fetchPublicInstalledComponents = async () => {
+    try {
+        const response = await axios.get(`${COMPILER_URL}/components/public-installed`);
+        return response.data.components || [];
+    } catch (error) {
+        console.warn("Failed to fetch dynamically installed components", error);
+        return [];
+    }
+};
+
 export async function backupInstalledComponents() {
     const response = await axios.get(`${COMPILER_URL}/admin/components/backup`, getAdminAuthConfig());
     return response.data.components || [];
