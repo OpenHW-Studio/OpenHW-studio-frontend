@@ -1,19 +1,27 @@
-export function validate(component: any, wires: any[]) {
-    const warnings = [];
-    const errors = [];
-    const connectedPins = new Set();
+export const validation = {
+    rules: [
+        {
+            name: "L293D Dual Power Supply Check",
+            check: (component: any, graph: Map<string, string[]>, validator: any) => {
+                const vcc1 = `${component.id}.VCC1`; // Logic Power
+                const vcc2 = `${component.id}.VCC2`; // Motor Power
+                const gnd = `${component.id}.GND.1` || `${component.id}.GND`;
 
-    wires.forEach(wire => {
-        if (wire.from.startsWith(`${component.id}:`)) connectedPins.add(wire.from.split(':')[1]);
-        if (wire.to.startsWith(`${component.id}:`)) connectedPins.add(wire.to.split(':')[1]);
-    });
+                const v1 = validator.calculateVoltageAtNode(vcc1);
+                const v2 = validator.calculateVoltageAtNode(vcc2);
 
-    if (!connectedPins.has('VCC1') || !connectedPins.has('VCC2')) {
-        errors.push('L293D requires both VCC1 (Logic) and VCC2 (Motor) power.');
-    }
-    if (!connectedPins.has('GND1') && !connectedPins.has('GND2') && !connectedPins.has('GND3') && !connectedPins.has('GND4')) {
-        errors.push('L293D requires at least one GND connection.');
-    }
+                if (v1 < 4.5) {
+                    return `⚠️ [L293D ${component.id}] Logic Power (VCC1) is missing or too low. Motor driver will not function.`;
+                }
+                if (v2 < v1) {
+                    return `⚠️ [L293D ${component.id}] Warning: Motor Power (VCC2) is lower than Logic Power. Motors may be underpowered or stall.`;
+                }
+                if (validator.getNeighbors(gnd).length === 0) {
+                    return `⚠️ [L293D ${component.id}] Ground connection is missing.`;
+                }
 
-    return { warnings, errors };
-}
+                return null;
+            }
+        }
+    ]
+};
