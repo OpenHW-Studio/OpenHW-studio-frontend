@@ -1,7 +1,7 @@
 import manifest from './manifest.json';
 import { ArduinoNanoLogic } from './logic';
 import { ArduinoNanoUI } from './ui';
-import { validate } from './validation';
+import { validation } from './validation';
 
 import { doc } from './doc';
 
@@ -9,6 +9,7 @@ export default {
     manifest,
     Logic: ArduinoNanoLogic,
     UI: ArduinoNanoUI,
-    validate,
+    validation,
     doc: doc
 };
+

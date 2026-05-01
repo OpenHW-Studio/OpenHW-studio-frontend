@@ -1,16 +1,20 @@
-export function validate(component: any, wires: any[]) {
-    const warnings = [];
-    const errors = [];
-    const connectedPins = new Set();
+export const validation = {
+    rules: [
+        {
+            name: "Stepper Coil Connection Check",
+            check: (component: any, graph: Map<string, string[]>, validator: any) => {
+                const requiredPins = ['A+', 'A-', 'B+', 'B-'];
+                const missingPins = requiredPins.filter(pin => {
+                    const node = `${component.id}.${pin}`;
+                    return validator.getNeighbors(node).length === 0;
+                });
 
-    wires.forEach(wire => {
-        if (wire.from.startsWith(`${component.id}:`)) connectedPins.add(wire.from.split(':')[1]);
-        if (wire.to.startsWith(`${component.id}:`)) connectedPins.add(wire.to.split(':')[1]);
-    });
+                if (missingPins.length > 0) {
+                    return `⚠️ [Stepper ${component.id}] Coil Warning: The following pins are not connected: ${missingPins.join(', ')}. Stepper motor requires both coils (A and B) to be fully wired.`;
+                }
 
-    if (!connectedPins.has('A+') || !connectedPins.has('A-') || !connectedPins.has('B+') || !connectedPins.has('B-')) {
-        warnings.push('Stepper Motor (Bipolar) has unconnected coils. Ensure A+, A-, B+, and B- are connected correctly.');
-    }
-
-    return { warnings, errors };
-}
+                return null;
+            }
+        }
+    ]
+};
