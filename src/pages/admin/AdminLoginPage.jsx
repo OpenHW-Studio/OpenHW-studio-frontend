@@ -30,7 +30,7 @@ export default function AdminLoginPage() {
             coins: 0,
             level: 1,
         }
-        login(mockToken, mockUser)
+        login(mockToken, mockUser, true)
         navigate('/admin/dashboard')
     }
 
@@ -56,13 +56,11 @@ export default function AdminLoginPage() {
                     return
                 }
 
-                // MOCK: simulate backend response
-                mockAdminLogin(googleUser)
-
-                // When backend is ready:
-                // const { token, user } = await googleLogin(tokenResponse.access_token, 'admin')
-                // login(token, user)
-                // navigate('/admin')
+                // Real Backend Login
+                const { googleLogin } = await import('../../services/authService.js');
+                const { token, user } = await googleLogin(tokenResponse.access_token, 'admin', true);
+                login(token, user, true);
+                navigate('/admin/dashboard');
 
             } catch (err) {
                 setError('Authentication failed. Please try again.')

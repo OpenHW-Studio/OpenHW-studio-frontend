@@ -9,13 +9,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const emulatorPath = env.VITE_EMULATOR_PATH
-  const resolvedEmulatorPath = emulatorPath ? path.resolve(__dirname, emulatorPath) : null
+  const dockerEmulatorPath = path.resolve(__dirname, 'src/emulator')
+  const resolvedEmulatorPath = emulatorPath 
+    ? path.resolve(__dirname, emulatorPath) 
+    : (fs.existsSync(dockerEmulatorPath) ? dockerEmulatorPath : null)
 
-  // Only use alias if the path is explicitly set and exists
-  const useAlias = resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath)
+  const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath)
 
   return {
     plugins: [react()],
+    build: {
+      minify: 'esbuild',
+      cssMinify: true,
+    },
     resolve: {
       alias: useAlias ? {
         '@openhw/emulator': resolvedEmulatorPath,

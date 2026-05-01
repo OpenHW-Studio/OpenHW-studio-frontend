@@ -548,7 +548,7 @@ function InventoryPhase({ data, onDone, navigate, projectName, theme }) {
                 <button
                   onClick={() => toggleEquip(selComp.id)}
                   style={{
-                    width:'100%', padding:'11px', borderRadius:10, border:'none',
+                    width:'100%', padding:'11px', borderRadius:10,
                     background: equipped.has(selComp.id) ? 'rgba(239,68,68,.2)' : 'rgba(34,197,94,.2)',
                     color: equipped.has(selComp.id) ? '#f87171' : '#34d399',
                     fontWeight:800, fontSize:13, cursor:'pointer', fontFamily:'Nunito,sans-serif',

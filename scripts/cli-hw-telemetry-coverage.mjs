@@ -6,8 +6,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 
-const emulatorComponentsDir = path.join(workspaceRoot, 'openhw-studio-emulator-danish', 'src', 'components');
-const executePath = path.join(workspaceRoot, 'OpenHW-studio-frontend-danish', 'src', 'worker', 'execute.ts');
+const emulatorComponentsDir = path.join(workspaceRoot, 'openhw-studio-emulator', 'src', 'components');
+const executePath = path.join(workspaceRoot, 'OpenHW-studio-frontend', 'src', 'worker', 'execute.ts');
 const matrixOutDir = path.join(workspaceRoot, 'temp', 'cli-hw-matrix');
 
 const TELEMETRY_TOKEN_PATTERNS = [
@@ -94,7 +94,7 @@ function resolveImportToFile(importPath) {
 
   if (importPath.startsWith('@openhw/emulator/src/components/')) {
     const suffix = importPath.replace('@openhw/emulator/', '');
-    const abs = path.join(workspaceRoot, 'openhw-studio-emulator-danish', suffix);
+    const abs = path.join(workspaceRoot, 'openhw-studio-emulator', suffix);
     return fs.existsSync(abs) ? abs : null;
   }
 
