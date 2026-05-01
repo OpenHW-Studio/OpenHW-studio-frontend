@@ -1515,6 +1515,7 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
           }}
           onMouseDown={onMouseDown}
           onClick={onClick}
+          onDoubleClick={e => e.stopPropagation()}
         />
         {isSelected && (
           <div style={{
@@ -1957,6 +1958,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const innerCanvasRef = useRef(null)   // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
   const rafMoveRef = useRef(null)       // pending rAF id for mousemove throttle (Fixes #1-#4)
   const pendingMoveRef = useRef(null)   // latest computed move data, read by the rAF callback
+  const rafZoomRef = useRef(null)
+  const pendingZoomRef = useRef(null)
   const svgRef = useRef(null)
   const viewPanelRef = useRef(null)
   const schematicSvgRef = useRef(null)
@@ -4097,28 +4100,50 @@ useEffect(() => {
     initialTouchDistanceRef.current = null;
   }, []);
 
-  // Trackpad pinch (Ctrl + Wheel)
+  // Pinch-to-zoom via trackpad (Ctrl + Wheel)
+  // Key insight: NEVER update React state mid-pinch — that causes React to re-render
+  // which overwrites our DOM transform on the SAME frame, creating the vibration.
+  // Instead: apply only the CSS transform during pinch, update refs for correctness,
+  // then flush to React state via a debounce AFTER the gesture ends.
   const onWheel = useCallback((e) => {
     if (isCanvasLockedRef.current || !e.ctrlKey) return;
     e.preventDefault();
-    const zoomSpeed = 0.001; 
+
+    const zoomSpeed = 0.002;
     const delta = -e.deltaY * zoomSpeed;
-    const newZoom = Math.min(3, Math.max(0.25, canvasZoomRef.current + delta));
-    
+    const currentZoom = canvasZoomRef.current;
+    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
+
+    if (newZoom === currentZoom) return;
+
     const rect = canvasRef.current.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    
-    const cx = (mx - canvasOffsetRef.current.x) / canvasZoomRef.current;
-    const cy = (my - canvasOffsetRef.current.y) / canvasZoomRef.current;
-    
+
+    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
+    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
+
     const newOffsetX = mx - cx * newZoom;
     const newOffsetY = my - cy * newZoom;
-    
-    setCanvasZoom(newZoom);
+
+    // 1. Update refs immediately — keeps subsequent wheel events reading the correct values
     canvasZoomRef.current = newZoom;
-    setCanvasOffset({ x: newOffsetX, y: newOffsetY });
     canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+
+    // 2. Apply directly to DOM — zero React renders mid-pinch = zero vibration
+    if (innerCanvasRef.current) {
+      innerCanvasRef.current.style.transform =
+        `translate(${newOffsetX}px, ${newOffsetY}px) scale(${newZoom})`;
+      innerCanvasRef.current.style.transformOrigin = '0 0';
+    }
+
+    // 3. Debounce the React state flush — commit once the user stops pinching
+    if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
+    rafZoomRef.current = setTimeout(() => {
+      rafZoomRef.current = null;
+      setCanvasZoom(canvasZoomRef.current);
+      setCanvasOffset({ ...canvasOffsetRef.current });
+    }, 150);
   }, []);
 
   // ── Move and Select component ──────────────────────────────────────────────
@@ -4288,20 +4313,19 @@ useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const preventDefault = (e) => {
-      // Still prevent wheel zoom (Ctrl + Wheel)
+    const handleWheel = (e) => {
       if (e.ctrlKey) {
         if (e.cancelable) e.preventDefault();
+        onWheel(e); // Trigger our custom zoom
       }
     };
 
-    canvas.addEventListener('wheel', preventDefault, { passive: false });
-    // removed native touch blockers as touch-action: none handles it and preventDefault might break React events
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
 
     return () => {
-      canvas.removeEventListener('wheel', preventDefault);
+      canvas.removeEventListener('wheel', handleWheel);
     };
-  }, []);
+  }, [onWheel]);
 
   // ── Pin click — start or complete wire ─────────────────────────────────────
   const onPinClick = useCallback((e, compId, pinId, pinLabel) => {
@@ -8246,7 +8270,6 @@ useEffect(() => {
             opacity: liveEditingDisabled ? 0.8 : 1,
           }}
           ref={canvasRef}
-          onWheel={onWheel}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -8779,6 +8802,7 @@ useEffect(() => {
               data-export-ignore="true"
               onClick={e => e.stopPropagation()}
               onMouseDown={e => e.stopPropagation()}
+              onDoubleClick={e => e.stopPropagation()}
               style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 220, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden' }}
             >
               {/* Header */}
@@ -9246,6 +9270,7 @@ useEffect(() => {
                 className="canvas-menu"
                 data-quickadd="true"
                 onMouseDown={e => e.stopPropagation()}
+                onDoubleClick={e => e.stopPropagation()}
                 onMouseLeave={() => setQuickAdd(null)}
                 style={{
                   position: 'fixed', 
