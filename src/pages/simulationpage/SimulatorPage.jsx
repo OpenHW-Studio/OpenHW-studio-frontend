@@ -19,7 +19,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
 import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents } from '../../services/simulatorService.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
@@ -2635,6 +2635,86 @@ useEffect(() => {
       document.exitFullscreen?.();
     }
   };
+
+  // ── Fetch and inject dynamically installed components from the backend ──────
+  useEffect(() => {
+    (async () => {
+      try {
+        const installedComps = await fetchPublicInstalledComponents();
+        if (!installedComps || installedComps.length === 0) return;
+
+        const Babel = await getBabel();
+        let injectedCount = 0;
+
+        for (const comp of installedComps) {
+          const { id, files } = comp;
+          if (!files || !files['manifest.json'] || !files['ui.tsx'] || !files['logic.ts']) continue;
+
+          try {
+            const manifest = JSON.parse(files['manifest.json']);
+            const uiRaw = files['ui.tsx'];
+            const logicRaw = files['logic.ts'];
+            const compType = manifest.type || id;
+
+            // Skip if it's already compiled natively into the frontend
+            if (COMPONENT_REGISTRY[compType] && !COMPONENT_REGISTRY[compType].isDynamic) continue;
+
+            const transpileUI = Babel.transform(uiRaw, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
+            const transpileLogic = Babel.transform(logicRaw, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+            assertSafeDynamicModule(transpileUI, 'ui.tsx');
+            assertSafeDynamicModule(transpileLogic, 'logic.ts');
+
+            const exportsUI = {};
+            const evalUI = new Function('exports', 'require', 'React', transpileUI);
+            evalUI(exportsUI, (mod) => (mod === 'react' ? React : null), React);
+
+            const uiComponent = resolveUiExport(exportsUI);
+            if (!uiComponent) continue;
+
+            // Inject into catalog
+            const newCatItem = { ...manifest };
+            delete newCatItem.pins;
+            delete newCatItem.group;
+
+            const groupName = normalizeGroupName(manifest.group);
+            let group = LOCAL_CATALOG.find(g => g.group === groupName);
+            if (!group) {
+              group = { group: groupName, items: [] };
+              LOCAL_CATALOG.push(group);
+            }
+            group.items = group.items.filter(i => i.type !== compType);
+            group.items.push(newCatItem);
+
+            COMPONENT_REGISTRY[compType] = {
+              manifest,
+              UI: uiComponent,
+              BOUNDS: exportsUI.BOUNDS,
+              ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))],
+              contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+              contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+              logicCode: transpileLogic,
+              uiRaw,
+              logicRaw,
+              isDynamic: true // Flag to distinguish dynamically injected components
+            };
+            if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
+            injectedCount++;
+
+          } catch (err) {
+            console.error(`[SimulatorPage] Failed to inject dynamically installed component ${id}:`, err);
+          }
+        }
+
+        if (injectedCount > 0) {
+          sortCatalog(LOCAL_CATALOG);
+          setCustomCatalogCounter(c => c + 1);
+          console.log(`[SimulatorPage] Successfully injected ${injectedCount} permanently installed custom components.`);
+        }
+      } catch (err) {
+        console.error('[SimulatorPage] Failed to fetch permanently installed components:', err);
+      }
+    })();
+  }, []);
 
   // ── Admin Preview: inject a pending component passed via sessionStorage ──────
   // When admin clicks "Test in Simulator", AdminPage stores the component in
