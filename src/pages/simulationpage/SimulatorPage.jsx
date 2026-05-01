@@ -1439,6 +1439,112 @@ function getPinCategory(pId, pDesc, compType) {
   return categories.length > 0 ? categories : null;
 }
 
+// ─── Memoized Wire Component ────────────────────────────────────────────────
+const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme }) => {
+  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints), [p1, e1, e2, p2, wire.waypoints]);
+
+  return (
+    <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
+      <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
+      <path d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
+      <circle cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
+      <circle cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
+      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints).reduce((acc, _, i, arr) => {
+        if (i < 1 || i >= arr.length - 2) return acc;
+        const a = arr[i], b = arr[i + 1];
+        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+        if (segLen < 20) return acc;
+        const isHoriz = Math.abs(b.y - a.y) < 1;
+        const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+        acc.push(
+          <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
+            fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
+            stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
+            opacity={isSelected ? 1 : 0.55}
+            style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
+            title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
+            onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr)}
+            onClick={ev => ev.stopPropagation()}
+            onDoubleClick={ev => {
+              ev.stopPropagation(); ev.preventDefault();
+              // This logic remains in parent for now or we pass a handler
+            }}
+          />
+        );
+        return acc;
+      }, [])}
+    </g>
+  );
+});
+
+// ─── Memoized Component Wrapper ──────────────────────────────────────────────
+const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
+  const rad = ((comp.rotation || 0) * Math.PI) / 180;
+  const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
+  
+  const getBounds = () => {
+    const reg = COMPONENT_REGISTRY[comp.type];
+    if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+    if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+    return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+  };
+  const b = getBounds();
+
+  return (
+    <React.Fragment>
+      <div
+        style={{
+          position: 'absolute',
+          left: comp.x, top: comp.y,
+          width: comp.w, height: comp.h,
+          zIndex: isSelected ? 5 : 2,
+          userSelect: 'none',
+          pointerEvents: 'none',
+          transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
+          transformOrigin: 'center center',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            left: b.x, top: b.y,
+            width: b.w, height: b.h,
+            cursor: 'move',
+            pointerEvents: 'auto',
+            zIndex: 0,
+          }}
+          onMouseDown={onMouseDown}
+          onClick={onClick}
+          onDoubleClick={e => e.stopPropagation()}
+        />
+        {isSelected && (
+          <div style={{
+            position: 'absolute',
+            left: b.x - 6, top: b.y - 6,
+            width: b.w + 12, height: b.h + 12,
+            borderRadius: 8,
+            border: '2px solid var(--accent)',
+            boxShadow: '0 0 16px var(--glow)',
+            pointerEvents: 'none', zIndex: 10,
+          }} />
+        )}
+        {hasError && (
+          <div style={{
+            position: 'absolute',
+            left: b.x - 6, top: b.y - 6,
+            width: b.w + 12, height: b.h + 12,
+            borderRadius: 8,
+            border: '2px solid var(--red)',
+            boxShadow: '0 0 12px rgba(239,68,68,0.4)',
+            pointerEvents: 'none', zIndex: 9,
+          }} />
+        )}
+      </div>
+      {/* Labels and Pins are usually better kept in the parent loop or as sub-memo items */}
+    </React.Fragment>
+  );
+});
+
 export default function SimulatorPage({ gamificationMode = false }) {
   const { isAuthenticated, isAdminAuthenticated, user, adminUser, token, logout, loading: authLoading } = useAuth()
   const activeUser = user || adminUser;
@@ -1603,13 +1709,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showFavorites, setShowFavorites] = useState(true)
   const [paletteContextMenu, setPaletteContextMenu] = useState(null) // { x, y, item }
-  const [selectedPaletteItem, setSelectedPaletteItem] = useState(null) // item for description panel
   const [showComponentDesc, setShowComponentDesc] = useState(true) // description panel visible
   const [showCreateComponentModal, setShowCreateComponentModal] = useState(false)
   const paletteContextMenuRef = useRef(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [showCanvasMenu, setShowCanvasMenu] = useState(false)
-  const [showConnectionsPanel, setShowConnectionsPanel] = useState(true)
+  const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
   const [wirepointsEnabled, setWirepointsEnabled] = useState(false)
   const canvasZoomRef = useRef(1)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
@@ -1853,6 +1958,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const innerCanvasRef = useRef(null)   // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
   const rafMoveRef = useRef(null)       // pending rAF id for mousemove throttle (Fixes #1-#4)
   const pendingMoveRef = useRef(null)   // latest computed move data, read by the rAF callback
+  const rafZoomRef = useRef(null)
+  const pendingZoomRef = useRef(null)
   const svgRef = useRef(null)
   const viewPanelRef = useRef(null)
   const schematicSvgRef = useRef(null)
@@ -3993,28 +4100,50 @@ useEffect(() => {
     initialTouchDistanceRef.current = null;
   }, []);
 
-  // Trackpad pinch (Ctrl + Wheel)
+  // Pinch-to-zoom via trackpad (Ctrl + Wheel)
+  // Key insight: NEVER update React state mid-pinch — that causes React to re-render
+  // which overwrites our DOM transform on the SAME frame, creating the vibration.
+  // Instead: apply only the CSS transform during pinch, update refs for correctness,
+  // then flush to React state via a debounce AFTER the gesture ends.
   const onWheel = useCallback((e) => {
     if (isCanvasLockedRef.current || !e.ctrlKey) return;
     e.preventDefault();
-    const zoomSpeed = 0.001; 
+
+    const zoomSpeed = 0.002;
     const delta = -e.deltaY * zoomSpeed;
-    const newZoom = Math.min(3, Math.max(0.25, canvasZoomRef.current + delta));
-    
+    const currentZoom = canvasZoomRef.current;
+    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
+
+    if (newZoom === currentZoom) return;
+
     const rect = canvasRef.current.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    
-    const cx = (mx - canvasOffsetRef.current.x) / canvasZoomRef.current;
-    const cy = (my - canvasOffsetRef.current.y) / canvasZoomRef.current;
-    
+
+    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
+    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
+
     const newOffsetX = mx - cx * newZoom;
     const newOffsetY = my - cy * newZoom;
-    
-    setCanvasZoom(newZoom);
+
+    // 1. Update refs immediately — keeps subsequent wheel events reading the correct values
     canvasZoomRef.current = newZoom;
-    setCanvasOffset({ x: newOffsetX, y: newOffsetY });
     canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+
+    // 2. Apply directly to DOM — zero React renders mid-pinch = zero vibration
+    if (innerCanvasRef.current) {
+      innerCanvasRef.current.style.transform =
+        `translate(${newOffsetX}px, ${newOffsetY}px) scale(${newZoom})`;
+      innerCanvasRef.current.style.transformOrigin = '0 0';
+    }
+
+    // 3. Debounce the React state flush — commit once the user stops pinching
+    if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
+    rafZoomRef.current = setTimeout(() => {
+      rafZoomRef.current = null;
+      setCanvasZoom(canvasZoomRef.current);
+      setCanvasOffset({ ...canvasOffsetRef.current });
+    }, 150);
   }, []);
 
   // ── Move and Select component ──────────────────────────────────────────────
@@ -4184,20 +4313,19 @@ useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const preventDefault = (e) => {
-      // Still prevent wheel zoom (Ctrl + Wheel)
+    const handleWheel = (e) => {
       if (e.ctrlKey) {
         if (e.cancelable) e.preventDefault();
+        onWheel(e); // Trigger our custom zoom
       }
     };
 
-    canvas.addEventListener('wheel', preventDefault, { passive: false });
-    // removed native touch blockers as touch-action: none handles it and preventDefault might break React events
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
 
     return () => {
-      canvas.removeEventListener('wheel', preventDefault);
+      canvas.removeEventListener('wheel', handleWheel);
     };
-  }, []);
+  }, [onWheel]);
 
   // ── Pin click — start or complete wire ─────────────────────────────────────
   const onPinClick = useCallback((e, compId, pinId, pinLabel) => {
@@ -7415,7 +7543,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -7943,7 +8071,7 @@ useEffect(() => {
                               onDragStart={e => !locked && onPaletteDragStart(e, item)}
                               onClick={() => {
                                 if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
-                                addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group });
+                                addComponentAtCenter(item);
                               }}
                               onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
                               title={item.label}
@@ -7984,7 +8112,7 @@ useEffect(() => {
                             onDragStart={e => !locked && onPaletteDragStart(e, item)}
                             onClick={() => {
                               if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
-                              addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group });
+                              addComponentAtCenter(item);
                             }}
                             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
                             style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
@@ -8142,7 +8270,6 @@ useEffect(() => {
             opacity: liveEditingDisabled ? 0.8 : 1,
           }}
           ref={canvasRef}
-          onWheel={onWheel}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -8201,60 +8328,32 @@ useEffect(() => {
                 if (!p1 || !p2) return null
                 const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
                 const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
-                const isSelectedWire = selected === w.id;
-                const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
-
+                
                 return (
-                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => {
-                    e.stopPropagation();
-                    setSelected(w.id);
-                    const rect = canvasRef.current.getBoundingClientRect();
-                    setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                  }} onDoubleClick={e => e.stopPropagation()}>
-                    <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-                    <path d={wirePath} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 2.5 : 1.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.6} />
-                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
-                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
-                    {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, w.waypoints).reduce((acc, _, i, arr) => {
-                      // Skip pin-stub segments (first: p1→e1, last: e2→p2) — only show on routing segments
-                      if (i < 1 || i >= arr.length - 2) return acc;
-                      const a = arr[i], b = arr[i + 1];
-                      const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-                      if (segLen < 20) return acc;
-                      const isHoriz = Math.abs(b.y - a.y) < 1;
-                      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-                      acc.push(
-                        <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelectedWire ? 6 : 4}
-                          fill={isSelectedWire ? '#fff' : 'rgba(255,255,255,0.35)'}
-                          stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={1.5}
-                          opacity={isSelectedWire ? 1 : 0.55}
-                          style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-                          title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-                          onMouseDown={ev => {
-                            ev.stopPropagation(); ev.preventDefault();
-                            if (!isSelectedWire) { setSelected(w.id); return; }
-                            const rect = canvasRef.current.getBoundingClientRect();
-                            const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                            const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                            const dragData = { wireId: w.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                            segDragRef.current = dragData;
-                            setSegDrag(dragData);
-                          }}
-                          onClick={ev => ev.stopPropagation()}
-                          onDoubleClick={ev => {
-                            ev.stopPropagation(); ev.preventDefault();
-                            const newCorners = arr.slice(1, -1)
-                              .filter((_, ci) => ci !== i - 1 && ci !== i)
-                              .map(pt => ({ x: pt.x, y: pt.y, _corner: true }));
-                            saveHistory();
-                            setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: newCorners } : ww));
-                          }}
-                        />
-                      );
-                      return acc;
-                    }, [])}
-                  </g>
-                )
+                  <CanvasWire
+                    key={w.id}
+                    wire={w}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    isSelected={selected === w.id}
+                    wirepointsEnabled={wirepointsEnabled}
+                    theme={theme}
+                    onSelect={(e) => {
+                      e.stopPropagation();
+                      setSelected(w.id);
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                    }}
+                    onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                      if (selected !== wire.id) { setSelected(wire.id); return; }
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                      const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                      segDragRef.current = dragData;
+                      setSegDrag(dragData);
+                    }}
+                  />
+                );
               })}
             </svg>
 
@@ -8272,60 +8371,32 @@ useEffect(() => {
                 if (!p1 || !p2) return null
                 const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
                 const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
-                const isSelectedWire = selected === w.id;
-                const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
-
+                
                 return (
-                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => {
-                    e.stopPropagation();
-                    setSelected(w.id);
-                    const rect = canvasRef.current.getBoundingClientRect();
-                    setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                  }} onDoubleClick={e => e.stopPropagation()}>
-                    <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-                    <path d={wirePath} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 2.3 : 1.3} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.9} />
-                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 3 : 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
-                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 3 : 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
-                    {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, w.waypoints).reduce((acc, _, i, arr) => {
-                      // Skip pin-stub segments (first: p1→e1, last: e2→p2) — only show on routing segments
-                      if (i < 1 || i >= arr.length - 2) return acc;
-                      const a = arr[i], b = arr[i + 1];
-                      const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-                      if (segLen < 20) return acc;
-                      const isHoriz = Math.abs(b.y - a.y) < 1;
-                      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-                      acc.push(
-                        <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelectedWire ? 6 : 4}
-                          fill={isSelectedWire ? '#fff' : 'rgba(255,255,255,0.35)'}
-                          stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={1.5}
-                          opacity={isSelectedWire ? 1 : 0.55}
-                          style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-                          title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-                          onMouseDown={ev => {
-                            ev.stopPropagation(); ev.preventDefault();
-                            if (!isSelectedWire) { setSelected(w.id); return; }
-                            const rect = canvasRef.current.getBoundingClientRect();
-                            const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                            const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                            const dragData = { wireId: w.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                            segDragRef.current = dragData;
-                            setSegDrag(dragData);
-                          }}
-                          onClick={ev => ev.stopPropagation()}
-                          onDoubleClick={ev => {
-                            ev.stopPropagation(); ev.preventDefault();
-                            const newCorners = arr.slice(1, -1)
-                              .filter((_, ci) => ci !== i - 1 && ci !== i)
-                              .map(pt => ({ x: pt.x, y: pt.y, _corner: true }));
-                            saveHistory();
-                            setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: newCorners } : ww));
-                          }}
-                        />
-                      );
-                      return acc;
-                    }, [])}
-                  </g>
-                )
+                  <CanvasWire
+                    key={w.id}
+                    wire={w}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    isSelected={selected === w.id}
+                    wirepointsEnabled={wirepointsEnabled}
+                    theme={theme}
+                    onSelect={(e) => {
+                      e.stopPropagation();
+                      setSelected(w.id);
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                    }}
+                    onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                      if (selected !== wire.id) { setSelected(wire.id); return; }
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                      const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                      segDragRef.current = dragData;
+                      setSegDrag(dragData);
+                    }}
+                  />
+                );
               })}
 
               {/* Preview wire while drawing */}
@@ -8467,245 +8538,181 @@ useEffect(() => {
               const hasError = errorCompIds.has(comp.id)
               const isSelected = selected === comp.id
               const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
+
+              const rad = ((comp.rotation || 0) * Math.PI) / 180;
+              const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
+              const visualHalfHeight = visualH / 2;
+
               return (
-                <div
-                  key={comp.id}
-                  style={{
+                <React.Fragment key={comp.id}>
+                  <CanvasComponent
+                    comp={comp}
+                    isSelected={isSelected}
+                    hasError={hasError}
+                    onMouseDown={e => onCompMouseDown(e, comp.id)}
+                    onClick={e => onCompClick(e, comp.id)}
+                    getComponentStateAttrs={getComponentStateAttrs}
+                    COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+                    PIN_DEFS={PIN_DEFS}
+                  />
+
+                  {/* Wrapper for the actual emulator component and its dynamic pins */}
+                  <div style={{
                     position: 'absolute',
                     left: comp.x, top: comp.y,
                     width: comp.w, height: comp.h,
-                    zIndex: isSelected ? 5 : 2,
+                    zIndex: isSelected ? 4 : 1,
                     userSelect: 'none',
-                    pointerEvents: 'none', // Clicks pass through the manifest wrapper
+                    pointerEvents: 'none',
                     transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
                     transformOrigin: 'center center',
-                  }}
-                >
-                  {/* Hit Box — captures selection and drag only within BOUNDS */}
-                  {(() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: b.x, top: b.y,
-                          width: b.w, height: b.h,
-                          cursor: wireStart ? 'crosshair' : 'move',
-                          pointerEvents: 'auto',
-                          zIndex: 0, // Below pins and interactive UI elements
-                        }}
-                        onMouseDown={e => onCompMouseDown(e, comp.id)}
-                        onClick={e => onCompClick(e, comp.id)}
-                        onDoubleClick={e => e.stopPropagation()}
-                      />
-                    );
-                  })()}
+                  }}>
 
-                  {/* Selection ring — uses BOUNDS from ui.tsx for precise sizing */}
-                  {isSelected && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div style={{
-                        position: 'absolute',
-                        left: b.x - 6, top: b.y - 6,
-                        width: b.w + 12, height: b.h + 12,
-                        borderRadius: 8,
-                        border: '2px solid var(--accent)',
-                        boxShadow: '0 0 16px var(--glow)',
-                        pointerEvents: 'none', zIndex: 10,
-                      }} />
-                    );
-                  })()}
-                  {/* Error ring — uses BOUNDS from ui.tsx for precise sizing */}
-                  {hasError && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div style={{
-                        position: 'absolute',
-                        left: b.x - 6, top: b.y - 6,
-                        width: b.w + 12, height: b.h + 12,
-                        borderRadius: 8,
-                        border: '2px solid var(--red)',
-                        boxShadow: '0 0 16px rgba(255,68,68,.4)',
-                        pointerEvents: 'none', zIndex: 10,
-                      }} />
-                    );
-                  })()}
+                    {/* Serial-target board ring */}
+                    {isSerialBoardSelected && (() => {
+                      const getBounds = () => {
+                        const reg = COMPONENT_REGISTRY[comp.type];
+                        if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                        if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                        return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                      };
+                      const b = getBounds();
+                      return (
+                        <>
+                          <div style={{
+                            position: 'absolute',
+                            left: b.x - 10, top: b.y - 10,
+                            width: b.w + 20, height: b.h + 20,
+                            borderRadius: 10,
+                            border: '2px dashed #38bdf8',
+                            boxShadow: '0 0 18px rgba(56,189,248,.45)',
+                            pointerEvents: 'none', zIndex: 9,
+                          }} />
+                          <div style={{
+                            position: 'absolute',
+                            left: b.x - 10,
+                            top: b.y - 26,
+                            background: '#0c4a6e',
+                            color: '#e0f2fe',
+                            border: '1px solid #38bdf8',
+                            borderRadius: 6,
+                            fontSize: 9,
+                            padding: '1px 6px',
+                            letterSpacing: '0.04em',
+                            fontFamily: 'JetBrains Mono, monospace',
+                            pointerEvents: 'none',
+                            zIndex: 11,
+                          }}>
+                            SERIAL TARGET
+                          </div>
+                        </>
+                      );
+                    })()}
 
-                  {/* Serial-target board ring */}
-                  {isSerialBoardSelected && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <>
-                        <div style={{
-                          position: 'absolute',
-                          left: b.x - 10, top: b.y - 10,
-                          width: b.w + 20, height: b.h + 20,
-                          borderRadius: 10,
-                          border: '2px dashed #38bdf8',
-                          boxShadow: '0 0 18px rgba(56,189,248,.45)',
-                          pointerEvents: 'none', zIndex: 9,
-                        }} />
-                        <div style={{
-                          position: 'absolute',
-                          left: b.x - 10,
-                          top: b.y - 26,
-                          background: '#0c4a6e',
-                          color: '#e0f2fe',
-                          border: '1px solid #38bdf8',
-                          borderRadius: 6,
-                          fontSize: 9,
-                          padding: '1px 6px',
-                          letterSpacing: '0.04em',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          pointerEvents: 'none',
-                          zIndex: 11,
-                        }}>
-                          SERIAL TARGET
+                    {/* Component Render — wrapped to allow pass-through to Hit Box */}
+                    <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
+                      {COMPONENT_REGISTRY[comp.type] ? (
+                        // Local UI component rendering SVG
+                        React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+                          state: oopStates[comp.id] || {},
+                          attrs: getComponentStateAttrs(comp),
+                          isRunning: isRunning
+                        })
+                      ) : (
+                        // Fallback for unsupported components (if any left)
+                        <div
+                          style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+                          ref={el => {
+                            if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                              neopixelRefs.current[comp.id] = el;
+                            }
+                          }}
+                        >
+                          {React.createElement(comp.type, getComponentStateAttrs(comp))}
                         </div>
-                      </>
-                    );
-                  })()}
+                      )}
+                    </div>
 
-                  {/* Component Render — wrapped to allow pass-through to Hit Box */}
-                  <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
-                    {COMPONENT_REGISTRY[comp.type] ? (
-                      // Local UI component rendering SVG
-                      React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                        state: oopStates[comp.id] || {},
-                        attrs: getComponentStateAttrs(comp),
-                        isRunning: isRunning
-                      })
-                    ) : (
-                      // Fallback for unsupported components (if any left)
-                      <div
-                        style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                        ref={el => {
-                          if (comp.type === 'wokwi-neopixel-matrix' && el) {
-                            neopixelRefs.current[comp.id] = el;
-                          }
-                        }}
-                      >
-                        {React.createElement(comp.type, getComponentStateAttrs(comp))}
-                      </div>
-                    )}
+                    {/* Pins */}
+                    {pins.map(pin => {
+                      const pinStrRef = `${comp.id}:${pin.id}`;
+                      const isHovered = hoveredPin === pinStrRef;
+                      const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
+
+                      // Hovered pin's category for passive highlighting
+                      const hoverCompId = hoveredPin?.split(':')[0];
+                      const hoverPinId = hoveredPin?.split(':')[1];
+                      const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+                      const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
+
+                      const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+                      const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+
+                      const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+                      const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+                      const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
+
+                      // Check if a wire is connected to this pin
+                      const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+                      const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
+                      const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
+
+                      return (
+                        <div
+                          key={pin.id}
+                          title={`${pin.description || pin.id} — click to wire`}
+                          style={{
+                            position: 'absolute',
+                            left: pin.x, top: pin.y,
+                            width: 5, height: 5,
+                            background: pinColor,
+                            border: `1px solid ${pinBorder}`,
+                            borderRadius: '0%', /* matching task3.html */
+                            cursor: 'crosshair',
+                            zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
+                            transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                            transition: '0.2s', /* matching task3.html transition */
+                            pointerEvents: 'all', /* Fix hit detection */
+                            boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
+                          }}
+                          onMouseEnter={() => setHoveredPin(pinStrRef)}
+                          onMouseLeave={() => setHoveredPin(null)}
+                          onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
+                        >
+                          {/* Pin label tooltip */}
+                          {isHovered && (
+                            <div style={{
+                              position: 'absolute', bottom: 18, left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: '#111', color: '#fff',
+                              padding: '4px 8px', borderRadius: 4,
+                              fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                              pointerEvents: 'none', border: '1px solid #444',
+                              boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                            }}>
+                              {pin.description || pin.id}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
 
-                  {/* Pins */}
-                  {pins.map(pin => {
-                    const pinStrRef = `${comp.id}:${pin.id}`;
-                    const isHovered = hoveredPin === pinStrRef;
-                    const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-
-                    // Hovered pin's category for passive highlighting
-                    const hoverCompId = hoveredPin?.split(':')[0];
-                    const hoverPinId = hoveredPin?.split(':')[1];
-                    const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
-                    const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
-
-                    const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
-                    const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-
-                    const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                    const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
-
-                    const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
-
-                    // Check if a wire is connected to this pin
-                    const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                    const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                    const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
-
-                    return (
-                      <div
-                        key={pin.id}
-                        title={`${pin.description || pin.id} — click to wire`}
-                        style={{
-                          position: 'absolute',
-                          left: pin.x, top: pin.y,
-                          width: 5, height: 5,
-                          background: pinColor,
-                          border: `1px solid ${pinBorder}`,
-                          borderRadius: '0%', /* matching task3.html */
-                          cursor: 'crosshair',
-                          zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
-                          transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                          transition: '0.2s', /* matching task3.html transition */
-                          pointerEvents: 'all', /* Fix hit detection */
-                          boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
-                        }}
-                        onMouseEnter={() => setHoveredPin(pinStrRef)}
-                        onMouseLeave={() => setHoveredPin(null)}
-                        onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                      >
-                        {/* Pin label tooltip */}
-                        {isHovered && (
-                          <div style={{
-                            position: 'absolute', bottom: 18, left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: '#111', color: '#fff',
-                            padding: '4px 8px', borderRadius: 4,
-                            fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                            pointerEvents: 'none', border: '1px solid #444',
-                            boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                          }}>
-                            {pin.description || pin.id}
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })}
-
-                  {/* Component label */}
+                  {/* Component label (Outside rotated container) */}
                   <div style={{
                     position: 'absolute',
-                    top: (() => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      const b = typeof reg?.BOUNDS === 'function'
-                        ? reg.BOUNDS(getComponentStateAttrs(comp))
-                        : (reg?.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h });
-                      return b.y + b.h + 4;
-                    })(),
-                    left: (() => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      const b = typeof reg?.BOUNDS === 'function'
-                        ? reg.BOUNDS(getComponentStateAttrs(comp))
-                        : (reg?.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h });
-                      return b.x + b.w / 2;
-                    })(),
+                    top: comp.y + comp.h / 2 + visualHalfHeight + 4,
+                    left: comp.x + comp.w / 2,
                     transform: 'translateX(-50%)',
                     fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
                     whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
                     pointerEvents: 'none',
+                    zIndex: 5,
                   }}>
                     {comp.label}
                   </div>
-
-                </div>
+                </React.Fragment>
               )
             })}
           </div>{/* end zoom wrapper */}
@@ -8795,6 +8802,7 @@ useEffect(() => {
               data-export-ignore="true"
               onClick={e => e.stopPropagation()}
               onMouseDown={e => e.stopPropagation()}
+              onDoubleClick={e => e.stopPropagation()}
               style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 220, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden' }}
             >
               {/* Header */}
@@ -8817,10 +8825,6 @@ useEffect(() => {
                   {selectedComponentInfo.label}
                 </div>
 
-                {/* Description - Preserved from Local */}
-                <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-                  {COMPONENT_REGISTRY[selectedComponentInfo.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[selectedComponentInfo.type] || `${selectedComponentInfo.type} component`}
-                </div>
 
                 <div style={{
                   display: 'flex',
@@ -9266,6 +9270,7 @@ useEffect(() => {
                 className="canvas-menu"
                 data-quickadd="true"
                 onMouseDown={e => e.stopPropagation()}
+                onDoubleClick={e => e.stopPropagation()}
                 onMouseLeave={() => setQuickAdd(null)}
                 style={{
                   position: 'fixed', 
@@ -9357,6 +9362,7 @@ useEffect(() => {
           isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
           explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
           selected={selected} setSelected={setSelected} theme={theme}
+          projectName={currentProjectName}
           validationErrors={validationErrors} showValidation={showValidation} setShowValidation={setShowValidation}
           codeTab={codeTab} setCodeTab={setCodeTab} code={code} setCode={setCode}
           blocklyXml={blocklyXml} setBlocklyXml={setBlocklyXml}

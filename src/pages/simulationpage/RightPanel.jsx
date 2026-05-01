@@ -14,7 +14,7 @@ const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.js
 
 const DISABLED_FILE_SUFFIX = '.disabled';
 
-export function RightPanel(props) {
+function RightPanelInternal(props) {
   const {
     isPanelOpen, panelWidth, isDragging, onMouseDownResize, setIsPanelOpen,
     explorerWidth, isExplorerDragging, onMouseDownExplorerResize,
@@ -36,6 +36,7 @@ export function RightPanel(props) {
     blocklyDisabled, setBlocklyDisabled,
     boardComponentMap, onToggleBoardFirmwareSource,
     theme,
+    projectName,
     editingDisabled = false,
     editingDisabledMessage = 'Editing is disabled.',
   } = props;
@@ -437,7 +438,7 @@ export function RightPanel(props) {
                           if (onOpenCodeFile) onOpenCodeFile(null);
                           setFileMenu(null);
                         }} style={{ flex: 1, overflow: 'auto', cursor: 'default' }}>
-                          <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.8 }}>project</div>
+                          <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={projectName || 'project'}>{projectName || 'project'}</div>
 
                           {projectRootFiles.map((file) => (
                             <div
@@ -1467,5 +1468,6 @@ export function RightPanel(props) {
     </aside>
   );
 }
+export const RightPanel = React.memo(RightPanelInternal);
 
 

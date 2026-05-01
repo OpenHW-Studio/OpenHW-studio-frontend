@@ -923,7 +923,8 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, varId
   const wsRef = useRef(null)
   const [renderError, setRenderError] = useState(false)
   const [renderReady, setRenderReady] = useState(false)
-  const [previewHeight, setPreviewHeight] = useState(30)
+  // Use a more stable default height (60px) to reduce CLS
+  const [previewHeight, setPreviewHeight] = useState(60)
 
   useEffect(() => {
     if (!blocklyReady) {
@@ -1027,7 +1028,23 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, varId
     e.dataTransfer.setData('text/plain', type)
     if (varId) e.dataTransfer.setData('application/x-varId', varId)
     e.dataTransfer.effectAllowed = 'copy'
-    onDragStart && onDragStart(type)
+
+    // Fix the "ghosting" issue by using a transparent drag image.
+    // The "real" preview will be rendered in the workspace.
+    const img = new Image()
+    img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+    e.dataTransfer.setDragImage(img, 0, 0)
+
+    // Calculate grab offset so the block stays under the cursor correctly.
+    let offsetX = 0
+    let offsetY = 0
+    if (hostRef.current) {
+      const rect = hostRef.current.getBoundingClientRect()
+      offsetX = e.clientX - rect.left
+      offsetY = e.clientY - rect.top
+    }
+
+    onDragStart && onDragStart({ type, varId, offsetX, offsetY })
   }
 
   return (
@@ -1036,7 +1053,16 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, varId
       onDragStart={handleDragStart}
       style={{ cursor: 'grab', userSelect: 'none', lineHeight: 0, padding: '4px 0', display: 'flex', justifyContent: 'center' }}
     >
-      <div style={{ position: 'relative', width: '100%', minWidth: 72, minHeight: previewHeight }}>
+      <div style={{ 
+        position: 'relative', 
+        width: '100%', 
+        minWidth: 72, 
+        minHeight: previewHeight,
+        // Add a subtle skeleton background to reserve space and reduce CLS
+        background: !renderReady ? (isDark ? '#11182766' : '#f1f5f966') : 'transparent',
+        borderRadius: 8,
+        transition: 'height 0.2s ease-in-out'
+      }}>
         <div
           ref={hostRef}
           style={{
@@ -1045,6 +1071,7 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, varId
             height: previewHeight,
             pointerEvents: 'none',
             opacity: renderReady && !renderError ? 1 : 0,
+            transition: 'opacity 0.2s'
           }}
         />
         {(!blocklyReady || !renderReady || renderError) && (
@@ -1086,6 +1113,9 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
   const wsContainerRef = useRef(null)
   const workspaceRef = useRef(null)
   const importFileRef = useRef(null)
+  const draggingRef = useRef(null) // { type, varId, offsetX, offsetY }
+  const previewBlockRef = useRef(null)
+  const markerManagerRef = useRef(null)
   const genRef = useRef(null)
   const blockCountRef = useRef(0)
 
@@ -1107,6 +1137,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     return () => mo.disconnect()
   }, [])
+
 
   useEffect(() => {
     window.BLOCKLY_BOARD_KIND = boardKind || 'arduino_uno'
@@ -1157,9 +1188,9 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     genRef.current = buildGenerator(B)
 
     const ws = B.inject(wsContainerRef.current, {
-      toolbox: null, // custom sidebar handles this
+      toolbox: null,
       theme: buildTheme(B, isDark),
-      renderer: 'zelos', // Scratch-like UI
+      renderer: 'zelos',
       grid: { spacing: 20, length: 3, colour: isDark ? '#1e2d47' : '#e2e8f0', snap: true },
       zoom: { controls: true, wheel: true, startScale: 0.9, maxScale: 3, minScale: 0.3, pinch: true },
       move: { scrollbars: true, drag: true, wheel: true },
@@ -1196,7 +1227,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
         }
       } catch (_) { }
     })
-  }, [isDark, boardKind]) // eslint-disable-line
+  }, [isDark, boardKind, onChange, onXmlChange, xml])
 
   // ── Resize Blockly when container changes ──────────────────────────────────
   useEffect(() => {
@@ -1209,7 +1240,6 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     return () => ro.disconnect()
   }, [loadStatus])
 
-  // ── Create block and place it at offset ────────────────────────────────────
   const placeBlock = useCallback((type, wsX, wsY) => {
     const ws = workspaceRef.current
     if (!ws || !window.Blockly) return
@@ -1248,27 +1278,145 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
   const handleWsDragOver = useCallback((e) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
+
+    const ws = workspaceRef.current
+    const B = window.Blockly
+    if (!ws || !B || !draggingRef.current) return
+
+    const screenCoord = new B.utils.Coordinate(e.clientX, e.clientY)
+    let wsCoord
+    try { 
+      wsCoord = B.utils.svgMath.screenToWsCoordinates(ws, screenCoord) 
+      const scale = ws.scale || 1
+      wsCoord.x -= (draggingRef.current.offsetX || 0) / scale
+      wsCoord.y -= (draggingRef.current.offsetY || 0) / scale
+    } catch (_) { return }
+
+    if (!previewBlockRef.current) {
+      const { type, varId } = draggingRef.current
+      
+      // Disable events while creating the temporary preview block 
+      // to avoid polluting the undo/redo history and causing event errors.
+      B.Events.disable()
+      try {
+        const block = ws.newBlock(type)
+        if (varId && block.getField('VAR')) block.getField('VAR').setValue(varId)
+        
+        block.initSvg()
+        block.render()
+        
+        if (block.getSvgRoot()) {
+          block.getSvgRoot().setAttribute('opacity', '1')
+        }
+
+        previewBlockRef.current = block
+        B.svgResize(ws)
+        
+        if (B.InsertionMarkerManager) {
+          markerManagerRef.current = new B.InsertionMarkerManager(block)
+        }
+      } finally {
+        B.Events.enable()
+      }
+    }
+
+    const block = previewBlockRef.current
+    if (block) {
+      B.Events.disable()
+      try {
+        // Ensure the block is not connected before moving it
+        if (block.getParent()) {
+          block.unplug(true)
+        }
+        block.moveTo(wsCoord)
+        
+        if (markerManagerRef.current) {
+          markerManagerRef.current.update(new B.utils.Coordinate(0, 0), null)
+        }
+      } finally {
+        B.Events.enable()
+      }
+    }
   }, [])
 
   const handleWsDrop = useCallback((e) => {
     e.preventDefault()
     const type = e.dataTransfer.getData('text/plain')
-    if (!type || !workspaceRef.current || !window.Blockly) return
     const ws = workspaceRef.current
     const B = window.Blockly
     const varId = e.dataTransfer.getData('application/x-varId')
-    // Convert screen coords → workspace coords
+    if (!ws || !B) return
+
     const screenCoord = new B.utils.Coordinate(e.clientX, e.clientY)
     let wsCoord
-    try { wsCoord = B.utils.svgMath.screenToWsCoordinates(ws, screenCoord) }
-    catch (_) { wsCoord = new B.utils.Coordinate(60, 60) }
-    // Create block
+    try { 
+      wsCoord = B.utils.svgMath.screenToWsCoordinates(ws, screenCoord) 
+      const scale = ws.scale || 1
+      if (draggingRef.current) {
+        wsCoord.x -= (draggingRef.current.offsetX || 0) / scale
+        wsCoord.y -= (draggingRef.current.offsetY || 0) / scale
+      }
+    } catch (_) { wsCoord = new B.utils.Coordinate(60, 60) }
+
+    // Check if we were snapped to something
+    let targetConnection = null
+    let draggedConnection = null
+    if (markerManagerRef.current) {
+      const mgr = markerManagerRef.current
+      if (mgr.markerConnection && mgr.markerConnection.targetConnection) {
+        targetConnection = mgr.markerConnection.targetConnection
+        draggedConnection = mgr.draggedConnection
+      }
+      mgr.dispose()
+      markerManagerRef.current = null
+    }
+
+    // CRITICAL: Unplug the preview block before disposing it.
+    // If it snapped to an existing block during the drag, a simple dispose()
+    // would destroy the connected canvas block along with the preview.
+    if (previewBlockRef.current) {
+      B.Events.disable()
+      try {
+        if (previewBlockRef.current.getParent()) {
+          previewBlockRef.current.unplug(false) // detach without healing
+        }
+        // Also disconnect any child connections (e.g. value inputs that snapped)
+        previewBlockRef.current.getConnections_(false).forEach(conn => {
+          if (conn.isConnected()) conn.disconnect()
+        })
+        previewBlockRef.current.dispose()
+      } finally {
+        B.Events.enable()
+      }
+      previewBlockRef.current = null
+    }
+
+    // Create real block
     const block = ws.newBlock(type)
     if (varId && block.getField('VAR')) block.getField('VAR').setValue(varId)
     block.initSvg()
     block.render()
-    block.moveTo(new B.utils.Coordinate(wsCoord.x, wsCoord.y))
+    block.moveTo(wsCoord)
+
+    // Connect if snapped
+    if (targetConnection && draggedConnection) {
+      // Find the equivalent connection on the real block by comparing offsets and types
+      const source = block.getConnections_(false).find(c => 
+        c.type === draggedConnection.type && 
+        c.getOffsetInBlock().x === draggedConnection.getOffsetInBlock().x &&
+        c.getOffsetInBlock().y === draggedConnection.getOffsetInBlock().y
+      )
+      if (source && targetConnection.getSourceBlock().workspace) {
+        try {
+          source.connect(targetConnection)
+        } catch (err) {
+          console.warn('Failed to connect block on drop:', err)
+        }
+      }
+    }
+
     B.svgResize(ws)
+    draggingRef.current = null
   }, [])
 
   const handleExport = useCallback(() => {
@@ -1406,7 +1554,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
   // ─── Render ────────────────────────────────────────────────────────────────
   if (loadStatus === 'error') {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: tok.bg }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: tok.bg, minHeight: 400 }}>
         <div style={{ color: 'var(--red)', fontSize: 13, padding: 24, textAlign: 'center' }}>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>Blockly failed to load</div>
           <div style={{ color: 'var(--text3)', fontSize: 11 }}>{errMsg}</div>
@@ -1417,8 +1565,14 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-      {/* Hide Blockly's built-in scrollbars */}
-      <style>{`.blocklyScrollbarHorizontal, .blocklyScrollbarVertical { display: none !important; }`}</style>
+      {/* Hide Blockly's built-in scrollbars and force opaque markers */}
+      <style>{`
+        .blocklyScrollbarHorizontal, .blocklyScrollbarVertical { display: none !important; }
+        .blocklyInsertionMarker .blocklyPath {
+          fill-opacity: 1 !important;
+          stroke-opacity: 1 !important;
+        }
+      `}</style>
 
       {/* ── Toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', flexShrink: 0, background: tok.toolbar, borderBottom: `1px solid ${tok.border}` }}>
@@ -1482,8 +1636,16 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
         {/* ════ Sidebar ════ */}
         <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: tok.sidebar }}>
 
-          {/* Category pills grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, padding: '10px 8px', borderBottom: `1px solid ${tok.border}`, flexShrink: 0 }}>
+          {/* Category pills grid - fixed height to prevent CLS */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: '1fr 1fr', 
+            gap: 5, 
+            padding: '10px 8px', 
+            borderBottom: `1px solid ${tok.border}`, 
+            flexShrink: 0,
+            minHeight: 110 // Matches the height of the 3-row grid
+          }}>
             {CATEGORIES.map(cat => {
               const active = activeCat === cat.id
               return (
@@ -1525,6 +1687,23 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     type={item.type}
                     isDark={isDark}
                     blocklyReady={loadStatus === 'ready'}
+                    onDragStart={(info) => { draggingRef.current = info }}
+                    onDragEnd={() => { 
+                      if (markerManagerRef.current) {
+                        markerManagerRef.current.dispose()
+                        markerManagerRef.current = null
+                      }
+                      if (previewBlockRef.current) {
+                        B.Events.disable()
+                        try {
+                          previewBlockRef.current.dispose()
+                        } finally {
+                          B.Events.enable()
+                        }
+                        previewBlockRef.current = null
+                      }
+                      draggingRef.current = null 
+                    }}
                   />
                 </div>
               )
@@ -1559,15 +1738,72 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                   <div key={v.getId()} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {/* Variable reporter (get) */}
                     <div onClick={() => addVariableBlock('variables_get', v)} style={{ cursor: 'pointer' }} title={`Use "${v.name}"`}>
-                      <BlockPreview type="variables_get" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'} />
+                      <BlockPreview 
+                        type="variables_get" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'} 
+                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragEnd={() => { 
+                          if (markerManagerRef.current) {
+                            markerManagerRef.current.dispose()
+                            markerManagerRef.current = null
+                          }
+                          if (previewBlockRef.current) {
+                            B.Events.disable()
+                            try {
+                              previewBlockRef.current.dispose()
+                            } finally {
+                              B.Events.enable()
+                            }
+                            previewBlockRef.current = null
+                          }
+                          draggingRef.current = null 
+                        }}
+                      />
                     </div>
                     {/* set */}
                     <div onClick={() => addVariableBlock('variables_set', v)} style={{ cursor: 'pointer' }} title={`set ${v.name}`}>
-                      <BlockPreview type="variables_set" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'} />
+                      <BlockPreview 
+                        type="variables_set" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'} 
+                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragEnd={() => { 
+                          if (markerManagerRef.current) {
+                            markerManagerRef.current.dispose()
+                            markerManagerRef.current = null
+                          }
+                          if (previewBlockRef.current) {
+                            B.Events.disable()
+                            try {
+                              previewBlockRef.current.dispose()
+                            } finally {
+                              B.Events.enable()
+                            }
+                            previewBlockRef.current = null
+                          }
+                          draggingRef.current = null 
+                        }}
+                      />
                     </div>
                     {/* change */}
                     <div onClick={() => addVariableBlock('math_change', v)} style={{ cursor: 'pointer' }} title={`change ${v.name}`}>
-                      <BlockPreview type="math_change" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'} />
+                      <BlockPreview 
+                        type="math_change" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'} 
+                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragEnd={() => { 
+                          if (markerManagerRef.current) {
+                            markerManagerRef.current.dispose()
+                            markerManagerRef.current = null
+                          }
+                          if (previewBlockRef.current) {
+                            B.Events.disable()
+                            try {
+                              previewBlockRef.current.dispose()
+                            } finally {
+                              B.Events.enable()
+                            }
+                            previewBlockRef.current = null
+                          }
+                          draggingRef.current = null 
+                        }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -1577,10 +1813,16 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
         </div>
 
         {/* ════ Blockly workspace ════ */}
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 400 }}>
           <div
             ref={wsContainerRef}
-            style={{ flex: showCode ? '0 0 45%' : '1 1 100%', position: 'relative', overflow: 'hidden', transition: 'flex .2s' }}
+            style={{ 
+              flex: showCode ? '0 0 45%' : '1 1 100%', 
+              position: 'relative', 
+              overflow: 'hidden', 
+              transition: 'flex .2s',
+              background: tok.bg // Reserve color to match final look
+            }}
             onDragOver={handleWsDragOver}
             onDrop={handleWsDrop}
           />
