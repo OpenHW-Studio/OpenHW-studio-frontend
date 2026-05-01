@@ -132,6 +132,9 @@ jobs:
         run: |
           cd /opt/openhw/backend
           
+          # Pull latest orchestration files from GitHub
+          git pull origin develop
+          
           # Update the local .env file with the new frontend tag for persistence
           sed -i '/^FRONTEND_TAG=/d' .env || true
           echo "FRONTEND_TAG=${{ github.sha }}" >> .env
