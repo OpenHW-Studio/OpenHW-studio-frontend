@@ -29,6 +29,8 @@ export class UnoLogic extends BaseComponent {
                 this.setState({ txActive: false });
                 this.txTimeout = null;
             }, 100);
+        } else if (pinId === '13') {
+            this.setState({ pin13Active: isHigh });
         }
     }
 

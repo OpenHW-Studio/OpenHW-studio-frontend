@@ -23,19 +23,16 @@ export class LEDLogic extends BaseComponent {
         const myPins = [`${this.id}:A`, `${this.id}:K`];
         const isWired = currentWires.some(w => myPins.includes(w.from) || myPins.includes(w.to));
 
-        let directTo5V = false;
-        let connectedToResistor = false;
+        const hasResistor = currentWires.some(w => {
+            const otherSide = w.from.startsWith(this.id) ? w.to : (w.to.startsWith(this.id) ? w.from : null);
+            if (!otherSide) return false;
+            // Check if the other side of this wire is a resistor
+            const compId = otherSide.split(':')[0];
+            const comp = allComponentsInstances.find(c => c.id === compId);
+            return comp && comp.manifest?.type === 'wokwi-resistor';
+        });
 
-        if (isWired) {
-            currentWires.forEach(w => {
-                if (myPins.includes(w.from) || myPins.includes(w.to)) {
-                    if (w.from.includes('5V') || w.to.includes('5V')) directTo5V = true;
-                    if (w.from.includes('wokwi-resistor') || w.to.includes('wokwi-resistor')) connectedToResistor = true;
-                }
-            });
-        }
-
-        if (isWired && directTo5V && !connectedToResistor) {
+        if (isWired && voltageDiff > 4.0 && !hasResistor) {
             this.setState({ illuminated: false, brightness: 0, burnedOut: true });
             return;
         }
