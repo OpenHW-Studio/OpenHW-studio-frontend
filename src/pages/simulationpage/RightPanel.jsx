@@ -35,6 +35,7 @@ export function RightPanel(props) {
     selected, setSelected,
     blocklyDisabled, setBlocklyDisabled,
     boardComponentMap, onToggleBoardFirmwareSource,
+    theme,
     editingDisabled = false,
     editingDisabledMessage = 'Editing is disabled.',
   } = props;
@@ -880,19 +881,24 @@ export function RightPanel(props) {
                   const isDisabledFile = String(theFile?.name || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX);
                   return (
                     <div
+                      className="canvas-menu"
+                      onMouseLeave={() => setFileMenu(null)}
                       style={{
                         position: 'fixed',
                         left: fileMenu.x,
                         top: fileMenu.y,
                         zIndex: 9999,
-                        background: 'var(--bg2)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 10,
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+                        background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                        backdropFilter: 'blur(16px) saturate(1.4)',
+                        WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                        border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                        borderRadius: 12,
+                        boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
                         minWidth: 180,
-                        overflow: 'hidden',
+                        padding: '5px',
                         animation: 'canvasMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
                         transformOrigin: 'top left',
+                        fontFamily: "'Space Grotesk', sans-serif"
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -932,27 +938,14 @@ export function RightPanel(props) {
                       ].map((item) => (
                         <button
                           key={item.label}
+                          className="canvas-menu-item"
                           onClick={() => {
                             item.action();
                             setFileMenu(null);
                           }}
                           style={{
-                            width: '100%',
-                            textAlign: 'left',
-                            background: 'none',
-                            border: 'none',
                             color: item.color || 'var(--text2)',
-                            padding: '6px 12px',
-                            fontSize: 13,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            fontFamily: 'inherit',
-                            transition: 'background 0.1s ease',
                           }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
                         >
                           {item.icon}
                           {item.label}
@@ -965,19 +958,24 @@ export function RightPanel(props) {
                 {folderMenu && (() => {
                   return (
                     <div
+                      className="canvas-menu"
+                      onMouseLeave={() => setFolderMenu(null)}
                       style={{
                         position: 'fixed',
                         left: folderMenu.x,
                         top: folderMenu.y,
                         zIndex: 9999,
-                        background: 'var(--bg2)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 10,
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+                        background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                        backdropFilter: 'blur(16px) saturate(1.4)',
+                        WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                        border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                        borderRadius: 12,
+                        boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
                         minWidth: 180,
-                        overflow: 'hidden',
+                        padding: '5px',
                         animation: 'canvasMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
                         transformOrigin: 'top left',
+                        fontFamily: "'Space Grotesk', sans-serif"
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -1010,27 +1008,14 @@ export function RightPanel(props) {
                       ].map((item) => (
                         <button
                           key={item.label}
+                          className="canvas-menu-item"
                           onClick={() => {
                             item.action();
                             setFolderMenu(null);
                           }}
                           style={{
-                            width: '100%',
-                            textAlign: 'left',
-                            background: 'none',
-                            border: 'none',
                             color: item.color || 'var(--text2)',
-                            padding: '6px 12px',
-                            fontSize: 13,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            fontFamily: 'inherit',
-                            transition: 'background 0.1s ease',
                           }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
                         >
                           {item.icon}
                           {item.label}
@@ -1350,41 +1335,41 @@ export function RightPanel(props) {
                         )}
 
                         {serialBoardFilter === 'all' && showSendTargetMenu && (
-                          <div style={{
-                            position: 'absolute',
-                            right: 0,
-                            bottom: 'calc(100% + 6px)',
-                            minWidth: 180,
-                            background: 'var(--bg2)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                            overflow: 'hidden',
-                            zIndex: 20,
-                          }}>
+                          <div 
+                            className="canvas-menu"
+                            onMouseLeave={() => setShowSendTargetMenu(false)}
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              bottom: 'calc(100% + 6px)',
+                              minWidth: 180,
+                              background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                              backdropFilter: 'blur(16px) saturate(1.4)',
+                              WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                              border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                              borderRadius: 12,
+                              boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                              padding: '5px',
+                              zIndex: 10000, // Increased z-index to match other menus
+                              animation: 'canvasMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                              transformOrigin: 'bottom right',
+                              fontFamily: "'Space Grotesk', sans-serif"
+                            }}
+                          >
                             {(serialBoardOptions || []).filter((id) => id !== 'all').map((id) => {
                               const active = serialSendTarget === id;
                               return (
                                 <button
                                   key={`send-target-${id}`}
+                                  className="canvas-menu-item"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSerialSendTarget(id);
                                     setShowSendTargetMenu(false);
                                   }}
                                   style={{
-                                    width: '100%',
-                                    border: 'none',
-                                    borderBottom: '1px solid var(--border)',
                                     background: active ? 'rgba(0,255,255,0.08)' : 'transparent',
                                     color: active ? 'var(--accent)' : 'var(--text2)',
-                                    fontSize: 11,
-                                    padding: '7px 9px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 7,
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
                                   }}
                                 >
                                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: boardColors[id] || '#94a3b8', boxShadow: `0 0 0 1px ${(boardColors[id] || '#94a3b8')}66` }} />
