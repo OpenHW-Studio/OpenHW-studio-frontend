@@ -19,7 +19,8 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
 import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion } from '../../services/simulatorService.js'
+import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
@@ -368,8 +369,54 @@ Object.values(COMPONENT_REGISTRY).forEach(module => {
 sortCatalog(LOCAL_CATALOG);
 
 // Tracks component types that were dynamically injected from the backend (not built-in).
-// Used by the polling loop to detect deletions and purge them from the registry.
 const BACKEND_INJECTED_TYPES = new Set();
+
+/**
+ * Injects an array of pre-transpiled backend components into the global registry and catalog.
+ * Works for both cached (IDB) and freshly fetched components.
+ * @param {Array<{id, manifest, transpiledUI, transpiledLogic, uiRaw, logicRaw, validationRaw, indexRaw}>} comps
+ */
+function injectComponentsIntoRegistry(comps) {
+  for (const comp of comps) {
+    const { id, manifest, transpiledUI, transpiledLogic, uiRaw, logicRaw, validationRaw, indexRaw } = comp;
+    if (!manifest || !transpiledUI) continue;
+    try {
+      const exportsUI = {};
+      const evalUI = new Function('exports', 'require', 'React', transpiledUI);
+      evalUI(exportsUI, (mod) => (mod === 'react' ? React : null), React);
+
+      const uiComponent = resolveUiExport(exportsUI);
+      if (!uiComponent) continue;
+
+      COMPONENT_REGISTRY[manifest.type] = {
+        manifest,
+        UI: uiComponent,
+        BOUNDS: exportsUI.BOUNDS,
+        ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))] || null,
+        contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+        contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+        logicCode: transpiledLogic,
+        uiRaw: uiRaw || '',
+        logicRaw: logicRaw || '',
+        validationRaw: validationRaw || '',
+        indexRaw: indexRaw || '',
+      };
+
+      if (manifest.pins) LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
+      BACKEND_INJECTED_TYPES.add(manifest.type);
+
+      const groupName = normalizeGroupName(manifest.group);
+      let group = LOCAL_CATALOG.find(g => g.group === groupName);
+      if (!group) { group = { group: groupName, items: [] }; LOCAL_CATALOG.push(group); }
+      group.items = group.items.filter(i => i.type !== manifest.type);
+      const { pins: _p, group: _g, ...catalogItem } = manifest;
+      group.items.push(catalogItem);
+    } catch (err) {
+      console.warn(`[ComponentCache] Failed to inject component ${id}:`, err);
+    }
+  }
+  sortCatalog(LOCAL_CATALOG);
+}
 
 let nextWireId = 1
 
@@ -1473,6 +1520,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
     handleAssessmentSubmit()
   }, [gamAllUnlocked, gamLockedCount, handleAssessmentSubmit])
 
+  // Incremented whenever backend components are injected/updated so catalog consumers re-render
+  const [customCatalogVersion, setCustomCatalogVersion] = useState(0);
+
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(() => {
     const t = document.documentElement.getAttribute('data-theme') || 'light';
@@ -2021,9 +2071,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
     }
   };
 
-  useEffect(() => {
-    loadLibraries();
-  }, []);
+  // loadLibraries is called from the demo-load effect below when no demo is loading,
+  // or deferred so that circuit.png gets exclusive network priority on demo pages.
 
   // ── Auto-load component from Component Editor ("Test in Simulator") ────────
   useEffect(() => {
@@ -2046,30 +2095,43 @@ export default function SimulatorPage({ gamificationMode = false }) {
   }, []);
 
   useEffect(() => {
-    if (gamificationMode) return; // gamification simulator starts with clean canvas
-    
+    if (gamificationMode) return;
+
     let cancelled = false;
+    let deferTimer = null;
 
     const loadDemoProject = async () => {
-      if (!projectName) return;
+      if (!projectName) {
+        // No demo loading — run library fetch immediately
+        loadLibraries();
+        return;
+      }
 
       try {
         const pngName = 'circuit.png';
         const pngUrl = `${EXAMPLES_BASE_URL}/${projectName}/${pngName}`;
         const pngRes = await fetch(pngUrl);
-        if (!pngRes.ok) return;
+        if (!pngRes.ok || cancelled) return;
         const blob = await pngRes.blob();
         if (cancelled) return;
         const file = new File([blob], pngName, { type: blob.type || 'image/png' });
         importPng(file);
       } catch (err) {
         console.error(`Failed to load demo project "${projectName}"`, err);
+      } finally {
+        // Defer lib list until after the demo circuit starts painting
+        if (!cancelled) {
+          deferTimer = window.setTimeout(() => { if (!cancelled) loadLibraries(); }, 0);
+        }
       }
     };
 
     loadDemoProject();
-    return () => { cancelled = true; };
-  }, [projectName]);
+    return () => {
+      cancelled = true;
+      if (deferTimer !== null) window.clearTimeout(deferTimer);
+    };
+  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Offline component queue: flush to backend when connectivity restores ──
   useEffect(() => {
@@ -2093,6 +2155,102 @@ export default function SimulatorPage({ gamificationMode = false }) {
     window.addEventListener('online', drainQueue);
     return () => window.removeEventListener('online', drainQueue);
   }, []);
+
+  // ── Sync backend custom components (cache-first, version-checked) ──────────
+  // On every page load:
+  //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
+  //  2. GET /api/components/version (~40 bytes) → compare hash
+  //  3. Only fetch + transpile when the hash actually changed
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncBackendComponents = async () => {
+      // ── Step 1: Serve from cache immediately ──────────────────────────────
+      const cached = await getCachedComponents();
+      if (cached.length > 0 && !cancelled) {
+        injectComponentsIntoRegistry(cached);
+        setCustomCatalogVersion(v => v + 1);
+        console.log(`[ComponentCache] Injected ${cached.length} components from IDB cache.`);
+      }
+
+      // ── Step 2: Lightweight version check ────────────────────────────────
+      const serverVersion = await fetchComponentsVersion();
+      if (!serverVersion || cancelled) return;
+
+      const cachedHash = await getCachedServerHash();
+
+      if (serverVersion === cachedHash) {
+        console.log('[ComponentCache] Cache is fresh, skipping re-fetch.');
+        return;
+      }
+
+      // ── Step 3: Fetch full sources (only when something changed) ──────────
+      console.log('[ComponentCache] Version mismatch — fetching updated components...');
+      const components = await fetchPublicInstalledComponents();
+      if (cancelled) return;
+
+      if (!components.length) {
+        await clearComponentCache();
+        return;
+      }
+
+      // ── Step 4: Transpile with Babel ──────────────────────────────────────
+      const Babel = await getBabel();
+      const injected = [];
+
+      for (const comp of components) {
+        if (cancelled) return;
+        try {
+          const files = comp.files || {};
+          const uiRaw = files['ui.tsx'] || files['ui.jsx'] || '';
+          const logicRaw = files['logic.ts'] || files['logic.js'] || '';
+          const validationRaw = files['validation.ts'] || files['validation.js'] || '';
+          const indexRaw = files['index.ts'] || files['index.js'] || '';
+          const manifest = JSON.parse(files['manifest.json'] || '{}');
+
+          const transpiledUI = Babel.transform(uiRaw, {
+            filename: 'ui.tsx', presets: ['react', 'typescript', 'env'],
+          }).code;
+          const transpiledLogic = Babel.transform(logicRaw, {
+            filename: 'logic.ts', presets: ['typescript', 'env'],
+          }).code;
+
+          injected.push({
+            id: comp.id,
+            manifest,
+            uiRaw,
+            logicRaw,
+            validationRaw,
+            indexRaw,
+            transpiledUI,
+            transpiledLogic,
+          });
+        } catch (err) {
+          console.warn(`[ComponentCache] Transpile failed for ${comp.id}:`, err);
+        }
+      }
+
+      if (cancelled || !injected.length) return;
+
+      // ── Step 5: Persist to IDB + update palette ───────────────────────────
+      await setCachedComponents(injected, serverVersion);
+      injectComponentsIntoRegistry(injected);
+      setCustomCatalogVersion(v => v + 1);
+      console.log(`[ComponentCache] Updated cache with ${injected.length} components (hash: ${serverVersion}).`);
+    };
+
+    // If a demo project is loading, give it a 1.5s head-start on the network
+    // before we fire any component-sync requests.
+    const delay = projectName ? 1500 : 0;
+    const timer = window.setTimeout(() => {
+      if (!cancelled) syncBackendComponents().catch(err => console.warn('[ComponentCache] Sync error:', err));
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Project: owner string ─────────────────────────────────────────────────
   const getOwner = () => user?.email || 'guest';
@@ -3063,7 +3221,10 @@ useEffect(() => {
   }, [validationToast]);
 
   // ── Load Catalog on Mount ────────────────────────────────────────────────────
-  const CATALOG = LOCAL_CATALOG;
+  const CATALOG = useMemo(() => {
+    // Return a shallow copy so React detects the update and re-renders the palette
+    return LOCAL_CATALOG.map(group => ({ ...group, items: [...group.items] }));
+  }, [customCatalogVersion]);
   const PIN_DEFS = LOCAL_PIN_DEFS;
 
   // ── Static component descriptions ────────────────────────────────────────────
