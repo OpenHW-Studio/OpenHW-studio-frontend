@@ -1,5 +1,7 @@
-import { FullCircuitValidator } from './engine.js';
-export { FullCircuitValidator };
+export { FullCircuitValidator } from './engine.js';
+export { analyzeCodeHardwareSync } from './sync-analyzer.js';
+export { applyCircuitFix } from './circuit-fixer.js';
+export { ProtocolAnalyzer } from './protocol-analyzer.js';
 
 // The Integration "Glue" Code (likely sitting in a React component or Redux thunk)
 export const handleCompileAndRun = (projectState, startCompilationPipeline, handleValidationFailure) => {

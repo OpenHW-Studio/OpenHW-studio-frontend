@@ -1,0 +1,16 @@
+{
+    "type": "wokwi-charger",
+    "name": "TP4056 Charger",
+    "label": "Li-ion Charger",
+    "description": "TP4056 based Lithium-ion charging module. Detects USB power and manages battery charging.",
+    "group": "Power",
+    "pins": [
+        { "id": "IN+", "label": "USB+", "x": 0, "y": 10 },
+        { "id": "IN-", "label": "USB-", "x": 0, "y": 30 },
+        { "id": "BAT+", "label": "BAT+", "x": 60, "y": 10 },
+        { "id": "BAT-", "label": "BAT-", "x": 60, "y": 30 }
+    ],
+    "attrs": {
+        "chargeCurrentMa": "1000"
+    }
+}

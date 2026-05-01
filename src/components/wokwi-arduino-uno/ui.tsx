@@ -13,6 +13,7 @@ export const UnoUI = ({ state, attrs, isRunning }: { state: any, attrs: any, isR
     const [isResetPressed, setIsResetPressed] = useState(false);
     const txOn = state?.txActive ? true : false;
     const rxOn = state?.rxActive ? true : false;
+    const pin13On = state?.pin13Active ? true : false;
     const powerOn = isRunning;
 
     const handleResetPress = (e: React.PointerEvent) => {
@@ -82,6 +83,24 @@ export const UnoUI = ({ state, attrs, isRunning }: { state: any, attrs: any, isR
                     boxShadow: rxOn ? '0 0 4px #ffaa00' : 'none',
                     transition: 'background-color 0.05s, box-shadow 0.05s'
                 }}
+            />
+
+            {/* L LED overlay (Connected to pin 13) */}
+            <div
+                className="uno-l-led"
+                style={{
+                    position: 'absolute',
+                    top: 43.7,
+                    left: 119,
+                    width: 5.5,
+                    height: 5.5,
+                    backgroundColor: pin13On ? '#ffaa00' : 'transparent',
+                    borderRadius: '10%',
+                    pointerEvents: 'none',
+                    boxShadow: pin13On ? '0 0 9px #ffaa00' : 'none',
+                    transition: 'background-color 0.1s, box-shadow 0.1s'
+                }}
+                title="Built-in LED (Pin 13)"
             />
 
             {/* Custom Reset Button overlay using wokwi-pushbutton */}
