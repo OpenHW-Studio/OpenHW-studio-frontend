@@ -171,6 +171,23 @@ export const fetchPublicInstalledComponents = async () => {
     }
 };
 
+/**
+ * Fetches a lightweight version hash for the currently installed custom components.
+ * Returns a short hex string (e.g. "a3f2c1b0") or null on failure.
+ * The frontend compares this to its IndexedDB cached hash to decide
+ * whether a full re-fetch + re-transpile is needed.
+ */
+export const fetchComponentsVersion = async () => {
+    try {
+        const response = await axios.get(`${COMPILER_URL}/components/version`);
+        return response.data?.version ?? null;
+    } catch {
+        return null; // Network failure → treat as "unknown", trigger full fetch
+    }
+};
+
+
+
 export async function backupInstalledComponents() {
     const response = await axios.get(`${COMPILER_URL}/admin/components/backup`, getAdminAuthConfig());
     return response.data.components || [];
