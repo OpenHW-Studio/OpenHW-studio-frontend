@@ -481,7 +481,7 @@ export function TopToolbox(props) {
           </Btn>
           {/* Save */}
           <Btn color="var(--accent)" onClick={!editingDisabled ? handleSave : undefined} disabled={editingDisabled} title="Save current project"> Save</Btn>
-          {['teacher', 'user'].includes(user?.role) && (
+          {user?.role && user.role !== 'student' && (
             <Btn
               color="var(--green)"
               onClick={handleShareSimulation}

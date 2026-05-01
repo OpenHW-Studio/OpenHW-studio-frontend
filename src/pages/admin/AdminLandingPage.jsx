@@ -1,129 +1,100 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { 
+    Zap, Globe, Cpu, Database, 
+    Activity, Users, ShieldCheck, 
+    ChevronRight, LogOut 
+} from 'lucide-react';
 
 export default function AdminLandingPage() {
     const navigate = useNavigate();
     const { isAdminAuthenticated } = useAuth();
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    const StatusItem = ({ label, value, status = 'success', icon: Icon }) => (
+        <div className="admin-status-chip group">
+            <div className="flex items-center gap-4">
+                <div className="p-2.5 bg-slate-800/50 rounded-lg group-hover:bg-slate-700/50 transition-colors">
+                    <Icon className="w-5 h-5 text-blue-400" />
+                </div>
+                <div>
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-0.5">{label}</div>
+                    <div className="flex items-center gap-2">
+                        <span className={`w-1.5 h-1.5 rounded-full ${status === 'success' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-amber-500'}`}></span>
+                        <span className="text-sm font-bold text-slate-200">{value}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 
     return (
-        <div style={{
-            minHeight: '100vh',
-            background: '#0f172a',
-            color: '#f1f5f9',
-            fontFamily: 'sans-serif',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px'
-        }}>
-            <div style={{
-                background: '#1e293b',
-                padding: '40px',
-                borderRadius: '12px',
-                maxWidth: '600px',
-                width: '100%',
-                textAlign: 'center',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
-            }}>
-                <div style={{ fontSize: '48px', marginBottom: '20px' }}>⚡</div>
-                <h1 style={{ fontSize: '32px', marginBottom: '16px', color: '#fff' }}>OpenHW-Studio</h1>
-                <h2 style={{ fontSize: '24px', marginBottom: '24px', color: '#94a3b8' }}>Admin Administration Portal</h2>
+        <div className="min-h-screen bg-[#070b14] text-slate-100 font-sans selection:bg-blue-500/30 overflow-hidden relative flex flex-col items-center justify-center p-8">
+            {/* Dynamic Background Elements */}
+            <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 blur-[150px] rounded-full"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-emerald-600/10 blur-[150px] rounded-full"></div>
 
-                <p style={{ color: '#cbd5e1', marginBottom: '32px', lineHeight: '1.6' }}>
-                    Welcome to the central control panel. This secured area is intended strictly for
-                    system administration. From the control panel, you can manage user roles, review
-                    community component submissions, and monitor system health.
-                </p>
+            {/* Main Content Card */}
+            <div className="admin-glass-panel max-w-3xl w-full p-12 md:p-16 rounded-[3rem] z-10 animate-admin-entry relative border border-white/5 shadow-2xl">
+                <div className="absolute top-0 right-0 p-12 text-slate-500 font-mono text-sm hidden md:block opacity-50">
+                    {currentTime.toLocaleTimeString()}
+                </div>
 
-                <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '16px',
-                    alignItems: 'center'
-                }}>
-                    <div style={{
-                        display: 'flex',
-                        background: '#334155',
-                        padding: '16px',
-                        borderRadius: '8px',
-                        width: '100%',
-                        justifyContent: 'space-between'
-                    }}>
-                        <span style={{ color: '#94a3b8' }}>System Status</span>
-                        <span style={{ color: '#10b981', fontWeight: 'bold' }}>● Operational</span>
+                <div className="flex flex-col items-center text-center">
+                    <div className="w-24 h-24 bg-blue-500/10 rounded-[2rem] flex items-center justify-center mb-10 border border-blue-500/20 shadow-xl animate-admin-float">
+                        <Zap className="w-12 h-12 text-blue-400 fill-blue-400/20" />
                     </div>
 
-                    <div style={{
-                        display: 'flex',
-                        background: '#334155',
-                        padding: '16px',
-                        borderRadius: '8px',
-                        width: '100%',
-                        justifyContent: 'space-between'
-                    }}>
-                        <span style={{ color: '#94a3b8' }}>Database Connection</span>
-                        <span style={{ color: '#10b981', fontWeight: 'bold' }}>● Connected</span>
+                    <h1 className="text-5xl md:text-6xl font-black mb-6 tracking-tighter">
+                        OpenHW<span className="text-blue-500">Studio</span>
+                    </h1>
+                    <div className="h-px w-24 bg-gradient-to-r from-transparent via-slate-700 to-transparent mb-8"></div>
+                    <h2 className="text-xl text-slate-400 font-semibold mb-4 tracking-widest uppercase">Administration Portal</h2>
+                    <p className="text-slate-500 leading-relaxed mb-12 max-w-lg text-lg">
+                        Secure gateway for enterprise system management. Monitor performance, 
+                        manage community integrations, and oversee global pipelines.
+                    </p>
+
+                    {/* Status Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mb-16">
+                        <StatusItem label="Frontend" value="v1.4.2" icon={Globe} />
+                        <StatusItem label="Backend API" value="Operational" icon={Cpu} />
+                        <StatusItem label="Database" value="Connected" icon={Database} />
+                        <StatusItem label="System Load" value="12% Normal" icon={Activity} />
+                        <StatusItem label="Active Sessions" value="24 Active" icon={Users} />
+                        <StatusItem label="Environment" value="Production" icon={ShieldCheck} />
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex flex-col sm:flex-row gap-6 w-full">
+                        <button
+                            onClick={() => navigate(isAdminAuthenticated ? '/admin/dashboard' : '/admin/login')}
+                            className="admin-glow-button flex-[1.5] bg-emerald-600 hover:bg-emerald-500 text-white py-5 px-10 rounded-[1.5rem] font-bold text-xl flex items-center justify-center gap-3 group shadow-lg shadow-emerald-900/20"
+                        >
+                            {isAdminAuthenticated ? 'Access Control Panel' : 'Secure Login'}
+                            <ChevronRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+                        </button>
+                        <button
+                            onClick={() => navigate('/')}
+                            className="flex-1 bg-slate-800/30 hover:bg-slate-800/60 text-slate-300 py-5 px-10 rounded-[1.5rem] font-bold text-xl border border-white/5 transition-all"
+                        >
+                            Back to Site
+                        </button>
                     </div>
                 </div>
+            </div>
 
-                <div style={{ marginTop: '40px' }}>
-                    {isAdminAuthenticated ? (
-                        <button
-                            onClick={() => navigate('/admin/dashboard')}
-                            style={{
-                                background: '#3b82f6',
-                                color: '#fff',
-                                padding: '12px 32px',
-                                fontSize: '18px',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                fontWeight: 'bold',
-                                transition: 'background 0.2s'
-                            }}
-                            onMouseOver={e => e.currentTarget.style.background = '#2563eb'}
-                            onMouseOut={e => e.currentTarget.style.background = '#3b82f6'}
-                        >
-                            Enter Control Panel →
-                        </button>
-                    ) : (
-                        <button
-                            onClick={() => navigate('/admin/login')}
-                            style={{
-                                background: '#10b981',
-                                color: '#fff',
-                                padding: '12px 32px',
-                                fontSize: '18px',
-                                border: 'none',
-                                borderRadius: '8px',
-                                cursor: 'pointer',
-                                fontWeight: 'bold',
-                                transition: 'background 0.2s'
-                            }}
-                            onMouseOver={e => e.currentTarget.style.background = '#059669'}
-                            onMouseOut={e => e.currentTarget.style.background = '#10b981'}
-                        >
-                            Admin Login
-                        </button>
-                    )}
-                </div>
-
-                <div style={{ marginTop: '30px' }}>
-                    <button
-                        onClick={() => navigate('/')}
-                        style={{
-                            background: 'transparent',
-                            color: '#64748b',
-                            border: 'none',
-                            cursor: 'pointer',
-                            textDecoration: 'underline'
-                        }}
-                    >
-                        Return to Main Site
-                    </button>
-                </div>
+            {/* Footer */}
+            <div className="mt-12 text-slate-700 text-sm font-bold tracking-widest uppercase z-10 flex items-center gap-6">
+                <span>© 2024 OpenHW-Studio</span>
+                <div className="w-2 h-2 bg-slate-800 rounded-full"></div>
+                <span>Deployment v1.0.0-admin</span>
             </div>
         </div>
     );

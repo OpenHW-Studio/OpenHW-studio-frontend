@@ -88,9 +88,9 @@ function shouldRunCase(caseId: string): boolean {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const WORKSPACE_ROOT = path.resolve(__dirname, '..', '..', '..');
-const JSON_EXAMPLE_DIR = path.resolve(WORKSPACE_ROOT, 'openhw-studio-examples-danish', 'examples', 'json-example');
-const MICROPYTHON_UF2_PATH = path.resolve(WORKSPACE_ROOT, 'openhw-studio-backend-danish', 'data', 'firmware', 'pico-micropython-uart0.uf2');
-const CIRCUITPYTHON_UF2_PATH = path.resolve(WORKSPACE_ROOT, 'openhw-studio-backend-danish', 'data', 'firmware', 'adafruit-circuitpython-raspberry_pi_pico-en_US-8.2.7.uf2');
+const JSON_EXAMPLE_DIR = path.resolve(WORKSPACE_ROOT, 'openhw-studio-examples', 'examples', 'json-example');
+const MICROPYTHON_UF2_PATH = path.resolve(WORKSPACE_ROOT, 'openhw-studio-backend', 'data', 'firmware', 'pico-micropython-uart0.uf2');
+const CIRCUITPYTHON_UF2_PATH = path.resolve(WORKSPACE_ROOT, 'openhw-studio-backend', 'data', 'firmware', 'adafruit-circuitpython-raspberry_pi_pico-en_US-8.2.7.uf2');
 const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
 const RP2040_LOGICAL_FLASH_BYTES = 2 * 1024 * 1024;
 const RP2040_MICROPYTHON_FS_OFFSET = 0xA0000;
@@ -689,7 +689,7 @@ function compileArduinoSketch({
     sketchDir,
   ];
 
-  const proc = spawnSync('arduino-cli', args, { encoding: 'utf8' });
+  const proc = spawnSync('arduino-cli', args, { encoding: 'utf8', timeout: 120_000 });
   if (proc.status !== 0) {
     throw new Error(
       `arduino-cli compile failed (exit=${proc.status})\nSTDOUT:\n${proc.stdout || ''}\nSTDERR:\n${proc.stderr || ''}`

@@ -7,7 +7,7 @@ import { GamificationToasts } from './services/gamification/Gamificationpanel.js
 import LandingPage from './pages/LandingPage.jsx'
 import UserLoginPage from './pages/auth/UserLoginPage.jsx'
 import SigninPage from './pages/auth/SigninPage.jsx'
-import SignupPage from './pages/auth/signupPage.jsx'
+import SignupPage from './pages/auth/SignupPage.jsx'
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx'
 import ResetPasswordPage from './pages/auth/ResetPasswordPage.jsx'
 import RoleSelectPage from './pages/RoleSelectPage.jsx'
@@ -31,8 +31,8 @@ import QuizPage from './pages/QuizPage.jsx'
 import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
 import AdventureMapPage from './pages/AdventureMapPage.jsx'
 import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
-import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage'
-import GuidedSimulatorPage from './pages/GuidedSimulatorPage'
+import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage.jsx'
+import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
 
 export default function App() {
   return (
