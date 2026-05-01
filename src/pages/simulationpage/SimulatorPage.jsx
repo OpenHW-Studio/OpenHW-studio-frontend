@@ -44,6 +44,7 @@ const getHtml2canvas = async () => {
 };
 
 import * as EmulatorComponents from "@openhw/emulator";
+const { FullCircuitValidator, analyzeCodeHardwareSync, applyCircuitFix: sharedApplyCircuitFix, ProtocolAnalyzer: SharedProtocolAnalyzer } = EmulatorComponents;
 
 // Web Editor features
 import EditorComponent from 'react-simple-code-editor';
@@ -1268,90 +1269,9 @@ function endpointAliases(endpoint) {
   return Array.from(aliases);
 }
 
-function validateCircuitLocally(components, wires) {
-  const errors = [];
-  const componentById = new Map((components || []).map((c) => [c.id, c]));
-
-  const programmableBoards = (components || []).filter((c) => isProgrammableBoardType(c.type));
-  if (programmableBoards.length === 0) return errors;
-
-  const graph = new Map();
-  const addEdge = (a, b) => {
-    if (!graph.has(a)) graph.set(a, new Set());
-    if (!graph.has(b)) graph.set(b, new Set());
-    graph.get(a).add(b);
-    graph.get(b).add(a);
-  };
-
-  (wires || []).forEach((w) => {
-    const fromAliases = endpointAliases(w.from);
-    const toAliases = endpointAliases(w.to);
-    fromAliases.forEach((fa) => toAliases.forEach((ta) => addEdge(fa, ta)));
-  });
-
-  const isMcuDigitalEndpoint = (endpoint) => {
-    const [compId, pin] = String(endpoint || '').split(':');
-    const comp = componentById.get(compId);
-    if (!comp || !isProgrammableBoardType(comp.type)) return false;
-    if (!pin) return false;
-    return /^D?\d+$/i.test(pin) || /^A\d+$/i.test(pin);
-  };
-
-  const bfsReachable = (starts) => {
-    const q = [...starts];
-    const visited = new Set(starts);
-    while (q.length) {
-      const n = q.shift();
-      for (const nei of graph.get(n) || []) {
-        if (visited.has(nei)) continue;
-        visited.add(nei);
-        q.push(nei);
-      }
-    }
-    return visited;
-  };
-
-  programmableBoards.forEach((board) => {
-    const powerPins = [`${board.id}:5V`, `${board.id}:3v3`, `${board.id}:VCC`];
-    const gndPins = [`${board.id}:gnd`, `${board.id}:gnd_1`, `${board.id}:gnd_2`, `${board.id}:gnd_3`, `${board.id}:GND`];
-    const reachable = bfsReachable(powerPins);
-    const isShorted = gndPins.some((g) => reachable.has(g) || reachable.has(`${board.id}:gnd`));
-    if (isShorted) {
-      errors.push({
-        type: 'error',
-        message: `Potential short circuit on ${board.id}: power net is connected to GND.`,
-        compIds: [board.id],
-      });
-    }
-  });
-
-  // LED should not be directly connected between two MCU GPIO pins in this simulator.
-  const leds = (components || []).filter((c) => String(c.type || '').toLowerCase() === 'wokwi-led');
-  leds.forEach((led) => {
-    const anode = `${led.id}:A`;
-    const cathode = `${led.id}:K`;
-    const anodeN = [...(graph.get(anode) || [])];
-    const cathodeN = [...(graph.get(cathode) || [])];
-
-    const anodeMcu = anodeN.filter(isMcuDigitalEndpoint);
-    const cathodeMcu = cathodeN.filter(isMcuDigitalEndpoint);
-
-    if (anodeMcu.length > 0 && cathodeMcu.length > 0) {
-      const involved = new Set([led.id]);
-      [...anodeMcu, ...cathodeMcu].forEach((ep) => involved.add(String(ep).split(':')[0]));
-      errors.push({
-        type: 'error',
-        message: `Invalid LED wiring on ${led.id}: anode and cathode are tied to MCU GPIO pins. Connect LED through a resistor to VCC/GND instead of pin-to-pin drive.`,
-        compIds: [...involved],
-      });
-    }
-  });
-
-  return errors;
-}
-
 /**
  * Helper to check if two category sets (strings or arrays) have any common elements.
+ * Used by the canvas pin-matching and suggestion UI.
  */
 function hasCategoryIntersection(cat1, cat2) {
   if (!cat1 || !cat2) return false;
@@ -1363,6 +1283,7 @@ function hasCategoryIntersection(cat1, cat2) {
 /**
  * Determines the logical category (or categories) of a pin.
  * Returns an array of strings, or null if no category matches.
+ * Used by the canvas pin-matching and suggestion UI.
  */
 function getPinCategory(pId, pDesc, compType) {
   const sId = String(pId || '').toLowerCase();
@@ -1410,7 +1331,7 @@ function getPinCategory(pId, pDesc, compType) {
     if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
   }
 
-  // 7. Motor Driver / EN Special (Enable can be PWM or POWER)
+  // 7. Motor Driver / EN Special
   if (matches(/^en([._]?\d+(,\d+)?)?$/i)) {
     if (!categories.includes('PWM')) categories.push('PWM');
     if (!categories.includes('POWER')) categories.push('POWER');
@@ -1529,15 +1450,33 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
           }} />
         )}
         {hasError && (
-          <div style={{
-            position: 'absolute',
-            left: b.x - 6, top: b.y - 6,
-            width: b.w + 12, height: b.h + 12,
-            borderRadius: 8,
-            border: '2px solid var(--red)',
-            boxShadow: '0 0 12px rgba(239,68,68,0.4)',
-            pointerEvents: 'none', zIndex: 9,
-          }} />
+          <div 
+            className="safety-pulse"
+            style={{
+              position: 'absolute',
+              left: b.x - 8, top: b.y - 8,
+              width: b.w + 16, height: b.h + 16,
+              borderRadius: 12,
+              border: '2px solid #ef4444',
+              boxShadow: '0 0 20px rgba(239,68,68,0.6)',
+              pointerEvents: 'none', zIndex: 9,
+              background: 'rgba(239,68,68,0.05)',
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'flex-end',
+              padding: '4px'
+            }}
+          >
+             <div style={{
+               background: '#ef4444',
+               borderRadius: '50%',
+               width: '18px', height: '18px',
+               display: 'flex', alignItems: 'center', justifyContent: 'center',
+               color: 'white', fontSize: '12px', fontWeight: 'bold',
+               boxShadow: '0 0 8px rgba(239,68,68,0.8)',
+               transform: 'translate(4px, -4px)'
+             }}>!</div>
+          </div>
         )}
       </div>
       {/* Labels and Pins are usually better kept in the parent loop or as sub-memo items */}
@@ -1743,8 +1682,29 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [showValidation, setShowValidation] = useState(true)
   const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
+  
+  // Inject safety pulse animation
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      @keyframes safetyPulse {
+        0% { transform: scale(1); opacity: 0.8; box-shadow: 0 0 10px rgba(239,68,68,0.4); }
+        50% { transform: scale(1.02); opacity: 1; box-shadow: 0 0 25px rgba(239,68,68,0.7); }
+        100% { transform: scale(1); opacity: 0.8; box-shadow: 0 0 10px rgba(239,68,68,0.4); }
+      }
+      .safety-pulse {
+        animation: safetyPulse 2s infinite ease-in-out;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
   const [isCompiling, setIsCompiling] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [protocolLogs, setProtocolLogs] = useState([])
+  const [activeConsoleTab, setActiveConsoleTab] = useState('console')
+  const [healthScore, setHealthScore] = useState(100)
+  const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
   const [pinStates, setPinStates] = useState({})
   const [neopixelData, setNeopixelData] = useState({})
   const [oopStates, setOopStates] = useState({});
@@ -5280,6 +5240,10 @@ useEffect(() => {
     setRenameValue(proj.name || 'Untitled');
   };
   const handleConfirmRename = async (id) => {
+    if (!id) {
+      setRenamingProjectId(null);
+      return;
+    }
     const newName = renameValue.trim() || 'Untitled';
     await renameProject(id, newName);
     if (currentProjectIdRef.current === id) setCurrentProjectName(newName);
@@ -5509,24 +5473,93 @@ useEffect(() => {
 
   const runCircuitValidation = useCallback(() => {
     try {
-      const errs = validateCircuitLocally(components, wires);
-      if (errs.length > 0) {
-        setValidationErrors(errs);
+      if (typeof FullCircuitValidator !== 'function') {
+        console.warn('[Validation] FullCircuitValidator not available in this build.');
+        return true;
+      }
+
+      // Adapter: convert frontend format (comp:pin) → engine format (comp.pin)
+      const engineConnections = (wires || []).map(w => ({
+        from: String(w.from || '').replace(':', '.'),
+        to:   String(w.to   || '').replace(':', '.'),
+      }));
+
+      const projectData = {
+        components: components,      // engine reads .id, .type, .pins[], .attrs{}
+        connections: engineConnections,
+      };
+
+      const validator = new FullCircuitValidator(projectData);
+      const isSafe = validator.runValidation();
+
+      // ── Software-Hardware Sync Analysis ──────────────────────────────────
+      const projectForSync = {
+        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
+        components: components,
+        connections: wires,
+        activeCodeFileId: activeCodeFileId
+      };
+      const syncResult = typeof analyzeCodeHardwareSync === 'function' 
+        ? analyzeCodeHardwareSync(projectForSync) 
+        : { passed: true, issues: [] };
+
+      if (!isSafe || !syncResult.passed) {
+        const physicsErrors = validator.errors || [];
+
+        const syncErrors = (syncResult.issues || []).map(issue => ({
+          type: 'warn',
+          message: issue.message,
+          compIds: []
+        }));
+
+        const formattedErrors = [...physicsErrors, ...syncErrors];
+        
+        // Use emulator's Health Score engine
+        const score = validator.calculateHealthScore(syncErrors);
+        setHealthScore(score);
+
+        const hasFatalPhysics = physicsErrors.some(e => e.type === 'error');
+
+        setValidationErrors(formattedErrors);
         setShowValidation(true);
+        if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
+        
         setValidationToast({
-          title: `Circuit validation failed (${errs.length})`,
-          reasons: errs.slice(0, 3).map((e) => e.message),
+          title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
+          reasons: formattedErrors.slice(0, 3).map(e => e.message),
         });
-      } else {
+
+        // Only block the run if there is a fatal physics error
+        if (hasFatalPhysics) return false;
+      }
+
+      if (isSafe && syncResult.passed) {
         setValidationErrors([]);
         setValidationToast(null);
+        setHealthScore(100);
       }
-      return errs.length === 0;
+      return true;
     } catch (err) {
       console.warn('[Validation] Engine failed, continuing run:', err);
       return true;
     }
-  }, [components, wires]);
+  }, [components, wires, code, useBlocklyCode, blocklyGeneratedCode, activeCodeFileId]);
+
+  const applyFix = useCallback((error) => {
+    if (!error.remediation) return;
+    saveHistory();
+
+    const projectData = { components, connections: wires };
+    const result = sharedApplyCircuitFix(projectData, error);
+
+    if (result.applied) {
+       setComponents(result.components);
+       setWires(result.connections);
+       appendConsoleEntry('info', `✅ Applied Shared Fix: ${error.remediation}`, 'simulator');
+       // Clear the error after applying
+       setValidationErrors(prev => prev.filter(e => e.message !== error.message));
+    }
+  }, [components, wires, saveHistory]);
 
   const getSerialTimestamp = () => {
     const now = new Date();
@@ -6431,6 +6464,16 @@ useEffect(() => {
             ? incomingBoardId
             : (singleBoardFallback || incomingBoardId || 'default');
           pushSerialRxChunk(msg.data, resolvedBoardId, msg.source || 'sim');
+        }
+
+        // Handle Protocol Events
+        if (msg.type === 'protocol:i2c') {
+          const log = protocolAnalyzerRef.current.processI2C(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log]);
+        }
+        if (msg.type === 'protocol:spi') {
+          const log = protocolAnalyzerRef.current.processSPI(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log]);
         }
       };
 
@@ -8037,10 +8080,12 @@ useEffect(() => {
                 const isGroupMatch = activeGroupFilter === 'All' || group.group === activeGroupFilter;
                 if (!isGroupMatch) return null;
 
-                const filteredItems = group.items.filter(item =>
-                  item.label.toLowerCase().includes(paletteSearch.toLowerCase()) ||
-                  item.type.toLowerCase().includes(paletteSearch.toLowerCase())
-                );
+                const filteredItems = group.items.filter(item => {
+                  const label = (item.label || item.name || '').toLowerCase();
+                  const type = (item.type || '').toLowerCase();
+                  const search = (paletteSearch || '').toLowerCase();
+                  return label.includes(search) || type.includes(search);
+                });
                 if (filteredItems.length === 0) return null;
                 const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
                 return (
@@ -8534,7 +8579,7 @@ useEffect(() => {
 
             {/* Components */}
             {components.map(comp => {
-              const pins = PIN_DEFS[comp.type] || []
+              const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || []
               const hasError = errorCompIds.has(comp.id)
               const isSelected = selected === comp.id
               const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
@@ -8561,7 +8606,7 @@ useEffect(() => {
                     position: 'absolute',
                     left: comp.x, top: comp.y,
                     width: comp.w, height: comp.h,
-                    zIndex: isSelected ? 4 : 1,
+                    zIndex: isSelected ? 10 : 5,
                     userSelect: 'none',
                     pointerEvents: 'none',
                     transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
@@ -9240,9 +9285,15 @@ useEffect(() => {
             isOpen={isConsoleOpen}
             height={consoleHeight}
             entries={consoleEntries}
+            activeTab={activeConsoleTab}
+            onTabChange={setActiveConsoleTab}
+            protocolLogs={protocolLogs}
             onResizeStart={onMouseDownConsoleResize}
             onClose={() => setIsConsoleOpen(false)}
-            onClear={clearConsoleEntries}
+            onClear={() => {
+              if (activeConsoleTab === 'protocol') setProtocolLogs([]);
+              else clearConsoleEntries();
+            }}
             onDownload={downloadConsoleLog}
           />
 
@@ -9364,6 +9415,7 @@ useEffect(() => {
           selected={selected} setSelected={setSelected} theme={theme}
           projectName={currentProjectName}
           validationErrors={validationErrors} showValidation={showValidation} setShowValidation={setShowValidation}
+          healthScore={healthScore} applyFix={applyFix}
           codeTab={codeTab} setCodeTab={setCodeTab} code={code} setCode={setCode}
           blocklyXml={blocklyXml} setBlocklyXml={setBlocklyXml}
           blocklyGeneratedCode={blocklyGeneratedCode} setBlocklyGeneratedCode={setBlocklyGeneratedCode}
@@ -10183,6 +10235,7 @@ function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, s
                 value={renameValue}
                 onChange={e => setRenameValue(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleConfirmRename(proj.id); if (e.key === 'Escape') setRenamingProjectId(null); }}
+                onBlur={() => handleConfirmRename(proj.id)}
                 onClick={e => e.stopPropagation()}
               />
             ) : (
