@@ -19,6 +19,7 @@ function RightPanelInternal(props) {
     isPanelOpen, panelWidth, isDragging, onMouseDownResize, setIsPanelOpen,
     explorerWidth, isExplorerDragging, onMouseDownExplorerResize,
     validationErrors, showValidation, setShowValidation,
+    healthScore = 100, applyFix,
     codeTab, setCodeTab, code, setCode, 
     blocklyXml, setBlocklyXml, blocklyGeneratedCode, setBlocklyGeneratedCode, useBlocklyCode, setUseBlocklyCode,
     projectFiles, openCodeTabs, activeCodeFileId, showCodeExplorer,
@@ -266,16 +267,40 @@ function RightPanelInternal(props) {
           {validationErrors.length > 0 && showValidation && (
             <div className="bg-[var(--bg3)] border-b border-[var(--border)] shrink-0">
               <div className="flex items-center justify-between px-3 py-2 text-xs font-bold text-[var(--orange)]">
-                <span>⚠ Validation ({validationErrors.length})</span>
+                <div className="flex items-center gap-2">
+                   <div style={{
+                     width: 40, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden'
+                   }}>
+                      <div style={{
+                        width: `${healthScore}%`, height: '100%',
+                        background: healthScore > 80 ? 'var(--green)' : healthScore > 50 ? 'var(--orange)' : 'var(--red)',
+                        transition: 'width 0.5s ease-out'
+                      }} />
+                   </div>
+                   <span>Project Health: {healthScore}%</span>
+                </div>
                 <button className="bg-transparent border-none text-[var(--text3)] cursor-pointer text-sm font-inherit" onClick={() => setShowValidation(false)}>✕</button>
               </div>
               {validationErrors.map((err, i) => (
-                <div key={i} className="px-3 py-1.5 text-xs border-l-3 mb-0.5 leading-relaxed" style={{
+                <div key={i} className="px-3 py-2 text-xs border-l-4 mb-0.5 leading-relaxed group relative" style={{
                   borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
+                  background: 'rgba(0,0,0,0.1)'
                 }}>
-                  <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
-                    {err.type === 'error' ? '🔴' : '🟡'} {err.message}
-                  </span>
+                  <div className="flex justify-between items-start gap-2">
+                    <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
+                      {err.type === 'error' ? '🔴' : '🟡'} {err.message}
+                    </span>
+                    {err.remediation && applyFix && (
+                      <button 
+                        onClick={() => applyFix(err)}
+                        className="shrink-0 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all"
+                        title={err.remediation}
+                      >
+                        <span>🪄</span>
+                        <span>FIX</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
