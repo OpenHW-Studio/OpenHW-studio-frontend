@@ -78,6 +78,48 @@ const cases = [
             ],
         },
     },
+    {
+        name: 'serial_pin_conflict_d0',
+        expectPass: false,
+        expectMessageIncludes: 'Serial USB communication',
+        project: {
+            components: [
+                { id: 'uno_serial', type: 'wokwi-arduino-uno', pins: UNO_PINS },
+                { id: 'led_serial', type: 'wokwi-led', pins: LED_PINS },
+            ],
+            connections: [
+                { from: 'uno_serial.0', to: 'led_serial.A' },
+            ],
+        },
+    },
+    {
+        name: 'led_floating_cathode',
+        expectPass: false,
+        expectMessageIncludes: 'Cathode (K) is floating',
+        project: {
+            components: [
+                { id: 'uno_f', type: 'wokwi-arduino-uno', pins: UNO_PINS },
+                { id: 'led_f', type: 'wokwi-led', pins: LED_PINS },
+            ],
+            connections: [
+                { from: 'uno_f.13', to: 'led_f.A' },
+            ],
+        },
+    },
+    {
+        name: 'rp2040_overvoltage_5v',
+        expectPass: false,
+        expectMessageIncludes: 'exceeds 3.3V logic limit',
+        project: {
+            components: [
+                { id: 'pico_1', type: 'wokwi-raspberry-pi-pico', pins: [{ id: 'GP0', type: 'digital' }, { id: 'VBUS', type: 'power' }] },
+                { id: 'uno_1', type: 'wokwi-arduino-uno', pins: [{ id: '5V', type: 'power' }] },
+            ],
+            connections: [
+                { from: 'uno_1.5V', to: 'pico_1.GP0' },
+            ],
+        },
+    },
 ];
 
 let failedCount = 0;

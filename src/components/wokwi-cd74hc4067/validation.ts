@@ -1,19 +1,29 @@
-export function validate(component: any, wires: any[]) {
-    const warnings = [];
-    const errors = [];
-    const connectedPins = new Set();
+export const validation = {
+    rules: [
+        {
+            name: "Legacy Validation Wrap",
+            check: (component: any, graph: any, validator: any) => {
+                const connectedPins = new Set();
+                const connections = validator.connections || [];
+                connections.forEach((w: any) => {
+                    if (w.from.startsWith(component.id + '.')) connectedPins.add(w.from.split('.')[1]);
+                    if (w.to.startsWith(component.id + '.')) connectedPins.add(w.to.split('.')[1]);
+                });
 
-    wires.forEach(wire => {
-        if (wire.from.startsWith(`${component.id}:`)) connectedPins.add(wire.from.split(':')[1]);
-        if (wire.to.startsWith(`${component.id}:`)) connectedPins.add(wire.to.split(':')[1]);
-    });
-
-    if (!connectedPins.has('VCC') || !connectedPins.has('GND')) {
-        errors.push('CD74HC4067 requires power: VCC and GND must be connected.');
-    }
-    if (!connectedPins.has('SIG')) {
-        warnings.push('SIG common pin is not connected.');
-    }
-
-    return { warnings, errors };
-}
+                // Check for Power/GND/Data from legacy logic (simplified translation)
+                const pins = (component.pins || []).map((p:any) => p.id);
+                const vcc = pins.find((p:any) => p.includes('VCC') || p.includes('5V') || p.includes('3V3'));
+                const gnd = pins.find((p:any) => p.includes('GND'));
+                
+                if (vcc && validator.getNeighbors(component.id + '.' + vcc).length === 0) {
+                    return '⚠️ [' + component.type + ' ' + component.id + '] Power is not connected.';
+                }
+                if (gnd && validator.getNeighbors(component.id + '.' + gnd).length === 0) {
+                    return '⚠️ [' + component.type + ' ' + component.id + '] Ground is not connected.';
+                }
+                
+                return null;
+            }
+        }
+    ]
+};

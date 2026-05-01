@@ -48,6 +48,8 @@ export { default as wokwiPCA9685 } from './wokwi-pca9685';
 export { default as wokwiPCA9865 } from './wokwi-pca9865';
 export { default as wokwiArduinoSensorShield } from './wokwi-arduino-sensor-shield';
 export { default as wokwiArduinoNano } from './wokwi-arduino-nano';
+export { default as wokwiBattery } from './wokwi-battery';
+export { default as wokwiCharger } from './wokwi-charger';
 
 export { default as logicMux2to1 } from './logic-mux-2to1';
 export { default as logicDFlipFlop } from './logic-d-flipflop';
@@ -59,9 +61,5 @@ export { default as wokwiArduinoMega } from './wokwi-arduino-mega';
 export { default as wokwiAttiny85 } from './wokwi-attiny85';
 export { default as wokwiHcSr04 } from './wokwi-hc-sr04';
 
-
-
-
-
-
+export { FullCircuitValidator, analyzeCodeHardwareSync, applyCircuitFix, ProtocolAnalyzer } from '../circuit-validation/index.js';
 
