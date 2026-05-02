@@ -44,7 +44,17 @@ const getHtml2canvas = async () => {
 };
 
 import * as EmulatorComponents from "@openhw/emulator";
-const { FullCircuitValidator, analyzeCodeHardwareSync, applyCircuitFix: sharedApplyCircuitFix, ProtocolAnalyzer: SharedProtocolAnalyzer } = EmulatorComponents;
+const { 
+  FullCircuitValidator, 
+  analyzeCodeHardwareSync, 
+  applyCircuitFix: sharedApplyCircuitFix,
+  initializeCircuitFixEngine,
+  getFixHistory,
+  getFixValidator,
+  undoLastFix,
+  redoLastFix,
+  ProtocolAnalyzer: SharedProtocolAnalyzer 
+} = EmulatorComponents;
 
 // Web Editor features
 import EditorComponent from 'react-simple-code-editor';
@@ -1905,6 +1915,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const runComponentUpdateCountsRef = useRef({})
   const runPinTransitionCountsRef = useRef({})
   const runLastBoardPinsRef = useRef(new Map())
+  const validationRunCacheRef = useRef({ signature: '', allowRun: true, errors: [], healthScore: 100, toast: null })
   const neopixelRefs = useRef({})
 
   const serialPlotBufferRef = useRef('');
@@ -5471,11 +5482,52 @@ useEffect(() => {
     appendConsoleEntry('info', 'Web GDB reference: https://wokwi.github.io/web-gdb/', 'debug');
   }, [appendConsoleEntry]);
 
+  const buildValidationSignature = useCallback(() => {
+    const normalizedComponents = (components || [])
+      .map(comp => ({
+        id: comp?.id || '',
+        type: comp?.type || '',
+        attrs: comp?.attrs || {},
+      }))
+      .sort((a, b) => `${a.id}|${a.type}`.localeCompare(`${b.id}|${b.type}`));
+
+    const normalizedWires = (wires || [])
+      .map(wire => ({
+        from: String(wire?.from || ''),
+        to: String(wire?.to || ''),
+      }))
+      .sort((a, b) => `${a.from}|${a.to}`.localeCompare(`${b.from}|${b.to}`));
+
+    return JSON.stringify({
+      components: normalizedComponents,
+      wires: normalizedWires,
+      activeCodeFileId: activeCodeFileId || '',
+      code: useBlocklyCode ? (blocklyGeneratedCode || '') : (code || ''),
+    });
+  }, [components, wires, activeCodeFileId, useBlocklyCode, blocklyGeneratedCode, code]);
+
   const runCircuitValidation = useCallback(() => {
     try {
+      if (isRunning) {
+        return true;
+      }
+
       if (typeof FullCircuitValidator !== 'function') {
         console.warn('[Validation] FullCircuitValidator not available in this build.');
         return true;
+      }
+
+      const validationSignature = buildValidationSignature();
+      const cachedValidation = validationRunCacheRef.current;
+      if (cachedValidation.signature === validationSignature) {
+        setValidationErrors(cachedValidation.errors || []);
+        setValidationToast(cachedValidation.toast || null);
+        setHealthScore(Number.isFinite(cachedValidation.healthScore) ? cachedValidation.healthScore : 100);
+        if ((cachedValidation.errors || []).length > 0) {
+          setShowValidation(true);
+          if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
+        }
+        return cachedValidation.allowRun !== false;
       }
 
       // Adapter: convert frontend format (comp:pin) → engine format (comp.pin)
@@ -5490,7 +5542,13 @@ useEffect(() => {
       };
 
       const validator = new FullCircuitValidator(projectData);
-      const isSafe = validator.runValidation();
+      const isSafe = validator.runValidation({
+        profile: 'balanced',
+        useCache: true,
+        cacheKey: validationSignature,
+        incremental: true,
+        incrementalScope: 'webui',
+      });
 
       // ── Software-Hardware Sync Analysis ──────────────────────────────────
       const projectForSync = {
@@ -5503,10 +5561,14 @@ useEffect(() => {
         ? analyzeCodeHardwareSync(projectForSync) 
         : { passed: true, issues: [] };
 
+      let allowRun = true;
+      let nextToast = null;
+
       if (!isSafe || !syncResult.passed) {
         const physicsErrors = validator.errors || [];
 
         const syncErrors = (syncResult.issues || []).map(issue => ({
+          severity: 'warn',
           type: 'warn',
           message: issue.message,
           compIds: []
@@ -5518,7 +5580,7 @@ useEffect(() => {
         const score = validator.calculateHealthScore(syncErrors);
         setHealthScore(score);
 
-        const hasFatalPhysics = physicsErrors.some(e => e.type === 'error');
+        const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
 
         setValidationErrors(formattedErrors);
         setShowValidation(true);
@@ -5529,8 +5591,15 @@ useEffect(() => {
           reasons: formattedErrors.slice(0, 3).map(e => e.message),
         });
 
+        nextToast = {
+          title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
+          reasons: formattedErrors.slice(0, 3).map(e => e.message),
+        };
+
         // Only block the run if there is a fatal physics error
-        if (hasFatalPhysics) return false;
+        if (hasFatalPhysics) {
+          allowRun = false;
+        }
       }
 
       if (isSafe && syncResult.passed) {
@@ -5538,28 +5607,109 @@ useEffect(() => {
         setValidationToast(null);
         setHealthScore(100);
       }
-      return true;
+
+      validationRunCacheRef.current = {
+        signature: validationSignature,
+        allowRun,
+        errors: (isSafe && syncResult.passed) ? [] : (validator.errors || []).concat(
+          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
+        ),
+        healthScore: isSafe && syncResult.passed ? 100 : validator.calculateHealthScore(
+          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
+        ),
+        toast: nextToast,
+      };
+
+      return allowRun;
     } catch (err) {
       console.warn('[Validation] Engine failed, continuing run:', err);
       return true;
     }
-  }, [components, wires, code, useBlocklyCode, blocklyGeneratedCode, activeCodeFileId]);
+  }, [components, wires, code, useBlocklyCode, blocklyGeneratedCode, activeCodeFileId, isRunning, buildValidationSignature]);
 
-  const applyFix = useCallback((error) => {
-    if (!error.remediation) return;
-    saveHistory();
-
-    const projectData = { components, connections: wires };
-    const result = sharedApplyCircuitFix(projectData, error);
-
-    if (result.applied) {
-       setComponents(result.components);
-       setWires(result.connections);
-       appendConsoleEntry('info', `✅ Applied Shared Fix: ${error.remediation}`, 'simulator');
-       // Clear the error after applying
-       setValidationErrors(prev => prev.filter(e => e.message !== error.message));
+  const applyFix = useCallback(async (error) => {
+    if (!error.remediation && !error.ruleId) {
+      appendConsoleEntry('warn', '⚠️ Cannot fix: No remediation found', 'simulator');
+      return;
     }
-  }, [components, wires, saveHistory]);
+
+    saveHistory();
+    const projectData = { components, connections: wires };
+    const circuitBefore = JSON.parse(JSON.stringify(projectData));
+
+    // Apply the fix using enhanced fixer
+    const result = sharedApplyCircuitFix(projectData, error, { appliedBy: 'webui' });
+
+    if (!result.applied) {
+      appendConsoleEntry('warn', `⚠️ Fix not applied: ${result.reason || 'Check circuit connectivity'}`, 'simulator');
+      return;
+    }
+
+    // Update the circuit
+    setComponents(result.components);
+    setWires(result.connections);
+
+    // Log applied fix
+    const fixDesc = result.appliedFixes?.[0]?.description || error.remediation;
+    appendConsoleEntry('info', `🔧 Applied: ${fixDesc}`, 'simulator');
+
+    // CRITICAL: Clear validation cache so next run re-validates from scratch
+    validationRunCacheRef.current = {};
+
+    // Re-run validation to verify the fix worked
+    try {
+      const validator = new FullCircuitValidator({ components: result.components }, result.connections);
+      const verifyResult = await validator.runValidation(
+        { components: result.components, connections: result.connections },
+        { profile: 'balanced', incrementalScope: 'webui' }
+      );
+
+      const errorStillExists = verifyResult.errors?.some(
+        e => (e.id || e.ruleId) === (error.id || error.ruleId)
+      );
+
+      const newErrors = verifyResult.errors?.filter(
+        newErr => !validationErrors.some(
+          oldErr => (oldErr.id || oldErr.ruleId) === (newErr.id || newErr.ruleId)
+        )
+      ) || [];
+
+      if (!errorStillExists) {
+        if (newErrors.length === 0) {
+          appendConsoleEntry('success', `✅ Fix successful! Error resolved.`, 'simulator');
+        } else {
+          const errorCount = newErrors.filter(e => e.severity === 'error').length;
+          const warnCount = newErrors.filter(e => e.severity === 'warn').length;
+          appendConsoleEntry('warn', `✅ Original error fixed, but introduced ${errorCount} error(s) and ${warnCount} warning(s). Review changes.`, 'simulator');
+        }
+      } else {
+        appendConsoleEntry('error', `❌ Fix did not resolve the error. Try a different approach.`, 'simulator');
+      }
+    } catch (verifyErr) {
+      console.warn('[Verification] Revalidation failed after fix:', verifyErr);
+      appendConsoleEntry('info', `✅ Applied: ${fixDesc} (verification skipped)`, 'simulator');
+    }
+  }, [components, wires, saveHistory, validationErrors]);
+
+  const undoFix = useCallback(() => {
+    const undoResult = undoLastFix();
+    if (undoResult?.undone) {
+      setComponents(undoResult.circuit.components || components);
+      setWires(undoResult.circuit.connections || wires);
+      validationRunCacheRef.current = {}; // Clear cache
+      appendConsoleEntry('info', `↩️ Undone: ${undoResult.fixDescription}`, 'simulator');
+    }
+  }, [components, wires]);
+
+  const redoFix = useCallback(() => {
+    const redoResult = redoLastFix();
+    if (redoResult?.redone) {
+      setComponents(redoResult.circuit.components || components);
+      setWires(redoResult.circuit.connections || wires);
+      validationRunCacheRef.current = {}; // Clear cache
+      appendConsoleEntry('info', `🔄 Redone: ${redoResult.fixDescription}`, 'simulator');
+    }
+  }, [components, wires]);
 
   const getSerialTimestamp = () => {
     const now = new Date();
