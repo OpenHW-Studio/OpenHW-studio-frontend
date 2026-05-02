@@ -106,6 +106,11 @@ export const LEVELS = [
     xpReward: 140,
     color: '#eab308',
     icon: '🌞',
+    unlockedComponents: [
+      'wokwi-rgb-led',
+      'wokwi-neopixel-matrix',
+      'wokwi-neopixel-ring',
+    ],
     badge: {
       id: 'badge_light_chaser',
       name: 'Light Chaser',
@@ -123,6 +128,11 @@ export const LEVELS = [
     xpReward: 200,
     color: '#3b82f6',
     icon: '⚙️',
+    unlockedComponents: [
+      'wokwi-lcd1602',
+      'wokwi-7segment',
+      'wokwi-tm1637-7segment',
+    ],
     badge: {
       id: 'badge_motion_master',
       name: 'Motion Master',

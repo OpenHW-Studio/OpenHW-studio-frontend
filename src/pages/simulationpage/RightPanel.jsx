@@ -1,5 +1,6 @@
 import React from 'react';
-import Editor from 'react-simple-code-editor';
+import EditorComponent from 'react-simple-code-editor';
+const Editor = EditorComponent.default || EditorComponent;
 import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
@@ -13,11 +14,12 @@ const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.js
 
 const DISABLED_FILE_SUFFIX = '.disabled';
 
-export function RightPanel(props) {
+function RightPanelInternal(props) {
   const {
     isPanelOpen, panelWidth, isDragging, onMouseDownResize, setIsPanelOpen,
     explorerWidth, isExplorerDragging, onMouseDownExplorerResize,
     validationErrors, showValidation, setShowValidation,
+    healthScore = 100, applyFix,
     codeTab, setCodeTab, code, setCode, 
     blocklyXml, setBlocklyXml, blocklyGeneratedCode, setBlocklyGeneratedCode, useBlocklyCode, setUseBlocklyCode,
     projectFiles, openCodeTabs, activeCodeFileId, showCodeExplorer,
@@ -33,6 +35,9 @@ export function RightPanel(props) {
     showConnectionsPanel, wires, updateWireColor, deleteWire,
     selected, setSelected,
     blocklyDisabled, setBlocklyDisabled,
+    boardComponentMap, onToggleBoardFirmwareSource,
+    theme,
+    projectName,
     editingDisabled = false,
     editingDisabledMessage = 'Editing is disabled.',
   } = props;
@@ -262,16 +267,40 @@ export function RightPanel(props) {
           {validationErrors.length > 0 && showValidation && (
             <div className="bg-[var(--bg3)] border-b border-[var(--border)] shrink-0">
               <div className="flex items-center justify-between px-3 py-2 text-xs font-bold text-[var(--orange)]">
-                <span>⚠ Validation ({validationErrors.length})</span>
+                <div className="flex items-center gap-2">
+                   <div style={{
+                     width: 40, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.1)', overflow: 'hidden'
+                   }}>
+                      <div style={{
+                        width: `${healthScore}%`, height: '100%',
+                        background: healthScore > 80 ? 'var(--green)' : healthScore > 50 ? 'var(--orange)' : 'var(--red)',
+                        transition: 'width 0.5s ease-out'
+                      }} />
+                   </div>
+                   <span>Project Health: {healthScore}%</span>
+                </div>
                 <button className="bg-transparent border-none text-[var(--text3)] cursor-pointer text-sm font-inherit" onClick={() => setShowValidation(false)}>✕</button>
               </div>
               {validationErrors.map((err, i) => (
-                <div key={i} className="px-3 py-1.5 text-xs border-l-3 mb-0.5 leading-relaxed" style={{
+                <div key={i} className="px-3 py-2 text-xs border-l-4 mb-0.5 leading-relaxed group relative" style={{
                   borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
+                  background: 'rgba(0,0,0,0.1)'
                 }}>
-                  <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
-                    {err.type === 'error' ? '🔴' : '🟡'} {err.message}
-                  </span>
+                  <div className="flex justify-between items-start gap-2">
+                    <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
+                      {err.type === 'error' ? '🔴' : '🟡'} {err.message}
+                    </span>
+                    {err.remediation && applyFix && (
+                      <button 
+                        onClick={() => applyFix(err)}
+                        className="shrink-0 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all"
+                        title={err.remediation}
+                      >
+                        <span>🪄</span>
+                        <span>FIX</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -434,7 +463,7 @@ export function RightPanel(props) {
                           if (onOpenCodeFile) onOpenCodeFile(null);
                           setFileMenu(null);
                         }} style={{ flex: 1, overflow: 'auto', cursor: 'default' }}>
-                          <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.8 }}>project</div>
+                          <div style={{ padding: '8px 10px', fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={projectName || 'project'}>{projectName || 'project'}</div>
 
                           {projectRootFiles.map((file) => (
                             <div
@@ -766,12 +795,12 @@ export function RightPanel(props) {
                             e.preventDefault();
                             setFileMenu({ x: e.clientX, y: e.clientY, fileId: file.id });
                           }}
-                          className={`group transition-all duration-150 ${activeCodeFileId === file.id ? 'bg-[rgba(0,255,255,0.04)]' : 'hover:bg-[rgba(255,255,255,0.02)]'}`}
+                          className={`group transition-all duration-200 ${activeCodeFileId === file.id ? 'bg-[rgba(0,255,255,0.06)]' : 'hover:bg-[rgba(255,255,255,0.03)]'}`}
                           style={{
                             display: 'inline-flex',
                             alignItems: 'center',
-                            gap: 6,
-                            padding: '7px 12px',
+                            gap: 7,
+                            padding: '8px 16px',
                             fontSize: 11,
                             cursor: 'pointer',
                             borderBottom: activeCodeFileId === file.id ? '2px solid var(--accent)' : '2px solid transparent',
@@ -779,8 +808,9 @@ export function RightPanel(props) {
                             fontFamily: 'JetBrains Mono, monospace',
                             whiteSpace: 'nowrap',
                             userSelect: 'none',
+                            fontWeight: activeCodeFileId === file.id ? 600 : 400,
                             textDecoration: String(file.name || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX) ? 'line-through' : 'none',
-                            opacity: String(file.name || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX) ? 0.75 : 1,
+                            opacity: activeCodeFileId === file.id ? 1 : (String(file.name || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX) ? 0.6 : 0.85),
                           }}
                         >
                           <span>{file.name}{file.dirty ? ' *' : ''}</span>
@@ -812,7 +842,35 @@ export function RightPanel(props) {
                       </div>
                     </div>
 
-                    <div className="panel-scroll" style={{ flex: 1, overflow: 'auto' }}>
+                    <div className="panel-scroll hide-scrollbar" style={{ flex: 1, overflowY: 'auto' }}>
+                      {(() => {
+                        if (!activeFile || !boardComponentMap) return null;
+                        const pathParts = activeFile.path.split('/');
+                        if (pathParts.length < 3 || pathParts[0] !== 'project') return null;
+                        
+                        const boardId = pathParts[1];
+                        const boardComp = boardComponentMap.get(boardId);
+                        if (!boardComp || !boardComp.attrs?.useUploadedFirmware) return null;
+                        
+                        const firmwareName = boardComp.attrs.firmwareArtifactName || 'custom binary';
+                        
+                        return (
+                          <div className="bg-[var(--accent)]/5 border-b border-[var(--accent)]/20 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0 animate-in slide-in-from-top-2 duration-300">
+                            <div className="flex items-center gap-2.5 text-[11px] text-[var(--accent)] font-semibold">
+                              <div className="bg-[var(--accent)]/20 p-1 rounded-md">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                              </div>
+                              <span className="tracking-tight">Override Active: <strong className="text-[var(--text)] uppercase opacity-80">{boardId}</strong> is using <strong>{firmwareName}</strong></span>
+                            </div>
+                            <Btn 
+                              onClick={() => onToggleBoardFirmwareSource?.(boardId, false)}
+                              color="var(--accent)"
+                            >
+                              <span className="text-[10px] font-bold px-1">Switch to Code</span>
+                            </Btn>
+                          </div>
+                        );
+                      })()}
                       <Editor
                         value={code}
                         onValueChange={v => {
@@ -833,7 +891,8 @@ export function RightPanel(props) {
                           outline: 'none',
                           resize: 'none',
                           // Add a subtle opacity change if read only
-                          opacity: (editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json') ? 0.7 : 1
+                          opacity: (editingDisabled || !activeCodeFileId || activeCodeFileId === 'project/diagram.json') ? 0.7 : 1,
+                          overflow: 'hidden'
                         }}
                         textareaClassName="editor-textarea"
                       />
@@ -848,19 +907,24 @@ export function RightPanel(props) {
                   const isDisabledFile = String(theFile?.name || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX);
                   return (
                     <div
+                      className="canvas-menu"
+                      onMouseLeave={() => setFileMenu(null)}
                       style={{
                         position: 'fixed',
                         left: fileMenu.x,
                         top: fileMenu.y,
                         zIndex: 9999,
-                        background: 'var(--bg2)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 10,
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+                        background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                        backdropFilter: 'blur(16px) saturate(1.4)',
+                        WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                        border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                        borderRadius: 12,
+                        boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
                         minWidth: 180,
-                        overflow: 'hidden',
+                        padding: '5px',
                         animation: 'canvasMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
                         transformOrigin: 'top left',
+                        fontFamily: "'Space Grotesk', sans-serif"
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -900,27 +964,14 @@ export function RightPanel(props) {
                       ].map((item) => (
                         <button
                           key={item.label}
+                          className="canvas-menu-item"
                           onClick={() => {
                             item.action();
                             setFileMenu(null);
                           }}
                           style={{
-                            width: '100%',
-                            textAlign: 'left',
-                            background: 'none',
-                            border: 'none',
                             color: item.color || 'var(--text2)',
-                            padding: '6px 12px',
-                            fontSize: 13,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            fontFamily: 'inherit',
-                            transition: 'background 0.1s ease',
                           }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
                         >
                           {item.icon}
                           {item.label}
@@ -933,19 +984,24 @@ export function RightPanel(props) {
                 {folderMenu && (() => {
                   return (
                     <div
+                      className="canvas-menu"
+                      onMouseLeave={() => setFolderMenu(null)}
                       style={{
                         position: 'fixed',
                         left: folderMenu.x,
                         top: folderMenu.y,
                         zIndex: 9999,
-                        background: 'var(--bg2)',
-                        border: '1px solid var(--border)',
-                        borderRadius: 10,
-                        boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+                        background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                        backdropFilter: 'blur(16px) saturate(1.4)',
+                        WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                        border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                        borderRadius: 12,
+                        boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
                         minWidth: 180,
-                        overflow: 'hidden',
+                        padding: '5px',
                         animation: 'canvasMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
                         transformOrigin: 'top left',
+                        fontFamily: "'Space Grotesk', sans-serif"
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -978,27 +1034,14 @@ export function RightPanel(props) {
                       ].map((item) => (
                         <button
                           key={item.label}
+                          className="canvas-menu-item"
                           onClick={() => {
                             item.action();
                             setFolderMenu(null);
                           }}
                           style={{
-                            width: '100%',
-                            textAlign: 'left',
-                            background: 'none',
-                            border: 'none',
                             color: item.color || 'var(--text2)',
-                            padding: '6px 12px',
-                            fontSize: 13,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            fontFamily: 'inherit',
-                            transition: 'background 0.1s ease',
                           }}
-                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
                         >
                           {item.icon}
                           {item.label}
@@ -1014,64 +1057,60 @@ export function RightPanel(props) {
                 )}
               </div>
             )}
-            {codeTab === 'block' && (
-              <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden', position: 'relative', pointerEvents: editingDisabled ? 'none' : 'auto' }}>
-                {blocklyDisabled ? (
-                  /* ── Block editor disabled placeholder ─────────────── */
-                  <div style={{
-                    flex: 1, display: 'flex', flexDirection: 'column',
-                    alignItems: 'center', justifyContent: 'center',
-                    gap: 12, padding: 24, textAlign: 'center',
-                    background: 'var(--bg)',
-                  }}>
-                    <span style={{ fontSize: 36, opacity: 0.4 }}>🧱</span>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>Block Editor is disabled</div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)', maxWidth: 220, lineHeight: 1.5 }}>
-                      Block coding is turned off to improve canvas performance.
-                    </div>
-                    <button
-                      onClick={toggleBlocklyDisabled}
-                      style={{
-                        marginTop: 4,
-                        padding: '7px 18px',
-                        background: 'var(--accent)',
-                        color: '#fff',
-                        border: 'none',
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                      }}
-                    >
-                      Enable Block Editor
-                    </button>
-                  </div>
-                ) : (
-                  /* ── Block editor enabled ───────────────────────────── */
-                  /* NOTE: Performance is managed here by unmounting Blockly entirely. 
-                     Do not use global CSS (display: none) to hide Blockly elements, 
-                     as it breaks the editor's internal layout engine. */
-                  <React.Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>Loading Block Editor...</div>}>
-                    <BlocklyEditor
-                      onExportCode={(generated) => { if (!editingDisabled) { setCode(generated); setCodeTab('code'); } }}
-                      onChange={(generated) => { if (!editingDisabled) setBlocklyGeneratedCode(generated); }}
-                      xml={blocklyXml}
-                      onXmlChange={(nextXml) => { if (!editingDisabled) setBlocklyXml(nextXml); }}
-                      useBlocklyCode={useBlocklyCode}
-                      onToggleUseBlocklyCode={() => { if (!editingDisabled) setUseBlocklyCode(!useBlocklyCode); }}
-                      visible={true}
-                      boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
-                    />
-                  </React.Suspense>
-                )}
-                {editingDisabled && (
+            {codeTab === 'block' && editingDisabled && (
                   <div style={{ position: 'absolute', top: 12, right: 12, zIndex: 5, background: 'rgba(15,23,42,0.92)', color: '#fff', border: '1px solid rgba(148,163,184,0.35)', borderRadius: 10, padding: '8px 10px', fontSize: 11, maxWidth: 220 }}>
                     {editingDisabledMessage}
                   </div>
                 )}
-              </div>
-            )}
+            {/* Block editor — always mounted to preserve workspace state, hidden via CSS when not active */}
+            <div style={{ display: codeTab === 'block' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', position: 'relative', pointerEvents: editingDisabled ? 'none' : 'auto' }}>
+              {blocklyDisabled ? (
+                /* ── Block editor disabled placeholder ─────────────── */
+                <div style={{
+                  flex: 1, display: 'flex', flexDirection: 'column',
+                  alignItems: 'center', justifyContent: 'center',
+                  gap: 12, padding: 24, textAlign: 'center',
+                  background: 'var(--bg)',
+                }}>
+                  <span style={{ fontSize: 36, opacity: 0.4 }}>🧱</span>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>Block Editor is disabled</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', maxWidth: 220, lineHeight: 1.5 }}>
+                    Block coding is turned off to improve canvas performance.
+                  </div>
+                  <button
+                    onClick={toggleBlocklyDisabled}
+                    style={{
+                      marginTop: 4,
+                      padding: '7px 18px',
+                      background: 'var(--accent)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 8,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    Enable Block Editor
+                  </button>
+                </div>
+              ) : (
+                /* ── Block editor enabled — kept mounted to preserve state ── */
+                <React.Suspense fallback={<div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>Loading Block Editor...</div>}>
+                  <BlocklyEditor
+                    onExportCode={(generated) => { if (!editingDisabled) { setCode(generated); setCodeTab('code'); } }}
+                    onChange={(generated) => { if (!editingDisabled) setBlocklyGeneratedCode(generated); }}
+                    xml={blocklyXml}
+                    onXmlChange={(nextXml) => { if (!editingDisabled) setBlocklyXml(nextXml); }}
+                    useBlocklyCode={useBlocklyCode}
+                    onToggleUseBlocklyCode={() => { if (!editingDisabled) setUseBlocklyCode(!useBlocklyCode); }}
+                    visible={codeTab === 'block'}
+                    boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
+                  />
+                </React.Suspense>
+              )}
+            </div>
             {codeTab === 'serial' && (
               <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden' }}>
                 {/* Serial panel toolbar */}
@@ -1322,41 +1361,41 @@ export function RightPanel(props) {
                         )}
 
                         {serialBoardFilter === 'all' && showSendTargetMenu && (
-                          <div style={{
-                            position: 'absolute',
-                            right: 0,
-                            bottom: 'calc(100% + 6px)',
-                            minWidth: 180,
-                            background: 'var(--bg2)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                            overflow: 'hidden',
-                            zIndex: 20,
-                          }}>
+                          <div 
+                            className="canvas-menu"
+                            onMouseLeave={() => setShowSendTargetMenu(false)}
+                            style={{
+                              position: 'absolute',
+                              right: 0,
+                              bottom: 'calc(100% + 6px)',
+                              minWidth: 180,
+                              background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                              backdropFilter: 'blur(16px) saturate(1.4)',
+                              WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                              border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                              borderRadius: 12,
+                              boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                              padding: '5px',
+                              zIndex: 10000, // Increased z-index to match other menus
+                              animation: 'canvasMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                              transformOrigin: 'bottom right',
+                              fontFamily: "'Space Grotesk', sans-serif"
+                            }}
+                          >
                             {(serialBoardOptions || []).filter((id) => id !== 'all').map((id) => {
                               const active = serialSendTarget === id;
                               return (
                                 <button
                                   key={`send-target-${id}`}
+                                  className="canvas-menu-item"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setSerialSendTarget(id);
                                     setShowSendTargetMenu(false);
                                   }}
                                   style={{
-                                    width: '100%',
-                                    border: 'none',
-                                    borderBottom: '1px solid var(--border)',
                                     background: active ? 'rgba(0,255,255,0.08)' : 'transparent',
                                     color: active ? 'var(--accent)' : 'var(--text2)',
-                                    fontSize: 11,
-                                    padding: '7px 9px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 7,
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
                                   }}
                                 >
                                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: boardColors[id] || '#94a3b8', boxShadow: `0 0 0 1px ${(boardColors[id] || '#94a3b8')}66` }} />
@@ -1454,5 +1493,6 @@ export function RightPanel(props) {
     </aside>
   );
 }
+export const RightPanel = React.memo(RightPanelInternal);
 
 

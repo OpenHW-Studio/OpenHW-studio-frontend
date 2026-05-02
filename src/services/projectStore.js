@@ -146,6 +146,10 @@ export async function deleteProject(id) {
  * @returns {Promise<void>}
  */
 export async function renameProject(id, newName) {
+  if (!id) {
+    console.warn('[ProjectStore] Cannot rename project: missing ID');
+    return Promise.resolve();
+  }
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const t = db.transaction(STORE, 'readwrite');

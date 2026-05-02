@@ -1,0 +1,34 @@
+name: Fast Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'The Git SHA tag of the image to roll back to'
+        required: true
+
+jobs:
+  rollback:
+    name: Rollback Frontend Container
+    runs-on: self-hosted
+    steps:
+      - name: Pull and Restart Container Locally
+        run: |
+          cd /opt/openhw/backend
+          
+          # Update the local .env file with the rollback tag
+          sed -i '/^FRONTEND_TAG=/d' .env || true
+          echo "FRONTEND_TAG=${{ github.event.inputs.image_tag }}" >> .env
+          
+          # Ensure Docker Hub credentials are available
+          export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
+          
+          # Log in to Docker Hub
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          
+          echo "Rolling back openhw-frontend to tag: ${{ github.event.inputs.image_tag }}"
+          docker compose -f docker-compose.prod.yml pull frontend
+          docker compose -f docker-compose.prod.yml up -d frontend
+          
+          # Clean up old images to save disk space
+          docker image prune -af

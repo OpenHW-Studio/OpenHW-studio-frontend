@@ -1,32 +1,48 @@
-FROM node:20-alpine AS build
+# Build stage
+FROM node:20 AS build
+WORKDIR /app/frontend
 
-WORKDIR /app
+# Copy frontend package files
+COPY OpenHW-studio-frontend/package*.json ./
 
-COPY openhw-studio-emulator/ ./openhw-studio-emulator/
-COPY OpenHW-studio-frontend/ ./OpenHW-studio-frontend/
+# 1. Copy the emulator into src/emulator first
+COPY openhw-studio-emulator ./src/emulator
+RUN rm -rf ./src/emulator/node_modules ./src/emulator/dist
 
-WORKDIR /app/openhw-studio-emulator
-RUN npm install
+# 2. Update package.json to point to the new local path
+RUN sed -i 's|"@openhw/emulator": "file:../openhw-studio-emulator"|"@openhw/emulator": "file:./src/emulator"|' package.json
 
-WORKDIR /app/OpenHW-studio-frontend
-RUN npm install
+# 3. Install dependencies and force Vite 5
+RUN npm install --legacy-peer-deps && \
+    npm install vite@5 --save-dev --legacy-peer-deps
 
-RUN rm -rf /app/OpenHW-studio-frontend/node_modules/@openhw/emulator && \
-    ln -sf /app/openhw-studio-emulator /app/OpenHW-studio-frontend/node_modules/@openhw/emulator
+# Copy frontend source code
+COPY OpenHW-studio-frontend/ .
 
+# Build-time environment variables
 ARG VITE_API_BASE_URL
 ARG VITE_EXAMPLES_BASE_URL
 ARG VITE_GOOGLE_CLIENT_ID
 ARG VITE_ADMIN_EMAILS
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
+ARG VITE_EXAMPLES_BASE_URL
 ENV VITE_EXAMPLES_BASE_URL=$VITE_EXAMPLES_BASE_URL
+
+ARG VITE_GOOGLE_CLIENT_ID
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+
+ARG VITE_ADMIN_EMAILS
 ENV VITE_ADMIN_EMAILS=$VITE_ADMIN_EMAILS
 
-RUN npm run build
+# Build the app
+RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
 FROM nginx:stable-alpine
-COPY --from=build /app/OpenHW-studio-frontend/dist /usr/share/nginx/html
-COPY --from=build /app/OpenHW-studio-frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/frontend/dist /usr/share/nginx/html
+
+# Custom nginx config to handle SPA routing and Reverse Proxy
+COPY OpenHW-studio-frontend/nginx.conf /etc/nginx/conf.d/default.conf
+
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

@@ -7,7 +7,7 @@ import { GamificationToasts } from './services/gamification/Gamificationpanel.js
 import LandingPage from './pages/LandingPage.jsx'
 import UserLoginPage from './pages/auth/UserLoginPage.jsx'
 import SigninPage from './pages/auth/SigninPage.jsx'
-import SignupPage from './pages/auth/signupPage.jsx'
+import SignupPage from './pages/auth/SignupPage.jsx'
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx'
 import ResetPasswordPage from './pages/auth/ResetPasswordPage.jsx'
 import RoleSelectPage from './pages/RoleSelectPage.jsx'

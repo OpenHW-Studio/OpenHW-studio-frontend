@@ -9,18 +9,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const emulatorPath = env.VITE_EMULATOR_PATH
-  const resolvedEmulatorPath = emulatorPath ? path.resolve(__dirname, emulatorPath) : null
+  const dockerEmulatorPath = path.resolve(__dirname, 'src/emulator')
+  const resolvedEmulatorPath = emulatorPath 
+    ? path.resolve(__dirname, emulatorPath) 
+    : (fs.existsSync(dockerEmulatorPath) ? dockerEmulatorPath : null)
 
-  // Default path to openhw-studio-emulator if not specified
-  const defaultEmulatorPath = path.resolve(__dirname, '../openhw-studio-emulator')
-  
-  // Use explicit path if set, otherwise default to local package
-  const aliasPath = resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath) 
-    ? resolvedEmulatorPath 
-    : (fs.existsSync(defaultEmulatorPath) ? defaultEmulatorPath : null)
+  const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath)
 
   return {
     plugins: [react()],
+    build: {
+      minify: 'esbuild',
+      cssMinify: true,
+    },
     resolve: {
       alias: aliasPath ? {
         '@openhw/emulator': aliasPath,

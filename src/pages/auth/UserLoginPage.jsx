@@ -32,9 +32,9 @@ export default function UserLoginPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/user/dashboard')
+      handleRedirect();
     }
-  }, [isAuthenticated, role, navigate])
+  }, [isAuthenticated])
 
   const handleInputChange = (e) => {
     const value = e.target.type === 'email' ? e.target.value.trim() : e.target.value
@@ -47,7 +47,7 @@ export default function UserLoginPage() {
     setError('')
 
     try {
-      const data = await loginUser({ ...formData, role: 'user' })
+      const data = await loginUser({ ...formData })
       login(data.token, data.user)
       handleRedirect()
     } catch (err) {
@@ -62,7 +62,7 @@ export default function UserLoginPage() {
       setLoading(true)
       setError('')
       try {
-        const data = await googleLogin(tokenResponse.access_token, 'user')
+        const data = await googleLogin(tokenResponse.access_token)
         login(data.token, data.user)
         handleRedirect()
       } catch (err) {
