@@ -1110,6 +1110,8 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, varId
 
 // ─── Main component ────────────────────────────────────────────────────────────
 export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useBlocklyCode, onToggleUseBlocklyCode, boardKind }) {
+  const [showSidebar, setShowSidebar] = useState(true);
+  const sidebarWidth = 220;
   const wsContainerRef = useRef(null)
   const workspaceRef = useRef(null)
   const importFileRef = useRef(null)
@@ -1192,7 +1194,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       theme: buildTheme(B, isDark),
       renderer: 'zelos',
       grid: { spacing: 20, length: 3, colour: isDark ? '#1e2d47' : '#e2e8f0', snap: true },
-      zoom: { controls: true, wheel: true, startScale: 0.9, maxScale: 3, minScale: 0.3, pinch: true },
+      zoom: { controls: false, wheel: true, startScale: 0.9, maxScale: 3, minScale: 0.3, pinch: true },
       move: { scrollbars: true, drag: true, wheel: true },
       scrollbars: true,
       trashcan: true,
@@ -1564,10 +1566,40 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-      {/* Hide Blockly's built-in scrollbars and force opaque markers */}
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', position: 'relative' }}>
+      {/* Sidebar Toggle Handle */}
+      <div 
+        onClick={() => setShowSidebar(!showSidebar)}
+        style={{ 
+          position: 'absolute', 
+          left: showSidebar ? sidebarWidth - 12 : -12,
+          top: '40%',
+          width: 32, height: 64,
+          background: 'var(--bg2)',
+          border: '1px solid var(--border)',
+          borderLeft: 'none',
+          borderRadius: '0 16px 16px 0',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer', zIndex: 100,
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          boxShadow: '4px 0 12px rgba(0,0,0,0.15)',
+        }}
+      >
+        <svg 
+          width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+          style={{ 
+            transform: showSidebar ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.3s',
+            color: 'var(--accent)'
+          }}
+        >
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+      </div>
+
+      {/* Hide Blockly's built-in scrollbars, force opaque markers, and hide zoom in/out */}
       <style>{`
-        .blocklyScrollbarHorizontal, .blocklyScrollbarVertical { display: none !important; }
+        /* Force opaque markers */
         .blocklyInsertionMarker .blocklyPath {
           fill-opacity: 1 !important;
           stroke-opacity: 1 !important;
@@ -1575,47 +1607,65 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       `}</style>
 
       {/* ── Toolbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', flexShrink: 0, background: tok.toolbar, borderBottom: `1px solid ${tok.border}` }}>
-        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: tok.textMuted }}>Block Editor</span>
-        {loadStatus === 'loading' && <span style={{ fontSize: 11, color: tok.textMuted, marginLeft: 8 }}>Loading...</span>}
-
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', flexShrink: 0, background: tok.toolbar, borderBottom: `1px solid ${tok.border}`, height: 48 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: tok.textMuted }}>Blocks</span>
+        
         <button
           style={{ 
             ...BTN, 
             borderColor: useBlocklyCode ? 'var(--green)' : tok.border, 
             color: useBlocklyCode ? 'var(--green)' : tok.textMuted,
             display: 'flex', alignItems: 'center', gap: 6,
-            fontWeight: useBlocklyCode ? 700 : 400,
-            marginLeft: 8
+            fontWeight: 800,
+            marginLeft: 4,
+            padding: '4px 8px',
+            fontSize: 10
           }}
           onClick={onToggleUseBlocklyCode}
-          title={useBlocklyCode ? "System is using Blocks for compilation" : "System is using Code Panel for compilation"}
+          title={useBlocklyCode ? "System is using Blocks" : "System is using Code"}
         >
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: useBlocklyCode ? 'var(--green)' : 'currentColor', opacity: useBlocklyCode ? 1 : 0.4 }} />
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: useBlocklyCode ? 'var(--green)' : 'currentColor' }} />
           Use Blocks
         </button>
 
         <div style={{ flex: 1 }} />
 
         <button
-          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted }}
+          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px' }}
           onClick={() => importFileRef.current?.click()}
         >Import</button>
 
         <button
-          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted }}
+          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px' }}
           onClick={handleExportPng}
         >Export</button>
 
-        <div style={{ width: 1, height: 16, background: tok.border, margin: '0 4px' }} />
+        <div style={{ width: 1, height: 16, background: tok.border, margin: '0 2px' }} />
 
         <button
-          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, ...(showCode ? { borderColor: 'var(--accent)', color: 'var(--accent)' } : {}) }}
+          style={{ 
+            ...BTN, 
+            borderColor: showCode ? 'var(--accent)' : tok.border, 
+            color: showCode ? 'var(--accent)' : tok.textMuted,
+            background: showCode ? 'rgba(0,255,255,0.05)' : 'transparent',
+            fontSize: 10,
+            padding: '4px 8px',
+            marginRight: 2 // Move Preview slightly left
+          }}
           onClick={() => setShowCode(v => !v)}
         >Preview</button>
 
         <button
-          style={{ ...BTN, background: 'var(--accent)', borderColor: 'var(--accent)', color: '#000', fontWeight: 700 }}
+          style={{ 
+            ...BTN, 
+            background: 'var(--accent)', 
+            borderColor: 'var(--accent)', 
+            color: '#000', 
+            fontWeight: 800,
+            fontSize: 11,
+            padding: '5px 12px',
+            boxShadow: '0 2px 8px rgba(0,255,255,0.2)'
+          }}
           onClick={handleExport} disabled={loadStatus !== 'ready'}
         >Use Code</button>
 
@@ -1634,7 +1684,16 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
 
         {/* ════ Sidebar ════ */}
-        <div style={{ width: 220, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: tok.sidebar }}>
+        <div style={{ 
+          width: showSidebar ? sidebarWidth : 0, 
+          flexShrink: 0, 
+          display: 'flex', 
+          flexDirection: 'column', 
+          overflow: 'hidden', 
+          background: 'var(--bg2)',
+          borderRight: showSidebar ? '1px solid var(--border)' : 'none',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}>
 
           {/* Category pills grid - fixed height to prevent CLS */}
           <div style={{ 
@@ -1653,18 +1712,22 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                   key={cat.id}
                   onClick={() => setActiveCat(cat.id)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 5,
-                    padding: '5px 8px', borderRadius: 20,
-                    border: `1px solid ${active ? cat.color : tok.border}`,
-                    background: active ? cat.color + '22' : 'transparent',
-                    color: active ? cat.color : tok.textMuted,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '6px 10px', borderRadius: 12,
+                    border: '1px solid var(--border)',
+                    background: active ? 'var(--bg)' : 'var(--bg3)',
+                    color: active ? cat.color : 'var(--text3)',
                     cursor: 'pointer', fontFamily: 'inherit',
-                    fontSize: 11, fontWeight: active ? 700 : 400,
-                    transition: 'all .15s', whiteSpace: 'nowrap', overflow: 'hidden',
+                    fontSize: 10, fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '.05em',
+                    transition: 'all .2s', whiteSpace: 'nowrap', overflow: 'hidden',
+                    boxShadow: active ? `0 4px 12px ${cat.color}22` : 'none',
+                    borderColor: active ? cat.color : 'var(--border)',
                   }}
                   title={cat.label}
                 >
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
                   {cat.label}
                 </button>
               )
