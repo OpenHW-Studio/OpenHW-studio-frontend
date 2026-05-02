@@ -5507,6 +5507,7 @@ useEffect(() => {
         const physicsErrors = validator.errors || [];
 
         const syncErrors = (syncResult.issues || []).map(issue => ({
+          severity: 'warn',
           type: 'warn',
           message: issue.message,
           compIds: []
@@ -5518,7 +5519,7 @@ useEffect(() => {
         const score = validator.calculateHealthScore(syncErrors);
         setHealthScore(score);
 
-        const hasFatalPhysics = physicsErrors.some(e => e.type === 'error');
+        const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
 
         setValidationErrors(formattedErrors);
         setShowValidation(true);

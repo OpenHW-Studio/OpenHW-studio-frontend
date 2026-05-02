@@ -281,14 +281,16 @@ function RightPanelInternal(props) {
                 </div>
                 <button className="bg-transparent border-none text-[var(--text3)] cursor-pointer text-sm font-inherit" onClick={() => setShowValidation(false)}>✕</button>
               </div>
-              {validationErrors.map((err, i) => (
+              {validationErrors.map((err, i) => {
+                const isError = err.severity === 'error' || err.type === 'error';
+                return (
                 <div key={i} className="px-3 py-2 text-xs border-l-4 mb-0.5 leading-relaxed group relative" style={{
-                  borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
+                  borderLeftColor: isError ? 'var(--red)' : 'var(--orange)',
                   background: 'rgba(0,0,0,0.1)'
                 }}>
                   <div className="flex justify-between items-start gap-2">
-                    <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
-                      {err.type === 'error' ? '🔴' : '🟡'} {err.message}
+                    <span style={{ color: isError ? 'var(--red)' : 'var(--orange)' }}>
+                      {isError ? '🔴' : '🟡'} {err.message}
                     </span>
                     {err.remediation && applyFix && (
                       <button 
@@ -302,7 +304,8 @@ function RightPanelInternal(props) {
                     )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
 
