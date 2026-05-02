@@ -662,3 +662,89 @@ export function validateSignalIntegrity(validator) {
         validator.addError(`💡 [Signal] EMI Risk: Motors and digital displays detected. Ensure you use decoupling capacitors (0.1uF) to avoid I2C noise.`, 'warn');
     }
 }
+
+export function validateRailConflicts(validator) {
+    console.log('🔍 Checking for mixed rail conflicts...');
+
+    const supplyNodes = [];
+    validator.components.forEach(component => {
+        const pins = getComponentPins(component);
+        pins.forEach(pin => {
+            const node = `${component.id}.${pin.id}`;
+            const directVoltage = validator.getNodeDirectVoltage(node);
+            if (Number.isFinite(directVoltage) && directVoltage > 0) {
+                supplyNodes.push({ node, voltage: directVoltage });
+            }
+        });
+    });
+
+    for (let i = 0; i < supplyNodes.length; i += 1) {
+        for (let j = i + 1; j < supplyNodes.length; j += 1) {
+            const left = supplyNodes[i];
+            const right = supplyNodes[j];
+            const delta = Math.abs(left.voltage - right.voltage);
+            if (delta < 0.8) continue;
+
+            const resistance = validator.findResistanceBetween(left.node, right.node);
+            if (!Number.isFinite(resistance)) continue;
+
+            if (resistance <= 1) {
+                validator.addError({
+                    ruleId: 'validateRailConflicts',
+                    severity: 'error',
+                    message: `Mixed-rail hard tie detected between ${left.node} (${left.voltage.toFixed(1)}V) and ${right.node} (${right.voltage.toFixed(1)}V).`,
+                    compIds: [validator.getComponentIdFromNode(left.node), validator.getComponentIdFromNode(right.node)].filter(Boolean),
+                    remediation: 'Separate 5V/3.3V rails or add proper level shifting/regulation between domains.',
+                    confidence: 0.95,
+                });
+            } else if (resistance < 50) {
+                validator.addError({
+                    ruleId: 'validateRailConflicts',
+                    severity: 'warn',
+                    message: `Potential rail conflict path between ${left.node} and ${right.node} (${resistance.toFixed(1)}Ω).`,
+                    remediation: 'Inspect resistor network to ensure rails are intentionally isolated.',
+                    confidence: 0.75,
+                });
+            }
+        }
+    }
+}
+
+export function validateCrossComponentInteractions(validator) {
+    console.log('🔍 Checking cross-component interaction risks...');
+
+    const highSurgeTypes = ['wokwi-motor', 'wokwi-servo', 'wokwi-stepper-motor'];
+    const sensitiveTypes = ['wokwi-ssd1306-oled', 'wokwi-lcd1602-i2c', 'wokwi-lcd2004-i2c', 'max30102'];
+
+    const surgeComponents = validator.components.filter(component => validator.isType(component, ...highSurgeTypes));
+    const sensitiveComponents = validator.components.filter(component => validator.isType(component, ...sensitiveTypes));
+
+    if (!surgeComponents.length || !sensitiveComponents.length) return;
+
+    const hasSharedSupplyPath = surgeComponents.some(surge => {
+        const surgePins = getComponentPins(surge);
+        return surgePins.some(pin => {
+            const surgeNode = `${surge.id}.${pin.id}`;
+            return sensitiveComponents.some(sensitive => {
+                const sensitivePins = getComponentPins(sensitive);
+                return sensitivePins.some(sensitivePin => {
+                    const sensitiveNode = `${sensitive.id}.${sensitivePin.id}`;
+                    const resistance = validator.findResistanceBetween(surgeNode, sensitiveNode);
+                    return Number.isFinite(resistance) && resistance <= 5;
+                });
+            });
+        });
+    });
+
+    if (hasSharedSupplyPath) {
+        validator.addError({
+            ruleId: 'validateCrossComponentInteractions',
+            severity: 'warn',
+            message: 'High-surge loads and sensitive peripherals appear to share a low-impedance rail path.',
+            compIds: [...surgeComponents.map(component => component.id), ...sensitiveComponents.map(component => component.id)],
+            remediation: 'Isolate sensitive devices with dedicated decoupling and separate high-current return paths.',
+            autoFix: false,
+            confidence: 0.8,
+        });
+    }
+}
