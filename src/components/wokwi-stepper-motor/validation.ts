@@ -1,7 +1,14 @@
-export const validation = {
+import { createValidationIssue } from '../component-schema.js';
+import type { ComponentValidationRule } from '../component-schema.js';
+
+export const validation: { rules: ComponentValidationRule[] } = {
     rules: [
         {
-            name: "Stepper Coil Connection Check",
+            id: 'stepper-coil-connection-check',
+            name: 'Stepper Coil Connection Check',
+            severity: 'warn',
+            priority: 10,
+            description: 'Warn when one or more stepper coils are disconnected.',
             check: (component: any, graph: Map<string, string[]>, validator: any) => {
                 const requiredPins = ['A+', 'A-', 'B+', 'B-'];
                 const missingPins = requiredPins.filter(pin => {
@@ -10,7 +17,14 @@ export const validation = {
                 });
 
                 if (missingPins.length > 0) {
-                    return `⚠️ [Stepper ${component.id}] Coil Warning: The following pins are not connected: ${missingPins.join(', ')}. Stepper motor requires both coils (A and B) to be fully wired.`;
+                    return createValidationIssue({
+                        ruleId: 'stepper-coil-connection-check',
+                        severity: 'warn',
+                        message: `⚠️ [Stepper ${component.id}] Coil Warning: The following pins are not connected: ${missingPins.join(', ')}. Stepper motor requires both coils (A and B) to be fully wired.`,
+                        compIds: [component.id],
+                        remediation: 'Connect all stepper coil pins.',
+                        autoFix: true,
+                    });
                 }
 
                 return null;
