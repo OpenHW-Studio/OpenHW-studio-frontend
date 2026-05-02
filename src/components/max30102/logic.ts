@@ -461,4 +461,29 @@ export class MAX30102Logic extends BaseComponent {
     getSyncState() {
         return { ...this.state };
     }
+
+    onCustomTelemetry() {
+        const head = this.regs[0x04]; // FIFO_WR_PTR
+        const tail = this.regs[0x06]; // FIFO_RD_PTR
+        const unreadRows = (head - tail + 32) % 32;
+        const modeBits = this.regs[0x09] & 0x07;
+        const mode = modeBits === 0x02
+            ? 'HR Only'
+            : modeBits === 0x03
+                ? 'SpO2'
+                : modeBits === 0x07
+                    ? 'Multi-LED'
+                    : 'Off';
+
+        this.setCustomTelemetry({
+            sampleRateHz: this.sampleRateHz,
+            heartRateHz: Number(this.heartRateHz.toFixed(3)),
+            fifoBufferDepth: unreadRows,
+            heartRate: this.state.heartRate,
+            spo2: this.state.spo2,
+            redAmplitude: this.redAmp,
+            irAmplitude: this.irAmp,
+            mode,
+        });
+    }
 }

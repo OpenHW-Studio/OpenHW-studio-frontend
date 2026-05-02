@@ -63,9 +63,25 @@ export class FullCircuitValidator {
         return types.map(t => this.normalizeType(t)).includes(normalized);
     }
 
-    addError(message) {
-        if (!this.errorSet.has(message)) {
-            this.errorSet.add(message);
+    addError(message, type = 'error', compIds = [], remediation = null) {
+        // If message is a string, try to parse legacy format for backwards compatibility
+        if (typeof message === 'string') {
+            const idMatch = message.match(/\[(?:MCU|LED|I2C|Arduino|Pico|Buzzer|NPN|Servo|Keypad|Encoder|Pot|L293D|74xx|Nano|Mega|Diode|Stepper|Ultrasonic|7-Segment|LCD|OLED)\s+([\w-]+)\]/);
+            const fixMatch = message.match(/Fix:\s*(.+)$/);
+            
+            const errorObj = {
+                message: message.split('Fix:')[0].trim(),
+                type: message.includes('🔥') ? 'error' : type,
+                compIds: idMatch ? [idMatch[1]] : compIds,
+                remediation: fixMatch ? fixMatch[1].trim() : remediation
+            };
+
+            if (!this.errorSet.has(message)) {
+                this.errorSet.add(message);
+                this.errors.push(errorObj);
+            }
+        } else {
+            // Support direct object addition
             this.errors.push(message);
         }
     }
@@ -142,15 +158,23 @@ export class FullCircuitValidator {
     getNodeDirectVoltage(nodeId) {
         const { componentId, pinId } = this.getNodeParts(nodeId);
         const component = this.getComponentById(componentId);
-        const normalizedPin = String(pinId || '').toLowerCase();
+        if (!component) return null;
 
         if (this.isGroundNode(nodeId)) return 0.0;
 
         const pinVoltage = this.getPinNumericVoltageLabel(pinId);
         if (pinVoltage !== null) return pinVoltage;
 
+        if (this.isType(component, 'wokwi-arduino-uno', 'mcu_uno')) {
+            const pin = String(pinId || '').toUpperCase();
+            if (/^(D?\d+|A\d+)$/.test(pin)) return 5.0; // Assume logic high for safety check
+            if (pin === '5V' || pin === 'VCC') return 5.0;
+            if (pin === '3V3') return 3.3;
+        }
+
         if (this.isType(component, 'wokwi-power-supply')) {
             const configured = this.getComponentAttrNumber(component, 'voltage', 5.0);
+            const normalizedPin = String(pinId || '').toLowerCase();
             if (normalizedPin === '5v' || normalizedPin === 'vcc') return configured;
             if (normalizedPin === 'gnd') return 0.0;
         }
@@ -234,6 +258,58 @@ export class FullCircuitValidator {
         }
 
         return foundPowerSource ? totalResistance : 0;
+    }
+
+    calculatePowerStats() {
+        const stats = {
+            totalCurrent: 0.05, // 50mA baseline
+            components: [],
+            thermal: {},
+            isOverloaded: false
+        };
+
+        this.components.forEach(comp => {
+            let current = 0;
+            if (this.isType(comp, 'wokwi-led')) current = 0.02;
+            if (this.isType(comp, 'wokwi-motor', 'wokwi-servo')) current = 0.2;
+            if (this.isType(comp, 'wokwi-neopixel')) current = (comp.attrs?.pixels || 16) * 0.02;
+            
+            if (current > 0) {
+                stats.totalCurrent += current;
+                stats.components.push({ id: comp.id, current: current * 1000 }); // mA
+
+                // Thermal Analysis
+                const voltage = this.isType(comp, 'wokwi-led') ? 2.0 : 5.0;
+                const powerWatts = voltage * current;
+                stats.thermal[comp.id] = {
+                    power: powerWatts,
+                    estimatedTemp: 25 + (powerWatts * 60) // 60°C/W
+                };
+            }
+        });
+
+        stats.isOverloaded = stats.totalCurrent > 0.5;
+        return stats;
+    }
+
+    calculateVoltageDrop(currentAmps) {
+        // Standard jumper wire resistance
+        const wireResistance = 0.01; 
+        return currentAmps * wireResistance;
+    }
+
+    calculateHealthScore(syncIssues = []) {
+        let score = 100;
+        
+        // Deduct based on structured error types
+        const fatalErrors = this.errors.filter(e => e.type === 'error');
+        const warnings = this.errors.filter(e => e.type === 'warn');
+        
+        score -= (fatalErrors.length * 20);
+        score -= (warnings.length * 5);
+        score -= (syncIssues.length * 10);
+        
+        return Math.max(0, score);
     }
 
     runValidation() {
