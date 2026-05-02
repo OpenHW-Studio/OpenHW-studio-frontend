@@ -1,26 +1,56 @@
-export const validation = {
+import { createValidationIssue } from '../component-schema.js';
+import type { ComponentValidationRule } from '../component-schema.js';
+
+export const validation: { rules: ComponentValidationRule[] } = {
     rules: [
         {
-            name: "Sensor Connection Check",
+            id: 'analog-joystick-connection-check',
+            name: 'Sensor Connection Check',
+            severity: 'warn',
+            priority: 10,
+            description: 'Warn when the joystick power, ground, or signal pins are disconnected.',
             check: (component: any, graph: Map<string, string[]>, validator: any) => {
                 const pins = (component.pins || []).map((p: any) => p.id);
                 const vcc = pins.find((p: string) => p.includes('VCC') || p.includes('5V') || p.includes('V+'));
                 const gnd = pins.find((p: string) => p.includes('GND'));
                 const sigPins = pins.filter((p: string) => p.includes('SIG') || p.includes('OUT') || p.includes('VERT') || p.includes('HORZ') || p.includes('SEL') || p.includes('AO'));
+                const issues = [];
 
                 if (vcc && validator.getNeighbors(`${component.id}.${vcc}`).length === 0) {
-                    return `⚠️ [${component.type} ${component.id}] Power is not connected.`;
+                    issues.push(createValidationIssue({
+                        ruleId: 'analog-joystick-connection-check',
+                        severity: 'warn',
+                        message: `⚠️ [${component.type} ${component.id}] Power is not connected.`,
+                        compIds: [component.id],
+                        remediation: 'Connect the joystick power pin to the supply rail.',
+                        autoFix: true,
+                    }));
                 }
+
                 if (gnd && validator.getNeighbors(`${component.id}.${gnd}`).length === 0) {
-                    return `⚠️ [${component.type} ${component.id}] Ground is not connected.`;
+                    issues.push(createValidationIssue({
+                        ruleId: 'analog-joystick-connection-check',
+                        severity: 'warn',
+                        message: `⚠️ [${component.type} ${component.id}] Ground is not connected.`,
+                        compIds: [component.id],
+                        remediation: 'Connect the joystick ground pin to the common ground rail.',
+                        autoFix: true,
+                    }));
                 }
                 
                 const connectedSigs = sigPins.filter(p => validator.getNeighbors(`${component.id}.${p}`).length > 0);
                 if (sigPins.length > 0 && connectedSigs.length === 0) {
-                    return `⚠️ [${component.type} ${component.id}] Warning: No signal/output pins are connected. The sensor will not provide any data.`;
+                    issues.push(createValidationIssue({
+                        ruleId: 'analog-joystick-connection-check',
+                        severity: 'warn',
+                        message: `⚠️ [${component.type} ${component.id}] Warning: No signal/output pins are connected. The sensor will not provide any data.`,
+                        compIds: [component.id],
+                        remediation: 'Wire the analog output pins to the MCU input pins.',
+                        autoFix: true,
+                    }));
                 }
 
-                return null;
+                return issues.length > 0 ? issues : null;
             }
         }
     ]

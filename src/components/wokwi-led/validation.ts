@@ -1,21 +1,28 @@
-export const validation = {
+import { createValidationIssue } from '../component-schema.js';
+import type { ComponentValidationRule } from '../component-schema.js';
+
+export const validation: { rules: ComponentValidationRule[] } = {
     rules: [
         {
-            name: "LED Series Resistor Check",
+            id: 'led-series-resistor-check',
+            name: 'LED Series Resistor Check',
+            severity: 'warn',
+            priority: 10,
+            description: 'Warn when an LED is left completely disconnected.',
             check: (component: any, graph: Map<string, string[]>) => {
-                // To check if the LED has a series resistor, we can see if it directly connects 
-                // to power or ground without any resistor in between.
-                // Note: FullCircuitValidator already does current calculation, 
-                // but this represents component-specific hints.
                 const anodeConnected = graph.get(`${component.id}.A`);
                 const cathodeConnected = graph.get(`${component.id}.K`);
 
                 if (!anodeConnected || !cathodeConnected) return null;
 
-                // If directly connected to VCC and GND without a resistor, the global engine catches it.
-                // We'll leave it simple.
                 if (anodeConnected.length === 0 && cathodeConnected.length === 0) {
-                    return `⚠️ [LED ${component.id}] Warning: Neither Anode nor Cathode is connected.`;
+                    return createValidationIssue({
+                        ruleId: 'led-series-resistor-check',
+                        severity: 'warn',
+                        message: `⚠️ [LED ${component.id}] Warning: Neither Anode nor Cathode is connected.`,
+                        compIds: [component.id],
+                        remediation: 'Wire the LED into a circuit with a series resistor.',
+                    });
                 }
                 return null;
             }

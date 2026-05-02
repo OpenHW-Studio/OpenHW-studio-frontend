@@ -1,3 +1,30 @@
+import { validateShortCircuits } from './shortCircuits.js';
+import {
+	validateMcuPower,
+	validateComponentLimits,
+	validatePowerDissipation,
+	validateReversePolarity,
+	validateFloatingPins,
+	validateLogicLevels,
+	validateI2CPullups,
+	validateSerialPinConflict,
+	validateI2CDeviceWithoutMcu,
+	validateLedFloatingPins,
+	validateRp2040VoltageInputs,
+	validateBuzzerResistor,
+	validateDuplicateI2CAddress,
+	validatePotentiometer,
+	validateDiodePolarity,
+	validateTotalPowerBudget,
+	validateThermalLimits,
+	validateBatteryLife,
+	validateVoltageDrops,
+	validateDeadlocks,
+	validateSignalIntegrity,
+	validateRailConflicts,
+	validateCrossComponentInteractions,
+} from './realWorldRules.js';
+
 export { validateShortCircuits } from './shortCircuits.js';
 export {
 	validateMcuPower,
@@ -20,6 +47,39 @@ export {
 	validateBatteryLife,
 	validateVoltageDrops,
 	validateDeadlocks,
-	validateSignalIntegrity
+	validateSignalIntegrity,
+	validateRailConflicts,
+	validateCrossComponentInteractions
 } from './realWorldRules.js';
+
+export const validationRules = [
+	{ id: 'validateShortCircuits', severity: 'error', priority: 0, description: 'Detect direct VCC-GND shorts', run: validateShortCircuits },
+	{ id: 'validateRailConflicts', severity: 'error', priority: 5, description: 'Detect conflicting rail domains tied together', run: validateRailConflicts },
+	{ id: 'validateMcuPower', severity: 'error', priority: 10, description: 'Check MCU supply rails', run: validateMcuPower },
+	{ id: 'validateComponentLimits', severity: 'error', priority: 20, requires: ['validateMcuPower'], description: 'Check GPIO current and LED drive limits', run: validateComponentLimits },
+	{ id: 'validatePowerDissipation', severity: 'error', priority: 30, requires: ['validateComponentLimits'], description: 'Check passive power dissipation', run: validatePowerDissipation },
+	{ id: 'validateReversePolarity', severity: 'warn', priority: 40, description: 'Detect reverse-biased polarized components', run: validateReversePolarity },
+	{ id: 'validateFloatingPins', severity: 'warn', priority: 50, description: 'Detect floating MCU inputs', run: validateFloatingPins },
+	{ id: 'validateLogicLevels', severity: 'error', priority: 60, description: 'Check digital logic compatibility', run: validateLogicLevels },
+	{ id: 'validateI2CPullups', severity: 'warn', priority: 70, description: 'Check I2C pull-up resistors', run: validateI2CPullups },
+	{ id: 'validateSerialPinConflict', severity: 'warn', priority: 80, description: 'Warn when Serial pins are reused', run: validateSerialPinConflict },
+	{ id: 'validateI2CDeviceWithoutMcu', severity: 'warn', priority: 90, description: 'Warn when I2C devices have no MCU', run: validateI2CDeviceWithoutMcu },
+	{ id: 'validateLedFloatingPins', severity: 'warn', priority: 100, description: 'Detect floating LED pins', run: validateLedFloatingPins },
+	{ id: 'validateRp2040VoltageInputs', severity: 'error', priority: 110, description: 'Check RP2040 GPIO voltage limits', run: validateRp2040VoltageInputs },
+	{ id: 'validateBuzzerResistor', severity: 'warn', priority: 120, description: 'Check buzzer series resistance', run: validateBuzzerResistor },
+	{ id: 'validateDuplicateI2CAddress', severity: 'warn', priority: 130, description: 'Detect duplicate I2C addresses', run: validateDuplicateI2CAddress },
+	{ id: 'validatePotentiometer', severity: 'warn', priority: 140, description: 'Check potentiometer wiring', run: validatePotentiometer },
+	{ id: 'validateDiodePolarity', severity: 'warn', priority: 150, description: 'Check diode orientation', run: validateDiodePolarity },
+	{ id: 'validateTotalPowerBudget', severity: 'warn', priority: 160, expensive: true, profiles: ['strict', 'balanced'], description: 'Estimate total power budget', run: validateTotalPowerBudget },
+	{ id: 'validateThermalLimits', severity: 'warn', priority: 170, expensive: true, requires: ['validateTotalPowerBudget'], profiles: ['strict', 'balanced'], description: 'Estimate thermal stress', run: validateThermalLimits },
+	{ id: 'validateBatteryLife', severity: 'warn', priority: 180, expensive: true, profiles: ['strict', 'balanced'], description: 'Estimate battery life', run: validateBatteryLife },
+	{ id: 'validateVoltageDrops', severity: 'warn', priority: 190, requires: ['validateMcuPower'], description: 'Check rail voltage drop', run: validateVoltageDrops },
+	{ id: 'validateDeadlocks', severity: 'warn', priority: 200, expensive: true, profiles: ['strict', 'balanced'], description: 'Flag blocking firmware loops', run: validateDeadlocks },
+	{ id: 'validateSignalIntegrity', severity: 'warn', priority: 210, expensive: true, profiles: ['strict', 'balanced'], description: 'Warn about EMI and signal integrity risks', run: validateSignalIntegrity },
+	{ id: 'validateCrossComponentInteractions', severity: 'warn', priority: 220, expensive: true, profiles: ['strict', 'balanced'], description: 'Detect interaction risks between high-surge and sensitive components', run: validateCrossComponentInteractions },
+];
+
+export function getValidationRules() {
+	return validationRules;
+}
 export * as emulatorComponents from '../../components/index.js';
