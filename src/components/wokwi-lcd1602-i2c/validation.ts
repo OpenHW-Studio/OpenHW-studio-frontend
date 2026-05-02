@@ -1,28 +1,29 @@
-import { BaseComponent } from '../BaseComponent';
+export const validation = {
+    rules: [
+        {
+            name: "I2C Interface Check",
+            check: (component: any, graph: Map<string, string[]>, validator: any) => {
+                const pins = (component.pins || []).map((p: any) => p.id);
+                const sda = pins.find((p: string) => p.includes('SDA'));
+                const scl = pins.find((p: string) => p.includes('SCL'));
+                const vcc = pins.find((p: string) => p.includes('VCC') || p.includes('V+'));
+                const gnd = pins.find((p: string) => p.includes('GND'));
 
-export function validate(component: BaseComponent, instances: BaseComponent[], wires: any[]): any[] {
-    const warnings: any[] = [];
-    
-    // Check required pins: VCC, GND, SDA, SCL
-    const requiredPins = ['VCC', 'GND', 'SDA', 'SCL'];
-    
-    for (const pinId of requiredPins) {
-        let isConnected = false;
-        for (const w of wires) {
-            if (w.from === `${component.id}:${pinId}` || w.to === `${component.id}:${pinId}`) {
-                isConnected = true;
-                break;
+                if (vcc && validator.getNeighbors(`${component.id}.${vcc}`).length === 0) {
+                    return `⚠️ [${component.type} ${component.id}] Power (VCC) is not connected.`;
+                }
+                if (gnd && validator.getNeighbors(`${component.id}.${gnd}`).length === 0) {
+                    return `⚠️ [${component.type} ${component.id}] Ground (GND) is not connected.`;
+                }
+                if (sda && validator.getNeighbors(`${component.id}.${sda}`).length === 0) {
+                    return `⚠️ [${component.type} ${component.id}] I2C SDA pin is floating.`;
+                }
+                if (scl && validator.getNeighbors(`${component.id}.${scl}`).length === 0) {
+                    return `⚠️ [${component.type} ${component.id}] I2C SCL pin is floating.`;
+                }
+
+                return null;
             }
         }
-        
-        if (!isConnected) {
-            warnings.push({
-                type: 'warning',
-                componentId: component.id,
-                message: `LCD 16x2 I2C pin ${pinId} is not connected.`
-            });
-        }
-    }
-    
-    return warnings;
-}
+    ]
+};

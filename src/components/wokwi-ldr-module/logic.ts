@@ -50,4 +50,13 @@ export class LdrModuleLogic extends BaseComponent {
     getSyncState() {
         return { ...this.state };
     }
+
+    onCustomTelemetry() {
+        this.setCustomTelemetry({
+            lux: this.state.lux,
+            threshold: this.state.threshold,
+            analogOutV: Number((this.getPinVoltage('AO') || 0).toFixed(2)),
+            digitalOutHigh: !!this.state.doLed
+        });
+    }
 }

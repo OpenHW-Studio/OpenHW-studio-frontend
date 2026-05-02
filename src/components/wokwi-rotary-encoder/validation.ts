@@ -1,19 +1,22 @@
-export function validate(component: any, wires: any[]) {
-    const warnings = [];
-    const errors = [];
-    const connectedPins = new Set();
+export const validation = {
+    rules: [
+        {
+            name: "Rotary Encoder Connection Check",
+            check: (component: any, graph: Map<string, string[]>, validator: any) => {
+                const clk = `${component.id}.CLK`;
+                const dt = `${component.id}.DT`;
+                const gnd = `${component.id}.GND`;
 
-    wires.forEach(wire => {
-        if (wire.from.startsWith(`${component.id}:`)) connectedPins.add(wire.from.split(':')[1]);
-        if (wire.to.startsWith(`${component.id}:`)) connectedPins.add(wire.to.split(':')[1]);
-    });
+                if (validator.getNeighbors(gnd).length === 0) {
+                    return `⚠️ [Encoder ${component.id}] Ground (GND) is not connected.`;
+                }
 
-    if (!connectedPins.has('VCC') || !connectedPins.has('GND')) {
-        errors.push('Rotary Encoder requires power: VCC and GND must be connected.');
-    }
-    if (!connectedPins.has('CLK') && !connectedPins.has('DT')) {
-        warnings.push('Rotary Encoder quadrature output pins (CLK, DT) are unconnected.');
-    }
+                if (validator.getNeighbors(clk).length === 0 || validator.getNeighbors(dt).length === 0) {
+                    return `⚠️ [Encoder ${component.id}] Warning: Quadrature outputs (CLK/DT) must both be connected to track rotation.`;
+                }
 
-    return { warnings, errors };
-}
+                return null;
+            }
+        }
+    ]
+};

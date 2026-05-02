@@ -107,4 +107,12 @@ export class Lcd2004I2CLogic extends BaseComponent {
     getSyncState() {
         return { ...this.state };
     }
+
+    onCustomTelemetry() {
+        const textContent = this.linesData.map(l => l.trimEnd()).join("\\n").trimEnd();
+        this.setCustomTelemetry({
+            textContent: textContent || "<empty>",
+            backlight: this.backlight,
+        });
+    }
 }

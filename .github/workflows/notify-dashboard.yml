@@ -1,0 +1,21 @@
+name: Notify Admin Dashboard of Changes
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Webhook to Backend
+        run: |
+          curl -X POST https://openhw-studio.fossee.in/api/deploy/notify \
+          -H "Content-Type: application/json" \
+          -d '{
+            "repo": "${{ github.repository }}",
+            "prTitle": "${{ github.event.head_commit.message }}",
+            "prDescription": "Commit pushed by ${{ github.actor }}",
+            "filesChanged": []
+          }'
