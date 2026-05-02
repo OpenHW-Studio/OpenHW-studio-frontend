@@ -281,28 +281,47 @@ function RightPanelInternal(props) {
                 </div>
                 <button className="bg-transparent border-none text-[var(--text3)] cursor-pointer text-sm font-inherit" onClick={() => setShowValidation(false)}>✕</button>
               </div>
-              {validationErrors.map((err, i) => (
+              {validationErrors.map((err, i) => {
+                const isError = err.severity === 'error' || err.type === 'error';
+                const confidence = err.confidence ? `${Math.round(err.confidence * 100)}%` : 'unknown';
+                return (
                 <div key={i} className="px-3 py-2 text-xs border-l-4 mb-0.5 leading-relaxed group relative" style={{
-                  borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
+                  borderLeftColor: isError ? 'var(--red)' : 'var(--orange)',
                   background: 'rgba(0,0,0,0.1)'
                 }}>
                   <div className="flex justify-between items-start gap-2">
-                    <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
-                      {err.type === 'error' ? '🔴' : '🟡'} {err.message}
-                    </span>
+                    <div className="flex-1">
+                      <span style={{ color: isError ? 'var(--red)' : 'var(--orange)' }}>
+                        {isError ? '🔴' : '🟡'} {err.message}
+                      </span>
+                      {err.remediation && (
+                        <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '2px' }}>
+                          💡 {err.remediation}
+                        </div>
+                      )}
+                      {err.details?.rootCauseGroup && (
+                        <div style={{ fontSize: '9px', color: 'var(--text4)', marginTop: '2px' }}>
+                          Root cause: {err.details.rootCauseGroup}
+                        </div>
+                      )}
+                    </div>
                     {err.remediation && applyFix && (
-                      <button 
-                        onClick={() => applyFix(err)}
-                        className="shrink-0 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all"
-                        title={err.remediation}
-                      >
-                        <span>🪄</span>
-                        <span>FIX</span>
-                      </button>
+                      <div className="shrink-0 flex gap-1">
+                        <button 
+                          onClick={() => applyFix(err)}
+                          className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all"
+                          title={`Fix with ${confidence} confidence`}
+                        >
+                          <span>🪄</span>
+                          <span>FIX</span>
+                          <span style={{ fontSize: '8px', opacity: 0.7 }}>({confidence})</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
 
