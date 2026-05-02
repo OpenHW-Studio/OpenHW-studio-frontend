@@ -18,17 +18,22 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const handleInitialLoad = async () => {
       // 1. Check if returning from Google OAuth with a token in URL
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const hashToken = hashParams.get('token');
       const urlParams = new URLSearchParams(window.location.search);
       const urlToken = urlParams.get('token');
+      const oauthToken = hashToken || urlToken;
 
-      if (urlToken) {
+      if (oauthToken) {
         // Save token temporarily to fetch profile
-        saveToken(urlToken);
+        saveToken(oauthToken);
         try {
           // Fetch the user's profile using the new token
           const data = await fetchProfile();
           if (data && data.user) {
-            login(urlToken, data.user); // Save to context and local storage
+            // For OAuth, we assume standard login unless we're on /admin
+            const isAdm = window.location.pathname.startsWith('/admin');
+            login(oauthToken, data.user, isAdm); 
           }
         } catch (error) {
           console.error("Failed to fetch profile with OAuth token:", error);
@@ -42,12 +47,8 @@ export function AuthProvider({ children }) {
         const storedUser = getUser()
         const storedToken = getToken()
         if (storedUser && storedToken) {
-          if (storedUser.role === 'admin') {
-            logoutService()
-          } else {
             setUser(storedUser)
             setToken(storedToken)
-          }
         }
       }
 
@@ -70,8 +71,8 @@ export function AuthProvider({ children }) {
    * @param {string} jwtToken - JWT from your backend
    * @param {object} userProfile - { id, name, email, role, points, coins, level }
    */
-  const login = (jwtToken, userProfile) => {
-    if (userProfile.role === 'admin') {
+  const login = (jwtToken, userProfile, isAdminPortal = false) => {
+    if (isAdminPortal) {
       saveAdminToken(jwtToken)
       saveAdminUser(userProfile)
       setAdminToken(jwtToken)

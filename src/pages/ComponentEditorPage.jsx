@@ -1,10 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import Editor from 'react-simple-code-editor'
+import EditorComponent from 'react-simple-code-editor'
+const Editor = EditorComponent.default || EditorComponent
 import Prism from 'prismjs/components/prism-core'
 import 'prismjs/components/prism-clike'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/components/prism-markup'
+import 'prismjs/components/prism-json'
+import 'prismjs/components/prism-typescript'
+import 'prismjs/components/prism-jsx'
+import 'prismjs/components/prism-tsx'
 import 'prismjs/themes/prism-tomorrow.css'
 import JSZip from 'jszip'
 import * as Babel from '@babel/standalone'
@@ -41,9 +46,10 @@ const STEPS = [
   { id:3, label:'Dimensions',        desc:'Canvas size and interactive BOUNDS rectangle' },
   { id:4, label:'Pins',              desc:'Place and define electrical pins' },
   { id:5, label:'Context Windows',   desc:'Write the ContextMenu component and preview it live' },
-  { id:6, label:'Simulation',        desc:'Write logic.ts, validation.ts and ui.tsx' },
-  { id:7, label:'Docs',              desc:'Documentation HTML page' },
-  { id:8, label:'Save & Export',     desc:'Download ZIP or test in simulator' },
+  { id:6, label:'Code',              desc:'Edit ui.tsx, index.ts and manifest.json' },
+  { id:7, label:'Logic',             desc:'Write logic.ts, validation.ts and run checks' },
+  { id:8, label:'Docs',              desc:'Documentation HTML page' },
+  { id:9, label:'Save & Export',     desc:'Download ZIP or test in simulator' },
 ]
 
 // Grid cell size — must match simulator's 24 × 24 px
@@ -132,6 +138,10 @@ function toPascalCase(s) {
           .replace(/[^a-zA-Z0-9]/g, '') || 'MyComponent'
 }
 
+function toSafeIdent(value) {
+  return toPascalCase(String(value || 'MyComponent'))
+}
+
 function normalizeSvg(svg, w, h) {
   if (!svg) return svg
   // Preserve or derive viewBox so the SVG scales properly
@@ -183,11 +193,140 @@ function svgToFluid(svg) {
   )
 }
 
+function escapeTemplateLiteral(value) {
+  return String(value || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${')
+}
+
+function unescapeTemplateLiteral(value) {
+  return String(value || '')
+    .replace(/\\\$\{/g, '${')
+    .replace(/\\`/g, '`')
+    .replace(/\\\\/g, '\\')
+}
+
+function extractSvgDimensions(svg, fallbackW = 200, fallbackH = 160) {
+  if (!svg) return { w: fallbackW, h: fallbackH }
+  const wm = svg.match(/<svg\b[^>]*?\bwidth="([\d.]+)"/i)
+  const hm = svg.match(/<svg\b[^>]*?\bheight="([\d.]+)"/i)
+  const vb = svg.match(/\bviewBox="([\d.+\-\s]+)"/i)
+  const vbParts = vb ? vb[1].trim().split(/\s+/).map(Number) : []
+  const vbW = vbParts.length === 4 && Number.isFinite(vbParts[2]) ? vbParts[2] : null
+  const vbH = vbParts.length === 4 && Number.isFinite(vbParts[3]) ? vbParts[3] : null
+  const w = wm ? Number(wm[1]) : (vbW || fallbackW)
+  const h = hm ? Number(hm[1]) : (vbH || fallbackH)
+  return {
+    w: Number.isFinite(w) && w > 0 ? Math.round(w) : fallbackW,
+    h: Number.isFinite(h) && h > 0 ? Math.round(h) : fallbackH,
+  }
+}
+
+function clampBoundsToCanvas(bounds, compW, compH) {
+  const cw = Math.max(GRID, Number(compW) || GRID)
+  const ch = Math.max(GRID, Number(compH) || GRID)
+  const safe = bounds || { x: 0, y: 0, w: cw, h: ch }
+  const bw = Math.max(GRID, Math.min(Number(safe.w) || GRID, cw))
+  const bh = Math.max(GRID, Math.min(Number(safe.h) || GRID, ch))
+  const bx = Math.max(0, Math.min(Number(safe.x) || 0, cw - bw))
+  const by = Math.max(0, Math.min(Number(safe.y) || 0, ch - bh))
+  return { x: Math.round(bx), y: Math.round(by), w: Math.round(bw), h: Math.round(bh) }
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
 // ─── Code generators ──────────────────────────────────────────────────────────
 // ── Context-menu code separator written into ui.tsx ──────────────────────
 const CTX_MENU_MARKER = '// ── Context Menu ─────────────────────────────────────────────────────────'
+const UI_REACT_MARKER = '// ── Component UI (React mode) ──────────────────────────────────────'
+const UI_SVG_MARKER = '// ── Component UI (SVG mode) ───────────────────────────────────────'
+const SVG_SOURCE_VAR = '__openhwSvgSource'
+const SVG_MARKUP_VAR = '__openhwSvgMarkup'
+const EDIT_COPY_KEY = 'openhw_edit_copy'
+
+function extractSvgFromReactSource(source) {
+  const normalized = String(source || '').replace(/\r\n/g, '\n')
+  const sourceRegex = new RegExp('const\\s+' + SVG_SOURCE_VAR + '\\s*=\\s*String\\.raw`([\\s\\S]*?)`')
+  const sourceMatch = normalized.match(sourceRegex)
+  if (sourceMatch?.[1]) {
+    return unescapeTemplateLiteral(sourceMatch[1])
+  }
+
+  const markupRegex = new RegExp('const\\s+' + SVG_MARKUP_VAR + '\\s*=\\s*String\\.raw`([\\s\\S]*?)`')
+  const markupMatch = normalized.match(markupRegex)
+  if (markupMatch?.[1]) {
+    const decoded = unescapeTemplateLiteral(markupMatch[1])
+    const nestedSvg = decoded.match(/<svg[\s\S]*?<\/svg>/i)
+    if (nestedSvg) return nestedSvg[0]
+  }
+
+  const inlineSvg = normalized.match(/<svg[\s\S]*?<\/svg>/i)
+  return inlineSvg ? inlineSvg[0] : ''
+}
+
+function parseContextFlagsFromUiSource(source) {
+  const normalized = String(source || '').replace(/\r\n/g, '\n')
+  const duringRunMatch = normalized.match(/export\s+const\s+contextMenuDuringRun\s*=\s*(true|false)/)
+  const onlyDuringRunMatch = normalized.match(/export\s+const\s+contextMenuOnlyDuringRun\s*=\s*(true|false)/)
+  return {
+    hasDuringRun: !!duringRunMatch,
+    duringRun: duringRunMatch ? duringRunMatch[1] === 'true' : false,
+    hasOnlyDuringRun: !!onlyDuringRunMatch,
+    onlyDuringRun: onlyDuringRunMatch ? onlyDuringRunMatch[1] === 'true' : false,
+  }
+}
+
+function readEditCopyPayloadFromStorage() {
+  const safeRemove = (storageLike, key) => {
+    try { storageLike?.removeItem?.(key) } catch (_) {}
+  }
+
+  const raw = localStorage.getItem(EDIT_COPY_KEY)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw)
+    safeRemove(localStorage, EDIT_COPY_KEY)
+
+    if (parsed && parsed.__openhwEditCopyPointer && parsed.key) {
+      let payloadRaw = ''
+      try {
+        payloadRaw = sessionStorage.getItem(parsed.key) || localStorage.getItem(parsed.key) || ''
+      } catch (_) {
+        payloadRaw = localStorage.getItem(parsed.key) || ''
+      }
+
+      safeRemove(sessionStorage, parsed.key)
+      safeRemove(localStorage, parsed.key)
+      if (!payloadRaw) return null
+
+      return JSON.parse(payloadRaw)
+    }
+
+    return parsed
+  } catch (error) {
+    safeRemove(localStorage, EDIT_COPY_KEY)
+    return null
+  }
+}
+
+const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i
+
+function assertSafeDynamicModule(code, label) {
+  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
+    throw new Error(`${label} uses blocked browser APIs in sandbox mode`)
+  }
+}
 
 function evalTranspiledReactModule(transformedCode) {
+  assertSafeDynamicModule(transformedCode, 'ui.tsx')
   const exportsObj = {}
   const normalizeChildrenKeys = (value) => {
     if (!Array.isArray(value)) return value
@@ -262,6 +401,14 @@ function evalTranspiledReactModule(transformedCode) {
 }
 
 function genManifest(d) {
+  const telemetry = {}
+  const telemetryTemplate = String(d.telemetryTemplate || '').trim()
+  const telemetryCriticalKeys = Array.isArray(d.telemetryCriticalKeys)
+    ? d.telemetryCriticalKeys.map(k => String(k || '').trim()).filter(Boolean)
+    : []
+  if (telemetryTemplate) telemetry.template = telemetryTemplate
+  if (telemetryCriticalKeys.length) telemetry.criticalKeys = telemetryCriticalKeys
+
   return JSON.stringify({
     type: d.type || 'my-component', label: d.label || 'My Component', group: d.group || 'Other',
     w: Number(d.w)||100, h: Number(d.h)||80,
@@ -269,12 +416,13 @@ function genManifest(d) {
     pins: (d.pins||[]).map(({ id,x,y,type,description }) => ({ id,x,y,type,...(description?{description}:{}) })),
     ...(d.contextMenuDuringRun    ? { contextMenuDuringRun:    true } : {}),
     ...(d.contextMenuOnlyDuringRun? { contextMenuOnlyDuringRun: true } : {}),
+    ...(Object.keys(telemetry).length ? { telemetry } : {}),
   }, null, 2)
 }
 
 function genUICode(d) {
   const name = toPascalCase(d.type), w = Number(d.w)||100, h = Number(d.h)||80
-  const b = d.bounds || { x:5, y:5, w:w-10, h:h-10 }
+  const b = clampBoundsToCanvas(d.bounds || { x:5, y:5, w:w-10, h:h-10 }, w, h)
   const boundsLine = `export const BOUNDS = { x: ${b.x}, y: ${b.y}, w: ${b.w}, h: ${b.h} };\n`
   const ctxLines = (d.contextMenuDuringRun?'export const contextMenuDuringRun = true;\n':'') + (d.contextMenuOnlyDuringRun?'export const contextMenuOnlyDuringRun = true;\n':'')
 
@@ -285,18 +433,21 @@ function genUICode(d) {
 
   // React JSX mode — embed the user's exported component directly
   if (d.imageMode === 'react' && d.reactCode?.trim()) {
-    return `import React from 'react';\n\n${boundsLine}${ctxLines}\n// ── Component UI (React mode) ──────────────────────────────────────\n${d.reactCode}\n${ctxBlock}`
+    return `import React from 'react';\n\n${boundsLine}${ctxLines}\n${UI_REACT_MARKER}\n${d.reactCode}\n${ctxBlock}`
   }
 
-  // SVG mode — wrap SVG in a div.
-  // svgToFluid converts fixed width/height to 100%/100% so the SVG always fills
-  // its container (the comp.w × comp.h div in the simulator) without overflowing.
-  const rawSvg = d.svgCode || `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+  // SVG mode — keep original source for Step 2 round-trips and render via HTML
+  // injection so raw SVG attributes (stroke-width, etc.) remain valid.
+  const sourceSvg = normalizeSvg(
+    d.svgCode || `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
   <rect x="2" y="2" width="${w-4}" height="${h-4}" rx="6" fill="#1e1e2e" stroke="#4ade80" strokeWidth="2"/>
   <text x="${w/2}" y="${h/2+4}" textAnchor="middle" fill="#4ade80" fontSize="11" fontFamily="monospace">${d.label||'Component'}</text>
-</svg>`
-  const svg = svgToFluid(rawSvg).split('\n').join('\n            ')
-  return `import React from 'react';\n\n${boundsLine}${ctxLines}\nexport const ${name}UI = ({ state, attrs, isRunning }: { state:any; attrs:any; isRunning:boolean }) => (\n    <div style={{ pointerEvents:'none', position:'absolute', inset:0 }}>\n        ${svg}\n    </div>\n);\n${ctxBlock}`
+</svg>`,
+    w,
+    h
+  )
+  const fluidSvg = svgToFluid(sourceSvg)
+  return `import React from 'react';\n\n${boundsLine}${ctxLines}\n${UI_SVG_MARKER}\nconst ${SVG_SOURCE_VAR} = String.raw\`${escapeTemplateLiteral(sourceSvg)}\`;\nconst ${SVG_MARKUP_VAR} = String.raw\`${escapeTemplateLiteral(fluidSvg)}\`;\n\nexport const ${name}UI = ({ state, attrs, isRunning }: { state:any; attrs:any; isRunning:boolean }) => (\n    <div style={{ pointerEvents:'none', position:'absolute', inset:0 }} dangerouslySetInnerHTML={{ __html: ${SVG_MARKUP_VAR} }} />\n);\n${ctxBlock}`
 }
 
 function genLogicCode(d) {
@@ -318,7 +469,108 @@ function genIndexCode(d) {
 }
 
 function genDocsHTML(d) {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><title>${d.label||'Component'}</title><style>body{font-family:system-ui,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;background:#0f0f0f;color:#e0e0e0;line-height:1.6}h1{color:#4ade80}h2{color:#86efac;border-bottom:1px solid #333;padding-bottom:8px}code{background:#1e1e2e;padding:2px 6px;border-radius:4px;font-family:monospace}pre{background:#1e1e2e;padding:16px;border-radius:8px}table{width:100%;border-collapse:collapse}td,th{padding:8px 12px;border:1px solid #333}th{background:#1e1e2e;color:#4ade80}</style></head><body><h1>${d.label||'Component'}</h1><p>${d.description||''}</p><h2>Pinout</h2><table><tr><th>Pin</th><th>Type</th><th>Description</th></tr>${(d.pins||[]).map(p=>`<tr><td><code>${p.id}</code></td><td>${p.type}</td><td>${p.description||''}</td></tr>`).join('')}</table><h2>Usage</h2><pre><code>// TODO</code></pre><h2>Notes</h2><ul><li>Size: ${d.w}×${d.h} px</li><li>Pins: ${(d.pins||[]).length}</li></ul></body></html>`
+  const title = escapeHtml(d.label || 'Component')
+  const subtitle = escapeHtml(d.description || 'Custom component documentation for OpenHW Studio.')
+  const sizeText = `${Number(d.w) || 100} x ${Number(d.h) || 80}`
+  const telemetryTemplate = escapeHtml((d.telemetryTemplate || '').trim() || 'not-set')
+  const telemetryKeys = (Array.isArray(d.telemetryCriticalKeys) ? d.telemetryCriticalKeys : [])
+    .map(k => escapeHtml(k))
+    .join(', ') || 'none'
+  const pinRows = (d.pins || []).map(p => {
+    const type = escapeHtml(p.type || 'digital')
+    const typeClass = ['i2c', 'spi', 'uart', 'power'].includes(type) ? 'output' : 'input'
+    return `<tr><td><span class="pin-name">${escapeHtml(p.id)}</span></td><td><span class="pin-type ${typeClass}">${type}</span></td><td>${escapeHtml(p.description || '')}</td></tr>`
+  }).join('')
+  const svgPreview = d.imageMode === 'code' && d.svgCode ? d.svgCode : `<svg width="180" height="120" viewBox="0 0 180 120" xmlns="http://www.w3.org/2000/svg"><rect x="6" y="6" width="168" height="108" rx="10" fill="#141824" stroke="#2d3748"/><text x="90" y="66" text-anchor="middle" fill="#63b3ed" font-size="12" font-family="monospace">${title}</text></svg>`
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>${title} | OpenHW Studio</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; line-height: 1.7; }
+  .content { flex: 1; padding: 48px 64px; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 34px; font-weight: 800; color: #fff; margin-bottom: 8px; }
+  .subtitle { font-size: 16px; color: #718096; margin-bottom: 32px; border-bottom: 1px solid #2d3748; padding-bottom: 22px; }
+  h2 { font-size: 22px; font-weight: 700; color: #fff; margin: 32px 0 14px; padding-bottom: 8px; border-bottom: 1px solid #2d3748; }
+  .component-preview { display: flex; gap: 24px; align-items: flex-start; margin-bottom: 24px; background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 22px; }
+  .component-svg-wrap { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .component-info p { color: #a0aec0; font-size: 14px; margin-bottom: 12px; }
+  .tag { display: inline-block; background: #1a2035; border: 1px solid #2d4a8a; color: #63b3ed; padding: 3px 10px; border-radius: 20px; font-size: 12px; margin-right: 6px; margin-bottom: 6px; }
+  .pin-table, .attrs-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; }
+  .pin-table th, .attrs-table th { background: #1a1f2e; color: #63b3ed; padding: 10px 14px; text-align: left; border: 1px solid #2d3748; }
+  .pin-table td, .attrs-table td { padding: 10px 14px; border: 1px solid #2d3748; color: #a0aec0; }
+  .pin-table tr:nth-child(even) td, .attrs-table tr:nth-child(even) td { background: #141824; }
+  .pin-name { font-family: monospace; color: #68d391; font-weight: 600; }
+  .pin-type { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .pin-type.input { background: #1a365d; color: #63b3ed; }
+  .pin-type.output { background: #1c3d27; color: #68d391; }
+  .note { background: #1a2a1a; border-left: 4px solid #68d391; padding: 14px 18px; border-radius: 0 8px 8px 0; margin-bottom: 16px; font-size: 14px; color: #9ae6b4; }
+  .warn { background: #2a1a00; border-left: 4px solid #f6ad55; padding: 14px 18px; border-radius: 0 8px 8px 0; margin-bottom: 16px; font-size: 14px; color: #fbd38d; }
+  .code-block { background: #141824; border: 1px solid #2d3748; border-radius: 8px; padding: 16px 18px; font-family: 'Courier New', monospace; font-size: 13px; color: #e2e8f0; overflow-x: auto; margin-bottom: 18px; white-space: pre; }
+  code { font-family: monospace; background: #1a1f2e; padding: 2px 6px; border-radius: 4px; color: #68d391; font-size: 13px; }
+  .try-section { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 22px; margin: 30px 0; }
+</style>
+</head>
+<body>
+  <div class="content">
+    <h1>${title}</h1>
+    <p class="subtitle">${subtitle}</p>
+
+    <div class="component-preview">
+      <div class="component-svg-wrap">
+        ${svgPreview}
+        <span style="font-size:11px;color:#718096;">Visual Preview</span>
+      </div>
+      <div class="component-info">
+        <p>This component can be configured through attributes and optional context menus during simulation.</p>
+        <div>
+          <span class="tag">Size ${sizeText}</span>
+          <span class="tag">Pins ${(d.pins || []).length}</span>
+          <span class="tag">Group ${escapeHtml(d.group || 'Other')}</span>
+        </div>
+      </div>
+    </div>
+
+    <h2>Pin Reference</h2>
+    <table class="pin-table">
+      <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+      ${pinRows || '<tr><td colspan="3">No pins defined.</td></tr>'}
+    </table>
+
+    <h2>Attributes</h2>
+    <table class="attrs-table">
+      <tr><th>Attribute</th><th>Value</th><th>Description</th></tr>
+      <tr><td><code>contextMenuDuringRun</code></td><td><code>${d.contextMenuDuringRun ? 'true' : 'false'}</code></td><td>Allow context menu while simulation is running.</td></tr>
+      <tr><td><code>contextMenuOnlyDuringRun</code></td><td><code>${d.contextMenuOnlyDuringRun ? 'true' : 'false'}</code></td><td>Only show context menu while running.</td></tr>
+      <tr><td><code>telemetry.template</code></td><td><code>${telemetryTemplate}</code></td><td>Optional telemetry summary template.</td></tr>
+      <tr><td><code>telemetry.criticalKeys</code></td><td><code>${telemetryKeys}</code></td><td>Critical state keys watched by telemetry heuristics.</td></tr>
+    </table>
+
+    <h2>Usage</h2>
+    <div class="code-block">// Example: update component attrs from ContextMenu
+onUpdate('mode', 'default');
+onUpdate('value', 128);
+
+// Logic hooks
+update(cpuCycles, wires, allInstances) {
+  // this.getPinVoltage('VCC')
+  // this.setPinVoltage('OUT', 5)
+}</div>
+
+    <div class="note">Use <code>getSyncState()</code> to return UI state and call <code>setState()</code> when values change.</div>
+    <div class="warn">Keep pin IDs in logic and manifest exactly identical. Mismatched IDs break wiring behavior.</div>
+
+    <div class="try-section">
+      <h2 style="margin-top:0;">Try in Simulator</h2>
+      <p>Import this component ZIP into OpenHW Studio and place it on the canvas to validate visuals, context menu, and logic behavior.</p>
+    </div>
+  </div>
+</body>
+</html>`
 }
 
 function genContextMenuTemplate(d) {
@@ -444,12 +696,19 @@ function DragResizeBox({ bx=0, by=0, bw=100, bh=100, scale=1, color='#4ade80', l
 function SvgPreview({ svgCode, compW, compH, zoom=1, style }) {
   const w = Number(compW)||100, h = Number(compH)||80
   const fluid = useMemo(()=>svgToFluid(svgCode),[svgCode])
+  const svgDataUrl = useMemo(
+    () => (fluid ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fluid)}` : ''),
+    [fluid]
+  )
   return (
     <div style={{ position:'relative', width:w*zoom, height:h*zoom, flexShrink:0, overflow:'hidden', ...style }}>
       {fluid
         ? <div style={{ position:'absolute', top:0, left:0, width:w, height:h, transform:`scale(${zoom})`, transformOrigin:'top left', pointerEvents:'none' }}>
-            <div style={{ position:'absolute', inset:0 }}
-              dangerouslySetInnerHTML={{ __html: fluid }} />
+            <img
+              src={svgDataUrl}
+              alt=""
+              style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'fill' }}
+            />
           </div>
         : <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'#1e1e2e', border:'1px dashed #333', borderRadius:4 }}>
             <span style={{ color:'#555', fontSize:11 }}>{w}×{h}</span>
@@ -675,9 +934,13 @@ function CanvasPanel({ open, onToggle, svgCode, reactCode, imageMode, compW, com
         )
       }
       // SVG mode — render fluid SVG directly, same as SimulatorPage
+      const fluidSvgDataUrl = fluidSvg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fluidSvg)}` : ''
       if (fluidSvg) return (
-        <div style={{ position:'absolute', inset:0, pointerEvents:'none' }}
-          dangerouslySetInnerHTML={{ __html: fluidSvg }} />
+        <img
+          src={fluidSvgDataUrl}
+          alt=""
+          style={{ position:'absolute', inset:0, width:'100%', height:'100%', objectFit:'fill', pointerEvents:'none' }}
+        />
       )
       return (
         <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'#1e1e2e', border:'1px dashed #333', borderRadius:4 }}>
@@ -1204,6 +1467,7 @@ export default function ComponentEditorPage() {
   const [svgMode, setSvgMode]   = useState('code')  // 'code' | 'upload' | 'react'
   const [svgCode, setSvgCode]   = useState('')
   const [reactCode, setReactCode] = useState('')
+  const [s2AutoSync, setS2AutoSync] = useState(true)
   const svgFileRef = useRef(null)
 
   // ── Step 3 ────────────────────────────────────────────────────────────────
@@ -1219,24 +1483,35 @@ export default function ComponentEditorPage() {
   const [newPinType, setNPType] = useState('digital')
   const [newPinDesc, setNPDesc] = useState('')
   const [editPin,    setEditPin]= useState(null)
+  const [retakePinIdx, setRetakePinIdx] = useState(null)
   const pinInnerRef             = useRef(null)
 
   // ── Step 5 — Context Windows ─────────────────────────────────────────────
   const [ctxMenuCode, setCtxMenuCode] = useState('')
   const [ctxMenuZoom, setCtxMenuZoom] = useState(1)
+  const [ctxPreviewRunning, setCtxPreviewRunning] = useState(false)
 
   // ── Step 6 ────────────────────────────────────────────────────────────────
-  const [codeTab,      setCodeTab]      = useState('logic')
+  const [codeTab,      setCodeTab]      = useState('ui')
+
+  // ── Step 7 ────────────────────────────────────────────────────────────────
+  const [logicTab,     setLogicTab]     = useState('logic')
   const [logicCode,    setLogicCode]    = useState('')
   const [validCode,    setValidCode]    = useState('')
+  const [logicCheck,   setLogicCheck]   = useState(null)
+  const [telemetryTemplate, setTelemetryTemplate] = useState('')
+  const [telemetryKeysText, setTelemetryKeysText] = useState('')
+
+  // ── Shared code files ─────────────────────────────────────────────────────
   const [uiCode,       setUiCode]       = useState('')
   const [indexCode,    setIndexCode]    = useState('')
   const [manifestCode, setManifestCode] = useState('')
   const uiEdited = useRef(false)
 
-  // ── Step 7 ────────────────────────────────────────────────────────────────
+  // ── Step 8 ────────────────────────────────────────────────────────────────
   const [docsCode,    setDocsCode]    = useState('')
   const [docsPreview, setDocsPreview] = useState(false)
+  const [helpOpen,    setHelpOpen]    = useState(false)
 
   // ── UI ────────────────────────────────────────────────────────────────────
   const [step,      setStep]      = useState(1)
@@ -1244,6 +1519,8 @@ export default function ComponentEditorPage() {
   const [canvasOpen,setCanvasOpen]= useState(true)
   const [saving,    setSaving]    = useState(false)
   const [s2EditorFont, setS2EditorFont] = useState(13)
+  const [s6EditorHeight, setS6EditorHeight] = useState(480)
+  const [s7EditorHeight, setS7EditorHeight] = useState(500)
 
   // ── Preview zoom per step ─────────────────────────────────────────────────
   const [s2Zoom, setS2Zoom] = useState(null)  // null = auto-fit
@@ -1254,6 +1531,11 @@ export default function ComponentEditorPage() {
     Math.min(containerW/Number(cW), containerH/Number(cH), 1.5)
   ), [compW, compH])
 
+  const telemetryCriticalKeys = useMemo(
+    () => telemetryKeysText.split(/[\n,]/).map(k => k.trim()).filter(Boolean),
+    [telemetryKeysText]
+  )
+
   // ── Undo / Redo ───────────────────────────────────────────────────────────
   const histRef  = useRef([])
   const histIdx  = useRef(-1)
@@ -1263,13 +1545,19 @@ export default function ComponentEditorPage() {
   const getSnap = useCallback(() => ({
     compType, compLabel, compDesc, compGroup, ctxDuringRun, ctxOnlyDuringRun,
     svgCode, reactCode, svgMode, compW, compH, bounds:{...bounds}, pins:pins.map(p=>({...p})),
-  }), [compType,compLabel,compDesc,compGroup,ctxDuringRun,ctxOnlyDuringRun,svgCode,reactCode,svgMode,compW,compH,bounds,pins])
+    ctxMenuCode,
+    telemetryTemplate,
+    telemetryKeysText,
+  }), [compType,compLabel,compDesc,compGroup,ctxDuringRun,ctxOnlyDuringRun,svgCode,reactCode,svgMode,compW,compH,bounds,pins,ctxMenuCode,telemetryTemplate,telemetryKeysText])
 
   const applySnap = useCallback((s) => {
     setCompType(s.compType); setCompLabel(s.compLabel); setCompDesc(s.compDesc)
     setCompGroup(s.compGroup); setCtxDuringRun(s.ctxDuringRun); setCtxOnlyDuringRun(s.ctxOnlyDuringRun)
     setSvgCode(s.svgCode); setReactCode(s.reactCode||''); setSvgMode(s.svgMode||'code')
     setCompW(s.compW); setCompH(s.compH); setBounds(s.bounds); setPins(s.pins)
+    setCtxMenuCode(s.ctxMenuCode || '')
+    setTelemetryTemplate(s.telemetryTemplate || '')
+    setTelemetryKeysText(s.telemetryKeysText || '')
   }, [])
 
   const pushHist = useCallback(() => {
@@ -1295,8 +1583,13 @@ export default function ComponentEditorPage() {
   const getData = useCallback(() => ({
     type:compType, label:compLabel, description:compDesc, group:compGroup,
     w:compW, h:compH, contextMenuDuringRun:ctxDuringRun, contextMenuOnlyDuringRun:ctxOnlyDuringRun,
-    svgCode, reactCode, imageMode:svgMode, bounds, pins, ctxMenuCode,
-  }), [compType,compLabel,compDesc,compGroup,compW,compH,ctxDuringRun,ctxOnlyDuringRun,svgCode,reactCode,svgMode,bounds,pins,ctxMenuCode])
+    svgCode, reactCode, imageMode:svgMode,
+    bounds: clampBoundsToCanvas(bounds, compW, compH),
+    pins,
+    ctxMenuCode,
+    telemetryTemplate,
+    telemetryCriticalKeys,
+  }), [compType,compLabel,compDesc,compGroup,compW,compH,ctxDuringRun,ctxOnlyDuringRun,svgCode,reactCode,svgMode,bounds,pins,ctxMenuCode,telemetryTemplate,telemetryCriticalKeys])
 
   // ── Dynamic warnings — reactive, no stale state ───────────────────────────
   const autoWarnings = useMemo(() => [
@@ -1306,72 +1599,108 @@ export default function ComponentEditorPage() {
     !pins.length && 'No pins defined — add them in Step 4.',
   ].filter(Boolean), [compType, svgCode, reactCode, svgMode, pins.length])
 
-  // ── Shared helper: parse a ui.tsx string into { reactCode, svgCode, svgMode, ctxMenuCode }
-  // Works for both marker-based (our editor) and raw TypeScript files (Edit-a-Copy).
+  // ── Shared helper: parse ui.tsx into editor fields ─────────────────────────
   const parseUISource = useCallback((src) => {
-    // Normalize line endings so regexes work on Windows files too
     const s = (src || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-    const ctxExportRegex = /(export\s+(?:default\s+)?(?:const|function|class)\s+[A-Za-z0-9_]*ContextMenu[A-Za-z0-9_]*[\s\S]*?)(?=\nexport\s+|$)/i
+    const ctxExportStartRegex = /export\s+(?:default\s+)?(?:const|function|class)\s+[A-Za-z0-9_]*ContextMenu[A-Za-z0-9_]*\b/
     const uiExportRegex = /(export\s+(?:default\s+)?(?:const|function|class)\s+[A-Za-z0-9_]*(?:UI|View|Component)[A-Za-z0-9_]*\b[\s\S]*?)(?=\nexport\s+|$)/i
 
-    // ── 1. Extract ContextMenu block ──────────────────────────────────────────
     let ctxCode = ''
     const markerIdx = s.indexOf(CTX_MENU_MARKER)
+    let uiSrc = s
     if (markerIdx !== -1) {
-      // Method A: our generated marker separator
       ctxCode = s.substring(markerIdx + CTX_MENU_MARKER.length).trim()
+      uiSrc = s.substring(0, markerIdx).trim()
     } else {
-      // Method B: detect any exported symbol whose name contains "ContextMenu"
-      const m = s.match(ctxExportRegex)
-      if (m) ctxCode = m[0].trim()
+      const ctxStart = s.search(ctxExportStartRegex)
+      if (ctxStart !== -1) {
+        const tail = s.slice(ctxStart + 1)
+        const nextExportRel = tail.search(/\nexport\s+/)
+        const ctxEnd = nextExportRel === -1 ? s.length : (ctxStart + 1 + nextExportRel)
+        ctxCode = s.slice(ctxStart, ctxEnd).trim()
+        uiSrc = `${s.slice(0, ctxStart)}${s.slice(ctxEnd)}`.trim()
+      }
     }
 
-    // ── 2. Get the UI-only body (strip ctx block when marker was used) ─────────
-    let uiSrc = markerIdx !== -1 ? s.substring(0, markerIdx).trim() : s
-    if (ctxCode) {
-      uiSrc = uiSrc.replace(ctxExportRegex, '').trim()
-    }
+    let outReactCode = ''
+    let outSvgCode = ''
+    let outMode = 'code'
 
-    // ── 3. Determine mode and extract the visual component code ───────────────
-    let outReactCode = '', outSvgCode = '', outMode = 'code'
+    const sourceRegex = new RegExp('const\\s+' + SVG_SOURCE_VAR + '\\s*=\\s*String\\.raw`([\\s\\S]*?)`')
+    const svgSource = uiSrc.match(sourceRegex)
+    const inlineSvg = uiSrc.match(/<svg[\s\S]*?<\/svg>/i)
+    const looksLikeReactModule = /import\s+React|from\s+['"]react(?:\/jsx-runtime)?['"]/.test(uiSrc)
+      || /export\s+(?:default\s+)?(?:const|function)\s+\w*(?:UI|View|Component)\b/.test(uiSrc)
 
-    // 3a. Our generated React-mode marker
-    const reactMarker = '// ── Component UI (React mode) ──────────────────────────────────────'
-    const reactMarkerIdx = uiSrc.indexOf(reactMarker)
-    if (reactMarkerIdx !== -1) {
-      const reactBody = uiSrc.substring(reactMarkerIdx + reactMarker.length).trim()
-      const uiOnly = reactBody.match(uiExportRegex)
+    if (svgSource?.[1]) {
+      outSvgCode = unescapeTemplateLiteral(svgSource[1])
+      outMode = 'code'
+    } else if (uiSrc.includes(UI_SVG_MARKER) && inlineSvg) {
+      outSvgCode = inlineSvg[0]
+      outMode = 'code'
+    } else if (uiSrc.includes(UI_REACT_MARKER) || looksLikeReactModule) {
+      const reactBody = uiSrc.includes(UI_REACT_MARKER)
+        ? uiSrc.substring(uiSrc.indexOf(UI_REACT_MARKER) + UI_REACT_MARKER.length).trim()
+        : uiSrc
+      const uiOnly = uiSrc.match(uiExportRegex)
       outReactCode = (uiOnly ? uiOnly[0] : reactBody).trim()
       outMode = 'react'
-    } else if (
-      /import\s+React|from\s+['"]react(?:\/jsx-runtime)?['"]/.test(uiSrc)
-      || /export\s+(?:default\s+)?(?:const|function)\s+\w*(?:UI|View|Component)\b/.test(uiSrc)
-    ) {
-      // 3b. Raw TypeScript React file — keep only the visual UI export for Step 2 editor.
-      const uiOnly = uiSrc.match(uiExportRegex)
-      outReactCode = (uiOnly ? uiOnly[0] : uiSrc).trim()
+    } else if (inlineSvg) {
+      outSvgCode = inlineSvg[0]
+      outMode = 'code'
+    } else if (uiSrc.trim()) {
+      outReactCode = uiSrc.trim()
       outMode = 'react'
-    } else {
-      // 3c. SVG mode — pull out the inline SVG element
-      const svgM = uiSrc.match(/<svg[\s\S]*?<\/svg>/)
-      if (svgM) { outSvgCode = svgM[0]; outMode = 'code' }
-      else if (uiSrc.trim()) {
-        // Fallback: keep non-empty source visible in the editor instead of blank panes.
-        outReactCode = uiSrc.trim()
-        outMode = 'react'
-      }
     }
 
     return { reactCode: outReactCode, svgCode: outSvgCode, svgMode: outMode, ctxMenuCode: ctxCode }
   }, [])
 
+  const applyParsedUiSource = useCallback((uiSource, options = {}) => {
+    const { keepRaw = true } = options
+    const src = String(uiSource || '')
+    const normalized = src.replace(/\r\n/g, '\n')
+    const parsed = parseUISource(src)
+    let nextW = compW
+    let nextH = compH
+
+    setCtxMenuCode(parsed.ctxMenuCode || '')
+    if (parsed.svgMode === 'react') {
+      setReactCode(parsed.reactCode || '')
+      setSvgMode('react')
+    } else {
+      setSvgCode(parsed.svgCode || '')
+      setSvgMode('code')
+      if (parsed.svgCode) {
+        const dims = extractSvgDimensions(parsed.svgCode, compW, compH)
+        if (dims.w > 0 && dims.h > 0) {
+          nextW = dims.w
+          nextH = dims.h
+          setCompW(dims.w)
+          setCompH(dims.h)
+        }
+      }
+    }
+
+    const bm = normalized.match(/BOUNDS\s*=\s*\{\s*x:\s*([\d.-]+)[^}]*y:\s*([\d.-]+)[^}]*w:\s*([\d.-]+)[^}]*h:\s*([\d.-]+)/)
+    if (bm) {
+      const importedBounds = { x: +bm[1], y: +bm[2], w: +bm[3], h: +bm[4] }
+      setBounds(clampBoundsToCanvas(importedBounds, nextW, nextH))
+    }
+
+    const parsedFlags = parseContextFlagsFromUiSource(normalized)
+    if (parsedFlags.hasDuringRun) setCtxDuringRun(parsedFlags.duringRun)
+    if (parsedFlags.hasOnlyDuringRun) setCtxOnlyDuringRun(parsedFlags.onlyDuringRun)
+
+    if (keepRaw) setUiCode(src)
+    uiEdited.current = false
+  }, [parseUISource, compW, compH])
+
   // ── Import "Edit a Copy" data from Simulator ──────────────────────────────
   useEffect(() => {
-    const raw = localStorage.getItem('openhw_edit_copy')
-    if (raw) {
+    const data = readEditCopyPayloadFromStorage()
+    if (data) {
       try {
-        const data = JSON.parse(raw)
-        localStorage.removeItem('openhw_edit_copy')
         if (data.manifest) {
           const m = data.manifest
           setCompType((m.type || 'component') + '-copy')
@@ -1383,24 +1712,21 @@ export default function ComponentEditorPage() {
           setPins(m.pins || [])
           setCtxDuringRun(!!m.contextMenuDuringRun)
           setCtxOnlyDuringRun(!!m.contextMenuOnlyDuringRun)
+          setTelemetryTemplate(String(m.telemetry?.template || ''))
+          setTelemetryKeysText(Array.isArray(m.telemetry?.criticalKeys) ? m.telemetry.criticalKeys.join('\n') : '')
           // Extract bounds from UI string if available
           if (data.ui) {
             const n = data.ui.replace(/\r\n/g, '\n')
             const bMatch = n.match(/BOUNDS\s*=\s*\{\s*x:\s*([\d.-]+)[^}]*y:\s*([\d.-]+)[^}]*w:\s*([\d.-]+)[^}]*h:\s*([\d.-]+)/);
             if (bMatch) {
-              setBounds({ x: parseFloat(bMatch[1]), y: parseFloat(bMatch[2]), w: parseFloat(bMatch[3]), h: parseFloat(bMatch[4]) });
+              setBounds(clampBoundsToCanvas({ x: parseFloat(bMatch[1]), y: parseFloat(bMatch[2]), w: parseFloat(bMatch[3]), h: parseFloat(bMatch[4]) }, m.w || 100, m.h || 80));
             } else {
-              setBounds({ x: 5, y: 5, w: (m.w || 100) - 10, h: (m.h || 80) - 10 })
+              setBounds(clampBoundsToCanvas({ x: 5, y: 5, w: (m.w || 100) - 10, h: (m.h || 80) - 10 }, m.w || 100, m.h || 80))
             }
           }
         }
         if (data.ui) {
-          const { reactCode: rc, svgCode: sc, svgMode: sm, ctxMenuCode: ctx } = parseUISource(data.ui)
-          setCtxMenuCode(ctx || '')
-          if (sm === 'react') { setReactCode(rc); setSvgMode('react') }
-          else if (sm === 'code' && sc) { setSvgCode(sc); setSvgMode('code') }
-          uiEdited.current = true
-          setUiCode(data.ui)
+          applyParsedUiSource(data.ui)
         }
         if (data.logic) setLogicCode(data.logic)
         if (data.validation) setValidCode(data.validation)
@@ -1410,32 +1736,42 @@ export default function ComponentEditorPage() {
         console.error('[Editor] Failed to import Edit a Copy data:', e)
       }
     }
-  }, [])
+  }, [applyParsedUiSource])
 
   // ── Auto-regenerate manifest + index ──────────────────────────────────────
   useEffect(() => {
     const d = getData()
     setManifestCode(genManifest(d))
     setIndexCode(genIndexCode(d))
-  }, [compType,compLabel,compDesc,compGroup,compW,compH,ctxDuringRun,ctxOnlyDuringRun,bounds,pins,ctxMenuCode])
+  }, [compType,compLabel,compDesc,compGroup,compW,compH,ctxDuringRun,ctxOnlyDuringRun,bounds,pins,ctxMenuCode,telemetryTemplate,telemetryCriticalKeys])
 
   useEffect(() => {
     if (!uiEdited.current) setUiCode(genUICode(getData()))
   }, [svgCode,reactCode,svgMode,bounds,compW,compH,compType,compLabel,ctxDuringRun,ctxOnlyDuringRun,ctxMenuCode])
 
+  useEffect(() => {
+    const clamped = clampBoundsToCanvas(bounds, compW, compH)
+    if (clamped.x !== bounds.x || clamped.y !== bounds.y || clamped.w !== bounds.w || clamped.h !== bounds.h) {
+      setBounds(clamped)
+    }
+  }, [bounds, compW, compH])
+
   // ── Nav ───────────────────────────────────────────────────────────────────
   const mark = (s) => setDoneSteps(p=>new Set([...p,s]))
   const goToStep = (n) => { mark(step); setStep(n) }
   const goNext = () => {
-    if (step===5) { if (!logicCode) setLogicCode(genLogicCode(getData())); if (!validCode) setValidCode(genValidationCode(getData())) }
+    if (step===6) {
+      if (!logicCode) setLogicCode(genLogicCode(getData()))
+      if (!validCode) setValidCode(genValidationCode(getData()))
+    }
     if (step===7 && !docsCode) setDocsCode(genDocsHTML(getData()))
-    mark(step); if (step<8) setStep(s=>s+1)
+    mark(step); if (step<9) setStep(s=>s+1)
   }
   const goPrev = () => { if (step>1) setStep(s=>s-1) }
 
   // ── Generate all ──────────────────────────────────────────────────────────
   const genAll = () => {
-    const shouldRegenerate = window.confirm('Regenerate all files? This will erase your current code in Step 6 and replace it with generated defaults.')
+    const shouldRegenerate = window.confirm('Regenerate all files? This will erase your current code in Code/Logic steps and replace it with generated defaults.')
     if (!shouldRegenerate) return
     const d = getData()
     setManifestCode(genManifest(d))
@@ -1444,14 +1780,38 @@ export default function ComponentEditorPage() {
     setValidCode(genValidationCode(d))
     setIndexCode(genIndexCode(d))
     if (!docsCode) setDocsCode(genDocsHTML(d))
-    setCodeTab('logic')
+    setCodeTab('ui')
+    setLogicTab('logic')
   }
+
+  const syncReactFromSvg = useCallback((svgSource, options = {}) => {
+    const raw = String(svgSource || '').trim()
+    if (!raw) return
+    const normalizedSvg = normalizeSvg(raw, compW, compH)
+    const safeName = `${toSafeIdent(compType || 'my-component')}UI`
+    const generated = `import React from 'react';\n\nconst ${SVG_SOURCE_VAR} = String.raw\`${escapeTemplateLiteral(normalizedSvg)}\`;\nconst ${SVG_MARKUP_VAR} = String.raw\`${escapeTemplateLiteral(svgToFluid(normalizedSvg))}\`;\n\nexport const ${safeName} = ({ state, attrs, isRunning }) => (\n  <div style={{ pointerEvents:'none', position:'absolute', inset:0 }} dangerouslySetInnerHTML={{ __html: ${SVG_MARKUP_VAR} }} />\n);\n`
+    setReactCode(prev => (prev === generated ? prev : generated))
+    if (options.setMode === true) setSvgMode('react')
+  }, [compW, compH, compType])
+
+  const syncSvgFromReact = useCallback((reactSource, options = {}) => {
+    const extracted = extractSvgFromReactSource(reactSource)
+    if (!extracted) return
+    const normalizedSvg = normalizeSvg(extracted, compW, compH)
+    setSvgCode(prev => (prev === normalizedSvg ? prev : normalizedSvg))
+    if (options.setMode === true) setSvgMode('code')
+  }, [compW, compH])
 
   // ── SVG upload ────────────────────────────────────────────────────────────
   const handleSvgUpload = (e) => {
     const f = e.target.files?.[0]; if (!f) return
     const r = new FileReader()
-    r.onload = (ev) => { setSvgCode(ev.target.result||''); pushHist() }
+    r.onload = (ev) => {
+      const nextSvg = String(ev.target.result || '')
+      setSvgCode(nextSvg)
+      if (s2AutoSync) syncReactFromSvg(nextSvg)
+      pushHist()
+    }
     r.readAsText(f)
   }
 
@@ -1469,28 +1829,20 @@ export default function ComponentEditorPage() {
         if (/logic\.(ts|js)$/.test(p))     logicStr= await s()
         if (/validation\.(ts|js)$/.test(p))validStr= await s()
         if (/index\.(ts|js)$/.test(p))     indexStr= await s()
-        if (/docs\/.*\.html$/i.test(p))    docsStr = await s()
+        if (/(^|\/)docs\/.*\.html$/i.test(p) || /(^|\/)doc\/.*\.html$/i.test(p)) docsStr = await s()
       }
       if (mStr) {
         const m = JSON.parse(mStr)
         setCompType(m.type||''); setCompLabel(m.label||''); setCompDesc(m.description||'')
         setCompGroup(m.group||'Sensors'); setCompW(m.w||200); setCompH(m.h||160)
         setCtxDuringRun(!!m.contextMenuDuringRun); setCtxOnlyDuringRun(!!m.contextMenuOnlyDuringRun)
-        if (m.pins?.length) setPins(m.pins); setManifestCode(mStr)
+        setTelemetryTemplate(String(m.telemetry?.template || ''))
+        setTelemetryKeysText(Array.isArray(m.telemetry?.criticalKeys) ? m.telemetry.criticalKeys.join('\n') : '')
+        setPins(m.pins || [])
+        setManifestCode(mStr)
       }
       if (uiStr) {
-        // Use shared parser — handles CRLF, marker, regex, boilerplate strip
-        const { reactCode: rc, svgCode: sc, svgMode: sm, ctxMenuCode: ctx } = parseUISource(uiStr)
-        setCtxMenuCode(ctx || '')
-        if (sm === 'react') { setSvgMode('react'); setReactCode(rc) }
-        else if (sm === 'code' && sc) { setSvgCode(sc); setSvgMode('code') }
-
-        uiEdited.current = true; setUiCode(uiStr)
-
-        // Extract BOUNDS from the raw source
-        const normalized = uiStr.replace(/\r\n/g, '\n')
-        const bm = normalized.match(/BOUNDS\s*=\s*\{\s*x:\s*([\d.-]+)[^}]*y:\s*([\d.-]+)[^}]*w:\s*([\d.-]+)[^}]*h:\s*([\d.-]+)/)
-        if (bm) setBounds({ x:+bm[1], y:+bm[2], w:+bm[3], h:+bm[4] })
+        applyParsedUiSource(uiStr)
       }
       if (logicStr) setLogicCode(logicStr)
       if (validStr) setValidCode(validStr)
@@ -1502,18 +1854,28 @@ export default function ComponentEditorPage() {
 
   // ── Pin placement (correct scale via pinInnerRef) ──────────────────────────
   const handlePinClick = useCallback((e) => {
-    if (!pinPlacing) return
+    if (!pinPlacing && retakePinIdx === null) return
     e.stopPropagation()
     const rect = pinInnerRef.current?.getBoundingClientRect(); if (!rect) return
     // pinInnerRef has width = compW * zoom, so: scale = rect.width / compW
     const sc = rect.width / Number(compW)
     const x = Math.round((e.clientX-rect.left)/sc)
     const y = Math.round((e.clientY-rect.top)/sc)
+
+    if (retakePinIdx !== null) {
+      setPins(prev => prev.map((p, idx) => idx === retakePinIdx ? { ...p, x, y } : p))
+      setEditPin(retakePinIdx)
+      setRetakePinIdx(null)
+      setPlacing(false)
+      setTimeout(pushHist, 0)
+      return
+    }
+
     const id = newPinId.trim() || `P${pins.length+1}`
     setPins(prev=>[...prev,{id,x,y,type:newPinType,description:newPinDesc}])
     setNPId(prev=>{const m=prev.match(/^(.*?)(\d+)$/); return m?`${m[1]}${+m[2]+1}`:prev})
     setPlacing(false); setTimeout(pushHist,0)
-  }, [pinPlacing,compW,newPinId,newPinType,newPinDesc,pins.length,pushHist])
+  }, [pinPlacing,retakePinIdx,compW,newPinId,newPinType,newPinDesc,pins.length,pushHist])
 
   // ── Build / download ZIP ──────────────────────────────────────────────────
   const buildZip = async () => {
@@ -1523,7 +1885,9 @@ export default function ComponentEditorPage() {
     f.file('logic.ts',      logicCode||genLogicCode(d))
     f.file('validation.ts', validCode||genValidationCode(d))
     f.file('index.ts',      indexCode||genIndexCode(d))
-    f.folder('docs').file('index.html', docsCode||genDocsHTML(d))
+    const docsHtml = docsCode || genDocsHTML(d)
+    f.folder('docs').file('index.html', docsHtml)
+    f.folder('doc').file('index.html', docsHtml)
     return zip.generateAsync({ type:'blob' })
   }
 
@@ -1545,6 +1909,138 @@ export default function ComponentEditorPage() {
       }; reader.readAsDataURL(blob)
     } finally { setSaving(false) }
   }
+
+  const syncFromUiCode = () => {
+    applyParsedUiSource(uiCode)
+    pushHist()
+  }
+
+  const runLogicCheck = useCallback(() => {
+    const issues = []
+    const notes = []
+    const startedAt = new Date().toISOString()
+
+    const addIssue = (msg) => issues.push(msg)
+    const addNote = (msg) => notes.push(msg)
+
+    // 1) Syntax/transpile checks
+    let transpiledLogic = ''
+    try {
+      transpiledLogic = Babel.transform(logicCode || '', {
+        filename: 'logic.ts',
+        presets: ['typescript', 'env'],
+      }).code || ''
+      addNote('logic.ts syntax: OK')
+    } catch (err) {
+      addIssue(`logic.ts syntax error: ${err.message}`)
+    }
+
+    let transpiledValidation = ''
+    try {
+      transpiledValidation = Babel.transform(validCode || 'export const validation = [];', {
+        filename: 'validation.ts',
+        presets: ['typescript', 'env'],
+      }).code || ''
+      addNote('validation.ts syntax: OK')
+    } catch (err) {
+      addIssue(`validation.ts syntax error: ${err.message}`)
+    }
+
+    // 2) Runtime smoke checks (safe mocks)
+    if (!issues.length) {
+      try {
+        assertSafeDynamicModule(transpiledLogic, 'logic.ts')
+        const logicExports = {}
+        const moduleObj = { exports: logicExports }
+        class MockBaseComponent {
+          constructor(id, manifest) {
+            this.id = id
+            this.type = manifest?.type || 'mock-component'
+            this.state = {}
+            this.stateChanged = false
+            this.pins = {}
+            ;(manifest?.pins || []).forEach(pin => {
+              this.pins[pin.id] = { voltage: 0, mode: 'INPUT' }
+            })
+          }
+          setPinVoltage(pinId, voltage) {
+            if (!this.pins[pinId]) this.pins[pinId] = { voltage: 0, mode: 'INPUT' }
+            this.pins[pinId].voltage = Number(voltage) || 0
+          }
+          getPinVoltage(pinId) {
+            return Number(this.pins[pinId]?.voltage || 0)
+          }
+          setState(nextState) {
+            this.state = { ...(this.state || {}), ...(nextState || {}) }
+            this.stateChanged = true
+          }
+          getSyncState() {
+            return this.state
+          }
+        }
+
+        const evalLogic = new Function('exports', 'module', 'require', transpiledLogic)
+        evalLogic(
+          logicExports,
+          moduleObj,
+          (mod) => {
+            if (String(mod || '').toLowerCase().includes('basecomponent')) {
+              return { BaseComponent: MockBaseComponent }
+            }
+            return {}
+          }
+        )
+
+        const mergedLogicExports = { ...logicExports, ...(moduleObj.exports || {}) }
+        const logicEntries = Object.entries(mergedLogicExports).filter(([, value]) => typeof value === 'function')
+        const preferred = logicEntries.find(([name]) => /logic$/i.test(name)) || logicEntries[0]
+        if (!preferred) {
+          addIssue('logic.ts check failed: no exported Logic class/function found.')
+        } else {
+          const LogicCtor = preferred[1]
+          const pinManifest = (pins || []).map(pin => ({ id: pin.id }))
+          const inst = new LogicCtor('__logic_probe__', { type: compType || 'component', pins: pinManifest })
+
+          if (typeof inst.reset === 'function') inst.reset()
+          if (typeof inst.update === 'function') inst.update(0, [], [])
+          if (typeof inst.onPinStateChange === 'function') inst.onPinStateChange((pins[0]?.id || 'P1'), true, 1)
+          if (typeof inst.onEvent === 'function') inst.onEvent({ type: 'check' })
+          if (typeof inst.getSyncState !== 'function') {
+            addIssue('logic.ts check failed: getSyncState() is missing.')
+          } else {
+            inst.getSyncState()
+          }
+          addNote(`logic.ts runtime smoke: OK (${preferred[0]})`)
+        }
+      } catch (err) {
+        addIssue(`logic.ts runtime error: ${err.message}`)
+      }
+
+      try {
+        assertSafeDynamicModule(transpiledValidation, 'validation.ts')
+        const validationExports = {}
+        const validationModule = { exports: validationExports }
+        const evalValidation = new Function('exports', 'module', transpiledValidation)
+        evalValidation(validationExports, validationModule)
+        const mergedValidation = { ...validationExports, ...(validationModule.exports || {}) }
+        const validation = mergedValidation.validation
+        if (!(Array.isArray(validation) || typeof validation === 'function')) {
+          addIssue('validation.ts check failed: export const validation must be an array or function.')
+        } else {
+          addNote('validation.ts export check: OK')
+        }
+      } catch (err) {
+        addIssue(`validation.ts runtime error: ${err.message}`)
+      }
+    }
+
+    setLogicCheck({
+      ok: issues.length === 0,
+      issues,
+      notes,
+      startedAt,
+    })
+  }, [logicCode, validCode, pins, compType])
 
   // ─────────────────────────────────────────────────────────────────────────
   //  Step 1
@@ -1642,10 +2138,11 @@ export default function ComponentEditorPage() {
     const zoom = s2Zoom ?? fz
     const gridPx = GRID * zoom
     const isReact = svgMode === 'react'
+    const step2Language = svgMode === 'react' ? 'TypeScript / JSX' : 'XML / SVG'
     return (
       <div style={{ display:'flex', gap:24, height:'100%', alignItems: 'stretch' }}>
         <div style={{ flex:1, display:'flex', flexDirection:'column', gap:16, minWidth:0 }}>
-          <div style={{ display:'flex', gap:8, background: 'var(--bg2)', padding: 6, borderRadius: 12, border: '1px solid var(--border)', width: 'fit-content' }}>
+          <div style={{ display:'flex', gap:8, background: 'var(--bg2)', padding: 6, borderRadius: 12, border: '1px solid var(--border)', width: 'fit-content', alignItems: 'center' }}>
             <button 
               onClick={()=>setSvgMode('code')}
               style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', background: svgMode==='code' ? 'var(--accent)' : 'transparent', color: svgMode==='code' ? '#fff' : 'var(--text2)' }}
@@ -1658,6 +2155,16 @@ export default function ComponentEditorPage() {
               onClick={()=>setSvgMode('react')}
               style={{ padding: '8px 16px', borderRadius: 8, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', transition: 'all 0.2s', background: svgMode==='react' ? 'var(--accent)' : 'transparent', color: svgMode==='react' ? '#fff' : 'var(--text2)' }}
             >React JSX</button>
+            <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+            <label style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'0 8px', fontSize:11, color:'var(--text2)', userSelect:'none' }}>
+              <input
+                type="checkbox"
+                checked={s2AutoSync}
+                onChange={e => setS2AutoSync(e.target.checked)}
+                style={{ accentColor:'var(--accent)', cursor:'pointer' }}
+              />
+              Auto Sync SVG↔React
+            </label>
           </div>
 
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', minHeight: 0 }}>
@@ -1681,7 +2188,9 @@ export default function ComponentEditorPage() {
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize:11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' }}>Editor</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize:10, color: 'var(--text3)' }}>{svgMode==='react' ? 'TypeScript / JSX' : 'XML / SVG'}</span>
+                    <span style={{ fontSize:10, color: 'var(--text3)' }}>{step2Language}</span>
+                    <button onClick={() => syncReactFromSvg(svgCode)} style={{ padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>SVG→React</button>
+                    <button onClick={() => syncSvgFromReact(reactCode)} style={{ padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>React→SVG</button>
                     <button onClick={() => setS2EditorFont(f => Math.max(11, f - 1))} style={{ padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>A-</button>
                     <button onClick={() => setS2EditorFont(f => Math.min(20, f + 1))} style={{ padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>A+</button>
                   </div>
@@ -1689,8 +2198,22 @@ export default function ComponentEditorPage() {
                 <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                   <Editor 
                     value={svgMode === 'react' ? reactCode : svgCode} 
-                    onValueChange={svgMode === 'react' ? setReactCode : setSvgCode}
-                    highlight={c=>Prism.highlight(c||'', svgMode==='react' ? Prism.languages.javascript : Prism.languages.markup, svgMode==='react' ? 'javascript' : 'markup')}
+                    onValueChange={(nextValue) => {
+                      if (svgMode === 'react') {
+                        setReactCode(nextValue)
+                        if (s2AutoSync) syncSvgFromReact(nextValue)
+                        return
+                      }
+                      setSvgCode(nextValue)
+                      if (s2AutoSync) syncReactFromSvg(nextValue)
+                    }}
+                    highlight={c=>Prism.highlight(
+                      c || '',
+                      svgMode === 'react'
+                        ? (Prism.languages.tsx || Prism.languages.typescript || Prism.languages.javascript)
+                        : (Prism.languages.markup || Prism.languages.xml),
+                      svgMode === 'react' ? 'tsx' : 'markup'
+                    )}
                     padding={16} 
                     style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:s2EditorFont, lineHeight:1.6, minHeight:'100%', color:'var(--text)', background:'transparent', whiteSpace:'pre', overflowX:'auto', overflowY:'auto' }}
                     placeholder={svgMode === 'react' ? 'export const MyUI = () => ...' : '<svg ...>'}
@@ -1774,8 +2297,16 @@ export default function ComponentEditorPage() {
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>📏 Canvas Footprint</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
                 {[
-                  ['Canvas Width', 'w', compW, v=>{setCompW(v);setBounds(b=>({...b,w:Math.max(GRID,v-26)}))}],
-                  ['Canvas Height', 'h', compH, v=>{setCompH(v);setBounds(b=>({...b,h:Math.max(GRID,v-14)}))}]
+                  ['Canvas Width', 'w', compW, v=>{
+                    const nextW = Math.max(GRID, Number(v) || GRID)
+                    setCompW(nextW)
+                    setBounds(b => clampBoundsToCanvas(b, nextW, compH))
+                  }],
+                  ['Canvas Height', 'h', compH, v=>{
+                    const nextH = Math.max(GRID, Number(v) || GRID)
+                    setCompH(nextH)
+                    setBounds(b => clampBoundsToCanvas(b, compW, nextH))
+                  }]
                 ].map(([lbl, key, val, updater]) => (
                   <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase' }}>{lbl}</label>
@@ -1807,7 +2338,7 @@ export default function ComponentEditorPage() {
                     <input 
                       type="number" 
                       value={bounds[k]} 
-                      onChange={e=>setBounds(b=>({...b,[k]:Number(e.target.value)}))} 
+                      onChange={e=>setBounds(b=>clampBoundsToCanvas({ ...b, [k]: Number(e.target.value) }, compW, compH))} 
                       onBlur={pushHist}
                       style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '8px 10px', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' }} 
                     />
@@ -1873,13 +2404,19 @@ export default function ComponentEditorPage() {
                 {resizeMode==='bounds'
                   ? <DragResizeBox bx={bounds.x} by={bounds.y} bw={bounds.w} bh={bounds.h} scale={scale} color="var(--accent)"
                       label={`BOUNDS`}
-                      onChange={v=>setBounds(v)} onEnd={pushHist} />
+                      onChange={v=>setBounds(clampBoundsToCanvas(v, compW, compH))} onEnd={pushHist} />
                   : <div style={{ position:'absolute', pointerEvents:'none', left:bounds.x*scale, top:bounds.y*scale, width:bounds.w*scale, height:bounds.h*scale, border:'2px solid var(--accent)', background:'rgba(0, 212, 255, 0.05)', borderRadius: 2 }} />
                 }
                 {resizeMode==='comp' && (
                   <DragResizeBox bx={0} by={0} bw={Number(compW)} bh={Number(compH)} scale={scale} color="#3b82f6"
                     label={`${compW}×${compH}`} noMove onlyEdges
-                    onChange={v=>{ setCompW(v.w); setCompH(v.h) }} onEnd={pushHist} />
+                    onChange={v=>{
+                      const nextW = Math.max(GRID, Math.round(v.w))
+                      const nextH = Math.max(GRID, Math.round(v.h))
+                      setCompW(nextW)
+                      setCompH(nextH)
+                      setBounds(b => clampBoundsToCanvas(b, nextW, nextH))
+                    }} onEnd={pushHist} />
                 )}
               </div>
             </div>
@@ -1920,10 +2457,49 @@ export default function ComponentEditorPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>Pins <span style={{ color: 'var(--text3)', fontWeight: 500, marginLeft: 4 }}>({pins.length})</span></div>
               <div style={{ height: 16, width: 1, background: 'var(--border)' }} />
-              <div style={{ fontSize: 12, color: 'var(--text3)' }}>{pinPlacing ? 'Click on preview to place' : 'Management'}</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+                {retakePinIdx !== null
+                  ? `Retake mode: click preview to reposition ${pins[retakePinIdx]?.id || 'pin'}`
+                  : (pinPlacing ? 'Click on preview to place' : 'Management')}
+              </div>
             </div>
-            <Btn v={pinPlacing ? 'danger' : 'primary'} onClick={()=>setPlacing(!pinPlacing)}>
-              {pinPlacing ? '🛑 Cancel' : '➕ Add Pin'}
+            <Btn
+              v={(pinPlacing || retakePinIdx !== null) ? 'danger' : 'primary'}
+              onClick={() => {
+                const next = !(pinPlacing || retakePinIdx !== null)
+                setRetakePinIdx(null)
+                setPlacing(next)
+              }}>
+              {(pinPlacing || retakePinIdx !== null) ? '🛑 Cancel' : '➕ Add Pin'}
+            </Btn>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr auto', gap: 12, padding: '12px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12 }}>
+            <input
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '8px 10px', fontSize: 13, outline: 'none' }}
+              placeholder="Next Pin ID"
+              value={newPinId}
+              onChange={e => setNPId(e.target.value)}
+            />
+            <select
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '8px 10px', fontSize: 13, outline: 'none' }}
+              value={newPinType}
+              onChange={e => setNPType(e.target.value)}
+            >
+              {PIN_TYPES.map(t => <option key={t}>{t}</option>)}
+            </select>
+            <input
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', padding: '8px 10px', fontSize: 13, outline: 'none' }}
+              placeholder="Description (optional)"
+              value={newPinDesc}
+              onChange={e => setNPDesc(e.target.value)}
+            />
+            <Btn v={(pinPlacing || retakePinIdx !== null) ? 'danger' : 'blue'} sm onClick={() => {
+              const next = !(pinPlacing || retakePinIdx !== null)
+              setRetakePinIdx(null)
+              setPlacing(next)
+            }}>
+              {(pinPlacing || retakePinIdx !== null) ? 'Cancel' : 'Place'}
             </Btn>
           </div>
 
@@ -1934,6 +2510,7 @@ export default function ComponentEditorPage() {
                   <tr style={{ textAlign: 'left', color: 'var(--text3)', textTransform: 'uppercase', fontSize: 10, letterSpacing: '0.05em' }}>
                     <th style={{ padding: '12px 20px' }}>Pin ID</th>
                     <th style={{ padding: '12px 20px' }}>Type</th>
+                    <th style={{ padding: '12px 20px' }}>Description</th>
                     <th style={{ padding: '12px 20px' }}>Position</th>
                     <th style={{ padding: '12px 20px', textAlign: 'right' }}>Actions</th>
                   </tr>
@@ -1941,7 +2518,7 @@ export default function ComponentEditorPage() {
                 <tbody>
                   {pins.length === 0 ? (
                     <tr>
-                      <td colSpan={4} style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>No pins added yet. Click "Add Pin" to start placing.</td>
+                      <td colSpan={5} style={{ padding: 40, textAlign: 'center', color: 'var(--text3)' }}>No pins added yet. Click "Add Pin" to start placing.</td>
                     </tr>
                   ) : (
                     pins.map((p, i) => (
@@ -1971,6 +2548,15 @@ export default function ComponentEditorPage() {
                           </select>
                         </td>
                         <td style={{ padding: '12px 20px' }}>
+                          <input
+                            style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 10px', fontSize: 13, outline: 'none', width: '100%' }}
+                            value={p.description || ''}
+                            onChange={e => setPins(ps => ps.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
+                            onBlur={pushHist}
+                            placeholder="Describe this pin"
+                          />
+                        </td>
+                        <td style={{ padding: '12px 20px' }}>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                             <span style={{ fontSize: 11, color: 'var(--text3)' }}>X</span>
                             <input type="number" style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text)', padding: '6px 8px', fontSize: 12, outline: 'none', width: 45 }} value={p.x} onChange={e => setPins(ps => ps.map((x, j) => j === i ? { ...x, x: +e.target.value } : x))} onBlur={pushHist} />
@@ -1979,7 +2565,18 @@ export default function ComponentEditorPage() {
                           </div>
                         </td>
                         <td style={{ padding: '12px 20px', textAlign: 'right' }}>
-                          <Btn v="danger" sm onClick={() => { setPins(ps => ps.filter((_, j) => j !== i)); pushHist() }}>✕</Btn>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                            <Btn v={retakePinIdx === i ? 'yellow' : 'blue'} sm onClick={() => {
+                              setRetakePinIdx(i)
+                              setPlacing(true)
+                              setEditPin(i)
+                            }}>Retake</Btn>
+                            <Btn v="danger" sm onClick={() => {
+                              setPins(ps => ps.filter((_, j) => j !== i))
+                              if (retakePinIdx === i) setRetakePinIdx(null)
+                              pushHist()
+                            }}>✕</Btn>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -2001,8 +2598,10 @@ export default function ComponentEditorPage() {
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, padding: 24, boxShadow: 'var(--shadow)' }}>
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize:11, fontWeight:700, color:'var(--text3)', textTransform:'uppercase' }}>Placement View</span>
-              <div style={{ fontSize:10, color: pinPlacing ? 'var(--accent)' : 'var(--text3)', fontWeight: 700 }}>
-                {pinPlacing ? '📍 CLICK PREVIEW TO PLACE' : 'PREVIEW'}
+              <div style={{ fontSize:10, color: (pinPlacing || retakePinIdx !== null) ? 'var(--accent)' : 'var(--text3)', fontWeight: 700 }}>
+                {retakePinIdx !== null
+                  ? `📍 RETAKE ${pins[retakePinIdx]?.id || ''}`
+                  : (pinPlacing ? '📍 CLICK PREVIEW TO PLACE' : 'PREVIEW')}
               </div>
             </div>
 
@@ -2013,10 +2612,10 @@ export default function ComponentEditorPage() {
                 backgroundColor:'var(--canvas-bg)', 
                 backgroundImage:`linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px)`,
                 backgroundSize:`${gridPx}px ${gridPx}px`,
-                borderRadius: 12, border: pinPlacing ? '2px solid var(--accent)' : '1px solid var(--border)',
+                borderRadius: 12, border: (pinPlacing || retakePinIdx !== null) ? '2px solid var(--accent)' : '1px solid var(--border)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 overflow: 'hidden', position: 'relative',
-                cursor: pinPlacing ? 'crosshair' : 'default',
+                cursor: (pinPlacing || retakePinIdx !== null) ? 'crosshair' : 'default',
                 transition: 'border-color 0.2s'
               }}
             >
@@ -2086,8 +2685,8 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
     const w = Number(compW) || 100, h = Number(compH) || 80
     const b = bounds || { x: 0, y: 0, w, h }
     const scale = ctxMenuZoom
-    const canvasW = Math.max(w * scale + 120, 400)
-    const canvasH = Math.max(h * scale + 120, 250)
+    const hasDuringRun = ctxDuringRun || ctxOnlyDuringRun
+    const showCtxMenu = !(ctxPreviewRunning && !hasDuringRun) && !(!ctxPreviewRunning && ctxOnlyDuringRun)
 
     return (
       <div style={{ display:'flex', gap:24, height:'calc(100vh - 340px)' }}>
@@ -2124,7 +2723,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
               <Editor
                 value={ctxMenuCode}
                 onValueChange={setCtxMenuCode}
-                highlight={c => Prism.highlight(c||'', Prism.languages.javascript, 'javascript')}
+                highlight={c => Prism.highlight(c || '', Prism.languages.tsx || Prism.languages.typescript || Prism.languages.javascript, 'tsx')}
                 padding={18}
                 style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.65, minHeight:'100%', color:'var(--text)', background:'transparent' }}
                 placeholder="export const ContextMenu = ({ attrs, onUpdate }) => (...)"
@@ -2138,10 +2737,20 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
           <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:16, padding:20, display:'flex', flexDirection:'column', gap:14, boxShadow:'var(--shadow)', flex:1 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <span style={{ fontSize:12, fontWeight:700, color:'var(--text)', letterSpacing:'0.05em' }}>LIVE PREVIEW</span>
-              <div style={{ display:'flex', gap:4 }}>
-                <div style={{ width:8, height:8, borderRadius:'50%', background:'#ff5f57' }} />
-                <div style={{ width:8, height:8, borderRadius:'50%', background:'#ffbd2e' }} />
-                <div style={{ width:8, height:8, borderRadius:'50%', background:'#27c93f' }} />
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <Btn
+                  sm
+                  v={ctxPreviewRunning ? 'green' : 'ghost'}
+                  onClick={() => setCtxPreviewRunning(v => !v)}
+                  title="Toggle running/stopped preview"
+                >
+                  {ctxPreviewRunning ? 'Running' : 'Stopped'}
+                </Btn>
+                <div style={{ display:'flex', gap:4 }}>
+                  <div style={{ width:8, height:8, borderRadius:'50%', background:'#ff5f57' }} />
+                  <div style={{ width:8, height:8, borderRadius:'50%', background:'#ffbd2e' }} />
+                  <div style={{ width:8, height:8, borderRadius:'50%', background:'#27c93f' }} />
+                </div>
               </div>
             </div>
 
@@ -2160,28 +2769,30 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
                   : <SvgPreview svgCode={svgCode} compW={compW} compH={compH} zoom={scale} />}
 
                 {/* Context menu bubble — rendered above BOUNDS centre, exactly like SimulatorPage */}
-                <div data-contextmenu="true" style={{
-                  position:'absolute',
-                  left: b.x * scale + (b.w * scale) / 2,
-                  top:  b.y * scale - 14 * scale,
-                  transform:'translateX(-50%) translateY(-100%)',
-                  background:'var(--bg2)', border:'1px solid var(--border)',
-                  display:'flex', alignItems:'center', gap:8,
-                  padding:'6px 10px', borderRadius:10,
-                  boxShadow:'0 8px 24px rgba(0,0,0,0.6)',
-                  pointerEvents:'all', whiteSpace:'nowrap', zIndex:200,
-                  minWidth:140,
-                }}>
-                  {liveCtxErr
-                    ? <span style={{ fontSize:10, color:'#ff6b6b', fontFamily:'monospace', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis' }}>⚠ {liveCtxErr}</span>
-                    : liveCtxEl
-                      ? liveCtxEl
-                      : <span style={{ fontSize:10, color:'var(--text3)', fontStyle:'italic' }}>Write a ContextMenu component →</span>
-                  }
-                  {/* Tooltip arrow */}
-                  <div style={{ position:'absolute', bottom:-6, left:'50%', transform:'translateX(-50%)', width:0, height:0, borderLeft:'6px solid transparent', borderRight:'6px solid transparent', borderTop:'6px solid var(--border)' }} />
-                  <div style={{ position:'absolute', bottom:-5, left:'50%', transform:'translateX(-50%)', width:0, height:0, borderLeft:'5px solid transparent', borderRight:'5px solid transparent', borderTop:'5px solid var(--bg2)' }} />
-                </div>
+                {showCtxMenu && (
+                  <div data-contextmenu="true" style={{
+                    position:'absolute',
+                    left: b.x * scale + (b.w * scale) / 2,
+                    top:  b.y * scale - 14 * scale,
+                    transform:'translateX(-50%) translateY(-100%)',
+                    background:'var(--bg2)', border:'1px solid var(--border)',
+                    display:'flex', alignItems:'center', gap:8,
+                    padding:'6px 10px', borderRadius:10,
+                    boxShadow:'0 8px 24px rgba(0,0,0,0.6)',
+                    pointerEvents:'all', whiteSpace:'nowrap', zIndex:200,
+                    minWidth:140,
+                  }}>
+                    {liveCtxErr
+                      ? <span style={{ fontSize:10, color:'#ff6b6b', fontFamily:'monospace', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis' }}>⚠ {liveCtxErr}</span>
+                      : liveCtxEl
+                        ? liveCtxEl
+                        : <span style={{ fontSize:10, color:'var(--text3)', fontStyle:'italic' }}>Write a ContextMenu component →</span>
+                    }
+                    {/* Tooltip arrow */}
+                    <div style={{ position:'absolute', bottom:-6, left:'50%', transform:'translateX(-50%)', width:0, height:0, borderLeft:'6px solid transparent', borderRight:'6px solid transparent', borderTop:'6px solid var(--border)' }} />
+                    <div style={{ position:'absolute', bottom:-5, left:'50%', transform:'translateX(-50%)', width:0, height:0, borderLeft:'5px solid transparent', borderRight:'5px solid transparent', borderTop:'5px solid var(--bg2)' }} />
+                  </div>
+                )}
 
                 {/* Selection ring */}
                 <div style={{ position:'absolute', left:b.x*scale-6, top:b.y*scale-6, width:b.w*scale+12, height:b.h*scale+12, borderRadius:8, border:'2px solid var(--accent)', boxShadow:'0 0 16px var(--glow)', pointerEvents:'none' }} />
@@ -2205,6 +2816,12 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
                   {ctxDuringRun ? 'duringRun' : ''}{ctxOnlyDuringRun ? ' onlyDuringRun' : ''}{!ctxDuringRun && !ctxOnlyDuringRun ? 'standard' : ''}
                 </span>
               </div>
+              <div style={{ fontSize:11, color:'var(--text3)', display:'flex', justifyContent:'space-between' }}>
+                <span>Preview run state</span>
+                <span style={{ color: showCtxMenu ? '#4ade80' : '#f59e0b', fontWeight:700 }}>
+                  {ctxPreviewRunning ? 'running' : 'stopped'} · {showCtxMenu ? 'menu visible' : 'menu hidden by flags'}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -2213,32 +2830,45 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  //  Step 6 (was Step 5)
-  // ─────────────────────────────────────────────────────────────────────────
-  // ─────────────────────────────────────────────────────────────────────────
-  //  Step 6
+  //  Step 6 - Code
   // ─────────────────────────────────────────────────────────────────────────
   const s6 = () => {
     const tabs = [
-      { id:'logic',    l:'logic.ts',       code:logicCode,    set:setLogicCode },
-      { id:'valid',    l:'validation.ts',  code:validCode,    set:setValidCode },
       { id:'ui',       l:'ui.tsx',         code:uiCode,       set:v=>{uiEdited.current=true;setUiCode(v)} },
       { id:'index',    l:'index.ts',       code:indexCode,    set:setIndexCode },
       { id:'manifest', l:'manifest.json',  code:manifestCode, set:setManifestCode },
     ]
     const cur = tabs.find(t=>t.id===codeTab) || tabs[0]
-    
+    const codeGrammar = cur.id === 'manifest'
+      ? (Prism.languages.json || Prism.languages.javascript)
+      : (cur.id === 'ui'
+        ? (Prism.languages.tsx || Prism.languages.typescript || Prism.languages.javascript)
+        : (Prism.languages.typescript || Prism.languages.javascript))
+    const codeLangId = cur.id === 'manifest' ? 'json' : (cur.id === 'ui' ? 'tsx' : 'typescript')
+
     return (
       <div style={{ height: 'calc(100vh - 350px)', display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
           {tabs.map(t => (
-            <button 
-              key={t.id} 
+            <button
+              key={t.id}
               onClick={() => setCodeTab(t.id)}
               style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', cursor: 'pointer', transition: 'all 0.2s', background: codeTab===t.id ? 'var(--bg3)' : 'transparent', color: codeTab===t.id ? 'var(--accent)' : 'var(--text2)', borderColor: codeTab===t.id ? 'var(--accent)' : 'var(--border)' }}
             >{t.l}</button>
           ))}
           <div style={{ flex: 1 }} />
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, paddingRight: 4 }}>
+            <span style={{ fontSize: 10, color: 'var(--text3)' }}>Height</span>
+            <input
+              type="range"
+              min={320}
+              max={860}
+              value={s6EditorHeight}
+              onChange={e => setS6EditorHeight(Number(e.target.value))}
+            />
+            <span style={{ fontSize: 10, color: 'var(--text3)', minWidth: 48, textAlign: 'right' }}>{s6EditorHeight}px</span>
+          </div>
+          <Btn v="ghost" sm onClick={syncFromUiCode}>Sync From ui.tsx</Btn>
           <Btn v="ghost" sm onClick={genAll}>Regenerate Files</Btn>
         </div>
 
@@ -2252,12 +2882,12 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
              </div>
              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{cur.id === 'manifest' ? 'JSON' : 'TypeScript'}</span>
            </div>
-           <div style={{ flex: 1, overflow: 'auto' }}>
-              <Editor 
-                value={cur.code} 
+           <div style={{ height: s6EditorHeight, minHeight: 320, maxHeight: '75vh', overflow: 'auto' }}>
+              <Editor
+                value={cur.code}
                 onValueChange={cur.set}
-                highlight={c=>Prism.highlight(c||'', Prism.languages.javascript, 'javascript')}
-                padding={20} 
+                highlight={c=>Prism.highlight(c || '', codeGrammar, codeLangId)}
+                padding={20}
                 style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight: '100%', color:'var(--text)', background: 'transparent' }}
               />
            </div>
@@ -2267,17 +2897,120 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  //  Step 7 (was Step 6)
+  //  Step 7 - Logic
   // ─────────────────────────────────────────────────────────────────────────
-  const s7 = () => (
+  const s7 = () => {
+    const tabs = [
+      { id:'logic', l:'logic.ts', code:logicCode, set:setLogicCode },
+      { id:'valid', l:'validation.ts', code:validCode, set:setValidCode },
+    ]
+    const cur = tabs.find(t => t.id === logicTab) || tabs[0]
+
+    return (
+      <div style={{ display:'flex', gap:24, height:'calc(100vh - 350px)' }}>
+        <div style={{ flex:1, display:'flex', flexDirection:'column', gap:12, minWidth:0 }}>
+          <div style={{ display:'flex', gap:8, overflowX:'auto', paddingBottom:4 }}>
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setLogicTab(t.id)}
+                style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', cursor: 'pointer', transition: 'all 0.2s', background: logicTab===t.id ? 'var(--bg3)' : 'transparent', color: logicTab===t.id ? 'var(--accent)' : 'var(--text2)', borderColor: logicTab===t.id ? 'var(--accent)' : 'var(--border)' }}
+              >{t.l}</button>
+            ))}
+            <div style={{ flex:1 }} />
+            <div style={{ display:'inline-flex', alignItems:'center', gap:8, paddingRight: 4 }}>
+              <span style={{ fontSize:10, color:'var(--text3)' }}>Height</span>
+              <input
+                type="range"
+                min={340}
+                max={900}
+                value={s7EditorHeight}
+                onChange={e => setS7EditorHeight(Number(e.target.value))}
+              />
+              <span style={{ fontSize:10, color:'var(--text3)', minWidth:48, textAlign:'right' }}>{s7EditorHeight}px</span>
+            </div>
+            <Btn v="primary" sm onClick={runLogicCheck}>Check Logic</Btn>
+          </div>
+
+          <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', minHeight: 340 }}>
+            <Editor
+              value={cur.code}
+              onValueChange={cur.set}
+              highlight={c=>Prism.highlight(c || '', Prism.languages.typescript || Prism.languages.javascript, 'typescript')}
+              padding={16}
+              style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight:s7EditorHeight, color:'var(--text)', maxHeight:'75vh', overflowY:'auto' }}
+            />
+          </div>
+
+          {logicCheck && (
+            <div style={{ border:'1px solid var(--border)', borderRadius:12, padding:'12px 14px', background: logicCheck.ok ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)' }}>
+              <div style={{ fontSize:12, fontWeight:700, color: logicCheck.ok ? '#22c55e' : '#ef4444', marginBottom:8 }}>
+                {logicCheck.ok ? 'Check passed' : 'Check failed'}
+              </div>
+              {!!logicCheck.notes?.length && (
+                <div style={{ fontSize:11, color:'var(--text2)', marginBottom:8 }}>
+                  {logicCheck.notes.join(' | ')}
+                </div>
+              )}
+              {!!logicCheck.issues?.length && (
+                <div style={{ fontSize:11, color:'#fca5a5' }}>
+                  {logicCheck.issues.map((issue, idx) => <div key={idx}>• {issue}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div style={{ width:360, flexShrink:0, display:'flex', flexDirection:'column', gap:12 }}>
+          <div style={{ background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:16, padding:16, display:'flex', flexDirection:'column', gap:12 }}>
+            <div style={{ fontSize:14, fontWeight:700, color:'var(--text)' }}>Telemetry</div>
+            <div style={{ fontSize:12, color:'var(--text2)' }}>
+              Configure telemetry fields used by runtime: <code>telemetry.template</code> and <code>telemetry.criticalKeys</code>.
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              <label style={{ fontSize:11, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.05em' }}>Template</label>
+              <input
+                value={telemetryTemplate}
+                onChange={e => setTelemetryTemplate(e.target.value)}
+                placeholder="Optional summary template"
+                style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', padding:'8px 10px', fontSize:13, outline:'none' }}
+              />
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              <label style={{ fontSize:11, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'0.05em' }}>Critical Keys</label>
+              <textarea
+                value={telemetryKeysText}
+                onChange={e => setTelemetryKeysText(e.target.value)}
+                placeholder="state.error\nstate.fault"
+                style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, color:'var(--text)', padding:'8px 10px', fontSize:12, minHeight:90, outline:'none', resize:'vertical', fontFamily:'JetBrains Mono, monospace' }}
+              />
+              <div style={{ fontSize:11, color:'var(--text3)' }}>Use comma or newline separators.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  //  Step 8 - Docs
+  // ─────────────────────────────────────────────────────────────────────────
+  const s8 = () => (
     <div style={{ display:'flex', gap:24, height:'calc(100vh - 350px)' }}>
       <div style={{ flex:1, display:'flex', flexDirection:'column', gap:12 }}>
-        <div style={{ fontSize:14, fontWeight:700, color:'var(--text)' }}>Documentation Editor (HTML)</div>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:12 }}>
+          <div style={{ fontSize:14, fontWeight:700, color:'var(--text)' }}>Documentation Editor (HTML)</div>
+          <Btn
+            v="blue"
+            sm
+            onClick={() => setDocsCode(genDocsHTML(getData()))}
+          >Generate doc/index.html</Btn>
+        </div>
         <div style={{ flex:1, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-          <Editor 
+          <Editor
             value={docsCode} onValueChange={setDocsCode}
-            highlight={c=>Prism.highlight(c||'',Prism.languages.markup,'markup')}
-            padding={16} 
+            highlight={c=>Prism.highlight(c || '', Prism.languages.markup || Prism.languages.html, 'markup')}
+            padding={16}
             style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight:'100%', color:'var(--text)' }}
           />
         </div>
@@ -2286,16 +3019,21 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
       <div style={{ flex:1, display:'flex', flexDirection:'column', gap:12 }}>
         <div style={{ fontSize:14, fontWeight:700, color:'var(--text)' }}>Live Preview</div>
         <div style={{ flex:1, background: 'white', color: '#333', borderRadius: 16, padding: 32, overflowY: 'auto', border: '1px solid var(--border)' }} className="panel-scroll prose">
-           <div dangerouslySetInnerHTML={{ __html: docsCode }} />
+           <iframe
+             title="component-doc-preview"
+             sandbox=""
+             srcDoc={docsCode}
+             style={{ width: '100%', minHeight: 480, border: '0', background: 'white' }}
+           />
         </div>
       </div>
     </div>
   )
 
   // ─────────────────────────────────────────────────────────────────────────
-  //  Step 8 (was Step 7)
+  //  Step 9 - Save & Export
   // ─────────────────────────────────────────────────────────────────────────
-  const s8 = () => (
+  const s9 = () => (
     <div style={{ maxWidth:900, margin:'0 auto', display:'flex', flexDirection:'column', gap:32 }}>
        <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <div style={{ fontSize: 40, marginBottom: 16 }}>🚀</div>
@@ -2342,7 +3080,7 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
     </div>
   )
 
-  const stepR = {1:s1,2:s2,3:s3,4:s4,5:s5,6:s6,7:s7,8:s8}
+  const stepR = {1:s1,2:s2,3:s3,4:s4,5:s5,6:s6,7:s7,8:s8,9:s9}
   const cfg = STEPS[step-1]
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -2445,6 +3183,14 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
           </nav>
 
           <div style={{ marginTop:'auto', padding:'20px 16px', borderTop:'1px solid var(--border)' }}>
+            <button
+              onClick={()=>setHelpOpen(true)}
+              className="hover:border-[var(--accent)] hover:text-[var(--accent)]"
+              style={{ width:'100%', padding:'10px', borderRadius:10, background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text2)', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', gap:10, fontWeight:600, transition: 'all 0.2s', marginBottom:10 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4"/><line x1="12" y1="17" x2="12" y2="17"/></svg>
+              Help & API
+            </button>
             <button 
               onClick={()=>goToStep(6)} 
               className="hover:border-[var(--accent)] hover:text-[var(--accent)]"
@@ -2490,13 +3236,13 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
             
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                <span style={{ fontSize: 13, color: 'var(--text3)', fontWeight: 600 }}>{step} / {STEPS.length}</span>
-               {step < 8 && (
+              {step < 9 && (
                   <Btn v="primary" onClick={goNext} style={{ minWidth: 120, justifyContent: 'center' }}>
-                    {step === 7 ? 'Finalize' : 'Continue'}
+                  {step === 8 ? 'Finalize' : 'Continue'}
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
                   </Btn>
                )}
-               {step === 8 && (
+              {step === 9 && (
                   <Btn v="primary" onClick={handleDownload} style={{ minWidth: 160, justifyContent: 'center' }}>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     Download Project
@@ -2522,6 +3268,79 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
         />
       </div>
       <input ref={importRef} type="file" accept=".zip" onChange={handleImport} style={{ display:'none' }} />
+
+      {helpOpen && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:2000, display:'flex', justifyContent:'flex-end' }} onClick={() => setHelpOpen(false)}>
+          <div style={{ width:'min(760px, 100vw)', height:'100%', background:'var(--bg2)', borderLeft:'1px solid var(--border)', padding:'22px 24px', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+              <div style={{ fontSize:20, fontWeight:800, color:'var(--text)' }}>Component Creation Help</div>
+              <Btn sm v="ghost" onClick={() => setHelpOpen(false)}>Close</Btn>
+            </div>
+
+            <div style={{ fontSize:13, color:'var(--text2)', lineHeight:1.7, marginBottom:16 }}>
+              Use Step 2 for visuals, Step 3 for dimensions and BOUNDS, Step 4 for pins, Step 5 for context menu UI, Step 6 for generated code files, and Step 7 for logic + validation checks.
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+              <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:12, padding:14 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:'var(--accent)', marginBottom:8 }}>Core Logic Lifecycle</div>
+                <div style={{ fontSize:12, color:'var(--text2)', lineHeight:1.7 }}>
+                  <div><code>reset()</code>: initialize internal state.</div>
+                  <div><code>update(cpuCycles, wires, allInstances)</code>: continuous simulation updates.</div>
+                  <div><code>onPinStateChange(pinId, isHigh, cpuCycles)</code>: edge-driven pin changes.</div>
+                  <div><code>onEvent(event)</code>: UI or context-menu interaction events.</div>
+                  <div><code>getSyncState()</code>: return state for UI rendering.</div>
+                </div>
+              </div>
+
+              <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:12, padding:14 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:'var(--accent)', marginBottom:8 }}>Pin + State Helpers</div>
+                <div style={{ fontSize:12, color:'var(--text2)', lineHeight:1.7 }}>
+                  <div><code>getPinVoltage(pinId)</code>: read pin voltage.</div>
+                  <div><code>setPinVoltage(pinId, voltage)</code>: drive output pin.</div>
+                  <div><code>setState(partial)</code>: merge state + mark changed.</div>
+                  <div><code>getTelemetrySummary()</code>: quick telemetry status.</div>
+                  <div><code>getTelemetryData()</code>: full telemetry payload.</div>
+                </div>
+              </div>
+
+              <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:12, padding:14 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:'var(--accent)', marginBottom:8 }}>Protocol Hooks</div>
+                <div style={{ fontSize:12, color:'var(--text2)', lineHeight:1.7 }}>
+                  <div><code>onI2CStart(address, read)</code></div>
+                  <div><code>onI2CByte(address, data)</code></div>
+                  <div><code>onI2CReadByte()</code> and <code>onI2CStop()</code></div>
+                  <div><code>onSPIByte(data)</code></div>
+                  <div><code>onPWM/onPWMSignal</code></div>
+                  <div><code>onPIOPinChange/onPIO</code></div>
+                  <div><code>onOneWireReset/onOneWireWriteBit/onOneWireSlot</code></div>
+                  <div><code>onI2SFrame(channel, sample, bitsPerFrame)</code></div>
+                </div>
+              </div>
+
+              <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:12, padding:14 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:'var(--accent)', marginBottom:8 }}>Logic Check Workflow</div>
+                <div style={{ fontSize:12, color:'var(--text2)', lineHeight:1.7 }}>
+                  <div>1. Write logic in <code>logic.ts</code> tab.</div>
+                  <div>2. Add validation rules in <code>validation.ts</code>.</div>
+                  <div>3. Click <strong>Check Logic</strong> in Step 7.</div>
+                  <div>4. Fix syntax/runtime findings and re-check.</div>
+                  <div>5. Use Step 9 to test in simulator.</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop:14, background:'var(--bg)', border:'1px solid var(--border)', borderRadius:12, padding:14 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'var(--accent)', marginBottom:8 }}>Telemetry Fields</div>
+              <div style={{ fontSize:12, color:'var(--text2)', lineHeight:1.7 }}>
+                <div><code>telemetry.template</code>: optional summary string pattern.</div>
+                <div><code>telemetry.criticalKeys</code>: state keys monitored for warning/error heuristics.</div>
+                <div>Configure these in Step 7 and they are synced into <code>manifest.json</code>.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
