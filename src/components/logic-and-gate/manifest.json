@@ -1,0 +1,32 @@
+{
+    "type": "logic-and-gate",
+    "label": "AND Gate",
+    "description": "Logical AND gate. Outputs high only when both inputs are high.",
+    "group": "Logic",
+    "w": 70,
+    "h": 50,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "IN1",
+            "x": 0,
+            "y": 15,
+            "type": "digital",
+            "description": "Input 1"
+        },
+        {
+            "id": "IN2",
+            "x": 0,
+            "y": 35,
+            "type": "digital",
+            "description": "Input 2"
+        },
+        {
+            "id": "OUT",
+            "x": 70,
+            "y": 25,
+            "type": "digital",
+            "description": "Output"
+        }
+    ]
+}
