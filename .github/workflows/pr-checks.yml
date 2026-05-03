@@ -57,7 +57,7 @@ jobs:
       - name: Install dependencies
         run: |
           echo "Installing emulator deps..."
-          cd openhw-studio-emulator && npm ci
+          npm --prefix openhw-studio-emulator ci
           echo "Installing CLI deps..."
           npm --prefix openhw-studio-cli install
           echo "Installing frontend deps..."
