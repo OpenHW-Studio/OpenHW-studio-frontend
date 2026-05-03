@@ -22,7 +22,7 @@ on:
     - cron: '0 2 * * *'
 
 permissions:
-  issues: write
+  pull-requests: write
 
 jobs:
   page-validation:
@@ -203,9 +203,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: page-validation
     if: always()
-    defaults:
-      run:
-        working-directory: OpenHW-studio-frontend
 
     steps:
       - name: Download test results
