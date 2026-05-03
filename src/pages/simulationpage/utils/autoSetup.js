@@ -2,6 +2,7 @@
  * autoSetup.js
  * Utility to handle automatic component placement, wiring, and coding.
  * Collision-aware row allocation and flexible pin-to-hole snapping.
+ * Handles visible vs hidden socket wires based on snapping distance.
  */
 
 // Helper for rotation math
@@ -87,7 +88,7 @@ export function findAlternativePin(targetPin, components, wires, pinDefs) {
 
 // Helper to find a free row with PADDING to avoid messy overlaps
 function findFreeBreadboardRow(bb, components, wires, pinDefs) {
-  const ROW_PADDING = 3; // Keep at least 3 rows distance between components
+  const ROW_PADDING = 3; 
   const pins = pinDefs[bb.type] || [];
   const rows = [...new Set(pins.map(p => {
     const m = p.id.match(/^(\d+)[a-j]$/);
@@ -95,7 +96,6 @@ function findFreeBreadboardRow(bb, components, wires, pinDefs) {
   }).filter(Boolean))].sort((a, b) => a - b);
 
   for (const row of rows) {
-    // Check a range of rows around this one
     const rowRange = [];
     for (let i = -ROW_PADDING; i <= ROW_PADDING; i++) rowRange.push(row + i);
 
@@ -110,7 +110,6 @@ function findFreeBreadboardRow(bb, components, wires, pinDefs) {
     const rowPin = pins.find(p => p.id === `${row}a`);
     const isRangeOccupiedByComp = rowPin && components.some(c => {
       if (c.id === bb.id || c.type.startsWith('wokwi-breadboard')) return false;
-      // Buffer check
       return Math.abs(c.y - (bb.y + rowPin.y)) < (ROW_PADDING * 15) && Math.abs(c.x - (bb.x + rowPin.x)) < 50;
     });
 
@@ -183,7 +182,6 @@ export function handleAutoSetup({
     const row = findFreeBreadboardRow(bb, updatedComponents, updatedWires, pinDefs);
     
     // POSITIONING & SNAPPING
-    // 1. Snap anchor pin to ideal hole
     const anchorPinId = finalComp.attrs?.breadboard?.anchorPin || pins[0]?.id;
     const anchorPin = pins.find(p => p.id === anchorPinId) || { x: 0, y: 0 };
     const anchorHoleId = `${row}i`;
@@ -197,7 +195,7 @@ export function handleAutoSetup({
       finalComp.y = holeWorld.y - anchorPin.y;
     }
 
-    // MAP EACH PIN TO NEAREST HOLE (Handles non-standard pitches)
+    // MAP EACH PIN TO NEAREST HOLE
     const pinToHoleMap = {};
     pins.forEach(p => {
       const pCenterX = finalComp.x + (finalComp.w || 0) / 2;
@@ -206,18 +204,23 @@ export function handleAutoSetup({
       const nearest = findNearestBreadboardHole(pWorld.x, pWorld.y, [bb], pinDefs);
       if (nearest) {
         pinToHoleMap[p.id] = nearest.holeId;
-        // Always connect Comp Pin -> Hole
+        
+        // Visibility Check: If distance is very small, hide the wire (direct snap)
+        const dist = Math.hypot(pWorld.x - nearest.x, pWorld.y - nearest.y);
+        const isDirect = dist < 2;
+
         updatedWires.push({
-          id: `w_socket_${finalComp.id}_${p.id}_${Date.now()}`,
+          id: `w_socket_${isDirect ? 'direct' : 'visible'}_${finalComp.id}_${p.id}_${Date.now()}`,
           from: `${finalComp.id}:${p.id}`,
           to: `${bb.id}:${nearest.holeId}`,
-          color: 'green',
-          isSocket: true
+          color: isDirect ? 'green' : '#666666',
+          isSocket: true,
+          isHidden: isDirect // Hidden if direct snap
         });
       }
     });
 
-    // PROCESS CONNECTIONS (Rail-centric & Via)
+    // PROCESS CONNECTIONS
     autowiring.connections.forEach((conn, idx) => {
       let target = conn.to;
       const breadboardHole = `${bb.id}:${pinToHoleMap[conn.from] || (idx === 0 ? row+'i' : row+'j')}`;
@@ -248,7 +251,18 @@ export function handleAutoSetup({
            viaComp.y = vWorld.y - 6;
         }
         updatedComponents.push(viaComp);
-        updatedWires.push({ id: `w_via_in_${Date.now()}_${idx}`, from: breadboardHole, to: `${viaId}:p1`, color: 'red', isSocket: true });
+
+        // Visibility Check for Via (Resistor)
+        // Usually resistors in auto-setup are aligned perfectly
+        updatedWires.push({ 
+          id: `w_via_in_socket_direct_${Date.now()}_${idx}`, 
+          from: breadboardHole, 
+          to: `${viaId}:p1`, 
+          color: 'red', 
+          isSocket: true,
+          isHidden: true // Resistor pin is usually directly over hole
+        });
+        
         updatedWires.push({ id: `w_via_out_${Date.now()}_${idx}`, from: `${viaId}:p2`, to: target, color: target.includes('gnd') ? 'black' : 'blue', isSocket: target.includes(bb.id + ':') });
       } else {
         updatedWires.push({ id: `w_direct_${Date.now()}_${idx}`, from: breadboardHole, to: target, color: target.includes('gnd') ? 'black' : 'green', isSocket: target.includes(bb.id + ':') });
