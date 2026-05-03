@@ -1,0 +1,25 @@
+{
+    "type": "logic-buffer-gate",
+    "label": "Buffer Gate",
+    "description": "Logical Buffer gate. Passes the input signal unchanged.",
+    "group": "Logic",
+    "w": 70,
+    "h": 50,
+    "attrs": {},
+    "pins": [
+        {
+            "id": "IN",
+            "x": 0,
+            "y": 25,
+            "type": "digital",
+            "description": "Input"
+        },
+        {
+            "id": "OUT",
+            "x": 70,
+            "y": 25,
+            "type": "digital",
+            "description": "Output"
+        }
+    ]
+}
