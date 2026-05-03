@@ -169,18 +169,22 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            const path = require('path');
             const marker = '<!-- page-validation -->';
-            const resultsPath = 'OpenHW-studio-frontend/test-results/page-validation/report.json';
+            const resultsPath = path.join(process.env.GITHUB_WORKSPACE, 'OpenHW-studio-frontend/test-results/page-validation/report.json');
+            
+            console.log(`Checking for report at: ${resultsPath}`);
             
             if (fs.existsSync(resultsPath)) {
               const reports = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
-              const passed = reports.filter(r => r.passed).length;
-              const failed = reports.length - passed;
+              const passedCount = reports.filter(r => r.passed).length;
+              const totalCount = reports.length;
+              const failedCount = totalCount - passedCount;
               const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
               
               let totalConsoleErrors = 0;
               let totalNetworkErrors = 0;
-              let routesWithErrors = 0;
+              let routesWithIssues = 0;
               let issueDetails = [];
               
               let tableRows = '';
@@ -189,21 +193,29 @@ jobs:
                 const networkResult = page.results.find(r => r.test === 'Network Errors');
                 const perfResult = page.results.find(r => r.test === 'Page Performance');
                 
-                const consoleCount = consoleResult ? (consoleResult.passed ? 0 : parseInt(consoleResult.message)) : 0;
-                const networkCount = networkResult ? (networkResult.passed ? 0 : parseInt(networkResult.message)) : 0;
-                const loadTime = perfResult ? perfResult.message.match(/\d+ms/)[0] : '-';
+                // Robust parsing of counts
+                const consoleCount = consoleResult ? (parseInt(consoleResult.message) || 0) : 0;
+                const networkCount = networkResult ? (parseInt(networkResult.message) || 0) : 0;
+                
+                // Robust parsing of load time
+                let loadTime = '-';
+                if (perfResult && perfResult.message) {
+                  const match = perfResult.message.match(/\d+ms/);
+                  if (match) loadTime = match[0];
+                }
                 
                 totalConsoleErrors += consoleCount;
                 totalNetworkErrors += networkCount;
                 
-                if (!page.passed || consoleCount > 0 || networkCount > 0) {
-                  routesWithErrors++;
+                const hasIssues = !page.passed || consoleCount > 0 || networkCount > 0;
+                if (hasIssues) {
+                  routesWithIssues++;
                   let reasons = [];
-                  if (consoleCount > 0) reasons.push(`${consoleCount} Console Error(s) detected`);
-                  if (networkCount > 0) reasons.push(`${networkCount} Network Error(s) detected`);
+                  if (consoleCount > 0) reasons.push(`${consoleCount} Console Error(s)`);
+                  if (networkCount > 0) reasons.push(`${networkCount} Network Error(s)`);
                   if (!page.passed) {
                     const failingChecks = page.results.filter(r => !r.passed && r.test !== 'Console Errors' && r.test !== 'Network Errors');
-                    failingChecks.forEach(fc => reasons.push(`${fc.test}: ${fc.message}`));
+                    failingChecks.forEach(fc => reasons.push(`${fc.test}`));
                   }
                   issueDetails.push(`  - **${page.pageName}**: ${reasons.join(', ')}`);
                 }
@@ -214,8 +226,8 @@ jobs:
                 tableRows += `| ${page.pageName} | ${statusEmoji} ${warningEmoji} | ${consoleCount} | ${networkCount} | ${loadTime} |\n`;
               });
 
-              const overallEmoji = failed > 0 ? '❌' : (totalConsoleErrors > 0 ? '⚠️' : '✅');
-              const overallStatus = failed > 0 ? 'FAILED' : (totalConsoleErrors > 0 ? 'WARNING' : 'PASSED');
+              const overallEmoji = failedCount > 0 ? '❌' : (totalConsoleErrors > 0 ? '⚠️' : '✅');
+              const overallStatus = failedCount > 0 ? 'FAILED' : (totalConsoleErrors > 0 ? 'WARNING' : 'PASSED');
               
               let comment = marker + '\n';
               comment += `## ${overallEmoji} Page Runtime Validation Results\n\n`;
@@ -223,9 +235,9 @@ jobs:
               comment += `**Runner**: [🔍 View Detailed Logs & Artifacts](${runUrl})\n\n`;
               
               comment += `### 📋 Summary\n`;
-              comment += `- **Total Pages Tested**: ${reports.length}\n`;
-              comment += `- **✓ Passed**: ${reports.length - routesWithErrors}\n`;
-              comment += `- **${overallEmoji} Issues Found**: ${routesWithErrors}\n`;
+              comment += `- **Total Pages Tested**: ${totalCount}\n`;
+              comment += `- **✓ Passed**: ${totalCount - routesWithIssues}\n`;
+              comment += `- **${overallEmoji} Issues Found**: ${routesWithIssues}\n`;
               if (issueDetails.length > 0) {
                 comment += issueDetails.join('\n') + '\n';
               }
@@ -265,6 +277,8 @@ jobs:
                   body: comment
                 });
               }
+            } else {
+              console.log('No report found, skipping comment.');
             }
 
       - name: Fail job if critical errors found
