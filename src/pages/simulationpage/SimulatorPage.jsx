@@ -4556,24 +4556,46 @@ useEffect(() => {
         if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
           const pins = LOCAL_PIN_DEFS[finalComp.type] || [];
           const worldPins = getComponentWorldPins(finalComp, pins);
-          const newSocketWires = [];
           
-          worldPins.forEach(wp => {
+          const snapMatches = worldPins.map(wp => {
             const hole = findNearestBreadboardHole(wp.worldX, wp.worldY, componentsRef.current, LOCAL_PIN_DEFS);
-            if (hole && Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) < 2) { // 2px tolerance for snapped position
-              newSocketWires.push({
-                id: `w_socket_${movedId}_${wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                from: `${movedId}:${wp.id}`,
-                to: `${hole.bbId}:${hole.holeId}`,
-                color: 'transparent',
-                isBelow: true,
-                isSocket: true
-              });
-            }
+            const dist = hole ? Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) : Infinity;
+            return { wp, hole, dist };
           });
 
-          if (newSocketWires.length > 0) {
-            setWires(prev => [...prev, ...newSocketWires]);
+          // Only attach if at least ONE pin is a perfect hit (< 2px)
+          const hasPerfectSnap = snapMatches.some(m => m.dist < 2);
+
+          if (hasPerfectSnap) {
+            const newSocketWires = [];
+            snapMatches.forEach(m => {
+              if (m.dist < 2) {
+                // Standard invisible socket
+                newSocketWires.push({
+                  id: `w_socket_${movedId}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                  from: `${movedId}:${m.wp.id}`,
+                  to: `${m.hole.bbId}:${m.hole.holeId}`,
+                  color: 'transparent',
+                  isBelow: true,
+                  isSocket: true
+                });
+              } else if (m.dist <= 5) {
+                // Visible gray helper wire for off-grid pins
+                newSocketWires.push({
+                  id: `socket_help_${movedId}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                  from: `${movedId}:${m.wp.id}`,
+                  to: `${m.hole.bbId}:${m.hole.holeId}`,
+                  color: '#7f8c8d', // Subtle gray
+                  isBelow: true,
+                  isSocket: true,
+                  isHelp: true
+                });
+              }
+            });
+
+            if (newSocketWires.length > 0) {
+              setWires(prev => [...prev, ...newSocketWires]);
+            }
           }
         }
 
@@ -9260,8 +9282,15 @@ useEffect(() => {
 
                         // Check if a wire is connected to this pin
                         const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                        const pinColor = isSnapping ? '#2ecc71' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)'));
-                        const pinBorder = isSnapping ? '#fff' : (connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)'));
+                        const isSocket = connectedWire?.isSocket;
+                        
+                        // Check if the component is "seated" (has at least one socket wire)
+                        const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
+                        const isBreadboard = comp.type.startsWith('wokwi-breadboard');
+                        const isFloating = !isBreadboard && isCompSeated && !isSocket;
+
+                        const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
+                        const pinBorder = isSnapping ? '#fff' : (isSocket ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
 
                         return (
                           <div
@@ -9272,8 +9301,8 @@ useEffect(() => {
                               position: 'absolute',
                               left: pin.x, top: pin.y,
                               width: 5, height: 5,
-                              background: pinColor,
-                              border: `1px solid ${pinBorder}`,
+                              background: pinColor === 'none' ? 'none' : pinColor,
+                              border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
                               borderRadius: '0%', /* matching task3.html */
                               cursor: 'crosshair',
                               zIndex: isHovered || isSuggested || isSnapping ? 30 : 20, /* matching task3.html hover and port z-index */
