@@ -62,10 +62,8 @@ jobs:
           npm --prefix openhw-studio-cli install
           echo "Installing frontend deps..."
           npm ci --include=optional
-          echo "Installing Rollup Linux binary..."
-          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2
-          echo "Installing Lightning CSS Linux binary..."
-          npm install --no-save --include=optional lightningcss-linux-x64-gnu@1.31.1
+          echo "Installing native Linux binaries..."
+          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1
           node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); console.log('Native binaries OK')"
 
       - name: Setup Arduino CLI
