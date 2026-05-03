@@ -44,13 +44,28 @@ jobs:
           cache: 'npm'
           cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
-      - name: Install frontend dependencies
-        env:
-          NPM_CONFIG_OPTIONAL: "true"
+      - name: Install Frontend Core Dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npm ci --include=optional
+
+      - name: Cache Native Linux Binaries
+        uses: actions/cache@v4
+        id: native-bins-cache
+        with:
+          path: |
+            OpenHW-studio-frontend/node_modules/@rollup/rollup-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/lightningcss-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+          key: native-bins-${{ runner.os }}-${{ hashFiles('.github/workflows/frontend-tests.yml') }}
+
+      - name: Install Native Linux Binaries
         working-directory: OpenHW-studio-frontend
         run: |
-          npm ci --include=optional
-          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          if [ "${{ steps.native-bins-cache.outputs.cache-hit }}" != "true" ]; then
+            echo "Installing native Linux binaries..."
+            npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          fi
+          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
 
       - name: Cache Vitest cache
         uses: actions/cache@v4
@@ -141,13 +156,28 @@ jobs:
           cache: 'npm'
           cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
-      - name: Install dependencies
-        env:
-          NPM_CONFIG_OPTIONAL: "true"
+      - name: Install Frontend Core Dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npm ci --include=optional
+
+      - name: Cache Native Linux Binaries
+        uses: actions/cache@v4
+        id: native-bins-cache
+        with:
+          path: |
+            OpenHW-studio-frontend/node_modules/@rollup/rollup-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/lightningcss-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+          key: native-bins-${{ runner.os }}-${{ hashFiles('.github/workflows/frontend-tests.yml') }}
+
+      - name: Install Native Linux Binaries
         working-directory: OpenHW-studio-frontend
         run: |
-          npm ci --include=optional
-          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          if [ "${{ steps.native-bins-cache.outputs.cache-hit }}" != "true" ]; then
+            echo "Installing native Linux binaries..."
+            npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          fi
+          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
