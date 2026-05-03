@@ -32,6 +32,7 @@ import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequ
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
+import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 
 // ── Lazy loaders — heavy libs loaded on first use, NOT on page paint ──────────
 // @babel/standalone is ~800KB — loading it eagerly was causing the 3.73s LCP.
@@ -57,7 +58,8 @@ const {
   getFixValidator,
   undoLastFix,
   redoLastFix,
-  ProtocolAnalyzer: SharedProtocolAnalyzer 
+  ProtocolAnalyzer: SharedProtocolAnalyzer,
+  runAutoFixAll,
 } = EmulatorComponents;
 
 // Web Editor features
@@ -730,6 +732,54 @@ function normalizeBoardKind(source) {
   return 'arduino_uno';
 }
 
+// ── Breadboard Snapping Helpers ─────────────────────────────────────────────
+const BREADBOARD_PITCH = 15;
+
+function getRotatedPoint(x, y, rotation, originX, originY) {
+  const rad = (rotation * Math.PI) / 180;
+  const dx = x - originX;
+  const dy = y - originY;
+  return {
+    x: originX + dx * Math.cos(rad) - dy * Math.sin(rad),
+    y: originY + dx * Math.sin(rad) + dy * Math.cos(rad),
+  };
+}
+
+function getComponentWorldPins(comp, pins) {
+  const rotation = comp.rotation || 0;
+  const centerX = comp.x + (comp.w || 0) / 2;
+  const centerY = comp.y + (comp.h || 0) / 2;
+
+  return (pins || []).map(pin => {
+    const world = getRotatedPoint(comp.x + pin.x, comp.y + pin.y, rotation, centerX, centerY);
+    return { ...pin, worldX: world.x, worldY: world.y };
+  });
+}
+
+function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
+  const snapRadius = 15;
+  let best = null;
+  let minDist = Infinity;
+
+  const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+  for (const bb of breadboards) {
+    const pins = pinDefs[bb.type] || [];
+    const bbCenterX = bb.x + (bb.w || 0) / 2;
+    const bbCenterY = bb.y + (bb.h || 0) / 2;
+    const bbRotation = bb.rotation || 0;
+
+    for (const pin of pins) {
+      const pinWorld = getRotatedPoint(bb.x + pin.x, bb.y + pin.y, bbRotation, bbCenterX, bbCenterY);
+      const dist = Math.hypot(pinWorld.x - worldX, pinWorld.y - worldY);
+      if (dist < snapRadius && dist < minDist) {
+        minDist = dist;
+        best = { bbId: bb.id, holeId: pin.id, x: pinWorld.x, y: pinWorld.y };
+      }
+    }
+  }
+  return best;
+}
+
 function resolveBoardFqbnForComponent(boardComp, boardKind) {
   const type = String(boardComp?.type || '').toLowerCase();
   if (type.includes('pico-w') || type.includes('picow')) {
@@ -1382,10 +1432,10 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
 
   return (
     <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
-      <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-      <path d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
-      <circle cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
-      <circle cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
+      <path id={`wire-path-hit-${wire.id}`} d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
+      <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
+      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
+      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
       {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints).reduce((acc, _, i, arr) => {
         if (i < 1 || i >= arr.length - 2) return acc;
         const a = arr[i], b = arr[i + 1];
@@ -1430,11 +1480,12 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
   return (
     <React.Fragment>
       <div
+        id={`comp-hit-${comp.id}`}
         style={{
           position: 'absolute',
-          left: comp.x, top: comp.y,
+          left: 0, top: 0,
           width: comp.w, height: comp.h,
-          zIndex: isSelected ? 5 : 2,
+          zIndex: isSelected ? 4 : 2,
           userSelect: 'none',
           pointerEvents: 'none',
           transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
@@ -1960,6 +2011,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // Reactive refs — kept current every render so async effects get fresh values
   const getPinPosRef = useRef(null);
   const componentsRef = useRef([]);
+  const wiresRef = useRef([]);
   const pinDefsRef = useRef({});
 
   // ── Project persistence state ────────────────────────────────────────────────
@@ -2013,6 +2065,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
     catch { return []; }
   });
   const [projContextMenu, setProjContextMenu] = useState(null); // { proj, x, y }
+  const [snappingHoles, setSnappingHoles] = useState([]); // Array<{ bbId, holeId, x, y }>
   const [renamingProjectId, setRenamingProjectId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
@@ -3933,6 +3986,7 @@ useEffect(() => {
   // Keep reactive refs current so async effects always use latest values
   getPinPosRef.current = getPinPos;
   componentsRef.current = components;
+  wiresRef.current = wires;
   pinDefsRef.current = PIN_DEFS;
 
   // ── Palette long-press ──────────────────────────────────────────────────────
@@ -4155,8 +4209,40 @@ useEffect(() => {
     e.stopPropagation();
     if (isRunning || liveEditingDisabled) return;
     const comp = components.find(c => c.id === id);
-    movingComp.current = { id, sx: event.clientX, sy: event.clientY, cx: comp.x, cy: comp.y, moved: false, originalComps: JSON.parse(JSON.stringify(components)) };
-  }, [components, isRunning, liveEditingDisabled])
+    if (!comp) return;
+
+    const dragData = { 
+      id, 
+      sx: event.clientX, 
+      sy: event.clientY, 
+      cx: comp.x, 
+      cy: comp.y, 
+      moved: false, 
+      originalComps: JSON.parse(JSON.stringify(components)) 
+    };
+
+    // Performance: If breadboard, pre-calculate children once here
+    if (comp.type.startsWith('wokwi-breadboard')) {
+      const childComps = components.filter(c => {
+        if (c.id === id) return false;
+        return wires.some(w => 
+          w.isSocket && 
+          (w.from.startsWith(c.id + ':') || w.to.startsWith(c.id + ':')) &&
+          (w.from.startsWith(id + ':') || w.to.startsWith(id + ':'))
+        );
+      });
+      
+      if (childComps.length > 0) {
+        dragData.childIds = childComps.map(c => c.id);
+        dragData.childrenStart = {};
+        childComps.forEach(c => {
+          dragData.childrenStart[c.id] = { x: c.x, y: c.y };
+        });
+      }
+    }
+
+    movingComp.current = dragData;
+  }, [components, wires, isRunning, liveEditingDisabled])
 
   const onCompClick = useCallback((e, id) => {
     e.stopPropagation()
@@ -4181,8 +4267,59 @@ useEffect(() => {
         movingComp.current.moved = true;
         const { id, sx, sy, cx, cy } = movingComp.current;
         const zoom = canvasZoomRef.current;
-        compUpdate = { id, newX: cx + (event.clientX - sx) / zoom, newY: cy + (event.clientY - sy) / zoom };
+        let nx = cx + (event.clientX - sx) / zoom;
+        let ny = cy + (event.clientY - sy) / zoom;
+
+        compUpdate = { id, newX: nx, newY: ny, snappingHoles: [] };
+
+        // Snapping Logic
+        const comp = componentsRef.current.find(c => c.id === id);
+        if (comp) {
+          if (comp.type.startsWith('wokwi-breadboard')) {
+            // Breadboard movement propagation
+            const dx = nx - cx;
+            const dy = ny - cy;
+            
+            if (movingComp.current.childIds) {
+              compUpdate.childUpdates = movingComp.current.childIds.map(childId => ({
+                id: childId,
+                newX: (movingComp.current.childrenStart?.[childId]?.x ?? 0) + dx,
+                newY: (movingComp.current.childrenStart?.[childId]?.y ?? 0) + dy
+              }));
+            }
+          } else {
+          const pins = LOCAL_PIN_DEFS[comp.type] || [];
+          const anchorPin = (comp.attrs?.breadboard?.anchorPin && pins.find(p => p.id === comp.attrs.breadboard.anchorPin)) || pins[0];
+          
+          if (anchorPin) {
+            const rotation = comp.rotation || 0;
+            const centerX = nx + (comp.w || 0) / 2;
+            const centerY = ny + (comp.h || 0) / 2;
+            const anchorWorld = getRotatedPoint(nx + anchorPin.x, ny + anchorPin.y, rotation, centerX, centerY);
+            
+            const hole = findNearestBreadboardHole(anchorWorld.x, anchorWorld.y, componentsRef.current, LOCAL_PIN_DEFS);
+              if (hole) {
+                nx += (hole.x - anchorWorld.x);
+                ny += (hole.y - anchorWorld.y);
+                compUpdate.newX = nx;
+                compUpdate.newY = ny;
+
+                const finalCenterX = nx + (comp.w || 0) / 2;
+                const finalCenterY = ny + (comp.h || 0) / 2;
+                const currentSnaps = [];
+                pins.forEach(p => {
+                  const pWorld = getRotatedPoint(nx + p.x, ny + p.y, rotation, finalCenterX, finalCenterY);
+                  const h = findNearestBreadboardHole(pWorld.x, pWorld.y, componentsRef.current, LOCAL_PIN_DEFS);
+                  if (h && Math.hypot(pWorld.x - h.x, pWorld.y - h.y) < 1) {
+                    currentSnaps.push({ ...h, compPinId: p.id });
+                  }
+                });
+                compUpdate.snappingHoles = currentSnaps;
+              }
+          }
+        }
       }
+    }
 
       const sd = segDragRef.current;
       if (sd && canvasRef.current) {
@@ -4246,20 +4383,118 @@ useEffect(() => {
         }
       }
 
+      // ── Schedule a single rAF to flush state updates (cap at 60fps) ───────
       pendingMoveRef.current = { compUpdate, wireUpdate, mousePosUpdate };
       if (!rafMoveRef.current) {
         rafMoveRef.current = requestAnimationFrame(() => {
           rafMoveRef.current = null;
           const { compUpdate, wireUpdate, mousePosUpdate } = pendingMoveRef.current || {};
+          
           if (compUpdate) {
-            const { id, newX, newY } = compUpdate;
-            setComponents(prev => prev.map(c => c.id === id ? { ...c, x: newX, y: newY } : c));
+            const { id, newX, newY, snappingHoles: holes, childUpdates } = compUpdate;
+            
+            // 1. Direct DOM Update for Components (Master Wrapper)
+            const updateMasterPos = (cid, x, y) => {
+              const master = document.getElementById(`comp-master-${cid}`);
+              if (master) {
+                master.style.left = `${x}px`;
+                master.style.top = `${y}px`;
+              }
+            };
+
+            updateMasterPos(id, newX, newY);
+            if (childUpdates) {
+              childUpdates.forEach(u => updateMasterPos(u.id, u.newX, u.newY));
+            }
+
+            // 2. Direct DOM Update for Wires (Lightweight Straight Lines)
+            const affectedCompIds = new Set([id, ...(childUpdates?.map(u => u.id) || [])]);
+            const affectedWires = wiresRef.current.filter(w => {
+              const fromId = w.from.split(':')[0];
+              const toId = w.to.split(':')[0];
+              return affectedCompIds.has(fromId) || affectedCompIds.has(toId);
+            });
+
+            affectedWires.forEach(w => {
+              const fromParts = w.from.split(':');
+              const toParts = w.to.split(':');
+              
+              const getLivePos = (cid, pid) => {
+                const c = componentsRef.current.find(comp => comp.id === cid);
+                if (!c) return null;
+                let curX = c.x, curY = c.y;
+                if (cid === id) { curX = newX; curY = newY; }
+                else if (childUpdates) {
+                  const u = childUpdates.find(cu => cu.id === cid);
+                  if (u) { curX = u.newX; curY = u.newY; }
+                }
+                const pins = LOCAL_PIN_DEFS[c.type] || [];
+                const pDef = pins.find(p => p.id === pid);
+                if (!pDef) return null;
+                const rotation = c.rotation || 0;
+                return getRotatedPoint(curX + pDef.x, curY + pDef.y, rotation, curX + c.w / 2, curY + c.h / 2);
+              };
+
+              const p1 = getLivePos(fromParts[0], fromParts.slice(1).join(':'));
+              const p2 = getLivePos(toParts[0], toParts.slice(1).join(':'));
+              if (p1 && p2) {
+                // LIGHTWEIGHT: Use simple straight line during drag for maximum performance
+                const pathStr = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+                const pathUi = document.getElementById(`wire-path-ui-${w.id}`);
+                const pathHit = document.getElementById(`wire-path-hit-${w.id}`);
+                const circFrom = document.getElementById(`wire-circ-from-${w.id}`);
+                const circTo = document.getElementById(`wire-circ-to-${w.id}`);
+                
+                if (pathUi) pathUi.setAttribute('d', pathStr);
+                if (pathHit) pathHit.setAttribute('d', pathStr);
+                if (circFrom) { circFrom.setAttribute('cx', p1.x); circFrom.setAttribute('cy', p1.y); }
+                if (circTo) { circTo.setAttribute('cx', p2.x); circTo.setAttribute('cy', p2.y); }
+              }
+            });
+
+            // 3. Direct DOM Update for Snapping Feedback
+            if (window._prevSnaps) {
+              window._prevSnaps.forEach(h => {
+                const holeEl = document.getElementById(`pin-dot-${h.bbId}-${h.holeId}`);
+                if (holeEl) {
+                  holeEl.style.background = 'rgba(255,255,255,0.2)';
+                  holeEl.style.boxShadow = 'none';
+                  holeEl.style.borderColor = 'rgba(255,255,255,0.8)';
+                }
+                const pinEl = document.getElementById(`pin-dot-${movingComp.current.id}-${h.compPinId}`);
+                if (pinEl) {
+                  pinEl.style.background = 'rgba(255,255,255,0.2)';
+                  pinEl.style.boxShadow = 'none';
+                  pinEl.style.borderColor = 'rgba(255,255,255,0.8)';
+                }
+              });
+            }
+            if (holes) {
+              holes.forEach(h => {
+                const holeEl = document.getElementById(`pin-dot-${h.bbId}-${h.holeId}`);
+                if (holeEl) {
+                  holeEl.style.background = '#2ecc71';
+                  holeEl.style.boxShadow = '0 0 10px #2ecc71';
+                  holeEl.style.borderColor = '#fff';
+                }
+                const pinEl = document.getElementById(`pin-dot-${id}-${h.compPinId}`);
+                if (pinEl) {
+                  pinEl.style.background = '#2ecc71';
+                  pinEl.style.boxShadow = '0 0 10px #2ecc71';
+                  pinEl.style.borderColor = '#fff';
+                }
+              });
+            }
+            window._prevSnaps = holes || [];
+
+            // IMPORTANT: No setSnappingHoles or setComponents here!
           }
+
           if (wireUpdate) {
             const { wireId, cornerWaypoints } = wireUpdate;
             setWires(prev => prev.map(w => w.id === wireId ? { ...w, waypoints: cornerWaypoints } : w));
           }
-          if (mousePosUpdate) {
+          if (mousePosUpdate && !compUpdate) {
             setMousePos(mousePosUpdate);
           }
         });
@@ -4273,7 +4508,89 @@ useEffect(() => {
       if (movingComp.current?.moved) {
         const origComps = movingComp.current.originalComps;
         const movedId = movingComp.current.id;
+        const childIds = movingComp.current.childIds;
+
+        // 1. Sync final positions from DOM to React State
+        const masterElem = document.getElementById(`comp-master-${movedId}`);
+        const finalX = masterElem ? parseFloat(masterElem.style.left) : 0;
+        const finalY = masterElem ? parseFloat(masterElem.style.top) : 0;
+
+        setComponents(prev => {
+          let next = prev.map(c => c.id === movedId ? { ...c, x: finalX, y: finalY } : c);
+          if (childIds) {
+            next = next.map(c => {
+              if (childIds.includes(c.id)) {
+                const childMaster = document.getElementById(`comp-master-${c.id}`);
+                if (childMaster) {
+                  return { ...c, x: parseFloat(childMaster.style.left), y: parseFloat(childMaster.style.top) };
+                }
+              }
+              return c;
+            });
+          }
+          return next;
+        });
+
         setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
+
+        // DETACHMENT: Remove old socket wires for this component (ONLY if moving a component, NOT a breadboard)
+        const isBreadboard = componentsRef.current.find(c => c.id === movedId)?.type.startsWith('wokwi-breadboard');
+        if (!isBreadboard) {
+          setWires(prev => prev.filter(w => {
+            const isFrom = w.from.startsWith(movedId + ':');
+            const isTo = w.to.startsWith(movedId + ':');
+            return !(w.isSocket && (isFrom || isTo));
+          }));
+        }
+
+        // 1.5 ATTACHMENT: Auto-create socket wires if snapped
+        const comp = componentsRef.current.find(c => c.id === movedId);
+        const finalComp = comp ? { ...comp, x: finalX, y: finalY } : null;
+        if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
+          const pins = LOCAL_PIN_DEFS[finalComp.type] || [];
+          const worldPins = getComponentWorldPins(finalComp, pins);
+          const newSocketWires = [];
+          
+          worldPins.forEach(wp => {
+            const hole = findNearestBreadboardHole(wp.worldX, wp.worldY, componentsRef.current, LOCAL_PIN_DEFS);
+            if (hole && Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) < 2) { // 2px tolerance
+              newSocketWires.push({
+                id: `w_socket_${movedId}_${wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                from: `${movedId}:${wp.id}`,
+                to: `${hole.bbId}:${hole.holeId}`,
+                color: 'transparent',
+                isBelow: true,
+                isSocket: true
+              });
+            }
+          });
+
+          if (newSocketWires.length > 0) {
+            setWires(prev => [...prev, ...newSocketWires]);
+          }
+        }
+
+        // 2. Finalize snapping and cleanup
+        if (window._prevSnaps) {
+          window._prevSnaps.forEach(h => {
+            const holeEl = document.getElementById(`pin-dot-${h.bbId}-${h.holeId}`);
+            if (holeEl) {
+              holeEl.style.background = '';
+              holeEl.style.boxShadow = '';
+              holeEl.style.borderColor = '';
+            }
+            const pinEl = document.getElementById(`pin-dot-${movedId}-${h.compPinId}`);
+            if (pinEl) {
+              pinEl.style.background = '';
+              pinEl.style.boxShadow = '';
+              pinEl.style.borderColor = '';
+            }
+          });
+          window._prevSnaps = null;
+        }
+        setSnappingHoles([]);
+
+        // 3. Clear _corner waypoints
         setWires(prev => prev.map(w => {
           if (w.from.startsWith(movedId + ':') || w.to.startsWith(movedId + ':')) {
             if (w.waypoints?.length && w.waypoints[0]._corner) return { ...w, waypoints: [] };
@@ -4282,6 +4599,7 @@ useEffect(() => {
         }));
       }
       movingComp.current = null;
+      setSnappingHoles([]);
       isPanningRef.current = false;
       if (segDragRef.current) {
         if (segDragRef.current.hasMoved) {
@@ -4424,7 +4742,47 @@ useEffect(() => {
   const rotateComponent = (id) => {
     if (isRunning || liveEditingDisabled) return;
     saveHistory();
-    setComponents(prev => prev.map(c => c.id === id ? { ...c, rotation: ((c.rotation || 0) + 90) % 360 } : c));
+    
+    setComponents(prev => {
+      const comp = prev.find(c => c.id === id);
+      if (!comp) return prev;
+      
+      const newRotation = ((comp.rotation || 0) + 90) % 360;
+      
+      // If breadboard, rotate children
+      if (comp.type.startsWith('wokwi-breadboard')) {
+        const childIds = new Set(wiresRef.current
+          .filter(w => w.isSocket && (w.from.startsWith(id + ':') || w.to.startsWith(id + ':')))
+          .map(w => {
+            const fromId = w.from.split(':')[0];
+            const toId = w.to.split(':')[0];
+            return fromId === id ? toId : fromId;
+          })
+        );
+        
+        const bbCenterX = comp.x + comp.w / 2;
+        const bbCenterY = comp.y + comp.h / 2;
+        
+        return prev.map(c => {
+          if (c.id === id) return { ...c, rotation: newRotation };
+          if (childIds.has(c.id)) {
+            const childCenterX = c.x + c.w / 2;
+            const childCenterY = c.y + c.h / 2;
+            const rotated = getRotatedPoint(childCenterX, childCenterY, 90, bbCenterX, bbCenterY);
+            
+            return {
+              ...c,
+              x: rotated.x - c.w / 2,
+              y: rotated.y - c.h / 2,
+              rotation: ((c.rotation || 0) + 90) % 360
+            };
+          }
+          return c;
+        });
+      }
+      
+      return prev.map(c => c.id === id ? { ...c, rotation: newRotation } : c);
+    });
   };
 
   const openCodeFile = useCallback((fileId) => {
@@ -5716,6 +6074,16 @@ useEffect(() => {
       appendConsoleEntry('info', `✅ Applied: ${fixDesc} (verification skipped)`, 'simulator');
     }
   }, [components, wires, saveHistory, validationErrors]);
+
+  const handleApplyPlanMobile = useCallback((res) => {
+    if (!res) return;
+    if (res.finalProject) {
+      setComponents(res.finalProject.components || components);
+      setWires(res.finalProject.connections || wires);
+      validationRunCacheRef.current = {};
+      appendConsoleEntry('info', `🔧 Applied plan: ${res.appliedCount || 0} fixes, skipped ${res.skippedCount || 0}`, 'simulator');
+    }
+  }, [components, wires]);
 
   const undoFix = useCallback(() => {
     const undoResult = undoLastFix();
@@ -7770,7 +8138,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} shareUrl={shareUrl} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} shareUrl={shareUrl} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlanMobile} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -8799,192 +9167,217 @@ useEffect(() => {
               </div>
             )}
 
-            {/* Components */}
-            {components.map(comp => {
-              const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || []
-              const hasError = errorCompIds.has(comp.id)
-              const isSelected = selected === comp.id
-              const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
+            {/* Components (Layered: Breadboards on Bottom) */}
+            {(() => {
+              const renderComponent = (comp) => {
+                const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || []
+                const hasError = errorCompIds.has(comp.id)
+                const isSelected = selected === comp.id
+                const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
 
-              const rad = ((comp.rotation || 0) * Math.PI) / 180;
-              const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
-              const visualHalfHeight = visualH / 2;
+                const rad = ((comp.rotation || 0) * Math.PI) / 180;
+                const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
+                const visualHalfHeight = visualH / 2;
 
-              return (
-                <React.Fragment key={comp.id}>
-                  <CanvasComponent
-                    comp={comp}
-                    isSelected={isSelected}
-                    hasError={hasError}
-                    onMouseDown={e => onCompMouseDown(e, comp.id)}
-                    onTouchStart={e => onCompMouseDown(e, comp.id)}
-                    onClick={e => onCompClick(e, comp.id)}
-                    getComponentStateAttrs={getComponentStateAttrs}
-                    COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-                    PIN_DEFS={PIN_DEFS}
-                  />
+                return (
+                  <div 
+                    key={comp.id}
+                    id={`comp-master-${comp.id}`}
+                    style={{
+                      position: 'absolute',
+                      left: comp.x, top: comp.y,
+                      zIndex: comp.type.startsWith('wokwi-breadboard') 
+                        ? (isSelected ? 4 : 2) 
+                        : (isSelected ? 10 : 5),
+                    }}
+                  >
+                    <CanvasComponent
+                      comp={comp}
+                      isSelected={isSelected}
+                      hasError={hasError}
+                      onMouseDown={e => onCompMouseDown(e, comp.id)}
+                      onTouchStart={e => onCompMouseDown(e, comp.id)}
+                      onClick={e => onCompClick(e, comp.id)}
+                      getComponentStateAttrs={getComponentStateAttrs}
+                      COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+                      PIN_DEFS={PIN_DEFS}
+                    />
 
-                  {/* Wrapper for the actual emulator component and its dynamic pins */}
-                  <div style={{
-                    position: 'absolute',
-                    left: comp.x, top: comp.y,
-                    width: comp.w, height: comp.h,
-                    zIndex: isSelected ? 10 : 5,
-                    userSelect: 'none',
-                    pointerEvents: 'none',
-                    transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-                    transformOrigin: 'center center',
-                  }}>
+                    {/* Wrapper for the actual emulator component and its dynamic pins */}
+                    <div style={{
+                      position: 'absolute',
+                      left: 0, top: 0,
+                      width: comp.w, height: comp.h,
+                      userSelect: 'none',
+                      pointerEvents: 'none',
+                      transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
+                      transformOrigin: 'center center',
+                    }}>
 
-                    {/* Serial-target board ring */}
-                    {isSerialBoardSelected && (() => {
-                      const getBounds = () => {
-                        const reg = COMPONENT_REGISTRY[comp.type];
-                        if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                        if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                        return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                      };
-                      const b = getBounds();
-                      return (
-                        <>
-                          <div style={{
-                            position: 'absolute',
-                            left: b.x - 10, top: b.y - 10,
-                            width: b.w + 20, height: b.h + 20,
-                            borderRadius: 10,
-                            border: '2px dashed #38bdf8',
-                            boxShadow: '0 0 18px rgba(56,189,248,.45)',
-                            pointerEvents: 'none', zIndex: 9,
-                          }} />
-                          <div style={{
-                            position: 'absolute',
-                            left: b.x - 10,
-                            top: b.y - 26,
-                            background: '#0c4a6e',
-                            color: '#e0f2fe',
-                            border: '1px solid #38bdf8',
-                            borderRadius: 6,
-                            fontSize: 9,
-                            padding: '1px 6px',
-                            letterSpacing: '0.04em',
-                            fontFamily: 'JetBrains Mono, monospace',
-                            pointerEvents: 'none',
-                            zIndex: 11,
-                          }}>
-                            SERIAL TARGET
+                      {/* Serial-target board ring */}
+                      {isSerialBoardSelected && (() => {
+                        const getBounds = () => {
+                          const reg = COMPONENT_REGISTRY[comp.type];
+                          if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                          if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                          return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                        };
+                        const b = getBounds();
+                        return (
+                          <>
+                            <div style={{
+                              position: 'absolute',
+                              left: b.x - 10, top: b.y - 10,
+                              width: b.w + 20, height: b.h + 20,
+                              borderRadius: 10,
+                              border: '2px dashed #38bdf8',
+                              boxShadow: '0 0 18px rgba(56,189,248,.45)',
+                              pointerEvents: 'none', zIndex: 9,
+                            }} />
+                            <div style={{
+                              position: 'absolute',
+                              left: b.x - 10,
+                              top: b.y - 26,
+                              background: '#0c4a6e',
+                              color: '#e0f2fe',
+                              border: '1px solid #38bdf8',
+                              borderRadius: 6,
+                              fontSize: 9,
+                              padding: '1px 6px',
+                              letterSpacing: '0.04em',
+                              fontFamily: 'JetBrains Mono, monospace',
+                              pointerEvents: 'none',
+                              zIndex: 11,
+                            }}>
+                              SERIAL TARGET
+                            </div>
+                          </>
+                        );
+                      })()}
+
+                      {/* Component Render — wrapped to allow pass-through to Hit Box */}
+                      <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
+                        {COMPONENT_REGISTRY[comp.type] ? (
+                          // Local UI component rendering SVG
+                          React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+                            state: oopStates[comp.id] || {},
+                            attrs: getComponentStateAttrs(comp),
+                            isRunning: isRunning
+                          })
+                        ) : (
+                          // Fallback for unsupported components (if any left)
+                          <div
+                            style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+                            ref={el => {
+                              if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                                neopixelRefs.current[comp.id] = el;
+                              }
+                            }}
+                          >
+                            {React.createElement(comp.type, getComponentStateAttrs(comp))}
                           </div>
-                        </>
-                      );
-                    })()}
+                        )}
+                      </div>
 
-                    {/* Component Render — wrapped to allow pass-through to Hit Box */}
-                    <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
-                      {COMPONENT_REGISTRY[comp.type] ? (
-                        // Local UI component rendering SVG
-                        React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                          state: oopStates[comp.id] || {},
-                          attrs: getComponentStateAttrs(comp),
-                          isRunning: isRunning
-                        })
-                      ) : (
-                        // Fallback for unsupported components (if any left)
-                        <div
-                          style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                          ref={el => {
-                            if (comp.type === 'wokwi-neopixel-matrix' && el) {
-                              neopixelRefs.current[comp.id] = el;
-                            }
-                          }}
-                        >
-                          {React.createElement(comp.type, getComponentStateAttrs(comp))}
-                        </div>
-                      )}
+                      {/* Pins */}
+                      {pins.map(pin => {
+                        const pinStrRef = `${comp.id}:${pin.id}`;
+                        const isHovered = hoveredPin === pinStrRef;
+                        const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
+
+                        // Snapping highlight
+                        const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
+
+                        // Hovered pin's category for passive highlighting
+                        const hoverCompId = hoveredPin?.split(':')[0];
+                        const hoverPinId = hoveredPin?.split(':')[1];
+                        const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+                        const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
+
+                        const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+                        const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+
+                        const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+                        const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+                        const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
+
+                        // Check if a wire is connected to this pin
+                        const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+                        const pinColor = isSnapping ? '#2ecc71' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)'));
+                        const pinBorder = isSnapping ? '#fff' : (connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)'));
+
+                        return (
+                          <div
+                            key={pin.id}
+                            id={`pin-dot-${comp.id}-${pin.id}`}
+                            title={`${pin.description || pin.id} — click to wire`}
+                            style={{
+                              position: 'absolute',
+                              left: pin.x, top: pin.y,
+                              width: 5, height: 5,
+                              background: pinColor,
+                              border: `1px solid ${pinBorder}`,
+                              borderRadius: '0%', /* matching task3.html */
+                              cursor: 'crosshair',
+                              zIndex: isHovered || isSuggested || isSnapping ? 30 : 20, /* matching task3.html hover and port z-index */
+                              transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                              transition: '0.2s', /* matching task3.html transition */
+                              pointerEvents: 'all', /* Fix hit detection */
+                              boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
+                            }}
+                            onMouseEnter={() => setHoveredPin(pinStrRef)}
+                            onMouseLeave={() => setHoveredPin(null)}
+                            onTouchStart={() => setHoveredPin(pinStrRef)}
+                            onClick={() => setHoveredPin(pinStrRef)}
+                            onDoubleClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
+                          >
+                            {/* Pin label tooltip */}
+                            {isHovered && (
+                              <div style={{
+                                position: 'absolute', bottom: 18, left: '50%',
+                                transform: 'translateX(-50%)',
+                                background: '#111', color: '#fff',
+                                padding: '4px 8px', borderRadius: 4,
+                                fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                                pointerEvents: 'none', border: '1px solid #444',
+                                boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                              }}>
+                                {pin.description || pin.id}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
 
-                    {/* Pins */}
-                    {pins.map(pin => {
-                      const pinStrRef = `${comp.id}:${pin.id}`;
-                      const isHovered = hoveredPin === pinStrRef;
-                      const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-
-                      // Hovered pin's category for passive highlighting
-                      const hoverCompId = hoveredPin?.split(':')[0];
-                      const hoverPinId = hoveredPin?.split(':')[1];
-                      const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
-                      const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
-
-                      const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
-                      const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-
-                      const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                      const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
-
-                      const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
-
-                      // Check if a wire is connected to this pin
-                      const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                      const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                      const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
-
-                      return (
-                        <div
-                          key={pin.id}
-                          title={`${pin.description || pin.id} — click to wire`}
-                          style={{
-                            position: 'absolute',
-                            left: pin.x, top: pin.y,
-                            width: 5, height: 5,
-                            background: pinColor,
-                            border: `1px solid ${pinBorder}`,
-                            borderRadius: '0%', /* matching task3.html */
-                            cursor: 'crosshair',
-                            zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
-                            transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                            transition: '0.2s', /* matching task3.html transition */
-                            pointerEvents: 'all', /* Fix hit detection */
-                            boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
-                          }}
-                          onMouseEnter={() => setHoveredPin(pinStrRef)}
-                          onMouseLeave={() => setHoveredPin(null)}
-                          onTouchStart={() => setHoveredPin(pinStrRef)}
-                          onClick={() => setHoveredPin(pinStrRef)}
-                          onDoubleClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                        >
-                          {/* Pin label tooltip */}
-                          {isHovered && (
-                            <div style={{
-                              position: 'absolute', bottom: 18, left: '50%',
-                              transform: 'translateX(-50%)',
-                              background: '#111', color: '#fff',
-                              padding: '4px 8px', borderRadius: 4,
-                              fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                              pointerEvents: 'none', border: '1px solid #444',
-                              boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                            }}>
-                              {pin.description || pin.id}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                    {/* Component label (Outside rotated container) */}
+                    <div style={{
+                      position: 'absolute',
+                      top: comp.h / 2 + visualHalfHeight + 4,
+                      left: comp.w / 2,
+                      transform: 'translateX(-50%)',
+                      fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
+                      whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
+                      pointerEvents: 'none',
+                      zIndex: 5,
+                    }}>
+                      {comp.label}
+                    </div>
                   </div>
+                );
+              };
 
-                  {/* Component label (Outside rotated container) */}
-                  <div style={{
-                    position: 'absolute',
-                    top: comp.y + comp.h / 2 + visualHalfHeight + 4,
-                    left: comp.x + comp.w / 2,
-                    transform: 'translateX(-50%)',
-                    fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                    whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                    pointerEvents: 'none',
-                    zIndex: 5,
-                  }}>
-                    {comp.label}
-                  </div>
-                </React.Fragment>
-              )
-            })}
+              const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+              const others = components.filter(c => !c.type.startsWith('wokwi-breadboard'));
+
+              return (
+                <>
+                  {breadboards.map(renderComponent)}
+                  {others.map(renderComponent)}
+                </>
+              );
+            })()}
           </div>{/* end zoom wrapper */}
 
           {/* Minimalist Runtime panel (top-left) */}
@@ -9748,7 +10141,6 @@ updateWireColor(connectedWire.id, newColor);
   </div>
 
   <MobileBottomNav activeTab={activeMobileTab} onTabChange={setActiveMobileTab} isRunning={isRunning} handleToggleRun={handleToggleRun} />
-
 
         {/* MY PROJECTS SIDEBAR */}
         {showProjectsSidebar && (
