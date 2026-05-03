@@ -108,7 +108,7 @@ jobs:
       - name: Dry-run Docker Deployment Build
         uses: docker/build-push-action@v5
         with:
-          context: ./OpenHW-studio-frontend
+          context: .
           file: ./OpenHW-studio-frontend/Dockerfile
           push: false # We only build to verify it works, we don't push it yet!
           tags: test-frontend:pr
