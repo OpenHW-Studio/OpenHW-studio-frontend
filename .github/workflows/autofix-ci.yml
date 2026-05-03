@@ -38,7 +38,7 @@ jobs:
       - name: Checkout cli
         uses: actions/checkout@v4
         with:
-          repository: OpenHW-Studio/openhw-studio-cli
+          repository: OpenHW-Studio/OpenHW-studio--cli
           path: openhw-studio-cli
 
       - name: Setup Node.js
