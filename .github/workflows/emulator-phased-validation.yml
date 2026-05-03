@@ -1,5 +1,8 @@
 name: Emulator Phased Validation
 
+permissions:
+  issues: write
+
 on:
   push:
     branches: [main, master, develop]
@@ -402,6 +405,12 @@ jobs:
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
+
+      - name: Link to Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "### Cross-repo Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "Emulator: See [platform-validation-summary.yml](platform-validation-summary.yml)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce quality gate
         if: always()
