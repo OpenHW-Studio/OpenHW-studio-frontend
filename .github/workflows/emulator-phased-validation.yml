@@ -1,6 +1,8 @@
 name: Emulator Phased Validation
 
 permissions:
+  contents: read
+  pull-requests: write
   issues: write
 
 on:
@@ -38,9 +40,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
           cache: 'npm'
-          cache-dependency-path: openhw-studio-emulator/package-lock.json
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
@@ -92,6 +94,9 @@ jobs:
 
               const hasManifest = fs.existsSync(manifest);
               const hasEntry = entryCandidates.some(fs.existsSync);
+
+              const isLikelyComponent = hasManifest || hasEntry;
+              if (!isLikelyComponent) continue;
 
               if (hasManifest) report.totals.manifests += 1;
               if (!hasManifest) report.totals.missingManifest += 1;
@@ -148,17 +153,29 @@ jobs:
         working-directory: openhw-studio-emulator
 
     steps:
-      - name: Checkout code
+      - name: Checkout emulator
         uses: actions/checkout@v4
         with:
           path: openhw-studio-emulator
 
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-backend
+          path: openhw-studio-backend
+
+      - name: Checkout cli
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/OpenHW-studio--cli
+          path: openhw-studio-cli
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
           cache: 'npm'
-          cache-dependency-path: openhw-studio-emulator/package-lock.json
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
@@ -170,7 +187,9 @@ jobs:
           TEST_STATUS=pass
           SMOKE_STATUS=pass
 
+          echo "Running unit tests..."
           npm run test || TEST_STATUS=fail
+          echo "Running smoke tests..."
           npm run validate:smoke || SMOKE_STATUS=fail
 
           cat > test-results/emulator/phase2-validation-engine.json <<EOF
@@ -214,17 +233,29 @@ jobs:
         working-directory: openhw-studio-emulator
 
     steps:
-      - name: Checkout code
+      - name: Checkout emulator
         uses: actions/checkout@v4
         with:
           path: openhw-studio-emulator
 
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-backend
+          path: openhw-studio-backend
+
+      - name: Checkout cli
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/OpenHW-studio--cli
+          path: openhw-studio-cli
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
           cache: 'npm'
-          cache-dependency-path: openhw-studio-emulator/package-lock.json
+          cache-dependency-path: '**/package-lock.json'
 
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
@@ -345,6 +376,8 @@ jobs:
           fs.writeFileSync(path.join(outDir, 'comment.md'),
             [
               '## Emulator Validation (Phased)',
+              '',
+              `Run: [#${process.env.GITHUB_RUN_ID}](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID})`,
               '',
               '```text',
               cliText,
