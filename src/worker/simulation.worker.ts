@@ -1014,16 +1014,19 @@ self.onmessage = async (e) => {
     } else if (data.type === 'STOP') {
         stopAllRunners();
     } else if (data.type === 'INTERACT') {
-        console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
-
         if (mode === 'single' && runner) {
-            runner.onEvent(data.compId, data.event);
+            const inst = runner.instances.get(data.compId);
+            if (inst && typeof inst.onEvent === 'function') {
+                inst.onEvent(data.event);
+            }
         } else {
             let delivered = false;
             for (const boardRunner of boardRunners.values()) {
                 const inst = boardRunner.instances.get(data.compId);
                 if (inst) {
-                    boardRunner.onEvent(data.compId, data.event);
+                    if (typeof inst.onEvent === 'function') {
+                        inst.onEvent(data.event);
+                    }
                     delivered = true;
                 }
             }
