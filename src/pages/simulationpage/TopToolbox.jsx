@@ -7,7 +7,7 @@ function TopToolboxInternal(props) {
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], runAutoFixAll, onApplyPlan } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], runAutoFixAll, onApplyPlan, autoWiringEnabled, setAutoWiringEnabled, autoCodingEnabled, setAutoCodingEnabled } = props;
 
   const viewPanelRef = useRef(null);
   const connectPanelRef = useRef(null);
@@ -121,7 +121,7 @@ function TopToolboxInternal(props) {
   };
 
   const MenuButton = ({ label, menuKey, items }) => (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', pointerEvents: 'auto' }}>
       <button
         onClick={() => setActiveMenu(activeMenu === menuKey ? null : menuKey)}
         style={{
@@ -134,6 +134,7 @@ function TopToolboxInternal(props) {
           cursor: 'pointer',
           borderRadius: '4px',
           transition: 'background 0.2s, color 0.2s',
+          pointerEvents: 'auto'
         }}
         onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = 'var(--text)'; }}
         onMouseLeave={(e) => {
@@ -208,18 +209,33 @@ function TopToolboxInternal(props) {
     );
   };
 
+  const assistMenuItems = [
+    { 
+      label: `Auto-Wiring: ${autoWiringEnabled ? 'ON' : 'OFF'}`, 
+      onClick: () => setAutoWiringEnabled?.(!autoWiringEnabled),
+    },
+    { 
+      label: `Auto-Coding: ${autoCodingEnabled ? 'ON' : 'OFF'}`, 
+      onClick: () => setAutoCodingEnabled?.(!autoCodingEnabled),
+    }
+  ];
+
   const helpMenuItems = [
     { label: 'Documentation', onClick: () => window.open('https://docs.openhw.org', '_blank') },
     { label: 'Keyboard Shortcuts', onClick: () => { } },
+    { 
+      label: 'Assist', 
+      submenu: assistMenuItems
+    },
     { type: 'separator' },
     { label: 'About OpenHW Studio', onClick: () => { } }
   ];
 
   return (
-    <header className="flex items-center gap-4 px-5 py-3 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
+    <header className="relative z-[100] flex items-center gap-4 px-5 py-3 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
       <div className="flex items-center gap-4">
         <Logo />
-        <div className="flex flex-col" style={{ width: TITLE_WIDTH, flexShrink: 0, marginTop: '2px' }}>
+        <div className="flex flex-col" style={{ minWidth: TITLE_WIDTH, flexShrink: 0, marginTop: '2px' }}>
           <div style={{ height: '28px', position: 'relative', width: '100%' }}>
             {renamingProjectId === currentProjectId ? (
               <input
@@ -253,7 +269,7 @@ function TopToolboxInternal(props) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1 -ml-2" ref={menuRef}>
+          <div className="flex items-center gap-1 -ml-2" ref={menuRef} style={{ position: 'relative', zIndex: 50 }}>
             <MenuButton label="File" menuKey="file" items={fileMenuItems} />
             <MenuButton label="Tool" menuKey="tool" items={toolMenuItems} />
             <MenuButton label="Help" menuKey="help" items={helpMenuItems} />

@@ -1,4 +1,5 @@
 import { TopToolbox } from './TopToolbox';
+import { handleAutoSetup } from './utils/autoSetup';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
 import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
@@ -1663,6 +1664,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection
   const [previewBanner, setPreviewBanner] = useState(null); // { id, label } — set when opened from admin "Test in Simulator"
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false)
+  const [autoWiringEnabled, setAutoWiringEnabled] = useState(true);
+  const [autoCodingEnabled, setAutoCodingEnabled] = useState(true);
   const [components, setComponents] = useState([])
   const [wires, setWires] = useState([])
   const [paletteSearch, setPaletteSearch] = useState('')
@@ -4019,48 +4022,69 @@ useEffect(() => {
     setSelected(null)
   }
 
+  // ── Component addition with auto-setup ─────────────────────────────────────
+  const addComponentInternal = useCallback((item, x, y) => {
+    if (liveEditingDisabled) return;
+    saveHistory();
+    
+    const usedIds = new Set(components.map(c => String(c.id || '')));
+    const id = allocateComponentId(item.type, usedIds);
+    const newCompBase = {
+      id,
+      type: item.type, label: item.label,
+      x: Math.max(8, x), y: Math.max(8, y),
+      w: item.w || 60, h: item.h || 60,
+      attrs: item.attrs || {},
+    };
+
+    const catalogItem = COMPONENT_REGISTRY[item.type];
+    if (catalogItem && (catalogItem.autowiring || catalogItem.autocoding)) {
+      const boardComp = components.find(c => isProgrammableBoardType(c.type));
+      const boardId = boardComp ? boardComp.id : 'uno';
+
+      const result = handleAutoSetup({
+        newComp: newCompBase,
+        components,
+        wires,
+        code,
+        catalogItem,
+        pinDefs: LOCAL_PIN_DEFS,
+        boardId,
+        options: { autoWiring: autoWiringEnabled, autoCoding: autoCodingEnabled }
+      });
+
+      const finalComps = result.components.some(c => c.id === id) 
+        ? result.components 
+        : [...result.components, result.component];
+
+      setComponents(finalComps);
+      setWires(result.wires);
+      setCode(result.code);
+    } else {
+      setComponents(prev => [...prev, newCompBase]);
+    }
+  }, [liveEditingDisabled, saveHistory, components, wires, code, autoWiringEnabled, autoCodingEnabled]);
+
   // ── Canvas drop ────────────────────────────────────────────────────────────
   const onCanvasDrop = useCallback((e) => {
     if (liveEditingDisabled) return;
     e.preventDefault()
     const item = dragPayload.current
     if (!item) return
-    saveHistory();
     const rect = canvasRef.current.getBoundingClientRect()
     const x = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current - (item.w || 60) / 2
     const y = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current - (item.h || 60) / 2
-    setComponents(prev => {
-      const usedIds = new Set(prev.map((comp) => String(comp.id || '')));
-      const id = allocateComponentId(item.type, usedIds);
-      return [...prev, {
-        id,
-        type: item.type, label: item.label,
-        x: Math.max(8, x), y: Math.max(8, y),
-        w: item.w || 60, h: item.h || 60,
-        attrs: item.attrs || {},
-      }];
-    })
+    addComponentInternal(item, x, y);
     dragPayload.current = null
-  }, [liveEditingDisabled, saveHistory])
+  }, [liveEditingDisabled, addComponentInternal])
 
   // ── Quick-add: place component at explicit canvas coordinates ──────────────
   const addComponentAt = useCallback((item, canvasX, canvasY) => {
     if (liveEditingDisabled) return;
-    saveHistory()
     const x = canvasX - (item.w || 60) / 2
     const y = canvasY - (item.h || 60) / 2
-    setComponents(prev => {
-      const usedIds = new Set(prev.map((comp) => String(comp.id || '')));
-      const id = allocateComponentId(item.type, usedIds);
-      return [...prev, {
-        id,
-        type: item.type, label: item.label,
-        x: Math.max(8, x), y: Math.max(8, y),
-        w: item.w || 60, h: item.h || 60,
-        attrs: item.attrs || {},
-      }];
-    })
-  }, [liveEditingDisabled, saveHistory])
+    addComponentInternal(item, x, y);
+  }, [liveEditingDisabled, addComponentInternal])
 
   // ── Palette click to add (adds to canvas center) ────────────────────────────
   const addComponentAtCenter = useCallback((item) => {
@@ -4070,7 +4094,6 @@ useEffect(() => {
     const cx = (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
     const cy = (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
     addComponentAt(item, cx, cy);
-    setSelectedPaletteItem(item);
   }, [addComponentAt]);
 
   // ── Enhanced Zooming (Pinch Only) ──────────────────────────────────────────
@@ -8111,7 +8134,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlan} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlan} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -8575,7 +8598,7 @@ useEffect(() => {
                                   key={`fav-${item.type}`}
                                   draggable
                                   onDragStart={e => onPaletteDragStart(e, item)}
-                                  onClick={() => { addComponentAtCenter(item); setSelectedPaletteItem(item); }}
+                                  onClick={() => { addComponentAtCenter(item); }}
                                   onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item }); }}
                                   style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box' }}
                                   onMouseEnter={e => { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; }}

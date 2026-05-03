@@ -10,7 +10,8 @@ function TopToolboxInternal(props) {
     schematicDataUrl, schematicLoading, generateSchematic, downloadSchematicPng, downloadSchematicPdf,
     downloadCompCsv, components, importFileRef, handleBackupWorkflow,
     shareUrl, isSharingSimulation, handleShareSimulation, toggleTheme,
-    validationErrors = [], runAutoFixAll, onApplyPlan, wires = []
+    validationErrors = [], runAutoFixAll, onApplyPlan, wires = [],
+    autoWiringEnabled, setAutoWiringEnabled, autoCodingEnabled, setAutoCodingEnabled
   } = props;
 
   const [activeMenu, setActiveMenu] = useState(null);
@@ -63,6 +64,19 @@ function TopToolboxInternal(props) {
     { label: 'Component List', onClick: () => setShowComponentList(true) },
   ];
 
+  const assistMenuItems = [
+    { 
+      label: `Auto-Wiring: ${autoWiringEnabled ? 'ON' : 'OFF'}`, 
+      onClick: () => setAutoWiringEnabled?.(!autoWiringEnabled),
+      icon: autoWiringEnabled ? '✅' : '❌'
+    },
+    { 
+      label: `Auto-Coding: ${autoCodingEnabled ? 'ON' : 'OFF'}`, 
+      onClick: () => setAutoCodingEnabled?.(!autoCodingEnabled),
+      icon: autoCodingEnabled ? '✅' : '❌'
+    }
+  ];
+
   const helpMenuItems = [
     { label: 'Documentation', onClick: () => window.open('https://docs.openhw.org', '_blank') },
     { label: 'About OpenHW Studio', onClick: () => { } }
@@ -74,6 +88,9 @@ function TopToolboxInternal(props) {
     { type: 'separator' },
     { label: 'TOOLS', type: 'header' },
     ...toolMenuItems,
+    { type: 'separator' },
+    { label: 'ASSIST', type: 'header' },
+    ...assistMenuItems,
     { type: 'separator' },
     { label: 'HELP', type: 'header' },
     ...helpMenuItems,
@@ -148,7 +165,8 @@ function TopToolboxInternal(props) {
                     className="w-full px-4 py-3 text-left text-[13px] font-bold text-[var(--text)] hover:bg-[var(--accent)] hover:text-white transition-colors flex items-center justify-between"
                     onClick={() => { item.onClick?.(); setActiveMenu(null); }}
                   >
-                    {item.label}
+                    <span>{item.label}</span>
+                    {item.icon && <span>{item.icon}</span>}
                   </button>
                 )
               ))}
