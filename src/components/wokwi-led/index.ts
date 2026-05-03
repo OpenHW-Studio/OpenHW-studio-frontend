@@ -20,4 +20,20 @@ export default {
     uiRaw,
     logicRaw,
     validationRaw,
+    autocoding: {
+        arduino: {
+            setup: "pinMode(13, OUTPUT);",
+            loop: "digitalWrite(13, HIGH);\ndelay(500);\ndigitalWrite(13, LOW);\ndelay(500);"
+        },
+        micropython: {
+            setup: "from machine import Pin\nfrom time import sleep\nled = Pin(25, Pin.OUT)",
+            loop: "while True:\n    led.toggle()\n    sleep(0.5)"
+        }
+    },
+    autowiring: {
+        connections: [
+            { from: "A", to: "arduino:13", via: "wokwi-resistor", attrs: { value: "220" } },
+            { from: "K", to: "arduino:GND" }
+        ]
+    }
 };
