@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
+        with:
+          path: OpenHW-studio-frontend
 
       - name: Checkout emulator code
         uses: actions/checkout@v4
@@ -50,16 +52,17 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
       - name: Install dependencies
         env:
           NPM_CONFIG_OPTIONAL: "true"
+        working-directory: OpenHW-studio-frontend
         run: |
           echo "Installing emulator deps..."
-          npm --prefix openhw-studio-emulator ci --include=optional
+          npm --prefix ../openhw-studio-emulator ci --include=optional
           echo "Installing CLI deps..."
-          npm --prefix openhw-studio-cli install
+          npm --prefix ../openhw-studio-cli install
           echo "Installing frontend deps..."
           npm ci --include=optional
           echo "Installing native Linux binaries..."
@@ -88,22 +91,25 @@ jobs:
           arduino-cli core install arduino:avr
 
       - name: Verify Build
+        working-directory: OpenHW-studio-frontend
         run: npm run build
         continue-on-error: false
 
       - name: Run Protocol Compliance Tests
+        working-directory: OpenHW-studio-frontend
         run: npm run test:protocol
         continue-on-error: false
 
       - name: Run RP2040 Smoke Tests
+        working-directory: OpenHW-studio-frontend
         run: npm run test:rp2040-smoke
         continue-on-error: false
 
       - name: Dry-run Docker Deployment Build
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: ./Dockerfile
+          context: ./OpenHW-studio-frontend
+          file: ./OpenHW-studio-frontend/Dockerfile
           push: false # We only build to verify it works, we don't push it yet!
           tags: test-frontend:pr
           build-args: |
