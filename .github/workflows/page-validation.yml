@@ -80,8 +80,6 @@ jobs:
             vite-build-${{ runner.os }}-
 
       - name: Build application
-
-
         working-directory: OpenHW-studio-frontend
         run: npm run build
 
@@ -178,25 +176,71 @@ jobs:
               const reports = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
               const passed = reports.filter(r => r.passed).length;
               const failed = reports.length - passed;
+              const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
+              
+              let totalConsoleErrors = 0;
+              let totalNetworkErrors = 0;
+              let routesWithErrors = 0;
+              let issueDetails = [];
+              
+              let tableRows = '';
+              reports.forEach(page => {
+                const consoleResult = page.results.find(r => r.test === 'Console Errors');
+                const networkResult = page.results.find(r => r.test === 'Network Errors');
+                const perfResult = page.results.find(r => r.test === 'Page Performance');
+                
+                const consoleCount = consoleResult ? (consoleResult.passed ? 0 : parseInt(consoleResult.message)) : 0;
+                const networkCount = networkResult ? (networkResult.passed ? 0 : parseInt(networkResult.message)) : 0;
+                const loadTime = perfResult ? perfResult.message.match(/\d+ms/)[0] : '-';
+                
+                totalConsoleErrors += consoleCount;
+                totalNetworkErrors += networkCount;
+                
+                if (!page.passed || consoleCount > 0 || networkCount > 0) {
+                  routesWithErrors++;
+                  let reasons = [];
+                  if (consoleCount > 0) reasons.push(`${consoleCount} Console Error(s) detected`);
+                  if (networkCount > 0) reasons.push(`${networkCount} Network Error(s) detected`);
+                  if (!page.passed) {
+                    const failingChecks = page.results.filter(r => !r.passed && r.test !== 'Console Errors' && r.test !== 'Network Errors');
+                    failingChecks.forEach(fc => reasons.push(`${fc.test}: ${fc.message}`));
+                  }
+                  issueDetails.push(`  - **${page.pageName}**: ${reasons.join(', ')}`);
+                }
+                
+                const statusEmoji = page.passed ? '✅' : '❌';
+                const warningEmoji = (consoleCount > 0 || networkCount > 0) ? '⚠️' : '';
+                
+                tableRows += `| ${page.pageName} | ${statusEmoji} ${warningEmoji} | ${consoleCount} | ${networkCount} | ${loadTime} |\n`;
+              });
+
+              const overallEmoji = failed > 0 ? '❌' : (totalConsoleErrors > 0 ? '⚠️' : '✅');
+              const overallStatus = failed > 0 ? 'FAILED' : (totalConsoleErrors > 0 ? 'WARNING' : 'PASSED');
               
               let comment = marker + '\n';
-              comment += '## Page Validation Results\n\n';
-              comment += `| Metric | Count |\n`;
-              comment += `|--------|-------|\n`;
-              comment += `| Total Pages | ${reports.length} |\n`;
-              comment += `| Passed | ${passed} |\n`;
-              comment += `| Failed | ${failed} |\n\n`;
-              comment += `Status: ${failed > 0 ? 'FAILED' : 'PASSED'}\n\n`;
+              comment += `## ${overallEmoji} Page Runtime Validation Results\n\n`;
+              comment += `**Status**: ${overallStatus}\n`;
+              comment += `**Runner**: [🔍 View Detailed Logs & Artifacts](${runUrl})\n\n`;
               
-              if (failed > 0) {
-                comment += '### Failed Pages:\n';
-                reports.filter(r => !r.passed).forEach(r => {
-                  comment += `- **${r.pageName}**\n`;
-                  r.results.filter(res => !res.passed).forEach(res => {
-                    comment += `  - ✗ ${res.test}: ${res.message}\n`;
-                  });
-                });
+              comment += `### 📋 Summary\n`;
+              comment += `- **Total Pages Tested**: ${reports.length}\n`;
+              comment += `- **✓ Passed**: ${reports.length - routesWithErrors}\n`;
+              comment += `- **${overallEmoji} Issues Found**: ${routesWithErrors}\n`;
+              if (issueDetails.length > 0) {
+                comment += issueDetails.join('\n') + '\n';
               }
+              comment += '\n';
+
+              comment += `### 📊 Global Metrics\n`;
+              comment += `- **Total Console Errors**: ${totalConsoleErrors} 🛑\n`;
+              comment += `- **Total Network Errors**: ${totalNetworkErrors} 🌐\n\n`;
+              
+              comment += `### 📄 Detailed Page Report\n`;
+              comment += `| Page | Status | Console | Network | Perf |\n`;
+              comment += `| :--- | :---: | :---: | :---: | :---: |\n`;
+              comment += tableRows + '\n';
+              
+              comment += '\n---\n*Console errors often indicate hidden crashes even if the page appears to load. Please check the logs if you see ⚠️ or ❌.*';
 
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner: context.repo.owner,
@@ -273,19 +317,3 @@ jobs:
               console.log(\`- Total Network Errors: \${data.totalNetworkErrors}\`);
             "
           fi
-
-# Workflow Logic:
-# 1. Build the application (production bundle)
-# 2. Run page validation tests on critical routes
-#    - Check if pages load successfully
-#    - Validate DOM content rendering (not blank)
-#    - Capture console messages/errors
-#    - Track network failures
-# 3. Run console error detection tests
-#    - Comprehensive error logging
-#    - Network error tracking
-#    - Generate detailed reports
-# 4. Upload artifacts (test results, screenshots, reports)
-# 5. Generate summary for GitHub Actions
-# 6. Comment on PR with results
-# 7. Fail job if critical pages have errors
