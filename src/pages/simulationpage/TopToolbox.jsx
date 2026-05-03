@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
 import { Btn } from './Btn';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 
@@ -119,7 +121,9 @@ function TopToolboxInternal(props) {
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], runAutoFixAll, onApplyPlan, autoWiringEnabled, setAutoWiringEnabled, autoCodingEnabled, setAutoCodingEnabled } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], runAutoFixAll, onApplyPlan, autoWiringEnabled, setAutoWiringEnabled, autoCodingEnabled, setAutoCodingEnabled } = props;
+  const navigate = useNavigate();
+
 
   const viewPanelRef = useRef(null);
   const connectPanelRef = useRef(null);
@@ -154,14 +158,7 @@ function TopToolboxInternal(props) {
   const currentProject = (myProjects || []).find(p => p.id === currentProjectId);
   const projectName = projectNameProp || (currentProject ? (currentProject.name || currentProject.id) : (currentProjectId || 'Untitled Project'));
 
-  const Logo = () => (
-    <img
-      src="/logo-Photoroom.png"
-      alt="Logo"
-      style={{ height: '36px', width: 'auto', flexShrink: 0, cursor: 'pointer', marginLeft: '6px' }}
-      onClick={() => navigate('/')}
-    />
-  );
+
 
   const fileMenuItems = [
     { label: 'New', onClick: handleNewProject },
@@ -248,7 +245,15 @@ function TopToolboxInternal(props) {
   return (
     <header className="relative z-[1000] flex items-center gap-4 px-5 py-3 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
       <div className="flex items-center gap-4">
-        <Logo />
+        <img
+          src="/logo-Photoroom.png"
+          alt="OpenHW Studio Logo"
+          title="Go to Landing Page"
+          draggable="false"
+          style={{ height: '36px', width: 'auto', flexShrink: 0, cursor: 'pointer', marginLeft: '6px' }}
+          onClick={() => navigate('/')}
+        />
+
         <div className="flex flex-col" style={{ minWidth: TITLE_WIDTH, flexShrink: 0, marginTop: '2px' }}>
           <div style={{ height: '28px', position: 'relative', width: '100%' }}>
             {renamingProjectId === currentProjectId ? (

@@ -8682,12 +8682,15 @@ useEffect(() => {
                                   onTouchMove={handlePalettePressEnd}
                                   onMouseDown={e => handlePalettePressStart(item, e, item.group)}
                                   onMouseUp={handlePalettePressEnd}
-                                  onMouseLeave={handlePalettePressEnd}
+                                  onMouseLeave={e => {
+                                    handlePalettePressEnd(e);
+                                    e.currentTarget.style.borderColor = `${gColor}44`;
+                                    e.currentTarget.style.background = 'var(--bg)';
+                                  }}
                                   onClick={() => { addComponentAtCenter(item); setSelectedPaletteItem(item); }}
                                   onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item }); }}
                                   style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box' }}
                                   onMouseEnter={e => { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; }}
-                                  onMouseLeave={e => { e.currentTarget.style.borderColor = `${gColor}44`; e.currentTarget.style.background = 'var(--bg)'; }}
                                 >
                                   <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 2, paddingRight: 2 }}>{item.label}</span>
                                 </div>
@@ -8751,7 +8754,13 @@ useEffect(() => {
                                   onTouchMove={handlePalettePressEnd}
                                   onMouseDown={e => !locked && handlePalettePressStart(item, e, group.group)}
                                   onMouseUp={handlePalettePressEnd}
-                                  onMouseLeave={handlePalettePressEnd}
+                                  onMouseLeave={e => {
+                                    handlePalettePressEnd(e);
+                                    if (!locked) {
+                                      e.currentTarget.style.borderColor = 'var(--border)';
+                                      e.currentTarget.style.background = 'var(--card)';
+                                    }
+                                  }}
                                   onClick={() => {
                                     if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
                                     addComponentAtCenter(item);
@@ -8760,7 +8769,6 @@ useEffect(() => {
                               title={item.label}
                               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px 7px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', height: 104, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', position: 'relative', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
                               onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = groupColor; e.currentTarget.style.background = `${groupColor}14`; } }}
-                              onMouseLeave={e => { if (!locked) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.background = 'var(--card)'; } }}
                             >
                               {/* Overlay for locked state */}
                               {locked && (
@@ -8797,7 +8805,10 @@ useEffect(() => {
                             onTouchMove={handlePalettePressEnd}
                             onMouseDown={e => !locked && handlePalettePressStart(item, e, group.group)}
                             onMouseUp={handlePalettePressEnd}
-                            onMouseLeave={handlePalettePressEnd}
+                            onMouseLeave={e => {
+                              handlePalettePressEnd(e);
+                              if (!locked) e.currentTarget.style.background = 'var(--card)';
+                            }}
                             onClick={() => {
                               if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
                               addComponentAtCenter(item);
@@ -8805,7 +8816,6 @@ useEffect(() => {
                             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
                             style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
                             onMouseEnter={e => { if (!locked) e.currentTarget.style.background = 'var(--bg3)'; }}
-                            onMouseLeave={e => { if (!locked) e.currentTarget.style.background = 'var(--card)'; }}
                           >
                             {locked && (
                               <div style={{ position: 'absolute', top: '50%', right: 10, transform: 'translateY(-50%)', fontSize: 13, color: '#ef4444' }}>
