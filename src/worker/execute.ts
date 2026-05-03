@@ -4,6 +4,13 @@ import { bootromB1 } from './rp2040-bootrom.ts';
 
 import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
 import { LEDLogic } from '@openhw/emulator/src/components/wokwi-led/logic.ts';
+import { PIRLogic } from '@openhw/emulator/src/components/PIR-Motion-Sensor/logic.ts';
+import { SoundSensorLogic } from '@openhw/emulator/src/components/Sound-sensor-4pin/logic.ts';
+import { DHT22Logic } from '@openhw/emulator/src/components/DHT-22/logic.ts';
+import { GasSensorLogic } from '@openhw/emulator/src/components/MQ2-gas-sensor/logic.ts';
+import { HCSR04Logic } from '@openhw/emulator/src/components/Ultrasonic-sensor/logic.ts';
+import { RaindropPadLogic } from '@openhw/emulator/src/components/Raindrop-pad/logic.ts';
+import { RaindropModuleLogic } from '@openhw/emulator/src/components/Raindrop-module/logic.ts';
 import { UnoLogic } from '@openhw/emulator/src/components/wokwi-arduino-uno/logic.ts';
 import { PicoLogic } from './pico-logic.ts';
 import { ResistorLogic } from '@openhw/emulator/src/components/wokwi-resistor/logic.ts';
@@ -1814,6 +1821,11 @@ class ILI9341FallbackLogic extends BaseComponent {
 }
 
 export const LOGIC_REGISTRY: Record<string, any> = {
+    'PIR-Motion-Sensor': PIRLogic,
+    'Sound-sensor-4pin': SoundSensorLogic,
+    'DHT-22': DHT22Logic,
+    'MQ-2 Gas Sensor': GasSensorLogic,
+    'ultrasonic sensor': HCSR04Logic,
     'wokwi-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
     'wokwi-raspberry-pi-pico': PicoLogic,
@@ -1860,6 +1872,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-a4988': A4988Logic,
     'wokwi-cd74hc4067': CD74HC4067Logic,
     'wokwi-logic-analyzer': LogicAnalyzerLogic,
+    'wokwi-raindrop-pad': RaindropPadLogic,
+    'wokwi-raindrop-module': RaindropModuleLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -3157,6 +3171,8 @@ export class AVRRunner {
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
+                (inst as any)._simCpu = this.cpu;
+                (inst as any)._simUpdatePhysics = () => this.updatePhysics?.();
                 this.instances.set(cDef.id, inst);
             }
         });
@@ -3570,6 +3586,9 @@ export class AVRRunner {
                             const pk = compPin.toLowerCase();
                             const isGndNode = pk.startsWith('gnd') || pk === 'vss' || pk === 'k';
                             if (inst.getPinVoltage(compPin) === 0 && isGndNode) {
+                                forcedLow = true;
+                            }
+                            if (inst.getPinVoltage(compPin) === 0 && (pk === 'do' || pk === 'd0' || pk === 'out' || pk === 'sig' || pk === 'sda' || pk === 'echo')) {
                                 forcedLow = true;
                             }
                             if (inst.type === 'wokwi-pushbutton' && inst.state.pressed && !forcedLow) {
@@ -4391,6 +4410,8 @@ export class RP2040Runner implements BoardRunner {
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
+                (inst as any)._simCpu = this.cpu;
+                (inst as any)._simUpdatePhysics = () => this.updatePhysics?.();
                 this.instances.set(cDef.id, inst);
             }
         });
