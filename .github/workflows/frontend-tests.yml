@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
+        with:
+          path: OpenHW-studio-frontend
 
       - name: Checkout emulator code
         uses: actions/checkout@v4
@@ -40,12 +42,18 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
       - name: Install frontend dependencies
-        run: npm ci
+        env:
+          NPM_CONFIG_OPTIONAL: "true"
+        working-directory: OpenHW-studio-frontend
+        run: |
+          npm ci --include=optional
+          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
 
       - name: Run Vitest component tests
+        working-directory: OpenHW-studio-frontend
         run: npx vitest run --environment jsdom src/components/**/*.test.jsx
 
       - name: Reference Platform Validation Summary
@@ -100,6 +108,8 @@ jobs:
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
+        with:
+          path: OpenHW-studio-frontend
 
       - name: Checkout emulator code
         uses: actions/checkout@v4
@@ -113,15 +123,22 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        env:
+          NPM_CONFIG_OPTIONAL: "true"
+        working-directory: OpenHW-studio-frontend
+        run: |
+          npm ci --include=optional
+          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
 
       - name: Install Playwright browsers
+        working-directory: OpenHW-studio-frontend
         run: npx playwright install chromium
 
       - name: Start dev server
+        working-directory: OpenHW-studio-frontend
         run: npm run dev &
         timeout-minutes: 1
 
@@ -129,6 +146,7 @@ jobs:
         run: npx wait-on http://localhost:5173 --timeout 30000
 
       - name: Run Playwright E2E tests
+        working-directory: OpenHW-studio-frontend
         run: npx playwright test e2e/autofix-preview.spec.js
 
       - name: Reference Platform Validation Summary
