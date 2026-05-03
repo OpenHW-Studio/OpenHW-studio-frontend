@@ -6,7 +6,10 @@
     "w": 60,
     "h": 12,
     "attrs": {
-        "value": "220"
+        "value": "220",
+        "breadboard": {
+            "anchorPin": "p1"
+        }
     },
     "telemetry": {
         "template": "resistance=${attr.value} Ohms",
