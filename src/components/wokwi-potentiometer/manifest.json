@@ -6,7 +6,10 @@
     "w": 75,
     "h": 75,
     "attrs": {
-        "value": "50"
+        "value": "50",
+        "breadboard": {
+            "anchorPin": "SIG"
+        }
     },
     "telemetry": {
         "template": "value=${state.value}",
@@ -17,10 +20,17 @@
     "pins": [
         {
             "id": "1",
-            "x": 29,
+            "x": 15,
             "y": 68,
             "type": "power",
             "description": "GND"
+        },
+        {
+            "id": "SIG",
+            "x": 30,
+            "y": 68,
+            "type": "analog",
+            "description": "SIG"
         },
         {
             "id": "2",
@@ -28,13 +38,6 @@
             "y": 68,
             "type": "power",
             "description": "VCC"
-        },
-        {
-            "id": "SIG",
-            "x": 37,
-            "y": 68,
-            "type": "analog",
-            "description": "SIG"
         }
     ]
 }

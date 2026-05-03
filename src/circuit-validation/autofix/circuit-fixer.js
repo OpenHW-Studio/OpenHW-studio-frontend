@@ -18,7 +18,11 @@ export function initializeCircuitFixEngine(validator) {
 }
 
 export function applyCircuitFix(projectData, error, options = {}) {
-    console.log('[CircuitFixer] Attempting fix for:', error.message, 'Remediation:', error.remediation);
+    const { quiet = false, verbose = false, appliedBy = 'unknown', dryRun = false } = options;
+    
+    if (!quiet) {
+        console.log('[CircuitFixer] Attempting fix for:', error.message, 'Remediation:', error.remediation);
+    }
     
     const { components = [], connections = [] } = projectData;
     if (!error.remediation && !error.ruleId) {
@@ -31,7 +35,11 @@ export function applyCircuitFix(projectData, error, options = {}) {
     }
 
     let newComponents = JSON.parse(JSON.stringify(components));
-    let newConnections = JSON.parse(JSON.stringify(connections));
+    let newConnections = JSON.parse(JSON.stringify(connections)).map((w) => ({
+        ...w,
+        from: normalizeEndpoint(w?.from),
+        to: normalizeEndpoint(w?.to),
+    }));
     let applied = false;
     let appliedFixes = [];
     const board = findBoard(newComponents);
@@ -70,12 +78,29 @@ export function applyCircuitFix(projectData, error, options = {}) {
         }
     }
 
+    // compute a changeSet by comparing ids before/after
+    const beforeComponentIds = new Set((components || []).map(c => c.id));
+    const afterComponentIds = new Set((newComponents || []).map(c => c.id));
+    const addedComponents = (newComponents || []).filter(c => !beforeComponentIds.has(c.id));
+    const removedComponents = (components || []).filter(c => !afterComponentIds.has(c.id));
+
+    const beforeConnIds = new Set((connections || []).map(c => c.id));
+    const afterConnIds = new Set((newConnections || []).map(c => c.id));
+    const addedConnections = (newConnections || []).filter(c => !beforeConnIds.has(c.id));
+    const removedConnections = (connections || []).filter(c => !afterConnIds.has(c.id));
+
     const result = {
         components: newComponents,
         connections: newConnections,
         applied,
         appliedFixes,
         fixCount: appliedFixes.length,
+        changeSet: {
+            addedComponents,
+            removedComponents,
+            addedConnections,
+            removedConnections,
+        },
         metadata: {
             errorId: error.id || error.ruleId,
             errorMessage: error.message,
@@ -85,8 +110,8 @@ export function applyCircuitFix(projectData, error, options = {}) {
         },
     };
 
-    // Store in history if tracking is enabled
-    if (fixHistory && options.trackHistory !== false) {
+    // Store in history if tracking is enabled and not a dry run
+    if (!dryRun && fixHistory && options.trackHistory !== false) {
         fixHistory.recordFix({
             error,
             strategy: appliedFixes,
@@ -100,6 +125,13 @@ export function applyCircuitFix(projectData, error, options = {}) {
     }
 
     return result;
+}
+
+function normalizeEndpoint(endpoint) {
+    const raw = String(endpoint || '');
+    const m = raw.match(/^([^:.]+)[:.](.+)$/);
+    if (!m) return raw;
+    return `${m[1]}:${m[2]}`;
 }
 
 function applyPatternFix(components, connections, pattern, error, board) {
@@ -182,6 +214,48 @@ function findBoardGND(connections) {
     );
 }
 
+function nextWireId(connections) {
+    let max = 0;
+    connections.forEach((w) => {
+        const m = String(w?.id || '').match(/^w(\d+)$/i);
+        if (m) {
+            const n = Number(m[1]);
+            if (Number.isFinite(n) && n > max) max = n;
+        }
+    });
+    return `w${max + 1}`;
+}
+
+function addWire(connections, from, to, color = 'green', label = undefined) {
+    if (!String(from || '').includes(':') || !String(to || '').includes(':')) return false;
+    connections.push({ id: nextWireId(connections), from, to, color, label });
+    return true;
+}
+
+function boardGroundEndpoint(board) {
+    if (!board?.id) return null;
+    return `${board.id}:GND`;
+}
+
+function isGroundEndpoint(ep) {
+    return /(^|:)(gnd|ground|-)$/i.test(String(ep || ''));
+}
+
+function pickTargetPinEndpoint(targetCompId, connections) {
+    const targetPrefix = `${targetCompId}:`;
+    const nonGround = connections.find((w) => {
+        const a = String(w.from || '');
+        const b = String(w.to || '');
+        if (a.startsWith(targetPrefix) && !isGroundEndpoint(a)) return true;
+        if (b.startsWith(targetPrefix) && !isGroundEndpoint(b)) return true;
+        return false;
+    });
+    if (nonGround) {
+        return String(nonGround.from || '').startsWith(targetPrefix) ? nonGround.from : nonGround.to;
+    }
+    return `${targetCompId}:1`;
+}
+
 function applyGroundConnection(components, connections, targetCompId, board) {
     if (!targetCompId || !board) return { components, connections, applied: false };
 
@@ -192,12 +266,7 @@ function applyGroundConnection(components, connections, targetCompId, board) {
 
     if (alreadyConnected) return { components, connections, applied: false };
 
-    connections.push({ 
-        from: `${board.id}:GND`, 
-        to: `${targetCompId}:GND`, 
-        color: 'black',
-        label: 'Ground'
-    });
+    addWire(connections, `${board.id}:GND`, `${targetCompId}:GND`, 'black', 'Ground');
 
     return { components, connections, applied: true, description: 'Added ground connection' };
 }
@@ -213,12 +282,7 @@ function applyPowerConnection(components, connections, targetCompId, board) {
 
     if (alreadyConnected) return { components, connections, applied: false };
 
-    connections.push({
-        from: `${board.id}:${powerRail}`,
-        to: `${targetCompId}:VCC`,
-        color: 'red',
-        label: 'Power'
-    });
+    addWire(connections, `${board.id}:${powerRail}`, `${targetCompId}:VCC`, 'red', 'Power');
 
     return { components, connections, applied: true, description: 'Added power connection' };
 }
@@ -230,19 +294,31 @@ function applyLedResistor(components, connections, targetCompId) {
     if (!targetComp) return { components, connections, applied: false };
 
     const resId = 'res_' + Math.random().toString(36).substr(2, 5);
-    const powerWireIdx = connections.findIndex(w => 
-        (w.to.startsWith(targetCompId) || w.from.startsWith(targetCompId)) &&
-        (/5V|3V3|VCC/i.test(w.from) || /5V|3V3|VCC/i.test(w.to))
-    );
+    const targetPrefix = `${targetCompId}:`;
 
-    if (powerWireIdx === -1) return { components, connections, applied: false };
+    const preferredWireIdx = connections.findIndex((w) => {
+        const from = String(w.from || '');
+        const to = String(w.to || '');
+        const touchesTarget = from.startsWith(targetPrefix) || to.startsWith(targetPrefix);
+        if (!touchesTarget) return false;
+        return !isGroundEndpoint(from) && !isGroundEndpoint(to);
+    });
 
-    const oldWire = connections[powerWireIdx];
+    const fallbackWireIdx = connections.findIndex((w) => {
+        const from = String(w.from || '');
+        const to = String(w.to || '');
+        return from.startsWith(targetPrefix) || to.startsWith(targetPrefix);
+    });
+
+    const wireIdx = preferredWireIdx !== -1 ? preferredWireIdx : fallbackWireIdx;
+    if (wireIdx === -1) return { components, connections, applied: false };
+
+    const oldWire = connections[wireIdx];
     const newResistor = {
         id: resId,
         type: 'wokwi-resistor',
-        x: targetComp.x - 60,
-        y: targetComp.y,
+        x: Number(targetComp.x || 0) - 60,
+        y: Number(targetComp.y || 0),
         w: 40,
         h: 20,
         attrs: { value: '220' }
@@ -253,9 +329,13 @@ function applyLedResistor(components, connections, targetCompId) {
     const sourceNode = oldWire.to.startsWith(targetCompId) ? oldWire.from : oldWire.to;
     const targetNode = oldWire.to.startsWith(targetCompId) ? oldWire.to : oldWire.from;
 
-    connections.splice(powerWireIdx, 1);
-    connections.push({ from: sourceNode, to: `${resId}:1`, color: oldWire.color || 'red' });
-    connections.push({ from: `${resId}:2`, to: targetNode, color: oldWire.color || 'red' });
+    connections.splice(wireIdx, 1);
+    const wireColor = oldWire.color || 'red';
+    const addedA = addWire(connections, sourceNode, `${resId}:1`, wireColor, oldWire.label);
+    const addedB = addWire(connections, `${resId}:2`, targetNode, wireColor, oldWire.label);
+    if (!addedA || !addedB) {
+        return { components, connections, applied: false };
+    }
 
     return { components, connections, applied: true, description: 'Added LED series resistor (220Ω)' };
 }
@@ -280,8 +360,8 @@ function applyI2cPullups(components, connections, board) {
             attrs: { value: '4700' }
         });
 
-        connections.push({ from: `${board.id}:${vccPin}`, to: `${resId}:1`, color: 'red' });
-        connections.push({ from: `${resId}:2`, to: `${board.id}:${pin}`, color: pin === 'SDA' ? 'yellow' : 'orange' });
+        addWire(connections, `${board.id}:${vccPin}`, `${resId}:1`, 'red');
+        addWire(connections, `${resId}:2`, `${board.id}:${pin}`, pin === 'SDA' ? 'yellow' : 'orange');
         added++;
     });
 
@@ -294,6 +374,10 @@ function applyButtonPulldown(components, connections, targetCompId) {
     const resId = 'btn_pull_' + Math.random().toString(36).substr(2, 5);
     const targetComp = components.find(c => c.id === targetCompId);
     if (!targetComp) return { components, connections, applied: false };
+    const board = findBoard(components);
+    const gndEndpoint = boardGroundEndpoint(board);
+    if (!gndEndpoint) return { components, connections, applied: false };
+    const targetPin = pickTargetPinEndpoint(targetCompId, connections);
 
     components.push({
         id: resId,
@@ -303,8 +387,8 @@ function applyButtonPulldown(components, connections, targetCompId) {
         attrs: { value: '10000' }
     });
 
-    connections.push({ from: `${resId}:1`, to: `${targetCompId}:1`, color: 'blue' });
-    connections.push({ from: `${resId}:2`, to: 'GND', color: 'black' });
+    addWire(connections, `${resId}:1`, targetPin, 'blue');
+    addWire(connections, `${resId}:2`, gndEndpoint, 'black');
 
     return { components, connections, applied: true, description: 'Added button pull-down resistor' };
 }
@@ -324,8 +408,8 @@ function applyMotorFlywheel(components, connections, targetCompId) {
         attrs: { }
     });
 
-    connections.push({ from: `${diodeId}:cathode`, to: `${targetCompId}:1`, color: 'red' });
-    connections.push({ from: `${diodeId}:anode`, to: `${targetCompId}:2`, color: 'black' });
+    addWire(connections, `${diodeId}:cathode`, `${targetCompId}:1`, 'red');
+    addWire(connections, `${diodeId}:anode`, `${targetCompId}:2`, 'black');
 
     return { components, connections, applied: true, description: 'Added motor flywheel diode (back-EMF protection)' };
 }
@@ -347,6 +431,17 @@ function applyVoltageDivider(components, connections, targetCompId) {
 
     const targetComp = components.find(c => c.id === targetCompId);
     if (!targetComp) return { components, connections, applied: false };
+    const board = findBoard(components);
+    const gndEndpoint = boardGroundEndpoint(board);
+    if (!gndEndpoint) return { components, connections, applied: false };
+
+    const targetPin = pickTargetPinEndpoint(targetCompId, connections);
+    const inputWire = connections.find((w) => {
+        const from = String(w.from || '');
+        const to = String(w.to || '');
+        return (from === targetPin || to === targetPin) && !isGroundEndpoint(from) && !isGroundEndpoint(to);
+    });
+    const inputNode = inputWire ? (inputWire.from === targetPin ? inputWire.to : inputWire.from) : `${board.id}:5V`;
 
     const r1Id = 'vdiv_r1_' + Math.random().toString(36).substr(2, 3);
     const r2Id = 'vdiv_r2_' + Math.random().toString(36).substr(2, 3);
@@ -354,8 +449,10 @@ function applyVoltageDivider(components, connections, targetCompId) {
     components.push({ id: r1Id, type: 'wokwi-resistor', x: targetComp.x - 80, y: targetComp.y - 20, attrs: { value: '10000' } });
     components.push({ id: r2Id, type: 'wokwi-resistor', x: targetComp.x - 80, y: targetComp.y + 20, attrs: { value: '6800' } });
 
-    connections.push({ from: `${r1Id}:2`, to: `${r2Id}:1`, label: 'Tap point (3.3V)' });
-    connections.push({ from: `${r2Id}:2`, to: 'GND', color: 'black' });
+    addWire(connections, inputNode, `${r1Id}:1`, 'red');
+    addWire(connections, `${r1Id}:2`, `${r2Id}:1`, 'green', 'Tap point (3.3V)');
+    addWire(connections, `${r1Id}:2`, targetPin, 'blue');
+    addWire(connections, `${r2Id}:2`, gndEndpoint, 'black');
 
     return { components, connections, applied: true, description: 'Added voltage divider (5V→3.3V)' };
 }
@@ -388,8 +485,8 @@ function applyServoCapacitor(components, connections, targetCompId) {
         attrs: { value: '47µF' }
     });
 
-    connections.push({ from: `${capId}:+`, to: `${targetCompId}:VCC`, color: 'red' });
-    connections.push({ from: `${capId}:-`, to: `${targetCompId}:GND`, color: 'black' });
+    addWire(connections, `${capId}:+`, `${targetCompId}:VCC`, 'red');
+    addWire(connections, `${capId}:-`, `${targetCompId}:GND`, 'black');
 
     return { components, connections, applied: true, description: 'Added servo power smoothing capacitor (47µF)' };
 }
@@ -406,8 +503,8 @@ function applyDs18b20Pullup(components, connections, board) {
         attrs: { value: '4700' }
     });
 
-    connections.push({ from: `${board.id}:5V`, to: `${resId}:1`, color: 'red' });
-    connections.push({ from: `${resId}:2`, to: `${board.id}:GPIO5`, color: 'yellow' });
+    addWire(connections, `${board.id}:5V`, `${resId}:1`, 'red');
+    addWire(connections, `${resId}:2`, `${board.id}:GPIO5`, 'yellow');
 
     return { components, connections, applied: true, description: 'Added DS18B20 1-Wire pull-up resistor' };
 }
@@ -424,9 +521,9 @@ function applyComponentWiring(components, connections, targetCompId, board) {
         !connections.some(c => c.to.includes(p))
     ) || gpioPins[0];
 
-    connections.push({ from: `${board.id}:${availableGpio}`, to: `${targetCompId}:1`, color: 'green' });
-    connections.push({ from: `${board.id}:${powerRail}`, to: `${targetCompId}:VCC`, color: 'red' });
-    connections.push({ from: `${board.id}:GND`, to: `${targetCompId}:GND`, color: 'black' });
+    addWire(connections, `${board.id}:${availableGpio}`, `${targetCompId}:1`, 'green');
+    addWire(connections, `${board.id}:${powerRail}`, `${targetCompId}:VCC`, 'red');
+    addWire(connections, `${board.id}:GND`, `${targetCompId}:GND`, 'black');
 
     return { components, connections, applied: true, description: 'Wired component to board (GPIO + Power + Ground)' };
 }
