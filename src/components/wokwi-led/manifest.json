@@ -6,7 +6,10 @@
     "w": 38,
     "h": 38,
     "attrs": {
-        "color": "red"
+        "color": "red",
+        "breadboard": {
+            "anchorPin": "A"
+        }
     },
     "telemetry": {
         "template": "illuminated=${state.illuminated}, brightness=${state.brightness}, burnedOut=${state.burnedOut}",
@@ -18,18 +21,18 @@
     },
     "pins": [
         {
-            "id": "K",
-            "x": 16,
-            "y": 43,
-            "type": "input",
-            "description": "Cathode (-)"
-        },
-        {
             "id": "A",
-            "x": 24,
-            "y": 43,
+            "x": 10,
+            "y": 40,
             "type": "input",
             "description": "Anode (+)"
+        },
+        {
+            "id": "K",
+            "x": 25,
+            "y": 40,
+            "type": "input",
+            "description": "Cathode (-)"
         }
     ]
 }
