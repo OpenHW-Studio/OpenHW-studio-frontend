@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 
 const workspaceRoot = path.resolve(__dirname, '..', '..');
 const frontendRoot = path.resolve(__dirname, '..');
-const cliRoot = path.join(workspaceRoot, 'openhw-studio-cli-danish');
+const cliRoot = path.join(workspaceRoot, 'openhw-studio-cli');
 const matrixScriptPath = path.join(frontendRoot, 'src', 'worker', 'cli-hardware-compat-matrix.ts');
 const matrixOutDir = path.join(workspaceRoot, 'temp', 'cli-hw-matrix');
 

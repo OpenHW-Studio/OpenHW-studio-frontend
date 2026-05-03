@@ -1,0 +1,113 @@
+name: Frontend PR Checks
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  verify_pr:
+    name: Lint, Test & Dry-Run Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout frontend code
+        uses: actions/checkout@v4
+        with:
+          path: OpenHW-studio-frontend
+
+      - name: Checkout emulator code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-emulator
+          path: openhw-studio-emulator
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout examples code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-examples
+          path: openhw-studio-examples
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout cli code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/OpenHW-studio--cli
+          path: openhw-studio-cli
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout backend code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-backend
+          path: openhw-studio-backend
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          echo "Installing emulator deps..."
+          cd openhw-studio-emulator && npm ci
+          echo "Installing CLI deps..."
+          cd ../openhw-studio-cli && npm install
+          echo "Installing frontend deps..."
+          cd ../OpenHW-studio-frontend && npm install
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache Arduino Cores
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15/packages
+            ~/.arduino15/staging
+          key: ${{ runner.os }}-arduino-cores-${{ hashFiles('**/OpenHW-studio-frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-arduino-cores-
+
+      - name: Install Arduino Cores
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli core update-index
+          arduino-cli core install rp2040:rp2040
+          arduino-cli core install arduino:avr
+
+      - name: Verify Build
+        run: |
+          cd OpenHW-studio-frontend
+          npm run build
+        continue-on-error: false
+
+      - name: Run Protocol Compliance Tests
+        run: |
+          cd OpenHW-studio-frontend
+          npm run test:protocol
+        continue-on-error: false
+
+      - name: Run RP2040 Smoke Tests
+        run: |
+          cd OpenHW-studio-frontend
+          npm run test:rp2040-smoke
+        continue-on-error: false
+
+      - name: Dry-run Docker Deployment Build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./OpenHW-studio-frontend/Dockerfile
+          push: false # We only build to verify it works, we don't push it yet!
+          tags: test-frontend:pr
+          build-args: |
+            VITE_API_BASE_URL=https://openhw-studio.fossee.in/api
+            VITE_EXAMPLES_BASE_URL=https://openhw-studio.fossee.in/examples
+            VITE_GOOGLE_CLIENT_ID=test-id
+            VITE_ADMIN_EMAILS=test@test.com
