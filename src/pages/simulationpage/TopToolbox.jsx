@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Btn } from './Btn';
+import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 
 function TopToolboxInternal(props) {
   // --- UI CONFIG ---
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], runAutoFixAll, onApplyPlan } = props;
 
   const viewPanelRef = useRef(null);
   const connectPanelRef = useRef(null);
@@ -16,6 +17,7 @@ function TopToolboxInternal(props) {
   const [activeMenu, setActiveMenu] = useState(null);
   const [showSchematic, setShowSchematic] = useState(false);
   const [showComponentList, setShowComponentList] = useState(false);
+  const [showAutofix, setShowAutofix] = useState(false);
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -380,6 +382,19 @@ function TopToolboxInternal(props) {
             </svg>
           )}
         </Btn>
+
+        {/* AUTOFIX BUTTON */}
+        <Btn
+          onClick={() => setShowAutofix(v => !v)}
+          color={validationErrors?.length > 0 ? 'var(--orange)' : undefined}
+          disabled={!validationErrors?.length}
+          title={validationErrors?.length ? `Auto-fix available: ${validationErrors.length} issue(s)` : 'No issues to fix'}
+          iconOnly
+        >
+          <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M29.5,24.5L16.563,11.563C16.84,10.758,17,9.899,17,9c0-4.411-3.589-8-8-8 C8.338,1,7.659,1.089,6.982,1.266c-0.347,0.09-0.619,0.359-0.713,0.706C6.175,2.317,6.273,2.687,6.527,2.941l2.645,2.645 C9.549,5.964,9.757,6.466,9.757,7c0,0.534-0.208,1.036-0.586,1.414L8.414,9.172C8.036,9.549,7.534,9.757,7,9.757 S5.964,9.549,5.586,9.172L2.941,6.526c-0.19-0.19-0.445-0.293-0.707-0.293c-0.087,0-0.175,0.011-0.262,0.035 C1.625,6.363,1.356,6.635,1.266,6.982C1.089,7.659,1,8.338,1,9c0,4.411,3.589,8,8,8c0.899,0,1.758-0.16,2.563-0.437L24.5,29.5 c0.69,0.69,1.595,1.036,2.5,1.036s1.81-0.345,2.5-1.036C30.881,28.119,30.881,25.881,29.5,24.5z M27,28c-0.552,0-1-0.448-1-1 c0-0.552,0.448-1,1-1s1,0.448,1,1C28,27.552,27.552,28,27,28z" />
+          </svg>
+        </Btn>
       </div>
 
       {/* RIGHT SIDE — right to left: Sign In/User, My Projects, Save, Export, Import */}
@@ -557,7 +572,18 @@ function TopToolboxInternal(props) {
           }}
           title="View and manage your saved projects"
         > {isAuthenticated ? (user?.name?.split(' ')[0] || 'User') : 'Local'}</Btn>
+
       </div>
+      <FloatingPanel title="Auto-fix" show={showAutofix} onClose={() => setShowAutofix(false)} width={380}>
+        <div style={{ padding: '12px 16px' }}>
+          <AutofixPreviewPanel 
+            project={{ components, connections: wires }} 
+            validationErrors={validationErrors || []} 
+            runAutoFixAll={runAutoFixAll} 
+            onApplyPlan={onApplyPlan}
+          />
+        </div>
+      </FloatingPanel>
       <FloatingPanel title="Schematic View" show={showSchematic} onClose={() => setShowSchematic(false)} width={420}>
         {schematicLoading ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>

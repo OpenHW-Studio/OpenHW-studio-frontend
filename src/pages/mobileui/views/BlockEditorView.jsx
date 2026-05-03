@@ -72,6 +72,7 @@ export default function BlockEditorView(props) {
             onToggleUseBlocklyCode={() => { if (!editingDisabled) setUseBlocklyCode(!useBlocklyCode); }}
             visible={true}
             boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
+            isMobile={true}
           />
         </React.Suspense>
       )}

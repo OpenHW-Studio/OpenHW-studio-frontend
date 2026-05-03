@@ -1109,7 +1109,7 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, varId
 ))
 
 // ─── Main component ────────────────────────────────────────────────────────────
-export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useBlocklyCode, onToggleUseBlocklyCode, boardKind }) {
+export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useBlocklyCode, onToggleUseBlocklyCode, boardKind, isMobile = false }) {
   const [showSidebar, setShowSidebar] = useState(true);
   const sidebarWidth = 220;
   const wsContainerRef = useRef(null)
@@ -1194,7 +1194,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       theme: buildTheme(B, isDark),
       renderer: 'zelos',
       grid: { spacing: 20, length: 3, colour: isDark ? '#1e2d47' : '#e2e8f0', snap: true },
-      zoom: { controls: false, wheel: true, startScale: 0.9, maxScale: 3, minScale: 0.3, pinch: true },
+      zoom: { controls: true, wheel: true, startScale: 0.9, maxScale: 3, minScale: 0.3, pinch: true },
       move: { scrollbars: true, drag: true, wheel: true },
       scrollbars: true,
       trashcan: true,
@@ -1567,48 +1567,75 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', position: 'relative' }}>
-      {/* Sidebar Toggle Handle */}
-      <div 
-        onClick={() => setShowSidebar(!showSidebar)}
-        style={{ 
-          position: 'absolute', 
-          left: showSidebar ? sidebarWidth - 12 : -12,
-          top: '40%',
-          width: 32, height: 64,
-          background: 'var(--bg2)',
-          border: '1px solid var(--border)',
-          borderLeft: 'none',
-          borderRadius: '0 16px 16px 0',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer', zIndex: 100,
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          boxShadow: '4px 0 12px rgba(0,0,0,0.15)',
-        }}
-      >
-        <svg 
-          width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+      {/* Sidebar Toggle Handle (Mobile Only) */}
+      {isMobile && (
+        <div 
+          onClick={() => setShowSidebar(!showSidebar)}
           style={{ 
-            transform: showSidebar ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.3s',
-            color: 'var(--accent)'
+            position: 'absolute', 
+            left: showSidebar ? sidebarWidth - 12 : -12,
+            top: '40%',
+            width: 32, height: 64,
+            background: 'var(--bg2)',
+            border: '1px solid var(--border)',
+            borderLeft: 'none',
+            borderRadius: '0 16px 16px 0',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', zIndex: 100,
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            boxShadow: '4px 0 12px rgba(0,0,0,0.15)',
           }}
         >
-          <path d="m9 18 6-6-6-6" />
-        </svg>
-      </div>
+          <svg 
+            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
+            style={{ 
+              transform: showSidebar ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.3s',
+              color: 'var(--accent)'
+            }}
+          >
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </div>
+      )}
 
       {/* Hide Blockly's built-in scrollbars, force opaque markers, and hide zoom in/out */}
       <style>{`
-        /* Force opaque markers */
+        .blocklyScrollbarHorizontal, .blocklyScrollbarVertical { display: none !important; }
         .blocklyInsertionMarker .blocklyPath {
           fill-opacity: 1 !important;
           stroke-opacity: 1 !important;
         }
+        /* Hide Zoom In and Zoom Out on Mobile, keep Reposition */
+        ${isMobile ? `
+        .blocklyZoom > image:nth-of-type(1), 
+        .blocklyZoom > image:nth-of-type(2) { 
+          display: none !important; 
+        }
+        /* Move zoom controls up slightly to clear any mobile UI quirks */
+        .blocklyZoom {
+          transform: translateY(-20px);
+        }
+        ` : ''}
       `}</style>
 
       {/* ── Toolbar ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', flexShrink: 0, background: tok.toolbar, borderBottom: `1px solid ${tok.border}`, height: 48 }}>
-        <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.1em', color: tok.textMuted }}>Blocks</span>
+      <div style={{ 
+        display: 'flex', alignItems: 'center', 
+        gap: isMobile ? 6 : 8, 
+        padding: isMobile ? '8px 12px' : '6px 10px', 
+        flexShrink: 0, background: tok.toolbar, borderBottom: `1px solid ${tok.border}`, 
+        height: isMobile ? 48 : 'auto' 
+      }}>
+        <span style={{ 
+          fontSize: 11, 
+          fontWeight: isMobile ? 800 : 700, 
+          textTransform: 'uppercase', 
+          letterSpacing: isMobile ? '.1em' : '.08em', 
+          color: tok.textMuted 
+        }}>
+          {isMobile ? 'Blocks' : 'Block Editor'}
+        </span>
         
         <button
           style={{ 
@@ -1616,15 +1643,15 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             borderColor: useBlocklyCode ? 'var(--green)' : tok.border, 
             color: useBlocklyCode ? 'var(--green)' : tok.textMuted,
             display: 'flex', alignItems: 'center', gap: 6,
-            fontWeight: 800,
-            marginLeft: 4,
-            padding: '4px 8px',
-            fontSize: 10
+            fontWeight: isMobile ? 800 : 700,
+            marginLeft: isMobile ? 4 : 8,
+            padding: isMobile ? '4px 8px' : '3px 10px',
+            fontSize: isMobile ? 10 : 11
           }}
           onClick={onToggleUseBlocklyCode}
           title={useBlocklyCode ? "System is using Blocks" : "System is using Code"}
         >
-          <div style={{ width: 6, height: 6, borderRadius: '50%', background: useBlocklyCode ? 'var(--green)' : 'currentColor' }} />
+          <div style={{ width: isMobile ? 6 : 8, height: isMobile ? 6 : 8, borderRadius: '50%', background: useBlocklyCode ? 'var(--green)' : 'currentColor' }} />
           Use Blocks
         </button>
 
@@ -1648,9 +1675,9 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             borderColor: showCode ? 'var(--accent)' : tok.border, 
             color: showCode ? 'var(--accent)' : tok.textMuted,
             background: showCode ? 'rgba(0,255,255,0.05)' : 'transparent',
-            fontSize: 10,
-            padding: '4px 8px',
-            marginRight: 2 // Move Preview slightly left
+            fontSize: isMobile ? 10 : 11,
+            padding: isMobile ? '4px 8px' : '3px 10px',
+            marginRight: isMobile ? 2 : 0 
           }}
           onClick={() => setShowCode(v => !v)}
         >Preview</button>
@@ -1662,9 +1689,9 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             borderColor: 'var(--accent)', 
             color: '#000', 
             fontWeight: 800,
-            fontSize: 11,
-            padding: '5px 12px',
-            boxShadow: '0 2px 8px rgba(0,255,255,0.2)'
+            fontSize: isMobile ? 11 : 11,
+            padding: isMobile ? '5px 12px' : '3px 10px',
+            boxShadow: isMobile ? '0 2px 8px rgba(0,255,255,0.2)' : 'none'
           }}
           onClick={handleExport} disabled={loadStatus !== 'ready'}
         >Use Code</button>
@@ -1685,13 +1712,13 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
 
         {/* ════ Sidebar ════ */}
         <div style={{ 
-          width: showSidebar ? sidebarWidth : 0, 
+          width: isMobile ? (showSidebar ? sidebarWidth : 0) : sidebarWidth, 
           flexShrink: 0, 
           display: 'flex', 
           flexDirection: 'column', 
           overflow: 'hidden', 
-          background: 'var(--bg2)',
-          borderRight: showSidebar ? '1px solid var(--border)' : 'none',
+          background: isMobile ? 'var(--bg2)' : tok.sidebar,
+          borderRight: (isMobile ? showSidebar : true) ? `1px solid ${tok.border}` : 'none',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }}>
 
@@ -1712,18 +1739,19 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                   key={cat.id}
                   onClick={() => setActiveCat(cat.id)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '6px 10px', borderRadius: 12,
-                    border: '1px solid var(--border)',
-                    background: active ? 'var(--bg)' : 'var(--bg3)',
-                    color: active ? cat.color : 'var(--text3)',
+                    display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 5,
+                    padding: isMobile ? '6px 10px' : '5px 8px', 
+                    borderRadius: isMobile ? 12 : 20,
+                    border: `1px solid ${active ? cat.color : tok.border}`,
+                    background: active ? (isMobile ? 'var(--bg)' : cat.color + '22') : (isMobile ? 'var(--bg3)' : 'transparent'),
+                    color: active ? cat.color : tok.textMuted,
                     cursor: 'pointer', fontFamily: 'inherit',
-                    fontSize: 10, fontWeight: 800,
-                    textTransform: 'uppercase',
-                    letterSpacing: '.05em',
+                    fontSize: isMobile ? 10 : 11, 
+                    fontWeight: active ? 700 : 400,
+                    textTransform: isMobile ? 'uppercase' : 'none',
+                    letterSpacing: isMobile ? '.05em' : 'normal',
                     transition: 'all .2s', whiteSpace: 'nowrap', overflow: 'hidden',
-                    boxShadow: active ? `0 4px 12px ${cat.color}22` : 'none',
-                    borderColor: active ? cat.color : 'var(--border)',
+                    boxShadow: (isMobile && active) ? `0 4px 12px ${cat.color}22` : 'none',
                   }}
                   title={cat.label}
                 >
