@@ -63,8 +63,8 @@ jobs:
           echo "Installing frontend deps..."
           npm ci --include=optional
           echo "Installing native Linux binaries..."
-          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1
-          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); console.log('Native binaries OK')"
+          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
 
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
