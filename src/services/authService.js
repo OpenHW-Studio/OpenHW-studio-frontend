@@ -77,7 +77,7 @@ export const signupUser = async (userData) => {
  * Native Email/Password Login
  * Matches 'signinUser' in userController.js
  */
-export const loginUser = async (credentials) => {
+export const loginUser = async (credentials, isAdminPortal = false) => {
   const response = await fetch(`${BASE_URL}/user/signin`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -95,8 +95,13 @@ export const loginUser = async (credentials) => {
   }
 
   // Save the JWT and user data returned by the backend
-  if (data.token) saveToken(data.token);
-  if (data.user) saveUser(data.user);
+  if (isAdminPortal) {
+    if (data.token) saveAdminToken(data.token);
+    if (data.user) saveAdminUser(data.user);
+  } else {
+    if (data.token) saveToken(data.token);
+    if (data.user) saveUser(data.user);
+  }
 
   return data; // Returns { message, token, user }
 };
@@ -105,7 +110,7 @@ export const loginUser = async (credentials) => {
  * Google OAuth Login
  * Sends the access token to the backend for verification.
  */
-export const googleLogin = async (accessToken, role) => {
+export const googleLogin = async (accessToken, role, isAdminPortal = false) => {
   const response = await fetch(`${BASE_URL}/user/google`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -118,8 +123,13 @@ export const googleLogin = async (accessToken, role) => {
     throw new Error(data.message || 'Google login failed');
   }
 
-  if (data.token) saveToken(data.token);
-  if (data.user) saveUser(data.user);
+  if (isAdminPortal) {
+    if (data.token) saveAdminToken(data.token);
+    if (data.user) saveAdminUser(data.user);
+  } else {
+    if (data.token) saveToken(data.token);
+    if (data.user) saveUser(data.user);
+  }
 
   return data;
 };

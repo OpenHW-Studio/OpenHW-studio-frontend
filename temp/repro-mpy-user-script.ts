@@ -66,12 +66,12 @@ const rawPayload = `\u0001${normalized}\n\u0004`;
 const components = [
   {
     id: 'pico1',
-    type: 'wokwi-raspberry-pi-pico',
+    type: 'raspberry-pi-pico',
     attrs: { env: 'micropython', builder: 'arduino-pico' },
   },
   {
     id: 'led1',
-    type: 'wokwi-led',
+    type: 'led',
     attrs: { color: 'red' },
   },
 ];
@@ -91,7 +91,7 @@ let gp15Toggles = 0;
 let lastGp15 = null;
 
 const runner = createRunnerForBoard(
-  'wokwi-raspberry-pi-pico',
+  'raspberry-pi-pico',
   toUf2PayloadFromFile(BACKEND_DEFAULT_UF2),
   components,
   wires,

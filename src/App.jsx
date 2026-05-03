@@ -1,4 +1,6 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useIsMobile } from './hooks/useIsMobile'
+
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { GamificationProvider } from './context/GamificationContext.jsx'
@@ -7,7 +9,7 @@ import { GamificationToasts } from './services/gamification/Gamificationpanel.js
 import LandingPage from './pages/LandingPage.jsx'
 import UserLoginPage from './pages/auth/UserLoginPage.jsx'
 import SigninPage from './pages/auth/SigninPage.jsx'
-import SignupPage from './pages/auth/signupPage.jsx'
+import SignupPage from './pages/auth/SignupPage.jsx'
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx'
 import ResetPasswordPage from './pages/auth/ResetPasswordPage.jsx'
 import RoleSelectPage from './pages/RoleSelectPage.jsx'
@@ -31,10 +33,39 @@ import QuizPage from './pages/QuizPage.jsx'
 import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
 import AdventureMapPage from './pages/AdventureMapPage.jsx'
 import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
-import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage'
-import GuidedSimulatorPage from './pages/GuidedSimulatorPage'
+import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage.jsx'
+import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
+import MobileSimulatorPage from "./pages/mobileui/SimulatorPage.jsx";
+
+
+
+const ResponsiveSimulatorRoute = ({ desktopElement, mobileElement }) => {
+  const isMobile = useIsMobile();
+  const location = useLocation();
+
+  const isMobilePath = location.pathname.startsWith('/mobile-simulator');
+  
+  // If we're on mobile but NOT on a mobile path, redirect to mobile
+  if (isMobile && !isMobilePath) {
+    const newPath = location.pathname.startsWith('/simulator') 
+      ? location.pathname.replace('/simulator', '/mobile-simulator')
+      : `/mobile-simulator${location.pathname}`;
+    return <Navigate to={newPath} replace />;
+  }
+
+  // If we're on desktop but ON a mobile path, redirect to desktop
+  if (!isMobile && isMobilePath) {
+    const newPath = location.pathname.replace('/mobile-simulator', '/simulator');
+    // If it was just /mobile-simulator, it goes to /simulator. 
+    // If it was /mobile-simulator/something, it goes to /simulator/something.
+    return <Navigate to={newPath === '' ? '/simulator' : newPath} replace />;
+  }
+
+  return isMobile ? mobileElement : desktopElement;
+};
 
 export default function App() {
+
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -64,11 +95,20 @@ export default function App() {
             <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
                         <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} />
             {/* Guest accessible simulator */}
-            <Route path="/simulator" element={<SimulatorPage />} />
-            <Route path="/simulator/live/:liveCode" element={<SimulatorPage />} />
-            <Route path="/simulator/share/:shareId" element={<SimulatorPage />} />
-            <Route path="/simulator/share/:shareId/assignment/:classId/:assignmentId" element={<SimulatorPage />} />
-            <Route path="/:projectName/demo" element={<SimulatorPage />} />
+            <Route path="/simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+
+            <Route path="/simulator/live/:liveCode" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator/live/:liveCode" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            
+            <Route path="/simulator/share/:shareId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator/share/:shareId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            
+            <Route path="/simulator/share/:shareId/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator/share/:shareId/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+
+            <Route path="/:projectName/demo" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+
             <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
             <Route path="/:projectName/gamified-guide" element={<GamifiedProjectGuidePage />} />
             <Route path="/:projectName/assessment" element={<ProjectAssessmentPage />} />

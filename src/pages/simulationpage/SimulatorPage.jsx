@@ -19,11 +19,13 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
 import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion } from '../../services/simulatorService.js'
+import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
+import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
@@ -43,9 +45,22 @@ const getHtml2canvas = async () => {
 };
 
 import * as EmulatorComponents from "@openhw/emulator";
+const { 
+  FullCircuitValidator, 
+  analyzeCodeHardwareSync, 
+  applyCircuitFix: sharedApplyCircuitFix,
+  runAutoFixAll,
+  initializeCircuitFixEngine,
+  getFixHistory,
+  getFixValidator,
+  undoLastFix,
+  redoLastFix,
+  ProtocolAnalyzer: SharedProtocolAnalyzer 
+} = EmulatorComponents;
 
 // Web Editor features
-import Editor from 'react-simple-code-editor';
+import EditorComponent from 'react-simple-code-editor';
+const Editor = EditorComponent.default || EditorComponent;
 import BlocklyEditor from '../../components/BlocklyEditor.jsx';
 import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
@@ -53,6 +68,47 @@ import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
 // Import a Prism theme (or we can inject our own CSS wrapper)
 import 'prismjs/themes/prism-tomorrow.css';
+
+const EDIT_COPY_KEY = 'openhw_edit_copy';
+const EDIT_COPY_PAYLOAD_PREFIX = 'openhw_edit_copy_payload_';
+const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
+
+function assertSafeDynamicModule(code, label) {
+  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
+    throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
+  }
+}
+
+function collectRawComponentSources() {
+  const rawFiles = {
+    ...import.meta.glob('../../../emulator/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
+    ...import.meta.glob('../../../emulator/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
+  };
+
+  const out = {};
+  Object.entries(rawFiles).forEach(([filePath, raw]) => {
+    const normalized = String(filePath || '').replace(/\\/g, '/').replace(/\?raw$/, '');
+    const match = normalized.match(/\/components\/([^/]+)\/(.+)$/);
+    if (!match) return;
+
+    const [, componentType, leaf] = match;
+    if (!out[componentType]) out[componentType] = {};
+    const text = String(raw || '');
+
+    if (leaf === 'ui.tsx') out[componentType].uiRaw = text;
+    if (leaf === 'logic.ts') out[componentType].logicRaw = text;
+    if (leaf === 'validation.ts') out[componentType].validationRaw = text;
+    if (leaf === 'index.ts') out[componentType].indexRaw = text;
+    if (leaf === 'doc/index.html') out[componentType].docRaw = text;
+  });
+
+  return out;
+}
+
+const COMPONENT_RAW_SOURCES = collectRawComponentSources();
 
 // Build Catalog & UI Registry dynamically from local backend imports
 const COMPONENT_REGISTRY = {};
@@ -62,9 +118,24 @@ Object.entries(EmulatorComponents).forEach(([key, module]) => {
 
   if (module && module.manifest) {
     const compId = module.manifest.type || module.manifest.id || key;
-    COMPONENT_REGISTRY[compId] = module;
+    const raw = COMPONENT_RAW_SOURCES[compId] || COMPONENT_RAW_SOURCES[key];
+    COMPONENT_REGISTRY[compId] = raw
+      ? {
+        ...module,
+        ...raw,
+        ...(raw.docRaw ? { doc: raw.docRaw } : {}),
+      }
+      : module;
   }
 });
+
+// Types that are natively compiled into the frontend and should not be overwritten by dynamic sync
+const BUILTIN_COMPONENT_TYPES = new Set(
+  Object.values(EmulatorComponents)
+    .filter(m => m && m.manifest)
+    .map(m => m.manifest.type || m.manifest.id)
+    .filter(Boolean)
+);
 
 // Compatibility aliases: accept WS2812 naming variants used in imported diagrams.
 const neopixelBaseModule = COMPONENT_REGISTRY['wokwi-neopixel-matrix'];
@@ -235,6 +306,64 @@ function buildIndexSourceFromRegistry(registryInfo, fallbackType) {
   return `import manifest from './manifest.json';\nimport { ${name}UI, BOUNDS${hasDuringRun ? ', contextMenuDuringRun' : ''}${hasOnlyDuringRun ? ', contextMenuOnlyDuringRun' : ''}${hasCtxMenu ? ', ContextMenu' : ''} } from './ui';\nimport { ${name}Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n  manifest,\n  UI: ${name}UI,\n  LogicClass: ${name}Logic,\n  BOUNDS,\n  validation,${hasCtxMenu ? '\n  ContextMenu,' : ''}${hasDuringRun ? '\n  contextMenuDuringRun,' : ''}${hasOnlyDuringRun ? '\n  contextMenuOnlyDuringRun,' : ''}\n};\n`;
 }
 
+function cleanupEditCopyPayloadStorage() {
+  const removeMatching = (storageLike) => {
+    try {
+      const keys = [];
+      for (let i = 0; i < storageLike.length; i += 1) {
+        const k = storageLike.key(i);
+        if (k && k.startsWith(EDIT_COPY_PAYLOAD_PREFIX)) keys.push(k);
+      }
+      keys.forEach((k) => storageLike.removeItem(k));
+    } catch (_) {
+      // Ignore storage access failures (private mode, disabled storage, etc.)
+    }
+  };
+
+  removeMatching(sessionStorage);
+  removeMatching(localStorage);
+}
+
+function writeEditCopyPayload(data) {
+  const serialized = JSON.stringify(data || {});
+  const payloadKey = `${EDIT_COPY_PAYLOAD_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const pointer = JSON.stringify({
+    __openhwEditCopyPointer: true,
+    version: 2,
+    storage: 'session',
+    key: payloadKey,
+    createdAt: Date.now(),
+  });
+
+  const writePointerPayload = () => {
+    sessionStorage.setItem(payloadKey, serialized);
+    localStorage.setItem(EDIT_COPY_KEY, pointer);
+  };
+
+  try {
+    writePointerPayload();
+    return { ok: true };
+  } catch (_) {
+    // Fall through to next strategy
+  }
+
+  try {
+    localStorage.setItem(EDIT_COPY_KEY, serialized);
+    return { ok: true };
+  } catch (_) {
+    // Fall through to cleanup + retry
+  }
+
+  cleanupEditCopyPayloadStorage();
+
+  try {
+    writePointerPayload();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
 Object.values(COMPONENT_REGISTRY).forEach(module => {
   const manifest = module.manifest;
   if (!manifest) return;
@@ -261,8 +390,62 @@ Object.values(COMPONENT_REGISTRY).forEach(module => {
 sortCatalog(LOCAL_CATALOG);
 
 // Tracks component types that were dynamically injected from the backend (not built-in).
-// Used by the polling loop to detect deletions and purge them from the registry.
 const BACKEND_INJECTED_TYPES = new Set();
+
+/**
+ * Injects an array of pre-transpiled backend components into the global registry and catalog.
+ * Works for both cached (IDB) and freshly fetched components.
+ * @param {Array<{id, manifest, transpiledUI, transpiledLogic, uiRaw, logicRaw, validationRaw, indexRaw}>} comps
+ */
+function injectComponentsIntoRegistry(comps) {
+  for (const comp of comps) {
+    const { id, manifest, transpiledUI, transpiledLogic, uiRaw, logicRaw, validationRaw, indexRaw } = comp;
+    if (!manifest || !transpiledUI) continue;
+
+    // Skip core components natively present in the frontend bundle
+    if (BUILTIN_COMPONENT_TYPES.has(manifest.type)) continue;
+    try {
+      const exportsUI = {};
+      const evalUI = new Function('exports', 'require', 'React', transpiledUI);
+      evalUI(exportsUI, (mod) => {
+        if (mod === 'react') return React;
+        if (mod.endsWith('manifest.json')) return manifest;
+        return null;
+      }, React);
+
+      const uiComponent = resolveUiExport(exportsUI);
+      if (!uiComponent) continue;
+
+      COMPONENT_REGISTRY[manifest.type] = {
+        manifest,
+        UI: uiComponent,
+        BOUNDS: exportsUI.BOUNDS,
+        ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))] || null,
+        contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+        contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+        logicCode: transpiledLogic,
+        uiRaw: uiRaw || '',
+        logicRaw: logicRaw || '',
+        validationRaw: validationRaw || '',
+        indexRaw: indexRaw || '',
+        isDynamic: true,
+      };
+
+      if (manifest.pins) LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
+      BACKEND_INJECTED_TYPES.add(manifest.type);
+
+      const groupName = normalizeGroupName(manifest.group);
+      let group = LOCAL_CATALOG.find(g => g.group === groupName);
+      if (!group) { group = { group: groupName, items: [] }; LOCAL_CATALOG.push(group); }
+      group.items = group.items.filter(i => i.type !== manifest.type);
+      const { pins: _p, group: _g, ...catalogItem } = manifest;
+      group.items.push(catalogItem);
+    } catch (err) {
+      console.warn(`[ComponentCache] Failed to inject component ${id}:`, err);
+    }
+  }
+  sortCatalog(LOCAL_CATALOG);
+}
 
 let nextWireId = 1
 
@@ -543,6 +726,54 @@ function normalizeBoardKind(source) {
   if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
   return 'arduino_uno';
+}
+
+// ── Breadboard Snapping Helpers ─────────────────────────────────────────────
+const BREADBOARD_PITCH = 15;
+
+function getRotatedPoint(x, y, rotation, originX, originY) {
+  const rad = (rotation * Math.PI) / 180;
+  const dx = x - originX;
+  const dy = y - originY;
+  return {
+    x: originX + dx * Math.cos(rad) - dy * Math.sin(rad),
+    y: originY + dx * Math.sin(rad) + dy * Math.cos(rad),
+  };
+}
+
+function getComponentWorldPins(comp, pins) {
+  const rotation = comp.rotation || 0;
+  const centerX = comp.x + (comp.w || 0) / 2;
+  const centerY = comp.y + (comp.h || 0) / 2;
+
+  return (pins || []).map(pin => {
+    const world = getRotatedPoint(comp.x + pin.x, comp.y + pin.y, rotation, centerX, centerY);
+    return { ...pin, worldX: world.x, worldY: world.y };
+  });
+}
+
+function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
+  const snapRadius = 15;
+  let best = null;
+  let minDist = Infinity;
+
+  const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+  for (const bb of breadboards) {
+    const pins = pinDefs[bb.type] || [];
+    const bbCenterX = bb.x + (bb.w || 0) / 2;
+    const bbCenterY = bb.y + (bb.h || 0) / 2;
+    const bbRotation = bb.rotation || 0;
+
+    for (const pin of pins) {
+      const pinWorld = getRotatedPoint(bb.x + pin.x, bb.y + pin.y, bbRotation, bbCenterX, bbCenterY);
+      const dist = Math.hypot(pinWorld.x - worldX, pinWorld.y - worldY);
+      if (dist < snapRadius && dist < minDist) {
+        minDist = dist;
+        best = { bbId: bb.id, holeId: pin.id, x: pinWorld.x, y: pinWorld.y };
+      }
+    }
+  }
+  return best;
 }
 
 function resolveBoardFqbnForComponent(boardComp, boardKind) {
@@ -1098,90 +1329,9 @@ function endpointAliases(endpoint) {
   return Array.from(aliases);
 }
 
-function validateCircuitLocally(components, wires) {
-  const errors = [];
-  const componentById = new Map((components || []).map((c) => [c.id, c]));
-
-  const programmableBoards = (components || []).filter((c) => isProgrammableBoardType(c.type));
-  if (programmableBoards.length === 0) return errors;
-
-  const graph = new Map();
-  const addEdge = (a, b) => {
-    if (!graph.has(a)) graph.set(a, new Set());
-    if (!graph.has(b)) graph.set(b, new Set());
-    graph.get(a).add(b);
-    graph.get(b).add(a);
-  };
-
-  (wires || []).forEach((w) => {
-    const fromAliases = endpointAliases(w.from);
-    const toAliases = endpointAliases(w.to);
-    fromAliases.forEach((fa) => toAliases.forEach((ta) => addEdge(fa, ta)));
-  });
-
-  const isMcuDigitalEndpoint = (endpoint) => {
-    const [compId, pin] = String(endpoint || '').split(':');
-    const comp = componentById.get(compId);
-    if (!comp || !isProgrammableBoardType(comp.type)) return false;
-    if (!pin) return false;
-    return /^D?\d+$/i.test(pin) || /^A\d+$/i.test(pin);
-  };
-
-  const bfsReachable = (starts) => {
-    const q = [...starts];
-    const visited = new Set(starts);
-    while (q.length) {
-      const n = q.shift();
-      for (const nei of graph.get(n) || []) {
-        if (visited.has(nei)) continue;
-        visited.add(nei);
-        q.push(nei);
-      }
-    }
-    return visited;
-  };
-
-  programmableBoards.forEach((board) => {
-    const powerPins = [`${board.id}:5V`, `${board.id}:3v3`, `${board.id}:VCC`];
-    const gndPins = [`${board.id}:gnd`, `${board.id}:gnd_1`, `${board.id}:gnd_2`, `${board.id}:gnd_3`, `${board.id}:GND`];
-    const reachable = bfsReachable(powerPins);
-    const isShorted = gndPins.some((g) => reachable.has(g) || reachable.has(`${board.id}:gnd`));
-    if (isShorted) {
-      errors.push({
-        type: 'error',
-        message: `Potential short circuit on ${board.id}: power net is connected to GND.`,
-        compIds: [board.id],
-      });
-    }
-  });
-
-  // LED should not be directly connected between two MCU GPIO pins in this simulator.
-  const leds = (components || []).filter((c) => String(c.type || '').toLowerCase() === 'wokwi-led');
-  leds.forEach((led) => {
-    const anode = `${led.id}:A`;
-    const cathode = `${led.id}:K`;
-    const anodeN = [...(graph.get(anode) || [])];
-    const cathodeN = [...(graph.get(cathode) || [])];
-
-    const anodeMcu = anodeN.filter(isMcuDigitalEndpoint);
-    const cathodeMcu = cathodeN.filter(isMcuDigitalEndpoint);
-
-    if (anodeMcu.length > 0 && cathodeMcu.length > 0) {
-      const involved = new Set([led.id]);
-      [...anodeMcu, ...cathodeMcu].forEach((ep) => involved.add(String(ep).split(':')[0]));
-      errors.push({
-        type: 'error',
-        message: `Invalid LED wiring on ${led.id}: anode and cathode are tied to MCU GPIO pins. Connect LED through a resistor to VCC/GND instead of pin-to-pin drive.`,
-        compIds: [...involved],
-      });
-    }
-  });
-
-  return errors;
-}
-
 /**
  * Helper to check if two category sets (strings or arrays) have any common elements.
+ * Used by the canvas pin-matching and suggestion UI.
  */
 function hasCategoryIntersection(cat1, cat2) {
   if (!cat1 || !cat2) return false;
@@ -1193,6 +1343,7 @@ function hasCategoryIntersection(cat1, cat2) {
 /**
  * Determines the logical category (or categories) of a pin.
  * Returns an array of strings, or null if no category matches.
+ * Used by the canvas pin-matching and suggestion UI.
  */
 function getPinCategory(pId, pDesc, compType) {
   const sId = String(pId || '').toLowerCase();
@@ -1240,7 +1391,7 @@ function getPinCategory(pId, pDesc, compType) {
     if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
   }
 
-  // 7. Motor Driver / EN Special (Enable can be PWM or POWER)
+  // 7. Motor Driver / EN Special
   if (matches(/^en([._]?\d+(,\d+)?)?$/i)) {
     if (!categories.includes('PWM')) categories.push('PWM');
     if (!categories.includes('POWER')) categories.push('POWER');
@@ -1269,8 +1420,137 @@ function getPinCategory(pId, pDesc, compType) {
   return categories.length > 0 ? categories : null;
 }
 
+// ─── Memoized Wire Component ────────────────────────────────────────────────
+const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme }) => {
+  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints), [p1, e1, e2, p2, wire.waypoints]);
+
+  return (
+    <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
+      <path id={`wire-path-hit-${wire.id}`} d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
+      <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
+      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
+      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
+      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints).reduce((acc, _, i, arr) => {
+        if (i < 1 || i >= arr.length - 2) return acc;
+        const a = arr[i], b = arr[i + 1];
+        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+        if (segLen < 20) return acc;
+        const isHoriz = Math.abs(b.y - a.y) < 1;
+        const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+        acc.push(
+          <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
+            fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
+            stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
+            opacity={isSelected ? 1 : 0.55}
+            style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
+            title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
+            onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr)}
+            onClick={ev => ev.stopPropagation()}
+            onDoubleClick={ev => {
+              ev.stopPropagation(); ev.preventDefault();
+              // This logic remains in parent for now or we pass a handler
+            }}
+          />
+        );
+        return acc;
+      }, [])}
+    </g>
+  );
+});
+
+// ─── Memoized Component Wrapper ──────────────────────────────────────────────
+const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
+  const rad = ((comp.rotation || 0) * Math.PI) / 180;
+  const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
+  
+  const getBounds = () => {
+    const reg = COMPONENT_REGISTRY[comp.type];
+    if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+    if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+    return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+  };
+  const b = getBounds();
+
+  return (
+    <React.Fragment>
+      <div
+        id={`comp-hit-${comp.id}`}
+        style={{
+          position: 'absolute',
+          left: 0, top: 0,
+          width: comp.w, height: comp.h,
+          zIndex: isSelected ? 4 : 2,
+          userSelect: 'none',
+          pointerEvents: 'none',
+          transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
+          transformOrigin: 'center center',
+        }}
+      >
+        <div
+          style={{
+            position: 'absolute',
+            left: b.x, top: b.y,
+            width: b.w, height: b.h,
+            cursor: 'move',
+            pointerEvents: 'auto',
+            zIndex: 0,
+          }}
+          onMouseDown={onMouseDown}
+          onClick={onClick}
+          onDoubleClick={e => e.stopPropagation()}
+        />
+
+        {/* Autofix preview panel intentionally rendered at page level (not per-component) */}
+        {isSelected && (
+          <div style={{
+            position: 'absolute',
+            left: b.x - 6, top: b.y - 6,
+            width: b.w + 12, height: b.h + 12,
+            borderRadius: 8,
+            border: '2px solid var(--accent)',
+            boxShadow: '0 0 16px var(--glow)',
+            pointerEvents: 'none', zIndex: 10,
+          }} />
+        )}
+        {hasError && (
+          <div 
+            className="safety-pulse"
+            style={{
+              position: 'absolute',
+              left: b.x - 8, top: b.y - 8,
+              width: b.w + 16, height: b.h + 16,
+              borderRadius: 12,
+              border: '2px solid #ef4444',
+              boxShadow: '0 0 20px rgba(239,68,68,0.6)',
+              pointerEvents: 'none', zIndex: 9,
+              background: 'rgba(239,68,68,0.05)',
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'flex-end',
+              padding: '4px'
+            }}
+          >
+             <div style={{
+               background: '#ef4444',
+               borderRadius: '50%',
+               width: '18px', height: '18px',
+               display: 'flex', alignItems: 'center', justifyContent: 'center',
+               color: 'white', fontSize: '12px', fontWeight: 'bold',
+               boxShadow: '0 0 8px rgba(239,68,68,0.8)',
+               transform: 'translate(4px, -4px)'
+             }}>!</div>
+          </div>
+        )}
+      </div>
+      {/* Labels and Pins are usually better kept in the parent loop or as sub-memo items */}
+    </React.Fragment>
+  );
+});
+
 export default function SimulatorPage({ gamificationMode = false }) {
-  const { isAuthenticated, user, token, logout, loading: authLoading } = useAuth()
+  const { isAuthenticated, isAdminAuthenticated, user, adminUser, token, logout, loading: authLoading } = useAuth()
+  const activeUser = user || adminUser;
+  const isAnyAuthenticated = isAuthenticated || isAdminAuthenticated;
   const navigate = useNavigate()
   const { projectName = '', shareId = '', classId = '', assignmentId = '', liveCode = '' } = useParams()
   const location = useLocation()
@@ -1278,9 +1558,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
   const assignmentMode = Boolean(shareId && classId && assignmentId)
-  const studentAssignmentMode = assignmentMode && user?.role === 'student'
+  const studentAssignmentMode = assignmentMode && activeUser?.role === 'student'
   const liveSessionCode = String(liveCode || '').trim().toUpperCase()
-  const currentLiveUserId = String(user?._id || user?.id || '')
+  const currentLiveUserId = String(activeUser?._id || activeUser?.id || '')
   const liveRoleParam = String(assessmentParams.get('role') || '').trim().toLowerCase()
   const liveMeetingMode = Boolean(liveSessionCode)
   const isLiveTeacher = liveMeetingMode && liveRoleParam === 'teacher'
@@ -1364,6 +1644,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
     handleAssessmentSubmit()
   }, [gamAllUnlocked, gamLockedCount, handleAssessmentSubmit])
 
+  // Incremented whenever backend components are injected/updated so catalog consumers re-render
+  const [customCatalogVersion, setCustomCatalogVersion] = useState(0);
+
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(() => {
     const t = document.documentElement.getAttribute('data-theme') || 'light';
@@ -1428,13 +1711,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
   const [showFavorites, setShowFavorites] = useState(true)
   const [paletteContextMenu, setPaletteContextMenu] = useState(null) // { x, y, item }
-  const [selectedPaletteItem, setSelectedPaletteItem] = useState(null) // item for description panel
   const [showComponentDesc, setShowComponentDesc] = useState(true) // description panel visible
   const [showCreateComponentModal, setShowCreateComponentModal] = useState(false)
   const paletteContextMenuRef = useRef(null)
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [showCanvasMenu, setShowCanvasMenu] = useState(false)
-  const [showConnectionsPanel, setShowConnectionsPanel] = useState(true)
+  const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
   const [wirepointsEnabled, setWirepointsEnabled] = useState(false)
   const canvasZoomRef = useRef(1)
   const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 })
@@ -1463,8 +1745,29 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [showValidation, setShowValidation] = useState(true)
   const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
+  
+  // Inject safety pulse animation
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      @keyframes safetyPulse {
+        0% { transform: scale(1); opacity: 0.8; box-shadow: 0 0 10px rgba(239,68,68,0.4); }
+        50% { transform: scale(1.02); opacity: 1; box-shadow: 0 0 25px rgba(239,68,68,0.7); }
+        100% { transform: scale(1); opacity: 0.8; box-shadow: 0 0 10px rgba(239,68,68,0.4); }
+      }
+      .safety-pulse {
+        animation: safetyPulse 2s infinite ease-in-out;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
   const [isCompiling, setIsCompiling] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [protocolLogs, setProtocolLogs] = useState([])
+  const [activeConsoleTab, setActiveConsoleTab] = useState('console')
+  const [healthScore, setHealthScore] = useState(100)
+  const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
   const [pinStates, setPinStates] = useState({})
   const [neopixelData, setNeopixelData] = useState({})
   const [oopStates, setOopStates] = useState({});
@@ -1624,8 +1927,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [isApplyingFirmwareUpload, setIsApplyingFirmwareUpload] = useState(false);
   const [runStartedAtMs, setRunStartedAtMs] = useState(null);
   const [runDurationSec, setRunDurationSec] = useState(0);
-  const simulationSpeed = 1;
-  const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
 
   // View Panel State
   const [showViewPanel, setShowViewPanel] = useState(false);
@@ -1667,6 +1968,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const runComponentUpdateCountsRef = useRef({})
   const runPinTransitionCountsRef = useRef({})
   const runLastBoardPinsRef = useRef(new Map())
+  const validationRunCacheRef = useRef({ signature: '', allowRun: true, errors: [], healthScore: 100, toast: null })
   const neopixelRefs = useRef({})
 
   const serialPlotBufferRef = useRef('');
@@ -1680,6 +1982,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const innerCanvasRef = useRef(null)   // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
   const rafMoveRef = useRef(null)       // pending rAF id for mousemove throttle (Fixes #1-#4)
   const pendingMoveRef = useRef(null)   // latest computed move data, read by the rAF callback
+  const rafZoomRef = useRef(null)
+  const pendingZoomRef = useRef(null)
   const svgRef = useRef(null)
   const viewPanelRef = useRef(null)
   const schematicSvgRef = useRef(null)
@@ -1690,6 +1994,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // Reactive refs — kept current every render so async effects get fresh values
   const getPinPosRef = useRef(null);
   const componentsRef = useRef([]);
+  const wiresRef = useRef([]);
   const pinDefsRef = useRef({});
 
   // ── Project persistence state ────────────────────────────────────────────────
@@ -1697,6 +2002,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [currentProjectName, setCurrentProjectName] = useState('Untitled');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [showF1Menu, setShowF1Menu] = useState(false);
+  const [simulationSpeed, setSimulationSpeed] = useState(1.0);
+  const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
+  const [showSpeedDialog, setShowSpeedDialog] = useState(false);
   const [saveDialogName, setSaveDialogName] = useState('');
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -1731,6 +2039,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const liveSyncTimerRef = useRef(null);
   const liveApplyingRemoteRef = useRef(false);
   const lastLiveSyncPayloadRef = useRef('');
+  const lastLiveSyncTimeRef = useRef(0);
   // My Projects sidebar state
   const [showProjectsSidebar, setShowProjectsSidebar] = useState(false);
   const [projectsSidebarTab, setProjectsSidebarTab] = useState('projects'); // 'favourites' | 'projects' | 'custom' | 'settings'
@@ -1739,6 +2048,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
     catch { return []; }
   });
   const [projContextMenu, setProjContextMenu] = useState(null); // { proj, x, y }
+  const [snappingHoles, setSnappingHoles] = useState([]); // Array<{ bbId, holeId, x, y }>
   const [renamingProjectId, setRenamingProjectId] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => {
@@ -1764,8 +2074,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
         if (relativePath.endsWith('logic.ts') || relativePath.endsWith('logic.js')) logicStr = await zip.files[relativePath].async('string');
         if (relativePath.endsWith('validation.ts') || relativePath.endsWith('validation.js')) validationStr = await zip.files[relativePath].async('string');
         if (relativePath.endsWith('index.ts') || relativePath.endsWith('index.js')) indexStr = await zip.files[relativePath].async('string');
-        // Doc folder — any HTML file inside doc/ directory
-        if (/\/doc\/.*\.html$/i.test(relativePath) || /^doc\/.*\.html$/i.test(relativePath)) {
+        // Doc folder — any HTML file inside doc/ or docs/ directory
+        if (/\/(?:doc|docs)\/.*\.html$/i.test(relativePath) || /^(?:doc|docs)\/.*\.html$/i.test(relativePath)) {
           docHtml = await zip.files[relativePath].async('string');
         }
       }
@@ -1798,10 +2108,16 @@ export default function SimulatorPage({ gamificationMode = false }) {
       const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
       const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
 
+      // Skip protection for SUBMITTED components (the user wants to preview their own work)
+      // but we still assert safety
+      assertSafeDynamicModule(transpileUI, 'ui.tsx');
+      assertSafeDynamicModule(transpileLogic, 'logic.ts');
+
       const exportsUI = {};
       const evalUI = new Function('exports', 'require', 'React', transpileUI);
       evalUI(exportsUI, (mod) => {
         if (mod === 'react') return React;
+        if (mod.endsWith('manifest.json')) return manifest;
         return null;
       }, React);
 
@@ -1835,7 +2151,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
           logicRaw: logicStr,
           validationRaw: validationStr,
           indexRaw: indexStr,
-          ...(docHtml ? { doc: docHtml } : {})
+          ...(docHtml ? { doc: docHtml } : {}),
+          isDynamic: true,
         };
         if (manifest.pins) {
           LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
@@ -1908,9 +2225,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
     }
   };
 
-  useEffect(() => {
-    loadLibraries();
-  }, []);
+  // loadLibraries is called from the demo-load effect below when no demo is loading,
+  // or deferred so that circuit.png gets exclusive network priority on demo pages.
 
   // ── Auto-load component from Component Editor ("Test in Simulator") ────────
   useEffect(() => {
@@ -1933,30 +2249,43 @@ export default function SimulatorPage({ gamificationMode = false }) {
   }, []);
 
   useEffect(() => {
-    if (gamificationMode) return; // gamification simulator starts with clean canvas
-    
+    if (gamificationMode) return;
+
     let cancelled = false;
+    let deferTimer = null;
 
     const loadDemoProject = async () => {
-      if (!projectName) return;
+      if (!projectName) {
+        // No demo loading — run library fetch immediately
+        loadLibraries();
+        return;
+      }
 
       try {
         const pngName = 'circuit.png';
         const pngUrl = `${EXAMPLES_BASE_URL}/${projectName}/${pngName}`;
         const pngRes = await fetch(pngUrl);
-        if (!pngRes.ok) return;
+        if (!pngRes.ok || cancelled) return;
         const blob = await pngRes.blob();
         if (cancelled) return;
         const file = new File([blob], pngName, { type: blob.type || 'image/png' });
         importPng(file);
       } catch (err) {
         console.error(`Failed to load demo project "${projectName}"`, err);
+      } finally {
+        // Defer lib list until after the demo circuit starts painting
+        if (!cancelled) {
+          deferTimer = window.setTimeout(() => { if (!cancelled) loadLibraries(); }, 0);
+        }
       }
     };
 
     loadDemoProject();
-    return () => { cancelled = true; };
-  }, [projectName]);
+    return () => {
+      cancelled = true;
+      if (deferTimer !== null) window.clearTimeout(deferTimer);
+    };
+  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Offline component queue: flush to backend when connectivity restores ──
   useEffect(() => {
@@ -1980,6 +2309,102 @@ export default function SimulatorPage({ gamificationMode = false }) {
     window.addEventListener('online', drainQueue);
     return () => window.removeEventListener('online', drainQueue);
   }, []);
+
+  // ── Sync backend custom components (cache-first, version-checked) ──────────
+  // On every page load:
+  //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
+  //  2. GET /api/components/version (~40 bytes) → compare hash
+  //  3. Only fetch + transpile when the hash actually changed
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncBackendComponents = async () => {
+      // ── Step 1: Serve from cache immediately ──────────────────────────────
+      const cached = await getCachedComponents();
+      if (cached.length > 0 && !cancelled) {
+        injectComponentsIntoRegistry(cached);
+        setCustomCatalogVersion(v => v + 1);
+        console.log(`[ComponentCache] Injected ${cached.length} components from IDB cache.`);
+      }
+
+      // ── Step 2: Lightweight version check ────────────────────────────────
+      const serverVersion = await fetchComponentsVersion();
+      if (!serverVersion || cancelled) return;
+
+      const cachedHash = await getCachedServerHash();
+
+      if (serverVersion === cachedHash) {
+        console.log('[ComponentCache] Cache is fresh, skipping re-fetch.');
+        return;
+      }
+
+      // ── Step 3: Fetch full sources (only when something changed) ──────────
+      console.log('[ComponentCache] Version mismatch — fetching updated components...');
+      const components = await fetchPublicInstalledComponents();
+      if (cancelled) return;
+
+      if (!components.length) {
+        await clearComponentCache();
+        return;
+      }
+
+      // ── Step 4: Transpile with Babel ──────────────────────────────────────
+      const Babel = await getBabel();
+      const injected = [];
+
+      for (const comp of components) {
+        if (cancelled) return;
+        try {
+          const files = comp.files || {};
+          const uiRaw = files['ui.tsx'] || files['ui.jsx'] || '';
+          const logicRaw = files['logic.ts'] || files['logic.js'] || '';
+          const validationRaw = files['validation.ts'] || files['validation.js'] || '';
+          const indexRaw = files['index.ts'] || files['index.js'] || '';
+          const manifest = JSON.parse(files['manifest.json'] || '{}');
+
+          const transpiledUI = Babel.transform(uiRaw, {
+            filename: 'ui.tsx', presets: ['react', 'typescript', 'env'],
+          }).code;
+          const transpiledLogic = Babel.transform(logicRaw, {
+            filename: 'logic.ts', presets: ['typescript', 'env'],
+          }).code;
+
+          injected.push({
+            id: comp.id,
+            manifest,
+            uiRaw,
+            logicRaw,
+            validationRaw,
+            indexRaw,
+            transpiledUI,
+            transpiledLogic,
+          });
+        } catch (err) {
+          console.warn(`[ComponentCache] Transpile failed for ${comp.id}:`, err);
+        }
+      }
+
+      if (cancelled || !injected.length) return;
+
+      // ── Step 5: Persist to IDB + update palette ───────────────────────────
+      await setCachedComponents(injected, serverVersion);
+      injectComponentsIntoRegistry(injected);
+      setCustomCatalogVersion(v => v + 1);
+      console.log(`[ComponentCache] Updated cache with ${injected.length} components (hash: ${serverVersion}).`);
+    };
+
+    // If a demo project is loading, give it a 1.5s head-start on the network
+    // before we fire any component-sync requests.
+    const delay = projectName ? 1500 : 0;
+    const timer = window.setTimeout(() => {
+      if (!cancelled) syncBackendComponents().catch(err => console.warn('[ComponentCache] Sync error:', err));
+    }, delay);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Project: owner string ─────────────────────────────────────────────────
   const getOwner = () => user?.email || 'guest';
@@ -2060,10 +2485,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
 
   // ── Project: load most-recent project on first mount ─────────────────────
-  // ── Project: load most-recent project on first mount ─────────────────────
   useEffect(() => {
-    // Don't auto-load a project if we're in assessment mode or loading a demo
-    if (assessmentMode || projectName || shareId || liveSessionCode) return;
+    // Don't auto-load a project if we're in assessment mode or loading a demo or circuit from URL
+    if (assessmentMode || projectName || shareId || liveSessionCode || assessmentParams.get('circuit')) return;
 
     const owner = user?.email || 'guest';
     listProjects(owner).then((projects) => {
@@ -2241,19 +2665,31 @@ export default function SimulatorPage({ gamificationMode = false }) {
     if (serializedSnapshot === lastLiveSyncPayloadRef.current) return;
     lastLiveSyncPayloadRef.current = serializedSnapshot;
 
-    const timeoutId = window.setTimeout(() => {
+    const now = Date.now();
+    const timeSinceLastSync = now - lastLiveSyncTimeRef.current;
+    const syncInterval = 100; // Throttle to 10Hz for smooth real-time drag/sync
+
+    const sendUpdate = () => {
       try {
-        liveSocketRef.current?.send(JSON.stringify({
-          type: isLiveTeacher ? 'teacher:sync' : 'student:sync',
-          snapshot: nextSnapshot,
-        }));
-        setLiveMeetingStatus(isLiveTeacher ? 'Broadcasting updates' : 'Sharing your edits');
+        if (liveSocketRef.current?.readyState === WebSocket.OPEN) {
+          liveSocketRef.current.send(JSON.stringify({
+            type: isLiveTeacher ? 'teacher:sync' : 'student:sync',
+            snapshot: nextSnapshot,
+          }));
+          lastLiveSyncTimeRef.current = Date.now();
+          setLiveMeetingStatus(isLiveTeacher ? 'Broadcasting updates' : 'Sharing your edits');
+        }
       } catch (error) {
         console.error('Failed to send live simulation update', error);
       }
-    }, 120);
+    };
 
-    return () => window.clearTimeout(timeoutId);
+    if (timeSinceLastSync >= syncInterval) {
+      sendUpdate();
+    } else {
+      const timeoutId = window.setTimeout(sendUpdate, syncInterval - timeSinceLastSync);
+      return () => window.clearTimeout(timeoutId);
+    }
   }, [activeCodeFileId, board, buildLiveMeetingSnapshot, code, components, currentProjectName, isLiveTeacher, liveCanEdit, liveMeetingMode, openCodeTabs, projectFiles, wires]);
 
   const isAssignmentSubmissionClosed = useCallback((assignment) => (
@@ -2293,6 +2729,32 @@ export default function SimulatorPage({ gamificationMode = false }) {
     loadAssignmentSubmission();
     return () => { cancelled = true; };
   }, [assignmentMode, classId, assignmentId, user?.role]);
+
+// ── Auto-load circuit from URL (?circuit=JSON_ENCODED) ──────────────────────
+useEffect(() => {
+  const urlCircuit = assessmentParams.get('circuit');
+  if (!urlCircuit) return;
+
+  try {
+    const payload = JSON.parse(decodeURIComponent(urlCircuit));
+    if (!payload || typeof payload !== 'object') return;
+
+    const normalized = normalizeImportedCircuitData(payload.components || [], payload.connections || []);
+    setBoard(payload.board || 'arduino_uno');
+    setComponents(normalized.components);
+    setWires(normalized.wires);
+    setCode(payload.code || '');
+    syncNextIds(normalized.components, normalized.wires);
+    
+    // Clear project state so we don't accidentally overwrite the user's project
+    setCurrentProjectName('Sample Circuit');
+    setCurrentProjectId(null);
+    currentProjectIdRef.current = null;
+    setHistory({ past: [], future: [] });
+  } catch (e) {
+    console.error('[URL Circuit] Failed to parse circuit from URL:', e);
+  }
+}, [assessmentParams]);
 
   const handleAssignmentSubmissionFilesChange = async (event) => {
     if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
@@ -2486,6 +2948,91 @@ export default function SimulatorPage({ gamificationMode = false }) {
     }
   };
 
+  // ── Fetch and inject dynamically installed components from the backend ──────
+  useEffect(() => {
+    (async () => {
+      try {
+        const installedComps = await fetchPublicInstalledComponents();
+        if (!installedComps || installedComps.length === 0) return;
+
+        const Babel = await getBabel();
+        let injectedCount = 0;
+
+        for (const comp of installedComps) {
+          const { id, files } = comp;
+          if (!files || !files['manifest.json'] || !files['ui.tsx'] || !files['logic.ts']) continue;
+
+          try {
+            const manifest = JSON.parse(files['manifest.json']);
+            const uiRaw = files['ui.tsx'];
+            const logicRaw = files['logic.ts'];
+            const compType = manifest.type || id;
+
+            // Skip if it's a core component or already compiled natively into the frontend
+            if (BUILTIN_COMPONENT_TYPES.has(compType)) continue;
+            if (COMPONENT_REGISTRY[compType] && !COMPONENT_REGISTRY[compType].isDynamic) continue;
+
+            const transpileUI = Babel.transform(uiRaw, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
+            const transpileLogic = Babel.transform(logicRaw, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+            assertSafeDynamicModule(transpileUI, 'ui.tsx');
+            assertSafeDynamicModule(transpileLogic, 'logic.ts');
+
+            const exportsUI = {};
+            const evalUI = new Function('exports', 'require', 'React', transpileUI);
+            evalUI(exportsUI, (mod) => {
+              if (mod === 'react') return React;
+              if (mod.endsWith('manifest.json')) return manifest;
+              return null;
+            }, React);
+
+            const uiComponent = resolveUiExport(exportsUI);
+            if (!uiComponent) continue;
+
+            // Inject into catalog
+            const newCatItem = { ...manifest };
+            delete newCatItem.pins;
+            delete newCatItem.group;
+
+            const groupName = normalizeGroupName(manifest.group);
+            let group = LOCAL_CATALOG.find(g => g.group === groupName);
+            if (!group) {
+              group = { group: groupName, items: [] };
+              LOCAL_CATALOG.push(group);
+            }
+            group.items = group.items.filter(i => i.type !== compType);
+            group.items.push(newCatItem);
+
+            COMPONENT_REGISTRY[compType] = {
+              manifest,
+              UI: uiComponent,
+              BOUNDS: exportsUI.BOUNDS,
+              ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))],
+              contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
+              contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
+              logicCode: transpileLogic,
+              uiRaw,
+              logicRaw,
+              isDynamic: true // Flag to distinguish dynamically injected components
+            };
+            if (manifest.pins) LOCAL_PIN_DEFS[compType] = manifest.pins;
+            injectedCount++;
+
+          } catch (err) {
+            console.error(`[SimulatorPage] Failed to inject dynamically installed component ${id}:`, err);
+          }
+        }
+
+        if (injectedCount > 0) {
+          sortCatalog(LOCAL_CATALOG);
+          setCustomCatalogCounter(c => c + 1);
+          console.log(`[SimulatorPage] Successfully injected ${injectedCount} permanently installed custom components.`);
+        }
+      } catch (err) {
+        console.error('[SimulatorPage] Failed to fetch permanently installed components:', err);
+      }
+    })();
+  }, []);
+
   // ── Admin Preview: inject a pending component passed via sessionStorage ──────
   // When admin clicks "Test in Simulator", AdminPage stores the component in
   // sessionStorage and opens /simulator in a new tab. This effect picks it up,
@@ -2513,10 +3060,16 @@ export default function SimulatorPage({ gamificationMode = false }) {
       const Babel = await getBabel();
       const transpileUI = Babel.transform(uiRaw, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
       const transpileLogic = Babel.transform(logicRaw, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+      assertSafeDynamicModule(transpileUI, 'ui.tsx');
+      assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
       const exportsUI = {};
       const evalUI = new Function('exports', 'require', 'React', transpileUI);
-      evalUI(exportsUI, (mod) => (mod === 'react' ? React : null), React);
+      evalUI(exportsUI, (mod) => {
+        if (mod === 'react') return React;
+        if (mod.endsWith('manifest.json')) return manifest;
+        return null;
+      }, React);
 
       const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) {
@@ -2588,17 +3141,21 @@ export default function SimulatorPage({ gamificationMode = false }) {
             const compType = manifest.type || id;
             currentInstalledTypes.add(compType);
 
-            // Already in registry — nothing to do this cycle
+            // Skip if it's a core component or already in registry
+            if (BUILTIN_COMPONENT_TYPES.has(compType)) continue;
             if (COMPONENT_REGISTRY[compType]) continue;
 
             const Babel = await getBabel();
             const transpileUI = Babel.transform(uiStr, { filename: 'ui.tsx', presets: ['react', 'typescript', 'env'] }).code;
             const transpileLogic = Babel.transform(logicStr, { filename: 'logic.ts', presets: ['typescript', 'env'] }).code;
+            assertSafeDynamicModule(transpileUI, 'ui.tsx');
+            assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
             const exportsUI = {};
             const evalUI = new Function('exports', 'require', 'React', transpileUI);
             evalUI(exportsUI, (mod) => {
               if (mod === 'react') return React;
+              if (mod.endsWith('manifest.json')) return manifest;
               return null;
             }, React);
 
@@ -2829,7 +3386,10 @@ export default function SimulatorPage({ gamificationMode = false }) {
   }, [validationToast]);
 
   // ── Load Catalog on Mount ────────────────────────────────────────────────────
-  const CATALOG = LOCAL_CATALOG;
+  const CATALOG = useMemo(() => {
+    // Return a shallow copy so React detects the update and re-renders the palette
+    return LOCAL_CATALOG.map(group => ({ ...group, items: [...group.items] }));
+  }, [customCatalogVersion]);
   const PIN_DEFS = LOCAL_PIN_DEFS;
 
   // ── Static component descriptions ────────────────────────────────────────────
@@ -3048,7 +3608,20 @@ export default function SimulatorPage({ gamificationMode = false }) {
         openCodeTabs,
         activeCodeFileId,
       });
-      const diagramJson = JSON.stringify(diagramPayload, null, 2);
+      const diagramJsonPayload = { ...diagramPayload };
+      // Omit noisy/default fields — keep diagram.json clean in the explorer
+      delete diagramJsonPayload.schemaVersion;
+      if (diagramJsonPayload.board === 'arduino_uno') delete diagramJsonPayload.board;
+      if (!diagramJsonPayload.components || diagramJsonPayload.components.length === 0) delete diagramJsonPayload.components;
+      if (!diagramJsonPayload.connections || diagramJsonPayload.connections.length === 0) delete diagramJsonPayload.connections;
+      if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
+      if (!diagramJsonPayload.blocklyGeneratedCode) delete diagramJsonPayload.blocklyGeneratedCode;
+      if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
+      // Always strip file-tree / tab state — not useful to display
+      delete diagramJsonPayload.projectFiles;
+      delete diagramJsonPayload.openCodeTabs;
+      delete diagramJsonPayload.activeCodeFileId;
+      const diagramJson = JSON.stringify(diagramJsonPayload, null, 2);
 
       const generatedRootFiles = [
         { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
@@ -3349,7 +3922,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
-    const pin = pins.find(p => p.id === pinId)
+    const pin = pins.find(p => String(p.id) === String(pinId))
     if (!pin) return null
     const rotation = comp.rotation || 0;
     if (rotation === 0) return { x: comp.x + pin.x, y: comp.y + pin.y }
@@ -3368,7 +3941,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
-    const pin = pins.find(p => p.id === pinId)
+    const pin = pins.find(p => String(p.id) === String(pinId))
     if (!pin) return null
     const stub = 20;
     // Determine dominant exit direction from unrotated pin position relative to component center
@@ -3396,6 +3969,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // Keep reactive refs current so async effects always use latest values
   getPinPosRef.current = getPinPos;
   componentsRef.current = components;
+  wiresRef.current = wires;
   pinDefsRef.current = PIN_DEFS;
 
   // ── Palette drag start ──────────────────────────────────────────────────────
@@ -3553,28 +4127,50 @@ export default function SimulatorPage({ gamificationMode = false }) {
     initialTouchDistanceRef.current = null;
   }, []);
 
-  // Trackpad pinch (Ctrl + Wheel)
+  // Pinch-to-zoom via trackpad (Ctrl + Wheel)
+  // Key insight: NEVER update React state mid-pinch — that causes React to re-render
+  // which overwrites our DOM transform on the SAME frame, creating the vibration.
+  // Instead: apply only the CSS transform during pinch, update refs for correctness,
+  // then flush to React state via a debounce AFTER the gesture ends.
   const onWheel = useCallback((e) => {
     if (isCanvasLockedRef.current || !e.ctrlKey) return;
     e.preventDefault();
-    const zoomSpeed = 0.001; 
+
+    const zoomSpeed = 0.002;
     const delta = -e.deltaY * zoomSpeed;
-    const newZoom = Math.min(3, Math.max(0.25, canvasZoomRef.current + delta));
-    
+    const currentZoom = canvasZoomRef.current;
+    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
+
+    if (newZoom === currentZoom) return;
+
     const rect = canvasRef.current.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    
-    const cx = (mx - canvasOffsetRef.current.x) / canvasZoomRef.current;
-    const cy = (my - canvasOffsetRef.current.y) / canvasZoomRef.current;
-    
+
+    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
+    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
+
     const newOffsetX = mx - cx * newZoom;
     const newOffsetY = my - cy * newZoom;
-    
-    setCanvasZoom(newZoom);
+
+    // 1. Update refs immediately — keeps subsequent wheel events reading the correct values
     canvasZoomRef.current = newZoom;
-    setCanvasOffset({ x: newOffsetX, y: newOffsetY });
     canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+
+    // 2. Apply directly to DOM — zero React renders mid-pinch = zero vibration
+    if (innerCanvasRef.current) {
+      innerCanvasRef.current.style.transform =
+        `translate(${newOffsetX}px, ${newOffsetY}px) scale(${newZoom})`;
+      innerCanvasRef.current.style.transformOrigin = '0 0';
+    }
+
+    // 3. Debounce the React state flush — commit once the user stops pinching
+    if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
+    rafZoomRef.current = setTimeout(() => {
+      rafZoomRef.current = null;
+      setCanvasZoom(canvasZoomRef.current);
+      setCanvasOffset({ ...canvasOffsetRef.current });
+    }, 150);
   }, []);
 
   // ── Move and Select component ──────────────────────────────────────────────
@@ -3582,8 +4178,40 @@ export default function SimulatorPage({ gamificationMode = false }) {
     e.stopPropagation()
     if (isRunning || liveEditingDisabled) return; // Restrict movement while running
     const comp = components.find(c => c.id === id)
-    movingComp.current = { id, sx: e.clientX, sy: e.clientY, cx: comp.x, cy: comp.y, moved: false, originalComps: JSON.parse(JSON.stringify(components)) }
-  }, [components, isRunning, liveEditingDisabled])
+    if (!comp) return;
+
+    const dragData = { 
+      id, 
+      sx: e.clientX, 
+      sy: e.clientY, 
+      cx: comp.x, 
+      cy: comp.y, 
+      moved: false, 
+      originalComps: JSON.parse(JSON.stringify(components)) 
+    };
+
+    // Performance: If breadboard, pre-calculate children once here
+    if (comp.type.startsWith('wokwi-breadboard')) {
+      const childComps = components.filter(c => {
+        if (c.id === id) return false;
+        return wires.some(w => 
+          w.isSocket && 
+          (w.from.startsWith(c.id + ':') || w.to.startsWith(c.id + ':')) &&
+          (w.from.startsWith(id + ':') || w.to.startsWith(id + ':'))
+        );
+      });
+      
+      if (childComps.length > 0) {
+        dragData.childIds = childComps.map(c => c.id);
+        dragData.childrenStart = {};
+        childComps.forEach(c => {
+          dragData.childrenStart[c.id] = { x: c.x, y: c.y };
+        });
+      }
+    }
+
+    movingComp.current = dragData;
+  }, [components, wires, isRunning, liveEditingDisabled])
 
   const onCompClick = useCallback((e, id) => {
     e.stopPropagation()
@@ -3598,19 +4226,74 @@ export default function SimulatorPage({ gamificationMode = false }) {
     // store it in a ref, then schedule one rAF callback to do all state updates.
     // This caps React renders at 60fps regardless of mouse polling rate.
     const onMove = (e) => {
-      // ── Synchronously read event data (must happen in the event handler) ───
+      // ── Synchronously read event data ───
       let compUpdate = null;
       let wireUpdate = null;
       let panUpdate = null;
       let mousePosUpdate = null;
 
       if (movingComp.current) {
-        // Fix #1 ─ component drag
         movingComp.current.moved = true;
         const { id, sx, sy, cx, cy } = movingComp.current;
         const zoom = canvasZoomRef.current;
-        compUpdate = { id, newX: cx + (e.clientX - sx) / zoom, newY: cy + (e.clientY - sy) / zoom };
+        let nx = cx + (e.clientX - sx) / zoom;
+        let ny = cy + (e.clientY - sy) / zoom;
+
+        compUpdate = { id, newX: nx, newY: ny, snappingHoles: [] };
+
+        const comp = componentsRef.current.find(c => c.id === id);
+        if (comp) {
+          if (comp.type.startsWith('wokwi-breadboard')) {
+            // Breadboard movement propagation
+            const dx = nx - cx;
+            const dy = ny - cy;
+            
+            if (movingComp.current.childIds) {
+              compUpdate.childUpdates = movingComp.current.childIds.map(childId => ({
+                id: childId,
+                newX: (movingComp.current.childrenStart?.[childId]?.x ?? 0) + dx,
+                newY: (movingComp.current.childrenStart?.[childId]?.y ?? 0) + dy
+              }));
+            }
+          } else {
+            // Snapping Logic (Multi-pin)
+            const pins = LOCAL_PIN_DEFS[comp.type] || [];
+            const anchorPinId = comp.attrs?.breadboard?.anchorPin || pins[0]?.id;
+            const anchorPin = pins.find(p => p.id === anchorPinId) || pins[0];
+            
+            if (anchorPin) {
+              const rotation = comp.rotation || 0;
+              const centerX = nx + (comp.w || 0) / 2;
+              const centerY = ny + (comp.h || 0) / 2;
+              const anchorWorld = getRotatedPoint(nx + anchorPin.x, ny + anchorPin.y, rotation, centerX, centerY);
+              
+              const hole = findNearestBreadboardHole(anchorWorld.x, anchorWorld.y, componentsRef.current, LOCAL_PIN_DEFS);
+              if (hole) {
+                // Apply snapping offset
+                nx += (hole.x - anchorWorld.x);
+                ny += (hole.y - anchorWorld.y);
+                compUpdate.newX = nx;
+                compUpdate.newY = ny;
+
+                // Identify all pins that align with holes
+                const finalCenterX = nx + (comp.w || 0) / 2;
+                const finalCenterY = ny + (comp.h || 0) / 2;
+                const currentSnaps = [];
+                pins.forEach(p => {
+                  const pWorld = getRotatedPoint(nx + p.x, ny + p.y, rotation, finalCenterX, finalCenterY);
+                  const h = findNearestBreadboardHole(pWorld.x, pWorld.y, componentsRef.current, LOCAL_PIN_DEFS);
+                  if (h && Math.hypot(pWorld.x - h.x, pWorld.y - h.y) < 1) {
+                    currentSnaps.push({ ...h, compPinId: p.id });
+                  }
+                });
+                compUpdate.snappingHoles = currentSnaps;
+              }
+            }
+          }
+        }
       }
+
+      // [ ... wire segment drag and panning logic remains same ... ]
 
       const sd = segDragRef.current;
       if (sd && canvasRef.current) {
@@ -3685,18 +4368,117 @@ export default function SimulatorPage({ gamificationMode = false }) {
         rafMoveRef.current = requestAnimationFrame(() => {
           rafMoveRef.current = null;
           const { compUpdate, wireUpdate, mousePosUpdate } = pendingMoveRef.current || {};
+          
           if (compUpdate) {
-            const { id, newX, newY } = compUpdate;
-            setComponents(prev => prev.map(c => c.id === id ? { ...c, x: newX, y: newY } : c));
+            const { id, newX, newY, snappingHoles: holes, childUpdates } = compUpdate;
+            
+            // 1. Direct DOM Update for Components (Master Wrapper)
+            const updateMasterPos = (cid, x, y) => {
+              const master = document.getElementById(`comp-master-${cid}`);
+              if (master) {
+                master.style.left = `${x}px`;
+                master.style.top = `${y}px`;
+              }
+            };
+
+            updateMasterPos(id, newX, newY);
+            if (childUpdates) {
+              childUpdates.forEach(u => updateMasterPos(u.id, u.newX, u.newY));
+            }
+
+            // 2. Direct DOM Update for Wires (Lightweight Straight Lines)
+            const affectedCompIds = new Set([id, ...(childUpdates?.map(u => u.id) || [])]);
+            const affectedWires = wiresRef.current.filter(w => {
+              const fromId = w.from.split(':')[0];
+              const toId = w.to.split(':')[0];
+              return affectedCompIds.has(fromId) || affectedCompIds.has(toId);
+            });
+
+            affectedWires.forEach(w => {
+              const fromParts = w.from.split(':');
+              const toParts = w.to.split(':');
+              
+              const getLivePos = (cid, pid) => {
+                const c = componentsRef.current.find(comp => comp.id === cid);
+                if (!c) return null;
+                let curX = c.x, curY = c.y;
+                if (cid === id) { curX = newX; curY = newY; }
+                else if (childUpdates) {
+                  const u = childUpdates.find(cu => cu.id === cid);
+                  if (u) { curX = u.newX; curY = u.newY; }
+                }
+                const pins = LOCAL_PIN_DEFS[c.type] || [];
+                const pDef = pins.find(p => p.id === pid);
+                if (!pDef) return null;
+                const rotation = c.rotation || 0;
+                return getRotatedPoint(curX + pDef.x, curY + pDef.y, rotation, curX + c.w / 2, curY + c.h / 2);
+              };
+
+              const p1 = getLivePos(fromParts[0], fromParts.slice(1).join(':'));
+              const p2 = getLivePos(toParts[0], toParts.slice(1).join(':'));
+              if (p1 && p2) {
+                // LIGHTWEIGHT: Use simple straight line during drag for maximum performance
+                const pathStr = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+                const pathUi = document.getElementById(`wire-path-ui-${w.id}`);
+                const pathHit = document.getElementById(`wire-path-hit-${w.id}`);
+                const circFrom = document.getElementById(`wire-circ-from-${w.id}`);
+                const circTo = document.getElementById(`wire-circ-to-${w.id}`);
+                
+                if (pathUi) pathUi.setAttribute('d', pathStr);
+                if (pathHit) pathHit.setAttribute('d', pathStr);
+                if (circFrom) { circFrom.setAttribute('cx', p1.x); circFrom.setAttribute('cy', p1.y); }
+                if (circTo) { circTo.setAttribute('cx', p2.x); circTo.setAttribute('cy', p2.y); }
+              }
+            });
+
+            // 3. Direct DOM Update for Snapping Feedback
+            // First, clear previous snapping highlights (using a cached list or just clearing everything is too slow)
+            // Better: only clear the holes that were previously snapped
+            if (window._prevSnaps) {
+              window._prevSnaps.forEach(h => {
+                const holeEl = document.getElementById(`pin-dot-${h.bbId}-${h.holeId}`);
+                if (holeEl) {
+                  holeEl.style.background = 'rgba(255,255,255,0.2)';
+                  holeEl.style.boxShadow = 'none';
+                  holeEl.style.borderColor = 'rgba(255,255,255,0.8)';
+                }
+                const pinEl = document.getElementById(`pin-dot-${movingComp.current.id}-${h.compPinId}`);
+                if (pinEl) {
+                  pinEl.style.background = 'rgba(255,255,255,0.2)';
+                  pinEl.style.boxShadow = 'none';
+                  pinEl.style.borderColor = 'rgba(255,255,255,0.8)';
+                }
+              });
+            }
+            if (holes) {
+              holes.forEach(h => {
+                const holeEl = document.getElementById(`pin-dot-${h.bbId}-${h.holeId}`);
+                if (holeEl) {
+                  holeEl.style.background = '#2ecc71';
+                  holeEl.style.boxShadow = '0 0 10px #2ecc71';
+                  holeEl.style.borderColor = '#fff';
+                }
+                const pinEl = document.getElementById(`pin-dot-${id}-${h.compPinId}`);
+                if (pinEl) {
+                  pinEl.style.background = '#2ecc71';
+                  pinEl.style.boxShadow = '0 0 10px #2ecc71';
+                  pinEl.style.borderColor = '#fff';
+                }
+              });
+            }
+            window._prevSnaps = holes || [];
+
+            // IMPORTANT: No setSnappingHoles or setComponents here!
+            // This ensures ZERO React re-renders during the drag.
           }
+
           if (wireUpdate) {
             const { wireId, cornerWaypoints } = wireUpdate;
             setWires(prev => prev.map(w => w.id === wireId ? { ...w, waypoints: cornerWaypoints } : w));
           }
-          if (mousePosUpdate) {
+          if (mousePosUpdate && !compUpdate) { // Only update mouse pos for wire pulling, not component dragging
             setMousePos(mousePosUpdate);
           }
-          // Note: panUpdate is applied via direct DOM transform above — no setState here
         });
       }
     };
@@ -3710,9 +4492,89 @@ export default function SimulatorPage({ gamificationMode = false }) {
       if (movingComp.current?.moved) {
         const origComps = movingComp.current.originalComps;
         const movedId = movingComp.current.id;
+        const childIds = movingComp.current.childIds;
+
+        // 1. Sync final positions from DOM to React State
+        const masterElem = document.getElementById(`comp-master-${movedId}`);
+        const finalX = masterElem ? parseFloat(masterElem.style.left) : 0;
+        const finalY = masterElem ? parseFloat(masterElem.style.top) : 0;
+
+        setComponents(prev => {
+          let next = prev.map(c => c.id === movedId ? { ...c, x: finalX, y: finalY } : c);
+          if (childIds) {
+            next = next.map(c => {
+              if (childIds.includes(c.id)) {
+                const childMaster = document.getElementById(`comp-master-${c.id}`);
+                if (childMaster) {
+                  return { ...c, x: parseFloat(childMaster.style.left), y: parseFloat(childMaster.style.top) };
+                }
+              }
+              return c;
+            });
+          }
+          return next;
+        });
+
         setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
-        // Clear _corner waypoints on wires connected to the moved component so
-        // they re-route cleanly from the new pin positions.
+
+        // DETACHMENT: Remove old socket wires for this component (ONLY if moving a component, NOT a breadboard)
+        const isBreadboard = componentsRef.current.find(c => c.id === movedId)?.type.startsWith('wokwi-breadboard');
+        if (!isBreadboard) {
+          setWires(prev => prev.filter(w => {
+            const isFrom = w.from.startsWith(movedId + ':');
+            const isTo = w.to.startsWith(movedId + ':');
+            return !(w.isSocket && (isFrom || isTo));
+          }));
+        }
+
+        // ATTACHMENT: Auto-create socket wires if snapped
+        const comp = componentsRef.current.find(c => c.id === movedId);
+        const finalComp = comp ? { ...comp, x: finalX, y: finalY } : null;
+        if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
+          const pins = LOCAL_PIN_DEFS[finalComp.type] || [];
+          const worldPins = getComponentWorldPins(finalComp, pins);
+          const newSocketWires = [];
+          
+          worldPins.forEach(wp => {
+            const hole = findNearestBreadboardHole(wp.worldX, wp.worldY, componentsRef.current, LOCAL_PIN_DEFS);
+            if (hole && Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) < 2) { // 2px tolerance for snapped position
+              newSocketWires.push({
+                id: `w_socket_${movedId}_${wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                from: `${movedId}:${wp.id}`,
+                to: `${hole.bbId}:${hole.holeId}`,
+                color: 'transparent',
+                isBelow: true,
+                isSocket: true
+              });
+            }
+          });
+
+          if (newSocketWires.length > 0) {
+            setWires(prev => [...prev, ...newSocketWires]);
+          }
+        }
+
+        // 2. Finalize snapping and cleanup
+        if (window._prevSnaps) {
+          window._prevSnaps.forEach(h => {
+            const holeEl = document.getElementById(`pin-dot-${h.bbId}-${h.holeId}`);
+            if (holeEl) {
+              holeEl.style.background = '';
+              holeEl.style.boxShadow = '';
+              holeEl.style.borderColor = '';
+            }
+            const pinEl = document.getElementById(`pin-dot-${movedId}-${h.compPinId}`);
+            if (pinEl) {
+              pinEl.style.background = '';
+              pinEl.style.boxShadow = '';
+              pinEl.style.borderColor = '';
+            }
+          });
+          window._prevSnaps = null;
+        }
+        setSnappingHoles([]);
+
+        // 3. Clear _corner waypoints
         setWires(prev => prev.map(w => {
           if (w.from.startsWith(movedId + ':') || w.to.startsWith(movedId + ':')) {
             if (w.waypoints?.length && w.waypoints[0]._corner) return { ...w, waypoints: [] };
@@ -3721,6 +4583,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
         }));
       }
       movingComp.current = null;
+      setSnappingHoles([]);
       isPanningRef.current = false;
       if (segDragRef.current) {
         if (segDragRef.current.hasMoved) {
@@ -3744,20 +4607,19 @@ export default function SimulatorPage({ gamificationMode = false }) {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const preventDefault = (e) => {
-      // Still prevent wheel zoom (Ctrl + Wheel)
+    const handleWheel = (e) => {
       if (e.ctrlKey) {
         if (e.cancelable) e.preventDefault();
+        onWheel(e); // Trigger our custom zoom
       }
     };
 
-    canvas.addEventListener('wheel', preventDefault, { passive: false });
-    // removed native touch blockers as touch-action: none handles it and preventDefault might break React events
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
 
     return () => {
-      canvas.removeEventListener('wheel', preventDefault);
+      canvas.removeEventListener('wheel', handleWheel);
     };
-  }, []);
+  }, [onWheel]);
 
   // ── Pin click — start or complete wire ─────────────────────────────────────
   const onPinClick = useCallback((e, compId, pinId, pinLabel) => {
@@ -3859,7 +4721,48 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const rotateComponent = (id) => {
     if (isRunning || liveEditingDisabled) return;
     saveHistory();
-    setComponents(prev => prev.map(c => c.id === id ? { ...c, rotation: ((c.rotation || 0) + 90) % 360 } : c));
+    
+    setComponents(prev => {
+      const comp = prev.find(c => c.id === id);
+      if (!comp) return prev;
+      
+      const newRotation = ((comp.rotation || 0) + 90) % 360;
+      
+      // If breadboard, rotate children
+      if (comp.type.startsWith('wokwi-breadboard')) {
+        const childIds = new Set(wiresRef.current
+          .filter(w => w.isSocket && (w.from.startsWith(id + ':') || w.to.startsWith(id + ':')))
+          .map(w => {
+            const fromId = w.from.split(':')[0];
+            const toId = w.to.split(':')[0];
+            return fromId === id ? toId : fromId;
+          })
+        );
+        
+        const bbCenterX = comp.x + comp.w / 2;
+        const bbCenterY = comp.y + comp.h / 2;
+        
+        return prev.map(c => {
+          if (c.id === id) return { ...c, rotation: newRotation };
+          if (childIds.has(c.id)) {
+            // Rotate child center around breadboard center
+            const childCenterX = c.x + c.w / 2;
+            const childCenterY = c.y + c.h / 2;
+            const rotated = getRotatedPoint(childCenterX, childCenterY, 90, bbCenterX, bbCenterY);
+            
+            return {
+              ...c,
+              x: rotated.x - c.w / 2,
+              y: rotated.y - c.h / 2,
+              rotation: ((c.rotation || 0) + 90) % 360
+            };
+          }
+          return c;
+        });
+      }
+      
+      return prev.map(c => c.id === id ? { ...c, rotation: newRotation } : c);
+    });
   };
 
   const openCodeFile = useCallback((fileId) => {
@@ -4525,13 +5428,29 @@ export default function SimulatorPage({ gamificationMode = false }) {
     }
   }, [firmwareBoardOptions]);
 
-  const applyUploadedFirmwareToBoard = useCallback(async () => {
-    const targetBoardId = String(firmwareUploadTarget || '').trim();
+  const toggleBoardFirmwareSource = useCallback((boardId, useUploaded) => {
+    saveHistory();
+    setComponents((prev) => prev.map((comp) => {
+      if (comp.id !== boardId) return comp;
+      return {
+        ...comp,
+        attrs: {
+          ...(comp.attrs || {}),
+          useUploadedFirmware: !!useUploaded,
+        },
+      };
+    }));
+    
+    const label = boardComponentMap.get(boardId)?.id || boardId;
+    appendConsoleEntry('info', `Board ${label} set to use ${useUploaded ? 'uploaded firmware override' : 'code editor source'}.`, 'simulator');
+  }, [saveHistory, setComponents, appendConsoleEntry, boardComponentMap]);
+
+  const applyUploadedFirmwareToBoard = useCallback(async (targetBoardId, file) => {
     if (!targetBoardId) {
       appendConsoleEntry('warn', 'Pick a board target before uploading firmware.', 'simulator');
       return;
     }
-    if (!(firmwareUploadFile instanceof File)) {
+    if (!(file instanceof File)) {
       appendConsoleEntry('warn', 'Select a firmware file before uploading.', 'simulator');
       return;
     }
@@ -4544,10 +5463,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
     setIsApplyingFirmwareUpload(true);
     try {
-      const parsed = await parseFirmwareUploadFile(firmwareUploadFile);
+      const parsed = await parseFirmwareUploadFile(file);
       const boardKind = normalizeBoardKind(targetBoardComp.type);
-      if (boardKind !== 'rp2040' && parsed.ext !== '.hex') {
-        throw new Error('Only RP2040 boards support UF2 firmware uploads. Use .hex for this board.');
+      
+      // Format validation
+      if (boardKind !== 'rp2040' && parsed.ext === '.uf2') {
+        throw new Error(`Board ${targetBoardId} (${boardKind}) does not support .uf2 files. Please use a .hex file.`);
       }
       if (!parsed.payload) {
         throw new Error('Firmware file is empty.');
@@ -4563,6 +5484,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
             firmwareHex: parsed.payload,
             hex: parsed.payload,
             firmwareArtifactName: String(parsed.fileName || ''),
+            useUploadedFirmware: true, // Auto-enable on upload
           },
         };
       }));
@@ -4573,11 +5495,10 @@ export default function SimulatorPage({ gamificationMode = false }) {
       const firmwareKind = parsed.ext === '.uf2' ? 'UF2' : 'HEX';
       appendConsoleEntry(
         'info',
-        `Assigned ${firmwareKind} firmware (${parsed.fileName}) to ${boardLabel}. The next run will use this firmware.`,
+        `Assigned ${firmwareKind} firmware (${parsed.fileName}) to ${boardLabel}. Now using uploaded override.`,
         'simulator',
       );
 
-      setShowFirmwareUploadDialog(false);
       setFirmwareUploadFile(null);
       if (firmwareUploadInputRef.current) {
         firmwareUploadInputRef.current.value = '';
@@ -4590,10 +5511,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
   }, [
     appendConsoleEntry,
     boardComponentMap,
-    firmwareUploadTarget,
-    firmwareUploadFile,
     parseFirmwareUploadFile,
     saveHistory,
+    setComponents,
   ]);
 
   const handleStartGDB = () => {
@@ -4695,6 +5615,10 @@ export default function SimulatorPage({ gamificationMode = false }) {
     setRenameValue(proj.name || 'Untitled');
   };
   const handleConfirmRename = async (id) => {
+    if (!id) {
+      setRenamingProjectId(null);
+      return;
+    }
     const newName = renameValue.trim() || 'Untitled';
     await renameProject(id, newName);
     if (currentProjectIdRef.current === id) setCurrentProjectName(newName);
@@ -4717,6 +5641,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
   // ─── Backup / Restore ──────────────────────────────────────────────────────
   const handleBackupWorkflow = async () => {
     const zip = new JSZip();
+
+    // 1. Generate full project payload (workflow.json)
     const data = buildProjectPayload({
       name: currentProjectName,
       board,
@@ -4732,6 +5658,44 @@ export default function SimulatorPage({ gamificationMode = false }) {
       exportedAt: new Date().toISOString(),
     });
     zip.file('workflow.json', JSON.stringify(data, null, 2));
+
+    // 2. Generate diagram.json (stripped version of payload)
+    const diagramJsonPayload = { ...data };
+    delete diagramJsonPayload.schemaVersion;
+    delete diagramJsonPayload.projectFiles;
+    delete diagramJsonPayload.openCodeTabs;
+    delete diagramJsonPayload.activeCodeFileId;
+    delete diagramJsonPayload.exportedAt;
+    if (diagramJsonPayload.board === 'arduino_uno') delete diagramJsonPayload.board;
+    if (!diagramJsonPayload.components || diagramJsonPayload.components.length === 0) delete diagramJsonPayload.components;
+    if (!diagramJsonPayload.connections || diagramJsonPayload.connections.length === 0) delete diagramJsonPayload.connections;
+    if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
+    if (!diagramJsonPayload.blocklyGeneratedCode) delete diagramJsonPayload.blocklyGeneratedCode;
+    if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
+    zip.file('diagram.json', JSON.stringify(diagramJsonPayload, null, 2));
+
+    // 3. Generate library.txt (root)
+    const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
+    zip.file('library.txt', libraries.join('\n'));
+
+    // 4. Organize files into board-specific folders
+    (projectFiles || []).forEach(file => {
+      // file.id is typically "project/<boardId>/<filename>"
+      const parts = file.id.split('/');
+      if (parts[0] === 'project' && parts.length >= 3) {
+        const boardId = parts[1];
+        const fileName = parts.slice(2).join('/');
+        zip.folder(boardId).file(fileName, file.content || '');
+      } else if (parts[0] === 'project' && parts.length === 2) {
+        // Root files that aren't the special ones we just handled
+        const fileName = parts[1];
+        const reservedNames = ['workflow.json', 'diagram.json', 'library.txt'];
+        if (!reservedNames.includes(fileName)) {
+          zip.file(fileName, file.content || '');
+        }
+      }
+    });
+
     const blob = await zip.generateAsync({ type: 'blob' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -4804,7 +5768,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
   };
 
   const handleShareSimulation = async () => {
-    if (!['teacher', 'user'].includes(user?.role)) {
+    if (!['teacher', 'user', 'admin'].includes(activeUser?.role)) {
       alert('Only signed-in teachers and users can share simulator templates.');
       return;
     }
@@ -4882,24 +5846,243 @@ export default function SimulatorPage({ gamificationMode = false }) {
     appendConsoleEntry('info', 'Web GDB reference: https://wokwi.github.io/web-gdb/', 'debug');
   }, [appendConsoleEntry]);
 
+  const buildValidationSignature = useCallback(() => {
+    const normalizedComponents = (components || [])
+      .map(comp => ({
+        id: comp?.id || '',
+        type: comp?.type || '',
+        attrs: comp?.attrs || {},
+      }))
+      .sort((a, b) => `${a.id}|${a.type}`.localeCompare(`${b.id}|${b.type}`));
+
+    const normalizedWires = (wires || [])
+      .map(wire => ({
+        from: String(wire?.from || ''),
+        to: String(wire?.to || ''),
+      }))
+      .sort((a, b) => `${a.from}|${a.to}`.localeCompare(`${b.from}|${b.to}`));
+
+    return JSON.stringify({
+      components: normalizedComponents,
+      wires: normalizedWires,
+      activeCodeFileId: activeCodeFileId || '',
+      code: useBlocklyCode ? (blocklyGeneratedCode || '') : (code || ''),
+    });
+  }, [components, wires, activeCodeFileId, useBlocklyCode, blocklyGeneratedCode, code]);
+
   const runCircuitValidation = useCallback(() => {
     try {
-      const errs = validateCircuitLocally(components, wires);
-      if (errs.length > 0) {
-        setValidationErrors(errs);
+      if (isRunning) {
+        return true;
+      }
+
+      if (typeof FullCircuitValidator !== 'function') {
+        console.warn('[Validation] FullCircuitValidator not available in this build.');
+        return true;
+      }
+
+      const validationSignature = buildValidationSignature();
+      const cachedValidation = validationRunCacheRef.current;
+      if (cachedValidation.signature === validationSignature) {
+        setValidationErrors(cachedValidation.errors || []);
+        setValidationToast(cachedValidation.toast || null);
+        setHealthScore(Number.isFinite(cachedValidation.healthScore) ? cachedValidation.healthScore : 100);
+        if ((cachedValidation.errors || []).length > 0) {
+          setShowValidation(true);
+          if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
+        }
+        return cachedValidation.allowRun !== false;
+      }
+
+      // Adapter: convert frontend format (comp:pin) → engine format (comp.pin)
+      const engineConnections = (wires || []).map(w => ({
+        from: String(w.from || '').replace(':', '.'),
+        to:   String(w.to   || '').replace(':', '.'),
+      }));
+
+      const projectData = {
+        components: components,      // engine reads .id, .type, .pins[], .attrs{}
+        connections: engineConnections,
+      };
+
+      const validator = new FullCircuitValidator(projectData);
+      const isSafe = validator.runValidation({
+        profile: 'balanced',
+        useCache: true,
+        cacheKey: validationSignature,
+        incremental: true,
+        incrementalScope: 'webui',
+      });
+
+      // ── Software-Hardware Sync Analysis ──────────────────────────────────
+      const projectForSync = {
+        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
+        components: components,
+        connections: wires,
+        activeCodeFileId: activeCodeFileId
+      };
+      const syncResult = typeof analyzeCodeHardwareSync === 'function' 
+        ? analyzeCodeHardwareSync(projectForSync) 
+        : { passed: true, issues: [] };
+
+      let allowRun = true;
+      let nextToast = null;
+
+      if (!isSafe || !syncResult.passed) {
+        const physicsErrors = validator.errors || [];
+
+        const syncErrors = (syncResult.issues || []).map(issue => ({
+          severity: 'warn',
+          type: 'warn',
+          message: issue.message,
+          compIds: []
+        }));
+
+        const formattedErrors = [...physicsErrors, ...syncErrors];
+        
+        // Use emulator's Health Score engine
+        const score = validator.calculateHealthScore(syncErrors);
+        setHealthScore(score);
+
+        const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
+
+        setValidationErrors(formattedErrors);
         setShowValidation(true);
+        if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
+        
         setValidationToast({
-          title: `Circuit validation failed (${errs.length})`,
-          reasons: errs.slice(0, 3).map((e) => e.message),
+          title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
+          reasons: formattedErrors.slice(0, 3).map(e => e.message),
         });
-      } else {
+
+        nextToast = {
+          title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
+          reasons: formattedErrors.slice(0, 3).map(e => e.message),
+        };
+
+        // Only block the run if there is a fatal physics error
+        if (hasFatalPhysics) {
+          allowRun = false;
+        }
+      }
+
+      if (isSafe && syncResult.passed) {
         setValidationErrors([]);
         setValidationToast(null);
+        setHealthScore(100);
       }
-      return errs.length === 0;
+
+      validationRunCacheRef.current = {
+        signature: validationSignature,
+        allowRun,
+        errors: (isSafe && syncResult.passed) ? [] : (validator.errors || []).concat(
+          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
+        ),
+        healthScore: isSafe && syncResult.passed ? 100 : validator.calculateHealthScore(
+          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
+        ),
+        toast: nextToast,
+      };
+
+      return allowRun;
     } catch (err) {
       console.warn('[Validation] Engine failed, continuing run:', err);
       return true;
+    }
+  }, [components, wires, code, useBlocklyCode, blocklyGeneratedCode, activeCodeFileId, isRunning, buildValidationSignature]);
+
+  const applyFix = useCallback(async (error) => {
+    if (!error.remediation && !error.ruleId) {
+      appendConsoleEntry('warn', '⚠️ Cannot fix: No remediation found', 'simulator');
+      return;
+    }
+
+    saveHistory();
+    const projectData = { components, connections: wires };
+    const circuitBefore = JSON.parse(JSON.stringify(projectData));
+
+    // Apply the fix using enhanced fixer
+    const result = sharedApplyCircuitFix(projectData, error, { appliedBy: 'webui' });
+
+    if (!result.applied) {
+      appendConsoleEntry('warn', `⚠️ Fix not applied: ${result.reason || 'Check circuit connectivity'}`, 'simulator');
+      return;
+    }
+
+    // Update the circuit
+    setComponents(result.components);
+    setWires(result.connections);
+
+    // Log applied fix
+    const fixDesc = result.appliedFixes?.[0]?.description || error.remediation;
+    appendConsoleEntry('info', `🔧 Applied: ${fixDesc}`, 'simulator');
+
+    // CRITICAL: Clear validation cache so next run re-validates from scratch
+    validationRunCacheRef.current = {};
+
+    // Re-run validation to verify the fix worked
+    try {
+      const validator = new FullCircuitValidator({ components: result.components }, result.connections);
+      const verifyResult = await validator.runValidation(
+        { components: result.components, connections: result.connections },
+        { profile: 'balanced', incrementalScope: 'webui' }
+      );
+
+      const errorStillExists = verifyResult.errors?.some(
+        e => (e.id || e.ruleId) === (error.id || error.ruleId)
+      );
+
+      const newErrors = verifyResult.errors?.filter(
+        newErr => !validationErrors.some(
+          oldErr => (oldErr.id || oldErr.ruleId) === (newErr.id || newErr.ruleId)
+        )
+      ) || [];
+
+      if (!errorStillExists) {
+        if (newErrors.length === 0) {
+          appendConsoleEntry('success', `✅ Fix successful! Error resolved.`, 'simulator');
+        } else {
+          const errorCount = newErrors.filter(e => e.severity === 'error').length;
+          const warnCount = newErrors.filter(e => e.severity === 'warn').length;
+          appendConsoleEntry('warn', `✅ Original error fixed, but introduced ${errorCount} error(s) and ${warnCount} warning(s). Review changes.`, 'simulator');
+        }
+      } else {
+        appendConsoleEntry('error', `❌ Fix did not resolve the error. Try a different approach.`, 'simulator');
+      }
+    } catch (verifyErr) {
+      console.warn('[Verification] Revalidation failed after fix:', verifyErr);
+      appendConsoleEntry('info', `✅ Applied: ${fixDesc} (verification skipped)`, 'simulator');
+    }
+  }, [components, wires, saveHistory, validationErrors]);
+
+  // Autofix preview/apply-all integration
+  const handleApplyPlan = useCallback((res) => {
+    if (!res) return;
+    if (res.finalProject) {
+      setComponents(res.finalProject.components || components);
+      setWires(res.finalProject.connections || wires);
+      validationRunCacheRef.current = {};
+      appendConsoleEntry('info', `🔧 Applied plan: ${res.appliedCount || 0} fixes, skipped ${res.skippedCount || 0}`, 'simulator');
+    }
+  }, [components, wires]);
+
+  const undoFix = useCallback(() => {
+    const undoResult = undoLastFix();
+    if (undoResult?.undone) {
+      setComponents(undoResult.circuit.components || components);
+      setWires(undoResult.circuit.connections || wires);
+      validationRunCacheRef.current = {}; // Clear cache
+      appendConsoleEntry('info', `↩️ Undone: ${undoResult.fixDescription}`, 'simulator');
+    }
+  }, [components, wires]);
+
+  const redoFix = useCallback(() => {
+    const redoResult = redoLastFix();
+    if (redoResult?.redone) {
+      setComponents(redoResult.circuit.components || components);
+      setWires(redoResult.circuit.connections || wires);
+      validationRunCacheRef.current = {}; // Clear cache
+      appendConsoleEntry('info', `🔄 Redone: ${redoResult.fixDescription}`, 'simulator');
     }
   }, [components, wires]);
 
@@ -5195,11 +6378,13 @@ export default function SimulatorPage({ gamificationMode = false }) {
             ? (boardComp.id === selectedRunBoardId ? selectedRunBaud : defaultBaud)
             : selectedRunBaud;
 
-          const uploadedFirmware = String(
+          const useUploaded = !!boardComp?.attrs?.useUploadedFirmware;
+          const uploadedFirmware = useUploaded ? String(
             resolveComponentAttrString(boardComp?.attrs, 'firmwareHex', '')
             || resolveComponentAttrString(boardComp?.attrs, 'hex', ''),
-          ).trim();
-          if (uploadedFirmware) {
+          ).trim() : '';
+
+          if (useUploaded && uploadedFirmware) {
             boardHexMap[boardComp.id] = uploadedFirmware;
             const uploadKind = uploadedFirmware.startsWith(UF2_PAYLOAD_PREFIX) ? 'UF2' : 'HEX';
             appendConsoleEntry(
@@ -5214,6 +6399,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
               };
             }
             continue;
+          } else if (useUploaded && !uploadedFirmware) {
+            appendConsoleEntry('warn', `Board ${boardComp.id} is set to use uploaded firmware, but none is assigned. Falling back to code editor.`, 'simulator');
           }
 
           const firmwareAssets = getBoardFirmwareAssets(boardComp.id);
@@ -5803,6 +6990,16 @@ export default function SimulatorPage({ gamificationMode = false }) {
             : (singleBoardFallback || incomingBoardId || 'default');
           pushSerialRxChunk(msg.data, resolvedBoardId, msg.source || 'sim');
         }
+
+        // Handle Protocol Events
+        if (msg.type === 'protocol:i2c') {
+          const log = protocolAnalyzerRef.current.processI2C(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log]);
+        }
+        if (msg.type === 'protocol:spi') {
+          const log = protocolAnalyzerRef.current.processSPI(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log]);
+        }
       };
 
       worker.onerror = (err) => {
@@ -5846,6 +7043,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
         baudRate: selectedRunBaud,
         debugRp2040: rp2040DebugTelemetryEnabled,
         debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
+        speed: simulationSpeed,
       });
 
       runStartGuardRef.current = false;
@@ -6913,7 +8111,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={user} navigate={navigate} isAuthenticated={isAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlan} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -7023,7 +8221,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
         </div>
       )}
 
-      {showShareDialog && ['teacher', 'user'].includes(user?.role) && (
+      {showShareDialog && ['teacher', 'user', 'admin'].includes(activeUser?.role) && (
         <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Share simulation">
           <div className="teacher-modal__backdrop" onClick={() => setShowShareDialog(false)} />
           <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
@@ -7271,15 +8469,41 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   </button>
 
                   {showFilterDropdown && (
-                    <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 100, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', padding: 4, minWidth: 160 }}>
+                    <div 
+                      className="canvas-menu"
+                      onMouseLeave={() => setShowFilterDropdown(false)}
+                      style={{ 
+                        position: 'absolute', 
+                        top: '100%', 
+                        right: 0, 
+                        marginTop: 6, 
+                        zIndex: 100, 
+                        background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                        backdropFilter: 'blur(16px) saturate(1.4)',
+                        WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                        border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                        borderRadius: 12, 
+                        boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                        padding: '5px', 
+                        minWidth: 160,
+                        animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+                        transformOrigin: 'top right',
+                        fontFamily: "'Space Grotesk', sans-serif",
+                        willChange: 'transform, opacity, backdrop-filter',
+                        backfaceVisibility: 'hidden',
+                        WebkitBackfaceVisibility: 'hidden',
+                      }}
+                    >
                       <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-3 py-1.5 border-b border-[var(--border)] mb-1">Groups</div>
                       {['All', ...CATALOG.map(g => g.group)].map(group => (
                         <button
                           key={group}
+                          className="canvas-menu-item"
                           onClick={() => { setActiveGroupFilter(group); setShowFilterDropdown(false); }}
-                          style={{ width: '100%', textAlign: 'left', padding: '6px 10px', borderRadius: 6, border: 'none', background: activeGroupFilter === group ? 'var(--accent)' : 'transparent', color: activeGroupFilter === group ? '#fff' : 'var(--text)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}
-                          onMouseEnter={e => { if (activeGroupFilter !== group) e.currentTarget.style.background = 'var(--bg3)'; }}
-                          onMouseLeave={e => { if (activeGroupFilter !== group) e.currentTarget.style.background = 'transparent'; }}
+                          style={{ 
+                            background: activeGroupFilter === group ? 'var(--accent)' : 'transparent', 
+                            color: activeGroupFilter === group ? '#fff' : 'var(--text)',
+                          }}
                         >
                           {group === 'All' ? 'All Groups' : group}
                         </button>
@@ -7381,10 +8605,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
                 const isGroupMatch = activeGroupFilter === 'All' || group.group === activeGroupFilter;
                 if (!isGroupMatch) return null;
 
-                const filteredItems = group.items.filter(item =>
-                  item.label.toLowerCase().includes(paletteSearch.toLowerCase()) ||
-                  item.type.toLowerCase().includes(paletteSearch.toLowerCase())
-                );
+                const filteredItems = group.items.filter(item => {
+                  const label = (item.label || item.name || '').toLowerCase();
+                  const type = (item.type || '').toLowerCase();
+                  const search = (paletteSearch || '').toLowerCase();
+                  return label.includes(search) || type.includes(search);
+                });
                 if (filteredItems.length === 0) return null;
                 const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
                 return (
@@ -7415,7 +8641,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                               onDragStart={e => !locked && onPaletteDragStart(e, item)}
                               onClick={() => {
                                 if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
-                                addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group });
+                                addComponentAtCenter(item);
                               }}
                               onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
                               title={item.label}
@@ -7456,7 +8682,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                             onDragStart={e => !locked && onPaletteDragStart(e, item)}
                             onClick={() => {
                               if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
-                              addComponentAtCenter(item); setSelectedPaletteItem({ ...item, group: group.group });
+                              addComponentAtCenter(item);
                             }}
                             onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item: { ...item, group: group.group } }); }}
                             style={{ padding: '7px 10px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--card)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', marginBottom: 4, borderLeft: `3px solid ${groupColor}`, transition: 'all .15s', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none', position: 'relative' }}
@@ -7494,8 +8720,29 @@ export default function SimulatorPage({ gamificationMode = false }) {
             : paletteContextMenu.y;
           return (
             <div
+              className="canvas-menu"
               onMouseDown={e => e.stopPropagation()}
-              style={{ position: 'fixed', left: paletteContextMenu.x, top: adjustedY, zIndex: 9000, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', minWidth: 200, overflow: 'hidden' }}
+              onMouseLeave={() => { setPaletteContextMenu(null); setIsPaletteHovered(false); }}
+              style={{ 
+                position: 'fixed', 
+                left: paletteContextMenu.x, 
+                top: adjustedY, 
+                zIndex: 10000, 
+                background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                backdropFilter: 'blur(16px) saturate(1.4)',
+                WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                borderRadius: 12, 
+                boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                minWidth: 200, 
+                padding: '5px',
+                animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+                transformOrigin: 'top left',
+                fontFamily: "'Space Grotesk', sans-serif",
+                willChange: 'transform, opacity, backdrop-filter',
+                backfaceVisibility: 'hidden',
+                WebkitBackfaceVisibility: 'hidden',
+              }}
             >
               <div style={{ padding: '7px 12px 6px', fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', borderBottom: '1px solid var(--border)' }}>{paletteContextMenu.item.label}</div>
               {[
@@ -7533,9 +8780,17 @@ export default function SimulatorPage({ gamificationMode = false }) {
                       ui: buildUiSourceFromRegistry(registryInfo, item.type),
                       validation: buildValidationSourceFromRegistry(registryInfo),
                       index: buildIndexSourceFromRegistry(registryInfo, item.type),
-                      docs: registryInfo?.doc || '',
+                      docs: registryInfo?.docRaw || registryInfo?.doc || '',
                     };
-                    localStorage.setItem('openhw_edit_copy', JSON.stringify(editCopyData));
+
+                    const writeResult = writeEditCopyPayload(editCopyData);
+                    if (!writeResult.ok) {
+                      alert(`Unable to prepare Edit a Copy payload. ${writeResult.error?.message || 'Please clear browser storage and retry.'}`);
+                      setPaletteContextMenu(null);
+                      setIsPaletteHovered(false);
+                      return;
+                    }
+
                     openComponentEditor();
                     setPaletteContextMenu(null);
                     setIsPaletteHovered(false);
@@ -7544,12 +8799,12 @@ export default function SimulatorPage({ gamificationMode = false }) {
               ].map(({ icon, label, color, action }) => (
                 <button
                   key={label}
+                  className="canvas-menu-item"
                   onClick={action}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', background: 'none', border: 'none', color, padding: '9px 14px', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}
-                  onMouseEnter={e => e.currentTarget.style.background = 'var(--card)'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                  style={{ color }}
                 >
-                  <span>{icon}</span>{label}
+                  {icon}
+                  {label}
                 </button>
               ))}
             </div>
@@ -7585,7 +8840,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
             opacity: liveEditingDisabled ? 0.8 : 1,
           }}
           ref={canvasRef}
-          onWheel={onWheel}
           onTouchStart={onTouchStart}
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
@@ -7634,141 +8888,85 @@ export default function SimulatorPage({ gamificationMode = false }) {
           }}>
             {/* BOTTOM SVG layer for wires (Below Components) */}
             <svg
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
             >
               {wires.filter(w => w.isBelow === true).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts[1])
-                const p2 = getPinPos(toParts[0], toParts[1])
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
-                const isSelectedWire = selected === w.id;
-                const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
-
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
+                
                 return (
-                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => {
-                    e.stopPropagation();
-                    setSelected(w.id);
-                    const rect = canvasRef.current.getBoundingClientRect();
-                    setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                  }} onDoubleClick={e => e.stopPropagation()}>
-                    <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-                    <path d={wirePath} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 2.5 : 1.5} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.6} />
-                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
-                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 4 : 3} fill={isSelectedWire ? 'var(--orange)' : w.color} opacity={0.6} />
-                    {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, w.waypoints).reduce((acc, _, i, arr) => {
-                      // Skip pin-stub segments (first: p1→e1, last: e2→p2) — only show on routing segments
-                      if (i < 1 || i >= arr.length - 2) return acc;
-                      const a = arr[i], b = arr[i + 1];
-                      const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-                      if (segLen < 20) return acc;
-                      const isHoriz = Math.abs(b.y - a.y) < 1;
-                      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-                      acc.push(
-                        <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelectedWire ? 6 : 4}
-                          fill={isSelectedWire ? '#fff' : 'rgba(255,255,255,0.35)'}
-                          stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={1.5}
-                          opacity={isSelectedWire ? 1 : 0.55}
-                          style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-                          title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-                          onMouseDown={ev => {
-                            ev.stopPropagation(); ev.preventDefault();
-                            if (!isSelectedWire) { setSelected(w.id); return; }
-                            const rect = canvasRef.current.getBoundingClientRect();
-                            const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                            const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                            const dragData = { wireId: w.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                            segDragRef.current = dragData;
-                            setSegDrag(dragData);
-                          }}
-                          onClick={ev => ev.stopPropagation()}
-                          onDoubleClick={ev => {
-                            ev.stopPropagation(); ev.preventDefault();
-                            const newCorners = arr.slice(1, -1)
-                              .filter((_, ci) => ci !== i - 1 && ci !== i)
-                              .map(pt => ({ x: pt.x, y: pt.y, _corner: true }));
-                            saveHistory();
-                            setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: newCorners } : ww));
-                          }}
-                        />
-                      );
-                      return acc;
-                    }, [])}
-                  </g>
-                )
+                  <CanvasWire
+                    key={w.id}
+                    wire={w}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    isSelected={selected === w.id}
+                    wirepointsEnabled={wirepointsEnabled}
+                    theme={theme}
+                    onSelect={(e) => {
+                      e.stopPropagation();
+                      setSelected(w.id);
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                    }}
+                    onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                      if (selected !== wire.id) { setSelected(wire.id); return; }
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                      const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                      segDragRef.current = dragData;
+                      setSegDrag(dragData);
+                    }}
+                  />
+                );
               })}
             </svg>
 
             {/* TOP SVG layer for wires (Above Components) & Context Menu */}
             <svg
               ref={svgRef}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
             >
               {/* Placed wires (Top layer) */}
               {wires.filter(w => w.isBelow !== true).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts[1])
-                const p2 = getPinPos(toParts[0], toParts[1])
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
-                const isSelectedWire = selected === w.id;
-                const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
-
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
+                
                 return (
-                  <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => {
-                    e.stopPropagation();
-                    setSelected(w.id);
-                    const rect = canvasRef.current.getBoundingClientRect();
-                    setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                  }} onDoubleClick={e => e.stopPropagation()}>
-                    <path d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-                    <path d={wirePath} stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={isSelectedWire ? 2.3 : 1.3} fill="none" strokeDasharray={isSelectedWire ? "6 4" : "none"} strokeLinecap="round" opacity={0.9} />
-                    <circle cx={p1.x} cy={p1.y} r={isSelectedWire ? 3 : 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
-                    <circle cx={p2.x} cy={p2.y} r={isSelectedWire ? 3 : 2} fill={isSelectedWire ? 'var(--orange)' : w.color} />
-                    {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, w.waypoints).reduce((acc, _, i, arr) => {
-                      // Skip pin-stub segments (first: p1→e1, last: e2→p2) — only show on routing segments
-                      if (i < 1 || i >= arr.length - 2) return acc;
-                      const a = arr[i], b = arr[i + 1];
-                      const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-                      if (segLen < 20) return acc;
-                      const isHoriz = Math.abs(b.y - a.y) < 1;
-                      const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-                      acc.push(
-                        <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelectedWire ? 6 : 4}
-                          fill={isSelectedWire ? '#fff' : 'rgba(255,255,255,0.35)'}
-                          stroke={isSelectedWire ? 'var(--orange)' : w.color} strokeWidth={1.5}
-                          opacity={isSelectedWire ? 1 : 0.55}
-                          style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-                          title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-                          onMouseDown={ev => {
-                            ev.stopPropagation(); ev.preventDefault();
-                            if (!isSelectedWire) { setSelected(w.id); return; }
-                            const rect = canvasRef.current.getBoundingClientRect();
-                            const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                            const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                            const dragData = { wireId: w.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                            segDragRef.current = dragData;
-                            setSegDrag(dragData);
-                          }}
-                          onClick={ev => ev.stopPropagation()}
-                          onDoubleClick={ev => {
-                            ev.stopPropagation(); ev.preventDefault();
-                            const newCorners = arr.slice(1, -1)
-                              .filter((_, ci) => ci !== i - 1 && ci !== i)
-                              .map(pt => ({ x: pt.x, y: pt.y, _corner: true }));
-                            saveHistory();
-                            setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: newCorners } : ww));
-                          }}
-                        />
-                      );
-                      return acc;
-                    }, [])}
-                  </g>
-                )
+                  <CanvasWire
+                    key={w.id}
+                    wire={w}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    isSelected={selected === w.id}
+                    wirepointsEnabled={wirepointsEnabled}
+                    theme={theme}
+                    onSelect={(e) => {
+                      e.stopPropagation();
+                      setSelected(w.id);
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                    }}
+                    onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                      if (selected !== wire.id) { setSelected(wire.id); return; }
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                      const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                      segDragRef.current = dragData;
+                      setSegDrag(dragData);
+                    }}
+                  />
+                );
               })}
 
               {/* Preview wire while drawing */}
@@ -7828,8 +9026,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
 
               const fromParts = w.from.split(':')
               const toParts = w.to.split(':')
-              const p1 = getPinPos(fromParts[0], fromParts[1])
-              const p2 = getPinPos(toParts[0], toParts[1])
+              const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+              const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
               if (!p1 || !p2) return null
 
               // Use click position, fall back to wire midpoint
@@ -7904,257 +9102,216 @@ export default function SimulatorPage({ gamificationMode = false }) {
               </div>
             )}
 
-            {/* Components */}
-            {components.map(comp => {
-              const pins = PIN_DEFS[comp.type] || []
-              const hasError = errorCompIds.has(comp.id)
-              const isSelected = selected === comp.id
-              const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
-              return (
-                <div
-                  key={comp.id}
-                  style={{
-                    position: 'absolute',
-                    left: comp.x, top: comp.y,
-                    width: comp.w, height: comp.h,
-                    zIndex: isSelected ? 5 : 2,
-                    userSelect: 'none',
-                    pointerEvents: 'none', // Clicks pass through the manifest wrapper
-                    transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-                    transformOrigin: 'center center',
-                  }}
-                >
-                  {/* Hit Box — captures selection and drag only within BOUNDS */}
-                  {(() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: b.x, top: b.y,
-                          width: b.w, height: b.h,
-                          cursor: wireStart ? 'crosshair' : 'move',
-                          pointerEvents: 'auto',
-                          zIndex: 0, // Below pins and interactive UI elements
-                        }}
-                        onMouseDown={e => onCompMouseDown(e, comp.id)}
-                        onClick={e => onCompClick(e, comp.id)}
-                        onDoubleClick={e => e.stopPropagation()}
-                      />
-                    );
-                  })()}
+            {/* Components (Layered: Breadboards on Bottom) */}
+            {(() => {
+              const renderComponent = (comp) => {
+                const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || []
+                const hasError = errorCompIds.has(comp.id)
+                const isSelected = selected === comp.id
+                const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
 
-                  {/* Selection ring — uses BOUNDS from ui.tsx for precise sizing */}
-                  {isSelected && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div style={{
-                        position: 'absolute',
-                        left: b.x - 6, top: b.y - 6,
-                        width: b.w + 12, height: b.h + 12,
-                        borderRadius: 8,
-                        border: '2px solid var(--accent)',
-                        boxShadow: '0 0 16px var(--glow)',
-                        pointerEvents: 'none', zIndex: 10,
-                      }} />
-                    );
-                  })()}
-                  {/* Error ring — uses BOUNDS from ui.tsx for precise sizing */}
-                  {hasError && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <div style={{
-                        position: 'absolute',
-                        left: b.x - 6, top: b.y - 6,
-                        width: b.w + 12, height: b.h + 12,
-                        borderRadius: 8,
-                        border: '2px solid var(--red)',
-                        boxShadow: '0 0 16px rgba(255,68,68,.4)',
-                        pointerEvents: 'none', zIndex: 10,
-                      }} />
-                    );
-                  })()}
+                const rad = ((comp.rotation || 0) * Math.PI) / 180;
+                const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
+                const visualHalfHeight = visualH / 2;
 
-                  {/* Serial-target board ring */}
-                  {isSerialBoardSelected && (() => {
-                    const getBounds = () => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                      if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                      return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                    };
-                    const b = getBounds();
-                    return (
-                      <>
-                        <div style={{
-                          position: 'absolute',
-                          left: b.x - 10, top: b.y - 10,
-                          width: b.w + 20, height: b.h + 20,
-                          borderRadius: 10,
-                          border: '2px dashed #38bdf8',
-                          boxShadow: '0 0 18px rgba(56,189,248,.45)',
-                          pointerEvents: 'none', zIndex: 9,
-                        }} />
-                        <div style={{
-                          position: 'absolute',
-                          left: b.x - 10,
-                          top: b.y - 26,
-                          background: '#0c4a6e',
-                          color: '#e0f2fe',
-                          border: '1px solid #38bdf8',
-                          borderRadius: 6,
-                          fontSize: 9,
-                          padding: '1px 6px',
-                          letterSpacing: '0.04em',
-                          fontFamily: 'JetBrains Mono, monospace',
-                          pointerEvents: 'none',
-                          zIndex: 11,
-                        }}>
-                          SERIAL TARGET
-                        </div>
-                      </>
-                    );
-                  })()}
+                return (
+                  <div 
+                    key={comp.id}
+                    id={`comp-master-${comp.id}`}
+                    style={{
+                      position: 'absolute',
+                      left: comp.x, top: comp.y,
+                      zIndex: comp.type.startsWith('wokwi-breadboard') 
+                        ? (isSelected ? 4 : 2) 
+                        : (isSelected ? 10 : 5),
+                    }}
+                  >
+                    <CanvasComponent
+                      comp={comp}
+                      isSelected={isSelected}
+                      hasError={hasError}
+                      onMouseDown={e => onCompMouseDown(e, comp.id)}
+                      onClick={e => onCompClick(e, comp.id)}
+                      getComponentStateAttrs={getComponentStateAttrs}
+                      COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+                      PIN_DEFS={PIN_DEFS}
+                    />
 
-                  {/* Component Render — wrapped to allow pass-through to Hit Box */}
-                  <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
-                    {COMPONENT_REGISTRY[comp.type] ? (
-                      // Local UI component rendering SVG
-                      React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                        state: oopStates[comp.id] || {},
-                        attrs: getComponentStateAttrs(comp),
-                        isRunning: isRunning
-                      })
-                    ) : (
-                      // Fallback for unsupported components (if any left)
-                      <div
-                        style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                        ref={el => {
-                          if (comp.type === 'wokwi-neopixel-matrix' && el) {
-                            neopixelRefs.current[comp.id] = el;
-                          }
-                        }}
-                        dangerouslySetInnerHTML={{
-                          __html: `<${comp.type} ${Object.entries(getComponentStateAttrs(comp)).map(([k, v]) => `${k}="${v}"`).join(' ')}></${comp.type}>`,
-                        }}
-                      />
-                    )}
-                  </div>
+                    {/* Wrapper for the actual emulator component and its dynamic pins */}
+                    <div style={{
+                      position: 'absolute',
+                      left: 0, top: 0,
+                      width: comp.w, height: comp.h,
+                      userSelect: 'none',
+                      pointerEvents: 'none',
+                      transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
+                      transformOrigin: 'center center',
+                    }}>
+                      {/* Serial-target board ring */}
+                      {isSerialBoardSelected && (() => {
+                        const getBounds = () => {
+                          const reg = COMPONENT_REGISTRY[comp.type];
+                          if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
+                          if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+                          return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
+                        };
+                        const b = getBounds();
+                        return (
+                          <>
+                            <div style={{
+                              position: 'absolute',
+                              left: b.x - 10, top: b.y - 10,
+                              width: b.w + 20, height: b.h + 20,
+                              borderRadius: 10,
+                              border: '2px dashed #38bdf8',
+                              boxShadow: '0 0 18px rgba(56,189,248,.45)',
+                              pointerEvents: 'none', zIndex: 9,
+                            }} />
+                            <div style={{
+                              position: 'absolute',
+                              left: b.x - 10,
+                              top: b.y - 26,
+                              background: '#0c4a6e',
+                              color: '#e0f2fe',
+                              border: '1px solid #38bdf8',
+                              borderRadius: 6,
+                              fontSize: 9,
+                              padding: '1px 6px',
+                              letterSpacing: '0.04em',
+                              fontFamily: 'JetBrains Mono, monospace',
+                              pointerEvents: 'none',
+                              zIndex: 11,
+                            }}>
+                              SERIAL TARGET
+                            </div>
+                          </>
+                        );
+                      })()}
 
-                  {/* Pins */}
-                  {pins.map(pin => {
-                    const pinStrRef = `${comp.id}:${pin.id}`;
-                    const isHovered = hoveredPin === pinStrRef;
-                    const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-
-                    // Hovered pin's category for passive highlighting
-                    const hoverCompId = hoveredPin?.split(':')[0];
-                    const hoverPinId = hoveredPin?.split(':')[1];
-                    const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
-                    const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
-
-                    const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
-                    const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-
-                    const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                    const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
-
-                    const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated;
-
-                    // Check if a wire is connected to this pin
-                    const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                    const pinColor = connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)');
-                    const pinBorder = connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)');
-
-                    return (
-                      <div
-                        key={pin.id}
-                        title={`${pin.description || pin.id} — click to wire`}
-                        style={{
-                          position: 'absolute',
-                          left: pin.x, top: pin.y,
-                          width: 5, height: 5,
-                          background: pinColor,
-                          border: `1px solid ${pinBorder}`,
-                          borderRadius: '0%', /* matching task3.html */
-                          cursor: 'crosshair',
-                          zIndex: isHovered || isSuggested ? 30 : 20, /* matching task3.html hover and port z-index */
-                          transform: `translate(-50%, -50%)${isHovered || isSuggested ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                          transition: '0.2s', /* matching task3.html transition */
-                          pointerEvents: 'all', /* Fix hit detection */
-                          boxShadow: isSuggested ? '0 0 8px #f1c40f' : 'none',
-                        }}
-                        onMouseEnter={() => setHoveredPin(pinStrRef)}
-                        onMouseLeave={() => setHoveredPin(null)}
-                        onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                      >
-                        {/* Pin label tooltip */}
-                        {isHovered && (
-                          <div style={{
-                            position: 'absolute', bottom: 18, left: '50%',
-                            transform: 'translateX(-50%)',
-                            background: '#111', color: '#fff',
-                            padding: '4px 8px', borderRadius: 4,
-                            fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                            pointerEvents: 'none', border: '1px solid #444',
-                            boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                          }}>
-                            {pin.description || pin.id}
+                      {/* Component Render — wrapped to allow pass-through to Hit Box */}
+                      <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
+                        {COMPONENT_REGISTRY[comp.type] ? (
+                          // Local UI component rendering SVG
+                          React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+                            state: oopStates[comp.id] || {},
+                            attrs: getComponentStateAttrs(comp),
+                            isRunning: isRunning
+                          })
+                        ) : (
+                          // Fallback for unsupported components (if any left)
+                          <div
+                            style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+                            ref={el => {
+                              if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                                neopixelRefs.current[comp.id] = el;
+                              }
+                            }}
+                          >
+                            {React.createElement(comp.type, getComponentStateAttrs(comp))}
                           </div>
                         )}
                       </div>
-                    )
-                  })}
 
-                  {/* Component label */}
-                  <div style={{
-                    position: 'absolute',
-                    top: (() => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      const b = typeof reg?.BOUNDS === 'function'
-                        ? reg.BOUNDS(getComponentStateAttrs(comp))
-                        : (reg?.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h });
-                      return b.y + b.h + 4;
-                    })(),
-                    left: (() => {
-                      const reg = COMPONENT_REGISTRY[comp.type];
-                      const b = typeof reg?.BOUNDS === 'function'
-                        ? reg.BOUNDS(getComponentStateAttrs(comp))
-                        : (reg?.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h });
-                      return b.x + b.w / 2;
-                    })(),
-                    transform: 'translateX(-50%)',
-                    fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                    whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                    pointerEvents: 'none',
-                  }}>
-                    {comp.label}
+                      {/* Pins */}
+                      {pins.map(pin => {
+                        const pinStrRef = `${comp.id}:${pin.id}`;
+                        const isHovered = hoveredPin === pinStrRef;
+                        const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
+
+                        // Snapping highlight
+                        const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
+
+                        // Hovered pin's category for passive highlighting
+                        const hoverCompId = hoveredPin?.split(':')[0];
+                        const hoverPinId = hoveredPin?.split(':')[1];
+                        const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
+                        const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
+
+                        const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
+                        const currentCat = getPinCategory(pin.id, pin.description, comp.type);
+
+                        const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
+                        const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+
+                        const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
+
+                        // Check if a wire is connected to this pin
+                        const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
+                        const pinColor = isSnapping ? '#2ecc71' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)'));
+                        const pinBorder = isSnapping ? '#fff' : (connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)'));
+
+                        return (
+                          <div
+                            key={pin.id}
+                            id={`pin-dot-${comp.id}-${pin.id}`}
+                            title={`${pin.description || pin.id} — click to wire`}
+                            style={{
+                              position: 'absolute',
+                              left: pin.x, top: pin.y,
+                              width: 5, height: 5,
+                              background: pinColor,
+                              border: `1px solid ${pinBorder}`,
+                              borderRadius: '0%', /* matching task3.html */
+                              cursor: 'crosshair',
+                              zIndex: isHovered || isSuggested || isSnapping ? 30 : 20, /* matching task3.html hover and port z-index */
+                              transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
+                              transition: '0.2s', /* matching task3.html transition */
+                              pointerEvents: 'all', /* Fix hit detection */
+                              boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
+                            }}
+                            onMouseEnter={() => setHoveredPin(pinStrRef)}
+                            onMouseLeave={() => setHoveredPin(null)}
+                            onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
+                          >
+                            {/* Pin label tooltip */}
+                            {isHovered && (
+                              <div style={{
+                                position: 'absolute', bottom: 18, left: '50%',
+                                transform: 'translateX(-50%)',
+                                background: '#111', color: '#fff',
+                                padding: '4px 8px', borderRadius: 4,
+                                fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                                pointerEvents: 'none', border: '1px solid #444',
+                                boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                              }}>
+                                {pin.description || pin.id}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Component label (Outside rotated container) */}
+                    <div style={{
+                      position: 'absolute',
+                      top: comp.h / 2 + visualHalfHeight + 4,
+                      left: comp.w / 2,
+                      transform: 'translateX(-50%)',
+                      fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
+                      whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
+                      pointerEvents: 'none',
+                      zIndex: 5,
+                    }}>
+                      {comp.label}
+                    </div>
                   </div>
+                );
+              };
 
-                </div>
-              )
-            })}
+              const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+              const others = components.filter(c => !c.type.startsWith('wokwi-breadboard'));
+              
+              return (
+                <>
+                  {breadboards.map(renderComponent)}
+                  {others.map(renderComponent)}
+                </>
+              );
+            })()}
           </div>{/* end zoom wrapper */}
 
-          {/* Runtime mini panel (top-left) */}
+          {/* Minimalist Runtime panel (top-left) */}
           {isRunning && !isCompiling && (
             <div
               data-export-ignore="true"
@@ -8162,30 +9319,73 @@ export default function SimulatorPage({ gamificationMode = false }) {
               onMouseDown={e => e.stopPropagation()}
               style={{
                 position: 'absolute',
-                top: 12,
-                left: 12,
+                top: 14,
+                left: 14,
                 zIndex: 90,
-                width: 188,
-                background: 'var(--bg2)',
-                border: '1px solid var(--border)',
-                borderRadius: 12,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                padding: '10px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '16px',
+                background: 'rgba(25, 25, 25, 0.65)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '10px',
+                boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                padding: '6px 12px',
+                pointerEvents: 'auto'
               }}
             >
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 7 }}>
-                Simulation Runtime
+              {/* Duration Segment */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 2h4" /><path d="M12 14v-4" /><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6V13z" />
+                  </svg>
+                </div>
+                <span style={{ 
+                  color: 'var(--text)', 
+                  fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', 
+                  fontSize: '11px', 
+                  fontWeight: 600,
+                  letterSpacing: '0.02em',
+                  minWidth: '65px'
+                }}>
+                  {formatRunDuration(runDurationSec)}
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, marginBottom: 5 }}>
-                <span style={{ color: 'var(--text3)' }}>Speed</span>
-                <span style={{ color: 'var(--accent)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{simulationSpeedPercent}%</span>
+
+              {/* Divider */}
+              <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.1)' }} />
+
+              {/* Speed Segment */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />
+                  </svg>
+                </div>
+                <span style={{ 
+                  color: 'var(--accent)', 
+                  fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)', 
+                  fontSize: '11px', 
+                  fontWeight: 700,
+                  minWidth: '35px'
+                }}>
+                  {simulationSpeedPercent}%
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
-                <span style={{ color: 'var(--text3)' }}>Duration</span>
-                <span style={{ color: 'var(--text)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{formatRunDuration(runDurationSec)}</span>
-              </div>
+
+              {/* Paused Indicator Overlay */}
               {isPaused && (
-                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--orange)', fontWeight: 600 }}>Paused</div>
+                <div style={{ 
+                  position: 'absolute', 
+                  inset: 0, 
+                  background: 'rgba(245, 158, 11, 0.15)', 
+                  borderRadius: '10px', 
+                  border: '1px solid var(--orange)',
+                  zIndex: -1,
+                  animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
+                }} />
               )}
             </div>
           )}
@@ -8196,6 +9396,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
               data-export-ignore="true"
               onClick={e => e.stopPropagation()}
               onMouseDown={e => e.stopPropagation()}
+              onDoubleClick={e => e.stopPropagation()}
               style={{ position: 'absolute', top: 12, right: 12, zIndex: 90, width: 220, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.35)', overflow: 'hidden' }}
             >
               {/* Header */}
@@ -8218,10 +9419,6 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   {selectedComponentInfo.label}
                 </div>
 
-                {/* Description - Preserved from Local */}
-                <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-                  {COMPONENT_REGISTRY[selectedComponentInfo.type]?.manifest?.description || COMPONENT_DESCRIPTIONS[selectedComponentInfo.type] || `${selectedComponentInfo.type} component`}
-                </div>
 
                 <div style={{
                   display: 'flex',
@@ -8251,7 +9448,9 @@ export default function SimulatorPage({ gamificationMode = false }) {
                     onClick={() => {
                       const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
                       if (doc) {
-                        const b = new Blob([doc], { type: 'text/html' });
+                        // Replace hardcoded localhost URLs with current origin
+                        const finalDoc = doc.replace(/http:\/\/localhost:5173/g, window.location.origin);
+                        const b = new Blob([finalDoc], { type: 'text/html' });
                         window.open(URL.createObjectURL(b), '_blank');
                       } else {
                         window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
@@ -8338,7 +9537,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   }
 
                   // Gather ALL components for destination endpoints (excluding self)
-                  const validTargets = components.filter(c => c.id !== selectedComponentInfo.id);
+                  const validTargets = components.filter(c => c.id !== selected);
                   const targetOptions = [];
                   validTargets.forEach(b => {
                     const bPins = LOCAL_PIN_DEFS[b.type] || [];
@@ -8351,7 +9550,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   });
 
                   return compPins.map(pin => {
-                    const pinIdStr = `${selectedComponentInfo.id}:${pin.id}`;
+                    const pinIdStr = `${selected}:${pin.id}`;
                     const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
 
                     // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
@@ -8574,8 +9773,29 @@ export default function SimulatorPage({ gamificationMode = false }) {
               >⋮</button>
               {showCanvasMenu && (
                 <div
-                  style={{ position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', minWidth: 190, zIndex: 200, padding: '4px' }}
+                  className="canvas-menu"
                   onMouseLeave={() => setShowCanvasMenu(false)}
+                  style={{ 
+                    position: 'absolute', 
+                    bottom: '100%', 
+                    right: 0, 
+                    marginBottom: 10,
+                    zIndex: 10000, 
+                    background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                    backdropFilter: 'blur(16px) saturate(1.4)',
+                    WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                    border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                    borderRadius: 12, 
+                    boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                    padding: '5px',
+                    minWidth: 190,
+                    animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+                    transformOrigin: 'bottom right',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    willChange: 'transform, opacity, backdrop-filter',
+                    backfaceVisibility: 'hidden',
+                    WebkitBackfaceVisibility: 'hidden',
+                  }}
                 >
                   <button className="canvas-menu-item" onClick={() => { setCanvasZoom(1); setCanvasOffset({ x: 0, y: 0 }); setShowCanvasMenu(false); }}>Fit to Canvas</button>
                   <button className={`canvas-menu-item${history.past.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { undo(); setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning}>Undo</button>
@@ -8614,9 +9834,15 @@ export default function SimulatorPage({ gamificationMode = false }) {
             isOpen={isConsoleOpen}
             height={consoleHeight}
             entries={consoleEntries}
+            activeTab={activeConsoleTab}
+            onTabChange={setActiveConsoleTab}
+            protocolLogs={protocolLogs}
             onResizeStart={onMouseDownConsoleResize}
             onClose={() => setIsConsoleOpen(false)}
-            onClear={clearConsoleEntries}
+            onClear={() => {
+              if (activeConsoleTab === 'protocol') setProtocolLogs([]);
+              else clearConsoleEntries();
+            }}
             onDownload={downloadConsoleLog}
           />
 
@@ -8641,17 +9867,30 @@ export default function SimulatorPage({ gamificationMode = false }) {
             const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
             return (
               <div
+                className="canvas-menu"
                 data-quickadd="true"
                 onMouseDown={e => e.stopPropagation()}
+                onDoubleClick={e => e.stopPropagation()}
+                onMouseLeave={() => setQuickAdd(null)}
                 style={{
-                  position: 'fixed', left, top, zIndex: 9999,
+                  position: 'fixed', 
+                  left, 
+                  top, 
+                  zIndex: 10000,
                   width: menuW,
-                  background: 'var(--bg2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.55)',
-                  overflow: 'hidden',
+                  background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+                  backdropFilter: 'blur(16px) saturate(1.4)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+                  border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+                  borderRadius: 12,
+                  boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+                  padding: '5px',
+                  animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+                  transformOrigin: 'top left',
                   fontFamily: "'Space Grotesk', sans-serif",
+                  willChange: 'transform, opacity, backdrop-filter',
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
                 }}
               >
                 {/* Search input */}
@@ -8674,30 +9913,34 @@ export default function SimulatorPage({ gamificationMode = false }) {
                     placeholder="Search component..."
                     style={{
                       width: '100%', boxSizing: 'border-box',
-                      background: 'var(--bg3)', border: '1px solid var(--border2)',
-                      color: 'var(--text)', padding: '7px 10px',
-                      borderRadius: 7, fontFamily: 'inherit', fontSize: 13, outline: 'none',
+                      background: theme === 'light' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.2)', 
+                      border: '1px solid var(--border)',
+                      color: 'var(--text)', padding: '10px 14px',
+                      borderRadius: 10, fontFamily: 'inherit', fontSize: 14, outline: 'none',
+                      transition: 'all 0.2s',
                     }}
+                    onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
+                    onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'}
                   />
                 </div>
                 {/* Result list */}
                 {results.map((item, i) => (
                   <div
                     key={`${item.type}-${i}`}
+                    className="canvas-menu-item"
                     data-quickadd="true"
                     onMouseEnter={() => setQuickAddIdx(i)}
                     onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
                     style={{
-                      padding: '8px 12px',
-                      fontSize: 13,
-                      cursor: 'pointer',
-                      display: 'flex', alignItems: 'center', gap: 8,
                       background: i === selIdx ? 'var(--accent)' : 'transparent',
                       color: i === selIdx ? '#fff' : 'var(--text)',
+                      borderRadius: 8,
+                      margin: '2px 5px',
+                      width: 'calc(100% - 10px)',
                       userSelect: 'none',
                     }}
                   >
-                    <span style={{ fontWeight: 600, flex: 1 }}>{item.label}</span>
+                    <span style={{ fontWeight: i === selIdx ? 700 : 500, flex: 1 }}>{item.label}</span>
                     {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
                   </div>
                 ))}
@@ -8718,8 +9961,10 @@ export default function SimulatorPage({ gamificationMode = false }) {
         <RightPanel
           isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
           explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
-          selected={selected} setSelected={setSelected}
+          selected={selected} setSelected={setSelected} theme={theme}
+          projectName={currentProjectName}
           validationErrors={validationErrors} showValidation={showValidation} setShowValidation={setShowValidation}
+          healthScore={healthScore} applyFix={applyFix}
           codeTab={codeTab} setCodeTab={setCodeTab} code={code} setCode={setCode}
           blocklyXml={blocklyXml} setBlocklyXml={setBlocklyXml}
           blocklyGeneratedCode={blocklyGeneratedCode} setBlocklyGeneratedCode={setBlocklyGeneratedCode}
@@ -8736,6 +9981,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
           hardwareConnected={hardwareConnected}
           plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
           showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
+          boardComponentMap={boardComponentMap} onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
           editingDisabled={liveEditingDisabled}
           editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required before you can edit this live simulation.' : 'Editing is disabled.'}
         />
@@ -8921,7 +10167,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
               </div>
 
               <div className="border-t border-[var(--border)] p-4 bg-[var(--bg2)] flex flex-col gap-3 shrink-0">
-                {!isAuthenticated ? (
+                {!isAnyAuthenticated ? (
                   <button 
                     onClick={() => { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); }}
                     className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] text-white py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-[0.98] transition-all"
@@ -8933,18 +10179,19 @@ export default function SimulatorPage({ gamificationMode = false }) {
                   <div 
                     className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] group cursor-pointer hover:border-[var(--text3)] transition-all"
                     onClick={() => {
-                      if (user?.role === 'teacher') navigate('/teacher/dashboard')
-                      else if (user?.role === 'student') navigate('/student/dashboard')
+                      if (activeUser?.role === 'teacher') navigate('/teacher/dashboard')
+                      else if (activeUser?.role === 'student') navigate('/student/dashboard')
+                      else if (activeUser?.role === 'admin') navigate('/admin/dashboard')
                       else navigate('/user/dashboard')
                     }}
                     title="Go to dashboard"
                   >
                     <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold uppercase">
-                      {user?.name?.[0] || 'U'}
+                      {activeUser?.name?.[0] || 'U'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold text-[var(--text)] truncate">{user?.name || 'User'}</div>
-                      <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{user?.role || 'Developer'}</div>
+                      <div className="text-[11px] font-bold text-[var(--text)] truncate">{activeUser?.name || 'User'}</div>
+                      <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{activeUser?.role || 'Developer'}</div>
                     </div>
                     <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
                   </div>
@@ -8956,7 +10203,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
                       ${!isAuthenticated 
                         ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm border border-[var(--border)]' 
                         : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
-                    onClick={() => { if (isAuthenticated) { if (user?.email) localStorage.setItem('ohw_last_email', user.email); logout(); } }}
+                    onClick={() => { if (isAnyAuthenticated) { if (activeUser?.email) localStorage.setItem('ohw_last_email', activeUser.email); logout(); } }}
                   >
                     Local
                   </button>
@@ -9166,60 +10413,111 @@ export default function SimulatorPage({ gamificationMode = false }) {
         </div>
       )}
 
-      {/* ── FIRMWARE UPLOAD DIALOG ───────────────────────────────────────── */}
+      {/* ── BOARD FIRMWARE MANAGER ─────────────────────────────────────── */}
       {showFirmwareUploadDialog && (
         <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareUploadDialog(false)}>
-          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-            <div className="text-base font-bold mb-2 text-[var(--text)]">Upload Firmware to Board</div>
-            <div className="text-xs text-[var(--text3)] mb-4">
-              Upload a firmware artifact for a specific board on canvas. Use <strong>.hex</strong> for Arduino/ESP32/STM32 and <strong>.uf2</strong> (or .hex) for RP2040.
-              Uploaded firmware is used on the next simulation run for that board.
-            </div>
-
-            <label className="text-xs font-semibold text-[var(--text2)] block mb-2">Board target</label>
-            <select
-              className="w-full bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-3 py-2 rounded-lg text-sm mb-4"
-              value={firmwareUploadTarget}
-              onChange={(e) => setFirmwareUploadTarget(e.target.value)}
-              disabled={firmwareBoardOptions.length === 0}
-            >
-              {firmwareBoardOptions.length === 0 ? (
-                <option value="">No programmable board on canvas</option>
-              ) : firmwareBoardOptions.map((option) => (
-                <option key={option.id} value={option.id}>{option.label}</option>
-              ))}
-            </select>
-
-            <input
-              ref={firmwareUploadInputRef}
-              type="file"
-              accept=".hex,.uf2"
-              style={{ display: 'none' }}
-              onChange={(e) => setFirmwareUploadFile(e.target.files?.[0] || null)}
-            />
-
-            <div className="mb-4" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <Btn onClick={() => firmwareUploadInputRef.current?.click()} disabled={firmwareBoardOptions.length === 0}>
-                Choose Firmware File
-              </Btn>
-              <div className="text-xs text-[var(--text3)]" style={{ minHeight: 18 }}>
-                {firmwareUploadFile?.name || 'No file selected'}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn onClick={() => setShowFirmwareUploadDialog(false)}>Cancel</Btn>
-              <Btn
-                color="var(--accent)"
-                disabled={!firmwareUploadTarget || !firmwareUploadFile || isApplyingFirmwareUpload}
-                onClick={applyUploadedFirmwareToBoard}
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[580px] max-w-[90vw] shadow-[0_12px_50px_rgba(0,0,0,.5)] max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <div className="text-lg font-bold text-[var(--text)]">Board Firmware Manager</div>
+              <button 
+                onClick={() => setShowFirmwareUploadDialog(false)}
+                className="text-[var(--text3)] hover:text-[var(--text)] transition-colors p-1"
               >
-                {isApplyingFirmwareUpload ? 'Applying...' : 'Upload & Use'}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+            <div className="text-xs text-[var(--text3)] mb-8 leading-relaxed">
+              Toggle between using the online code editor or a custom uploaded firmware binary (.hex/.uf2).
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+              {firmwareBoardOptions.length === 0 ? (
+                <div className="text-center py-12 border-2 border-dashed border-[var(--border)] rounded-xl opacity-60">
+                  <div className="text-[var(--text3)] text-sm">No programmable boards found on canvas.</div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-5">
+                  {firmwareBoardOptions.map((option) => {
+                    const boardComp = boardComponentMap.get(option.id);
+                    const attrs = boardComp?.attrs || {};
+                    const useUploaded = !!attrs.useUploadedFirmware;
+                    const firmwareName = attrs.firmwareArtifactName || '';
+                    const hasFirmware = !!(attrs.firmwareHex || attrs.hex);
+                    const kind = normalizeBoardKind(boardComp?.type || '');
+                    
+                    return (
+                      <div key={option.id} className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-xl flex items-center justify-between gap-6 transition-all hover:border-[var(--accent)]/30 group">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="font-bold text-[13px] text-[var(--text)] truncate">{option.id}</span>
+                            <span className="px-1.5 py-0.5 bg-[var(--bg2)] border border-[var(--border)] rounded text-[9px] uppercase text-[var(--text3)] font-bold tracking-wider">
+                              {kind}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full ${useUploaded && hasFirmware ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-blue-500 op-40'}`} />
+                            <span className="text-[10px] text-[var(--text2)]">
+                              Source: <strong className={useUploaded && hasFirmware ? "text-[var(--accent)]" : "text-[var(--text)]"}>{useUploaded && hasFirmware ? 'Uploaded Binary' : 'Code Editor'}</strong>
+                            </span>
+                          </div>
+                          {hasFirmware && (
+                            <div className="mt-2 text-[9px] text-[var(--text3)] flex items-center gap-1.5 bg-[var(--bg)]/40 px-2 py-1 rounded inline-flex">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                              <span className="truncate max-w-[180px]">{firmwareName || 'Custom Upload'}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <Btn
+                            onClick={() => toggleBoardFirmwareSource(option.id, !useUploaded)}
+                            disabled={!hasFirmware}
+                            color={useUploaded ? 'var(--accent)' : ''}
+                            title={!hasFirmware ? 'Upload a binary first to use this source override' : (useUploaded ? 'Switch to Code Editor' : 'Use Uploaded Binary')}
+                          >
+                            <span className="text-[11px] font-bold">{useUploaded ? 'Using Upload' : 'Use Upload'}</span>
+                          </Btn>
+                          
+                          <Btn
+                            onClick={() => {
+                              setFirmwareUploadTarget(option.id);
+                              firmwareUploadInputRef.current?.click();
+                            }}
+                            iconOnly
+                            title="Upload New Binary"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path><polyline points="16 16 12 12 8 16"></polyline></svg>
+                          </Btn>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-8 flex justify-end gap-3 pt-5 border-t border-[var(--border)]">
+              <Btn onClick={() => setShowFirmwareUploadDialog(false)}>
+                Close
               </Btn>
             </div>
           </div>
         </div>
       )}
+
+      {/* Hidden file input for manager */}
+      <input
+        ref={firmwareUploadInputRef}
+        type="file"
+        accept=".hex,.uf2"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file && firmwareUploadTarget) {
+            applyUploadedFirmwareToBoard(firmwareUploadTarget, file);
+          }
+        }}
+      />
 
       {/* F1 MENU */}
       {showF1Menu && (
@@ -9231,56 +10529,78 @@ export default function SimulatorPage({ gamificationMode = false }) {
             className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
             onClick={e => e.stopPropagation()}
           >
-            <div className="text-base font-bold mb-4 text-[var(--text)]">Quick Actions (F1)</div>
-            <div className="flex flex-col gap-2">
-              <button 
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+            <div className="text-base font-bold mb-5 text-[var(--text)] tracking-tight">Quick Actions (F1)</div>
+            <div className="flex flex-col gap-3">
+              <Btn 
                 onClick={() => {
                   downloadSimulationJson();
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                🧾 Download Simulation JSON
-              </button>
-              <button 
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                Download Simulation JSON
+              </Btn>
+              <Btn 
                 onClick={() => {
                   openFirmwareDownloadDialog();
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                📥 Download Firmware
-              </button>
-              <button 
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                Download Firmware
+              </Btn>
+              <Btn 
                 onClick={() => {
                   openFirmwareUploadDialog();
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                📤 Upload Firmware to Board
-              </button>
-              <button
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                Board Firmware Manager
+              </Btn>
+              <Btn 
                 onClick={() => {
                   setRp2040DebugTelemetryEnabled((prev) => !prev);
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                {rp2040DebugTelemetryEnabled ? '🐞 Disable RP2040 dbg Telemetry' : '🐞 Enable RP2040 dbg Telemetry'}
-              </button>
-              <button 
-                className="w-full px-4 py-3 text-left text-sm font-medium rounded-lg border border-[var(--border)] hover:bg-[var(--card)] transition-colors text-[var(--text2)] hover:text-[var(--text)]"
+                {rp2040DebugTelemetryEnabled ? 'Disable RP2040 dbg Telemetry' : 'Enable RP2040 dbg Telemetry'}
+              </Btn>
+              <Btn 
+                onClick={() => {
+                  setShowSpeedDialog(true);
+                  setShowF1Menu(false);
+                }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
+              >
+                Simulation Speed ({simulationSpeed.toFixed(1)}x)
+              </Btn>
+              <Btn 
+                onClick={() => {
+                  const resetSpeed = 1.0;
+                  setSimulationSpeed(resetSpeed);
+                  if (isRunning && workerRef.current) {
+                    workerRef.current.postMessage({ type: 'SET_SPEED', speed: resetSpeed });
+                  }
+                  setShowF1Menu(false);
+                }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
+              >
+                Reset Simulation Speed (1.0x)
+              </Btn>
+              <Btn 
                 onClick={() => {
                   handleStartGDB();
                   setShowF1Menu(false);
                 }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
-                🐛 Start GDB Session
-              </button>
+                Start GDB Session
+              </Btn>
             </div>
             <button 
-              className="mt-4 w-full px-3 py-2 text-xs text-[var(--text3)] hover:text-[var(--text)] transition-colors"
+              className="mt-6 w-full px-3 py-2 text-xs font-bold text-[var(--text3)] hover:text-[var(--text)] transition-colors uppercase tracking-widest"
               onClick={() => setShowF1Menu(false)}
             >
               Close (Esc)
@@ -9289,13 +10609,106 @@ export default function SimulatorPage({ gamificationMode = false }) {
         </div>
       )}
 
+      {/* ── SIMULATION SPEED DIALOG ─────────────────────────────────────── */}
+      {showSpeedDialog && (
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSpeedDialog(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[380px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
+            <div className="text-base font-bold mb-2 text-[var(--text)]">Simulation Speed</div>
+            <div className="text-xs text-[var(--text3)] mb-6 leading-relaxed">
+              Adjust how fast the simulation runs relative to real-time. Higher speeds may impact UI responsiveness.
+            </div>
+
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[10px] font-bold text-[var(--text2)] uppercase tracking-wider">Current Rate</span>
+                <span className="text-sm font-mono font-bold text-[var(--accent)]">{simulationSpeed.toFixed(1)}x</span>
+              </div>
+              <input 
+                type="range"
+                min="0.1"
+                max="10"
+                step="0.1"
+                value={simulationSpeed}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setSimulationSpeed(val);
+                  if (isRunning && workerRef.current) {
+                    workerRef.current.postMessage({ type: 'SET_SPEED', speed: val });
+                  }
+                }}
+                className="w-full accent-[var(--accent)] h-1.5 bg-[var(--border)] rounded-lg appearance-none cursor-pointer"
+              />
+              <div className="flex justify-between mt-2 text-[9px] text-[var(--text3)] font-mono">
+                <span>0.1x</span>
+                <span>1.0x</span>
+                <span>5.0x</span>
+                <span>10.0x</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 mb-6">
+              {[0.1, 0.5, 1.0, 2.0, 5.0, 10.0].map(val => (
+                <Btn 
+                  key={val}
+                  onClick={() => {
+                    setSimulationSpeed(val);
+                    if (isRunning && workerRef.current) {
+                      workerRef.current.postMessage({ type: 'SET_SPEED', speed: val });
+                    }
+                  }}
+                  color={simulationSpeed === val ? 'var(--accent)' : ''}
+                  style={{ fontSize: '11px', padding: '6px 0' }}
+                >
+                  {val === 1.0 ? 'Normal' : `${val}x`}
+                </Btn>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+              <Btn 
+                onClick={() => {
+                  const resetSpeed = 1.0;
+                  setSimulationSpeed(resetSpeed);
+                  if (isRunning && workerRef.current) {
+                    workerRef.current.postMessage({ type: 'SET_SPEED', speed: resetSpeed });
+                  }
+                }}
+              >
+                Reset
+              </Btn>
+              <Btn color="var(--accent)" onClick={() => setShowSpeedDialog(false)}>Done</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Project right-click context menu */}
       {projContextMenu && (
         <div
-          className="fixed z-[9999] bg-[var(--bg2)] border border-[var(--border)] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] min-w-[200px] overflow-hidden animate-in fade-in zoom-in-95 duration-100"
-          style={{ left: projContextMenu.x, top: Math.min(projContextMenu.y, window.innerHeight - 240) }}
+          className="canvas-menu"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
+          onMouseLeave={() => setProjContextMenu(null)}
+          style={{ 
+            position: 'fixed', 
+            left: projContextMenu.x, 
+            top: Math.min(projContextMenu.y, window.innerHeight - 240),
+            zIndex: 10000, 
+            background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+            backdropFilter: 'blur(16px) saturate(1.4)',
+            WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+            border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+            borderRadius: 12, 
+            boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+            minWidth: 200, 
+            padding: '5px',
+            animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
+            transformOrigin: 'top left',
+            fontFamily: "'Space Grotesk', sans-serif",
+            willChange: 'transform, opacity, backdrop-filter',
+            backfaceVisibility: 'hidden',
+            WebkitBackfaceVisibility: 'hidden',
+          }}
         >
           <div className="px-4 py-2.5 text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider border-b border-[var(--border)] bg-[var(--bg)]/40 flex items-center justify-between">
             <span className="truncate mr-2">{projContextMenu.proj.name || 'Untitled Project'}</span>
@@ -9307,7 +10720,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
           
           <div className="p-1 flex flex-col gap-0.5">
             <button 
-              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[var(--text2)] hover:text-[var(--text)] rounded-lg transition-all hover:bg-[var(--card)] group"
+              className="canvas-menu-item"
               onClick={() => { toggleFavourite(projContextMenu.proj.id); setProjContextMenu(null); }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "none"} stroke={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "currentColor"} strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
@@ -9315,7 +10728,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
             </button>
             
             <button 
-              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[var(--text2)] hover:text-[var(--text)] rounded-lg transition-all hover:bg-[var(--card)]"
+              className="canvas-menu-item"
               onClick={() => { handleCopyProject(projContextMenu.proj); setProjContextMenu(null); }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
@@ -9323,7 +10736,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
             </button>
             
             <button 
-              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-[var(--text2)] hover:text-[var(--text)] rounded-lg transition-all hover:bg-[var(--card)]"
+              className="canvas-menu-item"
               onClick={() => { handleStartRename(projContextMenu.proj, { stopPropagation: () => {} }); setProjContextMenu(null); setProjectsSidebarTab('projects'); }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
@@ -9333,7 +10746,7 @@ export default function SimulatorPage({ gamificationMode = false }) {
             <div className="h-px bg-[var(--border)] my-1 mx-2 opacity-50" />
             
             <button 
-              className="w-full flex items-center gap-3 px-3 py-2 text-[13px] font-semibold text-red-500 hover:text-red-600 rounded-lg transition-all hover:bg-red-500/10"
+              className="canvas-menu-item canvas-menu-item--danger"
               onClick={() => { handleDeleteProject(projContextMenu.proj.id); setProjContextMenu(null); }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
@@ -9371,6 +10784,7 @@ function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, s
                 value={renameValue}
                 onChange={e => setRenameValue(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleConfirmRename(proj.id); if (e.key === 'Escape') setRenamingProjectId(null); }}
+                onBlur={() => handleConfirmRename(proj.id)}
                 onClick={e => e.stopPropagation()}
               />
             ) : (
