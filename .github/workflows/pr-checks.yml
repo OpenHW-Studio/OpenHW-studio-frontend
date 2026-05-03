@@ -59,9 +59,9 @@ jobs:
           echo "Installing emulator deps..."
           cd openhw-studio-emulator && npm ci
           echo "Installing CLI deps..."
-          cd ../openhw-studio-cli && npm install
+          npm --prefix openhw-studio-cli install
           echo "Installing frontend deps..."
-          cd ../OpenHW-studio-frontend && npm install
+          npm --prefix OpenHW-studio-frontend install
 
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
@@ -85,21 +85,18 @@ jobs:
           arduino-cli core install arduino:avr
 
       - name: Verify Build
-        run: |
-          cd OpenHW-studio-frontend
-          npm run build
+        working-directory: OpenHW-studio-frontend
+        run: npm run build
         continue-on-error: false
 
       - name: Run Protocol Compliance Tests
-        run: |
-          cd OpenHW-studio-frontend
-          npm run test:protocol
+        working-directory: OpenHW-studio-frontend
+        run: npm run test:protocol
         continue-on-error: false
 
       - name: Run RP2040 Smoke Tests
-        run: |
-          cd OpenHW-studio-frontend
-          npm run test:rp2040-smoke
+        working-directory: OpenHW-studio-frontend
+        run: npm run test:rp2040-smoke
         continue-on-error: false
 
       - name: Dry-run Docker Deployment Build
