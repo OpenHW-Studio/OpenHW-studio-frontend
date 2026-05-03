@@ -36,6 +36,7 @@ import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
 import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage.jsx'
 import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
 import MobileSimulatorPage from "./pages/mobileui/SimulatorPage.jsx";
+import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
 
 
 
@@ -89,6 +90,7 @@ export default function App() {
             <Route path="/projects" element={<ProjectsGallery />} />
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/component-editor" element={<ComponentEditorPage />} />
+            <Route path="/alignment-lab" element={<ComponentLab />} />
             <Route path="/components/:componentId/theory" element={<TheoryPage />} />
             <Route path="/components/:componentId/quiz" element={<QuizPage />} />
             <Route path="/adventure" element={<AdventureMapPage />} />

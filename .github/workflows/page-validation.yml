@@ -21,6 +21,9 @@ on:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'
 
+permissions:
+  issues: write
+
 jobs:
   page-validation:
     name: Validate Page Runtime & Console Errors
@@ -121,6 +124,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+            const marker = '<!-- page-validation -->';
             const resultsPath = 'OpenHW-studio-frontend/test-results/page-validation/report.json';
             
             if (fs.existsSync(resultsPath)) {
@@ -128,12 +132,14 @@ jobs:
               const passed = reports.filter(r => r.passed).length;
               const failed = reports.length - passed;
               
-              let comment = '## 📊 Page Validation Results\n\n';
+              let comment = marker + '\n';
+              comment += '## Page Validation Results\n\n';
               comment += `| Metric | Count |\n`;
               comment += `|--------|-------|\n`;
               comment += `| Total Pages | ${reports.length} |\n`;
-              comment += `| ✓ Passed | ${passed} |\n`;
-              comment += `| ✗ Failed | ${failed} |\n\n`;
+              comment += `| Passed | ${passed} |\n`;
+              comment += `| Failed | ${failed} |\n\n`;
+              comment += `Status: ${failed > 0 ? 'FAILED' : 'PASSED'}\n\n`;
               
               if (failed > 0) {
                 comment += '### Failed Pages:\n';
@@ -144,13 +150,30 @@ jobs:
                   });
                 });
               }
-              
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: comment
+                issue_number: context.issue.number,
+                per_page: 100
               });
+
+              const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: comment
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: comment
+                });
+              }
             }
 
       - name: Fail job if critical errors found
