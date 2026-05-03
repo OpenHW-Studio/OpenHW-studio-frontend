@@ -53,17 +53,20 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        env:
+          NPM_CONFIG_OPTIONAL: "true"
         run: |
           echo "Installing emulator deps..."
-          npm --prefix openhw-studio-emulator ci
+          npm --prefix openhw-studio-emulator ci --include=optional
           echo "Installing CLI deps..."
           npm --prefix openhw-studio-cli install
           echo "Installing frontend deps..."
-          npm install
+          npm ci --include=optional
           echo "Installing Rollup Linux binary..."
-          npm install --no-save @rollup/rollup-linux-x64-gnu@4.60.2
+          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2
           echo "Installing Lightning CSS Linux binary..."
-          npm install --no-save lightningcss-linux-x64-gnu@1.31.1
+          npm install --no-save --include=optional lightningcss-linux-x64-gnu@1.31.1
+          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); console.log('Native binaries OK')"
 
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
