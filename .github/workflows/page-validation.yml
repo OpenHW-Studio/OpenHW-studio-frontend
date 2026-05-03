@@ -54,10 +54,34 @@ jobs:
         working-directory: OpenHW-studio-frontend
         run: |
           npm ci --no-audit --no-fund --include=optional
+      - name: Cache Native Linux Binaries
+        uses: actions/cache@v4
+        id: native-bins-cache
+        with:
+          path: |
+            OpenHW-studio-frontend/node_modules/@rollup/rollup-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/lightningcss-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+          key: native-bins-${{ runner.os }}-${{ hashFiles('.github/workflows/page-validation.yml') }}
+
+      - name: Install native Linux binaries
+        if: steps.native-bins-cache.outputs.cache-hit != 'true'
+        working-directory: OpenHW-studio-frontend
+        run: |
           npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
           node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
 
+      - name: Cache Vite build cache
+        uses: actions/cache@v4
+        with:
+          path: OpenHW-studio-frontend/node_modules/.vite
+          key: vite-build-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            vite-build-${{ runner.os }}-
+
       - name: Build application
+
+
         working-directory: OpenHW-studio-frontend
         run: npm run build
 
@@ -65,9 +89,24 @@ jobs:
         working-directory: OpenHW-studio-frontend
         run: mkdir -p test-results
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: OpenHW-studio-frontend
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
+
+      - name: Install Playwright dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npx playwright install-deps chromium
+
 
       - name: Run page validation tests
         working-directory: OpenHW-studio-frontend

@@ -54,20 +54,55 @@ jobs:
           cache: 'npm'
           cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
+      - name: Cache Emulator Node Modules
+        uses: actions/cache@v4
+        id: emulator-cache
+        with:
+          path: openhw-studio-emulator/node_modules
+          key: emulator-modules-${{ runner.os }}-${{ hashFiles('openhw-studio-emulator/package-lock.json') }}
+
+      - name: Cache CLI Node Modules
+        uses: actions/cache@v4
+        id: cli-cache
+        with:
+          path: openhw-studio-cli/node_modules
+          key: cli-modules-${{ runner.os }}-${{ hashFiles('openhw-studio-cli/package-lock.json') }}
+
+      - name: Cache Native Linux Binaries
+        uses: actions/cache@v4
+        id: native-bins-cache
+        with:
+          path: |
+            OpenHW-studio-frontend/node_modules/@rollup/rollup-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/lightningcss-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+          key: native-bins-${{ runner.os }}-${{ hashFiles('.github/workflows/pr-checks.yml') }}
+
       - name: Install dependencies
+
         env:
           NPM_CONFIG_OPTIONAL: "true"
         working-directory: OpenHW-studio-frontend
         run: |
           echo "Installing emulator deps..."
-          npm --prefix ../openhw-studio-emulator ci --include=optional
+          if [ "${{ steps.emulator-cache.outputs.cache-hit }}" != "true" ]; then
+            npm --prefix ../openhw-studio-emulator ci --include=optional
+          fi
+          
           echo "Installing CLI deps..."
-          npm --prefix ../openhw-studio-cli install
+          if [ "${{ steps.cli-cache.outputs.cache-hit }}" != "true" ]; then
+            npm --prefix ../openhw-studio-cli install
+          fi
+          
           echo "Installing frontend deps..."
           npm ci --include=optional
+          
           echo "Installing native Linux binaries..."
-          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          if [ "${{ steps.native-bins-cache.outputs.cache-hit }}" != "true" ]; then
+            npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          fi
           node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
+
 
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
@@ -90,7 +125,16 @@ jobs:
           arduino-cli core install rp2040:rp2040
           arduino-cli core install arduino:avr
 
+      - name: Cache Vite build results
+        uses: actions/cache@v4
+        with:
+          path: OpenHW-studio-frontend/node_modules/.vite
+          key: vite-build-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            vite-build-${{ runner.os }}-
+
       - name: Verify Build
+
         working-directory: OpenHW-studio-frontend
         run: npm run build
         continue-on-error: false

@@ -52,7 +52,16 @@ jobs:
           npm ci --include=optional
           npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
 
+      - name: Cache Vitest cache
+        uses: actions/cache@v4
+        with:
+          path: OpenHW-studio-frontend/node_modules/.vitest
+          key: vitest-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            vitest-${{ runner.os }}-
+
       - name: Run Vitest component tests
+
         working-directory: OpenHW-studio-frontend
         run: npx vitest run --environment jsdom src/components/
 
@@ -133,9 +142,31 @@ jobs:
           npm ci --include=optional
           npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Cache Vite cache
+        uses: actions/cache@v4
+        with:
+          path: OpenHW-studio-frontend/node_modules/.vite
+          key: vite-cache-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            vite-cache-${{ runner.os }}-
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: OpenHW-studio-frontend
         run: npx playwright install chromium
+
+      - name: Install Playwright dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npx playwright install-deps chromium
 
       - name: Start dev server
         working-directory: OpenHW-studio-frontend
