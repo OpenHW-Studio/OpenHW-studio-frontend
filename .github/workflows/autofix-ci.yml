@@ -24,10 +24,22 @@ jobs:
         working-directory: openhw-studio-emulator
 
     steps:
-      - name: Checkout
+      - name: Checkout emulator
         uses: actions/checkout@v4
         with:
           path: openhw-studio-emulator
+
+      - name: Checkout backend
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-backend
+          path: openhw-studio-backend
+
+      - name: Checkout cli
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-cli
+          path: openhw-studio-cli
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
