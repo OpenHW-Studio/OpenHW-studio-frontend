@@ -24,10 +24,6 @@ permissions:
 jobs:
   component-tests:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: OpenHW-studio-frontend
-
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
@@ -49,9 +45,11 @@ jobs:
           cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
       - name: Install frontend dependencies
+        working-directory: OpenHW-studio-frontend
         run: npm ci
 
       - name: Run Vitest component tests
+          working-directory: OpenHW-studio-frontend
         run: npx vitest run --environment jsdom src/components/**/*.test.jsx
 
       - name: Reference Platform Validation Summary
@@ -103,10 +101,6 @@ jobs:
 
   e2e-tests:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: OpenHW-studio-frontend
-
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
@@ -128,12 +122,15 @@ jobs:
           cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
       - name: Install dependencies
+        working-directory: OpenHW-studio-frontend
         run: npm ci
 
       - name: Install Playwright browsers
+        working-directory: OpenHW-studio-frontend
         run: npx playwright install chromium
 
       - name: Start dev server
+        working-directory: OpenHW-studio-frontend
         run: npm run dev &
         timeout-minutes: 1
 
@@ -141,6 +138,7 @@ jobs:
         run: npx wait-on http://localhost:5173 --timeout 30000
 
       - name: Run Playwright E2E tests
+        working-directory: OpenHW-studio-frontend
         run: npx playwright test e2e/autofix-preview.spec.js
 
       - name: Reference Platform Validation Summary

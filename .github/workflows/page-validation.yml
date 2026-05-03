@@ -28,10 +28,6 @@ jobs:
   page-validation:
     name: Validate Page Runtime & Console Errors
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: OpenHW-studio-frontend
-
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
@@ -53,24 +49,30 @@ jobs:
           cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
       - name: Install dependencies
+        working-directory: OpenHW-studio-frontend
         run: npm ci --no-audit --no-fund
 
       - name: Build application
+        working-directory: OpenHW-studio-frontend
         run: npm run build
 
       - name: Create test results directory
+        working-directory: OpenHW-studio-frontend
         run: mkdir -p test-results
 
       - name: Install Playwright browsers
+        working-directory: OpenHW-studio-frontend
         run: npx playwright install --with-deps chromium
 
       - name: Run page validation tests
+          working-directory: OpenHW-studio-frontend
         run: |
           # prefer project script if available, otherwise run playwright directly
           npm run test:pages --silent || npx playwright test e2e/page-validation.spec.js --reporter=html,json
         continue-on-error: true
 
       - name: Run console error check tests
+          working-directory: OpenHW-studio-frontend
         run: |
           npm run test:console-errors --silent || npx playwright test e2e/console-error-check.spec.js --reporter=html,json
         continue-on-error: true
@@ -96,6 +98,7 @@ jobs:
           retention-days: 30
 
       - name: Generate test summary
+          working-directory: OpenHW-studio-frontend
         if: always()
         run: |
           if [ -f test-results/page-validation/report.json ]; then
