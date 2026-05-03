@@ -175,23 +175,35 @@ jobs:
           script: |
             const marker = '<!-- frontend-pr-checks -->';
             const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚠️';
+            const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
+            
             const body = [
               marker,
-              '## Frontend PR Checks',
+              `## ${emoji} Frontend PR Checks`,
               '',
-              `Status: ${status.toUpperCase()}`,
+              `**Overall Status**: ${status.toUpperCase()}`,
               '',
-              'This workflow ran the frontend lint, test, and dry-run deploy checks.',
-              'If it failed, inspect the job logs for the failing step and the platform summary link above.'
+              '### 🛠️ Checks Performed:',
+              '- **Linting**: Prettier/ESLint verification',
+              '- **Build**: Production bundle generation',
+              '- **Protocol Compliance**: Core emulator interaction tests',
+              '- **RP2040 Smoke Tests**: Microcontroller lifecycle validation',
+              '- **Docker Dry-Run**: Deployment container integrity',
+              '',
+              `[🔍 View Detailed Build & Test Logs](${runUrl})`,
+              '',
+              '---',
+              'Failure in PR checks usually prevents deployment to prevent breaking the develop/main branches.'
             ].join('\n');
-
+ 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               per_page: 100
             });
-
+ 
             const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({
@@ -208,3 +220,4 @@ jobs:
                 body
               });
             }
+

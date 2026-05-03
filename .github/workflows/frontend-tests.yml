@@ -76,25 +76,31 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const marker = '<!-- frontend-tests -->';
+            const marker = '<!-- frontend-component-tests -->';
             const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚠️';
+            const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
+            
             const body = [
               marker,
-              '## Frontend Tests',
+              `## ${emoji} Frontend Component Tests`,
               '',
-              `Status: ${status.toUpperCase()}`,
+              `**Status**: ${status.toUpperCase()}`,
+              `**Check**: Vitest Unit & Component Tests`,
               '',
-              'This workflow ran the frontend component and E2E checks.',
-              'If it failed, inspect the workflow logs and the linked platform summary.'
+              `[🔍 View detailed logs and test results](${runUrl})`,
+              '',
+              '---',
+              'If these tests failed, it usually indicates a regression in a specific UI component or utility function.'
             ].join('\n');
-
+ 
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
               per_page: 100
             });
-
+ 
             const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
             if (existing) {
               await github.rest.issues.updateComment({
@@ -111,6 +117,7 @@ jobs:
                 body
               });
             }
+
 
   e2e-tests:
     runs-on: ubuntu-latest
@@ -185,4 +192,52 @@ jobs:
         run: |
           echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
           echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR with E2E result
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- frontend-e2e-tests -->';
+            const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚠️';
+            const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
+            
+            const body = [
+              marker,
+              `## ${emoji} Frontend E2E Tests`,
+              '',
+              `**Status**: ${status.toUpperCase()}`,
+              `**Check**: Playwright End-to-End Simulation Tests`,
+              '',
+              `[🔍 View detailed logs and Playwright report](${runUrl})`,
+              '',
+              '---',
+              'E2E failures often mean a breakdown in communication between the UI and the simulation engine.'
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body
+              });
+            }
+
 
