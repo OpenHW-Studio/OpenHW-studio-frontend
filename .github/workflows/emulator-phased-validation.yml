@@ -1,0 +1,426 @@
+name: Emulator Phased Validation
+
+permissions:
+  issues: write
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/emulator-phased-validation.yml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/emulator-phased-validation.yml'
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  phase1-components:
+    name: Phase 1 - Component and Schema Checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: openhw-studio-emulator
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: openhw-studio-emulator
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: openhw-studio-emulator/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run component integrity checks
+        run: |
+          mkdir -p test-results/emulator
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const root = process.cwd();
+          const compRoot = path.join(root, 'src', 'components');
+          const report = {
+            phase: 'phase1-components',
+            passed: true,
+            severity: 'info',
+            totals: {
+              componentDirs: 0,
+              manifests: 0,
+              missingManifest: 0,
+              missingEntry: 0
+            },
+            checks: []
+          };
+
+          if (!fs.existsSync(compRoot)) {
+            report.passed = false;
+            report.severity = 'critical';
+            report.checks.push({
+              name: 'components-root',
+              passed: false,
+              severity: 'critical',
+              message: 'src/components directory not found'
+            });
+          } else {
+            const dirs = fs.readdirSync(compRoot, { withFileTypes: true }).filter(d => d.isDirectory());
+            report.totals.componentDirs = dirs.length;
+
+            for (const d of dirs) {
+              const dir = path.join(compRoot, d.name);
+              const manifest = path.join(dir, 'manifest.json');
+              const entryCandidates = [
+                path.join(dir, 'index.ts'),
+                path.join(dir, 'index.js'),
+                path.join(dir, 'logic.ts'),
+                path.join(dir, 'logic.js')
+              ];
+
+              const hasManifest = fs.existsSync(manifest);
+              const hasEntry = entryCandidates.some(fs.existsSync);
+
+              if (hasManifest) report.totals.manifests += 1;
+              if (!hasManifest) report.totals.missingManifest += 1;
+              if (!hasEntry) report.totals.missingEntry += 1;
+
+              report.checks.push({
+                name: `component:${d.name}`,
+                passed: hasEntry,
+                severity: hasEntry ? (hasManifest ? 'info' : 'warn') : 'error',
+                message: hasEntry
+                  ? (hasManifest ? 'entry + manifest detected' : 'entry detected, manifest missing (warn)')
+                  : 'entry file missing (index/logic ts/js)',
+                autofixable: !hasManifest || !hasEntry
+              });
+            }
+
+            if (report.totals.componentDirs === 0) {
+              report.passed = false;
+              report.severity = 'critical';
+              report.checks.push({
+                name: 'component-count',
+                passed: false,
+                severity: 'critical',
+                message: 'No component directories found under src/components'
+              });
+            }
+
+            if (report.totals.missingEntry > 0) {
+              report.passed = false;
+              report.severity = 'error';
+            }
+          }
+
+          fs.writeFileSync(
+            path.join(root, 'test-results', 'emulator', 'phase1-components.json'),
+            JSON.stringify(report, null, 2)
+          );
+          NODE
+
+      - name: Upload phase 1 artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-phase1-components
+          path: |
+            openhw-studio-emulator/test-results/emulator/phase1-components.json
+          retention-days: 30
+
+  phase2-validation-engine:
+    name: Phase 2 - Validation Engine and Rule Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: openhw-studio-emulator
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: openhw-studio-emulator
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: openhw-studio-emulator/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run validation engine tests and smoke
+        continue-on-error: true
+        run: |
+          mkdir -p test-results/emulator
+          TEST_STATUS=pass
+          SMOKE_STATUS=pass
+
+          npm run test || TEST_STATUS=fail
+          npm run validate:smoke || SMOKE_STATUS=fail
+
+          cat > test-results/emulator/phase2-validation-engine.json <<EOF
+          {
+            "phase": "phase2-validation-engine",
+            "passed": $([ "$TEST_STATUS" = "pass" ] && [ "$SMOKE_STATUS" = "pass" ] && echo true || echo false),
+            "severity": "$([ "$TEST_STATUS" = "pass" ] && [ "$SMOKE_STATUS" = "pass" ] && echo info || echo error)",
+            "checks": [
+              {
+                "name": "engine-tests",
+                "passed": $([ "$TEST_STATUS" = "pass" ] && echo true || echo false),
+                "severity": "$([ "$TEST_STATUS" = "pass" ] && echo info || echo error)",
+                "message": "$([ "$TEST_STATUS" = "pass" ] && echo "npm run test passed" || echo "npm run test failed")",
+                "autofixable": false
+              },
+              {
+                "name": "smoke-test",
+                "passed": $([ "$SMOKE_STATUS" = "pass" ] && echo true || echo false),
+                "severity": "$([ "$SMOKE_STATUS" = "pass" ] && echo info || echo error)",
+                "message": "$([ "$SMOKE_STATUS" = "pass" ] && echo "npm run validate:smoke passed" || echo "npm run validate:smoke failed")",
+                "autofixable": false
+              }
+            ]
+          }
+          EOF
+
+      - name: Upload phase 2 artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-phase2-validation-engine
+          path: |
+            openhw-studio-emulator/test-results/emulator/phase2-validation-engine.json
+          retention-days: 30
+
+  phase3-autofix-dryrun:
+    name: Phase 3 - Autofix Dry Run
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: openhw-studio-emulator
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: openhw-studio-emulator
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: openhw-studio-emulator/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run autofix dry-run checks
+        continue-on-error: true
+        run: |
+          mkdir -p test-results/emulator
+
+          HAS_AUTOFIX=false
+          if [ -d "src/circuit-validation/autofix" ]; then
+            HAS_AUTOFIX=true
+          fi
+
+          cat > test-results/emulator/phase3-autofix-dryrun.json <<EOF
+          {
+            "phase": "phase3-autofix-dryrun",
+            "passed": true,
+            "severity": "$([ "$HAS_AUTOFIX" = "true" ] && echo info || echo warn)",
+            "checks": [
+              {
+                "name": "autofix-engine-present",
+                "passed": $([ "$HAS_AUTOFIX" = "true" ] && echo true || echo false),
+                "severity": "$([ "$HAS_AUTOFIX" = "true" ] && echo info || echo warn)",
+                "message": "$([ "$HAS_AUTOFIX" = "true" ] && echo "Autofix directory detected and ready for dry-run expansion" || echo "Autofix directory not found; phase executed as warn-only")",
+                "autofixable": false
+              }
+            ]
+          }
+          EOF
+
+      - name: Upload phase 3 artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-phase3-autofix-dryrun
+          path: |
+            openhw-studio-emulator/test-results/emulator/phase3-autofix-dryrun.json
+          retention-days: 30
+
+  phase4-summary-and-pr-comment:
+    name: Phase 4 - Summary, PR Comment, and Quality Gate
+    runs-on: ubuntu-latest
+    needs:
+      - phase1-components
+      - phase2-validation-engine
+      - phase3-autofix-dryrun
+    if: always()
+    defaults:
+      run:
+        working-directory: openhw-studio-emulator
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          path: openhw-studio-emulator
+
+      - name: Download phase artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: openhw-studio-emulator/test-results/downloaded
+
+      - name: Build merged CLI-style summary
+        id: build_summary
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const root = process.cwd();
+          const dl = path.join(root, 'test-results', 'downloaded');
+          const outDir = path.join(root, 'test-results', 'emulator');
+          fs.mkdirSync(outDir, { recursive: true });
+
+          const phaseFiles = [
+            path.join(dl, 'emulator-phase1-components', 'phase1-components.json'),
+            path.join(dl, 'emulator-phase2-validation-engine', 'phase2-validation-engine.json'),
+            path.join(dl, 'emulator-phase3-autofix-dryrun', 'phase3-autofix-dryrun.json')
+          ];
+
+          const reports = [];
+          for (const p of phaseFiles) {
+            if (fs.existsSync(p)) {
+              reports.push(JSON.parse(fs.readFileSync(p, 'utf8')));
+            } else {
+              reports.push({
+                phase: path.basename(p, '.json'),
+                passed: false,
+                severity: 'critical',
+                checks: [{ name: 'artifact-missing', passed: false, severity: 'critical', message: `${p} missing` }]
+              });
+            }
+          }
+
+          const failed = reports.filter(r => !r.passed).length;
+          const critical = reports.some(r => r.severity === 'critical');
+
+          const merged = {
+            pipeline: 'emulator-phased-validation',
+            passed: failed === 0,
+            critical,
+            totalPhases: reports.length,
+            failedPhases: failed,
+            phases: reports
+          };
+
+          const cliLines = [];
+          cliLines.push('$ openhw validate emulator --phases all');
+          cliLines.push(`Phases: ${merged.totalPhases} | Failed: ${merged.failedPhases}`);
+          for (const r of reports) {
+            cliLines.push(`- ${r.phase}: ${r.passed ? 'PASS' : 'FAIL'} (${r.severity})`);
+          }
+          const cliText = cliLines.join('\n');
+
+          fs.writeFileSync(path.join(outDir, 'phase4-summary.json'), JSON.stringify(merged, null, 2));
+          fs.writeFileSync(path.join(outDir, 'phase4-cli.txt'), cliText + '\n');
+          fs.writeFileSync(path.join(outDir, 'comment.md'),
+            [
+              '## Emulator Validation (Phased)',
+              '',
+              '```text',
+              cliText,
+              '```',
+              '',
+              `Critical: ${critical ? 'YES' : 'NO'}`,
+              `Overall: ${merged.passed ? 'PASS' : 'FAIL'}`
+            ].join('\n')
+          );
+
+          console.log(`passed=${merged.passed}`);
+          console.log(`critical=${critical}`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `passed=${merged.passed}\ncritical=${critical}\n`);
+          NODE
+
+      - name: Upload merged summary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-phase4-summary
+          path: |
+            openhw-studio-emulator/test-results/emulator/phase4-summary.json
+            openhw-studio-emulator/test-results/emulator/phase4-cli.txt
+            openhw-studio-emulator/test-results/emulator/comment.md
+          retention-days: 30
+
+      - name: Add summary to workflow run
+        if: always()
+        run: |
+          if [ -f test-results/emulator/comment.md ]; then
+            cat test-results/emulator/comment.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Comment result to PR conversation
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- emulator-phased-validation -->';
+            const bodyPath = 'openhw-studio-emulator/test-results/emulator/comment.md';
+            if (!fs.existsSync(bodyPath)) return;
+
+            const body = marker + '\n' + fs.readFileSync(bodyPath, 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100
+            });
+
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Link to Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "### Cross-repo Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "Emulator: See [platform-validation-summary.yml](platform-validation-summary.yml)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce quality gate
+        if: always()
+        run: |
+          PASSED='${{ steps.build_summary.outputs.passed }}'
+          CRITICAL='${{ steps.build_summary.outputs.critical }}'
+          if [ "$PASSED" != "true" ]; then
+            echo "Emulator phased validation failed"
+            if [ "$CRITICAL" = "true" ]; then
+              echo "Critical validation issues detected"
+            fi
+            exit 1
+          fi
