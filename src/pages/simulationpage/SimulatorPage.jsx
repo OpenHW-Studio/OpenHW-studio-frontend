@@ -1,4 +1,5 @@
 import { TopToolbox } from './TopToolbox';
+import { handleAutoSetup } from './utils/autoSetup';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
 import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
@@ -1663,6 +1664,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection
   const [previewBanner, setPreviewBanner] = useState(null); // { id, label } — set when opened from admin "Test in Simulator"
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false)
+  const [autoWiringEnabled, setAutoWiringEnabled] = useState(true);
+  const [autoCodingEnabled, setAutoCodingEnabled] = useState(true);
   const [components, setComponents] = useState([])
   const [wires, setWires] = useState([])
   const [paletteSearch, setPaletteSearch] = useState('')
@@ -4019,48 +4022,69 @@ useEffect(() => {
     setSelected(null)
   }
 
+  // ── Component addition with auto-setup ─────────────────────────────────────
+  const addComponentInternal = useCallback((item, x, y) => {
+    if (liveEditingDisabled) return;
+    saveHistory();
+    
+    const usedIds = new Set(components.map(c => String(c.id || '')));
+    const id = allocateComponentId(item.type, usedIds);
+    const newCompBase = {
+      id,
+      type: item.type, label: item.label,
+      x: Math.max(8, x), y: Math.max(8, y),
+      w: item.w || 60, h: item.h || 60,
+      attrs: item.attrs || {},
+    };
+
+    const catalogItem = COMPONENT_REGISTRY[item.type];
+    if (catalogItem && (catalogItem.autowiring || catalogItem.autocoding)) {
+      const boardComp = components.find(c => isProgrammableBoardType(c.type));
+      const boardId = boardComp ? boardComp.id : 'uno';
+
+      const result = handleAutoSetup({
+        newComp: newCompBase,
+        components,
+        wires,
+        code,
+        catalogItem,
+        pinDefs: LOCAL_PIN_DEFS,
+        boardId,
+        options: { autoWiring: autoWiringEnabled, autoCoding: autoCodingEnabled }
+      });
+
+      const finalComps = result.components.some(c => c.id === id) 
+        ? result.components 
+        : [...result.components, result.component];
+
+      setComponents(finalComps);
+      setWires(result.wires);
+      setCode(result.code);
+    } else {
+      setComponents(prev => [...prev, newCompBase]);
+    }
+  }, [liveEditingDisabled, saveHistory, components, wires, code, autoWiringEnabled, autoCodingEnabled]);
+
   // ── Canvas drop ────────────────────────────────────────────────────────────
   const onCanvasDrop = useCallback((e) => {
     if (liveEditingDisabled) return;
     e.preventDefault()
     const item = dragPayload.current
     if (!item) return
-    saveHistory();
     const rect = canvasRef.current.getBoundingClientRect()
     const x = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current - (item.w || 60) / 2
     const y = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current - (item.h || 60) / 2
-    setComponents(prev => {
-      const usedIds = new Set(prev.map((comp) => String(comp.id || '')));
-      const id = allocateComponentId(item.type, usedIds);
-      return [...prev, {
-        id,
-        type: item.type, label: item.label,
-        x: Math.max(8, x), y: Math.max(8, y),
-        w: item.w || 60, h: item.h || 60,
-        attrs: item.attrs || {},
-      }];
-    })
+    addComponentInternal(item, x, y);
     dragPayload.current = null
-  }, [liveEditingDisabled, saveHistory])
+  }, [liveEditingDisabled, addComponentInternal])
 
   // ── Quick-add: place component at explicit canvas coordinates ──────────────
   const addComponentAt = useCallback((item, canvasX, canvasY) => {
     if (liveEditingDisabled) return;
-    saveHistory()
     const x = canvasX - (item.w || 60) / 2
     const y = canvasY - (item.h || 60) / 2
-    setComponents(prev => {
-      const usedIds = new Set(prev.map((comp) => String(comp.id || '')));
-      const id = allocateComponentId(item.type, usedIds);
-      return [...prev, {
-        id,
-        type: item.type, label: item.label,
-        x: Math.max(8, x), y: Math.max(8, y),
-        w: item.w || 60, h: item.h || 60,
-        attrs: item.attrs || {},
-      }];
-    })
-  }, [liveEditingDisabled, saveHistory])
+    addComponentInternal(item, x, y);
+  }, [liveEditingDisabled, addComponentInternal])
 
   // ── Palette click to add (adds to canvas center) ────────────────────────────
   const addComponentAtCenter = useCallback((item) => {
@@ -4070,7 +4094,6 @@ useEffect(() => {
     const cx = (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
     const cy = (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
     addComponentAt(item, cx, cy);
-    setSelectedPaletteItem(item);
   }, [addComponentAt]);
 
   // ── Enhanced Zooming (Pinch Only) ──────────────────────────────────────────
@@ -4133,38 +4156,51 @@ useEffect(() => {
   // Instead: apply only the CSS transform during pinch, update refs for correctness,
   // then flush to React state via a debounce AFTER the gesture ends.
   const onWheel = useCallback((e) => {
-    if (isCanvasLockedRef.current || !e.ctrlKey) return;
+    if (isCanvasLockedRef.current) return;
     e.preventDefault();
 
-    const zoomSpeed = 0.002;
-    const delta = -e.deltaY * zoomSpeed;
-    const currentZoom = canvasZoomRef.current;
-    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
+    if (e.ctrlKey) {
+      // ─── ZOOM LOGIC ─────────────────────────────────────────────────────────
+      const zoomSpeed = 0.002;
+      const delta = -e.deltaY * zoomSpeed;
+      const currentZoom = canvasZoomRef.current;
+      const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
 
-    if (newZoom === currentZoom) return;
+      if (newZoom === currentZoom) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
 
-    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
-    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
+      const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
+      const cy = (my - canvasOffsetRef.current.y) / currentZoom;
 
-    const newOffsetX = mx - cx * newZoom;
-    const newOffsetY = my - cy * newZoom;
+      const newOffsetX = mx - cx * newZoom;
+      const newOffsetY = my - cy * newZoom;
 
-    // 1. Update refs immediately — keeps subsequent wheel events reading the correct values
-    canvasZoomRef.current = newZoom;
-    canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+      canvasZoomRef.current = newZoom;
+      canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+    } else {
+      // ─── PANNING LOGIC (Trackpad / Wheel) ───────────────────────────────────
+      // Use deltaX and deltaY directly for trackpad support.
+      // Shift key swaps vertical wheel to horizontal movement for standard mice.
+      const dx = e.shiftKey ? -e.deltaY : -e.deltaX;
+      const dy = e.shiftKey ? 0 : -e.deltaY;
+      
+      const newOffsetX = canvasOffsetRef.current.x + dx;
+      const newOffsetY = canvasOffsetRef.current.y + dy;
+      
+      canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+    }
 
-    // 2. Apply directly to DOM — zero React renders mid-pinch = zero vibration
+    // Apply directly to DOM for zero-latency 60fps movement
     if (innerCanvasRef.current) {
       innerCanvasRef.current.style.transform =
-        `translate(${newOffsetX}px, ${newOffsetY}px) scale(${newZoom})`;
+        `translate(${canvasOffsetRef.current.x}px, ${canvasOffsetRef.current.y}px) scale(${canvasZoomRef.current})`;
       innerCanvasRef.current.style.transformOrigin = '0 0';
     }
 
-    // 3. Debounce the React state flush — commit once the user stops pinching
+    // Debounce the React state flush to avoid re-render lag during interaction
     if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
     rafZoomRef.current = setTimeout(() => {
       rafZoomRef.current = null;
@@ -4533,24 +4569,46 @@ useEffect(() => {
         if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
           const pins = LOCAL_PIN_DEFS[finalComp.type] || [];
           const worldPins = getComponentWorldPins(finalComp, pins);
-          const newSocketWires = [];
           
-          worldPins.forEach(wp => {
+          const snapMatches = worldPins.map(wp => {
             const hole = findNearestBreadboardHole(wp.worldX, wp.worldY, componentsRef.current, LOCAL_PIN_DEFS);
-            if (hole && Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) < 2) { // 2px tolerance for snapped position
-              newSocketWires.push({
-                id: `w_socket_${movedId}_${wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                from: `${movedId}:${wp.id}`,
-                to: `${hole.bbId}:${hole.holeId}`,
-                color: 'transparent',
-                isBelow: true,
-                isSocket: true
-              });
-            }
+            const dist = hole ? Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) : Infinity;
+            return { wp, hole, dist };
           });
 
-          if (newSocketWires.length > 0) {
-            setWires(prev => [...prev, ...newSocketWires]);
+          // Only attach if at least ONE pin is a perfect hit (< 2px)
+          const hasPerfectSnap = snapMatches.some(m => m.dist < 2);
+
+          if (hasPerfectSnap) {
+            const newSocketWires = [];
+            snapMatches.forEach(m => {
+              if (m.dist < 2) {
+                // Standard invisible socket
+                newSocketWires.push({
+                  id: `w_socket_${movedId}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                  from: `${movedId}:${m.wp.id}`,
+                  to: `${m.hole.bbId}:${m.hole.holeId}`,
+                  color: 'transparent',
+                  isBelow: true,
+                  isSocket: true
+                });
+              } else if (m.dist <= 5) {
+                // Visible gray helper wire for off-grid pins
+                newSocketWires.push({
+                  id: `socket_help_${movedId}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                  from: `${movedId}:${m.wp.id}`,
+                  to: `${m.hole.bbId}:${m.hole.holeId}`,
+                  color: '#7f8c8d', // Subtle gray
+                  isBelow: true,
+                  isSocket: true,
+                  isHelp: true
+                });
+              }
+            });
+
+            if (newSocketWires.length > 0) {
+              setWires(prev => [...prev, ...newSocketWires]);
+            }
           }
         }
 
@@ -4608,10 +4666,7 @@ useEffect(() => {
     if (!canvas) return;
 
     const handleWheel = (e) => {
-      if (e.ctrlKey) {
-        if (e.cancelable) e.preventDefault();
-        onWheel(e); // Trigger our custom zoom
-      }
+      onWheel(e);
     };
 
     canvas.addEventListener('wheel', handleWheel, { passive: false });
@@ -8111,7 +8166,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlan} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlan} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -8575,7 +8630,7 @@ useEffect(() => {
                                   key={`fav-${item.type}`}
                                   draggable
                                   onDragStart={e => onPaletteDragStart(e, item)}
-                                  onClick={() => { addComponentAtCenter(item); setSelectedPaletteItem(item); }}
+                                  onClick={() => { addComponentAtCenter(item); }}
                                   onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item }); }}
                                   style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box' }}
                                   onMouseEnter={e => { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; }}
@@ -9237,8 +9292,15 @@ useEffect(() => {
 
                         // Check if a wire is connected to this pin
                         const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                        const pinColor = isSnapping ? '#2ecc71' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)'));
-                        const pinBorder = isSnapping ? '#fff' : (connectedWire ? connectedWire.color : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)'));
+                        const isSocket = connectedWire?.isSocket;
+                        
+                        // Check if the component is "seated" (has at least one socket wire)
+                        const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
+                        const isBreadboard = comp.type.startsWith('wokwi-breadboard');
+                        const isFloating = !isBreadboard && isCompSeated && !isSocket;
+
+                        const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
+                        const pinBorder = isSnapping ? '#fff' : (isSocket ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
 
                         return (
                           <div
@@ -9249,8 +9311,8 @@ useEffect(() => {
                               position: 'absolute',
                               left: pin.x, top: pin.y,
                               width: 5, height: 5,
-                              background: pinColor,
-                              border: `1px solid ${pinBorder}`,
+                              background: pinColor === 'none' ? 'none' : pinColor,
+                              border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
                               borderRadius: '0%', /* matching task3.html */
                               cursor: 'crosshair',
                               zIndex: isHovered || isSuggested || isSnapping ? 30 : 20, /* matching task3.html hover and port z-index */

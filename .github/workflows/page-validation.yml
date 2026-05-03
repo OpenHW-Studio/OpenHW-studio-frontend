@@ -1,0 +1,246 @@
+name: Page Runtime Validation
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'src/**'
+      - 'e2e/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/page-validation.yml'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'src/**'
+      - 'e2e/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/page-validation.yml'
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+permissions:
+  issues: write
+
+jobs:
+  page-validation:
+    name: Validate Page Runtime & Console Errors
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: OpenHW-studio-frontend
+
+    steps:
+      - name: Checkout frontend code
+        uses: actions/checkout@v4
+        with:
+          path: OpenHW-studio-frontend
+
+      - name: Checkout emulator code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-emulator
+          path: openhw-studio-emulator
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build application
+        run: npm run build
+
+      - name: Create test results directory
+        run: mkdir -p test-results
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run page validation tests
+        run: |
+          # prefer project script if available, otherwise run playwright directly
+          npm run test:pages --silent || npx playwright test e2e/page-validation.spec.js --reporter=html,json
+        continue-on-error: true
+
+      - name: Run console error check tests
+        run: |
+          npm run test:console-errors --silent || npx playwright test e2e/console-error-check.spec.js --reporter=html,json
+        continue-on-error: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: page-validation-results
+          path: |
+            OpenHW-studio-frontend/test-results/**
+            OpenHW-studio-frontend/test-results
+          retention-days: 30
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            OpenHW-studio-frontend/playwright-report/**
+            OpenHW-studio-frontend/playwright-report
+          retention-days: 30
+
+      - name: Generate test summary
+        if: always()
+        run: |
+          if [ -f test-results/page-validation/report.json ]; then
+            echo "## Page Validation Results" >> $GITHUB_STEP_SUMMARY
+            node -e "
+              const fs = require('fs');
+              const data = JSON.parse(fs.readFileSync('test-results/page-validation/report.json', 'utf8'));
+              const passed = data.filter(r => r.passed).length;
+              const failed = data.length - passed;
+              console.log(\`### Summary\`);
+              console.log(\`- Total Pages Tested: \${data.length}\`);
+              console.log(\`- Passed: \${passed} ✓\`);
+              console.log(\`- Failed: \${failed} ✗\`);
+              if (failed > 0) {
+                console.log(\`### Failed Pages:\`);
+                data.filter(r => !r.passed).forEach(r => {
+                  console.log(\`- \${r.pageName}\`);
+                });
+              }
+            "
+          fi
+
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- page-validation -->';
+            const resultsPath = 'OpenHW-studio-frontend/test-results/page-validation/report.json';
+            
+            if (fs.existsSync(resultsPath)) {
+              const reports = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
+              const passed = reports.filter(r => r.passed).length;
+              const failed = reports.length - passed;
+              
+              let comment = marker + '\n';
+              comment += '## Page Validation Results\n\n';
+              comment += `| Metric | Count |\n`;
+              comment += `|--------|-------|\n`;
+              comment += `| Total Pages | ${reports.length} |\n`;
+              comment += `| Passed | ${passed} |\n`;
+              comment += `| Failed | ${failed} |\n\n`;
+              comment += `Status: ${failed > 0 ? 'FAILED' : 'PASSED'}\n\n`;
+              
+              if (failed > 0) {
+                comment += '### Failed Pages:\n';
+                reports.filter(r => !r.passed).forEach(r => {
+                  comment += `- **${r.pageName}**\n`;
+                  r.results.filter(res => !res.passed).forEach(res => {
+                    comment += `  - ✗ ${res.test}: ${res.message}\n`;
+                  });
+                });
+              }
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              });
+
+              const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: comment
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: comment
+                });
+              }
+            }
+
+      - name: Fail job if critical errors found
+        if: always()
+        run: |
+          if [ -f test-results/page-validation/report.json ]; then
+            FAILED=$(node -e "
+              const fs = require('fs');
+              const data = JSON.parse(fs.readFileSync('test-results/page-validation/report.json', 'utf8'));
+              const failed = data.filter(r => !r.passed && r.pageName.includes('critical')).length;
+              console.log(failed);
+            ")
+            if [ "$FAILED" -gt 0 ]; then
+              echo "Critical page validation failures detected!"
+              exit 1
+            fi
+          fi
+
+      - name: Reference Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"
+
+  console-error-report:
+    name: Generate Console Error Report
+    runs-on: ubuntu-latest
+    needs: page-validation
+    if: always()
+    defaults:
+      run:
+        working-directory: OpenHW-studio-frontend
+
+    steps:
+      - name: Download test results
+        uses: actions/download-artifact@v4
+        with:
+          name: page-validation-results
+
+      - name: Generate console error summary
+        if: always()
+        run: |
+          if [ -f console-errors/summary.json ]; then
+            echo "## 🔍 Console Error Detection" >> $GITHUB_STEP_SUMMARY
+            node -e "
+              const fs = require('fs');
+              const data = JSON.parse(fs.readFileSync('console-errors/summary.json', 'utf8'));
+              console.log(\`### Summary\`);
+              console.log(\`- Routes Tested: \${data.totalRoutesTested}\`);
+              console.log(\`- Routes with Errors: \${data.routesWithErrors}\`);
+              console.log(\`- Total Console Errors: \${data.totalConsoleErrors}\`);
+              console.log(\`- Total Network Errors: \${data.totalNetworkErrors}\`);
+            "
+          fi
+
+# Workflow Logic:
+# 1. Build the application (production bundle)
+# 2. Run page validation tests on critical routes
+#    - Check if pages load successfully
+#    - Validate DOM content rendering (not blank)
+#    - Capture console messages/errors
+#    - Track network failures
+# 3. Run console error detection tests
+#    - Comprehensive error logging
+#    - Network error tracking
+#    - Generate detailed reports
+# 4. Upload artifacts (test results, screenshots, reports)
+# 5. Generate summary for GitHub Actions
+# 6. Comment on PR with results
+# 7. Fail job if critical pages have errors

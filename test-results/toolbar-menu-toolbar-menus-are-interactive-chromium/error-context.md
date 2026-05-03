@@ -1,0 +1,1222 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: toolbar-menu.spec.js >> toolbar menus are interactive
+- Location: e2e\toolbar-menu.spec.js:3:1
+
+# Error details
+
+```
+Error: expect(locator).toBeVisible() failed
+
+Locator: locator('button:has-text("New")')
+Expected: visible
+Timeout: 5000ms
+Error: element(s) not found
+
+Call log:
+  - Expect "toBeVisible" with timeout 5000ms
+  - waiting for locator('button:has-text("New")')
+
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - img "Logo" [ref=e6] [cursor=pointer]
+      - generic "Untitled" [ref=e9]
+      - generic [ref=e10]:
+        - button "File" [ref=e12] [cursor=pointer]
+        - button "Tool" [ref=e14] [cursor=pointer]
+        - button "Help" [ref=e16] [cursor=pointer]
+    - generic [ref=e17]:
+      - button "Run" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+        - text: Run
+      - button "Stop" [ref=e21]:
+        - img [ref=e22]
+      - button "Undo" [ref=e25]:
+        - img [ref=e26]
+      - button "Redo" [ref=e28]:
+        - img [ref=e29]
+      - button "Delete selected" [ref=e32]:
+        - img [ref=e33]
+      - button "Switch to Dark Mode" [ref=e36] [cursor=pointer]:
+        - img [ref=e37]
+      - button "No issues to fix" [ref=e39]:
+        - img [ref=e40]
+    - generic [ref=e42]:
+      - generic [ref=e43]:
+        - button "Connect" [ref=e44] [cursor=pointer]
+        - generic:
+          - generic:
+            - generic: Hardware Connect
+            - button "✕"
+          - generic:
+            - generic:
+              - generic: Board from Canvas
+              - combobox:
+                - option "No programmable board on canvas" [selected]
+            - generic:
+              - generic: Detected Port (Auto)
+              - generic:
+                - generic: No ports found
+                - button "↻"
+              - generic:
+                - checkbox "Show all serial ports"
+                - generic: Show all serial ports
+              - generic: "Off: only likely dev boards are shown. On: include Bluetooth and other virtual COM ports."
+            - button "Advanced ▾":
+              - generic: Advanced
+              - generic: ▾
+            - generic:
+              - button "Connect"
+              - button "Upload"
+            - generic: "Port scan failed: Network Error"
+      - button "Local" [ref=e45] [cursor=pointer]
+  - generic [ref=e46]:
+    - complementary [ref=e47]:
+      - generic:
+        - generic: Components
+      - generic:
+        - generic:
+          - generic: Components
+          - generic:
+            - generic:
+              - img
+              - textbox "Search..."
+            - generic:
+              - button "Filter by group":
+                - img
+            - button "Switch to List View":
+              - img
+          - generic:
+            - button "Upload ZIP":
+              - img
+              - text: Upload ZIP
+            - button "Create":
+              - img
+              - text: Create
+          - generic:
+            - button "Favourites":
+              - generic:
+                - img
+                - text: Favourites
+              - generic:
+                - img
+            - generic:
+              - generic: Right-click a component to favourite
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: Boards
+            - generic:
+              - generic "Arduino Mega 2560":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img:
+                        - generic: "false"
+                        - generic: PWR
+                        - generic: "false"
+                        - generic: "false"
+                        - generic: "false"
+                        - generic: L TX RX
+                        - generic: PWM
+                        - generic: COMMUNICATION
+                        - generic: AREF GND 13 12 11 10 9 8 7 6 5 4 3 2 TX→ 1 RX← 0 TX3 14 RX3 15 TX2 16 RX2 17 TX1 18 RX1 19 SDA 20 SCL 21
+                        - generic: POWER ANALOG IN
+                        - generic: IOREF RESET 3.3V 5V GND GND Vin A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 A10 A11 A12 A13 A14 A15
+                        - generic: Arduino MEGA
+                - generic: Arduino Mega 2560
+              - generic "Arduino Nano Type-C":
+                - generic:
+                  - img:
+                    - generic:
+                      - generic: MEGA328P
+                    - generic: RESET
+                    - generic: RX
+                    - generic: TX
+                    - generic: PWR
+                    - generic: L
+                    - generic: Nano
+                    - generic: SDA SCL
+                    - generic:
+                      - generic: D12
+                    - generic:
+                      - generic: D11
+                    - generic:
+                      - generic: D10
+                    - generic:
+                      - generic: D9
+                    - generic:
+                      - generic: D8
+                    - generic:
+                      - generic: D7
+                    - generic:
+                      - generic: D6
+                    - generic:
+                      - generic: D5
+                    - generic:
+                      - generic: D4
+                    - generic:
+                      - generic: D3
+                    - generic:
+                      - generic: D2
+                    - generic:
+                      - generic: GND
+                    - generic:
+                      - generic: RST
+                    - generic:
+                      - generic: RX0
+                    - generic:
+                      - generic: TX1
+                    - generic:
+                      - generic: PE1
+                    - generic:
+                      - generic: D13
+                    - generic:
+                      - generic: 3V3
+                    - generic:
+                      - generic: AREF
+                    - generic:
+                      - generic: A0
+                    - generic:
+                      - generic: A1
+                    - generic:
+                      - generic: A2
+                    - generic:
+                      - generic: A3
+                    - generic:
+                      - generic: A4
+                    - generic:
+                      - generic: A5
+                    - generic:
+                      - generic: A6
+                    - generic:
+                      - generic: A7
+                    - generic:
+                      - generic: +5V
+                    - generic:
+                      - generic: RST
+                    - generic:
+                      - generic: GND
+                    - generic:
+                      - generic: VIN
+                    - generic:
+                      - generic: PE0
+                - generic: Arduino Nano Type-C
+              - generic "Arduino Uno":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img:
+                        - generic: "false"
+                        - generic: "ON"
+                        - generic: "false"
+                        - generic: "false"
+                        - generic: "false"
+                        - generic: L TX RX
+                        - generic: DIGITAL (PWM ~)
+                        - generic: AREF GND 13 12 ~11 ~10 ~9 8 7 ~6 ~5 4 ~3 2 TX→1 RX←0
+                        - generic: POWER ANALOG IN
+                        - generic: IOREF RESET 3.3V 5V GND GND Vin A0 A1 A2 A3 A4 A5
+                        - generic: ARDUINO
+                        - generic: UNO
+                    - generic "Built-in LED (Pin 13)"
+                    - generic "Reset Arduino":
+                      - generic:
+                        - button "red pushbutton":
+                          - img
+                - generic: Arduino Uno
+              - generic "ATtiny85 (Digispark)":
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - text: TINY
+                        - text: "85"
+                    - generic: P5
+                    - generic: P4
+                    - generic: P3
+                    - generic: P2
+                    - generic: P1
+                    - generic: P0
+                    - generic: 5V
+                    - generic: GND
+                    - generic: VIN
+                    - generic: DIGISPARK
+                - generic: ATtiny85 (Digispark)
+              - generic "Raspberry Pi Pico":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img:
+                        - generic: B O O T S E L
+                        - generic: L E D 1 2 3 9 U S B
+                        - generic: R a s p b e r r y P i P i c o © 2 0 2 0
+                        - generic: R P 2 - 8 0 2 0 / 2 1 P 6 4 M 1 5 . 0 0 T T T
+                    - generic "Reset Pico"
+                - generic: Raspberry Pi Pico
+              - generic "Raspberry Pi Pico W":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img:
+                        - generic: B O O T S E L
+                        - generic: L E D 1 2 3 9 U S B
+                        - generic: R a s p b e r r y P i P i c o © 2 0 2 0
+                        - generic: R P 2 - 8 0 2 0 / 2 1 P 6 4 M 1 5 . 0 0 T T T
+                    - 'generic "Pico W wireless: stub"'
+                    - generic "Reset Pico W"
+                - generic: Raspberry Pi Pico W
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: Actuators
+            - generic:
+              - generic "A4988 Stepper Driver":
+                - generic:
+                  - img:
+                    - generic: EN
+                    - generic: MS1
+                    - generic: MS2
+                    - generic: MS3
+                    - generic: RST
+                    - generic: SLP
+                    - generic: STEP
+                    - generic: DIR
+                    - generic: VMOT
+                    - generic: GND
+                    - generic: 2B
+                    - generic: 2A
+                    - generic: 1A
+                    - generic: 1B
+                    - generic: VDD
+                    - generic: GND
+                - generic: A4988 Stepper Driver
+              - generic "Motor Driver (L293D)":
+                - generic:
+                  - img:
+                    - generic: L293D
+                - generic: Motor Driver (L293D)
+              - generic "L298N Motor Driver":
+                - generic:
+                  - generic:
+                    - generic "Heatsink"
+                    - generic:
+                      - text: L298N
+                      - text: Driver
+                - generic: L298N Motor Driver
+              - generic "Servo Pi HAT":
+                - generic:
+                  - img:
+                    - generic: SDA
+                    - generic: SCL
+                    - generic: TXD
+                    - generic: RXD
+                    - generic: "#4"
+                    - generic: "#17"
+                    - generic: "#18"
+                    - generic: "#27"
+                    - generic: "#22"
+                    - generic: "#23"
+                    - generic: "#24"
+                    - generic: "#25"
+                    - generic: MOSI
+                    - generic: MISO
+                    - generic: CLK
+                    - generic: CE0
+                    - generic: CE1
+                    - generic: "#5"
+                    - generic: "#6"
+                    - generic: "#12"
+                    - generic: "#13"
+                    - generic: "#16"
+                    - generic: "#19"
+                    - generic: "#20"
+                    - generic: "#21"
+                    - generic: 5.0V
+                    - generic: 3.3V
+                    - generic: GND
+                    - generic: GND
+                    - generic: "+5"
+                    - generic: C2
+                    - generic: +
+                    - generic: PCA9685
+                    - generic: POWER
+                    - generic: adafruit!
+                    - generic: I2C Address
+                    - generic: A5
+                    - generic: A4
+                    - generic: A3
+                    - generic: A2
+                    - generic: A1
+                    - generic: A0
+                    - generic: Open=0/Closed=1
+                    - generic: 5-6VDC
+                    - generic: 16 x 12-bit PWM
+                    - generic: Servo/PWM Pi HAT!
+                    - generic: A
+                    - generic: S
+                    - generic: V+
+                    - generic: G
+                    - generic: "0"
+                    - generic: "1"
+                    - generic: "2"
+                    - generic: "3"
+                    - generic: "4"
+                    - generic: "5"
+                    - generic: "6"
+                    - generic: "7"
+                    - generic: "8"
+                    - generic: "9"
+                    - generic: "10"
+                    - generic: "11"
+                    - generic: "12"
+                    - generic: "13"
+                    - generic: "14"
+                    - generic: "15"
+                - generic: Servo Pi HAT
+              - generic "16-Channel PWM Module (PCA9865)":
+                - generic:
+                  - img:
+                    - generic:
+                      - generic: GND
+                    - generic:
+                      - generic: OE
+                    - generic:
+                      - generic: SCL
+                    - generic:
+                      - generic: SDA
+                    - generic:
+                      - generic: VCC
+                    - generic:
+                      - generic: V+
+                    - generic:
+                      - generic: GND
+                    - generic:
+                      - generic: OE
+                    - generic:
+                      - generic: SCL
+                    - generic:
+                      - generic: SDA
+                    - generic:
+                      - generic: VCC
+                    - generic:
+                      - generic: V+
+                    - generic: V+
+                    - generic: GND
+                    - generic: POWER
+                    - generic: PCA9685
+                    - generic: 16 x 12-bit PWM
+                    - generic: duinofun!
+                    - generic: I2C Address
+                    - generic: (Open=0/Closed=1)
+                    - generic: PWM
+                    - generic: V+
+                    - generic: GND
+                    - generic: "0"
+                    - generic: "1"
+                    - generic: "2"
+                    - generic: "3"
+                    - generic: "4"
+                    - generic: "5"
+                    - generic: "6"
+                    - generic: "7"
+                    - generic: "8"
+                    - generic: "9"
+                    - generic: "10"
+                    - generic: "11"
+                    - generic: "12"
+                    - generic: "13"
+                    - generic: "14"
+                    - generic: "15"
+                - generic: 16-Channel PWM Module (PCA9865)
+              - generic "Servo Motor":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img
+                - generic: Servo Motor
+              - generic "Stepper Motor (Bipolar)":
+                - generic:
+                  - img:
+                    - generic: A+
+                    - generic: A-
+                    - generic: B+
+                    - generic: B-
+                - generic: Stepper Motor (Bipolar)
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: basic
+            - generic:
+              - generic "Li-ion Battery":
+                - generic:
+                  - generic:
+                    - generic: 0%
+                - generic: Li-ion Battery
+              - generic "Breadboard (Full)":
+                - generic:
+                  - img:
+                    - generic:
+                      - generic: "1"
+                      - generic: "1"
+                    - generic:
+                      - generic: "6"
+                      - generic: "6"
+                    - generic:
+                      - generic: "11"
+                      - generic: "11"
+                    - generic:
+                      - generic: "16"
+                      - generic: "16"
+                    - generic:
+                      - generic: "21"
+                      - generic: "21"
+                    - generic:
+                      - generic: "26"
+                      - generic: "26"
+                    - generic:
+                      - generic: "31"
+                      - generic: "31"
+                    - generic:
+                      - generic: "36"
+                      - generic: "36"
+                    - generic:
+                      - generic: "41"
+                      - generic: "41"
+                    - generic:
+                      - generic: "46"
+                      - generic: "46"
+                    - generic:
+                      - generic: "51"
+                      - generic: "51"
+                    - generic:
+                      - generic: "56"
+                      - generic: "56"
+                    - generic:
+                      - generic: "61"
+                      - generic: "61"
+                - generic: Breadboard (Full)
+              - generic "Breadboard (Half)":
+                - generic:
+                  - img:
+                    - generic:
+                      - generic: "1"
+                      - generic: "1"
+                    - generic:
+                      - generic: "6"
+                      - generic: "6"
+                    - generic:
+                      - generic: "11"
+                      - generic: "11"
+                    - generic:
+                      - generic: "16"
+                      - generic: "16"
+                    - generic:
+                      - generic: "21"
+                      - generic: "21"
+                    - generic:
+                      - generic: "26"
+                      - generic: "26"
+                - generic: Breadboard (Half)
+              - generic "Breadboard (Mini)":
+                - generic:
+                  - img:
+                    - generic:
+                      - generic: "1"
+                      - generic: "1"
+                    - generic:
+                      - generic: "6"
+                      - generic: "6"
+                    - generic:
+                      - generic: "11"
+                      - generic: "11"
+                    - generic:
+                      - generic: "16"
+                      - generic: "16"
+                - generic: Breadboard (Mini)
+              - generic "Li-ion Charger":
+                - generic:
+                  - generic:
+                    - generic: TP4056
+                - generic: Li-ion Charger
+              - generic "Diode":
+                - generic:
+                  - img:
+                    - generic: A
+                    - generic: C
+                - generic: Diode
+              - generic "NPN Transistor":
+                - generic:
+                  - img:
+                    - generic: E
+                    - generic: B
+                    - generic: C
+                - generic: NPN Transistor
+              - generic "Power Supply":
+                - generic:
+                  - generic:
+                    - generic: POWER
+                    - generic: 5.0V
+                    - generic: GND
+                - generic: Power Supply
+              - generic "Push Button":
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - button "red pushbutton":
+                          - img
+                - generic: Push Button
+              - generic "Resistor":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img
+                - generic: Resistor
+          - generic:
+            - generic: Debug
+            - generic:
+              - generic "8-Ch Logic Analyzer":
+                - generic:
+                  - img:
+                    - generic: 8-CH LOGIC
+                    - generic: ANALYZER
+                    - generic: GND
+                    - generic:
+                      - generic: D0
+                    - generic:
+                      - generic: D1
+                    - generic:
+                      - generic: D2
+                    - generic:
+                      - generic: D3
+                    - generic:
+                      - generic: D4
+                    - generic:
+                      - generic: D5
+                    - generic:
+                      - generic: D6
+                    - generic:
+                      - generic: D7
+                - generic: 8-Ch Logic Analyzer
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: display
+            - generic:
+              - generic "ILI9341 2.8\" TFT LCD":
+                - generic:
+                  - generic:
+                    - img:
+                      - generic:
+                        - generic: ILI9341
+                - generic: ILI9341 2.8" TFT LCD
+              - generic "LCD 16x2 (I2C)":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img:
+                        - generic: 1 GND VCC SDA SCL
+                - generic: LCD 16x2 (I2C)
+              - generic "LCD 2004 (I2C)":
+                - img [ref=e50] [cursor=pointer]:
+                  - generic [ref=e56]: 1 GND VCC SDA SCL
+                - generic: LCD 2004 (I2C)
+              - generic "Nokia 5110 Screen":
+                - generic:
+                  - img:
+                    - generic:
+                      - generic: "1"
+                      - generic: "8"
+                      - generic: ↑
+                    - generic:
+                      - generic: "1"
+                      - generic:
+                        - generic: VCC
+                      - generic:
+                        - generic: GND
+                      - generic:
+                        - generic: SCE
+                      - generic:
+                        - generic: RST
+                      - generic:
+                        - generic: DC
+                      - generic:
+                        - generic: DN
+                      - generic:
+                        - generic: SCLK
+                      - generic:
+                        - generic: LED
+                      - generic: "8"
+                - generic: Nokia 5110 Screen
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: input
+            - generic:
+              - generic "Membrane Keypad (4x4)":
+                - generic:
+                  - generic:
+                    - img:
+                      - generic: R1
+                      - generic: R2
+                      - generic: R3
+                      - generic: R4
+                      - generic: C1
+                      - generic: C2
+                      - generic: C3
+                      - generic: C4
+                      - generic [ref=e58]:
+                        - generic: "1"
+                      - generic [ref=e60]:
+                        - generic: "2"
+                      - generic [ref=e62]:
+                        - generic: "3"
+                      - generic [ref=e64]:
+                        - generic: A
+                      - generic [ref=e66]:
+                        - generic: "4"
+                      - generic [ref=e68]:
+                        - generic: "5"
+                      - generic [ref=e70]:
+                        - generic: "6"
+                      - generic [ref=e72]:
+                        - generic: B
+                      - generic [ref=e74]:
+                        - generic: "7"
+                      - generic [ref=e76]:
+                        - generic: "8"
+                      - generic [ref=e78]:
+                        - generic: "9"
+                      - generic [ref=e80]:
+                        - generic: C
+                      - generic [ref=e82]:
+                        - generic: "*"
+                      - generic [ref=e84]:
+                        - generic: "0"
+                      - generic [ref=e86]:
+                        - generic: "#"
+                      - generic [ref=e88]:
+                        - generic: D
+                - generic: Membrane Keypad (4x4)
+              - generic "Rotary Encoder":
+                - generic:
+                  - generic:
+                    - img:
+                      - generic:
+                        - generic: CLK
+                      - generic:
+                        - generic: DT
+                      - generic:
+                        - generic: SW
+                      - generic:
+                        - generic: VCC
+                      - generic:
+                        - generic: GND
+                - generic: Rotary Encoder
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: logic
+            - generic:
+              - generic "Clock":
+                - generic:
+                  - img:
+                    - generic: 10k
+                - generic: Clock
+              - generic "D Flip-Flop":
+                - generic:
+                  - img:
+                    - generic: D
+                    - generic: D
+                    - generic: Q
+                    - generic: Q
+                - generic: D Flip-Flop
+              - generic "D Flip-Flop (Set/Reset)":
+                - generic:
+                  - img:
+                    - generic: D
+                    - generic: S
+                    - generic: R
+                    - generic: Q
+                    - generic: Q
+                - generic: D Flip-Flop (Set/Reset)
+              - generic "D Flip-Flop (Reset)":
+                - generic:
+                  - img:
+                    - generic: D
+                    - generic: R
+                    - generic: Q
+                    - generic: Q
+                - generic: D Flip-Flop (Reset)
+              - generic "Logic IC":
+                - generic:
+                  - img:
+                    - generic:
+                      - generic: "14"
+                      - generic: VCC
+                    - generic:
+                      - generic: "13"
+                      - generic: 4A
+                    - generic:
+                      - generic: "12"
+                      - generic: 4B
+                    - generic:
+                      - generic: "11"
+                      - generic: 4Y
+                    - generic:
+                      - generic: "10"
+                      - generic: 3A
+                    - generic:
+                      - generic: "9"
+                      - generic: 3B
+                    - generic:
+                      - generic: "8"
+                      - generic: 3Y
+                    - generic:
+                      - generic: 1A
+                      - generic: "1"
+                    - generic:
+                      - generic: 1B
+                      - generic: "2"
+                    - generic:
+                      - generic: 1Y
+                      - generic: "3"
+                    - generic:
+                      - generic: 2A
+                      - generic: "4"
+                    - generic:
+                      - generic: 2B
+                      - generic: "5"
+                    - generic:
+                      - generic: 2Y
+                      - generic: "6"
+                    - generic:
+                      - generic: GND
+                      - generic: "7"
+                    - generic: 74LS08
+                - generic: Logic IC
+              - generic "MUX 2:1":
+                - generic:
+                  - img:
+                    - generic: "0"
+                    - generic: "1"
+                - generic: MUX 2:1
+              - generic "74HC595 Shift Register":
+                - generic:
+                  - generic:
+                    - generic: 74HC595 Shift Register
+                - generic: 74HC595 Shift Register
+              - generic "16-Channel Mux (CD74HC4067)":
+                - generic:
+                  - img:
+                    - generic: VCC
+                    - generic: GND
+                    - generic: EN
+                    - generic:
+                      - generic: S0
+                    - generic:
+                      - generic: S1
+                    - generic:
+                      - generic: S2
+                    - generic:
+                      - generic: S3
+                    - generic: SIG
+                    - generic:
+                      - generic: C0
+                    - generic:
+                      - generic: C1
+                    - generic:
+                      - generic: C2
+                    - generic:
+                      - generic: C3
+                    - generic:
+                      - generic: C4
+                    - generic:
+                      - generic: C5
+                    - generic:
+                      - generic: C6
+                    - generic:
+                      - generic: C7
+                    - generic:
+                      - generic: C8
+                    - generic:
+                      - generic: C9
+                    - generic:
+                      - generic: C10
+                    - generic:
+                      - generic: C11
+                    - generic:
+                      - generic: C12
+                    - generic:
+                      - generic: C13
+                    - generic:
+                      - generic: C14
+                    - generic:
+                      - generic: C15
+                - generic: 16-Channel Mux (CD74HC4067)
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: misc
+            - generic:
+              - generic "MicroSD Card":
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic: microSD
+                    - generic: memory
+                    - generic: 0 files • 0B
+                    - generic: mounted • idle
+                - generic: MicroSD Card
+          - generic:
+            - generic: Modules
+            - generic:
+              - generic "Arduino Sensor Shield v5.0":
+                - generic:
+                  - img:
+                    - generic: AREF
+                    - generic: GND
+                    - generic: 0/RX
+                    - generic: Pin 13
+                    - generic: Arduino Sensor Shield v5.0
+                    - generic: V1.1
+                    - generic: RESET
+                    - generic: SEL
+                    - generic: VCC
+                    - generic: GND
+                    - generic:
+                      - generic: G
+                      - generic: V
+                      - generic: S
+                      - generic:
+                        - generic: AREF
+                      - generic:
+                        - generic: GND
+                      - generic:
+                        - generic: "13"
+                      - generic:
+                        - generic: "12"
+                      - generic:
+                        - generic: "11"
+                      - generic:
+                        - generic: "10"
+                      - generic:
+                        - generic: "9"
+                      - generic:
+                        - generic: "8"
+                      - generic:
+                        - generic: "7"
+                      - generic:
+                        - generic: "6"
+                      - generic:
+                        - generic: "5"
+                      - generic:
+                        - generic: "4"
+                      - generic:
+                        - generic: "3"
+                      - generic:
+                        - generic: "2"
+                      - generic:
+                        - generic: "1"
+                      - generic:
+                        - generic: "0"
+                    - generic:
+                      - generic: G
+                      - generic: V
+                      - generic: S
+                      - generic:
+                        - generic: A0
+                      - generic:
+                        - generic: A1
+                      - generic:
+                        - generic: A2
+                      - generic:
+                        - generic: A3
+                      - generic:
+                        - generic: A4
+                      - generic:
+                        - generic: A5
+                    - generic: RESET
+                    - generic: 3V3
+                    - generic: POWER
+                    - generic: 5V
+                    - generic: GND
+                    - generic: GND
+                    - generic: VIN
+                    - generic: ANALOG IN
+                    - generic: "0"
+                    - generic: "1"
+                    - generic: "2"
+                    - generic: "3"
+                    - generic: "4"
+                    - generic: "5"
+                - generic: Arduino Sensor Shield v5.0
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: output
+            - generic:
+              - generic "7-Segment Display":
+                - generic:
+                  - img
+                - generic: 7-Segment Display
+              - generic "Buzzer":
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                - generic: Buzzer
+              - generic "LED":
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - img
+                - generic: LED
+              - generic "MAX7219 Dot Matrix":
+                - generic:
+                  - img
+                - generic: MAX7219 Dot Matrix
+              - generic "DC Motor":
+                - generic:
+                  - generic:
+                    - img
+                - generic: DC Motor
+              - generic "SPI LED Driver (NLSF595)":
+                - generic:
+                  - img:
+                    - generic: VCC
+                    - generic: GND
+                    - generic: MOSI
+                    - generic: SCK
+                    - generic: CS
+                    - generic: R1
+                    - generic: G1
+                    - generic: B1
+                - generic: SPI LED Driver (NLSF595)
+              - generic "WS2812B RGB LED":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img
+                - generic: WS2812B RGB LED
+              - generic "NeoPixel Ring":
+                - generic:
+                  - img
+                - generic: NeoPixel Ring
+              - generic "RGB LED (4-pin)":
+                - generic:
+                  - img
+                - generic: RGB LED (4-pin)
+              - generic "SSD1306 OLED 128x64":
+                - generic:
+                  - img:
+                    - generic: GND
+                    - generic: VCC
+                    - generic: SCL
+                    - generic: SDA
+                    - generic: SSD1306 OLED
+                - generic: SSD1306 OLED 128x64
+              - generic "TM1637 Display":
+                - generic:
+                  - img
+                - generic: TM1637 Display
+          - generic:
+            - generic:
+              - generic:
+                - img
+              - text: sensor
+            - generic:
+              - generic "MAX30102 Heart Rate":
+                - generic:
+                  - generic:
+                    - img:
+                      - generic:
+                        - generic: 65K5
+                        - generic:
+                          - generic: "472"
+                        - generic:
+                          - generic: "472"
+                        - generic:
+                          - generic: "472"
+                        - generic: N1IF
+                - generic: MAX30102 Heart Rate
+              - generic "Analog Joystick":
+                - generic:
+                  - img:
+                    - generic: GND
+                    - generic: 5V
+                    - generic: VRX
+                    - generic: VRY
+                    - generic: SW
+                - generic: Analog Joystick
+              - generic "Ultrasonic Sensor":
+                - generic:
+                  - generic:
+                    - generic:
+                      - img:
+                        - generic: HC-SR04
+                        - generic: VCC TRIG ECHO GND
+                - generic: Ultrasonic Sensor
+              - generic "LDR Sensor Module (4-pin)":
+                - generic:
+                  - generic:
+                    - img:
+                      - generic: VCC
+                      - generic: GND
+                      - generic: DO
+                      - generic: AO
+                - generic: LDR Sensor Module (4-pin)
+              - generic "Photodiode":
+                - generic:
+                  - img:
+                    - generic: A
+                    - generic: C
+                - generic: Photodiode
+              - generic "Rotary Potentiometer":
+                - generic:
+                  - generic:
+                    - generic:
+                      - slider: "50"
+                      - slider:
+                        - generic:
+                          - generic: GND
+                          - generic: SIG
+                          - generic: VCC
+                - generic: Rotary Potentiometer
+              - generic "Linear Potentiometer":
+                - generic:
+                  - generic:
+                    - generic:
+                      - slider: "50"
+                      - img
+                - generic: Linear Potentiometer
+              - generic "Soil Moisture":
+                - generic:
+                  - img:
+                    - generic:
+                      - generic: + Power
+                    - generic:
+                      - generic: "-"
+                      - generic: +
+                      - generic: S
+                    - generic: "MOISTURE: 50%"
+                - generic: Soil Moisture
+          - generic: Click or drag → drop to place · Del removes selected
+    - main [ref=e94]:
+      - generic [ref=e95]:
+        - img
+        - img
+        - generic:
+          - generic: 🔌
+          - paragraph: Drag components from the left panel
+          - paragraph: Arduino Uno · LED · Resistor · Button · Servo · LCD
+      - generic [ref=e96]:
+        - button "Toggle Console" [ref=e97] [cursor=pointer]:
+          - img [ref=e98]
+        - button "Zoom Out" [ref=e101] [cursor=pointer]:
+          - img [ref=e102]
+        - button "100%" [ref=e105] [cursor=pointer]
+        - button "Zoom In" [ref=e106] [cursor=pointer]:
+          - img [ref=e107]
+        - button "⋮" [ref=e112] [cursor=pointer]
+    - complementary [ref=e113]:
+      - button [ref=e115] [cursor=pointer]:
+        - img [ref=e116]
+      - generic [ref=e119]:
+        - generic [ref=e120]:
+          - button "Explorer" [ref=e122] [cursor=pointer]:
+            - img [ref=e123]
+            - generic [ref=e125]: Explorer
+          - generic [ref=e127]:
+            - button "Code" [ref=e129] [cursor=pointer]:
+              - img [ref=e131]
+              - generic [ref=e134]: Code
+            - button "Blocks" [ref=e135] [cursor=pointer]:
+              - img [ref=e137]
+              - generic [ref=e140]: Blocks
+            - button "Serial" [ref=e141] [cursor=pointer]:
+              - img [ref=e143]
+              - generic [ref=e145]: Serial
+        - generic [ref=e147]:
+          - generic [ref=e148]:
+            - generic [ref=e149]:
+              - generic "Untitled" [ref=e150]
+              - generic [ref=e151] [cursor=pointer]: diagram.json
+              - generic [ref=e152] [cursor=pointer]: library.txt
+            - button "Libraries" [ref=e154] [cursor=pointer]:
+              - img [ref=e155]
+              - generic [ref=e158]: Libraries
+          - generic [ref=e160]:
+            - generic [ref=e161]:
+              - generic [ref=e162] [cursor=pointer]:
+                - generic [ref=e163]: diagram.json
+                - button "Close tab" [ref=e164]:
+                  - img [ref=e165]
+              - generic [ref=e167]: json
+            - generic [ref=e169]:
+              - generic: "{}"
+              - textbox [ref=e170]: "{}"
+    - complementary
+```
+
+# Test source
+
+```ts
+  1  | import { test, expect } from '@playwright/test';
+  2  | 
+  3  | test('toolbar menus are interactive', async ({ page }) => {
+  4  |   page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
+  5  |   await page.goto('http://localhost:5174/simulator');
+  6  |   
+  7  |   // Wait for the File menu button
+  8  |   const fileMenu = page.locator('button:has-text("File")');
+  9  |   await expect(fileMenu).toBeVisible();
+  10 |   
+  11 |   // Click it
+  12 |   await fileMenu.click();
+  13 |   
+  14 |   // Check if dropdown appears
+  15 |   const dropdownItem = page.locator('button:has-text("New")');
+> 16 |   await expect(dropdownItem).toBeVisible();
+     |                              ^ Error: expect(locator).toBeVisible() failed
+  17 |   
+  18 |   // Click Tool
+  19 |   const toolMenu = page.locator('button:has-text("Tool")');
+  20 |   await toolMenu.click();
+  21 |   
+  22 |   // Check if "Schematic View" is visible
+  23 |   await expect(page.locator('button:has-text("Schematic View")')).toBeVisible();
+  24 |   
+  25 |   // Click Help
+  26 |   const helpMenu = page.locator('button:has-text("Help")');
+  27 |   await helpMenu.click();
+  28 |   
+  29 |   // Check if "Documentation" is visible
+  30 |   await expect(page.locator('button:has-text("Documentation")')).toBeVisible();
+  31 | });
+  32 | 
+```
