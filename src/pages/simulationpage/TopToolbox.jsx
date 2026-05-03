@@ -176,6 +176,7 @@ function TopToolboxInternal(props) {
   const toolMenuItems = [
     { label: 'Schematic View', onClick: () => { setShowSchematic(true); generateSchematic(); } },
     { label: 'Component List', onClick: () => setShowComponentList(true) },
+    { label: 'Alignment Lab', onClick: () => navigate('/alignment-lab') },
     { type: 'separator' },
     { 
       label: 'Export', 

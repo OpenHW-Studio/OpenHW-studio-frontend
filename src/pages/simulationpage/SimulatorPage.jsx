@@ -4156,38 +4156,51 @@ useEffect(() => {
   // Instead: apply only the CSS transform during pinch, update refs for correctness,
   // then flush to React state via a debounce AFTER the gesture ends.
   const onWheel = useCallback((e) => {
-    if (isCanvasLockedRef.current || !e.ctrlKey) return;
+    if (isCanvasLockedRef.current) return;
     e.preventDefault();
 
-    const zoomSpeed = 0.002;
-    const delta = -e.deltaY * zoomSpeed;
-    const currentZoom = canvasZoomRef.current;
-    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
+    if (e.ctrlKey) {
+      // ─── ZOOM LOGIC ─────────────────────────────────────────────────────────
+      const zoomSpeed = 0.002;
+      const delta = -e.deltaY * zoomSpeed;
+      const currentZoom = canvasZoomRef.current;
+      const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
 
-    if (newZoom === currentZoom) return;
+      if (newZoom === currentZoom) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
 
-    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
-    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
+      const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
+      const cy = (my - canvasOffsetRef.current.y) / currentZoom;
 
-    const newOffsetX = mx - cx * newZoom;
-    const newOffsetY = my - cy * newZoom;
+      const newOffsetX = mx - cx * newZoom;
+      const newOffsetY = my - cy * newZoom;
 
-    // 1. Update refs immediately — keeps subsequent wheel events reading the correct values
-    canvasZoomRef.current = newZoom;
-    canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+      canvasZoomRef.current = newZoom;
+      canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+    } else {
+      // ─── PANNING LOGIC (Trackpad / Wheel) ───────────────────────────────────
+      // Use deltaX and deltaY directly for trackpad support.
+      // Shift key swaps vertical wheel to horizontal movement for standard mice.
+      const dx = e.shiftKey ? -e.deltaY : -e.deltaX;
+      const dy = e.shiftKey ? 0 : -e.deltaY;
+      
+      const newOffsetX = canvasOffsetRef.current.x + dx;
+      const newOffsetY = canvasOffsetRef.current.y + dy;
+      
+      canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+    }
 
-    // 2. Apply directly to DOM — zero React renders mid-pinch = zero vibration
+    // Apply directly to DOM for zero-latency 60fps movement
     if (innerCanvasRef.current) {
       innerCanvasRef.current.style.transform =
-        `translate(${newOffsetX}px, ${newOffsetY}px) scale(${newZoom})`;
+        `translate(${canvasOffsetRef.current.x}px, ${canvasOffsetRef.current.y}px) scale(${canvasZoomRef.current})`;
       innerCanvasRef.current.style.transformOrigin = '0 0';
     }
 
-    // 3. Debounce the React state flush — commit once the user stops pinching
+    // Debounce the React state flush to avoid re-render lag during interaction
     if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
     rafZoomRef.current = setTimeout(() => {
       rafZoomRef.current = null;
@@ -4653,10 +4666,7 @@ useEffect(() => {
     if (!canvas) return;
 
     const handleWheel = (e) => {
-      if (e.ctrlKey) {
-        if (e.cancelable) e.preventDefault();
-        onWheel(e); // Trigger our custom zoom
-      }
+      onWheel(e);
     };
 
     canvas.addEventListener('wheel', handleWheel, { passive: false });
