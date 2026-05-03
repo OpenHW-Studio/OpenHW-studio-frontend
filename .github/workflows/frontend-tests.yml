@@ -19,15 +19,11 @@ on:
       - '.github/workflows/frontend-tests.yml'
 
 permissions:
-  issues: write
+  pull-requests: write
 
 jobs:
   component-tests:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: OpenHW-studio-frontend
-
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
@@ -48,11 +44,41 @@ jobs:
           cache: 'npm'
           cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - name: Install Frontend Core Dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npm ci --include=optional
+
+      - name: Cache Native Linux Binaries
+        uses: actions/cache@v4
+        id: native-bins-cache
+        with:
+          path: |
+            OpenHW-studio-frontend/node_modules/@rollup/rollup-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/lightningcss-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+          key: native-bins-${{ runner.os }}-${{ hashFiles('.github/workflows/frontend-tests.yml') }}
+
+      - name: Install Native Linux Binaries
+        working-directory: OpenHW-studio-frontend
+        run: |
+          if [ "${{ steps.native-bins-cache.outputs.cache-hit }}" != "true" ]; then
+            echo "Installing native Linux binaries..."
+            npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          fi
+          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
+
+      - name: Cache Vitest cache
+        uses: actions/cache@v4
+        with:
+          path: OpenHW-studio-frontend/node_modules/.vitest
+          key: vitest-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            vitest-${{ runner.os }}-
 
       - name: Run Vitest component tests
-        run: npx vitest run --environment jsdom src/components/**/*.test.jsx
+
+        working-directory: OpenHW-studio-frontend
+        run: npx vitest run --environment jsdom src/components/
 
       - name: Reference Platform Validation Summary
         if: github.event_name == 'pull_request'
@@ -65,16 +91,159 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const marker = '<!-- frontend-tests -->';
+            const marker = '<!-- frontend-component-tests -->';
             const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚠️';
+            const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
+            
             const body = [
               marker,
-              '## Frontend Tests',
+              `## ${emoji} Frontend Component Tests`,
               '',
-              `Status: ${status.toUpperCase()}`,
+              `**Status**: ${status.toUpperCase()}`,
+              `**Check**: Vitest Unit & Component Tests`,
               '',
-              'This workflow ran the frontend component and E2E checks.',
-              'If it failed, inspect the workflow logs and the linked platform summary.'
+              `[🔍 View detailed logs and test results](${runUrl})`,
+              '',
+              '---',
+              'If these tests failed, it usually indicates a regression in a specific UI component or utility function.'
+            ].join('\n');
+ 
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+ 
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body
+              });
+            }
+
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout frontend code
+        uses: actions/checkout@v4
+        with:
+          path: OpenHW-studio-frontend
+
+      - name: Checkout emulator code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-emulator
+          path: openhw-studio-emulator
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
+
+      - name: Install Frontend Core Dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npm ci --include=optional
+
+      - name: Cache Native Linux Binaries
+        uses: actions/cache@v4
+        id: native-bins-cache
+        with:
+          path: |
+            OpenHW-studio-frontend/node_modules/@rollup/rollup-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/lightningcss-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+          key: native-bins-${{ runner.os }}-${{ hashFiles('.github/workflows/frontend-tests.yml') }}
+
+      - name: Install Native Linux Binaries
+        working-directory: OpenHW-studio-frontend
+        run: |
+          if [ "${{ steps.native-bins-cache.outputs.cache-hit }}" != "true" ]; then
+            echo "Installing native Linux binaries..."
+            npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          fi
+          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Cache Vite cache
+        uses: actions/cache@v4
+        with:
+          path: OpenHW-studio-frontend/node_modules/.vite
+          key: vite-cache-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            vite-cache-${{ runner.os }}-
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: OpenHW-studio-frontend
+        run: npx playwright install chromium
+
+      - name: Install Playwright dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npx playwright install-deps chromium
+
+      - name: Start dev server
+        working-directory: OpenHW-studio-frontend
+        run: npm run dev &
+        timeout-minutes: 1
+
+      - name: Wait for dev server
+        run: npx wait-on http://localhost:5173 --timeout 30000
+
+      - name: Run Playwright E2E tests
+        working-directory: OpenHW-studio-frontend
+        run: npx playwright test e2e/autofix-preview.spec.js
+
+      - name: Reference Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR with E2E result
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- frontend-e2e-tests -->';
+            const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚠️';
+            const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
+            
+            const body = [
+              marker,
+              `## ${emoji} Frontend E2E Tests`,
+              '',
+              `**Status**: ${status.toUpperCase()}`,
+              `**Check**: Playwright End-to-End Simulation Tests`,
+              '',
+              `[🔍 View detailed logs and Playwright report](${runUrl})`,
+              '',
+              '---',
+              'E2E failures often mean a breakdown in communication between the UI and the simulation engine.'
             ].join('\n');
 
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -101,51 +270,4 @@ jobs:
               });
             }
 
-  e2e-tests:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: OpenHW-studio-frontend
-
-    steps:
-      - name: Checkout frontend code
-        uses: actions/checkout@v4
-        with:
-          path: OpenHW-studio-frontend
-
-      - name: Checkout emulator code
-        uses: actions/checkout@v4
-        with:
-          repository: OpenHW-Studio/openhw-studio-emulator
-          path: openhw-studio-emulator
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install Playwright browsers
-        run: npx playwright install chromium
-
-      - name: Start dev server
-        run: npm run dev &
-        timeout-minutes: 1
-
-      - name: Wait for dev server
-        run: npx wait-on http://localhost:5173 --timeout 30000
-
-      - name: Run Playwright E2E tests
-        run: npx playwright test e2e/autofix-preview.spec.js
-
-      - name: Reference Platform Validation Summary
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
-          echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"
 

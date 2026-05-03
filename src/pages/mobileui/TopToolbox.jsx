@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
 import { Btn } from './Btn';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 
 function TopToolboxInternal(props) {
   const { 
     handleRun, handleStop, isRunning, handleSave, downloadPng, downloadSimulationJson, 
-    handleNewProject, setShowProjectsSidebar, setProjectsSidebarTab, theme, navigate, 
+    handleNewProject, setShowProjectsSidebar, setProjectsSidebarTab, theme, 
     isAuthenticated, user, myProjects, currentProjectId, refreshProjectList,
     schematicDataUrl, schematicLoading, generateSchematic, downloadSchematicPng, downloadSchematicPdf,
     downloadCompCsv, components, importFileRef, handleBackupWorkflow,
@@ -13,6 +15,8 @@ function TopToolboxInternal(props) {
     validationErrors = [], runAutoFixAll, onApplyPlan, wires = [],
     autoWiringEnabled, setAutoWiringEnabled, autoCodingEnabled, setAutoCodingEnabled
   } = props;
+  const navigate = useNavigate();
+
 
   const [activeMenu, setActiveMenu] = useState(null);
   const [showSharePanel, setShowSharePanel] = useState(false);
@@ -43,14 +47,7 @@ function TopToolboxInternal(props) {
     }
   }, [showSharePanel, shareUrl, isSharingSimulation, handleShareSimulation]);
 
-  const Logo = () => (
-    <img
-      src="/logo-Photoroom.png"
-      alt="Logo"
-      style={{ height: '32px', width: 'auto', flexShrink: 0, cursor: 'pointer' }}
-      onClick={() => navigate('/')}
-    />
-  );
+
 
   const fileMenuItems = [
     { label: 'New Project', onClick: handleNewProject },
@@ -132,7 +129,15 @@ function TopToolboxInternal(props) {
   return (
     <header className="flex items-center justify-between px-4 h-14 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 z-[1000]">
       <div className="flex items-center gap-3">
-        <Logo />
+        <img
+          src="/logo-Photoroom.png"
+          alt="OpenHW Studio Logo"
+          title="Go to Landing Page"
+          draggable="false"
+          style={{ height: '32px', width: 'auto', flexShrink: 0, cursor: 'pointer' }}
+          onClick={() => navigate('/')}
+        />
+
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 2px' }} />
         
         <button 
