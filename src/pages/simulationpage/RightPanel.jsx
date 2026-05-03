@@ -1126,6 +1126,7 @@ function RightPanelInternal(props) {
                     onToggleUseBlocklyCode={() => { if (!editingDisabled) setUseBlocklyCode(!useBlocklyCode); }}
                     visible={codeTab === 'block'}
                     boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
+                    isMobile={false}
                   />
                 </React.Suspense>
               )}
