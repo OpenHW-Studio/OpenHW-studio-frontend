@@ -1,4 +1,9 @@
 name: Autofix CI
+ 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
 
 on:
   push:
@@ -52,17 +57,87 @@ jobs:
         run: npm ci
 
       - name: Run unit and integration tests
+        id: unit_tests
+        continue-on-error: true
         run: |
-          node --test src/circuit-validation/fix-patterns-catalog.test.js \
+          if node --test src/circuit-validation/fix-patterns-catalog.test.js \
             src/circuit-validation/autofix/circuit-fix-validator.test.js \
             src/circuit-validation/integration-e2e.test.js \
-            src/circuit-validation/webui-e2e.test.js
+            src/circuit-validation/webui-e2e.test.js; then
+            echo "UNIT_STATUS=pass" >> $GITHUB_ENV
+          else
+            echo "UNIT_STATUS=fail" >> $GITHUB_ENV
+          fi
 
       - name: Run smoke test
-        run: npm run validate:smoke
+        id: smoke_tests
+        continue-on-error: true
+        run: |
+          if npm run validate:smoke; then
+            echo "SMOKE_STATUS=pass" >> $GITHUB_ENV
+          else
+            echo "SMOKE_STATUS=fail" >> $GITHUB_ENV
+          fi
+
+      - name: Generate Summary
+        if: always()
+        run: |
+          mkdir -p test-results/autofix
+          {
+            echo "## Autofix CI Results"
+            echo ""
+            echo "Detailed results for commit \`${{ github.sha }}\` on branch \`${{ github.ref_name }}\`."
+            echo "Run URL: [#${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo ""
+            if [ "$UNIT_STATUS" = "pass" ]; then echo "- Unit/Integration: ✅ PASS"; else echo "- Unit/Integration: ❌ FAIL"; fi
+            if [ "$SMOKE_STATUS" = "pass" ]; then echo "- Smoke Tests: ✅ PASS"; else echo "- Smoke Tests: ❌ FAIL"; fi
+            echo ""
+            if [ "$UNIT_STATUS" = "pass" ] && [ "$SMOKE_STATUS" = "pass" ]; then
+              echo "**Overall: ✅ PASS**"
+            else
+              echo "**Overall: ❌ FAIL**"
+            fi
+          } > test-results/autofix/comment.md
+          cat test-results/autofix/comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment result to PR conversation
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- autofix-ci-summary -->';
+            const bodyPath = 'openhw-studio-emulator/test-results/autofix/comment.md';
+            if (!fs.existsSync(bodyPath)) return;
+
+            const body = marker + '\n' + fs.readFileSync(bodyPath, 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100
+            });
+
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
       - name: Reference Platform Validation Summary
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && always()
         run: |
-          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Platform Validation" >> "$GITHUB_STEP_SUMMARY"
           echo "See unified emulator+backend validation: [platform-validation-summary.yml](${{ github.server_url }}/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce quality gate
+        if: always()
+        run: |
+          if [ "$UNIT_STATUS" != "pass" ] || [ "$SMOKE_STATUS" != "pass" ]; then
+            echo "Autofix CI failed"
+            exit 1
+          fi
