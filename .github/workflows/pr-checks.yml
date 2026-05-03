@@ -62,6 +62,8 @@ jobs:
           npm install
           echo "Installing Rollup Linux binary..."
           npm install --no-save @rollup/rollup-linux-x64-gnu@4.60.2
+          echo "Installing Lightning CSS Linux binary..."
+          npm install --no-save lightningcss-linux-x64-gnu@1.31.1
 
       - name: Setup Arduino CLI
         uses: arduino/setup-arduino-cli@v2
