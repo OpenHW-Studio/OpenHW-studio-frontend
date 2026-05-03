@@ -6,6 +6,9 @@ on:
       - develop
       - main
 
+permissions:
+  issues: write
+
 jobs:
   verify_pr:
     name: Lint, Test & Dry-Run Deploy
@@ -111,3 +114,50 @@ jobs:
             VITE_EXAMPLES_BASE_URL=https://openhw-studio.fossee.in/examples
             VITE_GOOGLE_CLIENT_ID=test-id
             VITE_ADMIN_EMAILS=test@test.com
+
+      - name: Reference Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR with result
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- frontend-pr-checks -->';
+            const status = '${{ job.status }}';
+            const body = [
+              marker,
+              '## Frontend PR Checks',
+              '',
+              `Status: ${status.toUpperCase()}`,
+              '',
+              'This workflow ran the frontend lint, test, and dry-run deploy checks.',
+              'If it failed, inspect the job logs for the failing step and the platform summary link above.'
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body
+              });
+            }

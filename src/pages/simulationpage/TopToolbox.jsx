@@ -2,12 +2,124 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Btn } from './Btn';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 
+const MenuDropdown = ({ items, visible, isSubmenu = false, theme, setActiveMenu }) => {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+
+  if (!visible) return null;
+
+  return (
+    <div 
+      style={{
+        position: 'absolute',
+        top: isSubmenu ? 0 : '100%',
+        left: isSubmenu ? '100%' : 0,
+        zIndex: 10000,
+        paddingTop: isSubmenu ? 0 : '4px',
+        paddingLeft: isSubmenu ? '4px' : 0,
+      }}
+    >
+      <div 
+        className="canvas-menu bg-[var(--bg2)] border border-[var(--border)] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] min-w-[200px]"
+        style={{
+          background: theme === 'light' ? 'rgba(248, 250, 252, 0.95)' : 'rgba(13, 21, 37, 0.94)',
+          backdropFilter: 'blur(16px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+          border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(30, 45, 71, 0.8)',
+          borderRadius: '12px',
+          boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+          minWidth: '200px',
+          padding: '5px',
+          transformOrigin: 'top left',
+          fontFamily: "'Space Grotesk', sans-serif",
+          willChange: 'transform, opacity, backdrop-filter',
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+        }}
+      >
+        {items.map((item, idx) => (
+          item.type === 'separator' ? (
+            <div key={idx} style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
+          ) : (
+            <div 
+              key={idx} 
+              style={{ position: 'relative' }}
+              onMouseEnter={() => setHoveredIdx(idx)}
+              onMouseLeave={() => setHoveredIdx(null)}
+            >
+              <button
+                className="canvas-menu-item"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  if (!item.submenu) {
+                    item.onClick?.();
+                    setActiveMenu(null);
+                  }
+                }}
+                style={{
+                  background: hoveredIdx === idx ? 'var(--bg3)' : 'none',
+                }}
+              >
+                <span>{item.label}</span>
+                {item.shortcut && <span style={{ color: 'var(--text3)', fontSize: '11px', marginLeft: '12px' }}>{item.shortcut}</span>}
+                {item.submenu && (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: '10px' }}>
+                    <path d="M3 2L6 5L3 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+              {item.submenu && hoveredIdx === idx && (
+                <MenuDropdown items={item.submenu} visible={true} isSubmenu={true} theme={theme} setActiveMenu={setActiveMenu} />
+              )}
+            </div>
+          )
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const MenuButton = ({ label, menuKey, items, activeMenu, setActiveMenu, theme }) => (
+  <div 
+    style={{ position: 'relative', pointerEvents: 'auto' }}
+    onMouseLeave={() => setActiveMenu(null)}
+  >
+    <button
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        setActiveMenu(activeMenu === menuKey ? null : menuKey);
+      }}
+      style={{
+        background: activeMenu === menuKey ? 'rgba(255,255,255,0.05)' : 'none',
+        border: 'none',
+        color: activeMenu === menuKey ? 'var(--text)' : 'var(--text3)',
+        fontSize: '14px',
+        fontWeight: '500',
+        padding: '2px 8px',
+        cursor: 'pointer',
+        borderRadius: '4px',
+        transition: 'background 0.2s, color 0.2s',
+        pointerEvents: 'auto'
+      }}
+      onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = 'var(--text)'; }}
+      onMouseLeave={(e) => {
+        if (activeMenu !== menuKey) {
+          e.target.style.background = 'none';
+          e.target.style.color = 'var(--text3)';
+        }
+      }}
+    >
+      {label}
+    </button>
+    <MenuDropdown items={items} visible={activeMenu === menuKey} theme={theme} setActiveMenu={setActiveMenu} />
+  </div>
+);
+
 function TopToolboxInternal(props) {
   // --- UI CONFIG ---
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], runAutoFixAll, onApplyPlan } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], runAutoFixAll, onApplyPlan, autoWiringEnabled, setAutoWiringEnabled, autoCodingEnabled, setAutoCodingEnabled } = props;
 
   const viewPanelRef = useRef(null);
   const connectPanelRef = useRef(null);
@@ -37,7 +149,7 @@ function TopToolboxInternal(props) {
 
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showViewPanel, showConnectPanel, showProjectsDropdown, activeMenu, setShowViewPanel, setShowProjectsDropdown]);
+  }, [showConnectPanel, showProjectsDropdown, activeMenu, setShowConnectPanel, setShowProjectsDropdown]);
 
   const currentProject = (myProjects || []).find(p => p.id === currentProjectId);
   const projectName = projectNameProp || (currentProject ? (currentProject.name || currentProject.id) : (currentProjectId || 'Untitled Project'));
@@ -49,104 +161,6 @@ function TopToolboxInternal(props) {
       style={{ height: '36px', width: 'auto', flexShrink: 0, cursor: 'pointer', marginLeft: '6px' }}
       onClick={() => navigate('/')}
     />
-  );
-
-  const MenuDropdown = ({ items, visible, isSubmenu = false }) => {
-    const [hoveredIdx, setHoveredIdx] = useState(null);
-
-    if (!visible) return null;
-
-    return (
-      <div 
-        className="canvas-menu bg-[var(--bg2)] border border-[var(--border)] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] min-w-[200px]"
-        onMouseLeave={() => !isSubmenu && setActiveMenu(null)}
-        style={{
-          position: 'absolute',
-          top: isSubmenu ? 0 : 'calc(100% + 4px)',
-          left: isSubmenu ? '100%' : 0,
-          zIndex: 10000,
-          background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-          backdropFilter: 'blur(16px) saturate(1.4)',
-          WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-          border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-          borderRadius: '12px',
-          boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-          minWidth: '200px',
-          padding: '5px',
-          transformOrigin: 'top left',
-          fontFamily: "'Space Grotesk', sans-serif",
-          willChange: 'transform, opacity, backdrop-filter',
-          backfaceVisibility: 'hidden',
-          WebkitBackfaceVisibility: 'hidden',
-        }}
-      >
-        {items.map((item, idx) => (
-          item.type === 'separator' ? (
-            <div key={idx} style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
-          ) : (
-            <div 
-              key={idx} 
-              style={{ position: 'relative' }}
-              onMouseEnter={() => setHoveredIdx(idx)}
-              onMouseLeave={() => setHoveredIdx(null)}
-            >
-              <button
-                className="canvas-menu-item"
-                onClick={() => {
-                  if (!item.submenu) {
-                    item.onClick?.();
-                    setActiveMenu(null);
-                  }
-                }}
-                style={{
-                  background: hoveredIdx === idx ? 'var(--bg3)' : 'none',
-                }}
-              >
-                <span>{item.label}</span>
-                {item.shortcut && <span style={{ color: 'var(--text3)', fontSize: '11px', marginLeft: '12px' }}>{item.shortcut}</span>}
-                {item.submenu && (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: '10px' }}>
-                    <path d="M3 2L6 5L3 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </button>
-              {item.submenu && hoveredIdx === idx && (
-                <MenuDropdown items={item.submenu} visible={true} isSubmenu={true} />
-              )}
-            </div>
-          )
-        ))}
-      </div>
-    );
-  };
-
-  const MenuButton = ({ label, menuKey, items }) => (
-    <div style={{ position: 'relative' }}>
-      <button
-        onClick={() => setActiveMenu(activeMenu === menuKey ? null : menuKey)}
-        style={{
-          background: activeMenu === menuKey ? 'rgba(255,255,255,0.05)' : 'none',
-          border: 'none',
-          color: activeMenu === menuKey ? 'var(--text)' : 'var(--text3)',
-          fontSize: '14px',
-          fontWeight: '500',
-          padding: '2px 8px',
-          cursor: 'pointer',
-          borderRadius: '4px',
-          transition: 'background 0.2s, color 0.2s',
-        }}
-        onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = 'var(--text)'; }}
-        onMouseLeave={(e) => {
-          if (activeMenu !== menuKey) {
-            e.target.style.background = 'none';
-            e.target.style.color = 'var(--text3)';
-          }
-        }}
-      >
-        {label}
-      </button>
-      <MenuDropdown items={items} visible={activeMenu === menuKey} />
-    </div>
   );
 
   const fileMenuItems = [
@@ -162,6 +176,7 @@ function TopToolboxInternal(props) {
   const toolMenuItems = [
     { label: 'Schematic View', onClick: () => { setShowSchematic(true); generateSchematic(); } },
     { label: 'Component List', onClick: () => setShowComponentList(true) },
+    { label: 'Alignment Lab', onClick: () => navigate('/alignment-lab') },
     { type: 'separator' },
     { 
       label: 'Export', 
@@ -208,18 +223,33 @@ function TopToolboxInternal(props) {
     );
   };
 
+  const assistMenuItems = [
+    { 
+      label: `Auto-Wiring: ${autoWiringEnabled ? 'ON' : 'OFF'}`, 
+      onClick: () => setAutoWiringEnabled?.(!autoWiringEnabled),
+    },
+    { 
+      label: `Auto-Coding: ${autoCodingEnabled ? 'ON' : 'OFF'}`, 
+      onClick: () => setAutoCodingEnabled?.(!autoCodingEnabled),
+    }
+  ];
+
   const helpMenuItems = [
     { label: 'Documentation', onClick: () => window.open('https://docs.openhw.org', '_blank') },
     { label: 'Keyboard Shortcuts', onClick: () => { } },
+    { 
+      label: 'Assist', 
+      submenu: assistMenuItems
+    },
     { type: 'separator' },
     { label: 'About OpenHW Studio', onClick: () => { } }
   ];
 
   return (
-    <header className="flex items-center gap-4 px-5 py-3 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
+    <header className="relative z-[1000] flex items-center gap-4 px-5 py-3 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
       <div className="flex items-center gap-4">
         <Logo />
-        <div className="flex flex-col" style={{ width: TITLE_WIDTH, flexShrink: 0, marginTop: '2px' }}>
+        <div className="flex flex-col" style={{ minWidth: TITLE_WIDTH, flexShrink: 0, marginTop: '2px' }}>
           <div style={{ height: '28px', position: 'relative', width: '100%' }}>
             {renamingProjectId === currentProjectId ? (
               <input
@@ -253,10 +283,10 @@ function TopToolboxInternal(props) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1 -ml-2" ref={menuRef}>
-            <MenuButton label="File" menuKey="file" items={fileMenuItems} />
-            <MenuButton label="Tool" menuKey="tool" items={toolMenuItems} />
-            <MenuButton label="Help" menuKey="help" items={helpMenuItems} />
+          <div className="flex items-center gap-1 -ml-2" ref={menuRef} style={{ position: 'relative', zIndex: 1500 }}>
+            <MenuButton label="File" menuKey="file" items={fileMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
+            <MenuButton label="Tool" menuKey="tool" items={toolMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
+            <MenuButton label="Help" menuKey="help" items={helpMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
           </div>
         </div>
       </div>
