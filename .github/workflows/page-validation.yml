@@ -31,8 +31,6 @@ jobs:
     steps:
       - name: Checkout frontend code
         uses: actions/checkout@v4
-        with:
-          path: OpenHW-studio-frontend
 
       - name: Checkout emulator code
         uses: actions/checkout@v4
@@ -46,35 +44,30 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
-        working-directory: OpenHW-studio-frontend
         run: |
           npm ci --no-audit --no-fund
           npm install --no-save @rollup/rollup-linux-x64-gnu@4.60.2
+          npm install --no-save lightningcss-linux-x64-gnu@1.31.1
 
       - name: Build application
-        working-directory: OpenHW-studio-frontend
         run: npm run build
 
       - name: Create test results directory
-        working-directory: OpenHW-studio-frontend
         run: mkdir -p test-results
 
       - name: Install Playwright browsers
-        working-directory: OpenHW-studio-frontend
         run: npx playwright install --with-deps chromium
 
       - name: Run page validation tests
-          working-directory: OpenHW-studio-frontend
         run: |
           # prefer project script if available, otherwise run playwright directly
           npm run test:pages --silent || npx playwright test e2e/page-validation.spec.js --reporter=html,json
         continue-on-error: true
 
       - name: Run console error check tests
-          working-directory: OpenHW-studio-frontend
         run: |
           npm run test:console-errors --silent || npx playwright test e2e/console-error-check.spec.js --reporter=html,json
         continue-on-error: true
@@ -85,8 +78,8 @@ jobs:
         with:
           name: page-validation-results
           path: |
-            OpenHW-studio-frontend/test-results/**
-            OpenHW-studio-frontend/test-results
+            test-results/**
+            test-results
           retention-days: 30
 
       - name: Upload Playwright report
@@ -95,12 +88,11 @@ jobs:
         with:
           name: playwright-report
           path: |
-            OpenHW-studio-frontend/playwright-report/**
-            OpenHW-studio-frontend/playwright-report
+            playwright-report/**
+            playwright-report
           retention-days: 30
 
       - name: Generate test summary
-          working-directory: OpenHW-studio-frontend
         if: always()
         run: |
           if [ -f test-results/page-validation/report.json ]; then
@@ -130,7 +122,7 @@ jobs:
           script: |
             const fs = require('fs');
             const marker = '<!-- page-validation -->';
-            const resultsPath = 'OpenHW-studio-frontend/test-results/page-validation/report.json';
+            const resultsPath = 'test-results/page-validation/report.json';
             
             if (fs.existsSync(resultsPath)) {
               const reports = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
