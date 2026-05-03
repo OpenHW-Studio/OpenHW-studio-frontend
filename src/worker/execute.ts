@@ -25,6 +25,15 @@ import {
 } from './board-profiles.ts';
 import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
 import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic.ts';
+import { Lcd1602I2CLogic } from '@openhw/emulator/src/components/wokwi-lcd1602-i2c/logic.ts';
+import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic.ts';
+import { BufferGateLogic } from '@openhw/emulator/src/components/logic-buffer-gate/logic.ts';
+import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic.ts';
+import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic.ts';
+import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic.ts';
+import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic.ts';
+import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic.ts';
+import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic.ts';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
 import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
@@ -1842,11 +1851,20 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
     'logic-ic-74xx': LogicIC74xxLogic,
+    'wokwi-lcd1602-i2c': Lcd1602I2CLogic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
     'logic-d-flipflop-r': DFlipFlopRLogic,
     'logic-d-flipflop-dsr': DFlipFlopDsrLogic,
     'logic-clock-generator': ClockGeneratorLogic,
+    'logic-and-gate': AndGateLogic,
+    'logic-buffer-gate': BufferGateLogic,
+    'logic-not-gate': NotGateLogic,
+    'logic-or-gate': OrGateLogic,
+    'logic-nor-gate': NorGateLogic,
+    'logic-nand-gate': NandGateLogic,
+    'logic-xor-gate': XorGateLogic,
+    'logic-xnor-gate': XnorGateLogic,
     'wokwi-tm1637-7segment': WokwiTM1637Logic,
     'wokwi-rgb-led': RGBLEDLogic,
     'wokwi-nokia-5110': Nokia5110Logic,
@@ -1892,10 +1910,19 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
     'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
+    'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
     'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-d-flipflop-dsr': [{ id: 'D' }, { id: 'CLK' }, { id: 'S' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-and-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-buffer-gate': [{ id: 'IN' }, { id: 'OUT' }],
+    'logic-not-gate': [{ id: 'IN' }, { id: 'OUT' }],
+    'logic-or-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-nor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-nand-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-xor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-xnor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
     'logic-clock-generator': [{ id: 'OUT' }],
     'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
