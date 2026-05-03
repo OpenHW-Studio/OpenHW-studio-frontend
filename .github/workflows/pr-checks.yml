@@ -111,3 +111,9 @@ jobs:
             VITE_EXAMPLES_BASE_URL=https://openhw-studio.fossee.in/examples
             VITE_GOOGLE_CLIENT_ID=test-id
             VITE_ADMIN_EMAILS=test@test.com
+
+      - name: Reference Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"

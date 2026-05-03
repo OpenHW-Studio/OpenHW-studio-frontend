@@ -1,4 +1,5 @@
 import { TopToolbox } from './TopToolbox';
+import { handleAutoSetup } from './utils/autoSetup';
 import { Btn } from './Btn';
 import CodeEditorView from './views/CodeEditorView';
 import BlockEditorView from './views/BlockEditorView';
@@ -32,7 +33,6 @@ import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequ
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
-import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 
 // ── Lazy loaders — heavy libs loaded on first use, NOT on page paint ──────────
 // @babel/standalone is ~800KB — loading it eagerly was causing the 3.73s LCP.
@@ -1427,7 +1427,7 @@ function getPinCategory(pId, pDesc, compType) {
 
 
 // ─── Memoized Wire Component ────────────────────────────────────────────────
-const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme }) => {
+const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, onTouchStartSegment, wirepointsEnabled, theme }) => {
   const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints), [p1, e1, e2, p2, wire.waypoints]);
 
   return (
@@ -1451,6 +1451,7 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
             style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
             title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
             onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr)}
+            onTouchStart={ev => onTouchStartSegment(ev, wire, i, isHoriz, arr)}
             onClick={ev => ev.stopPropagation()}
             onDoubleClick={ev => {
               ev.stopPropagation(); ev.preventDefault();
@@ -1465,7 +1466,7 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
 });
 
 // ─── Memoized Component Wrapper ──────────────────────────────────────────────
-const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
+const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onTouchStart, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
   const rad = ((comp.rotation || 0) * Math.PI) / 180;
   const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
   
@@ -1502,6 +1503,7 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
             zIndex: 0,
           }}
           onMouseDown={onMouseDown}
+          onTouchStart={onTouchStart}
           onClick={onClick}
           onDoubleClick={e => e.stopPropagation()}
         />
@@ -1667,6 +1669,8 @@ export default function SimulatorPage({ gamificationMode = false }) {
   const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection
   const [previewBanner, setPreviewBanner] = useState(null); // { id, label } — set when opened from admin "Test in Simulator"
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false)
+  const [autoWiringEnabled, setAutoWiringEnabled] = useState(true);
+  const [autoCodingEnabled, setAutoCodingEnabled] = useState(true);
   const [components, setComponents] = useState([])
   const [wires, setWires] = useState([])
   const [paletteSearch, setPaletteSearch] = useState('')
@@ -4049,48 +4053,71 @@ useEffect(() => {
     setSelected(null)
   }
 
+  // ── Component addition with auto-setup ─────────────────────────────────────
+  const addComponentInternal = useCallback((item, x, y) => {
+    if (liveEditingDisabled) return;
+    saveHistory();
+    
+    const usedIds = new Set(components.map(c => String(c.id || '')));
+    const id = allocateComponentId(item.type, usedIds);
+    const newCompBase = {
+      id,
+      type: item.type, label: item.label,
+      x: Math.max(8, x), y: Math.max(8, y),
+      w: item.w || 60, h: item.h || 60,
+      attrs: item.attrs || {},
+    };
+
+    const catalogItem = COMPONENT_REGISTRY[item.type];
+    if (catalogItem && (catalogItem.autowiring || catalogItem.autocoding)) {
+      const boardComp = components.find(c => isProgrammableBoardType(c.type));
+      const boardId = boardComp ? boardComp.id : 'uno';
+
+      const result = handleAutoSetup({
+        newComp: newCompBase,
+        components,
+        wires,
+        code,
+        catalogItem,
+        pinDefs: LOCAL_PIN_DEFS,
+        boardId,
+        options: { autoWiring: autoWiringEnabled, autoCoding: autoCodingEnabled }
+      });
+
+      // result.components might already contain the new component (placed on breadboard)
+      // or we might need to add it if handleAutoSetup just returned a modified version of it.
+      const finalComps = result.components.some(c => c.id === id) 
+        ? result.components 
+        : [...result.components, result.component];
+
+      setComponents(finalComps);
+      setWires(result.wires);
+      setCode(result.code);
+    } else {
+      setComponents(prev => [...prev, newCompBase]);
+    }
+  }, [liveEditingDisabled, saveHistory, components, wires, code, autoWiringEnabled, autoCodingEnabled]);
+
   // ── Canvas drop ────────────────────────────────────────────────────────────
   const onCanvasDrop = useCallback((e) => {
     if (liveEditingDisabled) return;
     e.preventDefault()
     const item = dragPayload.current
     if (!item) return
-    saveHistory();
     const rect = canvasRef.current.getBoundingClientRect()
     const x = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current - (item.w || 60) / 2
     const y = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current - (item.h || 60) / 2
-    setComponents(prev => {
-      const usedIds = new Set(prev.map((comp) => String(comp.id || '')));
-      const id = allocateComponentId(item.type, usedIds);
-      return [...prev, {
-        id,
-        type: item.type, label: item.label,
-        x: Math.max(8, x), y: Math.max(8, y),
-        w: item.w || 60, h: item.h || 60,
-        attrs: item.attrs || {},
-      }];
-    })
+    addComponentInternal(item, x, y);
     dragPayload.current = null
-  }, [liveEditingDisabled, saveHistory])
+  }, [liveEditingDisabled, addComponentInternal])
 
   // ── Quick-add: place component at explicit canvas coordinates ──────────────
   const addComponentAt = useCallback((item, canvasX, canvasY) => {
     if (liveEditingDisabled) return;
-    saveHistory()
     const x = canvasX - (item.w || 60) / 2
     const y = canvasY - (item.h || 60) / 2
-    setComponents(prev => {
-      const usedIds = new Set(prev.map((comp) => String(comp.id || '')));
-      const id = allocateComponentId(item.type, usedIds);
-      return [...prev, {
-        id,
-        type: item.type, label: item.label,
-        x: Math.max(8, x), y: Math.max(8, y),
-        w: item.w || 60, h: item.h || 60,
-        attrs: item.attrs || {},
-      }];
-    })
-  }, [liveEditingDisabled, saveHistory])
+    addComponentInternal(item, x, y);
+  }, [liveEditingDisabled, addComponentInternal])
 
   // ── Palette click to add (adds to canvas center) ────────────────────────────
   const addComponentAtCenter = useCallback((item) => {
@@ -4109,24 +4136,24 @@ useEffect(() => {
   const initialTouchCenterCanvasRef = useRef(null);
 
   const onTouchStart = useCallback((e) => {
-    if (isCanvasLockedRef.current || e.touches.length !== 2) {
-      initialTouchDistanceRef.current = null;
-      return;
+    if (isCanvasLockedRef.current) return;
+    
+    if (e.touches.length === 2) {
+      // Pinch to zoom
+      const t1 = e.touches[0], t2 = e.touches[1];
+      const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      initialTouchDistanceRef.current = dist;
+      initialCanvasZoomRef.current = canvasZoomRef.current;
+      
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mx = (t1.clientX + t2.clientX) / 2 - rect.left;
+      const my = (t1.clientY + t2.clientY) / 2 - rect.top;
+      
+      initialTouchCenterCanvasRef.current = {
+        x: (mx - canvasOffsetRef.current.x) / canvasZoomRef.current,
+        y: (my - canvasOffsetRef.current.y) / canvasZoomRef.current
+      };
     }
-    const t1 = e.touches[0], t2 = e.touches[1];
-    const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-    initialTouchDistanceRef.current = dist;
-    initialCanvasZoomRef.current = canvasZoomRef.current;
-    
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mx = (t1.clientX + t2.clientX) / 2 - rect.left;
-    const my = (t1.clientY + t2.clientY) / 2 - rect.top;
-    
-    // Position on canvas relative to 0,0
-    initialTouchCenterCanvasRef.current = {
-      x: (mx - canvasOffsetRef.current.x) / canvasZoomRef.current,
-      y: (my - canvasOffsetRef.current.y) / canvasZoomRef.current
-    };
   }, []);
 
   const onTouchMove = useCallback((e) => {
@@ -4205,6 +4232,7 @@ useEffect(() => {
 
   // ── Move and Select component ──────────────────────────────────────────────
   const onCompMouseDown = useCallback((e, id) => {
+    if (e.touches && e.cancelable) e.preventDefault();
     const event = (e.touches && e.touches.length > 0) ? e.touches[0] : e;
     e.stopPropagation();
     if (isRunning || liveEditingDisabled) return;
@@ -4257,6 +4285,9 @@ useEffect(() => {
     // store it in a ref, then schedule one rAF callback to do all state updates.
     // This caps React renders at 60fps regardless of mouse polling rate.
     const onMove = (e) => {
+      if (e.cancelable && (movingComp.current || segDragRef.current || isPanningRef.current || wireStart)) {
+        e.preventDefault();
+      }
       const event = (e.touches && e.touches.length > 0) ? e.touches[0] : e;
       let compUpdate = null;
       let wireUpdate = null;
@@ -8138,7 +8169,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} shareUrl={shareUrl} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlanMobile} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} shareUrl={shareUrl} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlanMobile} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -8987,6 +9018,17 @@ useEffect(() => {
                       segDragRef.current = dragData;
                       setSegDrag(dragData);
                     }}
+                    onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
+                      if (ev.cancelable) ev.preventDefault();
+                      if (selected !== wire.id) { setSelected(wire.id); return; }
+                      const t = ev.touches[0];
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const mx = (t.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                      const my = (t.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                      segDragRef.current = dragData;
+                      setSegDrag(dragData);
+                    }}
                   />
                 );
               })}
@@ -9026,6 +9068,17 @@ useEffect(() => {
                       const rect = canvasRef.current.getBoundingClientRect();
                       const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
                       const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                      segDragRef.current = dragData;
+                      setSegDrag(dragData);
+                    }}
+                    onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
+                      if (ev.cancelable) ev.preventDefault();
+                      if (selected !== wire.id) { setSelected(wire.id); return; }
+                      const t = ev.touches[0];
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const mx = (t.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                      const my = (t.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
                       const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
                       segDragRef.current = dragData;
                       setSegDrag(dragData);

@@ -51,6 +51,12 @@ jobs:
       - name: Run Vitest component tests
         run: npx vitest run --environment jsdom src/components/**/*.test.jsx
 
+      - name: Reference Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"
+
   e2e-tests:
     runs-on: ubuntu-latest
     defaults:
@@ -92,4 +98,10 @@ jobs:
 
       - name: Run Playwright E2E tests
         run: npx playwright test e2e/autofix-preview.spec.js
+
+      - name: Reference Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"
 
