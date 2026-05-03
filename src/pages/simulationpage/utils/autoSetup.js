@@ -1,11 +1,11 @@
 /**
  * autoSetup.js
  * Utility to handle automatic component placement, wiring, and coding.
- * Improved with breadboard snapping and existing breadboard reuse.
+ * Collision-aware row allocation and flexible pin-to-hole snapping.
  */
 
 // Helper for rotation math
-function getRotatedPoint(x, y, rotation, originX, originY) {
+export function getRotatedPoint(x, y, rotation, originX, originY) {
   if (!rotation) return { x, y };
   const rad = (rotation * Math.PI) / 180;
   const dx = x - originX;
@@ -16,12 +16,34 @@ function getRotatedPoint(x, y, rotation, originX, originY) {
   };
 }
 
+// User-provided snapping logic
+export function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
+  const snapRadius = 15;
+  let best = null;
+  let minDist = Infinity;
+  const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+  
+  for (const bb of breadboards) {
+    const pins = pinDefs[bb.type] || [];
+    const bbCenterX = bb.x + (bb.w || 0) / 2;
+    const bbCenterY = bb.y + (bb.h || 0) / 2;
+    const bbRotation = bb.rotation || 0;
+    for (const pin of pins) {
+      const pinWorld = getRotatedPoint(bb.x + pin.x, bb.y + pin.y, bbRotation, bbCenterX, bbCenterY);
+      const dist = Math.hypot(pinWorld.x - worldX, pinWorld.y - worldY);
+      if (dist < snapRadius && dist < minDist) {
+        minDist = dist;
+        best = { bbId: bb.id, holeId: pin.id, x: pinWorld.x, y: pinWorld.y, pinX: pin.x, pinY: pin.y };
+      }
+    }
+  }
+  return best;
+}
+
 // Helper to find or add a breadboard
 export function findOrAddBreadboard(components, canvasCenter) {
-  // Support all common breadboard types
   const bbTypes = ['wokwi-breadboard', 'wokwi-breadboard-half', 'wokwi-breadboard-mini'];
   let bb = components.find(c => bbTypes.includes(c.type));
-  
   if (bb) return { components, breadboard: bb, added: false };
 
   const newBb = {
@@ -35,14 +57,10 @@ export function findOrAddBreadboard(components, canvasCenter) {
     attrs: {}
   };
 
-  return { 
-    components: [...components, newBb], 
-    breadboard: newBb, 
-    added: true 
-  };
+  return { components: [...components, newBb], breadboard: newBb, added: true };
 }
 
-// Helper to find alternative pins if the target board pin is occupied
+// Helper to find alternative board pins
 export function findAlternativePin(targetPin, components, wires, pinDefs) {
   const [boardId, pinId] = targetPin.split(':');
   const board = components.find(c => c.id === boardId);
@@ -55,61 +73,57 @@ export function findAlternativePin(targetPin, components, wires, pinDefs) {
   const targetPinDef = pins.find(p => p.id === pinId);
   if (!targetPinDef) return targetPin;
 
-  // Basic heuristic: find next available numeric pin of same type
   const pinNum = parseInt(pinId);
   if (isNaN(pinNum)) return targetPin;
 
-  for (let i = 1; i < 8; i++) {
+  for (let i = 1; i < 12; i++) {
     const nextPin = String(pinNum - i); 
     if (nextPin >= 0 && pins.some(p => p.id === nextPin) && !isOccupied(nextPin)) {
       return `${boardId}:${nextPin}`;
     }
   }
-
   return targetPin;
 }
 
-// Helper to find a free row on the breadboard
+// Helper to find a free row with PADDING to avoid messy overlaps
 function findFreeBreadboardRow(bb, components, wires, pinDefs) {
+  const ROW_PADDING = 3; // Keep at least 3 rows distance between components
   const pins = pinDefs[bb.type] || [];
-  // Extract unique numeric rows (1, 2, 3...)
   const rows = [...new Set(pins.map(p => {
     const m = p.id.match(/^(\d+)[a-j]$/);
     return m ? parseInt(m[1]) : null;
   }).filter(Boolean))].sort((a, b) => a - b);
 
-  // Check occupancy for each row
   for (const row of rows) {
-    const rowHoles = ['a','b','c','d','e','f','g','h','i','j'].map(c => `${row}${c}`);
-    
-    const isRowOccupiedByWire = rowHoles.some(hId => {
-      const fullHoleId = `${bb.id}:${hId}`;
-      return wires.some(w => w.from === fullHoleId || w.to === fullHoleId);
+    // Check a range of rows around this one
+    const rowRange = [];
+    for (let i = -ROW_PADDING; i <= ROW_PADDING; i++) rowRange.push(row + i);
+
+    const isRangeOccupied = rowRange.some(r => {
+      const rowHoles = ['a','b','c','d','e','f','g','h','i','j'].map(c => `${r}${c}`);
+      return rowHoles.some(hId => {
+        const fullHoleId = `${bb.id}:${hId}`;
+        return wires.some(w => w.from === fullHoleId || w.to === fullHoleId);
+      });
     });
 
-    // Check if any component is already placed near this row
     const rowPin = pins.find(p => p.id === `${row}a`);
-    const isRowOccupiedByComp = rowPin && components.some(c => {
+    const isRangeOccupiedByComp = rowPin && components.some(c => {
       if (c.id === bb.id || c.type.startsWith('wokwi-breadboard')) return false;
-      const rowX = bb.x + rowPin.x;
-      const rowY = bb.y + rowPin.y;
-      // Rough collision box for component
-      return Math.abs(c.y - rowY) < 15 && Math.abs(c.x - rowX) < 30;
+      // Buffer check
+      return Math.abs(c.y - (bb.y + rowPin.y)) < (ROW_PADDING * 15) && Math.abs(c.x - (bb.x + rowPin.x)) < 50;
     });
 
-    if (!isRowOccupiedByWire && !isRowOccupiedByComp) return row;
+    if (!isRangeOccupied && !isRangeOccupiedByComp) return row;
   }
-  
-  return rows[Math.floor(rows.length / 2)] || 15; // Fallback
+  return 15;
 }
 
 // Helper to merge code snippets
 export function mergeCodeSnippet(currentCode, snippet) {
   if (!snippet) return currentCode;
   if (!currentCode || currentCode.trim() === '') return `void setup() {\n  ${snippet.setup || ''}\n}\n\nvoid loop() {\n  ${snippet.loop || ''}\n}`;
-
   let newCode = currentCode;
-
   if (snippet.setup) {
     if (newCode.includes('void setup() {')) {
       newCode = newCode.replace('void setup() {', `void setup() {\n  ${snippet.setup}`);
@@ -117,7 +131,6 @@ export function mergeCodeSnippet(currentCode, snippet) {
       newCode = `void setup() {\n  ${snippet.setup}\n}\n\n` + newCode;
     }
   }
-
   if (snippet.loop) {
     if (newCode.includes('void loop() {')) {
       newCode = newCode.replace('void loop() {', `void loop() {\n  ${snippet.loop}`);
@@ -125,7 +138,6 @@ export function mergeCodeSnippet(currentCode, snippet) {
       newCode += `\n\nvoid loop() {\n  ${snippet.loop}\n}`;
     }
   }
-
   return newCode;
 }
 
@@ -153,125 +165,101 @@ export function handleAutoSetup({
 
   // 1. Auto-Wiring Logic
   if (options.autoWiring && autowiring && autowiring.connections) {
-    // Ensure breadboard exists
     const bbRes = findOrAddBreadboard(updatedComponents, { x: newComp.x, y: newComp.y });
     updatedComponents = bbRes.components;
     const bb = bbRes.breadboard;
     const bbPins = pinDefs[bb.type] || [];
 
-    // Find a free row
+    // Ensure board power rails are connected
+    const hasPowerWires = updatedWires.some(w => (w.from.startsWith(boardId) || w.to.startsWith(boardId)) && (w.from.startsWith(bb.id) || w.to.startsWith(bb.id)) && w.id.includes('bb_pwr'));
+    if (boardId && !hasPowerWires) {
+      const gndPin = pinDefs[boardId.split(':')[0]]?.find(p => p.id.toLowerCase().includes('gnd'))?.id || 'GND';
+      const vccPin = pinDefs[boardId.split(':')[0]]?.find(p => p.id === '5V' || p.id === '3V3' || p.id === 'VCC')?.id || '5V';
+
+      updatedWires.push({ id: `w_auto_bb_pwr_gnd_${Date.now()}`, from: `${boardId}:${gndPin}`, to: `${bb.id}:top_gnd_1`, color: 'black' });
+      updatedWires.push({ id: `w_auto_bb_pwr_vcc_${Date.now()}`, from: `${boardId}:${vccPin}`, to: `${bb.id}:top_vcc_1`, color: 'red' });
+    }
+
     const row = findFreeBreadboardRow(bb, updatedComponents, updatedWires, pinDefs);
     
-    // Snap finalComp to breadboard
-    // Most components like LEDs align to specific columns (e.g. i and j)
-    const anchorHoleId = `${row}i`;
+    // POSITIONING & SNAPPING
+    // 1. Snap anchor pin to ideal hole
     const anchorPinId = finalComp.attrs?.breadboard?.anchorPin || pins[0]?.id;
     const anchorPin = pins.find(p => p.id === anchorPinId) || { x: 0, y: 0 };
+    const anchorHoleId = `${row}i`;
     const bbHole = bbPins.find(p => p.id === anchorHoleId);
 
     if (bbHole) {
-      // Position calculation
       const bbCenterX = bb.x + (bb.w || 0) / 2;
       const bbCenterY = bb.y + (bb.h || 0) / 2;
-      const bbRotation = bb.rotation || 0;
-      
-      const holeWorld = getRotatedPoint(bb.x + bbHole.x, bb.y + bbHole.y, bbRotation, bbCenterX, bbCenterY);
-      
+      const holeWorld = getRotatedPoint(bb.x + bbHole.x, bb.y + bbHole.y, bb.rotation || 0, bbCenterX, bbCenterY);
       finalComp.x = holeWorld.x - anchorPin.x;
       finalComp.y = holeWorld.y - anchorPin.y;
     }
 
-    // Process connections
+    // MAP EACH PIN TO NEAREST HOLE (Handles non-standard pitches)
+    const pinToHoleMap = {};
+    pins.forEach(p => {
+      const pCenterX = finalComp.x + (finalComp.w || 0) / 2;
+      const pCenterY = finalComp.y + (finalComp.h || 0) / 2;
+      const pWorld = getRotatedPoint(finalComp.x + p.x, finalComp.y + p.y, finalComp.rotation || 0, pCenterX, pCenterY);
+      const nearest = findNearestBreadboardHole(pWorld.x, pWorld.y, [bb], pinDefs);
+      if (nearest) {
+        pinToHoleMap[p.id] = nearest.holeId;
+        // Always connect Comp Pin -> Hole
+        updatedWires.push({
+          id: `w_socket_${finalComp.id}_${p.id}_${Date.now()}`,
+          from: `${finalComp.id}:${p.id}`,
+          to: `${bb.id}:${nearest.holeId}`,
+          color: 'green',
+          isSocket: true
+        });
+      }
+    });
+
+    // PROCESS CONNECTIONS (Rail-centric & Via)
     autowiring.connections.forEach((conn, idx) => {
       let target = conn.to;
-      
-      // Board pin resolution
+      const breadboardHole = `${bb.id}:${pinToHoleMap[conn.from] || (idx === 0 ? row+'i' : row+'j')}`;
+
       if (target.startsWith('arduino:')) {
         target = target.replace('arduino:', `${boardId}:`);
+        const [bId, pId] = target.split(':');
+        const bPins = pinDefs[updatedComponents.find(c => c.id === bId)?.type] || [];
+        const match = bPins.find(p => p.id.toLowerCase().startsWith(pId.toLowerCase()));
+        if (match) target = `${bId}:${match.id}`;
         target = findAlternativePin(target, updatedComponents, updatedWires, pinDefs);
       }
 
-      // Component pin to breadboard hole mapping
-      // If we are connecting a component pin to a board pin, we usually go through the breadboard row
-      // LED A (10, 40) -> Row 15, Col i
-      // LED K (25, 40) -> Row 15, Col j (since 15 units apart)
-      
-      const pinIndex = pins.findIndex(p => p.id === conn.from);
-      const holeCol = pinIndex === 0 ? 'i' : 'j'; // Simple mapping for 2-pin components
-      const holeId = `${row}${holeCol}`;
-      const breadboardHole = `${bb.id}:${holeId}`;
+      if (target.toLowerCase().includes('gnd')) target = `${bb.id}:top_gnd_${row}`;
+      else if (target.toLowerCase().includes('5v') || target.toLowerCase().includes('3v3') || target.toLowerCase().includes('vcc')) target = `${bb.id}:top_vcc_${row}`;
 
       if (conn.via) {
-        // Spawn intermediate component (e.g. Resistor)
         const viaId = `${conn.via}_${Date.now()}_${idx}`;
-        const viaCatalog = catalogItem; // Fallback
-        
-        // Find Resistor x,y (place it across the gutter or in the same row)
-        // For Resistor: Row 15, Col i -> Row 15, Col f (jumps the gutter or moves columns)
+        const viaComp = {
+          id: viaId, type: conn.via, label: 'Resistor',
+          x: finalComp.x + 60, y: finalComp.y, w: 60, h: 12, attrs: conn.attrs || {}
+        };
         const viaTargetHoleId = `${row}f`;
         const viaHole = bbPins.find(p => p.id === viaTargetHoleId);
-        
-        const viaComp = {
-          id: viaId,
-          type: conn.via,
-          label: 'Resistor',
-          x: holeId === `${row}i` ? finalComp.x + 40 : finalComp.x - 40,
-          y: finalComp.y,
-          w: 60,
-          h: 12,
-          attrs: conn.attrs || {}
-        };
-
         if (viaHole) {
-           const bbCenterX = bb.x + (bb.w || 0) / 2;
-           const bbCenterY = bb.y + (bb.h || 0) / 2;
-           const bbRotation = bb.rotation || 0;
-           const vHoleWorld = getRotatedPoint(bb.x + viaHole.x, bb.y + viaHole.y, bbRotation, bbCenterX, bbCenterY);
-           viaComp.x = vHoleWorld.x - 30; // Centered
-           viaComp.y = vHoleWorld.y - 6;
+           const vWorld = getRotatedPoint(bb.x + viaHole.x, bb.y + viaHole.y, bb.rotation || 0, bb.x + bb.w/2, bb.y + bb.h/2);
+           viaComp.x = vWorld.x - 30;
+           viaComp.y = vWorld.y - 6;
         }
-
         updatedComponents.push(viaComp);
-
-        // Wire 1: Breadboard hole of Comp pin -> Resistor Pin 1
-        updatedWires.push({
-          id: `w_auto_${Date.now()}_${idx}_a`,
-          from: breadboardHole,
-          to: `${viaId}:p1`,
-          color: 'red'
-        });
-
-        // Wire 2: Resistor Pin 2 -> Target (e.g. Arduino Pin 13)
-        updatedWires.push({
-          id: `w_auto_${Date.now()}_${idx}_b`,
-          from: `${viaId}:p2`,
-          to: target,
-          color: 'blue'
-        });
+        updatedWires.push({ id: `w_via_in_${Date.now()}_${idx}`, from: breadboardHole, to: `${viaId}:p1`, color: 'red', isSocket: true });
+        updatedWires.push({ id: `w_via_out_${Date.now()}_${idx}`, from: `${viaId}:p2`, to: target, color: target.includes('gnd') ? 'black' : 'blue', isSocket: target.includes(bb.id + ':') });
       } else {
-        // Direct wire from breadboard hole to target
-        updatedWires.push({
-          id: `w_auto_${Date.now()}_${idx}`,
-          from: breadboardHole,
-          to: target,
-          color: target.includes('GND') ? 'black' : 'green'
-        });
+        updatedWires.push({ id: `w_direct_${Date.now()}_${idx}`, from: breadboardHole, to: target, color: target.includes('gnd') ? 'black' : 'green', isSocket: target.includes(bb.id + ':') });
       }
     });
   }
 
-  // 2. Auto-Coding Logic
   if (options.autoCoding && autocoding) {
     const snippet = autocoding.arduino;
-    if (snippet) {
-      updatedCode = mergeCodeSnippet(updatedCode, snippet);
-    }
+    if (snippet) updatedCode = mergeCodeSnippet(updatedCode, snippet);
   }
 
-  return {
-    component: finalComp,
-    components: updatedComponents,
-    wires: updatedWires,
-    code: updatedCode
-  };
+  return { component: finalComp, components: updatedComponents, wires: updatedWires, code: updatedCode };
 }
