@@ -51,8 +51,7 @@ jobs:
           NPM_CONFIG_OPTIONAL: "true"
         run: |
           npm ci --no-audit --no-fund --include=optional
-          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2
-          npm install --no-save --include=optional lightningcss-linux-x64-gnu@1.31.1
+          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1
           node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); console.log('Native binaries OK')"
 
       - name: Build application
