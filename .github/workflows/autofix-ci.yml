@@ -46,3 +46,9 @@ jobs:
 
       - name: Run smoke test
         run: npm run validate:smoke
+
+      - name: Reference Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "See unified emulator+backend validation: [platform-validation-summary.yml](${{ github.server_url }}/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml)" >> "$GITHUB_STEP_SUMMARY"
