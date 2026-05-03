@@ -1,0 +1,48 @@
+name: Autofix CI
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - 'src/circuit-validation/**'
+      - '.github/workflows/autofix-ci.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'src/circuit-validation/**'
+      - '.github/workflows/autofix-ci.yml'
+      - 'package.json'
+      - 'package-lock.json'
+
+jobs:
+  smoke-and-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: openhw-studio-emulator
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: openhw-studio-emulator/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit and integration tests
+        run: |
+          node --test src/circuit-validation/fix-patterns-catalog.test.js \
+            src/circuit-validation/autofix/circuit-fix-validator.test.js \
+            src/circuit-validation/integration-e2e.test.js \
+            src/circuit-validation/webui-e2e.test.js
+
+      - name: Run smoke test
+        run: npm run validate:smoke
