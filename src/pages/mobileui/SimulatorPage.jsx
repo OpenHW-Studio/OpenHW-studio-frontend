@@ -47,6 +47,23 @@ const getHtml2canvas = async () => {
   if (!_h2cMod) _h2cMod = (await import('html2canvas')).default;
   return _h2cMod;
 };
+let _exportLogoPromise = null;
+const _exportShadowSheetCache = new WeakMap();
+// In-memory cache for export results during a session. Keyed by render signature.
+const _exportPngResultCache = new Map();
+
+function getSerializedShadowSheet(sheet) {
+  if (!sheet) return '';
+  if (_exportShadowSheetCache.has(sheet)) return _exportShadowSheetCache.get(sheet);
+  let cssText = '';
+  try {
+    cssText = Array.from(sheet.cssRules || []).map(rule => rule.cssText).join('\n');
+  } catch (error) {
+    cssText = '';
+  }
+  _exportShadowSheetCache.set(sheet, cssText);
+  return cssText;
+}
 
 import * as EmulatorComponents from "@openhw/emulator";
 const { 
@@ -1553,7 +1570,7 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
   );
 });
 
-export default function SimulatorPage({ gamificationMode = false }) {
+export function MobileSimulatorPage({ gamificationMode = false }) {
   const { isAuthenticated, isAdminAuthenticated, user, adminUser, token, logout, loading: authLoading } = useAuth()
   const activeUser = user || adminUser;
   const isAnyAuthenticated = isAuthenticated || isAdminAuthenticated;
@@ -7320,9 +7337,17 @@ useEffect(() => {
     if (isExporting) return;
     setIsExporting(true);
     try {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const canvasEl = canvasRef.current;
-      const SCALE = 2;
+      const SCALE = 2.5;
       const PAD = 60; // padding around content in canvas-space pixels
+      const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
+      const pinPosCache = new Map();
+      const getCachedPinPos = (compId, pinId) => {
+        const key = `${compId}:${pinId}`;
+        if (!pinPosCache.has(key)) pinPosCache.set(key, getPinPos(compId, pinId));
+        return pinPosCache.get(key);
+      };
 
       // 1. Calculate bounding box of all components + wire waypoints (in canvas-space coords)
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -7340,7 +7365,7 @@ useEffect(() => {
         maxY = Math.max(maxY, c.y + b.y + b.h + 20);
         // pins (they're positioned relative to component and can extend beyond its box)
         (PIN_DEFS[c.type] || []).forEach(pin => {
-          const pp = getPinPos(c.id, pin.id);
+          const pp = getCachedPinPos(c.id, pin.id);
           if (pp) {
             minX = Math.min(minX, pp.x - 4);
             minY = Math.min(minY, pp.y - 4);
@@ -7360,8 +7385,8 @@ useEffect(() => {
         // wire endpoints (from/to pin positions)
         const [fComp, fPin] = (w.from || '').split(':');
         const [tComp, tPin] = (w.to || '').split(':');
-        const fp = getPinPos(fComp, fPin);
-        const tp = getPinPos(tComp, tPin);
+        const fp = getCachedPinPos(fComp, fPin);
+        const tp = getCachedPinPos(tComp, tPin);
         if (fp) { minX = Math.min(minX, fp.x); minY = Math.min(minY, fp.y); maxX = Math.max(maxX, fp.x); maxY = Math.max(maxY, fp.y); }
         if (tp) { minX = Math.min(minX, tp.x); minY = Math.min(minY, tp.y); maxX = Math.max(maxX, tp.x); maxY = Math.max(maxY, tp.y); }
       });
@@ -7371,7 +7396,42 @@ useEffect(() => {
       const bboxW = maxX - minX;
       const bboxH = maxY - minY;
 
+      // Build minimal signature payload for export cache
+      const exportSignaturePayload = {
+        board,
+        components,
+        wires,
+        code,
+        blocklyXml,
+        blocklyGeneratedCode,
+        useBlocklyCode: !!useBlocklyCode,
+        projectFiles: (projectFiles || []).map(f => ({ id: f.id, content: typeof f.content === 'string' ? f.content : String(f.content || '') })),
+        openCodeTabs: openCodeTabs || [],
+        activeCodeFileId: activeCodeFileId || '',
+        options: { SCALE, PAD },
+      };
+      const signature = computeRenderSyncHash(exportSignaturePayload);
+
+      const cached = _exportPngResultCache.get(signature);
+      if (cached && (Date.now() - cached.createdAt) < CACHE_TTL) {
+        try {
+          const finalBlob = new Blob([cached.bytes], { type: 'image/png' });
+          const url = URL.createObjectURL(finalBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = cached.filename || `circuit_${board}.png`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+          setIsExporting(false);
+          return;
+        } catch (err) {
+          console.warn('[PNG Export] mobile cache failed, regenerating', err);
+        }
+      }
+
       // 2. Hide overlays and temporarily adjust canvas + zoom wrapper for full-content capture
+      const t_start = performance.now();
+      console.log('[PNG Export mobile] signature:', signature);
       const overlays = canvasEl.querySelectorAll('[data-export-ignore="true"]');
       overlays.forEach(el => { el.style.visibility = 'hidden'; });
       // Find the zoom wrapper (first absolutely-positioned child)
@@ -7418,6 +7478,7 @@ useEffect(() => {
       let circuitCanvas;
       try {
         const html2canvas = await getHtml2canvas();
+        const t_html2c_start = performance.now();
         circuitCanvas = await html2canvas(canvasEl, {
           backgroundColor: '#070b14',
           scale: SCALE,
@@ -7434,12 +7495,35 @@ useEffect(() => {
             shadowHostEls.forEach((liveEl, idx) => {
               const cloned = clonedEl.querySelector(`[data-h2c-shadow="${idx}"]`);
               if (!cloned || !liveEl.shadowRoot) return;
-              const wrapper = _clonedDoc.createElement('div');
+              const wrapper = _clonedDoc.createElement((liveEl.tagName || 'div').toLowerCase());
+              // Preserve the original element identity and inline styles so board-specific CSS keeps applying.
+              Array.from(cloned.attributes).forEach(attr => {
+                if (attr.name === 'data-h2c-shadow') return;
+                wrapper.setAttribute(attr.name, attr.value);
+              });
               // Preserve inline styles (transform, size, etc.) from the original element
               Array.from(cloned.style).forEach(p =>
                 wrapper.style.setProperty(p, cloned.style.getPropertyValue(p))
               );
+              try {
+                const comp = window.getComputedStyle(liveEl);
+                if (comp.transform) wrapper.style.transform = comp.transform;
+                if (comp.transformOrigin) wrapper.style.transformOrigin = comp.transformOrigin;
+                if (comp.width) wrapper.style.width = comp.width;
+                if (comp.height) wrapper.style.height = comp.height;
+                if (comp.display) wrapper.style.display = comp.display;
+                if (comp.position) wrapper.style.position = comp.position;
+              } catch (e) {
+                // ignore getComputedStyle failures in some environments
+              }
               // Deep-copy shadow root children into the wrapper so html2canvas sees them
+              if (liveEl.shadowRoot.adoptedStyleSheets?.length) {
+                liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
+                  const styleEl = _clonedDoc.createElement('style');
+                  styleEl.textContent = getSerializedShadowSheet(sheet);
+                  wrapper.appendChild(styleEl);
+                });
+              }
               liveEl.shadowRoot.childNodes.forEach(node =>
                 wrapper.appendChild(_clonedDoc.importNode(node, true))
               );
@@ -7447,6 +7531,8 @@ useEffect(() => {
             });
           },
         });
+        const t_html2c_end = performance.now();
+        console.log('[PNG Export mobile] html2canvas ms:', Math.round(t_html2c_end - t_html2c_start));
       } finally {
         // Restore all original styles
         canvasEl.style.overflow = origStyles.canvasOverflow;
@@ -7464,6 +7550,7 @@ useEffect(() => {
         shadowHostEls.forEach(el => { delete el.dataset.h2cShadow; });
       }
 
+      const t_compose_start = performance.now();
       const CW = circuitCanvas.width;
       const CH = circuitCanvas.height;
 
@@ -7477,10 +7564,26 @@ useEffect(() => {
       ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(circuitCanvas, 0, 0);
 
-      // Branding watermark (bottom-right)
-      ctx.fillStyle = '#2a3a52';
-      ctx.font = `${9 * SCALE}px "Space Grotesk", sans-serif`;
-      ctx.fillText('Generated by OpenHW-Studio', CW - 240 * SCALE, CH - 8 * SCALE);
+      // Branding logo (bottom-right)
+      try {
+        if (!_exportLogoPromise) {
+          _exportLogoPromise = new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = '/logo-Photoroom.png';
+          });
+        }
+        const logo = await _exportLogoPromise;
+        const logoW = Math.min(Math.round(130 * SCALE), Math.max(96 * SCALE, Math.round(CW * 0.16)));
+        const logoH = Math.round(logoW * (logo.height / logo.width));
+        ctx.save();
+        ctx.globalAlpha = 0.62;
+        ctx.drawImage(logo, CW - logoW - 14 * SCALE, CH - logoH - 14 * SCALE, logoW, logoH);
+        ctx.restore();
+      } catch (logoErr) {
+        // Ignore logo load failures so export still succeeds.
+      }
 
       // 3. Encode FULL metadata (no truncation) for machine-readable round-trip
       const fullMetadata = buildProjectPayload({
@@ -7503,6 +7606,7 @@ useEffect(() => {
       const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-').replace(':', '-');
       const filename = `circuit_${board}_${dateStr}.png`;
       out.toBlob(async (blob) => {
+        const t_blob_start = performance.now();
         const pngBuf = await blob.arrayBuffer();
         const pngBytes = new Uint8Array(pngBuf);
         const metaBytes = new TextEncoder().encode(jsonPayload);
@@ -7510,11 +7614,19 @@ useEffect(() => {
         combined.set(pngBytes);
         combined.set(metaBytes, pngBytes.length);
         const finalBlob = new Blob([combined], { type: 'image/png' });
+        const t_blob_end = performance.now();
+        console.log('[PNG Export mobile] compose+blob ms:', Math.round(t_blob_end - t_blob_start));
+        console.log('[PNG Export mobile] total ms:', Math.round(t_blob_end - t_start));
         const url = URL.createObjectURL(finalBlob);
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;
         a.click();
+        try {
+          _exportPngResultCache.set(signature, { bytes: combined, filename, createdAt: Date.now() });
+        } catch (err) {
+          console.warn('[PNG Export] mobile cache store failed', err);
+        }
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }, 'image/png');
     } catch (err) {
@@ -8187,6 +8299,50 @@ useEffect(() => {
             onClick={() => setPreviewBanner(null)}
             style={{ background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 13 }}
           >✕ Dismiss</button>
+        </div>
+      )}
+
+      {isExporting && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 10000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(7, 11, 20, 0.36)',
+          backdropFilter: 'blur(2px)',
+          pointerEvents: 'all'
+        }}>
+          <style>{`
+            @keyframes openhw-png-spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 12,
+            padding: '18px 22px',
+            borderRadius: 16,
+            background: 'rgba(10, 15, 28, 0.94)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 18px 60px rgba(0,0,0,0.35)',
+            minWidth: 220
+          }}>
+            <div style={{
+              width: 36,
+              height: 36,
+              borderRadius: '50%',
+              border: '3px solid rgba(255,255,255,0.18)',
+              borderTopColor: 'var(--accent)',
+              animation: 'openhw-png-spin 0.9s linear infinite'
+            }} />
+            <div style={{ color: 'var(--text)', fontSize: 14, fontWeight: 700 }}>Exporting to PNG</div>
+            <div style={{ color: 'var(--text3)', fontSize: 12 }}>Please wait while the image is rendered.</div>
+          </div>
         </div>
       )}
 
@@ -11020,3 +11176,4 @@ updateWireColor(connectedWire.id, newColor);
 }
 
 
+export default MobileSimulatorPage;

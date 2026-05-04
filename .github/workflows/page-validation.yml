@@ -3,20 +3,8 @@ name: Page Runtime Validation
 on:
   push:
     branches: [main, master, develop]
-    paths:
-      - 'src/**'
-      - 'e2e/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/page-validation.yml'
   pull_request:
     branches: [main, master, develop]
-    paths:
-      - 'src/**'
-      - 'e2e/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/page-validation.yml'
   schedule:
     # Run daily at 2 AM UTC
     - cron: '0 2 * * *'

@@ -7,14 +7,38 @@ import {
     ChevronRight, LogOut 
 } from 'lucide-react';
 
+import { fetchPublicSystemStatus } from '../../services/simulatorService';
+
 export default function AdminLandingPage() {
     const navigate = useNavigate();
     const { isAdminAuthenticated } = useAuth();
     const [currentTime, setCurrentTime] = useState(new Date());
+    const [stats, setStats] = useState({
+        frontend: 'v1.4.2',
+        backend: 'Operational',
+        database: 'Connected',
+        load: 'Normal',
+        sessions: 0,
+        env: 'Production'
+    });
 
     useEffect(() => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-        return () => clearInterval(timer);
+        
+        // Initial Fetch
+        const loadStats = async () => {
+            const data = await fetchPublicSystemStatus();
+            if (data) setStats(data);
+        };
+        loadStats();
+
+        // Polling every 30 seconds
+        const statTimer = setInterval(loadStats, 30000);
+
+        return () => {
+            clearInterval(timer);
+            clearInterval(statTimer);
+        };
     }, []);
 
     const StatusItem = ({ label, value, status = 'success', icon: Icon }) => (
@@ -63,12 +87,12 @@ export default function AdminLandingPage() {
 
                     {/* Status Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mb-16">
-                        <StatusItem label="Frontend" value="v1.4.2" icon={Globe} />
-                        <StatusItem label="Backend API" value="Operational" icon={Cpu} />
-                        <StatusItem label="Database" value="Connected" icon={Database} />
-                        <StatusItem label="System Load" value="12% Normal" icon={Activity} />
-                        <StatusItem label="Active Sessions" value="24 Active" icon={Users} />
-                        <StatusItem label="Environment" value="Production" icon={ShieldCheck} />
+                        <StatusItem label="Frontend" value={stats.frontend} icon={Globe} />
+                        <StatusItem label="Backend API" value={stats.backend} icon={Cpu} />
+                        <StatusItem label="Database" value={stats.database} icon={Database} />
+                        <StatusItem label="System Load" value={`${stats.load} Normal`} icon={Activity} />
+                        <StatusItem label="Active Sessions" value={`${stats.sessions} Active`} icon={Users} />
+                        <StatusItem label="Environment" value={stats.env} icon={ShieldCheck} />
                     </div>
 
                     {/* Action Buttons */}
