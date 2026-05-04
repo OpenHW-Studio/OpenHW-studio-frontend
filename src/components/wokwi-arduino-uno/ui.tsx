@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 
-// Bounding box for the blue selection ring.
+// Bounding box for the board UI.
 // x, y: offset from comp.x/comp.y (top-left corner of the visual area)
 // w, h: width and height of the visual area
-export const BOUNDS = { x: 0, y: 0, w: 275, h: 203 };
+export const BOUNDS = { x: 0, y: 0, w: 311, h: 228 };
 
 export const UnoUI = ({ state, attrs, isRunning }: { state: any, attrs: any, isRunning?: boolean }) => {
     // Assuming a global stylesheet provides the CSS classes from task3.html
@@ -30,7 +30,7 @@ export const UnoUI = ({ state, attrs, isRunning }: { state: any, attrs: any, isR
         <div style={{ position: 'relative', width: 311, height: 228 }}>
             {/* Base Wokwi Component */}
             {React.createElement('wokwi-arduino-uno', {
-                style: { transform: 'scale(0.7)', transformOrigin: '0 0', pointerEvents: 'none' },
+                style: { pointerEvents: 'none', width: '100%', height: '100%' },
                 ...attrs
             })}
 
