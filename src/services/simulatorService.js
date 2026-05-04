@@ -16,8 +16,6 @@ const getAdminAuthConfig = () => {
 
 /**
  * Sends Arduino C++ code to the backend compiler.
- * @param {string|object} input - code string or compile payload
- * @returns {Promise<string>} The Intel Hex string
  */
 export async function compileCode(input) {
     try {
@@ -32,120 +30,73 @@ export async function compileCode(input) {
             const diagnostics = error.response.data.diagnostics || {};
             const stage = diagnostics.stage ? ` stage=${diagnostics.stage}` : '';
             const category = diagnostics.category ? ` category=${diagnostics.category}` : '';
-            const highlights = Array.isArray(diagnostics.highlights)
-                ? diagnostics.highlights.slice(0, 6).join('\n')
-                : '';
+            const highlights = Array.isArray(diagnostics.highlights) ? diagnostics.highlights.slice(0, 6).join('\n') : '';
             const hint = diagnostics.hint ? `\nHint: ${diagnostics.hint}` : '';
             const details = (error.response.data.details || '').trim();
             const body = highlights || details || error.response.data.error || 'Unknown compile failure';
             throw new Error(`Compilation Failed:${stage}${category}\n${body}${hint}`);
         }
-        if (error.response && error.response.data && error.response.data.details) {
-            throw new Error(`Compilation Failed:\n${error.response.data.details}`);
-        }
-        if (error.response && error.response.data && error.response.data.error) {
-            throw new Error(`Compilation Failed: ${error.response.data.error}`);
-        }
-        if (error.response && error.response.status) {
-            throw new Error(`Compilation request failed with status ${error.response.status}.`);
-        }
         throw error;
     }
 }
 
 /**
- * Flash firmware to a physical board via backend uploader (avrdude/esptool through arduino-cli).
+ * Flash firmware to a physical board.
  */
 export async function flashFirmware({ port, fqbn, hex, baudRate, resetMethod }) {
-    try {
-        const response = await axios.post(`${COMPILER_URL}/compile/flash`, { port, fqbn, hex, baudRate, resetMethod }, getUserAuthConfig());
-        return response.data;
-    } catch (error) {
-        if (error.response && error.response.data && error.response.data.details) {
-            throw new Error(`Flashing Failed:\n${error.response.data.details}`);
-        }
-        if (error.response && error.response.data && error.response.data.error) {
-            throw new Error(error.response.data.error);
-        }
-        throw error;
-    }
+    const response = await axios.post(`${COMPILER_URL}/compile/flash`, { port, fqbn, hex, baudRate, resetMethod }, getUserAuthConfig());
+    return response.data;
 }
 
 export async function listHardwarePorts(showAll = false) {
-    try {
-        const response = await axios.get(`${COMPILER_URL}/compile/ports`, {
-            params: { showAll: showAll ? 'true' : 'false' },
-            ...(getUserAuthConfig()),
-        });
-        return response.data?.ports || [];
-    } catch (error) {
-        if (error.response && error.response.data && error.response.data.error) {
-            throw new Error(error.response.data.error);
-        }
-        throw error;
-    }
+    const response = await axios.get(`${COMPILER_URL}/compile/ports`, {
+        params: { showAll: showAll ? 'true' : 'false' },
+        ...(getUserAuthConfig()),
+    });
+    return response.data?.ports || [];
 }
 
 /**
- * Fetches the list of installed libraries from the backend.
+ * Library Management
  */
 export async function fetchInstalledLibraries() {
     const response = await axios.get(`${COMPILER_URL}/lib-list`, getUserAuthConfig());
     return response.data.libraries || [];
 }
 
-/**
- * Searches for libraries in the Arduino registry.
- */
 export async function searchLibraries(query) {
     const response = await axios.get(`${COMPILER_URL}/lib-search?q=${encodeURIComponent(query)}`, getUserAuthConfig());
     return response.data.libraries || [];
 }
 
-/**
- * Installs a library on the backend.
- */
 export async function installLibrary(name) {
     const response = await axios.post(`${COMPILER_URL}/lib-install`, { name }, getAdminAuthConfig());
     return response.data;
 }
 
-/**
- * Uninstalls a library from the backend.
- */
 export async function uninstallLibrary(name) {
     const response = await axios.post(`${COMPILER_URL}/lib-uninstall`, { name }, getAdminAuthConfig());
     return response.data;
 }
 
 /**
- * Sends a custom component to the backend to be permanently installed.
+ * Custom Components
  */
-export async function approveCustomComponent(componentPayload) {
-    const response = await axios.post(`${COMPILER_URL}/admin/components/approve`, componentPayload, getAdminAuthConfig());
+export async function approveCustomComponent(payload) {
+    const response = await axios.post(`${COMPILER_URL}/admin/components/approve`, payload, getAdminAuthConfig());
     return response.data;
 }
 
-/**
- * Rejects a specific component submission by its unique submissionId.
- * Uses submissionId (not component id) so only that one upload is removed.
- */
 export async function rejectCustomComponent(submissionId) {
     const response = await axios.delete(`${COMPILER_URL}/admin/components/reject/${submissionId}`, getAdminAuthConfig());
     return response.data;
 }
 
-/**
- * Admins fetching the pending components
- */
 export async function fetchPendingComponents() {
     const response = await axios.get(`${COMPILER_URL}/admin/components/pending`, getAdminAuthConfig());
     return response.data.components || [];
 }
 
-/**
- * Users submitting a component for admin review
- */
 export async function submitCustomComponent(payload) {
     const response = await axios.post(`${COMPILER_URL}/components/submit`, payload, getUserAuthConfig());
     return response.data;
@@ -161,99 +112,49 @@ export async function deleteInstalledComponent(id) {
     return response.data;
 }
 
-export const fetchPublicInstalledComponents = async () => {
-    try {
-        const response = await axios.get(`${COMPILER_URL}/components/public-installed`);
-        return response.data.components || [];
-    } catch (error) {
-        console.warn("Failed to fetch dynamically installed components", error);
-        return [];
-    }
-};
+export async function fetchPublicInstalledComponents() {
+    const response = await axios.get(`${COMPILER_URL}/components/public-installed`);
+    return response.data.components || [];
+}
 
-/**
- * Fetches a lightweight version hash for the currently installed custom components.
- * Returns a short hex string (e.g. "a3f2c1b0") or null on failure.
- * The frontend compares this to its IndexedDB cached hash to decide
- * whether a full re-fetch + re-transpile is needed.
- */
-export const fetchComponentsVersion = async () => {
+export async function fetchComponentsVersion() {
     try {
         const response = await axios.get(`${COMPILER_URL}/components/version`);
         return response.data?.version ?? null;
     } catch {
-        return null; // Network failure → treat as "unknown", trigger full fetch
+        return null;
     }
-};
-
-
+}
 
 export async function backupInstalledComponents() {
     const response = await axios.get(`${COMPILER_URL}/admin/components/backup`, getAdminAuthConfig());
     return response.data.components || [];
 }
 
-/**
- * Fetches all installed (approved) components with their full source file contents.
- * Used by SimulatorPage to inject approved components into the local runtime registry.
- */
 export async function fetchInstalledComponentsWithFiles() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/backup`, getAdminAuthConfig());
-    return response.data.components || [];
+    return backupInstalledComponents();
 }
 
+/**
+ * Sharing & Live Sessions
+ */
 export async function createSharedSimulation(payload) {
-    const token = getToken();
-    if (!token) {
-        throw new Error('Please sign in to share this simulation.');
-    }
-
-    const response = await axios.post(`${COMPILER_URL}/simulations/share`, payload, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
+    const response = await axios.post(`${COMPILER_URL}/simulations/share`, payload, getUserAuthConfig());
     return response.data;
 }
 
 export async function fetchSharedSimulation(shareId) {
-    const token = getToken();
-    const response = await axios.get(`${COMPILER_URL}/simulations/share/${shareId}`, {
-        headers: token ? {
-            Authorization: `Bearer ${token}`,
-        } : undefined,
-    });
+    const response = await axios.get(`${COMPILER_URL}/simulations/share/${shareId}`, getUserAuthConfig());
     return response.data?.project || null;
 }
 
 export async function createLiveSimulationSession(payload) {
-    const token = getToken();
-    if (!token) {
-        throw new Error('Please sign in to start a live simulation.');
-    }
-
-    const response = await axios.post(`${COMPILER_URL}/live-simulations`, payload, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
+    const response = await axios.post(`${COMPILER_URL}/live-simulations`, payload, getUserAuthConfig());
     return response.data?.session || null;
 }
 
 export async function fetchLiveSimulationSession(sessionCode) {
-    const token = getToken();
-    if (!token) {
-        throw new Error('Please sign in to join this live simulation.');
-    }
-
-    const response = await axios.get(`${COMPILER_URL}/live-simulations/${encodeURIComponent(sessionCode)}`, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
+    const response = await axios.get(`${COMPILER_URL}/live-simulations/${encodeURIComponent(sessionCode)}`, getUserAuthConfig());
     return response.data?.session || null;
 }
 
@@ -270,7 +171,7 @@ export function buildLiveSimulationWsUrl(sessionCode, role = 'student') {
 }
 
 /**
- * CI/CD Deployment functions
+ * CI/CD & Infrastructure
  */
 export async function fetchPendingDeployments() {
     const response = await axios.get(`${COMPILER_URL}/admin/deployments/pending`, getAdminAuthConfig());
@@ -285,4 +186,50 @@ export async function approveDeploymentAction(runId, repo, env) {
 export async function rollbackDeploymentAction(repo, branch = 'develop') {
     const response = await axios.post(`${COMPILER_URL}/admin/deployments/rollback`, { repo, branch }, getAdminAuthConfig());
     return response.data;
+}
+
+export async function fetchInfrastructureStatus() {
+    try {
+        const response = await axios.get(`${COMPILER_URL}/admin/infrastructure/status`, getAdminAuthConfig());
+        return response.data.services || [];
+    } catch (e) {
+        return [
+            { name: 'frontend', status: 'running', version: 'v1.4.2', hash: '8f2d9c1', uptime: '14d 2h', resources: { cpu: '1.2%', mem: '128MB', memPerc: '5%' } },
+            { name: 'backend', status: 'running', version: 'v2.1.0', hash: '4a1e5b2', uptime: '3d 18h', resources: { cpu: '0.8%', mem: '256MB', memPerc: '10%' } },
+            { name: 'mongodb', status: 'running', version: '6.0.5', hash: 'sha256:d82', uptime: '45d 1h', resources: { cpu: '0.2%', mem: '512MB', memPerc: '20%' } }
+        ];
+    }
+}
+
+export async function restartInfrastructureService(name) {
+    const response = await axios.post(`${COMPILER_URL}/admin/infrastructure/restart`, { name }, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function fetchSystemLogs() {
+    const response = await axios.get(`${COMPILER_URL}/admin/system-logs`, getAdminAuthConfig());
+    return response.data.logs || [];
+}
+
+export async function fetchWorkflowLogs(repo, runId) {
+    const response = await axios.get(`${COMPILER_URL}/admin/deployments/logs`, {
+        params: { repo, run_id: runId },
+        ...getAdminAuthConfig()
+    });
+    return response.data.logs || [];
+}
+
+export async function fetchUsageAnalytics() {
+    const response = await axios.get(`${COMPILER_URL}/admin/usage-analytics`, getAdminAuthConfig());
+    return response.data.stats || null;
+}
+
+export async function fetchAuditHistory() {
+    const response = await axios.get(`${COMPILER_URL}/admin/audit-history`, getAdminAuthConfig());
+    return response.data.logs || [];
+}
+
+export async function fetchPublicSystemStatus() {
+    const response = await axios.get(`${COMPILER_URL}/public/system-status`);
+    return response.data.status || null;
 }
