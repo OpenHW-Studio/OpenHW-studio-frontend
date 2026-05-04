@@ -8,18 +8,8 @@ permissions:
 on:
   push:
     branches: [main, master, develop]
-    paths:
-      - 'src/circuit-validation/**'
-      - '.github/workflows/autofix-ci.yml'
-      - 'package.json'
-      - 'package-lock.json'
   pull_request:
     branches: [main, master, develop]
-    paths:
-      - 'src/circuit-validation/**'
-      - '.github/workflows/autofix-ci.yml'
-      - 'package.json'
-      - 'package-lock.json'
 
 jobs:
   smoke-and-tests:
