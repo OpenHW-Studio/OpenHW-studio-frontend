@@ -3,20 +3,8 @@ name: Frontend Tests
 on:
   push:
     branches: [main, master, develop]
-    paths:
-      - 'src/components/**'
-      - 'src/pages/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/frontend-tests.yml'
   pull_request:
     branches: [main, master, develop]
-    paths:
-      - 'src/components/**'
-      - 'src/pages/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - '.github/workflows/frontend-tests.yml'
 
 permissions:
   pull-requests: write
