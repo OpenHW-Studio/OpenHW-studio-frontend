@@ -50,6 +50,7 @@ export class LEDLogic extends BaseComponent {
         const vDiff = vA - vK;
         if (vDiff >= 1.8) return 0.1; // Conducting (10 ohms equivalent)
         if (vDiff >= 1.5) return 0.01; // Starting to conduct
+        if (vDiff <= -5.0) return 0.1; // Reverse breakdown conduction
         return 1e-9; // Non-conducting
     }
 
@@ -65,7 +66,14 @@ export class LEDLogic extends BaseComponent {
 
         const hasResistor = this.state.hasResistor ?? this.hasResistorInConnectedPath(currentWires, allComponentsInstances);
 
+        // Forward burnout (Over-current)
         if (isWired && voltageDiff > 4.0 && !hasResistor) {
+            this.setState({ illuminated: false, brightness: 0, burnedOut: true });
+            return;
+        }
+
+        // Reverse burnout (Breakdown)
+        if (isWired && voltageDiff < -5.0) {
             this.setState({ illuminated: false, brightness: 0, burnedOut: true });
             return;
         }

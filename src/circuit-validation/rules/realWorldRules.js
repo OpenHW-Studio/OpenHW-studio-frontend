@@ -338,20 +338,32 @@ export function validateReversePolarity(validator) {
             const cathodeNode = `${led.id}.K`;
             if (!hasConnection(validator, anodeNode) || !hasConnection(validator, cathodeNode)) return;
 
-            const anodeV = validator.calculateVoltageAtNode(anodeNode);
-            const cathodeV = validator.calculateVoltageAtNode(cathodeNode);
-            if (cathodeV <= anodeV) return;
+            let va = validator.calculateVoltageAtNode(anodeNode);
+            let vk = validator.calculateVoltageAtNode(cathodeNode);
 
-            const reverseV = cathodeV - anodeV;
-            const vBreak = validator.componentSpecs['wokwi-led'].reverseBreakdownVoltage;
+            // Predictive check: If pins are connected to digital GPIOs, assume worst-case polarity.
+            const anodeSources = validator.collectVoltageSources(anodeNode);
+            const cathodeSources = validator.collectVoltageSources(cathodeNode);
+            
+            const canAnodeGoLow = anodeSources.some(s => validator.isDigitalPin(s.nodeId));
+            const canCathodeGoHigh = cathodeSources.some(s => validator.isDigitalPin(s.nodeId));
+
+            if (canAnodeGoLow && va >= 4.5) va = 0.0;
+            if (canCathodeGoHigh && vk <= 0.5) vk = 5.0;
+
+            if (vk <= va) return;
+
+            const reverseV = vk - va;
+            const ledSpec = validator.componentSpecs['wokwi-led'];
+            const vBreak = ledSpec.reverseBreakdownVoltage;
 
             if (reverseV >= vBreak) {
                 validator.addError(
-                    `🔥 [LED ${led.id}] Reverse breakdown: ${reverseV.toFixed(2)}V exceeds ${vBreak.toFixed(2)}V.`
+                    `🔥 [LED ${led.id}] Reverse breakdown: ${reverseV.toFixed(2)}V exceeds ${vBreak.toFixed(2)}V. LED will be destroyed.`
                 );
             } else {
                 validator.addError(
-                    `⚠️ [LED ${led.id}] Reverse polarity detected (${reverseV.toFixed(2)}V). LED will not light and may degrade.`
+                    `🔥 [LED ${led.id}] Reverse polarity detected. LED is connected backwards and will not light. Flip the LED or check your wiring.`
                 );
             }
         });
