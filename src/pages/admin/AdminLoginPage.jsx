@@ -18,21 +18,6 @@ export default function AdminLoginPage() {
         }
     }, [isAdminAuthenticated, adminRole, navigate])
 
-    const mockAdminLogin = (googleUserInfo) => {
-        const mockToken = 'mock_admin_jwt_token_replace_when_backend_ready'
-        const mockUser = {
-            id: 'mock_admin_001',
-            name: googleUserInfo.name || 'Admin User',
-            email: googleUserInfo.email || 'admin@openhw.io',
-            picture: googleUserInfo.picture || '',
-            role: 'admin',
-            points: 0,
-            coins: 0,
-            level: 1,
-        }
-        login(mockToken, mockUser, true)
-        navigate('/admin/dashboard')
-    }
 
     const handleGoogleSuccess = useGoogleLogin({
         onSuccess: async (tokenResponse) => {

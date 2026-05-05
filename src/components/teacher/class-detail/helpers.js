@@ -45,7 +45,7 @@ export const getAttachmentLabel = (url, index) => {
     const parsedUrl = new URL(url);
     const fileName = parsedUrl.pathname.split("/").filter(Boolean).pop();
     if (fileName) return decodeURIComponent(fileName);
-  } catch {
+  } catch (e) {
     // Todo
     // Fallback for non-URL or malformed values.
   }

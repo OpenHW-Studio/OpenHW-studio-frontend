@@ -9,7 +9,7 @@ function stringifyArg(arg) {
   if (arg instanceof Error) return arg.stack || arg.message || String(arg);
   try {
     return JSON.stringify(arg);
-  } catch {
+  } catch (e) {
     return String(arg);
   }
 }
@@ -52,7 +52,7 @@ export function useSimulationConsole() {
   const [isConsoleOpen, setIsConsoleOpen] = useState(() => {
     try {
       return localStorage.getItem(CONSOLE_OPEN_KEY) === '1';
-    } catch {
+    } catch (e) {
       return false;
     }
   });
@@ -61,7 +61,7 @@ export function useSimulationConsole() {
       const v = Number(localStorage.getItem(CONSOLE_HEIGHT_KEY));
       if (Number.isFinite(v)) return Math.max(140, Math.min(540, v));
       return 220;
-    } catch {
+    } catch (e) {
       return 220;
     }
   });
@@ -119,7 +119,7 @@ export function useSimulationConsole() {
   useEffect(() => {
     try {
       localStorage.setItem(CONSOLE_OPEN_KEY, isConsoleOpen ? '1' : '0');
-    } catch {
+    } catch (e) {
       // Ignore storage failures (private mode/quota).
     }
   }, [isConsoleOpen]);
@@ -127,7 +127,7 @@ export function useSimulationConsole() {
   useEffect(() => {
     try {
       localStorage.setItem(CONSOLE_HEIGHT_KEY, String(consoleHeight));
-    } catch {
+    } catch (e) {
       // Ignore storage failures (private mode/quota).
     }
   }, [consoleHeight]);

@@ -13,8 +13,7 @@ import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './Si
 
 
 
-
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
@@ -66,13 +65,6 @@ import * as EmulatorComponents from "@openhw/emulator";
 const { 
   FullCircuitValidator, 
   analyzeCodeHardwareSync, 
-  applyCircuitFix: sharedApplyCircuitFix,
-  runAutoFixAll,
-  initializeCircuitFixEngine,
-  getFixHistory,
-  getFixValidator,
-  undoLastFix,
-  redoLastFix,
   ProtocolAnalyzer: SharedProtocolAnalyzer 
 } = EmulatorComponents;
 
@@ -240,7 +232,7 @@ function extractFunctionSource(fn) {
     src = src.replace(/\$RefreshSig\$\s*\([^)]*\)/g, '(() => {})');
     src = src.replace(/\$RefreshReg\$\s*\([^)]*\);?/g, '');
     return src.trim();
-  } catch {
+  } catch (e) {
     return '';
   }
 }
@@ -1445,9 +1437,11 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
   return (
     <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
       <path id={`wire-path-hit-${wire.id}`} d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-      <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
-      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
-      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
+      <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected || wire.isNew ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : (wire.isNew ? 1 : 0.9)} 
+        style={{ animation: wire.isNew ? 'autofixWirePulse 1.5s infinite linear' : 'none' }}
+      />
+      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} opacity={wire.isBelow ? 0.6 : 1} />
+      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} opacity={wire.isBelow ? 0.6 : 1} />
       {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints).reduce((acc, _, i, arr) => {
         if (i < 1 || i >= arr.length - 2) return acc;
         const a = arr[i], b = arr[i + 1];
@@ -1477,7 +1471,13 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
 });
 
 // ─── Memoized Component Wrapper ──────────────────────────────────────────────
-const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
+const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
+  const liveState = useSyncExternalStore(
+    useCallback((onStoreChange) => subscribeLiveOopState(comp.id, onStoreChange), [comp.id, subscribeLiveOopState]),
+    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot]),
+    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot])
+  );
+
   const rad = ((comp.rotation || 0) * Math.PI) / 180;
   const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
   
@@ -1489,8 +1489,25 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
   };
   const b = getBounds();
 
+  const attrs = getComponentStateAttrs(comp, liveState);
+  const isOverloaded = attrs.glow === true || attrs.isOverloaded === true;
+
   return (
     <React.Fragment>
+      {isOverloaded && (
+        <div 
+          className="overload-glow"
+          style={{
+            position: 'absolute',
+            left: comp.x + b.x - 10, top: comp.y + b.y - 10,
+            width: b.w + 20, height: b.h + 20,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(239,68,68,0.5) 0%, transparent 70%)',
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
+      )}
       <div
         id={`comp-hit-${comp.id}`}
         style={{
@@ -1564,6 +1581,8 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
     </React.Fragment>
   );
 });
+
+const EMPTY_LIVE_STATE = {};
 
 export function SimulatorPage({ gamificationMode = false }) {
   const { isAuthenticated, isAdminAuthenticated, user, adminUser, token, logout, loading: authLoading } = useAuth()
@@ -1683,6 +1702,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false)
   const [autoWiringEnabled, setAutoWiringEnabled] = useState(true);
   const [autoCodingEnabled, setAutoCodingEnabled] = useState(true);
+  const [isWiring, setIsWiring] = useState(false)
+  const [wiringStartPin, setWiringStartPin] = useState(null)
   const [components, setComponents] = useState([])
   const [wires, setWires] = useState([])
   const [paletteSearch, setPaletteSearch] = useState('')
@@ -1691,7 +1712,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [selected, setSelected] = useState(null)   // comp or wire id
   const [wireStart, setWireStart] = useState(null)   // { compId, pinId, pinLabel, x, y }
   const [wireClickPos, setWireClickPos] = useState(null) // canvas-space position where wire was clicked
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   // Segment-drag: tracks which wire segment handle is being dragged
   // { wireId, segIdx, isHoriz, startMouseCanvas: {x,y}, startPts: [...] }
   const [segDrag, setSegDrag] = useState(null)
@@ -1700,7 +1720,16 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
   const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
+  const [solverMode, setSolverMode] = useState('logic')
+  const [webGpuSupported, setWebGpuSupported] = useState(false)
   const [blocklyXml, setBlocklyXml] = useState('')
+  const [showEngineSelector, setShowEngineSelector] = useState(false)
+  useEffect(() => {
+    if (navigator.gpu) {
+      setWebGpuSupported(true);
+    }
+  }, []);
+
   const [blocklyGeneratedCode, setBlocklyGeneratedCode] = useState('')
   const [useBlocklyCode, setUseBlocklyCode] = useState(false)
   const [blocklyDisabled, setBlocklyDisabled] = useState(() => {
@@ -1721,11 +1750,12 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [explorerWidth, setExplorerWidth] = useState(190)
   const [isDragging, setIsDragging] = useState(false)
   const [isExplorerDragging, setIsExplorerDragging] = useState(false)
+  const [isComponentDragging, setIsComponentDragging] = useState(false)
   // Palette redesign state
   const [paletteViewMode, setPaletteViewMode] = useState('grid') // 'list' | 'grid'
   const [favoriteComponents, setFavoriteComponents] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('openhw_fav_components') || '[]')); }
-    catch { return new Set(); }
+    catch (e) { return new Set(); }
   })
   const [activeGroupFilter, setActiveGroupFilter] = useState('All')
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
@@ -1733,7 +1763,17 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [paletteContextMenu, setPaletteContextMenu] = useState(null) // { x, y, item }
   const [showComponentDesc, setShowComponentDesc] = useState(true) // description panel visible
   const [showCreateComponentModal, setShowCreateComponentModal] = useState(false)
-  const paletteContextMenuRef = useRef(null)
+  const [showInspector, setShowInspector] = useState(false);
+  const [hoveredElement, setHoveredElement] = useState(null); // { type: 'wire'|'pin'|'comp', id, data }
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    if (showInspector) {
+        setIsWiring(false);
+        setWiringStartPin(null);
+    }
+  }, [showInspector]);
+
   const [canvasZoom, setCanvasZoom] = useState(1)
   const [showCanvasMenu, setShowCanvasMenu] = useState(false)
   const [showConnectionsPanel, setShowConnectionsPanel] = useState(false)
@@ -1762,6 +1802,77 @@ export function SimulatorPage({ gamificationMode = false }) {
   const didPanRef = useRef(false)
 
   const [validationErrors, setValidationErrors] = useState([])
+  const [autofixPlan, setAutofixPlan] = useState(null)
+  const [autofixStatus, setAutofixStatus] = useState('Initializing...')
+  const [autofixLog, setAutofixLog] = useState([])
+  const autofixWorkerRef = useRef(null);
+
+  const triggerAutofixAnalysis = useCallback((forcedViolations = null) => {
+    const violations = forcedViolations || validationErrors;
+    if (!autofixWorkerRef.current || !violations || violations.length === 0) {
+      console.warn('[Autofix] Cannot trigger: no worker or no violations');
+      return;
+    }
+    
+    setAutofixStatus('Analyzing...');
+    setAutofixPlan(null);
+
+    // Filter connections to remove ':' for engine compatibility
+    const engineConnections = (wires || []).map(w => ({
+      from: String(w.from || '').replace(':', '.'),
+      to:   String(w.to   || '').replace(':', '.'),
+      color: w.color
+    }));
+
+    autofixWorkerRef.current.postMessage({
+      type: 'analyze',
+      payload: {
+        diagram: {
+          components: components,
+          connections: engineConnections
+        },
+        violations: validationErrors
+      }
+    });
+  }, [validationErrors, components, wires]);
+
+  useEffect(() => {
+    // Initialize Worker
+    const worker = new Worker(new URL('../../worker/autofix.worker.ts', import.meta.url), { type: 'module' });
+    autofixWorkerRef.current = worker;
+
+    worker.onmessage = (e) => {
+      const { type, payload } = e.data;
+      if (type === 'status') {
+        setAutofixStatus(payload);
+        setAutofixLog(prev => [...prev.slice(-19), { time: new Date().toLocaleTimeString(), msg: payload }]);
+      }
+      if (type === 'results') {
+        setAutofixStatus('Ready');
+        // payload: { planCount, suggestions }
+        if (payload.planCount > 0) {
+          // For now, we take the first suggestion (best confidence)
+          const bestFix = payload.suggestions[0];
+          setAutofixPlan(bestFix);
+        } else {
+          setAutofixPlan(null);
+        }
+      }
+    };
+
+    worker.postMessage({ type: 'init' });
+
+    return () => {
+      worker.terminate();
+    };
+  }, []);
+
+  // Auto-trigger analysis when validation changes
+  useEffect(() => {
+    if (validationErrors.length > 0) {
+      triggerAutofixAnalysis();
+    }
+  }, [validationErrors, triggerAutofixAnalysis]);
   const [showValidation, setShowValidation] = useState(true)
   const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
@@ -1775,8 +1886,19 @@ export function SimulatorPage({ gamificationMode = false }) {
         50% { transform: scale(1.02); opacity: 1; box-shadow: 0 0 25px rgba(239,68,68,0.7); }
         100% { transform: scale(1); opacity: 0.8; box-shadow: 0 0 10px rgba(239,68,68,0.4); }
       }
+      @keyframes overloadGlow {
+        0% { filter: blur(8px) brightness(1); transform: scale(1); opacity: 0.5; }
+        100% { filter: blur(12px) brightness(1.5); transform: scale(1.1); opacity: 0.8; }
+      }
       .safety-pulse {
         animation: safetyPulse 2s infinite ease-in-out;
+      }
+      .overload-glow {
+        animation: overloadGlow 0.8s infinite alternate ease-in-out;
+      }
+      @keyframes autofixWirePulse {
+        from { stroke-dashoffset: 0; }
+        to { stroke-dashoffset: 20; }
       }
     `;
     document.head.appendChild(style);
@@ -1788,9 +1910,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [activeConsoleTab, setActiveConsoleTab] = useState('console')
   const [healthScore, setHealthScore] = useState(100)
   const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
-  const [pinStates, setPinStates] = useState({})
-  const [neopixelData, setNeopixelData] = useState({})
-  const [oopStates, setOopStates] = useState({});
   const [serialHistory, setSerialHistory] = useState([]);
   const [serialInput, setSerialInput] = useState('');
   const [serialPaused, setSerialPaused] = useState(false);
@@ -1801,7 +1920,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       const saved = String(localStorage.getItem('openhw.serial.lineEnding') || '').toLowerCase();
       return Object.prototype.hasOwnProperty.call(SERIAL_LINE_ENDINGS, saved) ? saved : 'nl';
-    } catch {
+    } catch (e) {
       return 'nl';
     }
   });
@@ -1809,7 +1928,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       const saved = String(localStorage.getItem('openhw.rp2040.debugTelemetry') || '').toLowerCase();
       return saved === '1' || saved === 'true' || saved === 'on';
-    } catch {
+    } catch (e) {
       return false;
     }
   });
@@ -1842,6 +1961,16 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [selectedPlotPins, setSelectedPlotPins] = useState(['13', 'A0']);
   const plotterCanvasRef = useRef(null);
   const [plotterPaused, setPlotterPaused] = useState(false);
+
+  const serializedStateEquals = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch (e) {
+      return false;
+    }
+  };
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
@@ -1987,9 +2116,15 @@ export function SimulatorPage({ gamificationMode = false }) {
   const runStartGuardRef = useRef(false)
   const runComponentUpdateCountsRef = useRef({})
   const runPinTransitionCountsRef = useRef({})
+  const runLagTelemetryLastLogRef = useRef(new Map())
+  const runFpsTelemetryLastLogRef = useRef(new Map())
   const runLastBoardPinsRef = useRef(new Map())
   const validationRunCacheRef = useRef({ signature: '', allowRun: true, errors: [], healthScore: 100, toast: null })
   const neopixelRefs = useRef({})
+  const livePinStatesRef = useRef({})
+  const liveNeopixelDataRef = useRef({})
+  const liveOopStatesRef = useRef({})
+  const liveOopStateListenersRef = useRef(new Map())
 
   const serialPlotBufferRef = useRef('');
   const serialPlotLabelsRef = useRef([]);
@@ -2016,6 +2151,64 @@ export function SimulatorPage({ gamificationMode = false }) {
   const componentsRef = useRef([]);
   const wiresRef = useRef([]);
   const pinDefsRef = useRef({});
+
+  const getLiveOopStateSnapshot = useCallback((compId) => liveOopStatesRef.current[compId] || EMPTY_LIVE_STATE, []);
+  const subscribeLiveOopState = useCallback((compId, listener) => {
+    let listeners = liveOopStateListenersRef.current.get(compId);
+    if (!listeners) {
+      listeners = new Set();
+      liveOopStateListenersRef.current.set(compId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      const currentListeners = liveOopStateListenersRef.current.get(compId);
+      if (!currentListeners) return;
+      currentListeners.delete(listener);
+      if (currentListeners.size === 0) {
+        liveOopStateListenersRef.current.delete(compId);
+      }
+    };
+  }, []);
+  const notifyLiveOopStateListeners = useCallback((compId) => {
+    const listeners = liveOopStateListenersRef.current.get(compId);
+    if (!listeners || listeners.size === 0) return;
+    listeners.forEach(listener => listener());
+  }, []);
+  const updateLiveOopStates = useCallback((componentsState) => {
+    if (!Array.isArray(componentsState) || componentsState.length === 0) return;
+    const nextStates = liveOopStatesRef.current;
+    const changedIds = [];
+    componentsState.forEach((comp) => {
+      const compId = String(comp?.id || '').trim();
+      if (!compId) return;
+      const nextState = comp.state || {};
+      if (serializedStateEquals(nextStates[compId], nextState)) return;
+      nextStates[compId] = nextState;
+      changedIds.push(compId);
+    });
+    changedIds.forEach(notifyLiveOopStateListeners);
+  }, [notifyLiveOopStateListeners]);
+  const clearLiveOopStates = useCallback(() => {
+    const prevIds = Object.keys(liveOopStatesRef.current);
+    liveOopStatesRef.current = {};
+    prevIds.forEach(notifyLiveOopStateListeners);
+  }, [notifyLiveOopStateListeners]);
+  const applyLiveNeopixelData = useCallback((neopixelState) => {
+    liveNeopixelDataRef.current = neopixelState || {};
+    if (!liveNeopixelDataRef.current || Object.keys(liveNeopixelDataRef.current).length === 0) return;
+    for (const [compId, pixels] of Object.entries(liveNeopixelDataRef.current)) {
+      const wrapper = neopixelRefs.current[compId];
+      if (!wrapper) continue;
+      const el = wrapper.querySelector('wokwi-neopixel-matrix');
+      if (!el || typeof el.setPixel !== 'function') continue;
+      for (const [row, col, rgb] of pixels) {
+        el.setPixel(row, col, rgb);
+      }
+    }
+  }, []);
+  const clearLiveNeopixelData = useCallback(() => {
+    liveNeopixelDataRef.current = {};
+  }, []);
 
   // ── Project persistence state ────────────────────────────────────────────────
   const [currentProjectId, setCurrentProjectId] = useState(null);
@@ -2065,7 +2258,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [projectsSidebarTab, setProjectsSidebarTab] = useState('projects'); // 'favourites' | 'projects' | 'custom' | 'settings'
   const [favouriteProjectIds, setFavouriteProjectIds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ohw_favourite_projects') || '[]'); }
-    catch { return []; }
+    catch (e) { return []; }
   });
   const [projContextMenu, setProjContextMenu] = useState(null); // { proj, x, y }
   const [snappingHoles, setSnappingHoles] = useState([]); // Array<{ bbId, holeId, x, y }>
@@ -2075,7 +2268,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       const val = localStorage.getItem('ohw_autosave_enabled');
       return val === null ? true : val === 'true';
-    } catch {
+    } catch (e) {
       return true;
     }
   });
@@ -2317,7 +2510,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           await submitCustomComponent(item.payload);
           await dequeueComponent(item.queueId);
           console.log(`[Offline Queue] Submitted queued component: ${item.payload.id}`);
-        } catch {
+        } catch (e) {
           // Still offline or backend unreachable — leave in queue for next attempt
         }
       }
@@ -2921,7 +3114,7 @@ useEffect(() => {
   useEffect(() => {
     try {
       localStorage.setItem('ohw_autosave_enabled', String(autoSaveEnabled));
-    } catch {
+    } catch (e) {
       // no-op
     }
   }, [autoSaveEnabled]);
@@ -2930,6 +3123,73 @@ useEffect(() => {
   useEffect(() => { canvasOffsetRef.current = canvasOffset; }, [canvasOffset]);
   useEffect(() => { isCanvasLockedRef.current = isCanvasLocked; }, [isCanvasLocked]);
   useEffect(() => { segDragRef.current = segDrag; }, [segDrag]);
+
+  useEffect(() => {
+    if (!isRunning && !isComponentDragging && !isDragging && !isExplorerDragging && !segDrag) {
+      return;
+    }
+
+    let rafId = 0;
+    let frameStart = performance.now();
+    let lastFrameAt = frameStart;
+    let frameCount = 0;
+    let worstFrameMs = 0;
+
+    const sample = (now) => {
+      frameCount += 1;
+      const frameDeltaMs = now - lastFrameAt;
+      lastFrameAt = now;
+      if (frameDeltaMs > worstFrameMs) {
+        worstFrameMs = frameDeltaMs;
+      }
+
+      const windowMs = now - frameStart;
+      if (windowMs >= 1000) {
+        const fps = (frameCount * 1000) / windowMs;
+        // Canonicalize FPS telemetry modes to only three buckets the user requested:
+        // - 'component-drag' : moving a component or dragging wires/segments
+        // - 'canvas-pan'     : panning the whole canvas
+        // - 'running'        : simulation running without active pan/drag
+        // Fallback: 'idle' when none apply.
+        const dragMode = (movingComp.current || isComponentDragging || segDragRef.current)
+          ? 'component-drag'
+          : (isPanningRef.current)
+            ? 'canvas-pan'
+            : (isRunning)
+              ? 'running'
+              : 'idle';
+        const signature = `${dragMode}:${Math.round(fps)}:${Math.round(worstFrameMs)}:${solverMode}`;
+        const prev = runFpsTelemetryLastLogRef.current.get('browser') || null;
+
+        if (prev !== signature) {
+          const line = [
+            'FPS browser',
+            `mode=${dragMode}`,
+            `fps=${fps.toFixed(1)}`,
+            `worstDelta=${worstFrameMs.toFixed(1)}ms`,
+            `solver=${solverMode}`,
+          ].join(' | ');
+
+          appendConsoleEntry(fps < 45 || worstFrameMs > 24 ? 'warn' : 'info', line, 'debug');
+          runFpsTelemetryLastLogRef.current.set('browser', signature);
+        }
+
+        frameStart = now;
+        lastFrameAt = now;
+        frameCount = 0;
+        worstFrameMs = 0;
+      }
+
+      if (isRunning || isComponentDragging || isDragging || isExplorerDragging || segDrag || movingComp.current) {
+        rafId = requestAnimationFrame(sample);
+      }
+    };
+
+    rafId = requestAnimationFrame(sample);
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [isRunning, isComponentDragging, isDragging, isExplorerDragging, segDrag, solverMode]);
 
   // Quick-add menu: auto-focus input when menu opens
   useEffect(() => {
@@ -3431,20 +3691,6 @@ useEffect(() => {
     'wokwi-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
   };
 
-  // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
-  useEffect(() => {
-    if (!neopixelData || Object.keys(neopixelData).length === 0) return;
-    for (const [compId, pixels] of Object.entries(neopixelData)) {
-      const wrapper = neopixelRefs.current[compId];
-      if (!wrapper) continue;
-      const el = wrapper.querySelector('wokwi-neopixel-matrix');
-      if (!el || typeof el.setPixel !== 'function') continue;
-      for (const [row, col, rgb] of pixels) {
-        el.setPixel(row, col, rgb);
-      }
-    }
-  }, [neopixelData])
-
   // ── Error component IDs for highlighting ────────────────────────────────────
   const errorCompIds = useMemo(() =>
     new Set(validationErrors.flatMap(e => e.compIds)),
@@ -3477,7 +3723,7 @@ useEffect(() => {
   useEffect(() => {
     try {
       localStorage.setItem('openhw.serial.lineEnding', serialLineEnding);
-    } catch {
+    } catch (e) {
       // no-op: storage may be unavailable in restricted contexts
     }
   }, [serialLineEnding]);
@@ -3485,7 +3731,7 @@ useEffect(() => {
   useEffect(() => {
     try {
       localStorage.setItem('openhw.rp2040.debugTelemetry', rp2040DebugTelemetryEnabled ? '1' : '0');
-    } catch {
+    } catch (e) {
       // no-op: storage may be unavailable in restricted contexts
     }
   }, [rp2040DebugTelemetryEnabled]);
@@ -4008,7 +4254,7 @@ useEffect(() => {
     setFavoriteComponents(prev => {
       const next = new Set(prev);
       if (next.has(type)) next.delete(type); else next.add(type);
-      try { localStorage.setItem('openhw_fav_components', JSON.stringify([...next])); } catch { }
+      try { localStorage.setItem('openhw_fav_components', JSON.stringify([...next])); } catch (e) { }
       return next;
     });
   }, []);
@@ -4217,6 +4463,10 @@ useEffect(() => {
       innerCanvasRef.current.style.transformOrigin = '0 0';
     }
 
+    // While running, keep the interaction in refs/DOM only so the simulator tree
+    // does not rerender on every pan/zoom tick.
+    if (isRunning) return;
+
     // Debounce the React state flush to avoid re-render lag during interaction
     if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
     rafZoomRef.current = setTimeout(() => {
@@ -4239,9 +4489,16 @@ useEffect(() => {
       sy: e.clientY, 
       cx: comp.x, 
       cy: comp.y, 
+      type: comp.type,
+      w: comp.w,
+      h: comp.h,
+      rotation: comp.rotation || 0,
+      anchorPinId: comp.anchorPinId,
       moved: false, 
       originalComps: JSON.parse(JSON.stringify(components)) 
     };
+
+    dragData.breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
 
     // Performance: If breadboard, pre-calculate children once here
     if (comp.type.startsWith('wokwi-breadboard')) {
@@ -4264,6 +4521,7 @@ useEffect(() => {
     }
 
     movingComp.current = dragData;
+    setIsComponentDragging(true);
   }, [components, wires, isRunning, liveEditingDisabled])
 
   const onCompClick = useCallback((e, id) => {
@@ -4284,72 +4542,65 @@ useEffect(() => {
       let wireUpdate = null;
       let panUpdate = null;
       let mousePosUpdate = null;
+      const sd = segDragRef.current;
 
       if (movingComp.current) {
         movingComp.current.moved = true;
-        const { id, sx, sy, cx, cy } = movingComp.current;
+        const { id, type, sx, sy, cx, cy, w, h, rotation, breadboards } = movingComp.current;
         const zoom = canvasZoomRef.current;
         let nx = cx + (e.clientX - sx) / zoom;
         let ny = cy + (e.clientY - sy) / zoom;
 
         compUpdate = { id, newX: nx, newY: ny, snappingHoles: [] };
 
-        const comp = componentsRef.current.find(c => c.id === id);
-        if (comp) {
-          if (comp.type.startsWith('wokwi-breadboard')) {
-            // Breadboard movement propagation
-            const dx = nx - cx;
-            const dy = ny - cy;
+        if (type && type.startsWith('wokwi-breadboard')) {
+          // Breadboard movement propagation
+          const dx = nx - cx;
+          const dy = ny - cy;
+          
+          if (movingComp.current.childIds) {
+            compUpdate.childUpdates = movingComp.current.childIds.map(childId => ({
+              id: childId,
+              newX: (movingComp.current.childrenStart?.[childId]?.x ?? 0) + dx,
+              newY: (movingComp.current.childrenStart?.[childId]?.y ?? 0) + dy
+            }));
+          }
+        } else if (type) {
+          // Snapping Logic (Multi-pin)
+          const pins = LOCAL_PIN_DEFS[type] || [];
+          const anchorPinId = movingComp.current.anchorPinId || pins[0]?.id;
+          const anchorPin = pins.find(p => p.id === anchorPinId) || pins[0];
+          
+          if (anchorPin) {
+            const finalCenterX = nx + (w || 0) / 2;
+            const finalCenterY = ny + (h || 0) / 2;
+            const anchorWorld = getRotatedPoint(nx + anchorPin.x, ny + anchorPin.y, rotation, finalCenterX, finalCenterY);
             
-            if (movingComp.current.childIds) {
-              compUpdate.childUpdates = movingComp.current.childIds.map(childId => ({
-                id: childId,
-                newX: (movingComp.current.childrenStart?.[childId]?.x ?? 0) + dx,
-                newY: (movingComp.current.childrenStart?.[childId]?.y ?? 0) + dy
-              }));
-            }
-          } else {
-            // Snapping Logic (Multi-pin)
-            const pins = LOCAL_PIN_DEFS[comp.type] || [];
-            const anchorPinId = comp.attrs?.breadboard?.anchorPin || pins[0]?.id;
-            const anchorPin = pins.find(p => p.id === anchorPinId) || pins[0];
-            
-            if (anchorPin) {
-              const rotation = comp.rotation || 0;
-              const centerX = nx + (comp.w || 0) / 2;
-              const centerY = ny + (comp.h || 0) / 2;
-              const anchorWorld = getRotatedPoint(nx + anchorPin.x, ny + anchorPin.y, rotation, centerX, centerY);
-              
-              const hole = findNearestBreadboardHole(anchorWorld.x, anchorWorld.y, componentsRef.current, LOCAL_PIN_DEFS);
-              if (hole) {
-                // Apply snapping offset
-                nx += (hole.x - anchorWorld.x);
-                ny += (hole.y - anchorWorld.y);
-                compUpdate.newX = nx;
-                compUpdate.newY = ny;
+            // Use cached breadboards list for speed
+            const hole = findNearestBreadboardHole(anchorWorld.x, anchorWorld.y, breadboards || [], LOCAL_PIN_DEFS);
+            if (hole) {
+              // Apply snapping offset
+              nx += (hole.x - anchorWorld.x);
+              ny += (hole.y - anchorWorld.y);
+              compUpdate.newX = nx;
+              compUpdate.newY = ny;
 
-                // Identify all pins that align with holes
-                const finalCenterX = nx + (comp.w || 0) / 2;
-                const finalCenterY = ny + (comp.h || 0) / 2;
-                const currentSnaps = [];
-                pins.forEach(p => {
-                  const pWorld = getRotatedPoint(nx + p.x, ny + p.y, rotation, finalCenterX, finalCenterY);
-                  const h = findNearestBreadboardHole(pWorld.x, pWorld.y, componentsRef.current, LOCAL_PIN_DEFS);
-                  if (h && Math.hypot(pWorld.x - h.x, pWorld.y - h.y) < 1) {
-                    currentSnaps.push({ ...h, compPinId: p.id });
-                  }
-                });
-                compUpdate.snappingHoles = currentSnaps;
-              }
+              // Identify all pins that align with holes
+              const finalCenterX = nx + (w || 0) / 2;
+              const finalCenterY = ny + (h || 0) / 2;
+              const currentSnaps = [];
+              pins.forEach(p => {
+                const pWorld = getRotatedPoint(nx + p.x, ny + p.y, rotation, finalCenterX, finalCenterY);
+                const h = findNearestBreadboardHole(pWorld.x, pWorld.y, breadboards || [], LOCAL_PIN_DEFS);
+                if (h && Math.hypot(pWorld.x - h.x, pWorld.y - h.y) < 1) {
+                  currentSnaps.push({ ...h, compPinId: p.id });
+                }
+              });
+              compUpdate.snappingHoles = currentSnaps;
             }
           }
         }
-      }
-
-      // [ ... wire segment drag and panning logic remains same ... ]
-
-      const sd = segDragRef.current;
-      if (sd && canvasRef.current) {
+      } else if (sd && canvasRef.current) {
         // Fix #2 ─ wire segment drag
         const rect = canvasRef.current.getBoundingClientRect();
         const mx = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
@@ -4369,49 +4620,118 @@ useEffect(() => {
           }
           wireUpdate = { wireId: sd.wireId, cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) };
         }
-        // don't pan or track mouse while segment-dragging
-      } else {
+      } else if (isPanningRef.current && !isCanvasLockedRef.current) {
         // Fix #4 ─ canvas panning via direct DOM transform (zero React renders mid-pan)
-        if (isPanningRef.current && !isCanvasLockedRef.current) {
-          const dx = e.clientX - panStartRef.current.x;
-          const dy = e.clientY - panStartRef.current.y;
-          if (!didPanRef.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
-            didPanRef.current = true;
-          }
-          if (didPanRef.current) {
-            const newOffset = { x: panStartRef.current.ox + dx, y: panStartRef.current.oy + dy };
-            canvasOffsetRef.current = newOffset;
-            // Apply transform directly to DOM — NO React state update mid-pan
-            if (innerCanvasRef.current) {
-              innerCanvasRef.current.style.transform =
-                `translate(${newOffset.x}px, ${newOffset.y}px) scale(${canvasZoomRef.current})`;
-            }
-            panUpdate = newOffset; // stored so onUp can commit to React state
-          }
+        const dx = e.clientX - panStartRef.current.x;
+        const dy = e.clientY - panStartRef.current.y;
+        if (!didPanRef.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+          didPanRef.current = true;
         }
-
-        // Fix #3 ─ wire preview mouse tracking
-        if (wireStart && canvasRef.current) {
-          const rect = canvasRef.current.getBoundingClientRect();
+        if (didPanRef.current) {
+          const newOffset = { x: panStartRef.current.ox + dx, y: panStartRef.current.oy + dy };
+          canvasOffsetRef.current = newOffset;
+          // Apply transform directly to DOM — NO React state update mid-pan
+          if (innerCanvasRef.current) {
+            innerCanvasRef.current.style.transform =
+              `translate(${newOffset.x}px, ${newOffset.y}px) scale(${canvasZoomRef.current})`;
+          }
+          panUpdate = newOffset; // stored so onUp can commit to React state
+        }
+      } else if (wireStart && canvasRef.current) {
+        const rect = canvasRef.current.getBoundingClientRect();
+        const rawX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+        const rawY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+        mousePosUpdate = { x: rawX, y: rawY };
+      } else {
+        // Fix #5 ─ mouse position and inspector hover tracking (throttled)
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (rect) {
           const rawX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
           const rawY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-          const snapRadius = 15;
-          let snapped = null;
-          const allComps = componentsRef.current;
-          const pinDefs = pinDefsRef.current;
-          const getPos = getPinPosRef.current;
-          if (getPos) {
-            for (let ci = 0; ci < allComps.length && !snapped; ci++) {
-              const c = allComps[ci];
-              if (c.id === wireStart.compId) continue;
-              const pins = pinDefs[c.type] || [];
-              for (let pi = 0; pi < pins.length && !snapped; pi++) {
-                const pp = getPos(c.id, pins[pi].id);
-                if (pp && Math.hypot(pp.x - rawX, pp.y - rawY) < snapRadius) snapped = pp;
+          mousePosUpdate = { x: rawX, y: rawY };
+
+          if (showInspector) {
+            // Inspector hover detection (throttled)
+            // 1. Detect Pin Hover
+            const pinMatch = Array.from(document.querySelectorAll('[id^="pin-dot-"]')).find(el => {
+              const b = el.getBoundingClientRect();
+              return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom;
+            });
+            
+            if (pinMatch) {
+              const parts = pinMatch.id.split('-');
+              const compId = parts[2];
+              const pinId = parts.slice(3).join('-');
+              const instState = liveOopStatesRef.current[compId];
+              const pinVoltage = instState?.pins?.[pinId]?.voltage ?? 0;
+              // We'll use a direct state setter here, but since it's inside RAF it's fine
+              setHoveredElement({ 
+                type: 'pin', 
+                id: pinMatch.id, 
+                label: `${compId}:${pinId}`, 
+                voltage: pinVoltage,
+                history: instState?.vHistory || []
+              });
+            } else {
+              // 2. Detect Wire Hover
+              let foundWire = false;
+              for (const w of wiresRef.current) {
+                const fromParts = w.from.split(':');
+                const toParts = w.to.split(':');
+                // Use getPinPosRef to avoid expensive re-renders
+                const p1 = getPinPosRef.current?.(fromParts[0], fromParts.slice(1).join(':'));
+                const p2 = getPinPosRef.current?.(toParts[0], toParts.slice(1).join(':'));
+                if (!p1 || !p2) continue;
+                
+                const pts = [p1, ...(w.waypoints || []), p2];
+                for (let i = 0; i < pts.length - 1; i++) {
+                  const dist = distToSegment(rawX, rawY, pts[i], pts[i+1]);
+                  if (dist < 5) {
+                    const inst1 = liveOopStatesRef.current[fromParts[0]];
+                    const v1 = inst1?.pins?.[fromParts.slice(1).join(':')]?.voltage ?? 0;
+                    const v2 = liveOopStatesRef.current[toParts[0]]?.pins?.[toParts.slice(1).join(':')]?.voltage ?? 0;
+                    setHoveredElement({ 
+                      type: 'wire', 
+                      id: w.id, 
+                      label: `Wire ${w.id}`, 
+                      voltage: Math.max(v1, v2), 
+                      current: Math.abs(v1 - v2) * 1000,
+                      history: inst1?.vHistory || [] 
+                    });
+                    foundWire = true;
+                    break;
+                  }
+                }
+                if (foundWire) break;
+              }
+
+              if (!foundWire) {
+                // 3. Detect Component Body Hover
+                const compMatch = componentsRef.current.find(c => {
+                  const dx = rawX - c.x - c.w/2;
+                  const dy = rawY - c.y - c.h/2;
+                  return Math.abs(dx) < c.w/2 && Math.abs(dy) < c.h/2;
+                });
+
+                if (compMatch) {
+                  const instState = liveOopStatesRef.current[compMatch.id];
+                  const vDrop = instState?.voltageDrop ?? 0;
+                  const current = instState?.current ?? 0;
+                  setHoveredElement({ 
+                    type: 'comp', 
+                    id: compMatch.id, 
+                    label: compMatch.label || compMatch.type, 
+                    voltageDrop: vDrop, 
+                    current, 
+                    power: instState?.power ?? (vDrop * current),
+                    history: instState?.vHistory || []
+                  });
+                } else {
+                  setHoveredElement(null);
+                }
               }
             }
           }
-          mousePosUpdate = snapped || { x: rawX, y: rawY };
         }
       }
 
@@ -4447,12 +4767,16 @@ useEffect(() => {
               return affectedCompIds.has(fromId) || affectedCompIds.has(toId);
             });
 
+            // Create a quick lookup map for components for O(1) access
+            const compMap = new Map();
+            componentsRef.current.forEach(c => compMap.set(c.id, c));
+
             affectedWires.forEach(w => {
               const fromParts = w.from.split(':');
               const toParts = w.to.split(':');
               
               const getLivePos = (cid, pid) => {
-                const c = componentsRef.current.find(comp => comp.id === cid);
+                const c = compMap.get(cid);
                 if (!c) return null;
                 let curX = c.x, curY = c.y;
                 if (cid === id) { curX = newX; curY = newY; }
@@ -4658,6 +4982,7 @@ useEffect(() => {
         }));
       }
       movingComp.current = null;
+      setIsComponentDragging(false);
       setSnappingHoles([]);
       isPanningRef.current = false;
       if (segDragRef.current) {
@@ -4671,6 +4996,7 @@ useEffect(() => {
         segDragRef.current = null;
         setSegDrag(null);
       }
+      setIsComponentDragging(false);
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
@@ -4683,6 +5009,7 @@ useEffect(() => {
     if (!canvas) return;
 
     const handleWheel = (e) => {
+      if (e.target instanceof HTMLElement && e.target.closest('[data-simulation-console="true"]')) return;
       onWheel(e);
     };
 
@@ -5374,7 +5701,7 @@ useEffect(() => {
       try {
         const parsed = JSON.parse(localStorage.getItem(storageKey) || 'null');
         return parsed && typeof parsed === 'object' ? parsed : null;
-      } catch {
+      } catch (e) {
         return null;
       }
     };
@@ -5907,7 +6234,7 @@ useEffect(() => {
     try {
       localStorage.setItem(`openhw_gdb_artifact_${boardId}`, JSON.stringify(artifact));
       localStorage.setItem('openhw_gdb_last_artifact', JSON.stringify(artifact));
-    } catch {
+    } catch (e) {
       // ignore storage failures
     }
 
@@ -6019,6 +6346,17 @@ useEffect(() => {
         const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
 
         setValidationErrors(formattedErrors);
+
+        // Trigger Intelligent Autofix Analysis
+        if (formattedErrors.length > 0 && autofixWorkerRef.current) {
+          autofixWorkerRef.current.postMessage({
+            type: 'analyze',
+            payload: {
+              diagram: { components, connections: wires },
+              violations: formattedErrors
+            }
+          });
+        }
         setShowValidation(true);
         if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
         
@@ -6128,35 +6466,69 @@ useEffect(() => {
   }, [components, wires, saveHistory, validationErrors]);
 
   // Autofix preview/apply-all integration
-  const handleApplyPlan = useCallback((res) => {
-    if (!res) return;
-    if (res.finalProject) {
-      setComponents(res.finalProject.components || components);
-      setWires(res.finalProject.connections || wires);
-      validationRunCacheRef.current = {};
-      appendConsoleEntry('info', `🔧 Applied plan: ${res.appliedCount || 0} fixes, skipped ${res.skippedCount || 0}`, 'simulator');
+  const handleApplyPlan = useCallback(() => {
+    if (!autofixPlan) return;
+    
+    // Apply the plan to the actual project
+    const newComponents = JSON.parse(JSON.stringify(components)); // Deep clone for safety
+    const newWires = JSON.parse(JSON.stringify(wires));
+    
+    // Add new components
+    if (autofixPlan.addedComponents) {
+      autofixPlan.addedComponents.forEach(ac => {
+          if (!newComponents.find(c => c.id === ac.id)) {
+              newComponents.push({
+                  ...ac,
+                  isGhost: false, // Ensure it's not a ghost anymore
+                  w: ac.w || 40,
+                  h: ac.h || 20
+              });
+          }
+      });
     }
-  }, [components, wires]);
+    
+    // Add new wires
+    if (autofixPlan.addedWires) {
+      autofixPlan.addedWires.forEach(aw => {
+          newWires.push({
+              id: 'wire_' + Math.random().toString(36).substr(2, 9),
+              from: aw.from,
+              to: aw.to,
+              color: aw.color === '#38bdf8' ? 'green' : aw.color, // Transition from ghost blue to normal
+              waypoints: []
+          });
+      });
+    }
+    
+    // Remove wires (Logical removal by pin matching)
+    let finalWires = newWires;
+    if (autofixPlan.removedWires && autofixPlan.removedWires.length > 0) {
+      finalWires = newWires.filter(w => {
+        const isMatch = autofixPlan.removedWires.some(rw => 
+           (rw.from === w.from && rw.to === w.to) ||
+           (rw.from === w.to && rw.to === w.from)
+        );
+        return !isMatch;
+      });
+    }
+    
+    // Apply transformations (rotations/flips)
+    if (autofixPlan.transformations) {
+      autofixPlan.transformations.forEach(trans => {
+        const comp = newComponents.find(c => c.id === trans.componentId);
+        if (comp) {
+          comp.rotation = trans.rotation; 
+        }
+      });
+    }
 
-  const undoFix = useCallback(() => {
-    const undoResult = undoLastFix();
-    if (undoResult?.undone) {
-      setComponents(undoResult.circuit.components || components);
-      setWires(undoResult.circuit.connections || wires);
-      validationRunCacheRef.current = {}; // Clear cache
-      appendConsoleEntry('info', `↩️ Undone: ${undoResult.fixDescription}`, 'simulator');
-    }
-  }, [components, wires]);
-
-  const redoFix = useCallback(() => {
-    const redoResult = redoLastFix();
-    if (redoResult?.redone) {
-      setComponents(redoResult.circuit.components || components);
-      setWires(redoResult.circuit.connections || wires);
-      validationRunCacheRef.current = {}; // Clear cache
-      appendConsoleEntry('info', `🔄 Redone: ${redoResult.fixDescription}`, 'simulator');
-    }
-  }, [components, wires]);
+    setComponents(newComponents);
+    setWires(finalWires);
+    setAutofixPlan(null); // Clear preview
+    saveHistory(); // Save to undo/redo history
+    
+    appendConsoleEntry('info', `🔧 Intelligent Autofix Applied: ${autofixPlan.addedComponents?.length || 0} components, ${autofixPlan.addedWires?.length || 0} wires, ${autofixPlan.transformations?.length || 0} transforms.`, 'simulator');
+  }, [autofixPlan, components, wires, saveHistory]);
 
   const getSerialTimestamp = () => {
     const now = new Date();
@@ -6412,10 +6784,13 @@ useEffect(() => {
       serialPausedQueueRef.current = [];
       runComponentUpdateCountsRef.current = {};
       runPinTransitionCountsRef.current = {};
+      runLagTelemetryLastLogRef.current.clear();
+      runFpsTelemetryLastLogRef.current.clear();
       runLastBoardPinsRef.current = new Map();
 
       if (!runCircuitValidation()) {
         appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
+        // The useEffect will auto-trigger re-analysis when validationErrors state updates
         runStartGuardRef.current = false;
         return;
       }
@@ -6730,6 +7105,8 @@ useEffect(() => {
 
       worker.onmessage = async (event) => {
         const msg = event.data;
+        const msgArrivalMs = performance.now();
+        
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
@@ -6837,6 +7214,9 @@ useEffect(() => {
               `rx=${rx}`,
               `inq=${inq}`,
               `stall=${stall}`,
+              Number.isFinite(Number(metrics.lastRunLoopMs)) ? `loop=${Number(metrics.lastRunLoopMs).toFixed(2)}ms` : '',
+              Number.isFinite(Number(metrics.lastPhysicsMs)) ? `phys=${Number(metrics.lastPhysicsMs).toFixed(2)}ms` : '',
+              Number.isFinite(Number(metrics.lastComponentUpdateMs)) ? `comp=${Number(metrics.lastComponentUpdateMs).toFixed(2)}ms` : '',
               `pri=${primask ? '1' : '0'}`,
               `dSteps=${stepsSinceLastEmit}`,
               `high=${highPinsLabel}`,
@@ -6887,18 +7267,16 @@ useEffect(() => {
           const ip = String(wireless.ip || '');
           const note = String(wireless.note || '');
 
-          setOopStates((prev) => ({
-            ...prev,
-            [resolvedBoardId]: {
-              ...(prev[resolvedBoardId] || {}),
-              wirelessMode: mode,
-              wirelessStatus: status,
-              wirelessConnected: connected,
-              wirelessSsid: ssid,
-              wirelessIp: ip,
-              wirelessNote: note,
-            },
-          }));
+          liveOopStatesRef.current[resolvedBoardId] = {
+            ...(liveOopStatesRef.current[resolvedBoardId] || {}),
+            wirelessMode: mode,
+            wirelessStatus: status,
+            wirelessConnected: connected,
+            wirelessSsid: ssid,
+            wirelessIp: ip,
+            wirelessNote: note,
+          };
+          notifyLiveOopStateListeners(resolvedBoardId);
 
           const signature = `${mode}:${status}:${connected ? '1' : '0'}:${ssid}:${ip}`;
           const lastSignature = rp2040WirelessLastLogRef.current.get(resolvedBoardId);
@@ -7011,24 +7389,26 @@ useEffect(() => {
             renderAnalogByBoardRef.current[boardIdKey] = Array.isArray(msg.analog) ? [...msg.analog] : msg.analog;
           }
 
-          setPinStates(msg.pins);
-          // Push to plotData history
-          setPlotData(prev => {
-            const serialVars = {};
-            latestParsedSerialRef.current.forEach((val, idx) => {
-              const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
-              serialVars[lbl] = val;
+          livePinStatesRef.current = msg.pins;
+          if (codeTab === 'serial' && serialViewMode === 'plotter' && !plotterPaused) {
+            // Only grow plot history when the plotter is visible.
+            setPlotData(prev => {
+              const serialVars = {};
+              latestParsedSerialRef.current.forEach((val, idx) => {
+                const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
+                serialVars[lbl] = val;
+              });
+              const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars, boardId: msg.boardId || 'default' };
+              const next = [...prev, newPt];
+              if (next.length > 800) return next.slice(next.length - 800);
+              return next;
             });
-            const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars, boardId: msg.boardId || 'default' };
-            const next = [...prev, newPt];
-            if (next.length > 800) return next.slice(next.length - 800);
-            return next;
-          });
+          }
         }
         if (msg.type === 'state' && msg.neopixels) {
           const boardIdKey = String(msg.boardId || 'default');
           renderNeopixelsByBoardRef.current[boardIdKey] = msg.neopixels;
-          setNeopixelData(msg.neopixels);
+          applyLiveNeopixelData(msg.neopixels);
         }
         if (msg.type === 'state' && msg.components) {
           const boardIdKey = String(msg.boardId || 'default');
@@ -7045,13 +7425,54 @@ useEffect(() => {
 
           renderComponentsByBoardRef.current[boardIdKey] = boardComponentState;
 
-          setOopStates(prev => {
-            const next = { ...prev };
-            msg.components.forEach(c => {
-              next[c.id] = c.state;
-            });
-            return next;
-          });
+          updateLiveOopStates(msg.components);
+        }
+        if (msg.type === 'state') {
+          const boardIdKey = String(msg.boardId || 'default');
+          const boardComp = components.find((c) => c.id === boardIdKey) || boardComponents.find((b) => b.id === boardIdKey);
+          const boardKind = normalizeBoardKind(boardComp?.type || '');
+          const nowMs = Date.now();
+          const prevLag = runLagTelemetryLastLogRef.current.get(boardIdKey) || null;
+          const stateGapMs = prevLag ? (nowMs - prevLag.ts) : null;
+          
+          // Emit sequence tracking
+          const emitSeq = Number(msg._emitSeq || -1);
+          const emitTimeMs = Number(msg._emitTime || 0);
+          if (emitSeq >= 0 && emitTimeMs > 0) {
+            const msgAgeMs = (performance.now() - msgArrivalMs) + emitTimeMs;
+            if (stateGapMs > 80 || stateGapMs === 0) {
+              appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
+            }
+          }
+          const perf = msg.perf && typeof msg.perf === 'object' ? msg.perf : null;
+          const perfRunMs = Number(perf?.lastRunLoopMs);
+          const perfPhysicsMs = Number(perf?.lastPhysicsMs);
+          const perfComponentMs = Number(perf?.lastComponentUpdateMs);
+          const perfPresent = Number.isFinite(perfRunMs) || Number.isFinite(perfPhysicsMs) || Number.isFinite(perfComponentMs);
+          const pinsCount = msg.pins && typeof msg.pins === 'object' ? Object.keys(msg.pins).length : 0;
+          const componentsCount = Array.isArray(msg.components) ? msg.components.length : 0;
+          const slowStateGap = stateGapMs !== null && stateGapMs > 80;
+          const slowWorker = (Number.isFinite(perfRunMs) && perfRunMs > 12)
+            || (Number.isFinite(perfPhysicsMs) && perfPhysicsMs > 8)
+            || (Number.isFinite(perfComponentMs) && perfComponentMs > 8);
+          const msgHandleTimeMs = performance.now() - msgArrivalMs;
+          if (slowStateGap || slowWorker || !prevLag) {
+            const line = [
+              `LAG ${boardIdKey}`,
+              `board=${boardKind || 'unknown'}`,
+              `solver=${solverMode}`,
+              `stateGap=${stateGapMs === null ? 'n/a' : `${stateGapMs.toFixed(1)}ms`}`,
+              `handleMs=${msgHandleTimeMs.toFixed(1)}`,
+              `workerRun=${perfPresent ? `${Number.isFinite(perfRunMs) ? perfRunMs.toFixed(2) : 'n/a'}ms` : 'n/a'}`,
+              `workerPhysics=${perfPresent ? `${Number.isFinite(perfPhysicsMs) ? perfPhysicsMs.toFixed(2) : 'n/a'}ms` : 'n/a'}`,
+              `workerComponent=${perfPresent ? `${Number.isFinite(perfComponentMs) ? perfComponentMs.toFixed(2) : 'n/a'}ms` : 'n/a'}`,
+              `pins=${pinsCount}`,
+              `components=${componentsCount}`,
+            ];
+
+            appendConsoleEntry(slowStateGap || slowWorker ? 'warn' : 'info', line.join(' | '), 'debug');
+            runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs });
+          }
         }
         if (msg.type === 'serial') {
           const incomingBoardId = String(msg.boardId || '').trim();
@@ -7142,6 +7563,8 @@ useEffect(() => {
     rp2040WirelessLastLogRef.current.clear();
     rp2040UartMicroPythonBoardsRef.current.clear();
     rp2040UartSilentWarnedBoardsRef.current.clear();
+    runLagTelemetryLastLogRef.current.clear();
+    runFpsTelemetryLastLogRef.current.clear();
 
     if (wasRunning) {
       const componentSummary = Object.entries(runComponentUpdateCountsRef.current)
@@ -7206,9 +7629,11 @@ useEffect(() => {
     setIsPaused(false);
     setRunStartedAtMs(null);
     setRunDurationSec(0);
-    setPinStates({});
-    setNeopixelData(neopixelOffPixels);
-    setOopStates(neopixelOffStates);
+    livePinStatesRef.current = {};
+    clearLiveNeopixelData();
+    applyLiveNeopixelData(neopixelOffPixels);
+    liveOopStatesRef.current = neopixelOffStates;
+    Object.keys(neopixelOffStates).forEach(notifyLiveOopStateListeners);
     setSerialHistory([]);
     setPlotData([]);
     setSerialPaused(false);
@@ -8198,7 +8623,7 @@ useEffect(() => {
     else reader.readAsText(file);
   };
 
-  const getComponentStateAttrs = (comp) => {
+  const getComponentStateAttrs = (comp, liveStateOverride = null) => {
     let attrs = { ...comp.attrs };
 
     if (normalizeBoardKind(comp.type) === 'rp2040') {
@@ -8206,7 +8631,7 @@ useEffect(() => {
     }
 
     // Remote OOP state takes priority
-    const remoteState = oopStates[comp.id];
+    const remoteState = liveStateOverride || liveOopStatesRef.current[comp.id];
 
     if (comp.type === 'wokwi-led') {
       delete attrs.value; // Let ui.tsx handle it
@@ -8318,7 +8743,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlan} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -9038,7 +9463,7 @@ useEffect(() => {
         {/* CANVAS + SVG WIRE LAYER */}
         <main
           className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)] bg-[length:24px_24px]" style={{
-            cursor: segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab',
+            cursor: showInspector ? 'url("data:image/svg+xml,%3Csvg width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'4\' fill=\'%2338bdf8\'/%3E%3Cpath d=\'M12 2v6M12 16v6M2 12h6M16 12h6\' stroke=\'%2338bdf8\' stroke-width=\'2\'/%3E%3C/svg%3E") 12 12, crosshair' : (segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab'),
             backgroundImage: showGrid
               ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
               : 'none',
@@ -9052,6 +9477,7 @@ useEffect(() => {
           onTouchEnd={onTouchEnd}
           onDrop={onCanvasDrop}
           onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
+          onMouseMove={() => {}}
           onMouseDown={e => {
             if (isCanvasLocked || wireStart || movingComp.current) return;
             if (e.button !== 0 && e.button !== 1) return;
@@ -9129,6 +9555,42 @@ useEffect(() => {
                       segDragRef.current = dragData;
                       setSegDrag(dragData);
                     }}
+                  />
+                );
+              })}
+              {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
+                const fromParts = (w.from || '').replace('.', ':').split(':');
+                const toParts = (w.to || '').replace('.', ':').split(':');
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
+                if (!p1 || !p2) return null;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
+                return (
+                  <CanvasWire
+                    key={`ghost-${w.id}`}
+                    wire={{ ...w, color: '#38bdf8' }}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    isGhost={true}
+                    theme={theme}
+                  />
+                );
+              })}
+              {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
+                const fromParts = (w.from || '').replace('.', ':').split(':');
+                const toParts = (w.to || '').replace('.', ':').split(':');
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
+                if (!p1 || !p2) return null;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
+                return (
+                  <CanvasWire
+                    key={`ghost-${w.id}`}
+                    wire={{ ...w, color: '#38bdf8' }}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    isGhost={true}
+                    theme={theme}
                   />
                 );
               })}
@@ -9324,13 +9786,16 @@ useEffect(() => {
                 return (
                   <div 
                     key={comp.id}
-                    id={`comp-master-${comp.id}`}
+                    id={comp.isGhost ? `ghost-${comp.id}` : `comp-master-${comp.id}`}
                     style={{
                       position: 'absolute',
                       left: comp.x, top: comp.y,
                       zIndex: comp.type.startsWith('wokwi-breadboard') 
                         ? (isSelected ? 4 : 2) 
                         : (isSelected ? 10 : 5),
+                      opacity: comp.isGhost ? 0.4 : 1,
+                      filter: comp.isGhost ? 'grayscale(0.5) blur(0.5px)' : 'none',
+                      pointerEvents: comp.isGhost ? 'none' : 'auto',
                     }}
                   >
                     <CanvasComponent
@@ -9342,6 +9807,8 @@ useEffect(() => {
                       getComponentStateAttrs={getComponentStateAttrs}
                       COMPONENT_REGISTRY={COMPONENT_REGISTRY}
                       PIN_DEFS={PIN_DEFS}
+                      getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+                      subscribeLiveOopState={subscribeLiveOopState}
                     />
 
                     {/* Wrapper for the actual emulator component and its dynamic pins */}
@@ -9400,8 +9867,8 @@ useEffect(() => {
                         {COMPONENT_REGISTRY[comp.type] ? (
                           // Local UI component rendering SVG
                           React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                            state: oopStates[comp.id] || {},
-                            attrs: getComponentStateAttrs(comp),
+                            state: getLiveOopStateSnapshot(comp.id),
+                            attrs: getComponentStateAttrs(comp, getLiveOopStateSnapshot(comp.id)),
                             isRunning: isRunning
                           })
                         ) : (
@@ -9520,6 +9987,7 @@ useEffect(() => {
                 <>
                   {breadboards.map(renderComponent)}
                   {others.map(renderComponent)}
+                  {autofixPlan?.addedComponents?.map(c => renderComponent({ ...c, isGhost: true }))}
                 </>
               );
             })()}
@@ -10014,6 +10482,10 @@ useEffect(() => {
                   <button className="canvas-menu-item" onClick={() => { setCanvasZoom(1); setCanvasOffset({ x: 0, y: 0 }); setShowCanvasMenu(false); }}>Fit to Canvas</button>
                   <button className={`canvas-menu-item${history.past.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { undo(); setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning}>Undo</button>
                   <button className={`canvas-menu-item${history.future.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { redo(); setShowCanvasMenu(false); }} disabled={history.future.length === 0 || isRunning}>Redo</button>
+                  <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
+                  <button className="canvas-menu-item" onClick={() => { setShowInspector(v => !v); setShowCanvasMenu(false); }}>
+                    {showInspector ? 'Disable Inspector' : 'Enable Component Inspector'}
+                  </button>
                   <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
                   <button className="canvas-menu-item" onClick={() => { setShowGrid(g => !g); setShowCanvasMenu(false); }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
                   <button className="canvas-menu-item" onClick={() => { setIsCanvasLocked(l => !l); setShowCanvasMenu(false); }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
@@ -10566,7 +11038,8 @@ useEffect(() => {
             )}
           </aside>
         )}
-      </div>
+
+
 
       {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
       {showSaveDialog && (
@@ -10783,6 +11256,15 @@ useEffect(() => {
               </Btn>
               <Btn 
                 onClick={() => {
+                  setShowEngineSelector(true);
+                  setShowF1Menu(false);
+                }}
+                style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
+              >
+                Select Simulation Engine
+              </Btn>
+              <Btn 
+                onClick={() => {
                   setShowSpeedDialog(true);
                   setShowF1Menu(false);
                 }}
@@ -10896,6 +11378,70 @@ useEffect(() => {
         </div>
       )}
 
+      {/* ── ENGINE SELECTOR DIALOG ─────────────────────────────────────── */}
+      {showEngineSelector && (
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.6)] backdrop-blur-sm flex items-center justify-center z-[9999]" onClick={() => setShowEngineSelector(false)}>
+          <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-2xl p-8 w-[480px] shadow-[0_20px_60px_rgba(0,0,0,.6)]" onClick={e => e.stopPropagation()}>
+            <div className="text-xl font-bold mb-2 text-[var(--text)] tracking-tight">Select Simulation Engine</div>
+            <div className="text-sm text-[var(--text3)] mb-8 leading-relaxed">
+              Choose the computational engine that best fits your simulation needs. Changes are applied in real-time.
+            </div>
+
+            <div className="space-y-4 mb-8">
+              {/* Classic Logic Option */}
+              <div 
+                className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${solverMode === 'logic' ? 'border-[var(--accent)] bg-[rgba(var(--accent-rgb),0.05)]' : 'border-[var(--border)] hover:border-[var(--border-hover)]'}`}
+                onClick={() => {
+                  setSolverMode('logic');
+                  if (workerRef.current) workerRef.current.postMessage({ type: 'SET_SOLVER_MODE', mode: 'logic' });
+                }}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="font-bold text-[var(--text)]">Classic Logic</span>
+                  {solverMode === 'logic' && (
+                    <span className="text-[10px] bg-[var(--accent)] text-white px-3 py-1 rounded-full font-bold uppercase tracking-wider">This is Current Engine</span>
+                  )}
+                </div>
+                <div className="text-xs text-[var(--text2)] leading-normal">
+                  High-performance Boolean propagation. Ideal for large digital circuits and low-end hardware.
+                </div>
+              </div>
+
+              {/* Modern Nodal Option */}
+              <div 
+                className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${solverMode === 'nodal' ? 'border-[var(--accent)] bg-[rgba(var(--accent-rgb),0.05)]' : 'border-[var(--border)] hover:border-[var(--border-hover)]'}`}
+                onClick={() => {
+                  setSolverMode('nodal');
+                  if (workerRef.current) workerRef.current.postMessage({ type: 'SET_SOLVER_MODE', mode: 'nodal' });
+                }}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-[var(--text)]">Modern Nodal (MNA)</span>
+                    {webGpuSupported && <span className="text-[10px] text-[#4caf50] font-bold">● GPU Accel Available</span>}
+                  </div>
+                  {solverMode === 'nodal' && (
+                    <span className="text-[10px] bg-[var(--accent)] text-white px-3 py-1 rounded-full font-bold uppercase tracking-wider">This is Current Engine</span>
+                  )}
+                </div>
+                <div className="text-xs text-[var(--text2)] leading-normal">
+                  High-fidelity analog solving using matrix math. Recommended for mixed-signal designs.
+                  {!webGpuSupported && <div className="mt-2 text-[10px] text-[#ff9800] font-medium italic">Running on CPU (No WebGPU detected)</div>}
+                </div>
+              </div>
+            </div>
+
+            <Btn 
+              onClick={() => setShowEngineSelector(false)}
+              style={{ width: '100%', padding: '14px', borderRadius: '12px' }}
+              className="font-bold tracking-wide"
+            >
+              Continue with {solverMode === 'logic' ? 'Classic Logic' : 'Modern Nodal'}
+            </Btn>
+          </div>
+        </div>
+      )}
+
       {/* Project right-click context menu */}
       {projContextMenu && (
         <div
@@ -10971,9 +11517,87 @@ useEffect(() => {
       )}
 
 
+        {/* COMPONENT INSPECTOR HUD - High Performance Telemetry */}
+        {showInspector && hoveredElement && (
+          <div style={{
+            position: 'fixed',
+            left: mousePos.x * canvasZoom + canvasOffset.x + (canvasRef.current?.getBoundingClientRect().left || 0) + 20,
+            top: mousePos.y * canvasZoom + canvasOffset.y + (canvasRef.current?.getBoundingClientRect().top || 0) + 20,
+            background: '#0f172a',
+            border: '1px solid #334155',
+            borderRadius: '12px',
+            padding: '14px',
+            zIndex: 100000,
+            color: '#f8fafc',
+            fontFamily: "'Inter', system-ui, sans-serif",
+            fontSize: '11px',
+            pointerEvents: 'none',
+            boxShadow: '0 20px 50px -12px rgba(0, 0, 0, 0.6)',
+            minWidth: '200px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ fontSize: '9px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Electrical Telemetry
+              </div>
+              <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 8px #4ade80' }} />
+            </div>
+            
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ fontSize: '14px', fontWeight: '800', color: '#fff', marginBottom: '2px' }}>{hoveredElement.label}</div>
+              <div style={{ fontSize: '10px', color: '#64748b' }}>Node ID: {hoveredElement.id}</div>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+              <div style={{ background: '#1e293b', padding: '8px', borderRadius: '8px', border: '1px solid #334155' }}>
+                <div style={{ fontSize: '9px', color: '#94a3b8', marginBottom: '4px' }}>VOLTAGE</div>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: '#38bdf8' }}>{hoveredElement.voltage?.toFixed(2) ?? (hoveredElement.voltageDrop?.toFixed(2) || '0.00')}V</div>
+              </div>
+              {(hoveredElement.current !== undefined) && (
+                <div style={{ background: '#1e293b', padding: '8px', borderRadius: '8px', border: '1px solid #334155' }}>
+                  <div style={{ fontSize: '9px', color: '#94a3b8', marginBottom: '4px' }}>CURRENT</div>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#4ade80' }}>{(hoveredElement.current * 1000).toFixed(1)}mA</div>
+                </div>
+              )}
+            </div>
+            
+            {hoveredElement.power !== undefined && (
+              <div style={{ background: 'rgba(244, 114, 182, 0.1)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(244, 114, 182, 0.2)', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '9px', color: '#f472b6', fontWeight: '700' }}>POWER DISSIPATION</span>
+                  <span style={{ fontSize: '12px', fontWeight: '800', color: '#f472b6' }}>{(hoveredElement.power * 1000).toFixed(1)}mW</span>
+                </div>
+              </div>
+            )}
+            
+            {/* MINI-OSCILLOSCOPE SPARKLINE */}
+            {hoveredElement.history && hoveredElement.history.length > 1 && (
+              <div style={{ marginTop: '4px' }}>
+                <div style={{ fontSize: '9px', color: '#94a3b8', marginBottom: '6px', fontWeight: '600' }}>Signal Integrity (200ms)</div>
+                <div style={{ height: '35px', background: 'rgba(0,0,0,0.3)', borderRadius: '6px', padding: '2px', position: 'relative', overflow: 'hidden' }}>
+                  <svg width="100%" height="100%" viewBox="0 0 140 35" preserveAspectRatio="none" style={{ overflow: 'visible' }}>
+                    <polyline
+                      fill="none"
+                      stroke="#38bdf8"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      points={hoveredElement.history.map((v, i) => `${(i / (hoveredElement.history.length - 1)) * 140},${35 - (Math.min(v, 5) / 5) * 30}`).join(' ')}
+                    />
+                  </svg>
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '9px', color: '#475569' }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+              <span>WASM MNA Engine Active</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-  )
-}
+  );
+};
 
 function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, setRenameValue, handleConfirmRename, setRenamingProjectId, handleLoadProject, isRunning, setShowProjectsSidebar, onContextMenu, formatProjectDate }) {
   const isCurrent = proj.id === currentProjectId;

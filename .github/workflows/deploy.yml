@@ -115,10 +115,27 @@ jobs:
             ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:develop
             ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:${{ github.sha }}
           build-args: |
-            VITE_API_BASE_URL=https://openhw-studio.fossee.in/api
-            VITE_EXAMPLES_BASE_URL=https://openhw-studio.fossee.in/examples
-            VITE_GOOGLE_CLIENT_ID=330028772877-csjlu9u6nam4bq6i1ergcrs4oetkhnqv.apps.googleusercontent.com
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_EXAMPLES_BASE_URL=${{ secrets.VITE_EXAMPLES_BASE_URL }}
+            VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             VITE_ADMIN_EMAILS=${{ secrets.VITE_ADMIN_EMAILS }}
+
+  notify_admin:
+    name: Notify Dashboard
+    needs: test_and_build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Webhook to Backend
+        run: |
+          curl -X POST https://openhw-studio.fossee.in/api/deploy/notify \
+          -H "Content-Type: application/json" \
+          -d '{
+            "repo": "${{ github.event.repository.name }}",
+            "prTitle": "Frontend Build Successful: Ready for Approval",
+            "prDescription": "Commit: ${{ github.event.head_commit.message }}",
+            "secret": "5d2f8e1a9c3b4d7e0f2a5b8d1c4e7f9a",
+            "filesChanged": []
+          }'
 
   deploy:
     name: Deploy to Production

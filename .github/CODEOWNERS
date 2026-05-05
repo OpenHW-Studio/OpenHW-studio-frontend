@@ -1,0 +1,3 @@
+# Protect CI/CD workflows and sensitive configurations
+/.github/workflows/ @danish9661
+

@@ -121,7 +121,7 @@ export async function fetchComponentsVersion() {
     try {
         const response = await axios.get(`${COMPILER_URL}/components/version`);
         return response.data?.version ?? null;
-    } catch {
+    } catch (e) {
         return null;
     }
 }
@@ -188,16 +188,22 @@ export async function rollbackDeploymentAction(repo, branch = 'develop') {
     return response.data;
 }
 
+export async function fetchDeploymentNotifications() {
+    const response = await axios.get(`${COMPILER_URL}/admin/deployments/notifications`, getAdminAuthConfig());
+    return response.data.notifications || [];
+}
+
+export async function triggerDeploymentBuild(repo, notificationId = null) {
+    const response = await axios.post(`${COMPILER_URL}/admin/deployments/trigger`, { target_repo: repo, notification_id: notificationId }, getAdminAuthConfig());
+    return response.data;
+}
+
 export async function fetchInfrastructureStatus() {
     try {
         const response = await axios.get(`${COMPILER_URL}/admin/infrastructure/status`, getAdminAuthConfig());
         return response.data.services || [];
     } catch (e) {
-        return [
-            { name: 'frontend', status: 'running', version: 'v1.4.2', hash: '8f2d9c1', uptime: '14d 2h', resources: { cpu: '1.2%', mem: '128MB', memPerc: '5%' } },
-            { name: 'backend', status: 'running', version: 'v2.1.0', hash: '4a1e5b2', uptime: '3d 18h', resources: { cpu: '0.8%', mem: '256MB', memPerc: '10%' } },
-            { name: 'mongodb', status: 'running', version: '6.0.5', hash: 'sha256:d82', uptime: '45d 1h', resources: { cpu: '0.2%', mem: '512MB', memPerc: '20%' } }
-        ];
+        return [];
     }
 }
 
@@ -232,4 +238,19 @@ export async function fetchAuditHistory() {
 export async function fetchPublicSystemStatus() {
     const response = await axios.get(`${COMPILER_URL}/public/system-status`);
     return response.data.status || null;
+}
+
+export async function fetchMaintenanceStatus() {
+    try {
+        const response = await axios.get(`${COMPILER_URL}/public/maintenance-status`);
+        return response.data.enabled || false;
+    } catch (e) {
+        // If connection fails (e.g. backend down), consider it maintenance/offline
+        return true; 
+    }
+}
+
+export async function toggleMaintenanceMode(enabled) {
+    const response = await axios.post(`${COMPILER_URL}/admin/maintenance/toggle`, { enabled }, getAdminAuthConfig());
+    return response.data;
 }

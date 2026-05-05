@@ -250,7 +250,7 @@ export default function TeacherClassDetailPage() {
                 classStudentCount: students.length || 0,
               },
             ];
-          } catch {
+          } catch (e) {
             return [
               assignment._id,
               { submittedCount: 0, classStudentCount: students.length || 0 },
@@ -694,7 +694,7 @@ export default function TeacherClassDetailPage() {
       try {
         await navigator.clipboard.writeText(session.sessionCode);
         setInfo(`Live simulator started. Join code ${session.sessionCode} copied.`);
-      } catch {
+      } catch (e) {
         setInfo(`Live simulator started. Share join code ${session.sessionCode} with students.`);
       }
     } catch (liveMeetingError) {

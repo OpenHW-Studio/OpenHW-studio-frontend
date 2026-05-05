@@ -116,12 +116,51 @@ const MenuButton = ({ label, menuKey, items, activeMenu, setActiveMenu, theme })
   </div>
 );
 
+const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
+  if (!show) return null;
+  return (
+    <div style={{
+      position: 'fixed', top: '80px', right: '20px', width: `${width}px`,
+      background: 'rgba(23, 23, 23, 0.85)', backdropFilter: 'blur(20px)',
+      border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px',
+      boxShadow: '0 20px 50px rgba(0,0,0,0.5)', zIndex: 9999,
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      animation: 'panel-appear 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+    }}>
+      <div style={{
+        padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'rgba(255, 255, 255, 0.03)'
+      }}>
+        <span style={{ fontSize: '13px', fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }} 
+          style={{
+            background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', color: 'rgba(255, 255, 255, 0.6)',
+            cursor: 'pointer', padding: '6px', borderRadius: '8px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.2s'
+          }} onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+        {children}
+      </div>
+    </div>
+  );
+};
+
 function TopToolboxInternal(props) {
   // --- UI CONFIG ---
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], runAutoFixAll, onApplyPlan, autoWiringEnabled, setAutoWiringEnabled, autoCodingEnabled, setAutoCodingEnabled } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], autofixPlan, autofixStatus, autofixLog, onApplyPlan, onRefresh, autoWiringEnabled, setAutoWiringEnabled, autoCodingEnabled, setAutoCodingEnabled } = props;
   const navigate = useNavigate();
 
 
@@ -186,40 +225,6 @@ function TopToolboxInternal(props) {
     { label: 'Connect Hardware', onClick: () => setShowConnectPanel(true) }
   ];
 
-  const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
-    if (!show) return null;
-    return (
-      <div style={{
-        position: 'fixed', top: '80px', right: '20px', width: `${width}px`,
-        background: 'rgba(23, 23, 23, 0.85)', backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px',
-        boxShadow: '0 20px 50px rgba(0,0,0,0.5)', zIndex: 9999,
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        animation: 'panel-appear 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
-      }}>
-        <div style={{
-          padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'rgba(255, 255, 255, 0.03)'
-        }}>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#fff', letterSpacing: '0.02em' }}>{title}</h3>
-          <button onClick={onClose} style={{
-            background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
-            cursor: 'pointer', padding: '4px', borderRadius: '6px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'all 0.2s'
-          }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
-             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-        <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
-          {children}
-        </div>
-      </div>
-    );
-  };
-
   const assistMenuItems = [
     { 
       label: `Auto-Wiring: ${autoWiringEnabled ? 'ON' : 'OFF'}`, 
@@ -244,6 +249,13 @@ function TopToolboxInternal(props) {
 
   return (
     <header className="relative z-[1000] flex items-center gap-4 px-5 py-3 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
+      <style>{`
+        @keyframes panel-appear {
+          from { opacity: 0; transform: translateX(20px) scale(0.98); }
+          to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+      `}</style>
+
       <div className="flex items-center gap-4">
         <img
           src="/logo-Photoroom.png"
@@ -614,8 +626,11 @@ function TopToolboxInternal(props) {
           <AutofixPreviewPanel 
             project={{ components, connections: wires }} 
             validationErrors={validationErrors || []} 
-            runAutoFixAll={runAutoFixAll} 
+            autofixPlan={autofixPlan}
+            autofixStatus={autofixStatus}
+            autofixLog={autofixLog || []}
             onApplyPlan={onApplyPlan}
+            onRefresh={onRefresh}
           />
         </div>
       </FloatingPanel>
