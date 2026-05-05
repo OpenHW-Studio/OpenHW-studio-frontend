@@ -14,8 +14,9 @@ jobs:
           curl -X POST https://openhw-studio.fossee.in/api/deploy/notify \
           -H "Content-Type: application/json" \
           -d '{
-            "repo": "${{ github.repository }}",
+            "repo": "${{ github.event.repository.name }}",
             "prTitle": "${{ github.event.head_commit.message }}",
             "prDescription": "Commit pushed by ${{ github.actor }}",
+            "secret": "ohw_studio_secure_notify_2026",
             "filesChanged": []
           }'

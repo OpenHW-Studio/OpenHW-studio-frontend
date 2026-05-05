@@ -2,7 +2,21 @@ export const UNO_DIGITAL_PINS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9
 
 export const UNO_ANALOG_PINS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5'];
 
-export const UNO_POWER_PINS = ['vin', 'gnd_1', 'gnd_2', 'gnd_3', '5V', '3v3', 'rst', 'ioref'];
+export const UNO_POWER_PINS = [
+  'vin',
+  'VIN',
+  'gnd_1',
+  'gnd_2',
+  'gnd_3',
+  'GND',
+  '5V',
+  '3v3',
+  '3V3',
+  'rst',
+  'RST',
+  'ioref',
+  'IOREF',
+];
 
 export const UNO_BOARD_PINS = [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS, ...UNO_POWER_PINS];
 
