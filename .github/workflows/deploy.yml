@@ -133,7 +133,7 @@ jobs:
             "repo": "${{ github.event.repository.name }}",
             "prTitle": "Frontend Build Successful: Ready for Approval",
             "prDescription": "Commit: ${{ github.event.head_commit.message }}",
-            "secret": "ohw_studio_secure_notify_2026",
+            "secret": "5d2f8e1a9c3b4d7e0f2a5b8d1c4e7f9a",
             "filesChanged": []
           }'
 

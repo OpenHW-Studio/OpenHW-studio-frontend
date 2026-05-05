@@ -13,7 +13,7 @@ import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './Si
 
 
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
@@ -1437,9 +1437,11 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
   return (
     <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
       <path id={`wire-path-hit-${wire.id}`} d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-      <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
-      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
-      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
+      <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected || wire.isNew ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : (wire.isNew ? 1 : 0.9)} 
+        style={{ animation: wire.isNew ? 'autofixWirePulse 1.5s infinite linear' : 'none' }}
+      />
+      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} opacity={wire.isBelow ? 0.6 : 1} />
+      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} opacity={wire.isBelow ? 0.6 : 1} />
       {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints).reduce((acc, _, i, arr) => {
         if (i < 1 || i >= arr.length - 2) return acc;
         const a = arr[i], b = arr[i + 1];
@@ -1469,7 +1471,13 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
 });
 
 // ─── Memoized Component Wrapper ──────────────────────────────────────────────
-const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
+const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
+  const liveState = useSyncExternalStore(
+    useCallback((onStoreChange) => subscribeLiveOopState(comp.id, onStoreChange), [comp.id, subscribeLiveOopState]),
+    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot]),
+    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot])
+  );
+
   const rad = ((comp.rotation || 0) * Math.PI) / 180;
   const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
   
@@ -1481,7 +1489,7 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
   };
   const b = getBounds();
 
-  const attrs = getComponentStateAttrs(comp);
+  const attrs = getComponentStateAttrs(comp, liveState);
   const isOverloaded = attrs.glow === true || attrs.isOverloaded === true;
 
   return (
@@ -1573,6 +1581,8 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
     </React.Fragment>
   );
 });
+
+const EMPTY_LIVE_STATE = {};
 
 export function SimulatorPage({ gamificationMode = false }) {
   const { isAuthenticated, isAdminAuthenticated, user, adminUser, token, logout, loading: authLoading } = useAuth()
@@ -1797,6 +1807,35 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [autofixLog, setAutofixLog] = useState([])
   const autofixWorkerRef = useRef(null);
 
+  const triggerAutofixAnalysis = useCallback((forcedViolations = null) => {
+    const violations = forcedViolations || validationErrors;
+    if (!autofixWorkerRef.current || !violations || violations.length === 0) {
+      console.warn('[Autofix] Cannot trigger: no worker or no violations');
+      return;
+    }
+    
+    setAutofixStatus('Analyzing...');
+    setAutofixPlan(null);
+
+    // Filter connections to remove ':' for engine compatibility
+    const engineConnections = (wires || []).map(w => ({
+      from: String(w.from || '').replace(':', '.'),
+      to:   String(w.to   || '').replace(':', '.'),
+      color: w.color
+    }));
+
+    autofixWorkerRef.current.postMessage({
+      type: 'analyze',
+      payload: {
+        diagram: {
+          components: components,
+          connections: engineConnections
+        },
+        violations: validationErrors
+      }
+    });
+  }, [validationErrors, components, wires]);
+
   useEffect(() => {
     // Initialize Worker
     const worker = new Worker(new URL('../../worker/autofix.worker.ts', import.meta.url), { type: 'module' });
@@ -1827,6 +1866,13 @@ export function SimulatorPage({ gamificationMode = false }) {
       worker.terminate();
     };
   }, []);
+
+  // Auto-trigger analysis when validation changes
+  useEffect(() => {
+    if (validationErrors.length > 0) {
+      triggerAutofixAnalysis();
+    }
+  }, [validationErrors, triggerAutofixAnalysis]);
   const [showValidation, setShowValidation] = useState(true)
   const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
@@ -1850,6 +1896,10 @@ export function SimulatorPage({ gamificationMode = false }) {
       .overload-glow {
         animation: overloadGlow 0.8s infinite alternate ease-in-out;
       }
+      @keyframes autofixWirePulse {
+        from { stroke-dashoffset: 0; }
+        to { stroke-dashoffset: 20; }
+      }
     `;
     document.head.appendChild(style);
     return () => document.head.removeChild(style);
@@ -1860,9 +1910,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [activeConsoleTab, setActiveConsoleTab] = useState('console')
   const [healthScore, setHealthScore] = useState(100)
   const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
-  const [pinStates, setPinStates] = useState({})
-  const [neopixelData, setNeopixelData] = useState({})
-  const [oopStates, setOopStates] = useState({});
   const [serialHistory, setSerialHistory] = useState([]);
   const [serialInput, setSerialInput] = useState('');
   const [serialPaused, setSerialPaused] = useState(false);
@@ -2074,6 +2121,10 @@ export function SimulatorPage({ gamificationMode = false }) {
   const runLastBoardPinsRef = useRef(new Map())
   const validationRunCacheRef = useRef({ signature: '', allowRun: true, errors: [], healthScore: 100, toast: null })
   const neopixelRefs = useRef({})
+  const livePinStatesRef = useRef({})
+  const liveNeopixelDataRef = useRef({})
+  const liveOopStatesRef = useRef({})
+  const liveOopStateListenersRef = useRef(new Map())
 
   const serialPlotBufferRef = useRef('');
   const serialPlotLabelsRef = useRef([]);
@@ -2100,6 +2151,64 @@ export function SimulatorPage({ gamificationMode = false }) {
   const componentsRef = useRef([]);
   const wiresRef = useRef([]);
   const pinDefsRef = useRef({});
+
+  const getLiveOopStateSnapshot = useCallback((compId) => liveOopStatesRef.current[compId] || EMPTY_LIVE_STATE, []);
+  const subscribeLiveOopState = useCallback((compId, listener) => {
+    let listeners = liveOopStateListenersRef.current.get(compId);
+    if (!listeners) {
+      listeners = new Set();
+      liveOopStateListenersRef.current.set(compId, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      const currentListeners = liveOopStateListenersRef.current.get(compId);
+      if (!currentListeners) return;
+      currentListeners.delete(listener);
+      if (currentListeners.size === 0) {
+        liveOopStateListenersRef.current.delete(compId);
+      }
+    };
+  }, []);
+  const notifyLiveOopStateListeners = useCallback((compId) => {
+    const listeners = liveOopStateListenersRef.current.get(compId);
+    if (!listeners || listeners.size === 0) return;
+    listeners.forEach(listener => listener());
+  }, []);
+  const updateLiveOopStates = useCallback((componentsState) => {
+    if (!Array.isArray(componentsState) || componentsState.length === 0) return;
+    const nextStates = liveOopStatesRef.current;
+    const changedIds = [];
+    componentsState.forEach((comp) => {
+      const compId = String(comp?.id || '').trim();
+      if (!compId) return;
+      const nextState = comp.state || {};
+      if (serializedStateEquals(nextStates[compId], nextState)) return;
+      nextStates[compId] = nextState;
+      changedIds.push(compId);
+    });
+    changedIds.forEach(notifyLiveOopStateListeners);
+  }, [notifyLiveOopStateListeners]);
+  const clearLiveOopStates = useCallback(() => {
+    const prevIds = Object.keys(liveOopStatesRef.current);
+    liveOopStatesRef.current = {};
+    prevIds.forEach(notifyLiveOopStateListeners);
+  }, [notifyLiveOopStateListeners]);
+  const applyLiveNeopixelData = useCallback((neopixelState) => {
+    liveNeopixelDataRef.current = neopixelState || {};
+    if (!liveNeopixelDataRef.current || Object.keys(liveNeopixelDataRef.current).length === 0) return;
+    for (const [compId, pixels] of Object.entries(liveNeopixelDataRef.current)) {
+      const wrapper = neopixelRefs.current[compId];
+      if (!wrapper) continue;
+      const el = wrapper.querySelector('wokwi-neopixel-matrix');
+      if (!el || typeof el.setPixel !== 'function') continue;
+      for (const [row, col, rgb] of pixels) {
+        el.setPixel(row, col, rgb);
+      }
+    }
+  }, []);
+  const clearLiveNeopixelData = useCallback(() => {
+    liveNeopixelDataRef.current = {};
+  }, []);
 
   // ── Project persistence state ────────────────────────────────────────────────
   const [currentProjectId, setCurrentProjectId] = useState(null);
@@ -3582,20 +3691,6 @@ useEffect(() => {
     'wokwi-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
   };
 
-  // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
-  useEffect(() => {
-    if (!neopixelData || Object.keys(neopixelData).length === 0) return;
-    for (const [compId, pixels] of Object.entries(neopixelData)) {
-      const wrapper = neopixelRefs.current[compId];
-      if (!wrapper) continue;
-      const el = wrapper.querySelector('wokwi-neopixel-matrix');
-      if (!el || typeof el.setPixel !== 'function') continue;
-      for (const [row, col, rgb] of pixels) {
-        el.setPixel(row, col, rgb);
-      }
-    }
-  }, [neopixelData])
-
   // ── Error component IDs for highlighting ────────────────────────────────────
   const errorCompIds = useMemo(() =>
     new Set(validationErrors.flatMap(e => e.compIds)),
@@ -4567,7 +4662,7 @@ useEffect(() => {
               const parts = pinMatch.id.split('-');
               const compId = parts[2];
               const pinId = parts.slice(3).join('-');
-              const instState = oopStates[compId];
+              const instState = liveOopStatesRef.current[compId];
               const pinVoltage = instState?.pins?.[pinId]?.voltage ?? 0;
               // We'll use a direct state setter here, but since it's inside RAF it's fine
               setHoveredElement({ 
@@ -4592,9 +4687,9 @@ useEffect(() => {
                 for (let i = 0; i < pts.length - 1; i++) {
                   const dist = distToSegment(rawX, rawY, pts[i], pts[i+1]);
                   if (dist < 5) {
-                    const inst1 = oopStates[fromParts[0]];
+                    const inst1 = liveOopStatesRef.current[fromParts[0]];
                     const v1 = inst1?.pins?.[fromParts.slice(1).join(':')]?.voltage ?? 0;
-                    const v2 = oopStates[toParts[0]]?.pins?.[toParts.slice(1).join(':')]?.voltage ?? 0;
+                    const v2 = liveOopStatesRef.current[toParts[0]]?.pins?.[toParts.slice(1).join(':')]?.voltage ?? 0;
                     setHoveredElement({ 
                       type: 'wire', 
                       id: w.id, 
@@ -4619,7 +4714,7 @@ useEffect(() => {
                 });
 
                 if (compMatch) {
-                  const instState = oopStates[compMatch.id];
+                  const instState = liveOopStatesRef.current[compMatch.id];
                   const vDrop = instState?.voltageDrop ?? 0;
                   const current = instState?.current ?? 0;
                   setHoveredElement({ 
@@ -4914,6 +5009,7 @@ useEffect(() => {
     if (!canvas) return;
 
     const handleWheel = (e) => {
+      if (e.target instanceof HTMLElement && e.target.closest('[data-simulation-console="true"]')) return;
       onWheel(e);
     };
 
@@ -6374,24 +6470,46 @@ useEffect(() => {
     if (!autofixPlan) return;
     
     // Apply the plan to the actual project
-    const newComponents = [...components];
-    const newWires = [...wires];
+    const newComponents = JSON.parse(JSON.stringify(components)); // Deep clone for safety
+    const newWires = JSON.parse(JSON.stringify(wires));
     
     // Add new components
     if (autofixPlan.addedComponents) {
-      newComponents.push(...autofixPlan.addedComponents);
+      autofixPlan.addedComponents.forEach(ac => {
+          if (!newComponents.find(c => c.id === ac.id)) {
+              newComponents.push({
+                  ...ac,
+                  isGhost: false, // Ensure it's not a ghost anymore
+                  w: ac.w || 40,
+                  h: ac.h || 20
+              });
+          }
+      });
     }
     
     // Add new wires
     if (autofixPlan.addedWires) {
-      newWires.push(...autofixPlan.addedWires);
+      autofixPlan.addedWires.forEach(aw => {
+          newWires.push({
+              id: 'wire_' + Math.random().toString(36).substr(2, 9),
+              from: aw.from,
+              to: aw.to,
+              color: aw.color === '#38bdf8' ? 'green' : aw.color, // Transition from ghost blue to normal
+              waypoints: []
+          });
+      });
     }
     
-    // Remove wires (if any)
+    // Remove wires (Logical removal by pin matching)
     let finalWires = newWires;
-    if (autofixPlan.removedWires) {
-      const removedIds = new Set(autofixPlan.removedWires.map(w => w.id));
-      finalWires = newWires.filter(w => !removedIds.has(w.id));
+    if (autofixPlan.removedWires && autofixPlan.removedWires.length > 0) {
+      finalWires = newWires.filter(w => {
+        const isMatch = autofixPlan.removedWires.some(rw => 
+           (rw.from === w.from && rw.to === w.to) ||
+           (rw.from === w.to && rw.to === w.from)
+        );
+        return !isMatch;
+      });
     }
     
     // Apply transformations (rotations/flips)
@@ -6399,8 +6517,6 @@ useEffect(() => {
       autofixPlan.transformations.forEach(trans => {
         const comp = newComponents.find(c => c.id === trans.componentId);
         if (comp) {
-          // If the plan specifies a rotation, we apply it
-          // This allows "Flipping" by setting rotation to 180 or adding to current rotation
           comp.rotation = trans.rotation; 
         }
       });
@@ -6674,6 +6790,7 @@ useEffect(() => {
 
       if (!runCircuitValidation()) {
         appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
+        // The useEffect will auto-trigger re-analysis when validationErrors state updates
         runStartGuardRef.current = false;
         return;
       }
@@ -7150,18 +7267,16 @@ useEffect(() => {
           const ip = String(wireless.ip || '');
           const note = String(wireless.note || '');
 
-          setOopStates((prev) => ({
-            ...prev,
-            [resolvedBoardId]: {
-              ...(prev[resolvedBoardId] || {}),
-              wirelessMode: mode,
-              wirelessStatus: status,
-              wirelessConnected: connected,
-              wirelessSsid: ssid,
-              wirelessIp: ip,
-              wirelessNote: note,
-            },
-          }));
+          liveOopStatesRef.current[resolvedBoardId] = {
+            ...(liveOopStatesRef.current[resolvedBoardId] || {}),
+            wirelessMode: mode,
+            wirelessStatus: status,
+            wirelessConnected: connected,
+            wirelessSsid: ssid,
+            wirelessIp: ip,
+            wirelessNote: note,
+          };
+          notifyLiveOopStateListeners(resolvedBoardId);
 
           const signature = `${mode}:${status}:${connected ? '1' : '0'}:${ssid}:${ip}`;
           const lastSignature = rp2040WirelessLastLogRef.current.get(resolvedBoardId);
@@ -7274,7 +7389,7 @@ useEffect(() => {
             renderAnalogByBoardRef.current[boardIdKey] = Array.isArray(msg.analog) ? [...msg.analog] : msg.analog;
           }
 
-          setPinStates((prev) => (serializedStateEquals(prev, msg.pins) ? prev : msg.pins));
+          livePinStatesRef.current = msg.pins;
           if (codeTab === 'serial' && serialViewMode === 'plotter' && !plotterPaused) {
             // Only grow plot history when the plotter is visible.
             setPlotData(prev => {
@@ -7293,7 +7408,7 @@ useEffect(() => {
         if (msg.type === 'state' && msg.neopixels) {
           const boardIdKey = String(msg.boardId || 'default');
           renderNeopixelsByBoardRef.current[boardIdKey] = msg.neopixels;
-          setNeopixelData((prev) => (serializedStateEquals(prev, msg.neopixels) ? prev : msg.neopixels));
+          applyLiveNeopixelData(msg.neopixels);
         }
         if (msg.type === 'state' && msg.components) {
           const boardIdKey = String(msg.boardId || 'default');
@@ -7310,19 +7425,7 @@ useEffect(() => {
 
           renderComponentsByBoardRef.current[boardIdKey] = boardComponentState;
 
-          setOopStates(prev => {
-            let next = prev;
-            let changed = false;
-            msg.components.forEach(c => {
-              if (serializedStateEquals(prev[c.id], c.state)) return;
-              if (!changed) {
-                next = { ...prev };
-                changed = true;
-              }
-              next[c.id] = c.state;
-            });
-            return changed ? next : prev;
-          });
+          updateLiveOopStates(msg.components);
         }
         if (msg.type === 'state') {
           const boardIdKey = String(msg.boardId || 'default');
@@ -7526,9 +7629,11 @@ useEffect(() => {
     setIsPaused(false);
     setRunStartedAtMs(null);
     setRunDurationSec(0);
-    setPinStates({});
-    setNeopixelData(neopixelOffPixels);
-    setOopStates(neopixelOffStates);
+    livePinStatesRef.current = {};
+    clearLiveNeopixelData();
+    applyLiveNeopixelData(neopixelOffPixels);
+    liveOopStatesRef.current = neopixelOffStates;
+    Object.keys(neopixelOffStates).forEach(notifyLiveOopStateListeners);
     setSerialHistory([]);
     setPlotData([]);
     setSerialPaused(false);
@@ -8518,7 +8623,7 @@ useEffect(() => {
     else reader.readAsText(file);
   };
 
-  const getComponentStateAttrs = (comp) => {
+  const getComponentStateAttrs = (comp, liveStateOverride = null) => {
     let attrs = { ...comp.attrs };
 
     if (normalizeBoardKind(comp.type) === 'rp2040') {
@@ -8526,7 +8631,7 @@ useEffect(() => {
     }
 
     // Remote OOP state takes priority
-    const remoteState = oopStates[comp.id];
+    const remoteState = liveStateOverride || liveOopStatesRef.current[comp.id];
 
     if (comp.type === 'wokwi-led') {
       delete attrs.value; // Let ui.tsx handle it
@@ -9454,8 +9559,8 @@ useEffect(() => {
                 );
               })}
               {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
-                const fromParts = w.from.split(':');
-                const toParts = w.to.split(':');
+                const fromParts = (w.from || '').replace('.', ':').split(':');
+                const toParts = (w.to || '').replace('.', ':').split(':');
                 const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
                 const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
                 if (!p1 || !p2) return null;
@@ -9472,8 +9577,8 @@ useEffect(() => {
                 );
               })}
               {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
-                const fromParts = w.from.split(':');
-                const toParts = w.to.split(':');
+                const fromParts = (w.from || '').replace('.', ':').split(':');
+                const toParts = (w.to || '').replace('.', ':').split(':');
                 const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
                 const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
                 if (!p1 || !p2) return null;
@@ -9702,6 +9807,8 @@ useEffect(() => {
                       getComponentStateAttrs={getComponentStateAttrs}
                       COMPONENT_REGISTRY={COMPONENT_REGISTRY}
                       PIN_DEFS={PIN_DEFS}
+                      getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+                      subscribeLiveOopState={subscribeLiveOopState}
                     />
 
                     {/* Wrapper for the actual emulator component and its dynamic pins */}
@@ -9760,8 +9867,8 @@ useEffect(() => {
                         {COMPONENT_REGISTRY[comp.type] ? (
                           // Local UI component rendering SVG
                           React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                            state: oopStates[comp.id] || {},
-                            attrs: getComponentStateAttrs(comp),
+                            state: getLiveOopStateSnapshot(comp.id),
+                            attrs: getComponentStateAttrs(comp, getLiveOopStateSnapshot(comp.id)),
                             isRunning: isRunning
                           })
                         ) : (

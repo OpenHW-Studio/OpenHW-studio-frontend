@@ -243,7 +243,10 @@ export function SimulationConsolePanel({
   return (
     <div
       data-export-ignore="true"
+      data-simulation-console="true"
+      onWheelCapture={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       style={{
         position: 'absolute',
@@ -378,6 +381,7 @@ export function SimulationConsolePanel({
       <div
         ref={bodyRef}
         onScroll={handleScroll}
+        onWheel={(e) => e.stopPropagation()}
         style={{
           overflowY: 'auto',
           flex: 1,
