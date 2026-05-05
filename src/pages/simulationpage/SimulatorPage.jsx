@@ -65,13 +65,6 @@ import * as EmulatorComponents from "@openhw/emulator";
 const { 
   FullCircuitValidator, 
   analyzeCodeHardwareSync, 
-  applyCircuitFix: sharedApplyCircuitFix,
-  runAutoFixAll,
-  initializeCircuitFixEngine,
-  getFixHistory,
-  getFixValidator,
-  undoLastFix,
-  redoLastFix,
   ProtocolAnalyzer: SharedProtocolAnalyzer 
 } = EmulatorComponents;
 
@@ -1799,6 +1792,41 @@ export function SimulatorPage({ gamificationMode = false }) {
   const didPanRef = useRef(false)
 
   const [validationErrors, setValidationErrors] = useState([])
+  const [autofixPlan, setAutofixPlan] = useState(null)
+  const [autofixStatus, setAutofixStatus] = useState('Initializing...')
+  const [autofixLog, setAutofixLog] = useState([])
+  const autofixWorkerRef = useRef(null);
+
+  useEffect(() => {
+    // Initialize Worker
+    const worker = new Worker(new URL('../../worker/autofix.worker.ts', import.meta.url), { type: 'module' });
+    autofixWorkerRef.current = worker;
+
+    worker.onmessage = (e) => {
+      const { type, payload } = e.data;
+      if (type === 'status') {
+        setAutofixStatus(payload);
+        setAutofixLog(prev => [...prev.slice(-19), { time: new Date().toLocaleTimeString(), msg: payload }]);
+      }
+      if (type === 'results') {
+        setAutofixStatus('Ready');
+        // payload: { planCount, suggestions }
+        if (payload.planCount > 0) {
+          // For now, we take the first suggestion (best confidence)
+          const bestFix = payload.suggestions[0];
+          setAutofixPlan(bestFix);
+        } else {
+          setAutofixPlan(null);
+        }
+      }
+    };
+
+    worker.postMessage({ type: 'init' });
+
+    return () => {
+      worker.terminate();
+    };
+  }, []);
   const [showValidation, setShowValidation] = useState(true)
   const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
@@ -1886,6 +1914,16 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [selectedPlotPins, setSelectedPlotPins] = useState(['13', 'A0']);
   const plotterCanvasRef = useRef(null);
   const [plotterPaused, setPlotterPaused] = useState(false);
+
+  const serializedStateEquals = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch (e) {
+      return false;
+    }
+  };
 
   const serialBoardOptions = useMemo(() => {
     const ids = components
@@ -2999,19 +3037,18 @@ useEffect(() => {
       const windowMs = now - frameStart;
       if (windowMs >= 1000) {
         const fps = (frameCount * 1000) / windowMs;
-        const dragMode = movingComp.current
+        // Canonicalize FPS telemetry modes to only three buckets the user requested:
+        // - 'component-drag' : moving a component or dragging wires/segments
+        // - 'canvas-pan'     : panning the whole canvas
+        // - 'running'        : simulation running without active pan/drag
+        // Fallback: 'idle' when none apply.
+        const dragMode = (movingComp.current || isComponentDragging || segDragRef.current)
           ? 'component-drag'
-          : segDragRef.current
-            ? 'wire-drag'
-            : isDragging
-              ? 'panel-resize'
-              : isExplorerDragging
-                ? 'explorer-resize'
-                : isComponentDragging
-                  ? 'component-drag'
-                  : isRunning
-                    ? 'running'
-                    : 'idle';
+          : (isPanningRef.current)
+            ? 'canvas-pan'
+            : (isRunning)
+              ? 'running'
+              : 'idle';
         const signature = `${dragMode}:${Math.round(fps)}:${Math.round(worstFrameMs)}:${solverMode}`;
         const prev = runFpsTelemetryLastLogRef.current.get('browser') || null;
 
@@ -4331,6 +4368,10 @@ useEffect(() => {
       innerCanvasRef.current.style.transformOrigin = '0 0';
     }
 
+    // While running, keep the interaction in refs/DOM only so the simulator tree
+    // does not rerender on every pan/zoom tick.
+    if (isRunning) return;
+
     // Debounce the React state flush to avoid re-render lag during interaction
     if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
     rafZoomRef.current = setTimeout(() => {
@@ -4353,9 +4394,16 @@ useEffect(() => {
       sy: e.clientY, 
       cx: comp.x, 
       cy: comp.y, 
+      type: comp.type,
+      w: comp.w,
+      h: comp.h,
+      rotation: comp.rotation || 0,
+      anchorPinId: comp.anchorPinId,
       moved: false, 
       originalComps: JSON.parse(JSON.stringify(components)) 
     };
+
+    dragData.breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
 
     // Performance: If breadboard, pre-calculate children once here
     if (comp.type.startsWith('wokwi-breadboard')) {
@@ -6202,6 +6250,17 @@ useEffect(() => {
         const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
 
         setValidationErrors(formattedErrors);
+
+        // Trigger Intelligent Autofix Analysis
+        if (formattedErrors.length > 0 && autofixWorkerRef.current) {
+          autofixWorkerRef.current.postMessage({
+            type: 'analyze',
+            payload: {
+              diagram: { components, connections: wires },
+              violations: formattedErrors
+            }
+          });
+        }
         setShowValidation(true);
         if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
         
@@ -6311,35 +6370,49 @@ useEffect(() => {
   }, [components, wires, saveHistory, validationErrors]);
 
   // Autofix preview/apply-all integration
-  const handleApplyPlan = useCallback((res) => {
-    if (!res) return;
-    if (res.finalProject) {
-      setComponents(res.finalProject.components || components);
-      setWires(res.finalProject.connections || wires);
-      validationRunCacheRef.current = {};
-      appendConsoleEntry('info', `🔧 Applied plan: ${res.appliedCount || 0} fixes, skipped ${res.skippedCount || 0}`, 'simulator');
+  const handleApplyPlan = useCallback(() => {
+    if (!autofixPlan) return;
+    
+    // Apply the plan to the actual project
+    const newComponents = [...components];
+    const newWires = [...wires];
+    
+    // Add new components
+    if (autofixPlan.addedComponents) {
+      newComponents.push(...autofixPlan.addedComponents);
     }
-  }, [components, wires]);
+    
+    // Add new wires
+    if (autofixPlan.addedWires) {
+      newWires.push(...autofixPlan.addedWires);
+    }
+    
+    // Remove wires (if any)
+    let finalWires = newWires;
+    if (autofixPlan.removedWires) {
+      const removedIds = new Set(autofixPlan.removedWires.map(w => w.id));
+      finalWires = newWires.filter(w => !removedIds.has(w.id));
+    }
+    
+    // Apply transformations (rotations/flips)
+    if (autofixPlan.transformations) {
+      autofixPlan.transformations.forEach(trans => {
+        const comp = newComponents.find(c => c.id === trans.componentId);
+        if (comp) {
+          // If the plan specifies a rotation, we apply it
+          // This allows "Flipping" by setting rotation to 180 or adding to current rotation
+          comp.rotation = trans.rotation; 
+        }
+      });
+    }
 
-  const undoFix = useCallback(() => {
-    const undoResult = undoLastFix();
-    if (undoResult?.undone) {
-      setComponents(undoResult.circuit.components || components);
-      setWires(undoResult.circuit.connections || wires);
-      validationRunCacheRef.current = {}; // Clear cache
-      appendConsoleEntry('info', `↩️ Undone: ${undoResult.fixDescription}`, 'simulator');
-    }
-  }, [components, wires]);
-
-  const redoFix = useCallback(() => {
-    const redoResult = redoLastFix();
-    if (redoResult?.redone) {
-      setComponents(redoResult.circuit.components || components);
-      setWires(redoResult.circuit.connections || wires);
-      validationRunCacheRef.current = {}; // Clear cache
-      appendConsoleEntry('info', `🔄 Redone: ${redoResult.fixDescription}`, 'simulator');
-    }
-  }, [components, wires]);
+    setComponents(newComponents);
+    setWires(finalWires);
+    setAutofixPlan(null); // Clear preview
+    saveHistory(); // Save to undo/redo history
+    
+    appendConsoleEntry('info', `🔧 Intelligent Autofix Applied: ${autofixPlan.addedComponents?.length || 0} components, ${autofixPlan.addedWires?.length || 0} wires, ${autofixPlan.transformations?.length || 0} transforms.`, 'simulator');
+  }, [autofixPlan, components, wires, saveHistory]);
 
   const getSerialTimestamp = () => {
     const now = new Date();
@@ -6915,6 +6988,8 @@ useEffect(() => {
 
       worker.onmessage = async (event) => {
         const msg = event.data;
+        const msgArrivalMs = performance.now();
+        
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
@@ -7199,24 +7274,26 @@ useEffect(() => {
             renderAnalogByBoardRef.current[boardIdKey] = Array.isArray(msg.analog) ? [...msg.analog] : msg.analog;
           }
 
-          setPinStates(msg.pins);
-          // Push to plotData history
-          setPlotData(prev => {
-            const serialVars = {};
-            latestParsedSerialRef.current.forEach((val, idx) => {
-              const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
-              serialVars[lbl] = val;
+          setPinStates((prev) => (serializedStateEquals(prev, msg.pins) ? prev : msg.pins));
+          if (codeTab === 'serial' && serialViewMode === 'plotter' && !plotterPaused) {
+            // Only grow plot history when the plotter is visible.
+            setPlotData(prev => {
+              const serialVars = {};
+              latestParsedSerialRef.current.forEach((val, idx) => {
+                const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
+                serialVars[lbl] = val;
+              });
+              const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars, boardId: msg.boardId || 'default' };
+              const next = [...prev, newPt];
+              if (next.length > 800) return next.slice(next.length - 800);
+              return next;
             });
-            const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars, boardId: msg.boardId || 'default' };
-            const next = [...prev, newPt];
-            if (next.length > 800) return next.slice(next.length - 800);
-            return next;
-          });
+          }
         }
         if (msg.type === 'state' && msg.neopixels) {
           const boardIdKey = String(msg.boardId || 'default');
           renderNeopixelsByBoardRef.current[boardIdKey] = msg.neopixels;
-          setNeopixelData(msg.neopixels);
+          setNeopixelData((prev) => (serializedStateEquals(prev, msg.neopixels) ? prev : msg.neopixels));
         }
         if (msg.type === 'state' && msg.components) {
           const boardIdKey = String(msg.boardId || 'default');
@@ -7234,11 +7311,17 @@ useEffect(() => {
           renderComponentsByBoardRef.current[boardIdKey] = boardComponentState;
 
           setOopStates(prev => {
-            const next = { ...prev };
+            let next = prev;
+            let changed = false;
             msg.components.forEach(c => {
+              if (serializedStateEquals(prev[c.id], c.state)) return;
+              if (!changed) {
+                next = { ...prev };
+                changed = true;
+              }
               next[c.id] = c.state;
             });
-            return next;
+            return changed ? next : prev;
           });
         }
         if (msg.type === 'state') {
@@ -7248,6 +7331,16 @@ useEffect(() => {
           const nowMs = Date.now();
           const prevLag = runLagTelemetryLastLogRef.current.get(boardIdKey) || null;
           const stateGapMs = prevLag ? (nowMs - prevLag.ts) : null;
+          
+          // Emit sequence tracking
+          const emitSeq = Number(msg._emitSeq || -1);
+          const emitTimeMs = Number(msg._emitTime || 0);
+          if (emitSeq >= 0 && emitTimeMs > 0) {
+            const msgAgeMs = (performance.now() - msgArrivalMs) + emitTimeMs;
+            if (stateGapMs > 80 || stateGapMs === 0) {
+              appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
+            }
+          }
           const perf = msg.perf && typeof msg.perf === 'object' ? msg.perf : null;
           const perfRunMs = Number(perf?.lastRunLoopMs);
           const perfPhysicsMs = Number(perf?.lastPhysicsMs);
@@ -7259,23 +7352,14 @@ useEffect(() => {
           const slowWorker = (Number.isFinite(perfRunMs) && perfRunMs > 12)
             || (Number.isFinite(perfPhysicsMs) && perfPhysicsMs > 8)
             || (Number.isFinite(perfComponentMs) && perfComponentMs > 8);
-          const signature = [
-            boardKind || 'unknown',
-            solverMode,
-            stateGapMs !== null ? Math.round(stateGapMs / 25) : 'n',
-            Number.isFinite(perfRunMs) ? Math.round(perfRunMs) : 'n',
-            Number.isFinite(perfPhysicsMs) ? Math.round(perfPhysicsMs) : 'n',
-            Number.isFinite(perfComponentMs) ? Math.round(perfComponentMs) : 'n',
-            pinsCount,
-            componentsCount,
-          ].join(':');
-
-          if (runLagTelemetryLastLogRef.current.get(boardIdKey)?.sig !== signature || slowStateGap || slowWorker || !prevLag) {
+          const msgHandleTimeMs = performance.now() - msgArrivalMs;
+          if (slowStateGap || slowWorker || !prevLag) {
             const line = [
               `LAG ${boardIdKey}`,
               `board=${boardKind || 'unknown'}`,
               `solver=${solverMode}`,
               `stateGap=${stateGapMs === null ? 'n/a' : `${stateGapMs.toFixed(1)}ms`}`,
+              `handleMs=${msgHandleTimeMs.toFixed(1)}`,
               `workerRun=${perfPresent ? `${Number.isFinite(perfRunMs) ? perfRunMs.toFixed(2) : 'n/a'}ms` : 'n/a'}`,
               `workerPhysics=${perfPresent ? `${Number.isFinite(perfPhysicsMs) ? perfPhysicsMs.toFixed(2) : 'n/a'}ms` : 'n/a'}`,
               `workerComponent=${perfPresent ? `${Number.isFinite(perfComponentMs) ? perfComponentMs.toFixed(2) : 'n/a'}ms` : 'n/a'}`,
@@ -7284,7 +7368,7 @@ useEffect(() => {
             ];
 
             appendConsoleEntry(slowStateGap || slowWorker ? 'warn' : 'info', line.join(' | '), 'debug');
-            runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs, sig: signature });
+            runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs });
           }
         }
         if (msg.type === 'serial') {
@@ -8554,7 +8638,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} runAutoFixAll={runAutoFixAll} onApplyPlan={handleApplyPlan} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -9369,6 +9453,42 @@ useEffect(() => {
                   />
                 );
               })}
+              {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
+                const fromParts = w.from.split(':');
+                const toParts = w.to.split(':');
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
+                if (!p1 || !p2) return null;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
+                return (
+                  <CanvasWire
+                    key={`ghost-${w.id}`}
+                    wire={{ ...w, color: '#38bdf8' }}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    isGhost={true}
+                    theme={theme}
+                  />
+                );
+              })}
+              {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
+                const fromParts = w.from.split(':');
+                const toParts = w.to.split(':');
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
+                if (!p1 || !p2) return null;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
+                return (
+                  <CanvasWire
+                    key={`ghost-${w.id}`}
+                    wire={{ ...w, color: '#38bdf8' }}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    isGhost={true}
+                    theme={theme}
+                  />
+                );
+              })}
             </svg>
 
             {/* TOP SVG layer for wires (Above Components) & Context Menu */}
@@ -9561,13 +9681,16 @@ useEffect(() => {
                 return (
                   <div 
                     key={comp.id}
-                    id={`comp-master-${comp.id}`}
+                    id={comp.isGhost ? `ghost-${comp.id}` : `comp-master-${comp.id}`}
                     style={{
                       position: 'absolute',
                       left: comp.x, top: comp.y,
                       zIndex: comp.type.startsWith('wokwi-breadboard') 
                         ? (isSelected ? 4 : 2) 
                         : (isSelected ? 10 : 5),
+                      opacity: comp.isGhost ? 0.4 : 1,
+                      filter: comp.isGhost ? 'grayscale(0.5) blur(0.5px)' : 'none',
+                      pointerEvents: comp.isGhost ? 'none' : 'auto',
                     }}
                   >
                     <CanvasComponent
@@ -9757,6 +9880,7 @@ useEffect(() => {
                 <>
                   {breadboards.map(renderComponent)}
                   {others.map(renderComponent)}
+                  {autofixPlan?.addedComponents?.map(c => renderComponent({ ...c, isGhost: true }))}
                 </>
               );
             })()}

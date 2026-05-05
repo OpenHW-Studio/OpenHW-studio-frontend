@@ -49,6 +49,8 @@ export function TerminalIcon({ size = 16 }) {
 
 export function useSimulationConsole() {
   const [consoleEntries, setConsoleEntries] = useState([]);
+  const pendingEntriesRef = useRef([]);
+  const flushTimerRef = useRef(null);
   const [isConsoleOpen, setIsConsoleOpen] = useState(() => {
     try {
       return localStorage.getItem(CONSOLE_OPEN_KEY) === '1';
@@ -69,6 +71,7 @@ export function useSimulationConsole() {
   const appendConsoleEntry = useCallback((level, message, source = 'app') => {
     const normalized = String(message || '').trim();
     if (!normalized || shouldSkipEntry(normalized)) return;
+    if (source === 'debug' && !isConsoleOpen) return;
 
     const now = new Date();
     const ts = `${now.toTimeString().slice(0, 8)}.${String(now.getMilliseconds()).padStart(3, '0')}`;
@@ -80,14 +83,23 @@ export function useSimulationConsole() {
       message: normalized,
     };
 
-    setConsoleEntries((prev) => {
-      const next = [...prev, entry];
-      if (next.length > MAX_CONSOLE_ENTRIES) {
-        return next.slice(next.length - MAX_CONSOLE_ENTRIES);
-      }
-      return next;
-    });
-  }, []);
+    pendingEntriesRef.current.push(entry);
+    if (flushTimerRef.current !== null) return;
+
+    flushTimerRef.current = setTimeout(() => {
+      flushTimerRef.current = null;
+      const pending = pendingEntriesRef.current;
+      if (pending.length === 0) return;
+      pendingEntriesRef.current = [];
+      setConsoleEntries((prev) => {
+        const next = [...prev, ...pending];
+        if (next.length > MAX_CONSOLE_ENTRIES) {
+          return next.slice(next.length - MAX_CONSOLE_ENTRIES);
+        }
+        return next;
+      });
+    }, 100);
+  }, [isConsoleOpen]);
 
   useEffect(() => {
     const originalLog = console.log;
@@ -132,12 +144,21 @@ export function useSimulationConsole() {
     }
   }, [consoleHeight]);
 
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current !== null) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const clearConsoleEntries = useCallback(() => {
     setConsoleEntries([]);
   }, []);
 
   const downloadConsoleLog = useCallback(() => {
-    const content = consoleEntries.map(formatDownloadLine).join('\n');
+    const content = [...consoleEntries, ...pendingEntriesRef.current].map(formatDownloadLine).join('\n');
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
