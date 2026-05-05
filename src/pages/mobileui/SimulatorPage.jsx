@@ -243,7 +243,7 @@ function extractFunctionSource(fn) {
     src = src.replace(/\$RefreshSig\$\s*\([^)]*\)/g, '(() => {})');
     src = src.replace(/\$RefreshReg\$\s*\([^)]*\);?/g, '');
     return src.trim();
-  } catch {
+  } catch (e) {
     return '';
   }
 }
@@ -1731,7 +1731,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const [paletteViewMode, setPaletteViewMode] = useState('grid') // 'list' | 'grid'
   const [favoriteComponents, setFavoriteComponents] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('openhw_fav_components') || '[]')); }
-    catch { return new Set(); }
+    catch (e) { return new Set(); }
   })
   const [activeGroupFilter, setActiveGroupFilter] = useState('All')
   const [showFilterDropdown, setShowFilterDropdown] = useState(false)
@@ -1809,7 +1809,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     try {
       const saved = String(localStorage.getItem('openhw.serial.lineEnding') || '').toLowerCase();
       return Object.prototype.hasOwnProperty.call(SERIAL_LINE_ENDINGS, saved) ? saved : 'nl';
-    } catch {
+    } catch (e) {
       return 'nl';
     }
   });
@@ -1817,7 +1817,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     try {
       const saved = String(localStorage.getItem('openhw.rp2040.debugTelemetry') || '').toLowerCase();
       return saved === '1' || saved === 'true' || saved === 'on';
-    } catch {
+    } catch (e) {
       return false;
     }
   });
@@ -2083,7 +2083,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const [projectsSidebarTab, setProjectsSidebarTab] = useState('projects'); // 'favourites' | 'projects' | 'custom' | 'settings'
   const [favouriteProjectIds, setFavouriteProjectIds] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ohw_favourite_projects') || '[]'); }
-    catch { return []; }
+    catch (e) { return []; }
   });
   const [projContextMenu, setProjContextMenu] = useState(null); // { proj, x, y }
   const [snappingHoles, setSnappingHoles] = useState([]); // Array<{ bbId, holeId, x, y }>
@@ -2093,7 +2093,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
     try {
       const val = localStorage.getItem('ohw_autosave_enabled');
       return val === null ? true : val === 'true';
-    } catch {
+    } catch (e) {
       return true;
     }
   });
@@ -2335,7 +2335,7 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
           await submitCustomComponent(item.payload);
           await dequeueComponent(item.queueId);
           console.log(`[Offline Queue] Submitted queued component: ${item.payload.id}`);
-        } catch {
+        } catch (e) {
           // Still offline or backend unreachable — leave in queue for next attempt
         }
       }
@@ -2939,7 +2939,7 @@ useEffect(() => {
   useEffect(() => {
     try {
       localStorage.setItem('ohw_autosave_enabled', String(autoSaveEnabled));
-    } catch {
+    } catch (e) {
       // no-op
     }
   }, [autoSaveEnabled]);
@@ -3495,7 +3495,7 @@ useEffect(() => {
   useEffect(() => {
     try {
       localStorage.setItem('openhw.serial.lineEnding', serialLineEnding);
-    } catch {
+    } catch (e) {
       // no-op: storage may be unavailable in restricted contexts
     }
   }, [serialLineEnding]);
@@ -3503,7 +3503,7 @@ useEffect(() => {
   useEffect(() => {
     try {
       localStorage.setItem('openhw.rp2040.debugTelemetry', rp2040DebugTelemetryEnabled ? '1' : '0');
-    } catch {
+    } catch (e) {
       // no-op: storage may be unavailable in restricted contexts
     }
   }, [rp2040DebugTelemetryEnabled]);
@@ -4039,7 +4039,7 @@ useEffect(() => {
     setFavoriteComponents(prev => {
       const next = new Set(prev);
       if (next.has(type)) next.delete(type); else next.add(type);
-      try { localStorage.setItem('openhw_fav_components', JSON.stringify([...next])); } catch { }
+      try { localStorage.setItem('openhw_fav_components', JSON.stringify([...next])); } catch (e) { }
       return next;
     });
   }, []);
@@ -5392,7 +5392,7 @@ useEffect(() => {
       try {
         const parsed = JSON.parse(localStorage.getItem(storageKey) || 'null');
         return parsed && typeof parsed === 'object' ? parsed : null;
-      } catch {
+      } catch (e) {
         return null;
       }
     };
@@ -5925,7 +5925,7 @@ useEffect(() => {
     try {
       localStorage.setItem(`openhw_gdb_artifact_${boardId}`, JSON.stringify(artifact));
       localStorage.setItem('openhw_gdb_last_artifact', JSON.stringify(artifact));
-    } catch {
+    } catch (e) {
       // ignore storage failures
     }
 

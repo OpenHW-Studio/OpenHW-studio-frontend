@@ -67,7 +67,7 @@ export default function TeacherProfilePage() {
         setLoadingRecentClasses(true)
         const classrooms = await getMyClassrooms()
         setRecentClasses(classrooms.slice(0, 4))
-      } catch {
+      } catch (e) {
         setRecentClasses([])
       } finally {
         setLoadingRecentClasses(false)

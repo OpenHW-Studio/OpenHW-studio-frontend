@@ -31,6 +31,17 @@ const HistoryTab = ({ logs }) => {
         return ShieldCheck;
     };
 
+    const today = new Date().toLocaleDateString();
+    const loginsToday = logs.filter(l => 
+        l.action.toLowerCase().includes('login') && 
+        new Date(l.timestamp).toLocaleDateString() === today
+    ).length;
+
+    const securityAlerts = logs.filter(l => 
+        l.action.toLowerCase().includes('error') || 
+        l.action.toLowerCase().includes('failed')
+    ).length;
+
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             {/* Header / Summary */}
@@ -39,7 +50,7 @@ const HistoryTab = ({ logs }) => {
                     <div className="flex justify-between items-start">
                         <div className="space-y-1">
                             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-500/60">Logins Today</p>
-                            <p className="text-4xl font-black text-white italic tracking-tighter">12</p>
+                            <p className="text-4xl font-black text-white italic tracking-tighter">{loginsToday}</p>
                         </div>
                         <div className="p-3 bg-emerald-500/20 rounded-2xl text-emerald-400">
                             <User className="w-6 h-6" />
@@ -61,7 +72,7 @@ const HistoryTab = ({ logs }) => {
                     <div className="flex justify-between items-start">
                         <div className="space-y-1">
                             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-500/60">Security Alerts</p>
-                            <p className="text-4xl font-black text-white italic tracking-tighter">0</p>
+                            <p className="text-4xl font-black text-white italic tracking-tighter">{securityAlerts}</p>
                         </div>
                         <div className="p-3 bg-amber-500/20 rounded-2xl text-amber-400">
                             <ShieldCheck className="w-6 h-6" />

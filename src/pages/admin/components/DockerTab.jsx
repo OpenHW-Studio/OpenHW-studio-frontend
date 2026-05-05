@@ -120,6 +120,14 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                                                 <span className="text-[8px] font-black uppercase text-slate-600">RAM</span>
                                                 <span className="text-xs font-black text-white">{service.resources?.memPerc || '0%'}</span>
                                             </div>
+                                            <div className="flex flex-col items-end">
+                                                <span className="text-[8px] font-black uppercase text-slate-600">Load</span>
+                                                <span className="text-xs font-black text-white">{service.resources?.load || '0.00'}</span>
+                                            </div>
+                                            <div className="flex flex-col items-end">
+                                                <span className="text-[8px] font-black uppercase text-slate-600">Storage</span>
+                                                <span className="text-xs font-black text-white">{service.resources?.storage || '0B'}</span>
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden flex">

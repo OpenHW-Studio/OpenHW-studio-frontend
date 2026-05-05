@@ -14,10 +14,10 @@ const OverviewTab = ({ stats }) => {
     );
 
     const mainStats = [
-        { label: 'Total Simulations', value: stats.totalSimulations, icon: Zap, color: 'blue', change: '+12%', up: true },
-        { label: 'Active Sessions', value: stats.activeSessions, icon: Users, color: 'emerald', change: '+5%', up: true },
-        { label: 'Avg Compile Time', value: stats.avgCompileTime, icon: Clock, color: 'amber', change: '-2s', up: true },
-        { label: 'Cloud Storage', value: stats.storageUsed, icon: Database, color: 'purple', change: '+1.2G', up: false },
+        { label: 'Total Simulations', value: stats.totalSimulations ?? 'N/A', icon: Zap, color: 'blue', change: stats.totalSimulations ? '+12%' : '0%', up: true },
+        { label: 'Active Sessions', value: stats.activeSessions ?? 'N/A', icon: Users, color: 'emerald', change: stats.activeSessions ? '+5%' : '0%', up: true },
+        { label: 'Avg Compile Time', value: stats.avgCompileTime ?? 'N/A', icon: Clock, color: 'amber', change: stats.avgCompileTime ? '-2s' : '0s', up: true },
+        { label: 'Cloud Storage', value: stats.storageUsed ?? 'N/A', icon: Database, color: 'purple', change: stats.storageUsed ? '+1.2G' : '0G', up: false },
     ];
 
     return (
@@ -66,38 +66,44 @@ const OverviewTab = ({ stats }) => {
                         </div>
                     </div>
 
-                    <div className="h-64 flex items-end justify-between gap-4 px-2">
-                        {stats.compilationHistory.map((day, i) => {
-                            const total = day.success + day.fail;
-                            const successHeight = (day.success / 600) * 100;
-                            const failHeight = (day.fail / 600) * 100;
-                            return (
-                                <div key={i} className="flex-1 flex flex-col items-center gap-3 group/bar">
-                                    <div className="w-full relative flex flex-col justify-end gap-1 h-full min-h-[10px]">
-                                        {/* Fail Segment */}
-                                        <div 
-                                            style={{ height: `${failHeight}%` }} 
-                                            className="w-full bg-red-500/30 group-hover/bar:bg-red-500/50 rounded-t-sm transition-all relative"
-                                        ></div>
-                                        {/* Success Segment */}
-                                        <div 
-                                            style={{ height: `${successHeight}%` }} 
-                                            className="w-full bg-blue-600/60 group-hover/bar:bg-blue-600/80 rounded-t-sm transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)]"
-                                        ></div>
-                                        
-                                        {/* Tooltip */}
-                                        <div className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 bg-white text-black p-3 rounded-xl opacity-0 group-hover/bar:opacity-100 transition-opacity pointer-events-none z-50 shadow-2xl min-w-[120px]">
-                                            <p className="text-[9px] font-black uppercase text-slate-400 mb-1">{day.date}</p>
-                                            <p className="text-xs font-black">✅ {day.success} Success</p>
-                                            <p className="text-xs font-black text-red-500">❌ {day.fail} Failed</p>
+                    <div className="h-64 flex items-end justify-between gap-4 px-2 relative">
+                        {stats.compilationHistory && stats.compilationHistory.length > 0 ? (
+                            stats.compilationHistory.map((day, i) => {
+                                const total = day.success + day.fail;
+                                const successHeight = (day.success / 600) * 100;
+                                const failHeight = (day.fail / 600) * 100;
+                                return (
+                                    <div key={i} className="flex-1 flex flex-col items-center gap-3 group/bar">
+                                        <div className="w-full relative flex flex-col justify-end gap-1 h-full min-h-[10px]">
+                                            {/* Fail Segment */}
+                                            <div 
+                                                style={{ height: `${failHeight}%` }} 
+                                                className="w-full bg-red-500/30 group-hover/bar:bg-red-500/50 rounded-t-sm transition-all relative"
+                                            ></div>
+                                            {/* Success Segment */}
+                                            <div 
+                                                style={{ height: `${successHeight}%` }} 
+                                                className="w-full bg-blue-600/60 group-hover/bar:bg-blue-600/80 rounded-t-sm transition-all shadow-[0_0_15px_rgba(37,99,235,0.2)]"
+                                            ></div>
+                                            
+                                            {/* Tooltip */}
+                                            <div className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 bg-white text-black p-3 rounded-xl opacity-0 group-hover/bar:opacity-100 transition-opacity pointer-events-none z-50 shadow-2xl min-w-[120px]">
+                                                <p className="text-[9px] font-black uppercase text-slate-400 mb-1">{day.date}</p>
+                                                <p className="text-xs font-black">✅ {day.success} Success</p>
+                                                <p className="text-xs font-black text-red-500">❌ {day.fail} Failed</p>
+                                            </div>
                                         </div>
+                                        <span className="text-[9px] font-black text-slate-500 uppercase group-hover/bar:text-slate-300 transition-colors">
+                                            {day.date.split('-').slice(1).join('/')}
+                                        </span>
                                     </div>
-                                    <span className="text-[9px] font-black text-slate-500 uppercase group-hover/bar:text-slate-300 transition-colors">
-                                        {day.date.split('-').slice(1).join('/')}
-                                    </span>
-                                </div>
-                            );
-                        })}
+                                )
+                            })
+                        ) : (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-700">No telemetry data available</p>
+                            </div>
+                        )}
                     </div>
                 </AdminCard>
 
@@ -108,20 +114,26 @@ const OverviewTab = ({ stats }) => {
                         <p className="text-xs text-slate-500 font-bold">Most frequently installed assets</p>
                     </div>
                     <div className="space-y-6">
-                        {stats.topLibraries.map((lib, i) => (
-                            <div key={i} className="space-y-2">
-                                <div className="flex justify-between items-end">
-                                    <span className="text-sm font-black text-slate-200">{lib.name}</span>
-                                    <span className="text-xs font-black text-blue-500">{lib.count} installs</span>
+                        {stats.topLibraries && stats.topLibraries.length > 0 ? (
+                            stats.topLibraries.map((lib, i) => (
+                                <div key={i} className="space-y-2">
+                                    <div className="flex justify-between items-end">
+                                        <span className="text-sm font-black text-slate-200">{lib.name}</span>
+                                        <span className="text-xs font-black text-blue-500">{lib.count} installs</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                        <div 
+                                            style={{ width: `${(lib.count / stats.topLibraries[0].count) * 100}%` }}
+                                            className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full"
+                                        ></div>
+                                    </div>
                                 </div>
-                                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
-                                    <div 
-                                        style={{ width: `${(lib.count / stats.topLibraries[0].count) * 100}%` }}
-                                        className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full"
-                                    ></div>
-                                </div>
+                            ))
+                        ) : (
+                            <div className="py-10 text-center">
+                                <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 italic">No usage data found</p>
                             </div>
-                        ))}
+                        )}
                     </div>
                     <button className="w-full mt-12 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 transition-all border border-white/5">
                         View Full Registry Reports

@@ -60,7 +60,7 @@ export default function StudentProfilePage() {
       try {
         const classrooms = await getMyClassrooms()
         setRecentClasses(classrooms.slice(0, 4))
-      } catch {
+      } catch (e) {
         setRecentClasses([])
       }
     }

@@ -287,7 +287,7 @@ export default function ProjectAssessmentPage() {
   useEffect(() => {
     const raw = sessionStorage.getItem(`openhw_assessment_submission:${projectName}`)
     if (!raw) { setSubmission(null); setEvalResult(null); return }
-    try { setSubmission(JSON.parse(raw)) } catch { setSubmission(null) }
+    try { setSubmission(JSON.parse(raw)) } catch (e) { setSubmission(null) }
   }, [projectName])
 
   // Auto-evaluate when both are ready

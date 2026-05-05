@@ -1144,14 +1144,14 @@ async function runSingleBoardCase(
         }
       }
     }
-  } catch {
+  } catch (e) {
     // no-op
   }
 
   try {
     acceptStateUpdates = false;
     runner.stop();
-  } catch {
+  } catch (e) {
     // no-op
   }
 
@@ -1290,7 +1290,7 @@ async function runLinkedBoardsCase(
 
       try {
         targetRunner.setSerialBaudRate(sourceBaud);
-      } catch {
+      } catch (e) {
         // no-op
       }
 
@@ -1404,7 +1404,7 @@ async function runLinkedBoardsCase(
   for (const runner of boardRunners.values()) {
     try {
       runner.stop();
-    } catch {
+    } catch (e) {
       // no-op
     }
   }
