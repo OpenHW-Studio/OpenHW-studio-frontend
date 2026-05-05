@@ -16,7 +16,7 @@ export const getUser = () => {
   try {
     const user = localStorage.getItem('openhw_user');
     return user ? JSON.parse(user) : null;
-  } catch {
+  } catch (e) {
     return null;
   }
 };
@@ -31,7 +31,7 @@ export const saveAdminUser = (user) => localStorage.setItem('openhw_admin_user',
 export const getAdminUser = () => {
   try {
     return JSON.parse(localStorage.getItem('openhw_admin_user'))
-  } catch {
+  } catch (e) {
     return null
   }
 }

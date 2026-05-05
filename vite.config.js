@@ -18,7 +18,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // ensure esbuild target supports optional catch binding and modern syntax
+    esbuild: {
+      target: 'es2020',
+    },
     build: {
+      target: 'es2020',
       minify: 'esbuild',
       cssMinify: true,
     },

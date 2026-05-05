@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Maintenance | OpenHW Studio</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #030712;
+            color: white;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            text-align: center;
+        }
+        .container {
+            position: relative;
+            z-index: 10;
+            max-width: 600px;
+            padding: 20px;
+        }
+        .bg-glow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(37, 99, 235, 0.15) 0%, rgba(3, 7, 18, 0) 70%);
+            filter: blur(60px);
+            z-index: 1;
+        }
+        h1 {
+            font-size: 3rem;
+            font-weight: 900;
+            font-style: italic;
+            letter-spacing: -0.05em;
+            margin-bottom: 1rem;
+            background: linear-gradient(to bottom, #ffffff, #64748b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        p {
+            color: #94a3b8;
+            font-size: 1.2rem;
+            line-height: 1.6;
+            margin-bottom: 2rem;
+        }
+        .loader {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .status {
+            margin-top: 3rem;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            font-weight: 800;
+            letter-spacing: 0.2em;
+            color: #475569;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-glow"></div>
+    <div class="container">
+        <div style="margin-bottom: 2rem;">
+            <div class="loader"></div>
+        </div>
+        <h1>Maintenance Mode</h1>
+        <p>Our servers are currently undergoing updates or a quick restart. We'll be back online automatically in a few moments.</p>
+        <div class="status">System Reconnection in Progress</div>
+    </div>
+    <script>
+        // Automatic refresh check every 10 seconds
+        setInterval(() => {
+            fetch('/api/public/maintenance-status')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success && !data.enabled) {
+                        window.location.reload();
+                    }
+                })
+                .catch(() => {
+                    // Still down
+                });
+        }, 10000);
+    </script>
+</body>
+</html>

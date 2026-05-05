@@ -22,7 +22,11 @@ import {
     fetchInfrastructureStatus,
     restartInfrastructureService,
     fetchUsageAnalytics,
-    fetchAuditHistory
+    fetchAuditHistory,
+    fetchMaintenanceStatus,
+    toggleMaintenanceMode,
+    fetchDeploymentNotifications,
+    triggerDeploymentBuild
 } from '../../services/simulatorService.js';
 import { useAuth } from '../../context/AuthContext';
 import OverviewTab from './components/OverviewTab';
@@ -38,6 +42,7 @@ import ComponentsTab from './components/ComponentsTab';
 import DeploymentsTab from './components/DeploymentsTab';
 import DockerTab from './components/DockerTab';
 import LogsTab from './components/LogsTab';
+import UserMapTab from './components/UserMapTab';
 import { LibrarySearchModal, TranspileModal } from './components/Modals';
 
 export default function AdminPage() {
@@ -51,6 +56,8 @@ export default function AdminPage() {
     const [infraStatus, setInfraStatus] = useState([]);
     const [analytics, setAnalytics] = useState(null);
     const [auditLogs, setAuditLogs] = useState([]);
+    const [maintenanceMode, setMaintenanceMode] = useState(localStorage.getItem('admin_maintenance_mode') === 'true');
+    const [notifications, setNotifications] = useState([]);
     const [toasts, setToasts] = useState([]);
     const [logs, setLogs] = useState([]);
     const [transpileModal, setTranspileModal] = useState(null);
@@ -67,7 +74,7 @@ export default function AdminPage() {
             try { return await fn(); } catch (e) { console.error(e); return fallback; }
         };
 
-        const [libs, pending, installed, deps, serverLogs, infra, stats, history] = await Promise.all([
+        const [libs, pending, installed, deps, serverLogs, infra, stats, history, maint, notes] = await Promise.all([
             wrap(fetchInstalledLibraries),
             wrap(fetchPendingComponents),
             wrap(getInstalledComponents),
@@ -75,7 +82,9 @@ export default function AdminPage() {
             wrap(fetchSystemLogs),
             wrap(fetchInfrastructureStatus),
             wrap(fetchUsageAnalytics, null),
-            wrap(fetchAuditHistory)
+            wrap(fetchAuditHistory),
+            wrap(fetchMaintenanceStatus, false),
+            wrap(fetchDeploymentNotifications)
         ]);
         
         setLibraries(libs);
@@ -85,6 +94,9 @@ export default function AdminPage() {
         setInfraStatus(infra);
         setAnalytics(stats);
         setAuditLogs(history);
+        setMaintenanceMode(maint);
+        setNotifications(notes);
+        localStorage.setItem('admin_maintenance_mode', maint);
         
         if (serverLogs && serverLogs.length > 0) {
             setLogs(prev => {
@@ -101,15 +113,20 @@ export default function AdminPage() {
             const wrap = async (fn, fallback = []) => {
                 try { return await fn(); } catch (e) { return fallback; }
             };
-            const [comps, deps, serverLogs, infra] = await Promise.all([
+            const [comps, deps, serverLogs, infra, maint, notes] = await Promise.all([
                 wrap(fetchPendingComponents),
                 wrap(fetchPendingDeployments),
                 wrap(fetchSystemLogs),
-                wrap(fetchInfrastructureStatus)
+                wrap(fetchInfrastructureStatus),
+                wrap(fetchMaintenanceStatus, false),
+                wrap(fetchDeploymentNotifications)
             ]);
             setPendingComponents(comps);
             setDeployments(deps);
             setInfraStatus(infra);
+            setMaintenanceMode(maint);
+            setNotifications(notes);
+            localStorage.setItem('admin_maintenance_mode', maint);
             if (serverLogs && serverLogs.length > 0) {
                 setLogs(prev => {
                     const existingHashes = new Set(prev.map(l => `${l.time}-${l.msg}`));
@@ -307,6 +324,32 @@ export default function AdminPage() {
             loadData();
         } catch (e) {
             addLog(`Deletion failed: ${e.message}`, 'error');
+            showToast(`Deletion failed: ${e.message}`, 'error');
+        }
+    };
+
+    const handleToggleMaintenance = async (enabled) => {
+        addLog(`${enabled ? 'Enabling' : 'Disabling'} Maintenance Mode...`, 'warning');
+        try {
+            await toggleMaintenanceMode(enabled);
+            setMaintenanceMode(enabled);
+            localStorage.setItem('admin_maintenance_mode', enabled);
+            showToast(`System is now in ${enabled ? 'Maintenance' : 'Live'} mode`);
+        } catch (e) {
+            addLog(`Failed to toggle maintenance: ${e.message}`, 'error');
+            showToast(`Action failed: ${e.message}`, 'error');
+        }
+    };
+
+    const handleTriggerBuild = async (repo, noteId = null) => {
+        addLog(`Triggering build for ${repo}...`, 'info');
+        try {
+            await triggerDeploymentBuild(repo, noteId);
+            addLog(`Build for ${repo} triggered successfully.`, 'success');
+            showToast(`Build for ${repo} has been queued!`);
+            loadData();
+        } catch (e) {
+            addLog(`Failed to trigger build: ${e.message}`, 'error');
         }
     };
 
@@ -342,6 +385,8 @@ export default function AdminPage() {
         switch (activeTab) {
             case 'overview':
                 return <OverviewTab stats={analytics} />;
+            case 'map':
+                return <UserMapTab stats={analytics} />;
             case 'libraries':
                 return <LibrariesTab 
                     libraries={libraries} 
@@ -381,10 +426,14 @@ export default function AdminPage() {
                     onBackup={backupInstalledComponents}
                 />;
             case 'deployments':
-                return <DeploymentsTab 
-                    deployments={deployments} 
+                return <DeploymentsTab
+                    deployments={deployments}
+                    notifications={notifications}
                     onRefresh={loadData}
                     showToast={showToast}
+                    onApprove={handleApproveDeployment}
+                    onRollback={handleRollback}
+                    onTriggerBuild={handleTriggerBuild}
                 />;
             case 'docker':
                 return <DockerTab 
@@ -417,6 +466,8 @@ export default function AdminPage() {
                     setIsSidebarOpen(false); // Close on selection on mobile
                 }} 
                 onLogout={handleLogout} 
+                maintenanceMode={maintenanceMode}
+                onToggleMaintenance={handleToggleMaintenance}
             />
 
             {/* Mobile Overlay */}

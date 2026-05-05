@@ -21,7 +21,7 @@ export const getFilenameFromAssetUrl = (value) => {
     const parsedUrl = new URL(normalizedUrl);
     const fileName = parsedUrl.pathname.split("/").filter(Boolean).pop();
     return fileName ? decodeURIComponent(fileName) : "";
-  } catch {
+  } catch (e) {
     return "";
   }
 };

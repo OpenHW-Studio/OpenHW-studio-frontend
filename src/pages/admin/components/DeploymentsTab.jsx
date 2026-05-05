@@ -1,7 +1,7 @@
 import AdminCard from './AdminCard';
 import { useState, useEffect, useRef } from 'react';
 import { fetchWorkflowLogs } from '../../../services/simulatorService';
-import { Terminal, X, Play, Loader2, UploadCloud } from 'lucide-react';
+import { Terminal, X, Play, Loader2, UploadCloud, RefreshCw, Zap, Bell } from 'lucide-react';
 
 const WorkflowLogViewer = ({ repo, runId, onClose }) => {
     const [logs, setLogs] = useState([]);
@@ -76,10 +76,11 @@ const WorkflowLogViewer = ({ repo, runId, onClose }) => {
     );
 };
 
-const DeploymentsTab = ({ deployments, onApprove, onRollback }) => {
+const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback, onTriggerBuild }) => {
     const [processingIds, setProcessingIds] = useState(new Set());
     const [expandedIds, setExpandedIds] = useState(new Set());
     const [activeLog, setActiveLog] = useState(null); // { id: runId, repo: string }
+
 
     const toggleExpand = (id) => {
         setExpandedIds(prev => {
@@ -104,6 +105,59 @@ const DeploymentsTab = ({ deployments, onApprove, onRollback }) => {
     };
     return (
         <div className="space-y-6">
+            {/* Incoming Change Notifications Section */}
+            {notifications && notifications.length > 0 && (
+                <div className="space-y-4 mb-12 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="flex items-center gap-3 px-2">
+                        <Bell className="w-5 h-5 text-amber-500 animate-bounce" />
+                        <h2 className="text-xl font-black text-white uppercase tracking-tight">Active Change Requests</h2>
+                    </div>
+                    <div className="grid grid-cols-1 gap-4">
+                        {notifications.map((note) => (
+                            <AdminCard key={note.id} className="bg-amber-500/5 border-amber-500/10 hover:bg-amber-500/10 transition-all">
+                                <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+                                    <div className="flex items-start gap-4">
+                                        <div className="p-3 bg-amber-500/20 rounded-xl text-amber-500 mt-1">
+                                            <RefreshCw className="w-5 h-5" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <div className="flex items-center gap-3">
+                                                <h3 className="text-lg font-black text-white capitalize">{note.repo}</h3>
+                                                <span className="text-[10px] font-black bg-amber-500 text-black px-2 py-0.5 rounded uppercase">Update Available</span>
+                                            </div>
+                                            <p className="text-slate-300 font-bold leading-relaxed">{note.prTitle}</p>
+                                            {note.prDescription && (
+                                                <p className="text-slate-500 text-xs line-clamp-2 mt-1">{note.prDescription}</p>
+                                            )}
+                                            <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest text-slate-400/50 mt-1">
+                                                <span>{new Date(note.timestamp).toLocaleString()}</span>
+                                                {note.filesChanged && note.filesChanged.length > 0 && (
+                                                    <span className="text-blue-400">{note.filesChanged.length} Files Modified</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        disabled={processingIds.has(`build-${note.id}`)}
+                                        onClick={() => handleAction(`build-${note.id}`, () => onTriggerBuild(note.repo, note.id))}
+                                        className="w-full md:w-auto px-8 py-4 bg-amber-500 hover:bg-amber-400 text-black font-black text-sm rounded-xl flex items-center justify-center gap-2 transition-all shadow-xl shadow-amber-900/20"
+                                    >
+                                        {processingIds.has(`build-${note.id}`) ? (
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                        ) : (
+                                            <>
+                                                <Zap className="w-5 h-5" />
+                                                Trigger Build Pipeline
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </AdminCard>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {deployments.map(dep => (
                 <AdminCard key={dep.id} className="hover:bg-white/[0.04] shadow-2xl">
                     <div className="flex flex-col xl:flex-row justify-between gap-8">
