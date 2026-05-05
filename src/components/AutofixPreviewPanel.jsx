@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan, autofixStatus = 'Ready', autofixLog = [], onApplyPlan, className = '' }) {
+export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan, autofixStatus = 'Ready', autofixLog = [], onApplyPlan, onRefresh, className = '' }) {
   const [showReasoning, setShowReasoning] = useState(false);
   const [showSystemLog, setShowSystemLog] = useState(false);
   
@@ -16,6 +16,15 @@ export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan
         <div style={{ fontSize: 48, marginBottom: 16 }}>✨</div>
         <h3 style={{ color: '#fff', fontSize: 16, fontWeight: 700 }}>Circuit is Healthy</h3>
         <p style={{ color: 'var(--text3)', fontSize: 13, marginTop: 8 }}>No violations detected by the engine.</p>
+        <button 
+          onClick={onRefresh}
+          style={{
+            marginTop: 16, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.2)',
+            color: '#38bdf8', padding: '6px 12px', borderRadius: 8, fontSize: 11, cursor: 'pointer'
+          }}
+        >
+          Check Again
+        </button>
       </div>
     );
   }
@@ -31,21 +40,47 @@ export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
       `}</style>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 12, background: 'rgba(56, 189, 248, 0.1)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8'
-        }}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 12, background: 'rgba(56, 189, 248, 0.1)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8'
+          }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 style={{ color: '#fff', fontSize: 15, fontWeight: 700, margin: 0 }}>Intelligent Repair</h3>
+            <p style={{ color: 'var(--text3)', fontSize: 11, margin: 0 }}>WASM Engine analyzed {validationErrors.length} issue(s)</p>
+          </div>
+        </div>
+        
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onRefresh) onRefresh();
+          }}
+          disabled={autofixStatus === 'Analyzing'}
+          style={{
+            background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+            width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--text3)', cursor: 'pointer', transition: 'all 0.2s'
+          }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.08)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" 
+            style={{ animation: autofixStatus === 'Analyzing' ? 'spin 1s linear infinite' : 'none' }}>
+            <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
           </svg>
-        </div>
-        <div>
-          <h3 style={{ color: '#fff', fontSize: 15, fontWeight: 700, margin: 0 }}>Intelligent Repair</h3>
-          <p style={{ color: 'var(--text3)', fontSize: 11, margin: 0 }}>WASM Engine analyzed {validationErrors.length} issue(s)</p>
-        </div>
+        </button>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

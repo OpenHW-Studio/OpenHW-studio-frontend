@@ -169,6 +169,15 @@ async function instantiate(module: WebAssembly.Module, imports: any = {}) {
     },
     getTransformationRotation(fixIndex: number, transIndex: number): number {
       return (exports as any).getTransformationRotation(fixIndex, transIndex);
+    },
+    getFixRemovedWireCount(index: number): number {
+      return (exports as any).getFixRemovedWireCount(index);
+    },
+    getRemovedWireFrom(fixIndex: number, wireIndex: number): string {
+      return __liftString((exports as any).getRemovedWireFrom(fixIndex, wireIndex));
+    },
+    getRemovedWireTo(fixIndex: number, wireIndex: number): string {
+      return __liftString((exports as any).getRemovedWireTo(fixIndex, wireIndex));
     }
   };
 }
@@ -254,16 +263,29 @@ self.onmessage = async (e) => {
               id: engine.getAddedComponentId(i, j),
               type: engine.getAddedComponentType(i, j),
               x: engine.getAddedComponentX(i, j),
-              y: engine.getAddedComponentY(i, j)
+              y: engine.getAddedComponentY(i, j),
+              w: 0,
+              h: 0,
+              rotation: 0
             });
           }
 
           const wireCount = engine.getFixAddedWireCount(i);
           for (let j = 0; j < wireCount; j++) {
             addedWires.push({
-              from: engine.getAddedWireFrom(i, j),
-              to: engine.getAddedWireTo(i, j),
-              color: '#38bdf8' // Ghost sky blue
+              from: engine.getAddedWireFrom(i, j).replace('.', ':'),
+              to: engine.getAddedWireTo(i, j).replace('.', ':'),
+              color: '#38bdf8', // Ghost sky blue
+              isNew: true
+            });
+          }
+
+          const removedWires = [];
+          const removedCount = engine.getFixRemovedWireCount(i);
+          for (let j = 0; j < removedCount; j++) {
+            removedWires.push({
+              from: engine.getRemovedWireFrom(i, j).replace('.', ':'),
+              to: engine.getRemovedWireTo(i, j).replace('.', ':')
             });
           }
 
@@ -286,7 +308,7 @@ self.onmessage = async (e) => {
             description,
             addedComponents,
             addedWires,
-            removedWires: [], // Placeholder for now
+            removedWires,
             transformations,
             reasoning
           });
