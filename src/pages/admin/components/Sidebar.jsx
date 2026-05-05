@@ -1,6 +1,7 @@
 import React from 'react';
 import { 
     LayoutDashboard, 
+    Globe,
     Library, 
     Clock, 
     Puzzle, 
@@ -12,12 +13,14 @@ import {
     X,
     Package,
     PlayCircle,
-    ShieldCheck
+    ShieldCheck,
+    AlertTriangle
 } from 'lucide-react';
 
-const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout }) => {
+const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout, maintenanceMode, onToggleMaintenance }) => {
     const menuItems = [
         { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
+        { id: 'map', icon: Globe, label: 'User Map' },
         { id: 'libraries', icon: Library, label: 'Libraries' },
         { id: 'approval', icon: Clock, label: 'Approvals' },
         { id: 'components', label: 'Custom Components', icon: Package },
@@ -64,7 +67,27 @@ const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout }) => {
                 ))}
             </nav>
 
-            <div className="mt-auto pt-8 border-t border-white/10 mb-6">
+            <div className="mt-auto space-y-4 pt-8 border-t border-white/10 mb-6">
+                <div className={`p-6 rounded-2xl border transition-all ${maintenanceMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-white/5 border-white/5'}`}>
+                    <div className="flex items-center justify-between gap-4 mb-4">
+                        <div className="flex items-center gap-3">
+                            <AlertTriangle className={`w-4 h-4 ${maintenanceMode ? 'text-amber-500' : 'text-slate-500'}`} />
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${maintenanceMode ? 'text-amber-500' : 'text-slate-500'}`}>
+                                Maintenance
+                            </span>
+                        </div>
+                        <button 
+                            onClick={() => onToggleMaintenance(!maintenanceMode)}
+                            className={`w-10 h-5 rounded-full relative transition-all ${maintenanceMode ? 'bg-amber-500' : 'bg-slate-700'}`}
+                        >
+                            <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${maintenanceMode ? 'left-6' : 'left-1'}`}></div>
+                        </button>
+                    </div>
+                    <p className="text-[9px] text-slate-500 font-bold leading-tight">
+                        {maintenanceMode ? 'System is currently restricted to admins.' : 'System is live for all users.'}
+                    </p>
+                </div>
+
                 <button 
                     onClick={onLogout}
                     className="w-full flex items-center gap-6 px-10 py-6 rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-500/10 transition-all font-black text-xl"

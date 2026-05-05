@@ -547,11 +547,11 @@ async function runRunnerCase(
         setTimeout(() => {
           try {
             runner.serialRx(`\u0003\u0003\u0001${script}\n\u0004\u0002`);
-          } catch {
+          } catch (e) {
             // no-op
           }
         }, 120);
-      } catch {
+      } catch (e) {
         // no-op
       }
     };
@@ -579,7 +579,7 @@ async function runRunnerCase(
         if (cpu?.core?.BXWritePC) {
           cpu.core.BXWritePC((forcedPc | 1) >>> 0);
         }
-      } catch {
+      } catch (e) {
         // no-op
       }
     }, faultAfter);
@@ -589,7 +589,7 @@ async function runRunnerCase(
 
   try {
     runner.stop();
-  } catch {
+  } catch (e) {
     // no-op
   }
 
