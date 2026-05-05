@@ -181,15 +181,39 @@ export function validateComponentLimits(validator) {
                 );
             }
 
-            const va = validator.calculateVoltageAtNode(anode);
-            const vk = validator.calculateVoltageAtNode(cathode);
+            let va = validator.calculateVoltageAtNode(anode);
+            let vk = validator.calculateVoltageAtNode(cathode);
             const ledSpec = validator.componentSpecs['wokwi-led'];
+
+            // Handle Active-Low logic and worst-case states for digital pins:
+            // We trace paths to find if any digital pins are reachable.
+            const cathodeSources = validator.collectVoltageSources(cathode);
+            const anodeSources = validator.collectVoltageSources(anode);
+            
+            const hasDigitalSink = cathodeSources.some(s => validator.isDigitalPin(s.nodeId));
+            const hasDigitalSource = anodeSources.some(s => validator.isDigitalPin(s.nodeId));
+
+            if (hasDigitalSink && vk >= 4.5) {
+                vk = 0.0; // Assume pin can sink to GND
+            }
+            if (hasDigitalSource && va <= 0.5) {
+                va = 5.0; // Assume pin can source from VCC
+            }
 
             if (va > vk) {
                 const driveVoltage = va - vk - ledSpec.forwardVoltage;
                 if (driveVoltage <= 0) return;
 
-                const seriesResistance = validator.findSeriesResistance(anode);
+                // Sum resistance from both sides.
+                // We look for the resistance to a valid source/sink.
+                const rAnode = validator.findSeriesResistance(anode, s => s.voltage > 0 || validator.isDigitalPin(s.nodeId));
+                const rCathode = validator.findSeriesResistance(cathode, s => s.voltage === 0 || validator.isDigitalPin(s.nodeId));
+                
+                // If either side is truly open-circuit, skip current calculation (handled by other rules)
+                if (rAnode === Infinity || rCathode === Infinity) return;
+
+                const seriesResistance = rAnode + rCathode;
+                
                 if (seriesResistance <= 0) {
                     validator.addError(
                         `🔥 [LED ${component.id}] No series resistance detected. LED will burn out. Fix: Add a 220 ohm resistor in series.`
@@ -314,20 +338,32 @@ export function validateReversePolarity(validator) {
             const cathodeNode = `${led.id}.K`;
             if (!hasConnection(validator, anodeNode) || !hasConnection(validator, cathodeNode)) return;
 
-            const anodeV = validator.calculateVoltageAtNode(anodeNode);
-            const cathodeV = validator.calculateVoltageAtNode(cathodeNode);
-            if (cathodeV <= anodeV) return;
+            let va = validator.calculateVoltageAtNode(anodeNode);
+            let vk = validator.calculateVoltageAtNode(cathodeNode);
 
-            const reverseV = cathodeV - anodeV;
-            const vBreak = validator.componentSpecs['wokwi-led'].reverseBreakdownVoltage;
+            // Predictive check: If pins are connected to digital GPIOs, assume worst-case polarity.
+            const anodeSources = validator.collectVoltageSources(anodeNode);
+            const cathodeSources = validator.collectVoltageSources(cathodeNode);
+            
+            const canAnodeGoLow = anodeSources.some(s => validator.isDigitalPin(s.nodeId));
+            const canCathodeGoHigh = cathodeSources.some(s => validator.isDigitalPin(s.nodeId));
+
+            if (canAnodeGoLow && va >= 4.5) va = 0.0;
+            if (canCathodeGoHigh && vk <= 0.5) vk = 5.0;
+
+            if (vk <= va) return;
+
+            const reverseV = vk - va;
+            const ledSpec = validator.componentSpecs['wokwi-led'];
+            const vBreak = ledSpec.reverseBreakdownVoltage;
 
             if (reverseV >= vBreak) {
                 validator.addError(
-                    `🔥 [LED ${led.id}] Reverse breakdown: ${reverseV.toFixed(2)}V exceeds ${vBreak.toFixed(2)}V.`
+                    `🔥 [LED ${led.id}] Reverse breakdown: ${reverseV.toFixed(2)}V exceeds ${vBreak.toFixed(2)}V. LED will be destroyed.`
                 );
             } else {
                 validator.addError(
-                    `⚠️ [LED ${led.id}] Reverse polarity detected (${reverseV.toFixed(2)}V). LED will not light and may degrade.`
+                    `🔥 [LED ${led.id}] Reverse polarity detected. LED is connected backwards and will not light. Flip the LED or check your wiring.`
                 );
             }
         });
