@@ -7641,10 +7641,12 @@ body {
 }
 
 .teacher-assignment-modal__panel--submission {
-  background: linear-gradient(180deg, #f8fafc, #f1f5f9);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+    background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto; 
+    height: 100%; 
+    max-height: 85vh;
 }
 
 .teacher-assignment-modal__crumbs {
@@ -8701,4 +8703,53 @@ body {
   .classroom-preview-modal__actions {
     justify-content: space-between;
   }
+}
+.auto-grade-panel {
+  background-color: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: inherit;
+}
+.auto-grade-panel__header {
+  padding: 12px 16px;
+  background-color: #f9fafb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  border-bottom: 1px solid #e5e7eb;
+  transition: background-color 0.2s;
+}
+.auto-grade-panel__header:hover {
+  background-color: #f3f4f6;
+}
+.auto-grade-panel__title {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #111827;
+}
+.auto-grade-panel__header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.auto-grade-panel__score-badge {
+  background-color: #ecfdf5;
+  color: #047857;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.auto-grade-panel__pending {
+  color: #6b7280;
+  font-size: 13px;
+}
+.auto-grade-panel__body {
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
 }
