@@ -635,13 +635,25 @@ export class FullCircuitValidator {
         return weightedVoltage / totalWeight;
     }
 
+    isDigitalPin(nodeId) {
+        const { componentId, pinId } = this.getNodeParts(nodeId);
+        const component = this.getComponentById(componentId);
+        if (!component) return false;
+        if (this.isType(component, 'wokwi-arduino-uno', 'mcu_uno')) {
+            const pin = String(pinId || '').toUpperCase();
+            const isPin = /^(D?\d+|A\d+)$/.test(pin);
+            return isPin;
+        }
+        return false;
+    }
+
     // --- CORE HELPER: Calculate Series Resistance ---
-    findSeriesResistance(startNode) {
+    findSeriesResistance(startNode, sourceFilter = (s) => s.voltage !== null) {
         const sources = this.collectVoltageSources(startNode)
-            .filter(source => source.voltage > 0)
+            .filter(source => sourceFilter(source))
             .sort((left, right) => left.resistance - right.resistance);
 
-        if (sources.length === 0) return 0;
+        if (sources.length === 0) return Infinity; // Return Infinity if no source found
         return sources[0].resistance;
     }
 
