@@ -6,6 +6,17 @@ export class PotentiometerLogic extends BaseComponent {
         this.state = { value: 50 };
     }
 
+    getMnaStamps() {
+        const val = Number(this.state.value) || 0;
+        const totalR = 10000;
+        const r1 = Math.max(0.1, totalR * (val / 100.0));
+        const r2 = Math.max(0.1, totalR * (1 - val / 100.0));
+        return [
+            { pins: ['1', 'SIG'], g: 1 / r1 },
+            { pins: ['2', 'SIG'], g: 1 / r2 }
+        ];
+    }
+
     update(time: number, wires: any[], instances: BaseComponent[]) {
         super.update(time, wires, instances);
         let val = Number(this.state.value) || 0;

@@ -6,6 +6,13 @@ export class DiodeLogic extends BaseComponent {
         this.state = {};
     }
 
+    getMnaPins() { return ['A', 'C']; }
+    getConductance() {
+        const va = this.getPinVoltage('A');
+        const vc = this.getPinVoltage('C');
+        return (va > vc + 0.6) ? 100 : 1e-9;
+    }
+
     onPinStateChange() {
         const va = this.getPinVoltage('A');
         const vc = this.getPinVoltage('C');

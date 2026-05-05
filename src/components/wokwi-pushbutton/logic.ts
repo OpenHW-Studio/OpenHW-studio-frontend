@@ -6,6 +6,9 @@ export class PushbuttonLogic extends BaseComponent {
         this.state = { pressed: false };
     }
 
+    getMnaPins() { return ['1', '2']; }
+    getConductance() { return this.state.pressed ? 1000 : 1e-9; }
+
     onEvent(event: string) {
         if (event === 'press') {
             this.setState({ pressed: true });
