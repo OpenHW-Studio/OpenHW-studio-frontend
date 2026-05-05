@@ -3666,16 +3666,19 @@ export class AVRRunner {
         this.runLoop();
 
         // Send compact board state frequently, but coalesce large component payloads.
+        let statusIntervalEmitCount = 0;
         this.statusInterval = setInterval(() => {
             if (this.running && this.cpu) {
                 const msg: any = { type: 'state' };
                 const now = performance.now();
                 let shouldEmit = false;
 
+                // Always send pin states to maintain steady flow
+                msg.pins = this.pinStates;
+                shouldEmit = true;
+
                 if (this.pinsChanged) {
-                    msg.pins = this.pinStates;
                     this.pinsChanged = false;
-                    shouldEmit = true;
                 }
 
                 if (this.adc) {
@@ -3697,12 +3700,11 @@ export class AVRRunner {
 
                 if (compStates.length > 0) {
                     msg.components = compStates;
-                    shouldEmit = true;
                 }
 
-                if (!shouldEmit && (now - this.lastStateEmitAt) >= 250) {
-                    shouldEmit = true;
-                }
+                // Emit if there were any changes (pins or components)
+                // This naturally limits emission to when something happens, preventing empty messages
+                // but allows smooth flow without artificial throttling
 
                 if (shouldEmit) {
                     msg.boardId = this.boardId;
@@ -3712,6 +3714,9 @@ export class AVRRunner {
                         lastComponentUpdateMs: Number(this.lastComponentUpdateMs.toFixed(3)),
                     };
                     this.lastStateEmitAt = now;
+                    statusIntervalEmitCount++;
+                    msg._emitSeq = statusIntervalEmitCount;
+                    msg._emitTime = now;
                     this.onStateUpdate(msg);
                 }
             }
