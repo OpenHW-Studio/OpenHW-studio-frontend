@@ -4177,68 +4177,79 @@ useEffect(() => {
     ctx.fillText('← time', Y_LABEL_W + 4, height - 4);
   }, [plotData, codeTab, selectedPlotPins, plotterPaused, serialViewMode, serialBoardFilter]);
 
-  // ── Get absolute pin position on canvas ────────────────────────────────────
+  // -- Get absolute pin position on canvas --
   const componentsMap = useMemo(() => {
     const m = new Map();
     for (const c of components) m.set(c.id, c);
     return m;
   }, [components]);
 
-  const getPinPos = useCallback((compId, pinId) => {
-    const comp = componentsMap.get(compId)
-    if (!comp) return null
-    const pins = PIN_DEFS[comp.type] || []
-    const pin = pins.find(p => String(p.id) === String(pinId))
-    if (!pin) return null
+  const getPinPosForComp = useCallback((comp, pinId) => {
+    if (!comp) return null;
+    const pins = PIN_DEFS[comp.type] || [];
+    const pin = pins.find(p => String(p.id) === String(pinId));
+    if (!pin) return null;
     const rotation = comp.rotation || 0;
-    if (rotation === 0) return { x: comp.x + pin.x, y: comp.y + pin.y }
+    const cw = comp.w || 0;
+    const ch = comp.h || 0;
+    if (rotation === 0) return { x: comp.x + pin.x, y: comp.y + pin.y };
+    
     // Rotate pin coordinate around component center
-    const cx = comp.w / 2, cy = comp.h / 2;
-    const rad = rotation * Math.PI / 180;
+    const cx = cw / 2, cy = ch / 2;
+    const rad = (rotation * Math.PI) / 180;
     const dx = pin.x - cx, dy = pin.y - cy;
     return {
       x: comp.x + cx + dx * Math.cos(rad) - dy * Math.sin(rad),
       y: comp.y + cy + dx * Math.sin(rad) + dy * Math.cos(rad)
-    }
-  }, [componentsMap, PIN_DEFS])
+    };
+  }, [PIN_DEFS]);
 
-  // ── Get the point a wire should exit/enter at 90° from a pin ───────────────
+  const getPinPos = useCallback((compId, pinId) => {
+    return getPinPosForComp(componentsMap.get(compId), pinId);
+  }, [componentsMap, getPinPosForComp]);
+
+  // -- Get the point a wire should exit/enter at 90 deg from a pin --
   const getPinExitPoint = useCallback((compId, pinId) => {
-    const comp = componentsMap.get(compId)
-    if (!comp) return null
-    const pins = PIN_DEFS[comp.type] || []
-    const pin = pins.find(p => String(p.id) === String(pinId))
-    if (!pin) return null
-    const stub = 20;
-    // Determine dominant exit direction from unrotated pin position relative to component center
-    const cx = comp.w / 2, cy = comp.h / 2;
-    const dx = pin.x - cx, dy = pin.y - cy;
-    let exitDx = 0, exitDy = 0;
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      exitDx = dx >= 0 ? stub : -stub;
-    } else {
-      exitDy = dy >= 0 ? stub : -stub;
-    }
-    // Rotate exit direction with the component
-    const rotation = comp.rotation || 0;
-    if (rotation !== 0) {
-      const rad = rotation * Math.PI / 180;
-      const rdx = exitDx * Math.cos(rad) - exitDy * Math.sin(rad);
-      const rdy = exitDx * Math.sin(rad) + exitDy * Math.cos(rad);
-      exitDx = rdx; exitDy = rdy;
-    }
-    const pinPos = getPinPos(compId, pinId);
-    if (!pinPos) return null;
-    return { x: pinPos.x + exitDx, y: pinPos.y + exitDy };
-  }, [componentsMap, PIN_DEFS, getPinPos])
+    const comp = componentsMap.get(compId);
+    if (!comp) return null;
+    const pins = PIN_DEFS[comp.type] || [];
+    const pin = pins.find(p => String(p.id) === String(pinId));
+    if (!pin) return null;
+    const pPos = getPinPosForComp(comp, pinId);
+    if (!pPos) return null;
 
-  // Keep reactive refs current so async effects always use latest values
+    const rotation = comp.rotation || 0;
+    const exitLen = 15;
+    let dx = 0, dy = 0;
+    const dir = pin.dir || 'left';
+    if (dir === 'left') dx = -exitLen;
+    else if (dir === 'right') dx = exitLen;
+    else if (dir === 'top') dy = -exitLen;
+    else if (dir === 'bottom') dy = exitLen;
+
+    if (rotation === 0) return { x: pPos.x + dx, y: pPos.y + dy };
+    const rad = (rotation * Math.PI) / 180;
+    return {
+      x: pPos.x + dx * Math.cos(rad) - dy * Math.sin(rad),
+      y: pPos.y + dx * Math.sin(rad) + dy * Math.cos(rad)
+    };
+  }, [componentsMap, PIN_DEFS, getPinPosForComp]);
+
+  const getPinPosWithGhosts = useCallback((compId, pinId) => {
+    let comp = componentsMap.get(compId);
+    if (!comp && autofixPlan?.addedComponents) {
+      comp = autofixPlan.addedComponents.find(c => c.id === compId);
+    }
+    return getPinPosForComp(comp, pinId);
+  }, [componentsMap, autofixPlan?.addedComponents, getPinPosForComp]);
+
+  // Keep reactive refs current
   getPinPosRef.current = getPinPos;
   componentsRef.current = components;
   wiresRef.current = wires;
   pinDefsRef.current = PIN_DEFS;
 
-  // ── Palette drag start ──────────────────────────────────────────────────────
+  // -- Palette drag start --
   const onPaletteDragStart = (e, item) => {
     dragPayload.current = item
     e.dataTransfer.effectAllowed = 'copy'
@@ -6477,11 +6488,14 @@ useEffect(() => {
     if (autofixPlan.addedComponents) {
       autofixPlan.addedComponents.forEach(ac => {
           if (!newComponents.find(c => c.id === ac.id)) {
+              // Resistor is 70x32, LED is 72x44 in the SYMS library
+              const defW = ac.type === 'wokwi-resistor' ? 70 : (ac.type === 'wokwi-led' ? 72 : 40);
+              const defH = ac.type === 'wokwi-resistor' ? 32 : (ac.type === 'wokwi-led' ? 44 : 20);
               newComponents.push({
                   ...ac,
-                  isGhost: false, // Ensure it's not a ghost anymore
-                  w: ac.w || 40,
-                  h: ac.h || 20
+                  isGhost: false,
+                  w: ac.w || defW,
+                  h: ac.h || defH
               });
           }
       });
@@ -8743,7 +8757,7 @@ useEffect(() => {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -9561,11 +9575,11 @@ useEffect(() => {
               {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
                 const fromParts = (w.from || '').replace('.', ':').split(':');
                 const toParts = (w.to || '').replace('.', ':').split(':');
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
+                const p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
+                const p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
                 if (!p1 || !p2) return null;
-                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
+                const e1 = p1; // Simplify ghost exits for preview
+                const e2 = p2;
                 return (
                   <CanvasWire
                     key={`ghost-${w.id}`}
@@ -9579,11 +9593,11 @@ useEffect(() => {
               {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
                 const fromParts = (w.from || '').replace('.', ':').split(':');
                 const toParts = (w.to || '').replace('.', ':').split(':');
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
+                const p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
+                const p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
                 if (!p1 || !p2) return null;
-                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
+                const e1 = p1;
+                const e2 = p2;
                 return (
                   <CanvasWire
                     key={`ghost-${w.id}`}

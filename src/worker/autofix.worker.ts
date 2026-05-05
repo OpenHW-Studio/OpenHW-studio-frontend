@@ -8,6 +8,8 @@ import wasmUrl from '../wasm/autofix.wasm?url';
 // --- AssemblyScript Glue (adapted for browser worker) ---
 
 async function instantiate(module: WebAssembly.Module, imports: any = {}) {
+  // Clear any potential internal caches by ensuring we work with fresh module
+  console.log("[AutofixWorker] Instantiating WASM Engine (v1.0.3-stable)...");
   const adaptedImports = {
     env: Object.setPrototypeOf({
       abort(message: number, fileName: number, lineNumber: number, columnNumber: number) {
