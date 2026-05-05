@@ -1,9 +1,163 @@
-import { ExternalLink, Link2, Loader2, Upload, X } from "lucide-react";
+import { useState } from "react";
+import { 
+  AlertTriangle, 
+  BookOpen, 
+  CheckCircle, 
+  ChevronDown, 
+  ChevronUp, 
+  ExternalLink, 
+  Lightbulb, 
+  Link2, 
+  Loader2, 
+  RefreshCw, 
+  Star, 
+  Upload, 
+  X 
+} from "lucide-react";
 import ClassroomAttachmentBlock from "../../common/ClassroomAttachmentBlock.jsx";
 import { formatDateTime } from "../../common/test.js";
 import { getAttachmentLabel, pickAttachments, pickLinks } from "./helpers.js";
+import { triggerAutoGrade } from "../../../services/classroomService.js";
 
+// ─── STUDENT AUTO-GRADE PANEL ────────────────────────────────────────────────
+function StudentAutoGradePanel({ submission, classId, assignmentId }) {
+  const [open, setOpen] = useState(false);
+  const [regrading, setRegrading] = useState(false);
+  const [regradeError, setRegradeError] = useState("");
+  const [localGrade, setLocalGrade] = useState(submission?.autoGrade || null);
+  
+  const hasGrade = localGrade && (localGrade.score != null || localGrade.summary);
+
+  const handleRegrade = async (e) => {
+    e.stopPropagation(); 
+    setRegrading(true);
+    setRegradeError("");
+    try {
+      // Fallback to extraction if classId wasn't explicitly passed down
+      const resolvedClassId = classId || submission?.classId || assignmentId; 
+      const result = await triggerAutoGrade(resolvedClassId, assignmentId, submission._id);
+      setLocalGrade(result.autoGrade);
+      setOpen(true);
+    } catch (err) {
+      setRegradeError(err.message || "Re-grading failed.");
+    } finally {
+      setRegrading(false);
+    }
+  };
+
+  return (
+    <div 
+      className="auto-grade-panel" 
+      style={{ marginBottom: "24px" }} 
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div 
+        className="auto-grade-panel__header" 
+        style={{ cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f9fafb", padding: "12px 16px", borderRadius: "8px", border: "1px solid #e5e7eb" }} 
+        onClick={() => setOpen(!open)}
+      >
+        <span className="auto-grade-panel__title" style={{ fontWeight: "bold", display: "flex", alignItems: "center", gap: "8px", color: "#111827", fontSize: "14px" }}>
+          <Star size={16} color="#f59e0b" fill="#f59e0b" /> AI Feedback & Score
+        </span>
+        <div className="auto-grade-panel__header-right" style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {hasGrade ? (
+            <span style={{ background: "#ecfdf5", color: "#047857", padding: "4px 10px", borderRadius: "12px", fontSize: "13px", fontWeight: "bold" }}>
+              {localGrade.score ?? "—"}/100
+            </span>
+          ) : (
+            <span style={{ color: "#6b7280", fontSize: "13px" }}>Pending</span>
+          )}
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </div>
+      </div>
+
+      {open && (
+        <div className="auto-grade-panel__body" style={{ marginTop: "16px", fontSize: "14px", lineHeight: "1.6", color: "#374151",maxHeight: "400px", overflowY: "auto" }}>
+          {/* Show Regrade Button inside the body if they have an image attached/screenshot */}
+          {(submission?.screenshotUrl || submission?.attachments?.length > 0) && (
+            <button 
+              type="button" 
+              onClick={handleRegrade} 
+              disabled={regrading} 
+              style={{ 
+                marginBottom: "16px", display: "inline-flex", alignItems: "center", gap: "6px", 
+                padding: "8px 14px", fontSize: "13px", fontWeight: "500", background: "#ffffff", 
+                color: "#374151", border: "1px solid #d1d5db", borderRadius: "6px", cursor: "pointer",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.05)"
+              }}
+            >
+              {regrading ? (
+                <><Loader2 size={14} className="teacher-spin" /> Grading…</>
+              ) : (
+                <><RefreshCw size={14} /> Request Re-grade</>
+              )}
+            </button>
+          )}
+
+          {regradeError && <div style={{ color: "red", fontSize: "13px", marginBottom: "16px" }}>{regradeError}</div>}
+
+          {!hasGrade ? (
+            <p style={{ color: "#6b7280", background: "#f9fafb", padding: "12px", borderRadius: "6px", border: "1px solid #e5e7eb" }}>
+              Your circuit hasn't been auto-graded yet. Submit directly from the emulator, or attach an image file of your circuit to trigger grading.
+            </p>
+          ) : (
+            <>
+              {localGrade.summary && (
+                <p style={{ marginBottom: "16px", fontSize: "14px", background: "#f3f4f6", padding: "12px", borderRadius: "6px" }}>
+                  {localGrade.summary}
+                </p>
+              )}
+
+              {localGrade.errors?.length > 0 ? (
+                <div style={{ marginBottom: "16px", background: "#fef2f2", padding: "12px", borderRadius: "6px", border: "1px solid #fecaca" }}>
+                  <h5 style={{ color: "#dc2626", display: "flex", alignItems: "center", gap: "6px", margin: "0 0 8px 0", fontSize: "14px" }}>
+                    <AlertTriangle size={16} /> Issues to fix
+                  </h5>
+                  <ul style={{ paddingLeft: "24px", color: "#b91c1c", margin: 0 }}>
+                    {localGrade.errors.map((err, i) => (
+                      <li key={i} style={{ marginBottom: "4px" }}>
+                        <strong>{err.component}:</strong> {err.description}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : hasGrade ? (
+                <p style={{ color: "#059669", display: "flex", alignItems: "center", gap: "6px", marginTop: "16px", background: "#ecfdf5", padding: "12px", borderRadius: "6px", border: "1px solid #a7f3d0", fontWeight: "500" }}>
+                  <CheckCircle size={16} /> No issues found — great work!
+                </p>
+              ) : null}
+
+              {localGrade.suggestions?.length > 0 && (
+                <div style={{ marginTop: "16px", background: "#fffbeb", padding: "12px", borderRadius: "6px", border: "1px solid #fde68a" }}>
+                  <h5 style={{ color: "#d97706", display: "flex", alignItems: "center", gap: "6px", margin: "0 0 8px 0", fontSize: "14px" }}>
+                    <Lightbulb size={16} /> Tips for improvement
+                  </h5>
+                  <ul style={{ paddingLeft: "24px", color: "#b45309", margin: 0 }}>
+                    {localGrade.suggestions.map((s, i) => (
+                      <li key={i} style={{ marginBottom: "4px" }}>
+                        <strong>{s.area}:</strong> {s.tip}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {localGrade.gradedAt && (
+                <p style={{ marginTop: "16px", fontSize: "12px", color: "#9ca3af", borderTop: "1px solid #e5e7eb", paddingTop: "12px" }}>
+                  Graded {new Date(localGrade.gradedAt).toLocaleString()}
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── MAIN MODAL COMPONENT ────────────────────────────────────────────────────
 export default function StudentAssignmentModal({
+  classId, // Accepting classId explicitly
   assignment,
   submissionState,
   submissionForm,
@@ -23,6 +177,9 @@ export default function StudentAssignmentModal({
   const attachments = pickAttachments(assignment);
   const referenceLinks = pickLinks(assignment);
   const submission = submissionState.data;
+
+  // Fallback classId extraction just in case it isn't passed down from the parent
+  const resolvedClassId = classId || assignment.classId;
 
   return (
     <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Assignment submission">
@@ -83,6 +240,15 @@ export default function StudentAssignmentModal({
             <div className="teacher-assignment-modal__submission-head">
               <h3>Submission</h3>
             </div>
+
+            {/* ✅ AI FEEDBACK PANEL MOVED TO THE VERY TOP */}
+            {submission ? (
+              <StudentAutoGradePanel 
+                submission={submission} 
+                classId={resolvedClassId} 
+                assignmentId={assignment._id} 
+              />
+            ) : null}
 
             {isClosed ? (
               <div className="teacher-assignment-modal__alert">

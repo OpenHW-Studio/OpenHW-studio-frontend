@@ -55,6 +55,9 @@ export default function TeacherClassDetailPage() {
 
   const [noticeFiles, setNoticeFiles] = useState([]);
   const [assignmentFiles, setAssignmentFiles] = useState([]);
+  
+  // ✅ NEW: State for Auto-Grading Reference Image
+  const [referenceImageUrl, setReferenceImageUrl] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [postingNotice, setPostingNotice] = useState(false);
@@ -400,6 +403,9 @@ export default function TeacherClassDetailPage() {
     const normalizedAttachments = (assignmentFiles || [])
       .map((file) => String(file || "").trim())
       .filter(Boolean);
+    
+    // ✅ NEW: Extract reference image
+    const normalizedReferenceImage = String(referenceImageUrl || "").trim();
 
     setPostingAssignment(true);
     setError("");
@@ -414,10 +420,12 @@ export default function TeacherClassDetailPage() {
         links: normalizedLinks,
         attachments: normalizedAttachments,
         files: normalizedAttachments,
+        referenceImage: normalizedReferenceImage || undefined, // ✅ NEW: Sent to backend
       });
 
       setAssignmentForm({ title: "", description: "", dueDate: "", templateUrl: "", links: [""] });
       setAssignmentFiles([]);
+      setReferenceImageUrl(""); // ✅ NEW: Reset form
       setAssignments(await getClassAssignments(classId));
       setShowComposer(false);
       setActiveTab("classwork");
@@ -829,6 +837,7 @@ export default function TeacherClassDetailPage() {
 
       {showComposer ? (
         <TeacherComposerModal
+          classId={classId} // ✅ NEW: Passed correctly
           composerMode={composerMode}
           onComposerModeChange={setComposerMode}
           onClose={() => setShowComposer(false)}
@@ -849,6 +858,8 @@ export default function TeacherClassDetailPage() {
           onNoticeFilesChange={handleNoticeFilesChange}
           onRemoveNoticeFile={handleRemoveNoticeFile}
           postingNotice={postingNotice}
+          referenceImageUrl={referenceImageUrl} // ✅ NEW: Passed down to modal
+          onReferenceImageChange={setReferenceImageUrl} // ✅ NEW: Passed down to modal
         />
       ) : null}
 

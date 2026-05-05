@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Link2,
   BookOpenCheck,
@@ -8,10 +9,16 @@ import {
   FileText,
   Upload,
   X,
+  Loader2,
+  Image as ImageIcon
 } from "lucide-react";
 import { getAttachmentLabel } from "./helpers.js";
+import { getToken } from "../../../services/authService.js";
+
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
 
 export default function TeacherComposerModal({
+  classId,
   composerMode,
   onComposerModeChange,
   onClose,
@@ -32,7 +39,46 @@ export default function TeacherComposerModal({
   onNoticeFilesChange,
   onRemoveNoticeFile,
   postingNotice,
+  referenceImageUrl,
+  onReferenceImageChange
 }) {
+  const [uploadingRef, setUploadingRef] = useState(false);
+  const [refUploadError, setRefUploadError] = useState("");
+
+  const handleReferenceImageFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = ""; // reset input
+    setUploadingRef(true);
+    setRefUploadError("");
+
+    try {
+      const token = getToken();
+      const formData = new FormData();
+      formData.append("files", file);
+      formData.append("category", "reference-images");
+      formData.append("classId", classId || "shared");
+
+      const response = await fetch(`${BASE_URL}/classroom/uploads`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Upload failed");
+
+      const url = data?.files?.[0]?.url;
+      if (!url) throw new Error("No URL returned from upload");
+
+      onReferenceImageChange(url);
+    } catch (err) {
+      setRefUploadError(err.message || "Failed to upload reference image.");
+    } finally {
+      setUploadingRef(false);
+    }
+  };
+
   return (
     <div
       className="teacher-composer-modal"
@@ -200,6 +246,61 @@ export default function TeacherComposerModal({
               </div>
             </section>
 
+            {/* ✅ NEW SECTION: Auto-Grading Reference Image */}
+            <section className="teacher-assignment-section">
+              <div className="teacher-assignment-section__header">
+                <div className="teacher-assignment-section__icon">
+                  <ImageIcon size={16} />
+                </div>
+                <div className="teacher-assignment-section__copy">
+                  <strong>Auto-Grading Reference Image</strong>
+                  <small>Upload the correct circuit solution for AI evaluation. Hidden from students.</small>
+                </div>
+              </div>
+              <div className="teacher-assignment-section__body">
+                {uploadingRef ? (
+                  <div className="teacher-upload-dropzone" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+                    <Loader2 size={18} className="teacher-spin" />
+                    <span>Uploading reference...</span>
+                  </div>
+                ) : !referenceImageUrl ? (
+                  <label className="teacher-upload-dropzone">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleReferenceImageFile}
+                    />
+                    <span className="teacher-upload-dropzone__empty">
+                      <ImageIcon size={18} />
+                      Upload Solution Image
+                    </span>
+                  </label>
+                ) : (
+                  <div className="teacher-assignment-form__link-list" role="list">
+                    <div className="teacher-assignment-form__link-pill" role="listitem">
+                      <span className="teacher-assignment-form__link-pill-copy">
+                        <FileImage size={14} />
+                        Reference Image Attached
+                      </span>
+                      <button
+                        type="button"
+                        className="teacher-assignment-form__link-pill-remove"
+                        onClick={() => onReferenceImageChange("")}
+                        aria-label="Remove reference image"
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {refUploadError ? (
+                  <p style={{ color: "red", fontSize: "12px", marginTop: "4px" }}>
+                    {refUploadError}
+                  </p>
+                ) : null}
+              </div>
+            </section>
+
             <section className="teacher-assignment-section">
               <div className="teacher-assignment-section__header">
                 <div className="teacher-assignment-section__icon">
@@ -258,7 +359,8 @@ export default function TeacherComposerModal({
                 ) : null}
               </div>
             </section>
-            <button type="submit" disabled={postingAssignment}>
+            
+            <button type="submit" disabled={postingAssignment || uploadingRef}>
               {postingAssignment ? "Creating..." : "Add Assignment"}
             </button>
           </form>
