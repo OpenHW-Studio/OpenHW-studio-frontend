@@ -31,7 +31,7 @@ describe('AutofixPreviewPanel', () => {
     screen.getByText('Recommended Fix');
 
     const applyBtn = screen.getByRole('button', { name: /Apply Intelligent Repair/i });
-    expect(applyBtn).toBeEnabled();
+    expect(applyBtn.disabled).toBe(false);
 
     fireEvent.click(applyBtn);
 
