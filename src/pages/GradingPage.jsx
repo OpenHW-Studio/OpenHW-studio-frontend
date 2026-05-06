@@ -21,6 +21,8 @@ const GradingPage = () => {
         setLogs(prev => [...prev, { timestamp, msg, type }]);
     }, []);
 
+    const teacherKeyCacheRef = useRef({ hash: null, key: null });
+
     useEffect(() => {
         workerRef.current = new Worker(new URL('../worker/grading-worker.ts', import.meta.url), { type: 'module' });
         
@@ -29,8 +31,31 @@ const GradingPage = () => {
                 if (e.data.result.logs) {
                     e.data.result.logs.forEach(log => addLog(log, 'info'));
                 }
+                
+                // Cache the teacher key if it was generated/returned
+                if (e.data.teacherBinaryKey && teacherFile) {
+                    const fileHash = `${teacherFile.name}-${teacherFile.size}-${teacherFile.lastModified}`;
+                    teacherKeyCacheRef.current = { hash: fileHash, key: e.data.teacherBinaryKey };
+                }
+
                 addLog('Grading complete. Report generated.', 'success');
                 setReport(e.data.result);
+                setIsGrading(false);
+            } else if (e.data.type === 'KEY_GENERATED') {
+                addLog('Reference Key generated successfully!', 'success');
+                
+                // Also cache here
+                if (teacherFile) {
+                    const fileHash = `${teacherFile.name}-${teacherFile.size}-${teacherFile.lastModified}`;
+                    teacherKeyCacheRef.current = { hash: fileHash, key: e.data.key };
+                }
+
+                const blob = new Blob([e.data.key], { type: 'application/octet-stream' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `reference_key_${new Date().getTime()}.bin`;
+                a.click();
                 setIsGrading(false);
             } else if (e.data.type === 'LOG') {
                 addLog(e.data.msg, e.data.logType);
@@ -38,7 +63,7 @@ const GradingPage = () => {
         };
 
         return () => workerRef.current?.terminate();
-    }, [addLog]);
+    }, [addLog, teacherFile]);
 
     useEffect(() => {
         logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -64,6 +89,26 @@ const GradingPage = () => {
         a.click();
     };
 
+    const generateKey = async () => {
+        if (!teacherFile) {
+            addLog('Error: Please upload a teacher PNG first.', 'error');
+            return;
+        }
+        setIsGrading(true);
+        addLog('Starting Key Generation (with Behavioral Capture)...', 'info');
+        try {
+            const buf = await teacherFile.arrayBuffer();
+            workerRef.current.postMessage({
+                type: 'GENERATE_KEY',
+                teacher: { project: "", projectBuf: buf },
+                options
+            });
+        } catch (err) {
+            addLog(`Error: ${err.message}`, 'error');
+            setIsGrading(false);
+        }
+    };
+
     const runGrading = async () => {
         if (!teacherFile || !studentFile) {
             addLog('Error: Missing files for grading.', 'error');
@@ -76,17 +121,24 @@ const GradingPage = () => {
         addLog('Starting grading process...', 'info');
 
         try {
-            const teacherBuf = await teacherFile.arrayBuffer();
             const studentBuf = await studentFile.arrayBuffer();
-
-            addLog('ArrayBuffers prepared. Sending to worker.', 'info');
+            const fileHash = `${teacherFile.name}-${teacherFile.size}-${teacherFile.lastModified}`;
+            
+            let teacherData;
+            if (teacherKeyCacheRef.current.hash === fileHash && teacherKeyCacheRef.current.key) {
+                addLog('Using cached Teacher Reference Key (Simulation skipped).', 'success');
+                teacherData = teacherKeyCacheRef.current.key;
+            } else {
+                addLog('Teacher PNG changed or not cached. Simulation required.', 'info');
+                teacherData = await teacherFile.arrayBuffer();
+            }
 
             workerRef.current.postMessage({
                 type: 'GRADE',
-                teacher: teacherBuf,
+                teacher: teacherData,
                 student: studentBuf,
                 options
-            }, [teacherBuf, studentBuf]);
+            }, teacherData instanceof ArrayBuffer ? [teacherData, studentBuf] : [studentBuf]);
         } catch (err) {
             addLog(`Error preparing files: ${err.message}`, 'error');
             setIsGrading(false);
@@ -139,9 +191,14 @@ const GradingPage = () => {
                                 Detect Overlaps
                             </label>
                         </div>
-                        <button className="grade-action-btn" onClick={runGrading} disabled={isGrading}>
-                            {isGrading ? 'Analyzing in Rust...' : 'Compare Circuits'}
-                        </button>
+                        <div className="button-group">
+                            <button className="grade-action-btn" onClick={runGrading} disabled={isGrading}>
+                                {isGrading ? 'Analyzing...' : 'Compare Circuits'}
+                            </button>
+                            <button className="key-action-btn" onClick={generateKey} disabled={isGrading}>
+                                {isGrading ? 'Capturing...' : 'Generate Reference Key'}
+                            </button>
+                        </div>
                     </div>
 
                     {report && (

@@ -2466,6 +2466,8 @@ export type BoardRunner = {
     setSpeed: (speed: number) => void;
     solverMode: 'logic' | 'nodal';
     setSolverMode: (mode: 'logic' | 'nodal') => void;
+    setTelemetryEnabled: (enabled: boolean) => void;
+    getTelemetryReport: () => any;
 };
 
 const RP2040_FLASH_BASE = 0x10000000;
@@ -3469,6 +3471,7 @@ export class AVRRunner {
     private pinToNet: Map<string, number> = new Map();
     private physicsWorker: Worker | null = null;
     private physicsWorkerBusy: boolean = false;
+    private cpuCyclesAtStart: number = 0;
 
     constructor(
         hexData: string,
@@ -3494,11 +3497,12 @@ export class AVRRunner {
         u8.set(data);
 
         this.cpu = new CPU(program, 0x2200);
+        this.cpuCyclesAtStart = this.cpu.cycles;
 
         this.timers = [
             new AVRTimer(this.cpu, timer0Config),
             new AVRTimer(this.cpu, timer1Config),
-            new AVRTimer(this.cpu, timer2Config)
+            new AVRTimer(this.cpu, timer2Config),
         ];
 
         this.adc = new AVRADC(this.cpu, adcConfig);
@@ -3526,6 +3530,14 @@ export class AVRRunner {
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
+                inst.onTelemetryFinding = (finding: any) => {
+                    this.onStateUpdate({
+                        type: 'telemetry_finding',
+                        boardId: this.boardId,
+                        componentId: inst.id,
+                        ...finding
+                    });
+                };
                 this.instances.set(cDef.id, inst);
             }
         });
@@ -3541,10 +3553,12 @@ export class AVRRunner {
         class TWIAdapter {
             // Track the addressed slave across the read transaction
             private activeSlave: BaseComponent | null = null;
+            private currentBuffer: number[] = [];
 
             constructor(private twi: AVRTWI, private instances: Map<string, BaseComponent>) { }
 
             start(repeated: boolean) {
+                this.currentBuffer = [];
                 this.twi.completeStart();
             }
 
@@ -3554,8 +3568,12 @@ export class AVRRunner {
                     if (inst.onI2CStop) {
                         inst.onI2CStop();
                     }
+                    if (this.currentBuffer.length > 0 && inst.onI2CStart && this.activeSlave === inst) {
+                        inst.recordI2cTransaction([...this.currentBuffer]);
+                    }
                 }
                 this.activeSlave = null;
+                this.currentBuffer = [];
                 this.twi.completeStop();
             }
 
@@ -3565,12 +3583,13 @@ export class AVRRunner {
                 this.activeSlave = null;
                 for (const inst of instArray) {
                     if (inst.onI2CStart) {
-                        if (inst.onI2CStart(addr, !write)) { // write here in avr8js is actually the exact R/W bit. "write" true means bit is 0
+                        if (inst.onI2CStart(addr, !write)) { 
                             ack = true;
-                            if (!this.activeSlave) this.activeSlave = inst; // remember first ACKing slave
+                            if (!this.activeSlave) this.activeSlave = inst;
                         }
                     }
                 }
+                this.currentBuffer = [addr | (write ? 0 : 1)];
                 this.twi.completeConnect(ack);
             }
 
@@ -3584,12 +3603,11 @@ export class AVRRunner {
                         }
                     }
                 }
+                this.currentBuffer.push(value);
                 this.twi.completeWrite(handled);
             }
 
             readByte(ack: boolean) {
-                // Ask the currently addressed slave for the next byte.
-                // Components expose this via onI2CReadByte() or readByte().
                 let byte = 0xFF;
                 if (this.activeSlave) {
                     const slave = this.activeSlave as any;
@@ -3599,6 +3617,7 @@ export class AVRRunner {
                         byte = slave.readByte() & 0xFF;
                     }
                 }
+                this.currentBuffer.push(byte);
                 this.twi.completeRead(byte);
             }
         }
@@ -3721,6 +3740,44 @@ export class AVRRunner {
                 }
             }
         }, 1000 / 30);
+    }
+
+    getSimulatedTimeMs() {
+        if (!this.cpu) return 0;
+        return Math.floor(((this.cpu.cycles - this.cpuCyclesAtStart) / 16_000_000) * 1000);
+    }
+
+    setTelemetryEnabled(enabled: boolean) {
+        for (const inst of this.instances.values()) {
+            inst.telemetryEnabled = !!enabled;
+        }
+    }
+
+    getRichTelemetrySnapshot(options: { mode?: 'standard' | 'deep' | 'delta' } = {}) {
+        const components: any[] = [];
+        const mode = options.mode || 'deep';
+
+        for (const inst of this.instances.values()) {
+            if (mode === 'standard') {
+                const data = (inst as any).getTelemetryData?.() || inst.getSyncState();
+                components.push({
+                    id: inst.id,
+                    ...data
+                });
+            } else if (mode === 'delta') {
+                components.push(inst.getDeltaMetrics());
+            } else {
+                // 'deep' mode provides the FULL diagnostic report
+                components.push(inst.getRawMetrics());
+            }
+        }
+        return {
+            boardId: this.boardId,
+            components,
+            capturedAt: new Date().toISOString(),
+            mode,
+            isDelta: mode === 'delta'
+        };
     }
 
     private isBoardArduinoPin(wireCoord: string, targetPin: string): boolean {
@@ -4798,6 +4855,44 @@ export class RP2040Runner implements BoardRunner {
     private lastSerialSource: number = -1;
     private lastSerialEmitAt: number = 0;
     private lastUsbSerialAt: number = 0;
+
+    getSimulatedTimeMs() {
+        if (!this.cpu) return 0;
+        return Math.floor(((Number(this.cpu.core.cycles) - this.cpuCyclesAtStart) / 125_000_000) * 1000);
+    }
+
+    setTelemetryEnabled(enabled: boolean) {
+        for (const inst of this.instances.values()) {
+            inst.telemetryEnabled = !!enabled;
+        }
+    }
+
+    getRichTelemetrySnapshot(options: { mode?: 'standard' | 'deep' | 'delta' } = {}) {
+        const components: any[] = [];
+        const mode = options.mode || 'deep';
+
+        for (const inst of this.instances.values()) {
+            if (mode === 'standard') {
+                const data = (inst as any).getTelemetryData?.() || inst.getSyncState();
+                components.push({
+                    id: inst.id,
+                    ...data
+                });
+            } else if (mode === 'delta') {
+                components.push(inst.getDeltaMetrics());
+            } else {
+                // 'deep' mode provides the FULL diagnostic report
+                components.push(inst.getRawMetrics());
+            }
+        }
+        return {
+            boardId: this.boardId,
+            components,
+            capturedAt: new Date().toISOString(),
+            mode,
+            isDelta: mode === 'delta'
+        };
+    }
     private lowPcAliasCandidate: number = -1;
     private lowPcAliasRepeatCount: number = 0;
     private invalidPcStrikeCount: number = 0;
@@ -4945,6 +5040,14 @@ export class RP2040Runner implements BoardRunner {
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
+                inst.onTelemetryFinding = (finding: any) => {
+                    this.onStateUpdate({
+                        type: 'telemetry_finding',
+                        boardId: this.boardId,
+                        componentId: inst.id,
+                        ...finding
+                    });
+                };
                 this.instances.set(cDef.id, inst);
             }
         });
