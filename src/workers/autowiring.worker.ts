@@ -1,4 +1,4 @@
-import init, { reset, ingestComponent, generateAutonomousSetup } from '../wasm/autowiring/openhw_studio_autowiring_engine';
+import init, { reset, ingestComponent, generateAutonomousSetup } from '../wasm/autowiring/openhw_studio_autowiring_engine.js';
 
 let isWasmInitialized = false;
 
