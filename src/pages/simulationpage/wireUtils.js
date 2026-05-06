@@ -108,7 +108,10 @@ export function multiRoutePath(p1, p2, waypoints = []) {
 }
 
 // Builds the SVG path string for a placed wire.
-export function buildWirePath(p1, e1, e2, p2, waypoints = []) {
+export function buildWirePath(p1, e1, e2, p2, waypoints = [], path = null) {
+  if (path && Array.isArray(path) && path.length >= 2) {
+    return renderRoundedPath(path);
+  }
   return renderRoundedPath(getWirePoints(p1, e1, e2, p2, waypoints));
 }
 

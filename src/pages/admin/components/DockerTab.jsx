@@ -21,11 +21,13 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
 
     // Filter logs that look like Docker logs
     const dockerLogs = logs.filter(l => 
+        l.type === 'docker' ||
+        l.type === 'error' ||
         l.msg.toLowerCase().includes('docker') || 
         l.msg.toLowerCase().includes('container') || 
         l.msg.toLowerCase().includes('image') ||
-        l.msg.toLowerCase().includes('compose') ||
-        l.type === 'docker'
+        l.msg.toLowerCase().includes('active') ||
+        l.msg.toLowerCase().includes('infrastructure')
     ).filter(l => 
         l.msg.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (l.details && l.details.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -77,13 +79,13 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5 space-y-1">
+                                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5 space-y-1 min-w-0">
                                         <p className="text-[10px] uppercase font-black tracking-widest text-slate-600">Image Version</p>
-                                        <p className="text-lg font-black text-blue-400 font-mono">{service.version}</p>
+                                        <p className="text-lg font-black text-blue-400 font-mono truncate" title={service.version}>{service.version}</p>
                                     </div>
-                                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5 space-y-1">
+                                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5 space-y-1 min-w-0">
                                         <p className="text-[10px] uppercase font-black tracking-widest text-slate-600">Short Hash</p>
-                                        <p className="text-lg font-mono font-bold text-slate-300">{service.hash?.slice(0, 8)}</p>
+                                        <p className="text-lg font-mono font-bold text-slate-300 truncate" title={service.hash}>{service.hash?.slice(0, 8)}</p>
                                     </div>
                                 </div>
 
