@@ -17,6 +17,7 @@ export class BaseComponent {
     pins: { [key: string]: { voltage: number, mode: string } };
     state: any;
     stateChanged: boolean;
+    telemetryEnabled: boolean = false;
 
     private telemetryManifest: TelemetryManifestConfig | null = null;
     private telemetryRuntime = {
@@ -38,6 +39,8 @@ export class BaseComponent {
             spiTransactions: 0,
             spiBytes: 0,
             uartBytes: 0,
+            recentI2c: [] as number[],
+            recentSpi: [] as number[],
         },
         power: {
             vccCurrent: 0,
@@ -59,6 +62,9 @@ export class BaseComponent {
         customTelemetry: {} as Record<string, any>,
         lastHeuristicStatus: null as TelemetryHeuristicResult | null,
     };
+
+    private lastReportedJson: string = '';
+    onTelemetryFinding?: (finding: { summary: string; severity: 'warn' | 'error' }) => void;
 
     constructor(id: string, manifest: any) {
         this.id = id;
@@ -103,7 +109,7 @@ export class BaseComponent {
         if (current.__telemetryWrapped) return;
 
         const wrapped = (...args: any[]) => {
-            if (before) {
+            if (this.telemetryEnabled && before) {
                 try {
                     before(...args);
                 } catch {
@@ -113,7 +119,7 @@ export class BaseComponent {
 
             const result = current.apply(this, args);
 
-            if (after) {
+            if (this.telemetryEnabled && after) {
                 try {
                     after(result, ...args);
                 } catch {
@@ -245,6 +251,22 @@ export class BaseComponent {
                 }
             );
         }
+    }
+
+    recordI2cTransaction(data: number[]) {
+        if (!this.telemetryEnabled) return;
+        this.telemetryRuntime.io.i2cTransactions++;
+        this.telemetryRuntime.io.i2cBytes += data.length;
+        this.telemetryRuntime.lastIoAtMs = Date.now();
+        this.telemetryRuntime.io.recentI2c = data.slice(-16);
+    }
+
+    recordSpiTransaction(data: number[]) {
+        if (!this.telemetryEnabled) return;
+        this.telemetryRuntime.io.spiTransactions++;
+        this.telemetryRuntime.io.spiBytes += data.length;
+        this.telemetryRuntime.lastIoAtMs = Date.now();
+        this.telemetryRuntime.io.recentSpi = data.slice(-16);
     }
 
     private getInteractionKey(event: any): string {
@@ -581,13 +603,16 @@ export class BaseComponent {
         return 'ok';
     }
 
-    private applyHeuristics(): TelemetryHeuristicResult {
+    private applyHeuristics() {
         const findings: string[] = [];
-        let status: TelemetrySeverity = 'ok';
+        let status: 'ok' | 'warn' | 'error' = 'ok';
 
-        const addFinding = (severity: TelemetrySeverity, message: string) => {
-            status = this.mergeSeverity(status, severity);
-            findings.push(message);
+        const addFinding = (msg: string, sev: 'warn' | 'error') => {
+            findings.push(msg);
+            if (status !== 'error') status = sev;
+            if (this.telemetryEnabled && this.onTelemetryFinding) {
+                this.onTelemetryFinding({ summary: msg, severity: sev });
+            }
         };
 
         const snapshot = this.state && typeof this.state === 'object'
@@ -794,5 +819,34 @@ export class BaseComponent {
 
     getSyncState() {
         return this.state;
+    }
+
+    getRawMetrics() {
+        return {
+            id: this.id,
+            type: this.type,
+            metrics: this.getUniversalMetrics(),
+            heuristics: this.applyHeuristics(),
+            capturedAt: new Date().toISOString()
+        };
+    }
+
+    getDeltaMetrics() {
+        const full = this.getRawMetrics();
+        const currentJson = JSON.stringify(full.metrics);
+        if (currentJson === this.lastReportedJson) {
+            return {
+                id: this.id,
+                type: this.type,
+                delta: false,
+                heuristics: full.heuristics,
+                capturedAt: full.capturedAt
+            };
+        }
+        this.lastReportedJson = currentJson;
+        return {
+            ...full,
+            delta: true
+        };
     }
 }
