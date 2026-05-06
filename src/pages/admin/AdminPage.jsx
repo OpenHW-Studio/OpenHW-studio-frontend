@@ -69,6 +69,7 @@ export default function AdminPage() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const restoreInputRef = useRef(null);
 
+    const lastToggleTime = useRef(0);
     const loadData = async () => {
         const wrap = async (fn, fallback = []) => {
             try { return await fn(); } catch (e) { console.error(e); return fallback; }
@@ -94,9 +95,11 @@ export default function AdminPage() {
         setInfraStatus(infra);
         setAnalytics(stats);
         setAuditLogs(history);
-        setMaintenanceMode(maint);
+        if (Date.now() - lastToggleTime.current > 5000) {
+            setMaintenanceMode(maint);
+            localStorage.setItem('admin_maintenance_mode', maint);
+        }
         setNotifications(notes);
-        localStorage.setItem('admin_maintenance_mode', maint);
         
         if (serverLogs && serverLogs.length > 0) {
             setLogs(prev => {
@@ -124,9 +127,11 @@ export default function AdminPage() {
             setPendingComponents(comps);
             setDeployments(deps);
             setInfraStatus(infra);
-            setMaintenanceMode(maint);
+            if (Date.now() - lastToggleTime.current > 5000) {
+                setMaintenanceMode(maint);
+                localStorage.setItem('admin_maintenance_mode', maint);
+            }
             setNotifications(notes);
-            localStorage.setItem('admin_maintenance_mode', maint);
             if (serverLogs && serverLogs.length > 0) {
                 setLogs(prev => {
                     const existingHashes = new Set(prev.map(l => `${l.time}-${l.msg}`));
@@ -330,14 +335,19 @@ export default function AdminPage() {
 
     const handleToggleMaintenance = async (enabled) => {
         addLog(`${enabled ? 'Enabling' : 'Disabling'} Maintenance Mode...`, 'warning');
+        lastToggleTime.current = Date.now();
+        setMaintenanceMode(enabled);
+        localStorage.setItem('admin_maintenance_mode', enabled);
+        
         try {
             await toggleMaintenanceMode(enabled);
-            setMaintenanceMode(enabled);
-            localStorage.setItem('admin_maintenance_mode', enabled);
             showToast(`System is now in ${enabled ? 'Maintenance' : 'Live'} mode`);
         } catch (e) {
             addLog(`Failed to toggle maintenance: ${e.message}`, 'error');
             showToast(`Action failed: ${e.message}`, 'error');
+            // Revert on failure
+            setMaintenanceMode(!enabled);
+            localStorage.setItem('admin_maintenance_mode', !enabled);
         }
     };
 
