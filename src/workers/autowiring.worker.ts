@@ -1,12 +1,22 @@
-import init, { reset, ingestComponent, generateAutonomousSetup } from '../wasm/autowiring/openhw_studio_autowiring_engine.js';
+let init: any;
+let reset: any;
+let ingestComponent: any;
+let generateAutonomousSetup: any;
 
 let isWasmInitialized = false;
 
 self.onmessage = async (e) => {
   const { type, payload } = e.data;
 
-  try {
+    try {
     if (!isWasmInitialized) {
+      console.log('[AutowiringWorker] Dynamically importing WASM wrapper...');
+      const mod = await import('../wasm/autowiring/openhw_studio_autowiring_engine.js');
+      init = mod.default || mod.init || mod;
+      reset = mod.reset;
+      ingestComponent = mod.ingestComponent;
+      generateAutonomousSetup = mod.generateAutonomousSetup;
+
       console.log('[AutowiringWorker] Initializing WASM...');
       await init();
       isWasmInitialized = true;
