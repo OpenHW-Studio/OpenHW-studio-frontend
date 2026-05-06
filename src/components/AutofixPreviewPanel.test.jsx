@@ -26,8 +26,9 @@ describe('AutofixPreviewPanel', () => {
       />,
     );
 
-    expect(screen.getByText('Intelligent Repair')).toBeInTheDocument();
-    expect(screen.getByText('Recommended Fix')).toBeInTheDocument();
+    // getByText throws if not found, so these calls verify the elements exist
+    screen.getByText('Intelligent Repair');
+    screen.getByText('Recommended Fix');
 
     const applyBtn = screen.getByRole('button', { name: /Apply Intelligent Repair/i });
     expect(applyBtn).toBeEnabled();
