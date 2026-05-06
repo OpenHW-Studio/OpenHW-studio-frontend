@@ -4627,7 +4627,6 @@ export class AVRRunner {
         this.dispatchOptionalOneWire(pinId, isHigh, cycles);
     }
 
-    private pinToNet = new Map<string, number>();
     private netHasResistor = new Set<number>();
 
     private buildNetlist() {

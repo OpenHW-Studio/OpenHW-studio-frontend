@@ -18,6 +18,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    worker: {
+      format: 'es',
+    },
     // ensure esbuild target supports optional catch binding and modern syntax
     esbuild: {
       target: 'es2020',

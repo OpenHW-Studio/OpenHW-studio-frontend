@@ -9601,8 +9601,8 @@ function SimulatorPageContent() {
               {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
                 const fromParts = (w.from || '').split(':');
                 const toParts = (w.to || '').split(':');
-                const p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
-                const p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
+                let p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
+                let p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
                 if (!p1 || !p2) {
                   if (!p1) p1 = { x: 0, y: 0, isFallback: true };
                   if (!p2) p2 = { x: 0, y: 0, isFallback: true };
@@ -9622,8 +9622,8 @@ function SimulatorPageContent() {
               {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
                 const fromParts = (w.from || '').split(':');
                 const toParts = (w.to || '').split(':');
-                const p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
-                const p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
+                let p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
+                let p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
                 if (!p1 || !p2) {
                   if (!p1) p1 = { x: 0, y: 0, isFallback: true };
                   if (!p2) p2 = { x: 0, y: 0, isFallback: true };
