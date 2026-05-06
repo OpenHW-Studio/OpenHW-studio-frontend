@@ -173,10 +173,21 @@ export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan
             textAlign: 'center', padding: '30px 20px', background: 'rgba(255, 255, 255, 0.02)',
             borderRadius: 14, border: '1px dashed rgba(255, 255, 255, 0.1)'
           }}>
-            <div style={{ fontSize: 24, marginBottom: 12 }}>🧠</div>
-            <p style={{ color: 'var(--text3)', fontSize: 12, margin: 0 }}>
-              {autofixStatus}... The WASM brain is calculating the optimal repair plan.
-            </p>
+            {autofixStatus === 'Ready' ? (
+              <>
+                <div style={{ fontSize: 24, marginBottom: 12 }}>🤷‍♂️</div>
+                <p style={{ color: 'var(--text3)', fontSize: 12, margin: 0 }}>
+                  The engine analyzed the circuit but couldn't find a confident repair strategy yet.
+                </p>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 24, marginBottom: 12 }}>🧠</div>
+                <p style={{ color: 'var(--text3)', fontSize: 12, margin: 0 }}>
+                  {autofixStatus}... The WASM brain is calculating the optimal repair plan.
+                </p>
+              </>
+            )}
           </div>
         )}
 

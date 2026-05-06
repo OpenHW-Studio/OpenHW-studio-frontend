@@ -38,7 +38,9 @@ import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage.jsx'
 import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
 import MobileSimulatorPage from './pages/mobileui/SimulatorPage.jsx'
 import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
+import GradingPage from './pages/GradingPage.jsx';
 import MaintenancePage from './pages/MaintenancePage.jsx';
+
 import { fetchMaintenanceStatus } from './services/simulatorService.js';
 import axios from 'axios';
 
@@ -146,7 +148,9 @@ export default function App() {
             <Route path="/components/:componentId/theory" element={<TheoryPage />} />
             <Route path="/components/:componentId/quiz" element={<QuizPage />} />
             <Route path="/adventure" element={<AdventureMapPage />} />
+            <Route path="/grade" element={<GradingPage />} />
             <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
+
                         <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} />
             {/* Guest accessible simulator */}
             <Route path="/simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />

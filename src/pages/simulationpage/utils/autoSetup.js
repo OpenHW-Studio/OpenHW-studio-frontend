@@ -41,6 +41,66 @@ export function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
   return best;
 }
 
+export function getComponentWorldPins(comp, pins) {
+  const rotation = comp.rotation || 0;
+  const centerX = comp.x + (comp.w || 0) / 2;
+  const centerY = comp.y + (comp.h || 0) / 2;
+
+  return (pins || []).map(pin => {
+    const world = getRotatedPoint(comp.x + pin.x, comp.y + pin.y, rotation, centerX, centerY);
+    return { ...pin, worldX: world.x, worldY: world.y };
+  });
+}
+
+/**
+ * Robustly snaps a component to available breadboards.
+ * Returns an object with { snappedWires, hasPerfectSnap, snapMatches }
+ */
+export function robustSnapComponent(comp, components, pinDefs) {
+  if (!comp || comp.type.startsWith('wokwi-breadboard')) {
+    return { snappedWires: [], hasPerfectSnap: false, snapMatches: [] };
+  }
+
+  const pins = pinDefs[comp.type] || [];
+  const worldPins = getComponentWorldPins(comp, pins);
+  
+  const snapMatches = worldPins.map(wp => {
+    const hole = findNearestBreadboardHole(wp.worldX, wp.worldY, components, pinDefs);
+    const dist = hole ? Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) : Infinity;
+    return { wp, hole, dist };
+  });
+
+  const hasPerfectSnap = snapMatches.some(m => m.dist < 2);
+  const newSocketWires = [];
+
+  if (hasPerfectSnap) {
+    snapMatches.forEach(m => {
+      if (m.dist < 2) {
+        newSocketWires.push({
+          id: `w_socket_${comp.id}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          from: `${comp.id}:${m.wp.id}`,
+          to: `${m.hole.bbId}:${m.hole.holeId}`,
+          color: 'transparent',
+          isBelow: true,
+          isSocket: true
+        });
+      } else if (m.dist <= 5) {
+        newSocketWires.push({
+          id: `socket_help_${comp.id}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          from: `${comp.id}:${m.wp.id}`,
+          to: `${m.hole.bbId}:${m.hole.holeId}`,
+          color: '#7f8c8d',
+          isBelow: true,
+          isSocket: true,
+          isHelp: true
+        });
+      }
+    });
+  }
+
+  return { snappedWires: newSocketWires, hasPerfectSnap, snapMatches };
+}
+
 // Helper to find or add a breadboard
 export function findOrAddBreadboard(components, canvasCenter) {
   const bbTypes = ['wokwi-breadboard', 'wokwi-breadboard-half', 'wokwi-breadboard-mini'];
@@ -195,30 +255,13 @@ export function handleAutoSetup({
       finalComp.y = holeWorld.y - anchorPin.y;
     }
 
-    // MAP EACH PIN TO NEAREST HOLE
+    // MAP EACH PIN TO NEAREST HOLE USING ROBUST LOGIC
+    const { snappedWires, snapMatches } = robustSnapComponent(finalComp, updatedComponents, pinDefs);
     const pinToHoleMap = {};
-    pins.forEach(p => {
-      const pCenterX = finalComp.x + (finalComp.w || 0) / 2;
-      const pCenterY = finalComp.y + (finalComp.h || 0) / 2;
-      const pWorld = getRotatedPoint(finalComp.x + p.x, finalComp.y + p.y, finalComp.rotation || 0, pCenterX, pCenterY);
-      const nearest = findNearestBreadboardHole(pWorld.x, pWorld.y, [bb], pinDefs);
-      if (nearest) {
-        pinToHoleMap[p.id] = nearest.holeId;
-        
-        // Visibility Check: If distance is very small, hide the wire (direct snap)
-        const dist = Math.hypot(pWorld.x - nearest.x, pWorld.y - nearest.y);
-        const isDirect = dist < 2;
-
-        updatedWires.push({
-          id: `w_socket_${isDirect ? 'direct' : 'visible'}_${finalComp.id}_${p.id}_${Date.now()}`,
-          from: `${finalComp.id}:${p.id}`,
-          to: `${bb.id}:${nearest.holeId}`,
-          color: isDirect ? 'green' : '#666666',
-          isSocket: true,
-          isHidden: isDirect // Hidden if direct snap
-        });
-      }
+    snapMatches.forEach(m => {
+      if (m.hole) pinToHoleMap[m.wp.id] = m.hole.holeId;
     });
+    updatedWires.push(...snappedWires);
 
     // PROCESS CONNECTIONS
     autowiring.connections.forEach((conn, idx) => {
