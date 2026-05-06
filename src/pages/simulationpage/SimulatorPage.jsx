@@ -1,11 +1,14 @@
 import { TopToolbox } from './TopToolbox';
-import { handleAutoSetup } from './utils/autoSetup';
+import { handleAutoSetup, getRotatedPoint, getComponentWorldPins, findNearestBreadboardHole, robustSnapComponent } from './utils/autoSetup';
+import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
 import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
+import { calculateProjectPlanApplication } from './projectUtils';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
+import { ChromeUIProvider } from './ChromeUIContext';
 
 
 
@@ -738,53 +741,6 @@ function normalizeBoardKind(source) {
   return 'arduino_uno';
 }
 
-// ── Breadboard Snapping Helpers ─────────────────────────────────────────────
-const BREADBOARD_PITCH = 15;
-
-function getRotatedPoint(x, y, rotation, originX, originY) {
-  const rad = (rotation * Math.PI) / 180;
-  const dx = x - originX;
-  const dy = y - originY;
-  return {
-    x: originX + dx * Math.cos(rad) - dy * Math.sin(rad),
-    y: originY + dx * Math.sin(rad) + dy * Math.cos(rad),
-  };
-}
-
-function getComponentWorldPins(comp, pins) {
-  const rotation = comp.rotation || 0;
-  const centerX = comp.x + (comp.w || 0) / 2;
-  const centerY = comp.y + (comp.h || 0) / 2;
-
-  return (pins || []).map(pin => {
-    const world = getRotatedPoint(comp.x + pin.x, comp.y + pin.y, rotation, centerX, centerY);
-    return { ...pin, worldX: world.x, worldY: world.y };
-  });
-}
-
-function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
-  const snapRadius = 15;
-  let best = null;
-  let minDist = Infinity;
-
-  const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
-  for (const bb of breadboards) {
-    const pins = pinDefs[bb.type] || [];
-    const bbCenterX = bb.x + (bb.w || 0) / 2;
-    const bbCenterY = bb.y + (bb.h || 0) / 2;
-    const bbRotation = bb.rotation || 0;
-
-    for (const pin of pins) {
-      const pinWorld = getRotatedPoint(bb.x + pin.x, bb.y + pin.y, bbRotation, bbCenterX, bbCenterY);
-      const dist = Math.hypot(pinWorld.x - worldX, pinWorld.y - worldY);
-      if (dist < snapRadius && dist < minDist) {
-        minDist = dist;
-        best = { bbId: bb.id, holeId: pin.id, x: pinWorld.x, y: pinWorld.y };
-      }
-    }
-  }
-  return best;
-}
 
 function resolveBoardFqbnForComponent(boardComp, boardKind) {
   const type = String(boardComp?.type || '').toLowerCase();
@@ -919,17 +875,21 @@ function buildProjectPayload({
   const payload = {
     schemaVersion: 'openhw-project-v2',
     board: String(board || 'arduino_uno'),
-    components: (Array.isArray(components) ? components : []).map((component) => ({
-      id: String(component?.id || ''),
-      type: String(component?.type || ''),
-      label: String(component?.label || ''),
-      x: Number(component?.x ?? 0),
-      y: Number(component?.y ?? 0),
-      w: Number(component?.w ?? 0),
-      h: Number(component?.h ?? 0),
-      rotation: Number(component?.rotation ?? 0),
-      attrs: component?.attrs && typeof component.attrs === 'object' ? component.attrs : {},
-    })),
+    components: (Array.isArray(components) ? components : []).map((component) => {
+      const isSnapped = (Array.isArray(wires) ? wires : []).some(w => w.isSocket && (w.from.startsWith(component.id + ':') || w.to.startsWith(component.id + ':')));
+      return {
+        id: String(component?.id || ''),
+        type: String(component?.type || ''),
+        label: String(component?.label || ''),
+        x: Number(component?.x ?? 0),
+        y: Number(component?.y ?? 0),
+        w: Number(component?.w ?? 0),
+        h: Number(component?.h ?? 0),
+        rotation: Number(component?.rotation ?? 0),
+        attrs: component?.attrs && typeof component.attrs === 'object' ? component.attrs : {},
+        snap: isSnapped || undefined,
+      };
+    }),
     connections: (Array.isArray(wires) ? wires : []).map((wire) => ({
       id: String(wire?.id || ''),
       from: String(wire?.from || ''),
@@ -937,6 +897,9 @@ function buildProjectPayload({
       color: String(wire?.color || ''),
       waypoints: Array.isArray(wire?.waypoints) ? wire.waypoints : [],
       isBelow: wire?.isBelow === true,
+      isSocket: wire?.isSocket === true,
+      isHidden: wire?.isHidden === true,
+      isHelp: wire?.isHelp === true,
       fromLabel: String(wire?.fromLabel || ''),
       toLabel: String(wire?.toLabel || ''),
     })),
@@ -1069,6 +1032,9 @@ function normalizeImportedCircuitData(rawComponents, rawConnections) {
           ? wire.waypoints.map(normalizeWaypoint).filter(Boolean)
           : [],
         isBelow: wire.isBelow === true,
+        isSocket: wire.isSocket === true,
+        isHidden: wire.isHidden === true,
+        isHelp: wire.isHelp === true,
         fromLabel: String(wire.fromLabel || endpointLabel(from) || ''),
         toLabel: String(wire.toLabel || endpointLabel(to) || ''),
       };
@@ -1432,16 +1398,23 @@ function getPinCategory(pId, pDesc, compType) {
 
 // ─── Memoized Wire Component ────────────────────────────────────────────────
 const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints), [p1, e1, e2, p2, wire.waypoints]);
+  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path), [p1, e1, e2, p2, wire.waypoints, wire.path]);
+  const isOrphaned = p1.isFallback || p2.isFallback;
 
   return (
     <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
       <path id={`wire-path-hit-${wire.id}`} d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-      <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected || wire.isNew ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : (wire.isNew ? 1 : 0.9)} 
-        style={{ animation: wire.isNew ? 'autofixWirePulse 1.5s infinite linear' : 'none' }}
+      <path id={`wire-path-ui-${wire.id}`} d={wirePath} 
+        stroke={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} 
+        strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} 
+        fill="none" 
+        strokeDasharray={isSelected || wire.isNew || isOrphaned ? "6 4" : "none"} 
+        strokeLinecap="round" 
+        opacity={wire.isBelow ? 0.6 : (wire.isNew || isOrphaned ? 1 : 0.9)} 
+        style={{ animation: (wire.isNew || isOrphaned) ? 'autofixWirePulse 1.5s infinite linear' : 'none' }}
       />
-      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} opacity={wire.isBelow ? 0.6 : 1} />
-      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (wire.isNew ? '#38bdf8' : wire.color)} opacity={wire.isBelow ? 0.6 : 1} />
+      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={wire.isBelow ? 0.6 : 1} />
+      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={wire.isBelow ? 0.6 : 1} />
       {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints).reduce((acc, _, i, arr) => {
         if (i < 1 || i >= arr.length - 2) return acc;
         const a = arr[i], b = arr[i + 1];
@@ -1577,7 +1550,6 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
           </div>
         )}
       </div>
-      {/* Labels and Pins are usually better kept in the parent loop or as sub-memo items */}
     </React.Fragment>
   );
 });
@@ -1589,6 +1561,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const activeUser = user || adminUser;
   const isAnyAuthenticated = isAuthenticated || isAdminAuthenticated;
   const navigate = useNavigate()
+  const { generateAutonomousSetup } = useAutowiring();
   const { projectName = '', shareId = '', classId = '', assignmentId = '', liveCode = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
@@ -1819,8 +1792,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Filter connections to remove ':' for engine compatibility
     const engineConnections = (wires || []).map(w => ({
-      from: String(w.from || '').replace(':', '.'),
-      to:   String(w.to   || '').replace(':', '.'),
+      from: String(w.from || ''),
+      to:   String(w.to   || ''),
       color: w.color
     }));
 
@@ -4187,8 +4160,35 @@ useEffect(() => {
   const getPinPosForComp = useCallback((comp, pinId) => {
     if (!comp) return null;
     const pins = PIN_DEFS[comp.type] || [];
-    const pin = pins.find(p => String(p.id) === String(pinId));
-    if (!pin) return null;
+    const searchId = String(pinId).toLowerCase();
+    
+    // Normalize aliases
+    const normalize = (id) => {
+      const s = String(id).toLowerCase();
+      if (s === 'p1') return '1';
+      if (s === 'p2') return '2';
+      if (s === 'a') return 'anode';
+      if (s === 'k') return 'cathode';
+      return s;
+    };
+
+    const normSearch = normalize(searchId);
+
+    let pin = pins.find(p => {
+      const pid = String(p.id).toLowerCase();
+      return pid === searchId || normalize(pid) === normSearch;
+    });
+
+    if (!pin) {
+      // Resilience: Try to find a pin that starts with the ID (e.g. "GND" matches "GND.1" or "gnd_1")
+      pin = pins.find(p => {
+        const pid = String(p.id).toLowerCase();
+        return pid === searchId || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
+      });
+    }
+    if (!pin) {
+      return { x: comp.x + (comp.w || 40) / 2, y: comp.y + (comp.h || 40) / 2, isFallback: true };
+    }
     const rotation = comp.rotation || 0;
     const cw = comp.w || 0;
     const ch = comp.h || 0;
@@ -4214,7 +4214,9 @@ useEffect(() => {
     if (!comp) return null;
     const pins = PIN_DEFS[comp.type] || [];
     const pin = pins.find(p => String(p.id) === String(pinId));
-    if (!pin) return null;
+    if (!pin) {
+      return { x: comp.x + (comp.w || 40) / 2, y: comp.y + (comp.h || 40) / 2, isFallback: true };
+    }
     const pPos = getPinPosForComp(comp, pinId);
     if (!pPos) return null;
 
@@ -4278,6 +4280,132 @@ useEffect(() => {
     }))
   }, [components, wires])
 
+  // ── Component addition with autonomous WASM setup ───────────────────────────
+  const addComponentInternal = useCallback(async (item, x, y) => {
+    if (liveEditingDisabled) return;
+    saveHistory();
+    
+    const usedIds = new Set(components.map(c => String(c.id || '')));
+    const id = allocateComponentId(item.type, usedIds);
+    const newCompBase = {
+      id,
+      type: item.type, label: item.label,
+      x: Math.max(8, x), y: Math.max(8, y),
+      w: item.w || 60, h: item.h || 60,
+      attrs: item.attrs || {},
+    };
+
+    const catalogItem = COMPONENT_REGISTRY[item.type];
+    const manifest = catalogItem?.manifest || catalogItem;
+
+    if (catalogItem && (manifest.autowiring || manifest.autocoding)) {
+      const boardComp = components.find(c => isProgrammableBoardType(c.type));
+      const boardId = boardComp ? boardComp.id : 'uno';
+
+      // --- DISCONNECTED FROM LEGACY ---
+      if (autoWiringEnabled || autoCodingEnabled) {
+        console.log('[Autonomous] Requesting WASM setup for:', item.type);
+        
+        const plan = await generateAutonomousSetup(
+          components,
+          wires,
+          newCompBase, 
+          manifest, 
+          boardId,
+          PIN_DEFS
+        );
+
+        console.log('[Autonomous] Received plan:', plan);
+
+        // 1. Initial Plan Mapping
+        let projectPlan = {
+          addedComponents: [
+            { ...newCompBase, x: plan.main_component.x, y: plan.main_component.y },
+            ...plan.added_components.map(ac => {
+               const reg = COMPONENT_REGISTRY[ac.type];
+               const manifest = reg?.manifest || {};
+               return { ...ac, w: ac.w || manifest.w || 100, h: ac.h || manifest.h || 100 };
+            })
+          ],
+          addedWires: plan.added_wires,
+          removedWires: [],
+          transformations: []
+        };
+
+        // 2. Perform "Manual-Style" Snapping for the whole plan
+        const { findNearestBreadboardHole, getRotatedPoint } = await import('./utils/autoSetup');
+        
+        // Snap Breadboards to 15px grid first
+        projectPlan.addedComponents.forEach(comp => {
+           if (comp.type.startsWith('wokwi-breadboard')) {
+              comp.x = Math.round(comp.x / 15) * 15;
+              comp.y = Math.round(comp.y / 15) * 15;
+           }
+        });
+
+        const allBBs = [
+           ...components.filter(c => c.type.startsWith('wokwi-breadboard')),
+           ...projectPlan.addedComponents.filter(c => c.type.startsWith('wokwi-breadboard'))
+        ];
+        
+        // Snap all other components to the breadboards
+        projectPlan.addedComponents = projectPlan.addedComponents.map(comp => {
+           if (comp.type.startsWith('wokwi-breadboard')) return comp;
+           const pins = PIN_DEFS[comp.type] || [];
+           const anchorPinId = comp.attrs?.breadboard?.anchorPin || pins[0]?.id;
+           const anchorPin = pins.find(p => p.id === anchorPinId) || pins[0];
+
+           if (anchorPin) {
+              const cx = (comp.w || 0) / 2;
+              const cy = (comp.h || 0) / 2;
+              const anchorWorld = getRotatedPoint(comp.x + anchorPin.x, comp.y + anchorPin.y, comp.rotation || 0, comp.x + cx, comp.y + cy);
+              const hole = findNearestBreadboardHole(anchorWorld.x, anchorWorld.y, allBBs, PIN_DEFS);
+              if (hole) {
+                 comp.x += (hole.x - anchorWorld.x);
+                 comp.y += (hole.y - anchorWorld.y);
+              }
+           }
+           return comp;
+        });
+
+        // 3. Final Application
+        const result = calculateProjectPlanApplication(projectPlan, components, wires, LOCAL_PIN_DEFS);
+
+        // Apply coding
+        let newCode = code;
+        if (autoCodingEnabled && plan.code_snippet) {
+           const { mergeCodeSnippet } = await import('./utils/autoSetup');
+           newCode = mergeCodeSnippet(code, {
+              setup: plan.code_snippet.setup,
+              loop: plan.code_snippet.loop
+           });
+        }
+
+        setComponents(result.components);
+        setWires(result.wires);
+        if (newCode !== code) setCode(newCode);
+
+        if (plan.reasoning) {
+          console.log('[Autonomous] Reasoning:', plan.reasoning);
+        }
+      } else {
+        setComponents(prev => [...prev, newCompBase]);
+      }
+    } else {
+      setComponents(prev => [...prev, newCompBase]);
+    }
+  }, [liveEditingDisabled, saveHistory, components, wires, code, autoWiringEnabled, autoCodingEnabled, generateAutonomousSetup]);
+
+  const onPaletteItemClick = useCallback(async (item) => {
+    if (liveEditingDisabled) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current - (item.w || 60) / 2
+    const y = (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current - (item.h || 60) / 2
+    await addComponentInternal(item, x, y);
+  }, [liveEditingDisabled, addComponentInternal]);
+
   const undo = () => {
     if (history.past.length === 0 || isRunning) return
     const prev = history.past[history.past.length - 1]
@@ -4296,51 +4424,8 @@ useEffect(() => {
     setSelected(null)
   }
 
-  // ── Component addition with auto-setup ─────────────────────────────────────
-  const addComponentInternal = useCallback((item, x, y) => {
-    if (liveEditingDisabled) return;
-    saveHistory();
-    
-    const usedIds = new Set(components.map(c => String(c.id || '')));
-    const id = allocateComponentId(item.type, usedIds);
-    const newCompBase = {
-      id,
-      type: item.type, label: item.label,
-      x: Math.max(8, x), y: Math.max(8, y),
-      w: item.w || 60, h: item.h || 60,
-      attrs: item.attrs || {},
-    };
-
-    const catalogItem = COMPONENT_REGISTRY[item.type];
-    if (catalogItem && (catalogItem.autowiring || catalogItem.autocoding)) {
-      const boardComp = components.find(c => isProgrammableBoardType(c.type));
-      const boardId = boardComp ? boardComp.id : 'uno';
-
-      const result = handleAutoSetup({
-        newComp: newCompBase,
-        components,
-        wires,
-        code,
-        catalogItem,
-        pinDefs: LOCAL_PIN_DEFS,
-        boardId,
-        options: { autoWiring: autoWiringEnabled, autoCoding: autoCodingEnabled }
-      });
-
-      const finalComps = result.components.some(c => c.id === id) 
-        ? result.components 
-        : [...result.components, result.component];
-
-      setComponents(finalComps);
-      setWires(result.wires);
-      setCode(result.code);
-    } else {
-      setComponents(prev => [...prev, newCompBase]);
-    }
-  }, [liveEditingDisabled, saveHistory, components, wires, code, autoWiringEnabled, autoCodingEnabled]);
-
   // ── Canvas drop ────────────────────────────────────────────────────────────
-  const onCanvasDrop = useCallback((e) => {
+  const onCanvasDrop = useCallback(async (e) => {
     if (liveEditingDisabled) return;
     e.preventDefault()
     const item = dragPayload.current
@@ -4348,26 +4433,26 @@ useEffect(() => {
     const rect = canvasRef.current.getBoundingClientRect()
     const x = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current - (item.w || 60) / 2
     const y = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current - (item.h || 60) / 2
-    addComponentInternal(item, x, y);
+    await addComponentInternal(item, x, y);
     dragPayload.current = null
   }, [liveEditingDisabled, addComponentInternal])
 
   // ── Quick-add: place component at explicit canvas coordinates ──────────────
-  const addComponentAt = useCallback((item, canvasX, canvasY) => {
+  const addComponentAt = useCallback(async (item, canvasX, canvasY) => {
     if (liveEditingDisabled) return;
     const x = canvasX - (item.w || 60) / 2
     const y = canvasY - (item.h || 60) / 2
-    addComponentInternal(item, x, y);
+    await addComponentInternal(item, x, y);
   }, [liveEditingDisabled, addComponentInternal])
 
   // ── Palette click to add (adds to canvas center) ────────────────────────────
-  const addComponentAtCenter = useCallback((item) => {
+  const addComponentAtCenter = useCallback(async (item) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const cx = (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
     const cy = (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
-    addComponentAt(item, cx, cy);
+    await addComponentAt(item, cx, cy);
   }, [addComponentAt]);
 
   // ── Enhanced Zooming (Pinch Only) ──────────────────────────────────────────
@@ -4919,48 +5004,9 @@ useEffect(() => {
         const comp = componentsRef.current.find(c => c.id === movedId);
         const finalComp = comp ? { ...comp, x: finalX, y: finalY } : null;
         if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
-          const pins = LOCAL_PIN_DEFS[finalComp.type] || [];
-          const worldPins = getComponentWorldPins(finalComp, pins);
-          
-          const snapMatches = worldPins.map(wp => {
-            const hole = findNearestBreadboardHole(wp.worldX, wp.worldY, componentsRef.current, LOCAL_PIN_DEFS);
-            const dist = hole ? Math.hypot(wp.worldX - hole.x, wp.worldY - hole.y) : Infinity;
-            return { wp, hole, dist };
-          });
-
-          // Only attach if at least ONE pin is a perfect hit (< 2px)
-          const hasPerfectSnap = snapMatches.some(m => m.dist < 2);
-
-          if (hasPerfectSnap) {
-            const newSocketWires = [];
-            snapMatches.forEach(m => {
-              if (m.dist < 2) {
-                // Standard invisible socket
-                newSocketWires.push({
-                  id: `w_socket_${movedId}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                  from: `${movedId}:${m.wp.id}`,
-                  to: `${m.hole.bbId}:${m.hole.holeId}`,
-                  color: 'transparent',
-                  isBelow: true,
-                  isSocket: true
-                });
-              } else if (m.dist <= 5) {
-                // Visible gray helper wire for off-grid pins
-                newSocketWires.push({
-                  id: `socket_help_${movedId}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                  from: `${movedId}:${m.wp.id}`,
-                  to: `${m.hole.bbId}:${m.hole.holeId}`,
-                  color: '#7f8c8d', // Subtle gray
-                  isBelow: true,
-                  isSocket: true,
-                  isHelp: true
-                });
-              }
-            });
-
-            if (newSocketWires.length > 0) {
-              setWires(prev => [...prev, ...newSocketWires]);
-            }
+          const { snappedWires } = robustSnapComponent(finalComp, componentsRef.current, LOCAL_PIN_DEFS);
+          if (snappedWires.length > 0) {
+            setWires(prev => [...prev, ...snappedWires]);
           }
         }
 
@@ -6477,72 +6523,25 @@ useEffect(() => {
   }, [components, wires, saveHistory, validationErrors]);
 
   // Autofix preview/apply-all integration
+  // Unified project change application (shared by Autofix and future Autowiring engines)
+  const applyProjectChangePlan = useCallback((plan) => {
+    if (!plan) return;
+    
+    // Calculate the new project state using the centralized utility
+    const { components: nextComponents, wires: nextWires } = calculateProjectPlanApplication(plan, components, wires, LOCAL_PIN_DEFS);
+
+    setComponents(nextComponents);
+    setWires(nextWires);
+    saveHistory();
+    
+    appendConsoleEntry('info', `🔧 Project Plan Applied: ${plan.addedComponents?.length || 0} components, ${plan.addedWires?.length || 0} wires.`, 'simulator');
+  }, [components, wires, saveHistory, appendConsoleEntry]);
+
   const handleApplyPlan = useCallback(() => {
     if (!autofixPlan) return;
-    
-    // Apply the plan to the actual project
-    const newComponents = JSON.parse(JSON.stringify(components)); // Deep clone for safety
-    const newWires = JSON.parse(JSON.stringify(wires));
-    
-    // Add new components
-    if (autofixPlan.addedComponents) {
-      autofixPlan.addedComponents.forEach(ac => {
-          if (!newComponents.find(c => c.id === ac.id)) {
-              // Resistor is 70x32, LED is 72x44 in the SYMS library
-              const defW = ac.type === 'wokwi-resistor' ? 70 : (ac.type === 'wokwi-led' ? 72 : 40);
-              const defH = ac.type === 'wokwi-resistor' ? 32 : (ac.type === 'wokwi-led' ? 44 : 20);
-              newComponents.push({
-                  ...ac,
-                  isGhost: false,
-                  w: ac.w || defW,
-                  h: ac.h || defH
-              });
-          }
-      });
-    }
-    
-    // Add new wires
-    if (autofixPlan.addedWires) {
-      autofixPlan.addedWires.forEach(aw => {
-          newWires.push({
-              id: 'wire_' + Math.random().toString(36).substr(2, 9),
-              from: aw.from,
-              to: aw.to,
-              color: aw.color === '#38bdf8' ? 'green' : aw.color, // Transition from ghost blue to normal
-              waypoints: []
-          });
-      });
-    }
-    
-    // Remove wires (Logical removal by pin matching)
-    let finalWires = newWires;
-    if (autofixPlan.removedWires && autofixPlan.removedWires.length > 0) {
-      finalWires = newWires.filter(w => {
-        const isMatch = autofixPlan.removedWires.some(rw => 
-           (rw.from === w.from && rw.to === w.to) ||
-           (rw.from === w.to && rw.to === w.from)
-        );
-        return !isMatch;
-      });
-    }
-    
-    // Apply transformations (rotations/flips)
-    if (autofixPlan.transformations) {
-      autofixPlan.transformations.forEach(trans => {
-        const comp = newComponents.find(c => c.id === trans.componentId);
-        if (comp) {
-          comp.rotation = trans.rotation; 
-        }
-      });
-    }
-
-    setComponents(newComponents);
-    setWires(finalWires);
+    applyProjectChangePlan(autofixPlan);
     setAutofixPlan(null); // Clear preview
-    saveHistory(); // Save to undo/redo history
-    
-    appendConsoleEntry('info', `🔧 Intelligent Autofix Applied: ${autofixPlan.addedComponents?.length || 0} components, ${autofixPlan.addedWires?.length || 0} wires, ${autofixPlan.transformations?.length || 0} transforms.`, 'simulator');
-  }, [autofixPlan, components, wires, saveHistory]);
+  }, [autofixPlan, applyProjectChangePlan]);
 
   const getSerialTimestamp = () => {
     const now = new Date();
@@ -8688,6 +8687,30 @@ useEffect(() => {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
+    <ChromeUIProvider>
+      {SimulatorPageContent()}
+    </ChromeUIProvider>
+  );
+
+
+/**
+ * Inner component that consumes ChromeUIContext and renders the main simulator UI.
+ * Can gradually migrate props to use useChromeUI() in phases.
+ */
+function SimulatorPageContent() {
+  const chrome = {
+    setShowCanvasMenu,
+    setShowInspector,
+    setShowGrid,
+    setIsCanvasLocked,
+    setShowComponentDesc,
+    setShowConnectionsPanel,
+    setShowF1Menu,
+    setShowSpeedDialog,
+    setShowSaveDialog,
+  };
+
+  return (
     <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
 
       {/* ADMIN PREVIEW BANNER — shown when opened via "Test in Simulator" from admin dashboard */}
@@ -9540,9 +9563,12 @@ useEffect(() => {
               {wires.filter(w => w.isBelow === true).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                if (!p1 || !p2) return null
+                let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                let p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
+                if (!p1 || !p2) {
+                  if (!p1) p1 = { x: 0, y: 0, isFallback: true };
+                  if (!p2) p2 = { x: 0, y: 0, isFallback: true };
+                }
                 const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
                 const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
                 
@@ -9573,17 +9599,20 @@ useEffect(() => {
                 );
               })}
               {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
-                const fromParts = (w.from || '').replace('.', ':').split(':');
-                const toParts = (w.to || '').replace('.', ':').split(':');
+                const fromParts = (w.from || '').split(':');
+                const toParts = (w.to || '').split(':');
                 const p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
                 const p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
-                if (!p1 || !p2) return null;
+                if (!p1 || !p2) {
+                  if (!p1) p1 = { x: 0, y: 0, isFallback: true };
+                  if (!p2) p2 = { x: 0, y: 0, isFallback: true };
+                }
                 const e1 = p1; // Simplify ghost exits for preview
                 const e2 = p2;
                 return (
                   <CanvasWire
                     key={`ghost-${w.id}`}
-                    wire={{ ...w, color: '#38bdf8' }}
+                    wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
                     p1={p1} p2={p2} e1={e1} e2={e2}
                     isGhost={true}
                     theme={theme}
@@ -9591,17 +9620,20 @@ useEffect(() => {
                 );
               })}
               {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
-                const fromParts = (w.from || '').replace('.', ':').split(':');
-                const toParts = (w.to || '').replace('.', ':').split(':');
+                const fromParts = (w.from || '').split(':');
+                const toParts = (w.to || '').split(':');
                 const p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
                 const p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
-                if (!p1 || !p2) return null;
+                if (!p1 || !p2) {
+                  if (!p1) p1 = { x: 0, y: 0, isFallback: true };
+                  if (!p2) p2 = { x: 0, y: 0, isFallback: true };
+                }
                 const e1 = p1;
                 const e2 = p2;
                 return (
                   <CanvasWire
                     key={`ghost-${w.id}`}
-                    wire={{ ...w, color: '#38bdf8' }}
+                    wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
                     p1={p1} p2={p2} e1={e1} e2={e2}
                     isGhost={true}
                     theme={theme}
@@ -9619,9 +9651,12 @@ useEffect(() => {
               {wires.filter(w => w.isBelow !== true).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                if (!p1 || !p2) return null
+                let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                let p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
+                if (!p1 || !p2) {
+                  if (!p1) p1 = { x: 0, y: 0, isFallback: true };
+                  if (!p2) p2 = { x: 0, y: 0, isFallback: true };
+                }
                 const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
                 const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
                 
@@ -10463,14 +10498,14 @@ useEffect(() => {
             <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
             <div style={{ position: 'relative' }}>
               <button
-                onClick={() => setShowCanvasMenu(m => !m)}
+                onClick={() => chrome.setShowCanvasMenu(m => !m)}
                 style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 7px', borderRadius: 6 }}
                 title="Canvas Menu"
               >⋮</button>
               {showCanvasMenu && (
                 <div
                   className="canvas-menu"
-                  onMouseLeave={() => setShowCanvasMenu(false)}
+                  onMouseLeave={() => chrome.setShowCanvasMenu(false)}
                   style={{ 
                     position: 'absolute', 
                     bottom: '100%', 
@@ -10493,24 +10528,24 @@ useEffect(() => {
                     WebkitBackfaceVisibility: 'hidden',
                   }}
                 >
-                  <button className="canvas-menu-item" onClick={() => { setCanvasZoom(1); setCanvasOffset({ x: 0, y: 0 }); setShowCanvasMenu(false); }}>Fit to Canvas</button>
-                  <button className={`canvas-menu-item${history.past.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { undo(); setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning}>Undo</button>
-                  <button className={`canvas-menu-item${history.future.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { redo(); setShowCanvasMenu(false); }} disabled={history.future.length === 0 || isRunning}>Redo</button>
+                  <button className="canvas-menu-item" onClick={() => { setCanvasZoom(1); setCanvasOffset({ x: 0, y: 0 }); chrome.setShowCanvasMenu(false); }}>Fit to Canvas</button>
+                  <button className={`canvas-menu-item${history.past.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { undo(); chrome.setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning}>Undo</button>
+                  <button className={`canvas-menu-item${history.future.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { redo(); chrome.setShowCanvasMenu(false); }} disabled={history.future.length === 0 || isRunning}>Redo</button>
                   <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                  <button className="canvas-menu-item" onClick={() => { setShowInspector(v => !v); setShowCanvasMenu(false); }}>
+                  <button className="canvas-menu-item" onClick={() => { chrome.setShowInspector(v => !v); chrome.setShowCanvasMenu(false); }}>
                     {showInspector ? 'Disable Inspector' : 'Enable Component Inspector'}
                   </button>
                   <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                  <button className="canvas-menu-item" onClick={() => { setShowGrid(g => !g); setShowCanvasMenu(false); }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
-                  <button className="canvas-menu-item" onClick={() => { setIsCanvasLocked(l => !l); setShowCanvasMenu(false); }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
-                  <button className="canvas-menu-item" onClick={() => { toggleFullscreen(); setShowCanvasMenu(false); }}>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</button>
+                  <button className="canvas-menu-item" onClick={() => { chrome.setShowGrid(g => !g); chrome.setShowCanvasMenu(false); }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
+                  <button className="canvas-menu-item" onClick={() => { chrome.setIsCanvasLocked(l => !l); chrome.setShowCanvasMenu(false); }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
+                  <button className="canvas-menu-item" onClick={() => { toggleFullscreen(); chrome.setShowCanvasMenu(false); }}>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</button>
                   <button className="canvas-menu-item" onClick={() => {
                     const enabling = !wirepointsEnabled;
                     setWirepointsEnabled(enabling);
                     setShowCanvasMenu(false);
                   }}>{wirepointsEnabled ? 'Disable Wire Waypoints' : 'Enable Wire Waypoints'}</button>
-                  <button className="canvas-menu-item" onClick={() => { setShowComponentDesc(d => !d); setShowCanvasMenu(false); }}>{showComponentDesc ? 'Hide Component Info' : 'Show Component Info'}</button>
-                  <button className="canvas-menu-item" onClick={() => { setShowConnectionsPanel(p => !p); setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
+                  <button className="canvas-menu-item" onClick={() => { chrome.setShowComponentDesc(d => !d); chrome.setShowCanvasMenu(false); }}>{showComponentDesc ? 'Hide Component Info' : 'Show Component Info'}</button>
+                  <button className="canvas-menu-item" onClick={() => { chrome.setShowConnectionsPanel(p => !p); chrome.setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
                   <button
                     className="canvas-menu-item"
                     onClick={() => {
@@ -10524,7 +10559,7 @@ useEffect(() => {
                     {blocklyDisabled ? 'Enable Block Coding' : 'Disable Block Coding'}
                   </button>
                   <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                  <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
+                  <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } chrome.setShowCanvasMenu(false); }}>Clear Canvas</button>
                 </div>
               )}
             </div>
@@ -11057,7 +11092,7 @@ useEffect(() => {
 
       {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
       {showSaveDialog && (
-        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSaveDialog(false)}>
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => chrome.setShowSaveDialog(false)}>
           <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
             <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
             <input
@@ -11066,10 +11101,10 @@ useEffect(() => {
               placeholder="Project name..."
               value={saveDialogName}
               onChange={e => setSaveDialogName(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') setShowSaveDialog(false); }}
+              onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') chrome.setShowSaveDialog(false); }}
             />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <Btn onClick={() => setShowSaveDialog(false)}>Cancel</Btn>
+              <Btn onClick={() => chrome.setShowSaveDialog(false)}>Cancel</Btn>
               <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
             </div>
           </div>
@@ -11235,7 +11270,7 @@ useEffect(() => {
               <Btn 
                 onClick={() => {
                   downloadSimulationJson();
-                  setShowF1Menu(false);
+                  chrome.setShowF1Menu(false);
                 }}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
@@ -11244,7 +11279,7 @@ useEffect(() => {
               <Btn 
                 onClick={() => {
                   openFirmwareDownloadDialog();
-                  setShowF1Menu(false);
+                  chrome.setShowF1Menu(false);
                 }}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
@@ -11253,7 +11288,7 @@ useEffect(() => {
               <Btn 
                 onClick={() => {
                   openFirmwareUploadDialog();
-                  setShowF1Menu(false);
+                  chrome.setShowF1Menu(false);
                 }}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
@@ -11262,7 +11297,7 @@ useEffect(() => {
               <Btn 
                 onClick={() => {
                   setRp2040DebugTelemetryEnabled((prev) => !prev);
-                  setShowF1Menu(false);
+                  chrome.setShowF1Menu(false);
                 }}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
@@ -11271,7 +11306,7 @@ useEffect(() => {
               <Btn 
                 onClick={() => {
                   setShowEngineSelector(true);
-                  setShowF1Menu(false);
+                  chrome.setShowF1Menu(false);
                 }}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
@@ -11279,8 +11314,8 @@ useEffect(() => {
               </Btn>
               <Btn 
                 onClick={() => {
-                  setShowSpeedDialog(true);
-                  setShowF1Menu(false);
+                  chrome.setShowSpeedDialog(true);
+                  chrome.setShowF1Menu(false);
                 }}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
@@ -11293,7 +11328,7 @@ useEffect(() => {
                   if (isRunning && workerRef.current) {
                     workerRef.current.postMessage({ type: 'SET_SPEED', speed: resetSpeed });
                   }
-                  setShowF1Menu(false);
+                  chrome.setShowF1Menu(false);
                 }}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
@@ -11302,7 +11337,7 @@ useEffect(() => {
               <Btn 
                 onClick={() => {
                   handleStartGDB();
-                  setShowF1Menu(false);
+                  chrome.setShowF1Menu(false);
                 }}
                 style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
               >
@@ -11311,7 +11346,7 @@ useEffect(() => {
             </div>
             <button 
               className="mt-6 w-full px-3 py-2 text-xs font-bold text-[var(--text3)] hover:text-[var(--text)] transition-colors uppercase tracking-widest"
-              onClick={() => setShowF1Menu(false)}
+              onClick={() => chrome.setShowF1Menu(false)}
             >
               Close (Esc)
             </button>
@@ -11321,7 +11356,7 @@ useEffect(() => {
 
       {/* ── SIMULATION SPEED DIALOG ─────────────────────────────────────── */}
       {showSpeedDialog && (
-        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowSpeedDialog(false)}>
+        <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => chrome.setShowSpeedDialog(false)}>
           <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[380px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
             <div className="text-base font-bold mb-2 text-[var(--text)]">Simulation Speed</div>
             <div className="text-xs text-[var(--text3)] mb-6 leading-relaxed">
@@ -11386,7 +11421,7 @@ useEffect(() => {
               >
                 Reset
               </Btn>
-              <Btn color="var(--accent)" onClick={() => setShowSpeedDialog(false)}>Done</Btn>
+              <Btn color="var(--accent)" onClick={() => chrome.setShowSpeedDialog(false)}>Done</Btn>
             </div>
           </div>
         </div>
@@ -11608,10 +11643,47 @@ useEffect(() => {
             </div>
           </div>
         )}
+        {autofixPlan && (
+          <div style={{
+            position: 'fixed',
+            bottom: '30px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '440px',
+            zIndex: 10000,
+            background: 'rgba(15, 23, 42, 0.95)',
+            backdropFilter: 'blur(16px)',
+            borderRadius: '24px',
+            border: '1px solid rgba(56, 189, 248, 0.4)',
+            boxShadow: '0 30px 60px -12px rgba(0, 0, 0, 0.7)',
+            padding: '24px',
+            pointerEvents: 'auto',
+            animation: 'appear 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+          }}>
+            <AutofixPreviewPanel 
+              autofixPlan={autofixPlan} 
+              onApplyPlan={handleApplyPlan}
+              validationErrors={validationErrors}
+              autofixStatus={autofixStatus}
+              autofixLog={autofixLog}
+              onRefresh={triggerAutofixAnalysis}
+            />
+            <button 
+              onClick={() => setAutofixPlan(null)}
+              style={{
+                position: 'absolute', top: 12, right: 12,
+                background: 'rgba(255,255,255,0.05)', border: 'none',
+                width: 24, height: 24, borderRadius: '50%',
+                color: 'rgba(255,255,255,0.4)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14
+              }}
+            >×</button>
+          </div>
+        )}
       </div>
-    </div>
-  );
-};
+      </div>
+    );
+}
 
 function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, setRenameValue, handleConfirmRename, setRenamingProjectId, handleLoadProject, isRunning, setShowProjectsSidebar, onContextMenu, formatProjectDate }) {
   const isCurrent = proj.id === currentProjectId;
@@ -11686,6 +11758,8 @@ function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, s
       )}
     </div>
   );
+}
+
 }
 
 export default SimulatorPage;
