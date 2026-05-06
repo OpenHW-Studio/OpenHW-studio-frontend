@@ -12,6 +12,7 @@ const GradingPage = () => {
         check_breadboard: true,
         check_overlap: true
     });
+    const [activeTab, setActiveTab] = useState('summary');
 
     const workerRef = useRef(null);
     const logEndRef = useRef(null);
@@ -86,6 +87,17 @@ const GradingPage = () => {
         const a = document.createElement('a');
         a.href = url;
         a.download = `grading_logs_${new Date().getTime()}.txt`;
+        a.click();
+    };
+
+    const downloadReport = (type) => {
+        const data = type === 'teacher' ? report.teacher_telemetry : report.student_telemetry;
+        if (!data) return;
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${type}_behavioral_report_${new Date().getTime()}.json`;
         a.click();
     };
 
@@ -203,27 +215,70 @@ const GradingPage = () => {
 
                     {report && (
                         <div className="report-container">
-                            <h2>Analysis Report</h2>
-                            <div className="stats">
-                                <div className="stat-box">
-                                    <span className="val">{report.score}%</span>
-                                    <span className="label">Total Grade</span>
-                                </div>
-                                <div className="stat-box">
-                                    <span className="val">{report.spatial_score}%</span>
-                                    <span className="label">Spatial Eye</span>
-                                </div>
-                                <div className="stat-box">
-                                    <span className="val">{report.behavioral_score}%</span>
-                                    <span className="label">Behavior</span>
-                                </div>
+                            <div className="report-tabs">
+                                <button className={activeTab === 'summary' ? 'active' : ''} onClick={() => setActiveTab('summary')}>Summary</button>
+                                <button className={activeTab === 'diff' ? 'active' : ''} onClick={() => setActiveTab('diff')}>Behavioral Diff</button>
                             </div>
-                            <ul className="feedback">
-                                {report.feedback.map((f, i) => (
-                                    <li key={i} className={f.includes('Error') ? 'error-item' : 'info-item'}>{f}</li>
-                                ))}
-                                {report.feedback.length === 0 && <li className="success">Perfect Circuit Alignment!</li>}
-                            </ul>
+
+                            {activeTab === 'summary' ? (
+                                <>
+                                    <h2>Analysis Report</h2>
+                                    <div className="stats">
+                                        <div className="stat-box">
+                                            <span className="val">{report.score}%</span>
+                                            <span className="label">Total Grade</span>
+                                        </div>
+                                        <div className="stat-box">
+                                            <span className="val">{report.spatial_score}%</span>
+                                            <span className="label">Spatial Eye</span>
+                                        </div>
+                                        <div className="stat-box">
+                                            <span className="val">{report.behavioral_score}%</span>
+                                            <span className="label">Behavior</span>
+                                        </div>
+                                    </div>
+                                    <ul className="feedback">
+                                        {report.feedback.map((f, i) => (
+                                            <li key={i} className={f.includes('Error') || f.includes('Gap') ? 'error-item' : 'info-item'}>{f}</li>
+                                        ))}
+                                        {report.feedback.length === 0 && <li className="success">Perfect Circuit Alignment!</li>}
+                                    </ul>
+                                    <div className="download-actions">
+                                        <button onClick={() => downloadReport('teacher')}>Download Teacher Report</button>
+                                        <button onClick={() => downloadReport('student')}>Download Student Report</button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="timeline-diff-view">
+                                    <div className="diff-header">
+                                        <span>Teacher Timeline</span>
+                                        <span>Student Timeline</span>
+                                    </div>
+                                    <div className="diff-body">
+                                        {(() => {
+                                            const tEvents = JSON.parse(report.teacher_telemetry || '{"events":[]}').events;
+                                            const sEvents = JSON.parse(report.student_telemetry || '{"events":[]}').events;
+                                            const maxRows = Math.max(tEvents.length, sEvents.length);
+                                            const rows = [];
+                                            for (let i = 0; i < maxRows; i++) {
+                                                const t = tEvents[i];
+                                                const s = sEvents[i];
+                                                rows.push(
+                                                    <div key={i} className="diff-row">
+                                                        <div className={`event-cell teacher ${!s ? 'missing' : ''}`}>
+                                                            {t ? `${t.time_ms}ms: ${Object.keys(t)[0]}` : '-'}
+                                                        </div>
+                                                        <div className={`event-cell student ${!t ? 'extra' : (JSON.stringify(t) !== JSON.stringify(s) ? 'mismatch' : '')}`}>
+                                                            {s ? `${s.time_ms}ms: ${Object.keys(s)[0]}` : '-'}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                            return rows;
+                                        })()}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

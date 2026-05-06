@@ -237,7 +237,109 @@
     border-left: 4px solid #3b82f6;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
+.report-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 30px;
+}
+
+.report-tabs button {
+    background: #070b14;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    padding: 10px 20px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.report-tabs button.active {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+}
+
+.download-actions {
+    display: flex;
+    gap: 15px;
+    margin-top: 30px;
+}
+
+.download-actions button {
+    flex: 1;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #3b82f6;
+    padding: 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.download-actions button:hover {
+    background: rgba(59, 130, 246, 0.2);
+}
+
+.timeline-diff-view {
+    margin-top: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.diff-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: #070b14;
+    padding: 15px;
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+}
+
+.diff-body {
+    max-height: 400px;
+    overflow-y: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+}
+
+.diff-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.event-cell {
+    padding: 10px 15px;
+}
+
+.event-cell.teacher {
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.event-cell.missing { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+.event-cell.extra { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.event-cell.mismatch { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+
+.grading-loader {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(7, 11, 20, 0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.spinner {
+    width: 50px; height: 50px;
+    border: 5px solid rgba(59, 130, 246, 0.2);
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 20px;
 }
 
