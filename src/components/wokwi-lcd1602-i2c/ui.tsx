@@ -5,6 +5,11 @@ export const BOUNDS = { x: 0, y: 0, w: 300, h: 133 };
 export const Lcd1602I2CUI = ({ state, attrs }: { state: any, attrs: any }) => {
     const lcdRef = useRef<any>(null);
 
+    const nativeW = 280;
+    const nativeH = 110;
+    const scaleX = BOUNDS.w / nativeW;
+    const scaleY = BOUNDS.h / nativeH;
+
     useEffect(() => {
         if (lcdRef.current && state) {
             // Apply text lines logic for 2 lines, 16 characters each.
@@ -19,12 +24,25 @@ export const Lcd1602I2CUI = ({ state, attrs }: { state: any, attrs: any }) => {
     }, [state]);
 
     return (
-        <div style={{ position: 'relative', width: 280, height: 110, pointerEvents: 'none' }}>
+        <div style={{ 
+            position: 'relative', 
+            width: BOUNDS.w, 
+            height: BOUNDS.h, 
+            pointerEvents: 'none',
+            overflow: 'visible'
+        }}>
             <wokwi-lcd1602
                 ref={lcdRef}
                 pins="i2c"
                 color={attrs?.color || 'blue'}
-                style={{ pointerEvents: 'none', width: '100%', height: '100%' }}
+                style={{ 
+                    display: 'block',
+                    width: nativeW,
+                    height: nativeH,
+                    transform: `scale(${scaleX}, ${scaleY})`,
+                    transformOrigin: '0 0',
+                    pointerEvents: 'none'
+                }}
                 {...attrs}
             />
         </div>

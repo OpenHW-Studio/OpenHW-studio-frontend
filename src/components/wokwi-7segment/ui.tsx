@@ -1,5 +1,8 @@
 import React from 'react';
 
+// Bounding box for the blue selection ring.
+export const BOUNDS = { x: 0, y: 0, w: 260, h: 70 };
+
 export const Wokwi7SegmentUI = ({ state, attrs }: { state: any, attrs: any }) => {
     // Parse attributes
     const numDigits = parseInt(attrs?.digits || '1', 10);
@@ -21,7 +24,13 @@ export const Wokwi7SegmentUI = ({ state, attrs }: { state: any, attrs: any }) =>
     };
 
     return (
-        <svg width={totalWidth} height={totalHeight} viewBox={`0 0 ${totalWidth} ${totalHeight}`} xmlns="http://www.w3.org/2000/svg">
+        <svg 
+            width="100%" 
+            height="100%" 
+            viewBox={`0 0 ${totalWidth} ${totalHeight}`} 
+            xmlns="http://www.w3.org/2000/svg"
+            style={{ display: 'block' }}
+        >
             {/* Background Base */}
             <rect width={totalWidth} height={totalHeight} fill="#1e1e1e" rx="4" />
 

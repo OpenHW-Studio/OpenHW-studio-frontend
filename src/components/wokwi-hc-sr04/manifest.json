@@ -3,37 +3,37 @@
     "label": "Ultrasonic Sensor",
     "description": "HC-SR04 ultrasonic distance sensor measuring 2cm–400cm using sound waves. Signals via Trig and Echo pins at 5V.",
     "group": "Sensors",
-    "w": 172.5,
-    "h": 114,
+    "w": 244.1,
+    "h": 161.3,
     "attrs": {
         "distance": "100"
     },
     "pins": [
         {
             "id": "VCC",
-            "x": 71,
-            "y": 92,
+            "x": 99.5,
+            "y": 136.7,
             "type": "power",
             "description": "5V Power"
         },
         {
             "id": "TRIG",
-            "x": 80.6,
-            "y": 92,
+            "x": 114.6,
+            "y": 136.8,
             "type": "digital",
             "description": "Trigger Input"
         },
         {
             "id": "ECHO",
-            "x": 90.2,
-            "y": 92,
+            "x": 130.4,
+            "y": 136.8,
             "type": "digital",
             "description": "Echo Output"
         },
         {
             "id": "GND",
-            "x": 99.8,
-            "y": 92,
+            "x": 145.2,
+            "y": 136.8,
             "type": "power",
             "description": "Ground"
         }

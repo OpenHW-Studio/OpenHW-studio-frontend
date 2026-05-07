@@ -1,12 +1,21 @@
 import React from 'react';
 
+// Bounding box for the blue selection ring.
+export const BOUNDS = { x: 0, y: 0, w: 80, h: 80 };
+
 export const NeopixelRingUI = ({ state, attrs }: { state: any, attrs: any }) => {
     const pixels = parseInt(attrs?.pixels || '16', 10);
     const radius = 30;
     const center = 40;
 
     return (
-        <svg width="100%" height="100%" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+        <svg 
+            width="100%" 
+            height="100%" 
+            viewBox="0 0 80 80" 
+            xmlns="http://www.w3.org/2000/svg"
+            style={{ display: 'block' }}
+        >
             <circle cx={center} cy={center} r={radius} fill="none" stroke="#222" strokeWidth="6" />
 
             {Array.from({ length: pixels }).map((_, i) => {
