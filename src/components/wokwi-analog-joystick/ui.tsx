@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
 
+// Bounding box for the blue selection ring.
 export const BOUNDS = { x: 0, y: 0, w: 60, h: 60 };
 
-export const JoystickUI = ({ state, attrs, isRunning }: { state: any, attrs: any, isRunning: boolean }) => {
+export const JoystickUI = ({ state, attrs, isRunning, comp }: { state: any, attrs: any, isRunning: boolean, comp?: any }) => {
     const handleRef = useRef<SVGCircleElement>(null);
     const [localState, setLocalState] = useState({ x: 0.5, y: 0.5, pressed: false });
 
@@ -123,17 +124,23 @@ export const JoystickUI = ({ state, attrs, isRunning }: { state: any, attrs: any
     );
 
     return (
-        <svg
-            width={60} height={60}
-            viewBox="0 0 60 60"
-            style={{ display: 'block', overflow: 'visible', cursor: isRunning ? 'pointer' : 'default', touchAction: 'none' }}
-            onMouseDown={e => isRunning && e.stopPropagation()}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            onPointerCancel={handlePointerUp}
-            onContextMenu={e => { if (isRunning) e.preventDefault(); }} // Prevent context menu if running
-        >
+        <div style={{
+            width: comp?.w ?? BOUNDS.w,
+            height: comp?.h ?? BOUNDS.h,
+            pointerEvents: 'none',
+            position: 'relative'
+        }}>
+            <svg
+                width="100%" height="100%"
+                viewBox="0 0 60 60"
+                style={{ display: 'block', overflow: 'visible', cursor: isRunning ? 'pointer' : 'default', touchAction: 'none' }}
+                onMouseDown={e => isRunning && e.stopPropagation()}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                onContextMenu={e => { if (isRunning) e.preventDefault(); }} // Prevent context menu if running
+            >
             {/* Base */}
             <rect x={2} y={2} width={56} height={56} rx={8} fill="#2c3e50" stroke="#1a252f" strokeWidth={2} />
             <circle cx={30} cy={30} r={22} fill="#34495e" stroke="#2c3e50" strokeWidth={2} />
@@ -173,5 +180,6 @@ export const JoystickUI = ({ state, attrs, isRunning }: { state: any, attrs: any
             {/* Inner shading for the stick */}
             <circle cx={cx - 3} cy={cy - 3} r={4} fill="#ffffff" opacity={0.3} style={{ pointerEvents: 'none' }} />
         </svg>
+    </div>
     );
 };

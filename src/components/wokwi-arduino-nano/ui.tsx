@@ -1,12 +1,21 @@
 import React from 'react';
 
+// Bounding box for the board UI.
+export const BOUNDS = { x: 0, y: 0, w: 180, h: 50 };
+
 export const ArduinoNanoUI = ({ state, attrs }: { state: any, attrs: any }) => {
 
     const topLabels = ['D12', 'D11', 'D10', 'D9', 'D8', 'D7', 'D6', 'D5', 'D4', 'D3', 'D2', 'GND', 'RST', 'RX0', 'TX1', 'PE1'];
     const botLabels = ['D13', '3V3', 'AREF', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', '+5V', 'RST', 'GND', 'VIN', 'PE0'];
 
     return (
-        <svg width="180" height="50" viewBox="0 0 180 50" xmlns="http://www.w3.org/2000/svg">
+        <svg 
+            width="100%" 
+            height="100%" 
+            viewBox="0 0 180 50" 
+            xmlns="http://www.w3.org/2000/svg"
+            style={{ display: 'block' }}
+        >
             {/* Main PCB */}
             <rect x="15" y="0" width="165" height="50" fill="#004d80" />
 

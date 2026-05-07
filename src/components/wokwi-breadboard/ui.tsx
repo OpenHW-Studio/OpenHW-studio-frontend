@@ -1,6 +1,9 @@
 import React from 'react';
 import manifest from './manifest.json';
 
+// Bounding box for the board UI.
+export const BOUNDS = { x: 0, y: 0, w: manifest.w, h: manifest.h };
+
 export const BreadboardUI = () => {
     const { w, h, pins } = manifest;
 
@@ -9,7 +12,13 @@ export const BreadboardUI = () => {
     const endX = startX + 62 * 15;
 
     return (
-        <svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} xmlns="http://www.w3.org/2000/svg">
+        <svg 
+            width="100%" 
+            height="100%" 
+            viewBox={`0 0 ${w} ${h}`} 
+            xmlns="http://www.w3.org/2000/svg"
+            style={{ display: 'block' }}
+        >
             {/* Base board */}
             <rect width={w} height={h} fill="#fbfbf6" rx="10" stroke="#dddddd" strokeWidth="2" />
 

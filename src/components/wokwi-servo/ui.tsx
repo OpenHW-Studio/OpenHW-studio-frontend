@@ -6,11 +6,29 @@ import React from 'react';
 export const BOUNDS = { x: 0, y: 0, w: 165, h: 120 };
 
 export const ServoUI = ({ state, attrs }: { state: any, attrs: any }) => {
+    const nativeW = 165;
+    const nativeH = 120;
+    const scaleX = BOUNDS.w / nativeW;
+    const scaleY = BOUNDS.h / nativeH;
+
     return (
-        <div style={{ pointerEvents: 'none' }}>
+        <div style={{ 
+            pointerEvents: 'none',
+            width: BOUNDS.w,
+            height: BOUNDS.h,
+            position: 'relative',
+            overflow: 'visible'
+        }}>
             {React.createElement('wokwi-servo', {
                 angle: state?.angle || attrs?.angle || 0,
-                ...attrs
+                ...attrs,
+                style: {
+                    display: 'block',
+                    width: nativeW,
+                    height: nativeH,
+                    transform: `scale(${scaleX}, ${scaleY})`,
+                    transformOrigin: '0 0'
+                }
             })}
         </div>
     );

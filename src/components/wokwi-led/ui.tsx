@@ -28,6 +28,11 @@ export const LEDUI = ({ state, attrs }: { state: any, attrs: any }) => {
     const color = attrs?.color || 'red';
     const ledRef = useRef<any>(null);
 
+    const nativeW = 38;
+    const nativeH = 38;
+    const scaleX = BOUNDS.w / nativeW;
+    const scaleY = BOUNDS.h / nativeH;
+
     useEffect(() => {
         if (ledRef.current) {
             ledRef.current.value = isLit ? true : false;
@@ -35,11 +40,22 @@ export const LEDUI = ({ state, attrs }: { state: any, attrs: any }) => {
     }, [isLit]);
 
     return (
-        <div style={{ position: 'relative', width: 38, height: 38 }}>
+        <div style={{ 
+            position: 'relative', 
+            width: BOUNDS.w, 
+            height: BOUNDS.h,
+            pointerEvents: 'none'
+        }}>
             <wokwi-led
                 ref={ledRef}
                 color={color}
-                style={{ pointerEvents: 'none' }}
+                style={{ 
+                    display: 'block',
+                    width: nativeW,
+                    height: nativeH,
+                    transform: `scale(${scaleX}, ${scaleY})`,
+                    transformOrigin: '0 0'
+                }}
                 {...attrs}
             />
         </div>
