@@ -833,7 +833,23 @@ export class BaseComponent {
 
     getDeltaMetrics() {
         const full = this.getRawMetrics();
-        const currentJson = JSON.stringify(full.metrics);
+        
+        // Stabilize metrics for comparison (remove volatile timing fields)
+        const stableMetrics = { ...full.metrics };
+        if (stableMetrics.lifecycle) {
+            stableMetrics.lifecycle = { ...stableMetrics.lifecycle };
+            delete (stableMetrics.lifecycle as any).idleMs;
+        }
+        if (stableMetrics.ioThroughput) {
+            stableMetrics.ioThroughput = { ...stableMetrics.ioThroughput };
+            delete (stableMetrics.ioThroughput as any).lastIoAtMs;
+        }
+        if (stableMetrics.interactionAudit) {
+            stableMetrics.interactionAudit = { ...stableMetrics.interactionAudit };
+            delete (stableMetrics.interactionAudit as any).lastEventAtMs;
+        }
+
+        const currentJson = JSON.stringify(stableMetrics);
         if (currentJson === this.lastReportedJson) {
             return {
                 id: this.id,
