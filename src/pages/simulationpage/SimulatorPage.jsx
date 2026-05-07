@@ -9918,7 +9918,8 @@ function SimulatorPageContent() {
                           React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
                             state: getLiveOopStateSnapshot(comp.id),
                             attrs: getComponentStateAttrs(comp, getLiveOopStateSnapshot(comp.id)),
-                            isRunning: isRunning
+                            isRunning: isRunning,
+                            comp: comp
                           })
                         ) : (
                           // Fallback for unsupported components (if any left)
@@ -10015,7 +10016,9 @@ function SimulatorPageContent() {
                     {/* Component label (Outside rotated container) */}
                     <div style={{
                       position: 'absolute',
-                      top: comp.h / 2 + visualHalfHeight + 4,
+                      top: (comp.rotation === 90 || comp.rotation === 270)
+                        ? comp.h / 2 + comp.w / 2 + 4
+                        : comp.h + 4,
                       left: comp.w / 2,
                       transform: 'translateX(-50%)',
                       fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
