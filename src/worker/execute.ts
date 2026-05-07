@@ -3462,7 +3462,8 @@ export class AVRRunner {
     private circuitDirty: boolean = true;
     private topologyDirty: boolean = true;
     private lastPhysicsSolveAt: number = 0;
-    private lastStateEmitAt: number = 0;
+    private lastStateEmitCycle: number = 0;
+    private statusIntervalEmitCount: number = 0;
     private lastRunLoopMs: number = 0;
     private lastPhysicsMs: number = 0;
     private lastComponentUpdateMs: number = 0;
@@ -3683,63 +3684,6 @@ export class AVRRunner {
         this.running = true;
         this.lastTime = performance.now();
         this.runLoop();
-
-        // Send compact board state frequently, but coalesce large component payloads.
-        let statusIntervalEmitCount = 0;
-        this.statusInterval = setInterval(() => {
-            if (this.running && this.cpu) {
-                const msg: any = { type: 'state' };
-                const now = performance.now();
-                let shouldEmit = false;
-
-                // Always send pin states to maintain steady flow
-                msg.pins = this.pinStates;
-                shouldEmit = true;
-
-                if (this.pinsChanged) {
-                    this.pinsChanged = false;
-                }
-
-                if (this.adc) {
-                    msg.analog = Array.from(this.adc.channelValues);
-                }
-
-                const compStates: Array<{ id: string; state: any }> = [];
-                for (const inst of this.instances.values()) {
-                    if (!inst.stateChanged) continue;
-                    const syncState = inst.getSyncState();
-                    if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
-                    inst.stateChanged = false;
-                    compStates.push({
-                        id: inst.id,
-                        state: syncState,
-                        ...collectComponentTelemetry(inst),
-                    });
-                }
-
-                if (compStates.length > 0) {
-                    msg.components = compStates;
-                }
-
-                // Emit if there were any changes (pins or components)
-                // This naturally limits emission to when something happens, preventing empty messages
-                // but allows smooth flow without artificial throttling
-
-                if (shouldEmit) {
-                    msg.boardId = this.boardId;
-                    msg.perf = {
-                        lastRunLoopMs: Number(this.lastRunLoopMs.toFixed(3)),
-                        lastPhysicsMs: Number(this.lastPhysicsMs.toFixed(3)),
-                        lastComponentUpdateMs: Number(this.lastComponentUpdateMs.toFixed(3)),
-                    };
-                    this.lastStateEmitAt = now;
-                    statusIntervalEmitCount++;
-                    msg._emitSeq = statusIntervalEmitCount;
-                    msg._emitTime = now;
-                    this.onStateUpdate(msg);
-                }
-            }
-        }, 1000 / 30);
     }
 
     getSimulatedTimeMs() {
@@ -4195,6 +4139,43 @@ export class AVRRunner {
 
             this.lastPhysicsMs = physicsMs;
             this.lastRunLoopMs = performance.now() - loopStart;
+
+            // Cycle-Locked State Emission (30Hz = ~533,333 cycles at 16MHz)
+            if (this.cpu.cycles - this.lastStateEmitCycle >= 533333) {
+                const msg: any = { type: 'state', boardId: this.boardId };
+                msg.pins = this.pinStates;
+                this.pinsChanged = false;
+                
+                if (this.adc) {
+                    msg.analog = Array.from(this.adc.channelValues);
+                }
+
+                const now = performance.now();
+                const compStates: Array<{ id: string; state: any }> = [];
+                for (const inst of this.instances.values()) {
+                    if (!inst.stateChanged) continue;
+                    const syncState = inst.getSyncState();
+                    
+                    // Respect the component's sync policy to avoid overloading the UI
+                    if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+                    
+                    inst.stateChanged = false;
+                    compStates.push({
+                        id: inst.id,
+                        state: syncState,
+                        ...collectComponentTelemetry(inst),
+                    });
+                }
+                msg.components = compStates;
+
+                this.statusIntervalEmitCount++;
+                msg._emitSeq = this.statusIntervalEmitCount;
+                msg._emitTime = now;
+                msg.simTimeMs = this.getSimulatedTimeMs();
+                
+                this.lastStateEmitCycle = this.cpu.cycles;
+                this.onStateUpdate(msg);
+            }
         }
 
         setTimeout(this.runLoop, 1);
@@ -4825,7 +4806,8 @@ export class RP2040Runner implements BoardRunner {
     private circuitDirty: boolean = true;
     private topologyDirty: boolean = true;
     private lastPhysicsSolveAt: number = 0;
-    private lastStateEmitAt: number = 0;
+    private lastStateEmitCycle: number = 0;
+    private statusIntervalEmitCount: number = 0;
     private lastPhysicsMs: number = 0;
     private lastRunLoopMs: number = 0;
     private lastComponentUpdateMs: number = 0;
@@ -5072,42 +5054,6 @@ export class RP2040Runner implements BoardRunner {
         this.emitDebugSnapshot('start', this.lastTime, true);
         this.emitWirelessStubStatus('start', true);
         this.runLoop();
-
-        this.statusInterval = setInterval(() => {
-            if (this.running && this.cpu) {
-                const msg: any = { type: 'state', boardId: this.boardId };
-                let shouldEmit = false;
-                const now = performance.now();
-                this.emitWirelessStubStatus('tick');
-                if (this.pinsChanged) {
-                    msg.pins = this.pinStates;
-                    this.pinsChanged = false;
-                    shouldEmit = true;
-                }
-
-                const compStates: Array<{ id: string; state: any }> = [];
-                for (const inst of this.instances.values()) {
-                    if (!inst.stateChanged) continue;
-                    const syncState = inst.getSyncState();
-                    if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
-                    inst.stateChanged = false;
-                    compStates.push({
-                        id: inst.id,
-                        state: syncState,
-                        ...collectComponentTelemetry(inst),
-                    });
-                }
-
-                if (compStates.length > 0) {
-                    msg.components = compStates;
-                    shouldEmit = true;
-                }
-
-                if (shouldEmit) {
-                    this.onStateUpdate(msg);
-                }
-            }
-        }, 1000 / 30);
     }
 
     private shouldEmitComponentState(componentId: string, state: any, nowMs: number): boolean {
@@ -6886,6 +6832,41 @@ export class RP2040Runner implements BoardRunner {
         this.lastPhysicsMs = physicsMs;
         this.lastComponentUpdateMs = componentMs;
         this.lastRunLoopMs = performance.now() - loopStart;
+
+        // Cycle-Locked State Emission (30Hz = ~4,166,666 cycles at 125MHz)
+        const currentCycles = Number(this.cpu.core.cycles);
+        if (currentCycles - this.lastStateEmitCycle >= 4166666) {
+            const msg: any = { type: 'state', boardId: this.boardId };
+            msg.pins = this.pinStates;
+            this.pinsChanged = false;
+            
+            const now = performance.now();
+            this.emitWirelessStubStatus('tick');
+
+            const compStates: Array<{ id: string; state: any }> = [];
+            for (const inst of this.instances.values()) {
+                if (!inst.stateChanged) continue;
+                const syncState = inst.getSyncState();
+                
+                if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+
+                inst.stateChanged = false;
+                compStates.push({
+                    id: inst.id,
+                    state: syncState,
+                    ...collectComponentTelemetry(inst),
+                });
+            }
+            msg.components = compStates;
+
+            this.statusIntervalEmitCount++;
+            msg._emitSeq = this.statusIntervalEmitCount;
+            msg._emitTime = now;
+            msg.simTimeMs = this.getSimulatedTimeMs();
+            
+            this.lastStateEmitCycle = currentCycles;
+            this.onStateUpdate(msg);
+        }
 
         if (this.running) {
             this.emitDebugSnapshot('tick', now);
