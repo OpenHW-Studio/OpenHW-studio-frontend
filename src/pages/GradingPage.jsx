@@ -10,7 +10,8 @@ const GradingPage = () => {
     const [options, setOptions] = useState({
         exact_match: true,
         check_breadboard: true,
-        check_overlap: true
+        check_overlap: true,
+        ignore_pin_changes: true
     });
     const [activeTab, setActiveTab] = useState('summary');
 
@@ -33,24 +34,69 @@ const GradingPage = () => {
                     e.data.result.logs.forEach(log => addLog(log, 'info'));
                 }
                 
-                // Cache the teacher key if it was generated/returned
                 if (e.data.teacherBinaryKey && teacherFile) {
                     const fileHash = `${teacherFile.name}-${teacherFile.size}-${teacherFile.lastModified}`;
                     teacherKeyCacheRef.current = { hash: fileHash, key: e.data.teacherBinaryKey };
                 }
 
                 addLog('Grading complete. Report generated.', 'success');
-                setReport(e.data.result);
+                const finalReport = e.data.result;
+                setReport(finalReport);
                 setIsGrading(false);
+                
+                if (finalReport.teacher_telemetry && finalReport.student_telemetry) {
+                    addLog('Starting AI Semantic Auditor (WASM) in background...', 'info');
+                    setReport(prev => ({...prev, ai_status: 'Analyzing...'}));
+                    const aiWorker = new Worker(new URL('../worker/ai-audit-final.worker.ts', import.meta.url), { type: 'module' });
+                    
+                    aiWorker.onmessage = (aiEvent) => {
+                        const aiData = aiEvent.data;
+                        if (aiData.type === 'STATUS') {
+                            addLog(`AI Auditor: ${aiData.msg}`, 'info');
+                        } else if (aiData.type === 'RESULT') {
+                            addLog(`AI Semantic Score generated: ${(aiData.score * 100).toFixed(1)}% (Time: ${aiData.auditTimeMs}ms)`, 'success');
+                            const aiScore = Math.round(aiData.score * 100);
+                            
+                            setReport(prev => {
+                                if (!prev) return null;
+                                const astMatch = prev.code_score || 100;
+                                const pinFidelity = prev.pin_fidelity || 0;
+                                const verifiedCodeScore = Math.round((astMatch * 0.7) + (pinFidelity * 0.3));
+                                const rawScore = (prev.spatial_score * 0.2) + (prev.logic_score * 0.2) + (aiScore * 0.3) + (verifiedCodeScore * 0.3);
+                                
+                                return { 
+                                    ...prev, 
+                                    ai_score: aiScore,
+                                    code_score: verifiedCodeScore,
+                                    score: Math.round(rawScore),
+                                    ai_teacher_str: aiData.teacherStr,
+                                    student_ai_str: aiData.studentStr
+                                };
+                            });
+                            aiWorker.terminate();
+                            addLog('AI Auditor worker terminated to free memory.', 'info');
+                        } else if (aiData.type === 'ERROR') {
+                            addLog(`AI Auditor Error: ${aiData.error}`, 'error');
+                            setReport(prev => ({ ...prev, ai_status: 'Error' }));
+                            aiWorker.terminate();
+                        }
+                    };
+
+                    aiWorker.postMessage({
+                        type: 'GRADE_SEMANTICS',
+                        teacherTelemetry: finalReport.teacher_telemetry,
+                        studentTelemetry: finalReport.student_telemetry,
+                        idMapping: finalReport.id_mapping
+                    });
+                } else {
+                    setIsGrading(false);
+                }
             } else if (e.data.type === 'KEY_GENERATED') {
                 addLog('Reference Key generated successfully!', 'success');
-                
-                // Also cache here
                 if (teacherFile) {
                     const fileHash = `${teacherFile.name}-${teacherFile.size}-${teacherFile.lastModified}`;
                     teacherKeyCacheRef.current = { hash: fileHash, key: e.data.key };
                 }
-
                 const blob = new Blob([e.data.key], { type: 'application/octet-stream' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -99,6 +145,24 @@ const GradingPage = () => {
         a.href = url;
         a.download = `${type}_behavioral_report_${new Date().getTime()}.json`;
         a.click();
+    };
+
+    const downloadAiTraces = () => {
+        if (!report || !report.ai_teacher_str) return;
+        const data = {
+            teacher_semantic_trace: report.ai_teacher_str,
+            student_semantic_trace: report.ai_student_str,
+            id_mapping: report.id_mapping,
+            similarity_score: report.ai_score
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `ai_semantic_match_${Date.now()}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const generateKey = async () => {
@@ -202,6 +266,11 @@ const GradingPage = () => {
                                     onChange={(e) => setOptions({...options, check_overlap: e.target.checked})} />
                                 Detect Overlaps
                             </label>
+                            <label className="critical-option">
+                                <input type="checkbox" checked={options.ignore_pin_changes} 
+                                    onChange={(e) => setOptions({...options, ignore_pin_changes: e.target.checked})} />
+                                Ignore Pin Changes (Behavioral Pruning)
+                            </label>
                         </div>
                         <div className="button-group">
                             <button className="grade-action-btn" onClick={runGrading} disabled={isGrading}>
@@ -217,66 +286,174 @@ const GradingPage = () => {
                         <div className="report-container">
                             <div className="report-tabs">
                                 <button className={activeTab === 'summary' ? 'active' : ''} onClick={() => setActiveTab('summary')}>Summary</button>
-                                <button className={activeTab === 'diff' ? 'active' : ''} onClick={() => setActiveTab('diff')}>Behavioral Diff</button>
+                                <button className={activeTab === 'behavior' ? 'active' : ''} onClick={() => setActiveTab('behavior')}>Behavioral Audit</button>
+                                <button className={activeTab === 'logs' ? 'active' : ''} onClick={() => setActiveTab('logs')}>Grading Logs</button>
                             </div>
 
-                            {activeTab === 'summary' ? (
-                                <>
+                            {activeTab === 'summary' && (
+                                <div className="report-content">
                                     <h2>Analysis Report</h2>
                                     <div className="stats">
                                         <div className="stat-box">
-                                            <span className="val">{report.score}%</span>
-                                            <span className="label">Total Grade</span>
+                                            <span className="val">{report.spatial_score}%</span>
+                                            <span className="label">Spatial</span>
                                         </div>
                                         <div className="stat-box">
-                                            <span className="val">{report.spatial_score}%</span>
-                                            <span className="label">Spatial Eye</span>
+                                            <span className="val">{report.logic_score}%</span>
+                                            <span className="label">Logic</span>
+                                        </div>
+                                        <div className="stat-box">
+                                            <span className="val">{report.ai_score || 0}%</span>
+                                            <span className="label">Semantic AI</span>
                                         </div>
                                         <div className="stat-box">
                                             <span className="val">{report.behavioral_score}%</span>
-                                            <span className="label">Behavior</span>
+                                            <span className="label">Temporal</span>
+                                        </div>
+                                        <div className="stat-box accent">
+                                            <span className="val">{report.code_score}%</span>
+                                            <span className="label">Verified Code</span>
                                         </div>
                                     </div>
                                     <ul className="feedback">
                                         {report.feedback.map((f, i) => (
                                             <li key={i} className={f.includes('Error') || f.includes('Gap') ? 'error-item' : 'info-item'}>{f}</li>
                                         ))}
-                                        {report.feedback.length === 0 && <li className="success">Perfect Circuit Alignment!</li>}
+                                        <li className="info-item success">
+                                            <b>Code Execution Audit:</b> {report.pin_fidelity >= 90 ? 
+                                                'Excellent. Code matches pin-toggling patterns perfectly.' : 
+                                                `Moderate. Pin execution fidelity: ${report.pin_fidelity}%`}
+                                        </li>
                                     </ul>
                                     <div className="download-actions">
                                         <button onClick={() => downloadReport('teacher')}>Download Teacher Report</button>
                                         <button onClick={() => downloadReport('student')}>Download Student Report</button>
+                                        <button onClick={() => {
+                                             const tEvents = JSON.parse(report.teacher_telemetry || '{"events":[]}').events;
+                                             const sEvents = JSON.parse(report.student_telemetry || '{"events":[]}').events;
+                                             const maxRows = Math.max(tEvents.length, sEvents.length);
+                                             const behaviorDiff = [];
+                                             for (let i = 0; i < maxRows; i++) {
+                                                 const t = tEvents[i] || null;
+                                                 const s = sEvents[i] || null;
+                                                 const getEventTime = (e) => {
+                                                     if (!e) return null;
+                                                     const inner = Object.values(e)[0];
+                                                     return inner?.time_ms || 0;
+                                                 };
+                                                 behaviorDiff.push({
+                                                     index: i,
+                                                     teacher_time: getEventTime(t),
+                                                     student_time: getEventTime(s),
+                                                     teacher_event: t,
+                                                     student_event: s,
+                                                     is_match: JSON.stringify(t) === JSON.stringify(s)
+                                                 });
+                                             }
+                                             const bundle = {
+                                                 grading_report: report,
+                                                 behavioral_diff_report: behaviorDiff,
+                                                 ai_report: {
+                                                     score: report.ai_score,
+                                                     teacher_trace: report.ai_teacher_str,
+                                                     student_trace: report.ai_student_str
+                                                 }
+                                             };
+                                             const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+                                             const url = URL.createObjectURL(blob);
+                                             const a = document.createElement('a');
+                                             a.href = url;
+                                             a.download = `full_diagnostic_bundle_${Date.now()}.json`;
+                                             a.click();
+                                        }} className="download-btn primary">📦 Download Full Diagnostic Bundle</button>
                                     </div>
-                                </>
-                            ) : (
+                                </div>
+                            )}
+
+                            {activeTab === 'behavior' && (
                                 <div className="timeline-diff-view">
                                     <div className="diff-header">
                                         <span>Teacher Timeline</span>
                                         <span>Student Timeline</span>
                                     </div>
-                                    <div className="diff-body">
-                                        {(() => {
-                                            const tEvents = JSON.parse(report.teacher_telemetry || '{"events":[]}').events;
-                                            const sEvents = JSON.parse(report.student_telemetry || '{"events":[]}').events;
-                                            const maxRows = Math.max(tEvents.length, sEvents.length);
-                                            const rows = [];
-                                            for (let i = 0; i < maxRows; i++) {
-                                                const t = tEvents[i];
-                                                const s = sEvents[i];
-                                                rows.push(
-                                                    <div key={i} className="diff-row">
-                                                        <div className={`event-cell teacher ${!s ? 'missing' : ''}`}>
-                                                            {t ? `${t.time_ms}ms: ${Object.keys(t)[0]}` : '-'}
-                                                        </div>
-                                                        <div className={`event-cell student ${!t ? 'extra' : (JSON.stringify(t) !== JSON.stringify(s) ? 'mismatch' : '')}`}>
-                                                            {s ? `${s.time_ms}ms: ${Object.keys(s)[0]}` : '-'}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            }
-                                            return rows;
-                                        })()}
+                                    <div className="diff-body grouped">
+                                         {(() => {
+                                             const tEvents = JSON.parse(report.teacher_telemetry || '{"events":[]}').events;
+                                             const sEvents = JSON.parse(report.student_telemetry || '{"events":[]}').events;
+                                             const idMap = report.id_mapping || {};
+                                             const groupEvents = (events, isStudent) => {
+                                                 const groups = {};
+                                                 events.forEach(e => {
+                                                     const type = Object.keys(e)[0];
+                                                     const data = e[type];
+                                                     let groupId = 'other';
+                                                     if (type === 'PinChange') groupId = `Pin ${data.pin}`;
+                                                     else if (type === 'SerialOutput') groupId = 'Serial Console';
+                                                     else if (type === 'ComponentState') {
+                                                         groupId = isStudent ? (idMap[data.id] || data.id) : data.id;
+                                                     }
+                                                     if (!groups[groupId]) groups[groupId] = [];
+                                                     groups[groupId].push({ ...data, _type: type, _raw: e });
+                                                 });
+                                                 return groups;
+                                             };
+                                             const tGroups = groupEvents(tEvents, false);
+                                             const sGroups = groupEvents(sEvents, true);
+                                             const allGroupIds = Array.from(new Set([...Object.keys(tGroups), ...Object.keys(sGroups)]));
+                                             return allGroupIds.map(groupId => {
+                                                 const tList = tGroups[groupId] || [];
+                                                 const sList = sGroups[groupId] || [];
+                                                 const maxRows = Math.max(tList.length, sList.length);
+                                                 const rows = [];
+                                                 rows.push(<div key={`header-${groupId}`} className="diff-group-header">{groupId}</div>);
+                                                 for (let i = 0; i < maxRows; i++) {
+                                                     const t = tList[i];
+                                                     const s = sList[i];
+                                                     const formatDesc = (e) => {
+                                                         if (!e) return null;
+                                                         if (e._type === 'PinChange') return `State: ${e.state ? 'HIGH' : 'LOW'}`;
+                                                         if (e._type === 'ComponentState') return `${e.key} = ${e.value}`;
+                                                         if (e._type === 'SerialOutput') return e.data;
+                                                         return e._type;
+                                                     };
+                                                     const isMismatch = (() => {
+                                                         if (!t || !s) return false;
+                                                         const tClean = { ...t }; delete tClean.time_ms; delete tClean._raw;
+                                                         const sClean = { ...s }; delete sClean.time_ms; delete sClean._raw;
+                                                         return JSON.stringify(tClean) !== JSON.stringify(sClean);
+                                                     })();
+                                                     rows.push(
+                                                         <div key={`${groupId}-${i}`} className="diff-row">
+                                                             <div className={`event-cell teacher ${!s ? 'missing' : ''}`}>
+                                                                 {t ? `${t.time_ms}ms: ${formatDesc(t)}` : '-'}
+                                                             </div>
+                                                             <div className={`event-cell student ${!t ? 'extra' : (isMismatch ? 'mismatch' : 'match')}`}>
+                                                                 {s ? `${s.time_ms}ms: ${formatDesc(s)}` : '-'}
+                                                             </div>
+                                                         </div>
+                                                     );
+                                                 }
+                                                 return rows;
+                                             });
+                                         })()}
+                                     </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'logs' && (
+                                <div className="grading-logs-view">
+                                    <div className="log-summary">
+                                        <h3>Simulation Event Statistics</h3>
+                                        <div className="metric-row">
+                                            <span>Teacher Events:</span> <span>{report.teacher_metrics?.pins || 0} Pins, {report.teacher_metrics?.functional || 0} Components</span>
+                                        </div>
+                                        <div className="metric-row">
+                                            <span>Student Events:</span> <span>{report.student_metrics?.pins || 0} Pins, {report.student_metrics?.functional || 0} Components</span>
+                                        </div>
                                     </div>
+                                    <ul className="engine-logs">
+                                        {report.logs.map((log, i) => <li key={i}>{log}</li>)}
+                                    </ul>
                                 </div>
                             )}
                         </div>
@@ -302,13 +479,6 @@ const GradingPage = () => {
                     </div>
                 </div>
             </div>
-
-            {isGrading && (
-                <div className="grading-loader">
-                    <div className="spinner"></div>
-                    <p>Executing Graph Isomorphism & Spatial Checks...</p>
-                </div>
-            )}
         </div>
     );
 };

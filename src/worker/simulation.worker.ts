@@ -1114,15 +1114,6 @@ self.onmessage = async (e) => {
                 boardRunners.forEach((br) => br.setSpeed(nextSpeed));
             }
         }
-    } else if (data.type === 'SET_SOLVER_MODE') {
-        const nextMode = data.mode;
-        if (nextMode === 'logic' || nextMode === 'nodal') {
-            if (mode === 'single' && runner) {
-                (runner as any).setSolverMode?.(nextMode);
-            } else {
-                boardRunners.forEach((br) => (br as any).setSolverMode?.(nextMode));
-            }
-        }
     } else if (data.type === 'SERIAL_SET_BAUD') {
         const parsedBaud = Number(data.baudRate);
         if (!Number.isFinite(parsedBaud)) {
