@@ -32,6 +32,7 @@ import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
 import JSZip from 'jszip';
+import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared } from '../../utils/projectCompilerUtils';
 
 // ── Lazy loaders — heavy libs loaded on first use, NOT on page paint ──────────
 // @babel/standalone is ~800KB — loading it eagerly was causing the 3.73s LCP.
@@ -531,7 +532,6 @@ const DEFAULT_PICO_MICROPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/micropyth
 const DEFAULT_PICO_CIRCUITPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/circuitpython-uf2`;
 const DEFAULT_PICO_CIRCUITPYTHON_VERSION = '8.2.7';
 const DISABLED_FILE_SUFFIX = '.disabled';
-const GENERATED_ROOT_FILE_IDS = new Set(['project/diagram.png']);
 const ARDUINO_CODE_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
 const ROOT_UPLOADABLE_EXTENSIONS = new Set(['.ino', '.cpp', '.h', '.hpp', '.c', '.txt', '.json', '.xml', '.py', '.uf2']);
 const RP2040_NATIVE_ALLOWED_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp', '.txt', '.json', '.xml', '.uf2']);
@@ -776,10 +776,6 @@ function getDefaultMainFileName(boardKind, boardId, options = {}) {
   return `${boardId}.ino`;
 }
 
-function fileExt(path) {
-  const idx = path.lastIndexOf('.');
-  return idx >= 0 ? path.substring(idx).toLowerCase() : '';
-}
 
 function toBoardRelativePath(boardId, fullPath) {
   const prefix = `project/${boardId}/`;
@@ -796,9 +792,6 @@ function toBoardRelativePath(boardId, fullPath) {
   return parts.join('/');
 }
 
-function isFileDisabled(pathLike) {
-  return String(pathLike || '').toLowerCase().endsWith(DISABLED_FILE_SUFFIX);
-}
 
 function baseFileExt(pathLike) {
   const normalized = isFileDisabled(pathLike)
@@ -807,27 +800,6 @@ function baseFileExt(pathLike) {
   return fileExt(normalized);
 }
 
-function normalizeProjectFiles(files) {
-  const list = Array.isArray(files) ? files : [];
-  const seen = new Set();
-  const out = [];
-
-  list.forEach((entry) => {
-    if (!entry || typeof entry !== 'object') return;
-    const normalizedPath = String(entry.path || entry.id || '').trim();
-    if (!normalizedPath || GENERATED_ROOT_FILE_IDS.has(normalizedPath) || seen.has(normalizedPath)) return;
-    seen.add(normalizedPath);
-
-    out.push({
-      ...entry,
-      id: normalizedPath,
-      path: normalizedPath,
-      name: String(entry.name || normalizedPath.split('/').pop() || ''),
-    });
-  });
-
-  return out;
-}
 
 function normalizeOpenCodeTabs(tabs, projectFiles) {
   const list = Array.isArray(tabs) ? tabs : [];
@@ -2089,6 +2061,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const runStartGuardRef = useRef(false)
   const runComponentUpdateCountsRef = useRef({})
   const runPinTransitionCountsRef = useRef({})
+  const runLagTelemetryLastStateRef = useRef(new Map())
   const runLagTelemetryLastLogRef = useRef(new Map())
   const runFpsTelemetryLastLogRef = useRef(new Map())
   const runLastBoardPinsRef = useRef(new Map())
@@ -2105,6 +2078,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const serialIngressArbitrationRef = useRef(new Map());
   const serialPausedRef = useRef(false);
   const serialPausedQueueRef = useRef([]);
+  const canvasWorkerRef = useRef(null);
 
   const canvasRef = useRef(null)
   const innerCanvasRef = useRef(null)   // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
@@ -5324,32 +5298,14 @@ useEffect(() => {
   }, [projectFileMap, projectFiles]);
 
   const getBoardCompileFiles = useCallback((boardId, preferredMainPath = '') => {
-    const allowed = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
-    const allFiles = projectFiles
-      .filter((f) => f.path.startsWith(`project/${boardId}/`))
-      .filter((f) => !isFileDisabled(f.path))
-      .filter((f) => allowed.has(fileExt(f.path)))
-      .map((f) => ({ path: f.path, name: f.name, content: f.id === activeCodeFileId ? code : (f.content || '') }));
+    // Virtualize project files to include current editor changes
+    const virtualProjectFiles = projectFiles.map(f => ({
+      ...f,
+      content: f.id === activeCodeFileId ? code : (f.content || '')
+    }));
 
-    const preferredMainName = `${boardId}.ino`;
-    const preferredPath = String(preferredMainPath || '').trim();
-    const main = allFiles.find((f) => f.path === preferredPath)
-      || allFiles.find((f) => f.name === preferredMainName)
-      || allFiles.find((f) => fileExt(f.name) === '.ino')
-      || null;
-
-    const files = allFiles
-      .filter((f) => !(main && f.path === main.path))
-      .map((f) => ({ name: f.name, content: f.content }));
-
-    return {
-      mainCode: main?.content || getBoardMainCode(boardId) || '',
-      sketchName: boardId,
-      files,
-      hasMainFile: !!main,
-      mainFilePath: main?.path || '',
-    };
-  }, [projectFiles, getBoardMainCode, activeCodeFileId, code]);
+    return getBoardCompileFilesShared({ projectFiles: virtualProjectFiles }, boardId);
+  }, [projectFiles, activeCodeFileId, code]);
 
   const getBoardFirmwareAssets = useCallback((boardId) => {
     const boardFiles = projectFiles
@@ -6797,6 +6753,7 @@ useEffect(() => {
       serialPausedQueueRef.current = [];
       runComponentUpdateCountsRef.current = {};
       runPinTransitionCountsRef.current = {};
+      runLagTelemetryLastStateRef.current.clear();
       runLagTelemetryLastLogRef.current.clear();
       runFpsTelemetryLastLogRef.current.clear();
       runLastBoardPinsRef.current = new Map();
@@ -7445,31 +7402,37 @@ useEffect(() => {
           const boardComp = components.find((c) => c.id === boardIdKey) || boardComponents.find((b) => b.id === boardIdKey);
           const boardKind = normalizeBoardKind(boardComp?.type || '');
           const nowMs = Date.now();
+          const prevState = runLagTelemetryLastStateRef.current.get(boardIdKey) || null;
           const prevLag = runLagTelemetryLastLogRef.current.get(boardIdKey) || null;
-          const stateGapMs = prevLag ? (nowMs - prevLag.ts) : null;
+          const stateGapMs = prevState ? (nowMs - prevState.ts) : null;
+          runLagTelemetryLastStateRef.current.set(boardIdKey, { ts: nowMs });
+          const perf = msg.perf && typeof msg.perf === 'object' ? msg.perf : null;
+          const telemetryLogIntervalMs = 1500;
+          const telemetryLogEligible = !prevLag
+            || (nowMs - prevLag.ts) >= telemetryLogIntervalMs
+            || (Number.isFinite(Number(perf?.lastRunLoopMs)) && Number(perf.lastRunLoopMs) > 20)
+            || (Number.isFinite(Number(perf?.lastPhysicsMs)) && Number(perf.lastPhysicsMs) > 12)
+            || (Number.isFinite(Number(perf?.lastComponentUpdateMs)) && Number(perf.lastComponentUpdateMs) > 12);
           
           // Emit sequence tracking
           const emitSeq = Number(msg._emitSeq || -1);
           const emitTimeMs = Number(msg._emitTime || 0);
-          if (emitSeq >= 0 && emitTimeMs > 0) {
+          if (emitSeq >= 0 && emitTimeMs > 0 && telemetryLogEligible) {
             const msgAgeMs = (performance.now() - msgArrivalMs) + emitTimeMs;
-            if (stateGapMs > 80 || stateGapMs === 0) {
-              appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
-            }
+            appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
           }
-          const perf = msg.perf && typeof msg.perf === 'object' ? msg.perf : null;
           const perfRunMs = Number(perf?.lastRunLoopMs);
           const perfPhysicsMs = Number(perf?.lastPhysicsMs);
           const perfComponentMs = Number(perf?.lastComponentUpdateMs);
           const perfPresent = Number.isFinite(perfRunMs) || Number.isFinite(perfPhysicsMs) || Number.isFinite(perfComponentMs);
           const pinsCount = msg.pins && typeof msg.pins === 'object' ? Object.keys(msg.pins).length : 0;
           const componentsCount = Array.isArray(msg.components) ? msg.components.length : 0;
-          const slowStateGap = stateGapMs !== null && stateGapMs > 80;
+          const slowStateGap = stateGapMs !== null && stateGapMs > 60;
           const slowWorker = (Number.isFinite(perfRunMs) && perfRunMs > 12)
             || (Number.isFinite(perfPhysicsMs) && perfPhysicsMs > 8)
             || (Number.isFinite(perfComponentMs) && perfComponentMs > 8);
           const msgHandleTimeMs = performance.now() - msgArrivalMs;
-          if (slowStateGap || slowWorker || !prevLag) {
+          if (telemetryLogEligible && (slowStateGap || slowWorker || !prevLag)) {
             const line = [
               `LAG ${boardIdKey}`,
               `board=${boardKind || 'unknown'}`,
@@ -7576,6 +7539,7 @@ useEffect(() => {
     rp2040WirelessLastLogRef.current.clear();
     rp2040UartMicroPythonBoardsRef.current.clear();
     rp2040UartSilentWarnedBoardsRef.current.clear();
+    runLagTelemetryLastStateRef.current.clear();
     runLagTelemetryLastLogRef.current.clear();
     runFpsTelemetryLastLogRef.current.clear();
 
@@ -8041,6 +8005,120 @@ useEffect(() => {
     } catch (err) {
       console.error('[PNG Export] Error:', err);
       alert('PNG export failed: ' + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const downloadPngWasm = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      if (!canvasWorkerRef.current) {
+        canvasWorkerRef.current = new Worker(new URL('../../worker/canvas-worker.ts', import.meta.url), { type: 'module' });
+      }
+
+      const SCALE = 2.5;
+      const PAD = 60;
+      
+      // 1. Gather component SVG assets from DOM
+      const assets = {};
+      const canvasEl = canvasRef.current;
+      const types = new Set(components.map(c => c.kind || c.type));
+      console.log('[PNG Export WASM] Harvesting assets for types:', Array.from(types));
+      
+      for (const type of types) {
+          const el = canvasEl.querySelector(type);
+          if (el && el.shadowRoot) {
+              const svg = el.shadowRoot.querySelector('svg');
+              if (svg) {
+                  // usvg (Rust) is a strict XML parser. 
+                  // It doesn't like &nbsp; and it definitely doesn't like <br> tags in SVG.
+                  assets[type] = svg.outerHTML
+                      .replace(/&nbsp;/g, '&#160;')
+                      .replace(/<br\s*\/?>/gi, ' ');
+              } else {
+                  console.warn(`[PNG Export WASM] No SVG found in shadowRoot for ${type}`);
+              }
+          } else {
+              console.warn(`[PNG Export WASM] Element or shadowRoot missing for ${type}`);
+          }
+      }
+      console.log(`[PNG Export WASM] Harvested ${Object.keys(assets).length} assets`);
+
+      // 2. Prepare payload
+      const project = {
+        board,
+        components: components.map(c => ({
+            id: c.id,
+            type: c.type || c.kind,
+            x: c.x,
+            y: c.y,
+            w: c.w,
+            h: c.h,
+            rotate: c.rotate,
+            attrs: c.attrs
+        })),
+        wires: wires.map(w => ({
+            from: w.from,
+            to: w.to,
+            color: w.color || 'green',
+            waypoints: w.waypoints
+        }))
+      };
+
+      const fullMetadata = buildProjectPayload({
+        board,
+        components,
+        wires,
+        code,
+        blocklyXml,
+        blocklyGeneratedCode,
+        useBlocklyCode,
+        projectFiles,
+        openCodeTabs,
+        activeCodeFileId,
+        exportedAt: new Date().toISOString(),
+      });
+
+      const options = {
+        scale: SCALE,
+        padding: PAD,
+        background: '#070b14'
+      };
+
+      const requestId = Date.now();
+      
+      const result = await new Promise((resolve, reject) => {
+          const handler = (e) => {
+              if (e.data.id === requestId) {
+                  canvasWorkerRef.current.removeEventListener('message', handler);
+                  if (e.data.type === 'RENDER_RESULT') resolve(e.data.payload);
+                  else reject(new Error(e.data.payload));
+              }
+          };
+          canvasWorkerRef.current.addEventListener('message', handler);
+          canvasWorkerRef.current.postMessage({
+              type: 'RENDER_PNG',
+              id: requestId,
+              payload: { project, assets, options, fullMetadata }
+          });
+      });
+
+      console.log('[PNG Export WASM] rendered in', result.ms, 'ms');
+      
+      const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-').replace(':', '-');
+      const filename = `circuit_${board}_${dateStr}_wasm.png`;
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    } catch (err) {
+      console.error('[PNG Export WASM] Error:', err);
+      alert('WASM PNG export failed: ' + err.message);
     } finally {
       setIsExporting(false);
     }
@@ -8780,7 +8858,7 @@ function SimulatorPageContent() {
       )}
 
       {/* TOP BAR */}
-      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
+      <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} downloadPngWasm={downloadPngWasm} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} />
       {studentAssignmentMode && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
@@ -9101,6 +9179,7 @@ function SimulatorPageContent() {
           </div>
 
           {/* Full palette content */}
+          {(isPaletteHovered || paletteContextMenu || showFilterDropdown) && (
           <div style={{
             width: 340, opacity: isPaletteHovered ? 1 : 0, transition: 'opacity 0.2s',
             pointerEvents: isPaletteHovered ? 'auto' : 'none',
@@ -9379,6 +9458,7 @@ function SimulatorPageContent() {
               </div>
             </div>
           </div>
+          )}
         </aside>
 
         {/* Palette right-click context menu */}
@@ -11445,7 +11525,6 @@ function SimulatorPageContent() {
                 className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${solverMode === 'logic' ? 'border-[var(--accent)] bg-[rgba(var(--accent-rgb),0.05)]' : 'border-[var(--border)] hover:border-[var(--border-hover)]'}`}
                 onClick={() => {
                   setSolverMode('logic');
-                  if (workerRef.current) workerRef.current.postMessage({ type: 'SET_SOLVER_MODE', mode: 'logic' });
                 }}
               >
                 <div className="flex justify-between items-start mb-2">
@@ -11458,29 +11537,6 @@ function SimulatorPageContent() {
                   High-performance Boolean propagation. Ideal for large digital circuits and low-end hardware.
                 </div>
               </div>
-
-              {/* Modern Nodal Option */}
-              <div 
-                className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${solverMode === 'nodal' ? 'border-[var(--accent)] bg-[rgba(var(--accent-rgb),0.05)]' : 'border-[var(--border)] hover:border-[var(--border-hover)]'}`}
-                onClick={() => {
-                  setSolverMode('nodal');
-                  if (workerRef.current) workerRef.current.postMessage({ type: 'SET_SOLVER_MODE', mode: 'nodal' });
-                }}
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-[var(--text)]">Modern Nodal (MNA)</span>
-                    {webGpuSupported && <span className="text-[10px] text-[#4caf50] font-bold">● GPU Accel Available</span>}
-                  </div>
-                  {solverMode === 'nodal' && (
-                    <span className="text-[10px] bg-[var(--accent)] text-white px-3 py-1 rounded-full font-bold uppercase tracking-wider">This is Current Engine</span>
-                  )}
-                </div>
-                <div className="text-xs text-[var(--text2)] leading-normal">
-                  High-fidelity analog solving using matrix math. Recommended for mixed-signal designs.
-                  {!webGpuSupported && <div className="mt-2 text-[10px] text-[#ff9800] font-medium italic">Running on CPU (No WebGPU detected)</div>}
-                </div>
-              </div>
             </div>
 
             <Btn 
@@ -11488,7 +11544,7 @@ function SimulatorPageContent() {
               style={{ width: '100%', padding: '14px', borderRadius: '12px' }}
               className="font-bold tracking-wide"
             >
-              Continue with {solverMode === 'logic' ? 'Classic Logic' : 'Modern Nodal'}
+              Continue with Classic Logic
             </Btn>
           </div>
         </div>

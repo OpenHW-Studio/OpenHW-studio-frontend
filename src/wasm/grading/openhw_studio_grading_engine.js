@@ -102,6 +102,10 @@ function __wbg_get_imports() {
             const ret = typeof(val) === 'object' && val !== null;
             return ret;
         },
+        __wbg___wbindgen_is_string_eddc07a3efad52e6: function(arg0) {
+            const ret = typeof(arg0) === 'string';
+            return ret;
+        },
         __wbg___wbindgen_is_undefined_244a92c34d3b6ec0: function(arg0) {
             const ret = arg0 === undefined;
             return ret;
@@ -210,6 +214,10 @@ function __wbg_get_imports() {
             const ret = new Array();
             return ret;
         },
+        __wbg_new_46ae4e4ff2a07a64: function() {
+            const ret = new Map();
+            return ret;
+        },
         __wbg_new_8454eee672b2ba6e: function(arg0) {
             const ret = new Uint8Array(arg0);
             return ret;
@@ -227,6 +235,10 @@ function __wbg_get_imports() {
         },
         __wbg_set_6be42768c690e380: function(arg0, arg1, arg2) {
             arg0[arg1] = arg2;
+        },
+        __wbg_set_82f7a370f604db70: function(arg0, arg1, arg2) {
+            const ret = arg0.set(arg1, arg2);
+            return ret;
         },
         __wbg_set_f614f6a0608d1d1d: function(arg0, arg1, arg2) {
             arg0[arg1 >>> 0] = arg2;
