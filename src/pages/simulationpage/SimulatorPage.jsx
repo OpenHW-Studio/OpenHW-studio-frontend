@@ -5180,15 +5180,23 @@ export function SimulatorPage({ gamificationMode = false }) {
         return
       }
       saveHistory();
+      const color1 = wireColor(wireStart.pinLabel);
+      const color2 = wireColor(pinLabel);
+      
+      // Logic: If the second pin has a more "specific" color (comms, power, etc.) 
+      // and the first is generic green, use the specific color.
+      const isGeneric = (c) => c === '#2ecc71' || c === '#10b981';
+      const finalColor = (!isGeneric(color2) && isGeneric(color1)) ? color2 : color1;
+
       const newWire = {
         id: `w${nextWireId++}`,
         from: `${wireStart.compId}:${wireStart.pinId}`,
         to: `${compId}:${pinId}`,
         fromLabel: wireStart.pinLabel,
         toLabel: pinLabel,
-        color: wireColor(wireStart.pinLabel),
+        color: finalColor,
         waypoints: wireStart.waypoints || [],
-        isBelow: false // Add z-index configuration
+        isBelow: false 
       }
       setWires(prev => [...prev, newWire])
       setWireStart(null)
@@ -9988,15 +9996,6 @@ export function SimulatorPage({ gamificationMode = false }) {
                     {/* Row 2: controls — centered */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                       <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
-                      <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-                      <button
-                        style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 6px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                        onClick={(e) => { e.stopPropagation(); toggleWireLayer(w.id); }}
-                        onPointerDown={(e) => { e.stopPropagation(); }}
-                        title={w.isBelow ? "Bring to Front" : "Send to Back"}
-                      >
-                        {w.isBelow ? '↑' : '↓'}
-                      </button>
                       <button
                         style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
                         title="Reset route to auto"

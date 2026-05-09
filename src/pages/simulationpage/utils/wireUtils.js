@@ -147,15 +147,32 @@ export function multiRoutePath(p1, p2, waypoints = []) {
 export function wireColor(pinLabel) {
   if (!pinLabel) return '#2ecc71';
   const l = pinLabel.toUpperCase();
-  if (l.includes('GND') || l === 'CATHODE') return '#808080';
-  if (l.includes('5V') || l.includes('3.3V') || l === 'VCC' || l === 'ANODE') return '#e74c3c';
-  if (l.includes('SDA')) return '#3498db';
-  if (l.includes('SCL')) return '#f1c40f';
-  if (l.includes('RX')) return '#e67e22';
-  if (l.includes('TX')) return '#d35400';
-  if (l.includes('MOSI') || l.includes('MISO') || l.includes('SCK') || l.includes('SCLK') || l.includes('CS') || l.includes('SS')) return '#9b59b6';
-  if (l.includes('PWM') || l.includes('~')) return '#1abc9c';
-  if (l.startsWith('A') && !isNaN(l.substring(1))) return '#27ae60';
-  if (l.includes('ANALOG')) return '#27ae60';
-  return '#2ecc71';
+
+  // Power & Ground (Highest priority)
+  if (l === 'GND' || l.includes('.GND') || l.includes('_GND') || l === 'VSS' || l === 'CATHODE' || l === 'COM') return '#1f2937'; 
+  if (l === 'VCC' || l === 'VDD' || l === '5V' || l === '3V3' || l === '3.3V' || l === 'VIN' || l === 'ANODE' || l === 'V+') return '#ef4444'; 
+
+  // UART
+  if (l.includes('RX')) return '#f97316'; // Orange
+  if (l.includes('TX')) return '#ea580c'; // Deep Orange
+
+  // I2C
+  if (l.includes('SDA')) return '#3b82f6'; // Blue
+  if (l.includes('SCL')) return '#eab308'; // Yellow/Amber
+
+  // SPI - Specific Signal Separation
+  if (l.includes('MOSI') || l.includes('DIN') || l.includes('SDI')) return '#8b5cf6'; // Violet
+  if (l.includes('MISO') || l.includes('DOUT') || l.includes('SDO')) return '#d946ef'; // Fuchsia
+  if (l === 'SCK') return '#6366f1';  // Indigo
+  if (l.includes('SCLK') || l.includes('CLK')) return '#4f46e5'; // Deep Indigo
+  if (l === 'CS') return '#ec4899';   // Pink
+  if (l.includes('SS') || l.includes('SCE')) return '#be185d';  // Deep Pink/Maroon
+
+  // Analog
+  if ((l.startsWith('A') && !isNaN(l.substring(1))) || l.includes('ANALOG') || l.includes('ADC')) return '#10b981'; // Emerald
+
+  // PWM / Special
+  if (l.includes('PWM') || l.includes('~') || l.includes('EN')) return '#06b6d4'; // Cyan
+
+  return '#2ecc71'; // Default Green
 }

@@ -18,6 +18,7 @@ if (typeof window === 'undefined') {
 
 console.log("[HEARTBEAT] Worker [v3.8]: Environment Polyfilled.");
 self.postMessage({ type: 'LOG', msg: "Worker is ALIVE (Dynamic Loader Mode)." });
+console.log("[WORKER VERSION] grading-engine.worker.ts v3.9-debug");
 
 function timeStamp() {
     return new Date().toLocaleTimeString();
@@ -258,6 +259,7 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
         let simStartMs = runner.getSimulatedTimeMs();
         let lastTraceTime = 0;
         let lastPollSimMs = simStartMs;
+        let deepSnapshotCache: any | null = null;
 
         const emitComponentStateEvents = (snapshot: any, eventTimeMs: number, requireDelta: boolean) => {
             if (!snapshot?.components) {
@@ -367,6 +369,27 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                 }
 
                 const snapshot = runner.getRichTelemetrySnapshot({ mode: 'delta' });
+                // If delta snapshots omit metrics (delta:false), merge metrics from a deep snapshot once
+                if (snapshot && Array.isArray(snapshot.components)) {
+                    const missingMetrics = snapshot.components.some((c: any) => {
+                        const customKeys = Object.keys(c?.metrics?.custom || {});
+                        return !c.metrics || customKeys.length === 0;
+                    });
+                    if (missingMetrics) {
+                        if (!deepSnapshotCache) deepSnapshotCache = runner.getRichTelemetrySnapshot({ mode: 'deep' });
+                        if (deepSnapshotCache && Array.isArray(deepSnapshotCache.components)) {
+                            const deepMap = new Map(deepSnapshotCache.components.map((c: any) => [c.id, c]));
+                            for (const comp of snapshot.components) {
+                                const deepComp = deepMap.get(comp.id);
+                                if (!deepComp || !deepComp.metrics) continue;
+                                const currentKeys = Object.keys(comp?.metrics?.custom || {});
+                                if (!comp.metrics || currentKeys.length === 0) {
+                                    comp.metrics = deepComp.metrics;
+                                }
+                            }
+                        }
+                    }
+                }
                 
                 // DEBUG: Log snapshot structure to diagnose empty telemetry
                 if (snapshot && !snapshot._debugLogged) {
@@ -419,7 +442,28 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                 }
                 
                 const snapshot = runner.getRichTelemetrySnapshot({ mode: 'delta' });
-                
+                // If delta snapshots omit metrics (delta:false), merge metrics from a deep snapshot once
+                if (snapshot && Array.isArray(snapshot.components)) {
+                    const missingMetrics = snapshot.components.some((c: any) => {
+                        const customKeys = Object.keys(c?.metrics?.custom || {});
+                        return !c.metrics || customKeys.length === 0;
+                    });
+                    if (missingMetrics) {
+                        if (!deepSnapshotCache) deepSnapshotCache = runner.getRichTelemetrySnapshot({ mode: 'deep' });
+                        if (deepSnapshotCache && Array.isArray(deepSnapshotCache.components)) {
+                            const deepMap = new Map(deepSnapshotCache.components.map((c: any) => [c.id, c]));
+                            for (const comp of snapshot.components) {
+                                const deepComp = deepMap.get(comp.id);
+                                if (!deepComp || !deepComp.metrics) continue;
+                                const currentKeys = Object.keys(comp?.metrics?.custom || {});
+                                if (!comp.metrics || currentKeys.length === 0) {
+                                    comp.metrics = deepComp.metrics;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // DEBUG: Log snapshot structure to diagnose empty telemetry
                 if (snapshot && !snapshot._debugLogged) {
                     const compCount = snapshot.components?.length || 0;
