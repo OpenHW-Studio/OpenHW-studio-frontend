@@ -36,5 +36,19 @@
       "type": "analog",
       "description": "Analog output"
     }
-  ]
+  ],
+  "autowiring": {
+    "connections": [
+      { "from": "VCC", "to": "arduino:5V" },
+      { "from": "GND", "to": "arduino:GND" },
+      { "from": "DO",  "to": "arduino:3" },
+      { "from": "AO",  "to": "arduino:A1" }
+    ]
+  },
+  "autocoding": {
+    "arduino": {
+      "setup": "Serial.begin(9600);\npinMode(3, INPUT);\nSerial.println(\"LDR Sensor Ready\");",
+      "loop": "int analog = analogRead(A1);\nint digital = digitalRead(3);\nfloat lux = (1023.0 - analog) / 1023.0 * 1000.0;\nSerial.print(\"LDR Analog: \");\nSerial.print(analog);\nSerial.print(\" | Lux~\");\nSerial.print(lux, 0);\nSerial.print(\" | Dark: \");\nSerial.println(digital == HIGH ? \"YES\" : \"no\");\ndelay(300);"
+    }
+  }
 }

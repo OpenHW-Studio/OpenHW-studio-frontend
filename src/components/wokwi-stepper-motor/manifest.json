@@ -32,5 +32,20 @@
             "y": 50,
             "type": "digital"
         }
-    ]
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "A+", "to": "a4988_1:1A" },
+            { "from": "A-", "to": "a4988_1:2A" },
+            { "from": "B+", "to": "a4988_1:1B" },
+            { "from": "B-", "to": "a4988_1:2B" }
+        ]
+    },
+    "autocoding": {
+        "libraries": ["AccelStepper"],
+        "arduino": {
+            "setup": "#include <AccelStepper.h>\nAccelStepper stepper(AccelStepper::FULL4WIRE, 8, 10, 9, 11);\nstepper.setMaxSpeed(500);\nstepper.setAcceleration(100);",
+            "loop": "stepper.moveTo(200);\nstepper.runToPosition();\ndelay(500);\nstepper.moveTo(0);\nstepper.runToPosition();\ndelay(500);"
+        }
+    }
 }

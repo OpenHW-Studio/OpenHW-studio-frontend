@@ -7,96 +7,39 @@
     "h": 80,
     "attrs": {},
     "pins": [
-        {
-            "id": "ENA",
-            "x": 0,
-            "y": 10,
-            "type": "digital",
-            "description": "Enable A"
-        },
-        {
-            "id": "IN1",
-            "x": 0,
-            "y": 30,
-            "type": "digital",
-            "description": "Input 1"
-        },
-        {
-            "id": "IN2",
-            "x": 0,
-            "y": 50,
-            "type": "digital",
-            "description": "Input 2"
-        },
-        {
-            "id": "IN3",
-            "x": 0,
-            "y": 70,
-            "type": "digital",
-            "description": "Input 3"
-        },
-        {
-            "id": "IN4",
-            "x": 80,
-            "y": 10,
-            "type": "digital",
-            "description": "Input 4"
-        },
-        {
-            "id": "ENB",
-            "x": 80,
-            "y": 30,
-            "type": "digital",
-            "description": "Enable B"
-        },
-        {
-            "id": "OUT1",
-            "x": 20,
-            "y": 80,
-            "type": "power",
-            "description": "Output 1"
-        },
-        {
-            "id": "OUT2",
-            "x": 40,
-            "y": 80,
-            "type": "power",
-            "description": "Output 2"
-        },
-        {
-            "id": "OUT3",
-            "x": 60,
-            "y": 80,
-            "type": "power",
-            "description": "Output 3"
-        },
-        {
-            "id": "OUT4",
-            "x": 80,
-            "y": 80,
-            "type": "power",
-            "description": "Output 4"
-        },
-        {
-            "id": "12V",
-            "x": 20,
-            "y": 0,
-            "type": "power",
-            "description": "12V In"
-        },
-        {
-            "id": "GND",
-            "x": 40,
-            "y": 0,
-            "type": "power",
-            "description": "Ground"
-        },
-        {
-            "id": "5V",
-            "x": 60,
-            "y": 0,
-            "type": "power",
-            "description": "5V Out"
+        { "id": "ENA",  "x": 0,  "y": 10, "type": "digital", "description": "Enable A" },
+        { "id": "IN1",  "x": 0,  "y": 30, "type": "digital", "description": "Input 1" },
+        { "id": "IN2",  "x": 0,  "y": 50, "type": "digital", "description": "Input 2" },
+        { "id": "IN3",  "x": 0,  "y": 70, "type": "digital", "description": "Input 3" },
+        { "id": "IN4",  "x": 80, "y": 10, "type": "digital", "description": "Input 4" },
+        { "id": "ENB",  "x": 80, "y": 30, "type": "digital", "description": "Enable B" },
+        { "id": "OUT1", "x": 20, "y": 80, "type": "power",   "description": "Output 1" },
+        { "id": "OUT2", "x": 40, "y": 80, "type": "power",   "description": "Output 2" },
+        { "id": "OUT3", "x": 60, "y": 80, "type": "power",   "description": "Output 3" },
+        { "id": "OUT4", "x": 80, "y": 80, "type": "power",   "description": "Output 4" },
+        { "id": "12V",  "x": 20, "y": 0,  "type": "power",   "description": "12V In" },
+        { "id": "GND",  "x": 40, "y": 0,  "type": "power",   "description": "Ground" },
+        { "id": "5V",   "x": 60, "y": 0,  "type": "power",   "description": "5V Out" }
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "ENA", "to": "arduino:5" },
+            { "from": "IN1", "to": "arduino:6" },
+            { "from": "IN2", "to": "arduino:7" },
+            { "from": "ENB", "to": "arduino:3" },
+            { "from": "IN3", "to": "arduino:4" },
+            { "from": "IN4", "to": "arduino:2" },
+            { "from": "GND", "to": "arduino:GND" },
+            { "from": "5V",  "to": "arduino:5V" },
+            { "from": "12V", "to": "powersupply:5V" }
+        ],
+        "externalPower": true,
+        "externalVoltage": "12.0"
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "pinMode(5,OUTPUT); pinMode(6,OUTPUT); pinMode(7,OUTPUT);\npinMode(3,OUTPUT); pinMode(4,OUTPUT); pinMode(2,OUTPUT);\nanalogWrite(5, 200);\nanalogWrite(3, 200);",
+            "loop": "digitalWrite(6,HIGH); digitalWrite(7,LOW); delay(2000);\ndigitalWrite(6,LOW); digitalWrite(7,LOW); delay(500);\ndigitalWrite(6,LOW); digitalWrite(7,HIGH); delay(2000);\ndigitalWrite(6,LOW); digitalWrite(7,LOW); delay(500);"
         }
-    ]
+    }
 }
