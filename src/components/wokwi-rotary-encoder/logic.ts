@@ -1,6 +1,9 @@
 import { BaseComponent } from '../BaseComponent';
 
 export class RotaryEncoderLogic extends BaseComponent {
+    private rotationCount = 0;
+    private pressCount = 0;
+
     constructor(id: string, manifest: any) {
         super(id, manifest);
         this.state = { rot: 0, sw: false };
@@ -18,17 +21,22 @@ export class RotaryEncoderLogic extends BaseComponent {
         if (event === 'rotate-cw') {
             // Clockwise: Advance one step in sequence
             this.quadratureStep = (this.quadratureStep + 1) % 4;
+            this.rotationCount++;
             this.updateQuadraturePins();
         } else if (event === 'rotate-ccw') {
             // Anticlockwise: Go back one step in sequence
             this.quadratureStep = (this.quadratureStep + 3) % 4;
+            this.rotationCount--;
             this.updateQuadraturePins();
         } else if (event === 'press') {
             this.setState({ sw: true });
+            this.pressCount++;
             this.setPinVoltage('SW', 0.0); // Active LOW
+            this.stateChanged = true;
         } else if (event === 'release') {
             this.setState({ sw: false });
             this.setPinVoltage('SW', 5.0); // High when released
+            this.stateChanged = true;
         }
     }
 
@@ -38,6 +46,7 @@ export class RotaryEncoderLogic extends BaseComponent {
         this.setPinVoltage('DT', step.dt ? 5.0 : 0.0);
         // Also update internal state for UI feedback
         this.setState({ rot: (this.state.rot + (this.quadratureStep % 4 === 1 ? 5 : -5)) % 360 });
+        this.stateChanged = true;
     }
 
     onPinStateChange() {
@@ -47,5 +56,15 @@ export class RotaryEncoderLogic extends BaseComponent {
             this.setPinVoltage('CLK', 5.0);
             this.setPinVoltage('DT', 5.0);
         }
+    }
+
+    onCustomTelemetry() {
+        this.setCustomTelemetry({
+            angle: Number(this.state.rot.toFixed(0)),
+            buttonPressed: this.state.sw,
+            totalRotations: this.rotationCount,
+            totalPresses: this.pressCount,
+            quadratureStep: this.quadratureStep,
+        });
     }
 }

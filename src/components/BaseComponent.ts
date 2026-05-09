@@ -825,6 +825,7 @@ export class BaseComponent {
         return {
             id: this.id,
             type: this.type,
+            state: this.getSyncState(),
             metrics: this.getUniversalMetrics(),
             heuristics: this.applyHeuristics(),
             capturedAt: new Date().toISOString()
@@ -854,6 +855,7 @@ export class BaseComponent {
             return {
                 id: this.id,
                 type: this.type,
+                state: this.getSyncState(),
                 delta: false,
                 metrics: full.metrics,  // CRITICAL: Always include metrics so telemetry capture doesn't lose custom metrics
                 heuristics: full.heuristics,
@@ -863,6 +865,7 @@ export class BaseComponent {
         this.lastReportedJson = currentJson;
         return {
             ...full,
+            state: this.getSyncState(),
             delta: true
         };
     }
