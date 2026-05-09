@@ -273,14 +273,16 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                 const cid = comp.id;
                 const compType = comp.type || 'unknown';
                 
-                // CRITICAL FIX: Always process custom metrics regardless of delta status
-                // This ensures components like LCD2004 that only expose custom metrics are captured
+                // CRITICAL FIX: Normalize telemetry across snapshot shapes.
+                // Some components expose data under metrics.custom, while others surface it as customTelemetry.
                 const metrics = comp.metrics || {};
-                const custom = metrics.custom || {};
+                const custom = metrics.custom || comp.customTelemetry || comp._metrics?.customTelemetry || {};
+                const stateLike = comp.state && typeof comp.state === 'object' ? comp.state : {};
+                const emitSource = Object.keys(custom).length > 0 ? custom : stateLike;
                 
-                // For each custom metric, check if it changed and emit event
-                for (const key in custom) {
-                    const val = custom[key];
+                // For each available field, check if it changed and emit event
+                for (const key in emitSource) {
+                    const val = emitSource[key];
                     const stateKey = `${cid}:${key}`;
                     const serialized = JSON.stringify(val);
                     const lastSerialized = lastComponentStates[stateKey];
@@ -306,7 +308,9 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                         stateSize: metrics.stateSize,
                         ioThroughput: metrics.ioThroughput,
                         powerProfile: metrics.powerProfile,
-                        pinToggles: metrics.pinToggles
+                        pinToggles: metrics.pinToggles,
+                        customTelemetry: custom,
+                        state: stateLike
                     };
                     
                     const metricKey = `${cid}:_metrics`;
@@ -398,7 +402,8 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                         const sampleComps = snapshot.components.slice(0, 3).map(c => ({
                             id: c.id,
                             type: c.type,
-                            customMetricKeys: Object.keys(c.metrics?.custom || {})
+                            customMetricKeys: Object.keys(c.metrics?.custom || {}),
+                            stateKeys: Object.keys(c.state || {})
                         }));
                         console.log(`[SNAPSHOT DEBUG] SIM-TIME: Components: ${compCount}, Sample: ${JSON.stringify(sampleComps)}`);
                     } else {
@@ -471,7 +476,8 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
                         const sampleComps = snapshot.components.slice(0, 3).map(c => ({
                             id: c.id,
                             type: c.type,
-                            customMetricKeys: Object.keys(c.metrics?.custom || {})
+                            customMetricKeys: Object.keys(c.metrics?.custom || {}),
+                            stateKeys: Object.keys(c.state || {})
                         }));
                         console.log(`[SNAPSHOT DEBUG] Components: ${compCount}, Sample: ${JSON.stringify(sampleComps)}`);
                     } else {
@@ -495,6 +501,27 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
         (telemetry as any).simulation_speed = normalizedSpeed;
         (telemetry as any).telemetry_cutoff_ms = effectiveCutoffMs;
         (telemetry as any).real_capture_ms = Date.now() - captureWallStartMs;
+
+        const coverageIssues = Array.isArray(richSnapshot?.components)
+            ? richSnapshot.components
+                .map((comp: any) => {
+                    const customKeys = Object.keys(comp?.metrics?.custom || comp?.customTelemetry || comp?._metrics?.customTelemetry || {});
+                    const stateKeys = Object.keys(comp?.state || {});
+                    if (customKeys.length === 0 && stateKeys.length === 0) {
+                        return `${comp?.id || 'unknown'}:${comp?.type || 'unknown'}`;
+                    }
+                    return null;
+                })
+                .filter(Boolean)
+            : [];
+
+        if (coverageIssues.length > 0) {
+            (telemetry as any).coverage_issues = coverageIssues;
+            sendJsonLog(`[Telemetry Coverage] Components with no visible telemetry/state: ${coverageIssues.join(', ')}`, 'warn');
+        } else {
+            (telemetry as any).coverage_issues = [];
+        }
+
         const allEvents = telemetry.events || [];
         
         console.log(`[CAPTURE SUMMARY] ${label}: Captured ${allEvents.length} events (real_time: ${(telemetry as any).real_capture_ms}ms, sim_time: ${Math.round(runner.getSimulatedTimeMs())}ms)`);

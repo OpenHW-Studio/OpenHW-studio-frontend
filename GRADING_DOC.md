@@ -26,6 +26,56 @@ Location in repo:
 
 Notes: the frontend now normalizes missing telemetry (falls back to `{events:[], duration_ms:0}`) so missing/partial traces no longer crash `.map()`.
 
+### Event types used by grading
+
+The grading engine currently reduces all observable runtime behavior into three event families:
+
+- `PinChange` - an electrical edge on a specific pin. This is how the engine sees wiring behavior, output toggles, and low-level board activity.
+- `ComponentState` - a component state snapshot. This is how LCD text, LED flags, sensor state, and other high-level component behavior are captured.
+- `SerialOutput` - text emitted on the serial port. This acts as a functional trace when a sketch prints status or debug output.
+
+These are enough for the current grading flow because the worker now emits component `state` when `custom` telemetry is empty. In the temporal breakdown, some static pin groups are shown as `pinstate:<component>:pins`; those are synthetic grouping labels, not separate event types.
+
+### Why AI functional/electrical traces can show `silent`
+
+The AI audit is a separate semantic layer from the grading telemetry. It builds:
+
+- a raw trace from the captured events,
+- a functional trace from changed component/serial meanings,
+- an electrical trace from pin-level transitions,
+- and a normalized blend of the functional and electrical traces.
+
+If the normalization step does not produce a usable semantic string, the worker falls back to `silent`. That does **not** mean grading failed. It means the semantic-audit string was empty, while the raw telemetry may still have valid events and the score can still be 100.
+
+### Telemetry coverage check
+
+The worker now records a coverage warning when a component exposes neither custom telemetry nor component state. In a healthy run, `coverage_issues` stays empty. If a new component is added without telemetry coverage, the warning will name the component ID and type so it can be fixed quickly.
+
+### Current grading issue observed in RP2040 + LCD2004 runs
+
+The latest grading logs show that the worker starts correctly and the simulation loop runs, but the behavioral capture still ends with:
+
+- `Components: 2`
+- `customMetricKeys: []`
+- `Captured 0 events`
+
+That means the grading problem is not the worker startup path; it is the telemetry shape being empty or mismatched at capture time. The worker now tries to normalize telemetry from multiple snapshot shapes (`metrics.custom`, `customTelemetry`, and `_metrics.customTelemetry`), but this issue can still appear if the browser is holding an older worker bundle or if the component snapshot path is not emitting custom fields for the current runtime.
+
+The `ws://localhost:3333/` WebSocket warning is a separate RP2040 GDB bridge connection failure. It is noisy, but it is not what prevents telemetry capture. The real behavioral data path is the component snapshot payload, and the current fix now also falls back to component `state` when `custom` telemetry is empty.
+
+Retest checklist:
+
+1. Start the stack with `start_all.bat`.
+2. Open DevTools in the browser.
+3. In Network, enable `Disable cache`.
+4. Hard-reload the page with `Ctrl+Shift+R`.
+5. Re-run grading and confirm the console shows `[WORKER VERSION] grading-engine.worker.ts v3.9-debug`.
+6. Confirm the snapshot log now shows non-empty custom telemetry keys for Pico or LCD2004.
+
+If the worker version is correct but `customMetricKeys` is still empty, check the new `stateKeys` field in the log. If `stateKeys` is populated but custom telemetry is still empty, the fallback should still produce events. If both are empty, inspect the component logic classes and `BaseComponent.ts` for missing state updates.
+
+For all supported components, the grading engine is now expected to work with either custom telemetry or component state. The new runtime coverage warning is the guardrail that tells you when a component has neither.
+
 ---
 
 ## 2) Why `verified_code_score` can be 0
