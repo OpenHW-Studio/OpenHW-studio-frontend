@@ -52,4 +52,18 @@ export class CD74HC4067Logic extends BaseComponent {
             }
         }
     }
+
+    onCustomTelemetry() {
+        const enabled = this.getPinVoltage('EN') < 2.5;
+        const activeChannel = enabled ? this.state.activeChannel : -1;
+        const sigVolt = this.getPinVoltage('SIG');
+
+        this.setCustomTelemetry({
+            enabled: enabled,
+            activeChannel: activeChannel >= 0 ? activeChannel : 'disabled',
+            signalVoltage: Number(sigVolt.toFixed(2)),
+            addressPins: 's0 s1 s2 s3 (binary select)',
+            type: '16-channel analog multiplexer',
+        });
+    }
 }

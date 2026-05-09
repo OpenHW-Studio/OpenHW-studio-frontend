@@ -1,6 +1,9 @@
 import { BaseComponent } from '../BaseComponent';
 
 export class KeypadLogic extends BaseComponent {
+    private pressCount = 0;
+    private lastPressedKey: string | null = null;
+
     constructor(id: string, manifest: any) {
         super(id, manifest);
         this.state = { pressedKey: null };
@@ -17,8 +20,24 @@ export class KeypadLogic extends BaseComponent {
                 '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4'],
             };
             this.setState({ pressedKey: key, connectedPair: matrix[key] || null });
+            if (key !== this.lastPressedKey) {
+                this.pressCount++;
+                this.lastPressedKey = key;
+                this.stateChanged = true;
+            }
         } else if (event === 'release') {
             this.setState({ pressedKey: null, connectedPair: null });
+            this.lastPressedKey = null;
+            this.stateChanged = true;
         }
+    }
+
+    onCustomTelemetry() {
+        this.setCustomTelemetry({
+            pressedKey: this.state.pressedKey || 'none',
+            totalKeyPresses: this.pressCount,
+            matrixType: '4x4',
+            keys: ['1', '2', '3', 'A', '4', '5', '6', 'B', '7', '8', '9', 'C', '*', '0', '#', 'D'],
+        });
     }
 }

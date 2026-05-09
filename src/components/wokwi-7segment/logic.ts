@@ -61,4 +61,30 @@ export class Wokwi7SegmentLogic extends BaseComponent {
         
         return syncData;
     }
+
+    onCustomTelemetry() {
+        let activatedSegments = 0;
+        let displayedDigits = 0;
+        
+        // Count active segments across all digits
+        for (let i = 0; i < this.numDigits; i++) {
+            const digit = this.state.digits[i];
+            let digitActive = false;
+            for (const seg of this.segmentsList) {
+                if (digit[seg]) {
+                    activatedSegments++;
+                    digitActive = true;
+                }
+            }
+            if (digitActive) displayedDigits++;
+        }
+        
+        this.setCustomTelemetry({
+            displayType: `${this.numDigits}-digit 7-segment ${this.isAnode ? 'common-anode' : 'common-cathode'}`,
+            activeSegments: activatedSegments,
+            displayedDigits: displayedDigits,
+            colonActive: this.state.colon,
+            totalDigits: this.numDigits,
+        });
+    }
 }

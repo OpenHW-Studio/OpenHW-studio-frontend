@@ -4,6 +4,7 @@ export class StepperMotorLogic extends BaseComponent {
     private angle = 0;
     private stepAngle = 1.8;
     private currentPhase = -1;
+    private stepCount = 0;
 
     constructor(id: string, manifest: any) {
         super(id, manifest);
@@ -40,8 +41,10 @@ export class StepperMotorLogic extends BaseComponent {
                 const diff = (newPhase - this.currentPhase + 4) % 4;
                 if (diff === 1) {
                     this.angle += this.stepAngle;
+                    this.stepCount++;
                 } else if (diff === 3) {
                     this.angle -= this.stepAngle;
+                    this.stepCount--;
                 }
                 this.currentPhase = newPhase;
                 this.state.angle = this.angle;
@@ -51,5 +54,16 @@ export class StepperMotorLogic extends BaseComponent {
             // Unpowered or freewheeling phase
             this.currentPhase = -1;
         }
+    }
+
+    onCustomTelemetry() {
+        const revolutionCount = this.stepCount * this.stepAngle / 360;
+        this.setCustomTelemetry({
+            angle: Number(this.angle.toFixed(1)),
+            stepCount: this.stepCount,
+            stepsPerRevolution: Number((360 / this.stepAngle).toFixed(0)),
+            revolutions: Number(revolutionCount.toFixed(2)),
+            currentPhase: this.currentPhase,
+        });
     }
 }
