@@ -1,10 +1,11 @@
 /**
  * SHARED UTILITY: projectCompilerUtils.js
- * This file contains the "Source of Truth" for extracting compilation payloads from OpenHW projects.
- * It is used by both SimulatorPage.jsx and grading-worker.ts.
+ * This file contains the "Source of Truth" for extracting project payloads from OpenHW projects.
+ * It is used by both SimulatorPage.jsx and grading-engine.worker.ts.
  */
 
 export const GENERATED_ROOT_FILE_IDS = new Set(['project/diagram.png']);
+export const OPENHW_META_MARKER = '\x00OPENHW_META\x00';
 
 export function fileExt(path) {
     const idx = String(path || '').lastIndexOf('.');
@@ -13,6 +14,34 @@ export function fileExt(path) {
 
 export function isFileDisabled(pathLike) {
     return String(pathLike || '').toLowerCase().endsWith('.disabled');
+}
+
+export function extractProjectMetaFromPng(bytes) {
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+    const markerBytes = new TextEncoder().encode(OPENHW_META_MARKER);
+
+    let markerByteIdx = -1;
+    for (let i = data.length - markerBytes.length; i >= 0; i--) {
+        let ok = true;
+        for (let j = 0; j < markerBytes.length; j++) {
+            if (data[i + j] !== markerBytes[j]) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok) {
+            markerByteIdx = i;
+            break;
+        }
+    }
+
+    if (markerByteIdx === -1) {
+        throw new Error('This PNG does not contain OpenHW-Studio circuit data.');
+    }
+
+    const payloadBytes = data.slice(markerByteIdx + markerBytes.length);
+    const jsonStr = new TextDecoder('utf-8', { fatal: false }).decode(payloadBytes);
+    return JSON.parse(jsonStr);
 }
 
 /**

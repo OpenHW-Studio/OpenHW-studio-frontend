@@ -48,6 +48,11 @@ self.onmessage = async (e) => {
           throw new Error(plan);
         }
 
+        // Forward library dependencies from manifest
+        if (manifest?.autocoding?.libraries) {
+            plan.libraries = manifest.autocoding.libraries;
+        }
+
         console.log('[AutowiringWorker] Generated Plan:', plan);
         self.postMessage({ type: 'AUTONOMOUS_RESULT', payload: plan });
         break;

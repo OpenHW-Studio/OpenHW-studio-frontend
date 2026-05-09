@@ -1,9 +1,1 @@
-# Ignore generated test and build artifacts, but keep the essentials
 *
-!openhw_studio_autowiring_engine.js
-!openhw_studio_autowiring_engine.d.ts
-!openhw_studio_autowiring_engine_bg.wasm
-!openhw_studio_autowiring_engine_bg.wasm.d.ts
-!package.json
-!.gitignore
-!README.md

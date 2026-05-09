@@ -1,4 +1,4 @@
-/* @ts-self-types="./openhw_studio_autofix_rust.d.ts" */
+/* @ts-self-types="./autofix_rust.d.ts" */
 
 /**
  * @param {number} fix_index
@@ -205,6 +205,23 @@ export function getFixRemovedWireCount(index) {
 
 /**
  * @param {number} index
+ * @returns {string}
+ */
+export function getFixTargetRuleId(index) {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.getFixTargetRuleId(index);
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
+ * @param {number} index
  * @returns {number}
  */
 export function getFixTransformationCount(index) {
@@ -342,7 +359,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./openhw_studio_autofix_rust_bg.js": import0,
+        "./autofix_rust_bg.js": import0,
     };
 }
 
@@ -502,7 +519,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('openhw_studio_autofix_rust_bg.wasm', import.meta.url);
+        module_or_path = new URL('autofix_rust_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 
