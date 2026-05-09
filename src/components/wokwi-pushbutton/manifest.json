@@ -1,36 +1,25 @@
 {
     "type": "wokwi-pushbutton",
     "label": "Push Button",
-    "description": "Momentary tactile push button. Closes the circuit while pressed and opens it when released. Ideal for digital input triggers and interrupt signals.",
+    "description": "Momentary tactile push button.",
     "group": "Basic",
-    "w": 68,
-    "h": 44,
-    "attrs": {
-        "breadboard": {
-            "anchorPin": "1",
-            "ravine": true
-        }
-    },
-    "telemetry": {
-        "template": "pressed=${state.pressed}",
-        "criticalKeys": [
-            "state.pressed"
+    "w": 68, "h": 44,
+    "attrs": { "breadboard": { "anchorPin": "1", "ravine": true } },
+    "telemetry": { "template": "pressed=${state.pressed}", "criticalKeys": ["state.pressed"] },
+    "pins": [
+        { "id": "1", "x": 0,  "y": 10, "type": "passive", "description": "Terminal 1" },
+        { "id": "2", "x": 60, "y": 10, "type": "passive", "description": "Terminal 2" }
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "1", "to": "arduino:2" },
+            { "from": "2", "to": "arduino:GND" }
         ]
     },
-    "pins": [
-        {
-            "id": "1",
-            "x": 0,
-            "y": 10,
-            "type": "passive",
-            "description": "Terminal 1"
-        },
-        {
-            "id": "2",
-            "x": 60,
-            "y": 10,
-            "type": "passive",
-            "description": "Terminal 2"
+    "autocoding": {
+        "arduino": {
+            "setup": "Serial.begin(9600);\npinMode(2, INPUT_PULLUP);\nSerial.println(\"Push Button Ready\");",
+            "loop": "bool pressed = (digitalRead(2) == LOW);\nSerial.print(\"Button: \");\nSerial.println(pressed ? \"PRESSED\" : \"released\");\ndelay(100);"
         }
-    ]
+    }
 }

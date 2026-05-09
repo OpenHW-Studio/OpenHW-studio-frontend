@@ -1,41 +1,28 @@
 {
     "type": "wokwi-hc-sr04",
     "label": "Ultrasonic Sensor",
-    "description": "HC-SR04 ultrasonic distance sensor measuring 2cm–400cm using sound waves. Signals via Trig and Echo pins at 5V.",
+    "description": "HC-SR04 ultrasonic distance sensor.",
     "group": "Sensors",
-    "w": 244.1,
-    "h": 161.3,
-    "attrs": {
-        "distance": "100"
-    },
+    "w": 244.1, "h": 161.3,
+    "attrs": { "distance": "100" },
     "pins": [
-        {
-            "id": "VCC",
-            "x": 99.5,
-            "y": 136.7,
-            "type": "power",
-            "description": "5V Power"
-        },
-        {
-            "id": "TRIG",
-            "x": 114.6,
-            "y": 136.8,
-            "type": "digital",
-            "description": "Trigger Input"
-        },
-        {
-            "id": "ECHO",
-            "x": 130.4,
-            "y": 136.8,
-            "type": "digital",
-            "description": "Echo Output"
-        },
-        {
-            "id": "GND",
-            "x": 145.2,
-            "y": 136.8,
-            "type": "power",
-            "description": "Ground"
+        { "id": "VCC",  "x": 99.5,  "y": 136.7, "type": "power",   "description": "5V Power" },
+        { "id": "TRIG", "x": 114.6, "y": 136.8, "type": "digital", "description": "Trigger Input" },
+        { "id": "ECHO", "x": 130.4, "y": 136.8, "type": "digital", "description": "Echo Output" },
+        { "id": "GND",  "x": 145.2, "y": 136.8, "type": "power",   "description": "Ground" }
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "VCC",  "to": "arduino:5V" },
+            { "from": "TRIG", "to": "arduino:9" },
+            { "from": "ECHO", "to": "arduino:10" },
+            { "from": "GND",  "to": "arduino:GND" }
+        ]
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "Serial.begin(9600);\npinMode(9, OUTPUT);\npinMode(10, INPUT);\nSerial.println(\"HC-SR04 Ready\");",
+            "loop": "digitalWrite(9, LOW);\ndelayMicroseconds(2);\ndigitalWrite(9, HIGH);\ndelayMicroseconds(10);\ndigitalWrite(9, LOW);\nlong dur = pulseIn(10, HIGH);\nfloat cm = dur / 58.2;\nfloat inch = dur / 148.0;\nSerial.print(\"Distance: \");\nSerial.print(cm, 1);\nSerial.print(\" cm | \");\nSerial.print(inch, 1);\nSerial.println(\" in\");\ndelay(500);"
         }
-    ]
+    }
 }

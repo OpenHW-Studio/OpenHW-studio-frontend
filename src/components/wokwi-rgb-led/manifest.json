@@ -5,7 +5,10 @@
     "w": 30,
     "h": 30,
     "attrs": {
-        "common": "cathode"
+        "common": "cathode",
+        "breadboard": {
+            "anchorPin": "R"
+        }
     },
     "pins": [
         {
@@ -18,7 +21,7 @@
             "id": "COM",
             "x": 12,
             "y": 30,
-            "type": "digital"
+            "type": "power"
         },
         {
             "id": "G",
@@ -32,5 +35,19 @@
             "y": 30,
             "type": "digital"
         }
-    ]
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "R",   "to": "arduino:9",  "via": "wokwi-resistor", "attrs": { "value": "220" } },
+            { "from": "G",   "to": "arduino:10", "via": "wokwi-resistor", "attrs": { "value": "220" } },
+            { "from": "B",   "to": "arduino:11", "via": "wokwi-resistor", "attrs": { "value": "220" } },
+            { "from": "COM", "to": "arduino:GND" }
+        ]
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "pinMode(9, OUTPUT);\npinMode(10, OUTPUT);\npinMode(11, OUTPUT);",
+            "loop": "analogWrite(9, 255); analogWrite(10, 0);   analogWrite(11, 0);   delay(500);\nanalogWrite(9, 0);   analogWrite(10, 255); analogWrite(11, 0);   delay(500);\nanalogWrite(9, 0);   analogWrite(10, 0);   analogWrite(11, 255); delay(500);"
+        }
+    }
 }

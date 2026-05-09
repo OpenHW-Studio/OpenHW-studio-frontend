@@ -855,6 +855,7 @@ export class BaseComponent {
                 id: this.id,
                 type: this.type,
                 delta: false,
+                metrics: full.metrics,  // CRITICAL: Always include metrics so telemetry capture doesn't lose custom metrics
                 heuristics: full.heuristics,
                 capturedAt: full.capturedAt
             };
