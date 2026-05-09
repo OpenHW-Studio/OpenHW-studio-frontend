@@ -45,71 +45,63 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
   if (waypoints.length > 0 && waypoints[0]._corner) {
     let pts = [p1, ...waypoints, p2];
     pts = pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+    if (offset !== 0 && pts.length > 2) {
+      const newPts = [p1];
+      for (let i = 1; i < pts.length - 1; i++) {
+        newPts.push({ x: pts[i].x + offset, y: pts[i].y + offset });
+      }
+      newPts.push(p2);
+      return makeOrthogonal(newPts);
+    }
     return makeOrthogonal(pts);
   }
 
-  // offset is now a laneIndex (0-6). trunkShift centres the bundle symmetrically.
-  const laneIndex = offset;
-  const trunkShift = (laneIndex - 3) * 5;  // -15..+15 px
-
-  const se1 = { ...e1 }, se2 = { ...e2 };
+  // --- STRICT MANHATTAN ROUTING ---
+  let se1 = { ...e1 }, se2 = { ...e2 };
   const sdx1 = se1.x - p1.x, sdy1 = se1.y - p1.y;
   const sdx2 = se2.x - p2.x, sdy2 = se2.y - p2.y;
   const e1Horiz = Math.abs(sdx1) >= Math.abs(sdy1);
   const e2Horiz = Math.abs(sdx2) >= Math.abs(sdy2);
 
   let midPts = [];
-
   if (e1Horiz && e2Horiz) {
-    const dir1 = Math.sign(sdx1) || 1;
-    const dir2 = Math.sign(sdx2) || 1;
-    let midX;
-    if (dir1 !== dir2) {
-      midX = (se1.x + se2.x) / 2 + trunkShift;
+    const midX = (se1.x + se2.x) / 2 + (offset * 2);
+    if (Math.abs(se1.y - se2.y) < 20) {
+      const bypassY = se1.y + (offset >= 0 ? 35 + offset : -35 + offset);
+      midPts = [{ x: se1.x, y: bypassY }, { x: se2.x, y: bypassY }];
     } else {
-      const base = dir1 > 0 ? Math.max(se1.x, se2.x) : Math.min(se1.x, se2.x);
-      midX = base + dir1 * (20 + Math.abs(trunkShift));
+      midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
     }
-    midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
-
   } else if (!e1Horiz && !e2Horiz) {
-    const dir1 = Math.sign(sdy1) || 1;
-    const dir2 = Math.sign(sdy2) || 1;
-    let midY;
-    if (dir1 !== dir2) {
-      midY = (se1.y + se2.y) / 2 + trunkShift;
+    const midY = (se1.y + se2.y) / 2 + (offset * 2);
+    if (Math.abs(se1.x - se2.x) < 20) {
+      const bypassX = se1.x + (offset >= 0 ? 35 + offset : -35 + offset);
+      midPts = [{ x: bypassX, y: se1.y }, { x: bypassX, y: se2.y }];
     } else {
-      const base = dir1 > 0 ? Math.max(se1.y, se2.y) : Math.min(se1.y, se2.y);
-      midY = base + dir1 * (20 + Math.abs(trunkShift));
+      midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
     }
-    midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
-
   } else if (e1Horiz && !e2Horiz) {
-    const cornerX = se2.x;
-    const cornerY = se1.y;
-    const dir1 = Math.sign(sdx1) || 1;
-    const dir2 = Math.sign(sdy2) || 1;
-    if ((cornerX - se1.x) * dir1 >= 0 && (cornerY - se2.y) * dir2 >= 0) {
-      midPts = [{ x: cornerX, y: cornerY }];
-    } else {
-      const stepX = se1.x + dir1 * (20 + laneIndex * 5);
-      midPts = [{ x: stepX, y: se1.y }, { x: stepX, y: se2.y }];
-    }
-
+    midPts = [{ x: se2.x + offset, y: se1.y + offset }];
   } else {
-    const cornerX = se1.x;
-    const cornerY = se2.y;
-    const dir1 = Math.sign(sdy1) || 1;
-    const dir2 = Math.sign(sdx2) || 1;
-    if ((cornerY - se1.y) * dir1 >= 0 && (cornerX - se2.x) * dir2 >= 0) {
-      midPts = [{ x: cornerX, y: cornerY }];
-    } else {
-      const stepY = se1.y + dir1 * (20 + laneIndex * 5);
-      midPts = [{ x: se1.x, y: stepY }, { x: se2.x, y: stepY }];
-    }
+    midPts = [{ x: se1.x + offset, y: se2.y + offset }];
   }
 
-  return makeOrthogonal([p1, se1, ...midPts, se2, p2]);
+  let rawPts = [p1, se1, ...midPts, se2, p2];
+  if (offset === 0) return makeOrthogonal(rawPts);
+
+  const finalPts = [p1];
+  if (e1Horiz) finalPts.push({ x: p1.x, y: p1.y + offset });
+  else finalPts.push({ x: p1.x + offset, y: p1.y });
+
+  for (let i = 1; i < rawPts.length - 1; i++) {
+    finalPts.push({ x: rawPts[i].x + offset, y: rawPts[i].y + offset });
+  }
+
+  if (e2Horiz) finalPts.push({ x: p2.x, y: p2.y + offset });
+  else finalPts.push({ x: p2.x + offset, y: p2.y });
+
+  finalPts.push(p2);
+  return makeOrthogonal(finalPts);
 }
 
 // ─── BUILD FULL WIRE PATH STRING ───────────────────────────────────────────
