@@ -1,3 +1,4 @@
-# Protect CI/CD workflows and sensitive configurations
-/.github/workflows/ @danish9661
+# CODEOWNERS for OpenHW Studio Frontend
+# Only @danish9661 can approve changes to workflows
 
+/.github/workflows/ @danish9661
