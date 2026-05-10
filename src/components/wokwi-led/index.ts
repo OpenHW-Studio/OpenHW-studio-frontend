@@ -1,7 +1,7 @@
 import { validation } from './validation';
 import manifest from './manifest.json';
 import { LEDLogic } from './logic';
-import { LEDUI, LEDContextMenu, BOUNDS } from './ui';
+import { LEDUI, BOUNDS } from './ui';
 import docHtml from './doc/index.html?raw';
 
 import uiRaw from './ui.tsx?raw';
@@ -12,7 +12,7 @@ export default {
     manifest,
     LogicClass: LEDLogic,
     UI: LEDUI,
-    ContextMenu: LEDContextMenu,
+    ContextMenu: null,
     contextMenuDuringRun: false,
     BOUNDS,
     validation,
