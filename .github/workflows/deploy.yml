@@ -133,8 +133,23 @@ jobs:
             "repo": "${{ github.event.repository.name }}",
             "prTitle": "Frontend Build Successful: Ready for Approval",
             "prDescription": "Commit: ${{ github.event.head_commit.message }}",
-            "secret": "5d2f8e1a9c3b4d7e0f2a5b8d1c4e7f9a",
+            "secret": "${{ secrets.NOTIFY_SECRET }}",
             "filesChanged": []
+          }'
+
+  notify_telegram:
+    name: Notify Telegram
+    needs: test_and_build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Message to Telegram
+        run: |
+          curl -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+          -H "Content-Type: application/json" \
+          -d '{
+            "chat_id": "${{ secrets.TELEGRAM_CHAT_ID }}",
+            "text": "🚀 <b>Build Successful: Waiting for Deployment Approval</b>\n\n📦 <b>Repo:</b> ${{ github.repository }}\n👤 <b>Author:</b> ${{ github.actor }}\n💬 <b>Message:</b> ${{ github.event.head_commit.message }}\n#️⃣ <b>Hash:</b> ${{ github.sha }}\n\n⚠️ <i>Please go to GitHub Actions to approve the deployment to production.</i>",
+            "parse_mode": "HTML"
           }'
 
   deploy:
@@ -167,3 +182,18 @@ jobs:
           
           # Clean up old images to save disk space
           docker image prune -af
+
+  notify_deployed:
+    name: Notify Deployed
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Deployment Success to Telegram
+        run: |
+          curl -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+          -H "Content-Type: application/json" \
+          -d '{
+            "chat_id": "${{ secrets.TELEGRAM_CHAT_ID }}",
+            "text": "✅ <b>Deployment Successful</b>\n\n📦 <b>Repo:</b> ${{ github.repository }}\n🏷️ <b>Version:</b> ${{ github.sha }}\n👤 <b>Author:</b> ${{ github.actor }}\n\n🚀 The containers have been restarted on the production VM.",
+            "parse_mode": "HTML"
+          }'
