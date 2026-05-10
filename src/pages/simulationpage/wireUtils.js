@@ -52,9 +52,9 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
   }
 
   // offset is now a laneIndex (0-6). trunkShift centres the bundle symmetrically.
-  // 7px inter-wire spacing with a 10px "Safety Offset" to prevent overlaps with pin centers.
+  // 5px inter-wire spacing with a 10px "Safety Offset" to prevent overlaps with pin centers.
   const laneIndex = offset;
-  const trunkShift = (laneIndex - 3) * 7 + (laneIndex < 3 ? -10 : 10); 
+  const trunkShift = (laneIndex - 3) * 5 + (laneIndex < 3 ? -10 : 10); 
 
   const se1 = { ...e1 }, se2 = { ...e2 };
   const sdx1 = se1.x - p1.x, sdy1 = se1.y - p1.y;

@@ -1,7 +1,9 @@
 /* tslint:disable */
 /* eslint-disable */
 
-export function generateAutonomousSetup(new_comp_json: any, manifest_json: any, board_id: string, existing_wires_json: any): any;
+export function findNearestBoard(x: number, y: number): string | undefined;
+
+export function generateAutonomousSetup(new_comp_json: any, manifest_json: any, board_id: string, wires_json: any, allow_breadboard: boolean, is_rewire: boolean): any;
 
 export function ingestComponent(id: string, kind: string, x: number, y: number, w: number, h: number, pins_json: any): void;
 
@@ -11,7 +13,8 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly generateAutonomousSetup: (a: any, b: any, c: number, d: number, e: any) => any;
+    readonly findNearestBoard: (a: number, b: number) => [number, number];
+    readonly generateAutonomousSetup: (a: any, b: any, c: number, d: number, e: any, f: number, g: number) => any;
     readonly ingestComponent: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: any) => void;
     readonly reset: () => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
@@ -19,6 +22,7 @@ export interface InitOutput {
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_start: () => void;
 }
 

@@ -1,10 +1,16 @@
 import { TopToolbox } from './TopToolbox';
-import { handleAutoSetup, getRotatedPoint, getComponentWorldPins, findNearestBreadboardHole, robustSnapComponent } from './utils/autoSetup';
+import { 
+  calculateProjectPlanApplication,
+  getRotatedPoint,
+  getComponentWorldPins,
+  findNearestBreadboardHole,
+  robustSnapComponent,
+  mergeCodeSnippet
+} from './projectUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
 import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
-import { calculateProjectPlanApplication } from './projectUtils';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
@@ -125,6 +131,9 @@ function collectRawComponentSources() {
 
 const COMPONENT_RAW_SOURCES = collectRawComponentSources();
 
+const LOCAL_CATALOG = [];
+const LOCAL_PIN_DEFS = {};
+
 // Build Catalog & UI Registry dynamically from local backend imports
 const COMPONENT_REGISTRY = {};
 
@@ -141,6 +150,11 @@ Object.entries(EmulatorComponents).forEach(([key, module]) => {
         ...(raw.docRaw ? { doc: raw.docRaw } : {}),
       }
       : module;
+      
+    // ── REGISTER BUILTIN PINS ──
+    if (module.manifest.pins) {
+      LOCAL_PIN_DEFS[compId] = module.manifest.pins;
+    }
   }
 });
 
@@ -167,9 +181,6 @@ if (neopixelBaseModule?.manifest) {
     };
   });
 }
-
-const LOCAL_CATALOG = [];
-const LOCAL_PIN_DEFS = {};
 
 const GROUP_MAPPING = {
   'Basic': 'basic',
@@ -1653,6 +1664,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [previewBanner, setPreviewBanner] = useState(null); // { id, label } — set when opened from admin "Test in Simulator"
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false)
   const [autoWiringEnabled, setAutoWiringEnabled] = useState(false);
+  const [autoBreadboardEnabled, setAutoBreadboardEnabled] = useState(false);
   const [autoCodingEnabled, setAutoCodingEnabled] = useState(false);
   const [isWiring, setIsWiring] = useState(false)
   const [wiringStartPin, setWiringStartPin] = useState(null)
@@ -2240,7 +2252,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     const listeners = liveOopStateListenersRef.current.get(compId);
     if (!listeners || listeners.size === 0) return;
     listeners.forEach(listener => listener());
-  }, []);
+  }, [liveOopStateListenersRef]);
   const updateLiveOopStates = useCallback((componentsState) => {
     if (!Array.isArray(componentsState) || componentsState.length === 0) return;
     const nextStates = liveOopStatesRef.current;
@@ -3348,6 +3360,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             }
             group.items = group.items.filter(i => i.type !== compType);
             group.items.push(newCatItem);
+            sortCatalog(LOCAL_CATALOG);
 
             COMPONENT_REGISTRY[compType] = {
               manifest,
@@ -4538,107 +4551,47 @@ export function SimulatorPage({ gamificationMode = false }) {
     const manifest = catalogItem?.manifest || catalogItem;
 
     if (catalogItem && !isProgrammableBoardType(item.type) && !item.type.startsWith('wokwi-breadboard') && !item.type.startsWith('wokwi-resistor')) {
-      const boardComp = components.find(c => isProgrammableBoardType(c.type));
-      const boardId = boardComp ? boardComp.id : 'uno';
-
-      // --- DISCONNECTED FROM LEGACY ---
       if (autoWiringEnabled || autoCodingEnabled) {
-        console.log('[Autonomous] Requesting WASM setup for:', item.type);
-
         const plan = await generateAutonomousSetup(
           components,
           wires,
           newCompBase,
           manifest,
-          boardId,
-          PIN_DEFS
+          null, // Let WASM select the nearest board
+          PIN_DEFS,
+          autoBreadboardEnabled
         );
 
-        console.log('[Autonomous] Received plan:', plan);
-
-        // 1. Initial Plan Mapping
-        let projectPlan = {
-          addedComponents: [
-            { ...newCompBase, x: plan.main_component.x, y: plan.main_component.y },
-            ...plan.added_components.map(ac => {
-              const reg = COMPONENT_REGISTRY[ac.type];
-              const manifest = reg?.manifest || {};
-              return { ...ac, w: ac.w || manifest.w || 100, h: ac.h || manifest.h || 100 };
-            })
-          ],
-          addedWires: plan.added_wires,
-          removedWires: [],
-          transformations: []
-        };
-
-        // If autowiring is disabled, we only want the main component at its intelligent position, 
-        // and NO wires or helper components (like breadboards).
-        if (!autoWiringEnabled) {
-          projectPlan.addedComponents = projectPlan.addedComponents.filter(c => c.id === newCompBase.id);
-          projectPlan.addedWires = [];
-        }
-
-
-        // 2. Perform "Manual-Style" Snapping for the whole plan
-        const { findNearestBreadboardHole, getRotatedPoint } = await import('./utils/autoSetup');
-
-        // Snap Breadboards to 15px grid first
-        projectPlan.addedComponents.forEach(comp => {
-          if (comp.type.startsWith('wokwi-breadboard')) {
-            comp.x = Math.round(comp.x / 15) * 15;
-            comp.y = Math.round(comp.y / 15) * 15;
-          }
-        });
-
-        const allBBs = [
-          ...components.filter(c => c.type.startsWith('wokwi-breadboard')),
-          ...projectPlan.addedComponents.filter(c => c.type.startsWith('wokwi-breadboard'))
-        ];
-
-        // Snap all other components to the breadboards (40px radius for reliable snapping)
-        projectPlan.addedComponents = projectPlan.addedComponents.map(comp => {
-          if (comp.type.startsWith('wokwi-breadboard')) return comp;
-          const pins = PIN_DEFS[comp.type] || [];
-          const anchorPinId = comp.attrs?.breadboard?.anchorPin || pins[0]?.id;
-          const anchorPin = pins.find(p => p.id === anchorPinId) || pins[0];
-
-          if (anchorPin) {
-            const cx = (comp.w || 0) / 2;
-            const cy = (comp.h || 0) / 2;
-            const anchorWorld = getRotatedPoint(comp.x + anchorPin.x, comp.y + anchorPin.y, comp.rotation || 0, comp.x + cx, comp.y + cy);
-            // Use larger snap radius (40px) and skip power rails
-            const hole = findNearestBreadboardHole(anchorWorld.x, anchorWorld.y, allBBs, PIN_DEFS, { snapRadius: 40, skipPower: true });
-            if (hole) {
-              comp.x += (hole.x - anchorWorld.x);
-              comp.y += (hole.y - anchorWorld.y);
+        if (plan) {
+          // ── IMMEDIATE ERROR DETECTION ──
+          if (plan.reasoning) {
+            console.log('[Autowiring Debug] Reasoning:', plan.reasoning);
+            const critical = plan.reasoning.find(r => r.toUpperCase().includes('CRITICAL'));
+            if (critical) {
+              console.error('[Autowiring Critical]', critical);
+              appendConsoleEntry('error', `[Autowiring] ${critical}`, 'simulator');
+              setTimeout(() => {
+                setIsConsoleOpen(true);
+                alert(`Autowiring Critical Error:\n\n${critical}`);
+              }, 100);
             }
           }
-          return comp;
-        });
 
-        // Deduplicate wires: remove any new wire whose from+to already exists in current wires
-        const existingWireKeys = new Set(wires.map(w => `${w.from}|${w.to}`));
-        projectPlan.addedWires = (projectPlan.addedWires || []).filter(w => {
-          const key = `${w.from}|${w.to}`;
-          const keyR = `${w.to}|${w.from}`;
-          if (existingWireKeys.has(key) || existingWireKeys.has(keyR)) return false;
-          existingWireKeys.add(key); // prevent duplicates within the plan itself
-          return true;
-        });
+          const mainCompWithPos = { ...newCompBase, x: plan.main_component.x, y: plan.main_component.y };
+          const adjustedPlan = {
+            ...plan,
+            added_components: [
+              mainCompWithPos, 
+              ...(plan.added_components || []).map(ac => ({ ...ac, ownerId: id })) // Tag helpers
+            ],
+            added_wires: (plan.added_wires || []).map(aw => ({ ...aw, ownerId: id })) // Tag wires
+          };
 
-        // 3. Final Application
-        const result = calculateProjectPlanApplication(projectPlan, components, wires, LOCAL_PIN_DEFS);
+          const result = calculateProjectPlanApplication(adjustedPlan, components, wires, PIN_DEFS);
+          setComponents(result.components);
+          setWires(result.wires);
 
-        // Apply coding
-        let newCode = code;
-        if (autoCodingEnabled && plan.code_snippet) {
-          const { mergeCodeSnippet } = await import('./utils/autoSetup');
-          newCode = mergeCodeSnippet(code, {
-            setup: plan.code_snippet.setup,
-            loop: plan.code_snippet.loop
-          });
-
-          // Auto-install any requested libraries
+          // ── Restore Library Installation ──
           if (plan.libraries && plan.libraries.length > 0) {
             for (const libName of plan.libraries) {
               const alreadyInstalled = libInstalled?.some(l => (l?.library?.name || l?.name) === libName);
@@ -4648,15 +4601,18 @@ export function SimulatorPage({ gamificationMode = false }) {
               }
             }
           }
+
+          // ── Restore Code Merging ──
+          if (plan.code_snippet) {
+            setEditorCode(mergeCodeSnippet(editorCode, plan.code_snippet, plan.reasoning || []));
+          }
+
+          // ── Restore Reasoning Logs ──
+          if (plan.reasoning) {
+            console.log('[Autonomous] Reasoning:', plan.reasoning);
+          }
         }
 
-        setComponents(result.components);
-        setWires(result.wires);
-        if (newCode !== code) setCode(newCode);
-
-        if (plan.reasoning) {
-          console.log('[Autonomous] Reasoning:', plan.reasoning);
-        }
       } else {
         setComponents(prev => [...prev, newCompBase]);
       }
@@ -5468,6 +5424,50 @@ export function SimulatorPage({ gamificationMode = false }) {
     setWires(prev => prev.map(w => w.id === id ? { ...w, isBelow: !w.isBelow } : w));
   };
 
+  const handleWireToBoard = async (compId, targetBoardId) => {
+    const comp = components.find(c => c.id === compId);
+    if (!comp) return;
+
+    saveHistory();
+
+    const manifest = COMPONENT_REGISTRY[comp.type]?.manifest || {};
+    
+    // Trigger WASM setup with isRewire flag
+    // The worker will handle cleaning up old wires and helper components
+    const plan = await generateAutonomousSetup(
+      components,
+      wires,
+      comp,
+      manifest,
+      targetBoardId,
+      PIN_DEFS,
+      autoBreadboardEnabled,
+      true // isRewire
+    );
+
+    if (plan) {
+      // Re-map IDs for added components to ensure uniqueness during re-wiring
+      const mainCompId = compId;
+      const adjustedPlan = {
+        ...plan,
+        added_components: (plan.added_components || []).map(ac => ({
+          ...ac,
+          id: ac.id.includes(mainCompId) ? ac.id : `${ac.id}_${mainCompId}`,
+          ownerId: mainCompId // Tag helpers with the main component's ID
+        })),
+        added_wires: (plan.added_wires || []).map(aw => ({
+          ...aw,
+          ownerId: mainCompId // Tag wires with the main component's ID
+        }))
+      };
+
+      const result = calculateProjectPlanApplication(adjustedPlan, components, wires, PIN_DEFS);
+      
+      setComponents(result.components);
+      setWires(result.wires);
+    }
+  };
+
 
   // Cancel wire on Escape / delete selected
   useEffect(() => {
@@ -5485,10 +5485,27 @@ export function SimulatorPage({ gamificationMode = false }) {
         if (selected.match(/^w\d+$/)) {
           setWires(prev => prev.filter(w => w.id !== selected))
         } else {
-          setComponents(prev => prev.filter(c => c.id !== selected))
-          setWires(prev => prev.filter(w => !w.from.startsWith(selected + ':') && !w.to.startsWith(selected + ':')))
+          // Shared Ownership Cleanup: Only delete if no other owners exist
+          const id = selected;
+          setComponents(prev => prev.map(c => {
+            if (c.ownerIds?.includes(id)) {
+              return { ...c, ownerIds: c.ownerIds.filter(oid => oid !== id) };
+            }
+            return c;
+          }).filter(c => c.id !== id && (!c.ownerIds || c.ownerIds.length > 0)));
+
+          setWires(prev => prev.map(w => {
+            if (w.ownerIds?.includes(id)) {
+              return { ...w, ownerIds: w.ownerIds.filter(oid => oid !== id) };
+            }
+            return w;
+          }).filter(w => 
+            !w.from.startsWith(id + ':') && 
+            !w.to.startsWith(id + ':') && 
+            (!w.ownerIds || w.ownerIds.length > 0)
+          ));
+          setSelected(null);
         }
-        setSelected(null)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -9053,7 +9070,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         )}
 
         {/* TOP BAR */}
-        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} />
+        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} />
         {studentAssignmentMode && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
             <div style={{ minWidth: 0 }}>
@@ -11959,8 +11976,24 @@ export function SimulatorPage({ gamificationMode = false }) {
             onDelete={() => {
               saveHistory();
               const id = compContextMenu.compId;
-              setComponents(prev => prev.filter(c => c.id !== id));
-              setWires(prev => prev.filter(w => !w.from.startsWith(id + ':') && !w.to.startsWith(id + ':')));
+              // Shared Ownership Cleanup: Only delete if no other owners exist
+              setComponents(prev => prev.map(c => {
+                if (c.ownerIds?.includes(id)) {
+                  return { ...c, ownerIds: c.ownerIds.filter(oid => oid !== id) };
+                }
+                return c;
+              }).filter(c => c.id !== id && (!c.ownerIds || c.ownerIds.length > 0)));
+
+              setWires(prev => prev.map(w => {
+                if (w.ownerIds?.includes(id)) {
+                  return { ...w, ownerIds: w.ownerIds.filter(oid => oid !== id) };
+                }
+                return w;
+              }).filter(w => 
+                !w.from.startsWith(id + ':') && 
+                !w.to.startsWith(id + ':') && 
+                (!w.ownerIds || w.ownerIds.length > 0)
+              ));
               if (selected === id) setSelected(null);
             }}
             onDoc={() => {
@@ -11980,6 +12013,8 @@ export function SimulatorPage({ gamificationMode = false }) {
               }
             }}
             theme={theme}
+            programmableBoards={components.filter(c => isProgrammableBoardType(c.type))}
+            onWireToBoard={handleWireToBoard}
           />
 
           <ComponentRenamePanel
