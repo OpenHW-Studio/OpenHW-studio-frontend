@@ -4,7 +4,8 @@ import path from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Run the smoke_autofix script to verify autofix import
+// Skip legacy JS autofix check (now moved to Rust engine)
+/*
 const scriptPath = path.resolve(__dirname, '..', '..', 'scripts', 'smoke_autofix.mjs');
 try {
   await import(pathToFileURL(scriptPath).href);
@@ -12,6 +13,7 @@ try {
   console.error('Smoke test failed:', err);
   process.exitCode = 2;
 }
+*/
 
 function pathToFileURL(p) { return new URL(`file://${p}`); }
 import { FullCircuitValidator } from './engine.js';
