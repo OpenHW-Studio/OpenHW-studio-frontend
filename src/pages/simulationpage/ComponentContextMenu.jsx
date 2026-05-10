@@ -50,7 +50,8 @@ const actionPanelStyle = (theme) => ({
 export const ComponentContextMenu = ({ 
   x, y, comp, info, visible, onClose, theme,
   onRename, onPinMap, onRotate, onDelete, onDoc,
-  updateComponentAttr, onValueEdit
+  updateComponentAttr, onValueEdit,
+  programmableBoards = [], onWireToBoard
 }) => {
   const menuRef = useRef(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -196,6 +197,8 @@ export const ComponentContextMenu = ({
     return () => document.removeEventListener('mousedown', handleGlobalClick);
   }, [visible, onClose]);
 
+  const flipLeft = x + 300 > window.innerWidth;
+
   if (!visible || !comp) return null;
 
   return (
@@ -203,7 +206,8 @@ export const ComponentContextMenu = ({
       ref={menuRef}
       style={{
         position: 'fixed',
-        left: x,
+        left: flipLeft ? 'auto' : x,
+        right: flipLeft ? (window.innerWidth - x) : 'auto',
         top: y,
         zIndex: 10001,
         pointerEvents: 'auto',
@@ -269,7 +273,8 @@ export const ComponentContextMenu = ({
                 {activeSubmenu === sub.label && !sub.disabled && (
                   <div style={{
                     position: 'absolute',
-                    left: 'calc(100% + 6px)',
+                    left: flipLeft ? 'auto' : 'calc(100% + 6px)',
+                    right: flipLeft ? 'calc(100% + 6px)' : 'auto',
                     top: '-4px',
                     ...actionPanelStyle(theme),
                     flexDirection: 'column',
@@ -277,7 +282,7 @@ export const ComponentContextMenu = ({
                     padding: '4px',
                     zIndex: 10002,
                   }}>
-                    <div style={{ position: 'absolute', left: '-8px', top: 0, bottom: 0, width: '8px', background: 'transparent' }} />
+                    <div style={{ position: 'absolute', left: flipLeft ? 'auto' : '-8px', right: flipLeft ? '-8px' : 'auto', top: 0, bottom: 0, width: '8px', background: 'transparent' }} />
                     {sub.options.map((opt, oIdx) => (
                       <div key={oIdx} style={{ position: 'relative' }} onMouseEnter={() => { if (opt.submenu) setActiveNestedSubmenu(opt.label); else setActiveNestedSubmenu(null); }}>
                         <button
@@ -303,8 +308,18 @@ export const ComponentContextMenu = ({
                         </button>
 
                         {opt.submenu && activeNestedSubmenu === opt.label && (
-                          <div style={{ position: 'absolute', left: 'calc(100% + 6px)', top: '-4px', ...actionPanelStyle(theme), flexDirection: 'column', minWidth: opt.customContent ? 'auto' : '140px', padding: '4px', zIndex: 10003 }}>
-                            <div style={{ position: 'absolute', left: '-8px', top: 0, bottom: 0, width: '8px', background: 'transparent' }} />
+                          <div style={{ 
+                            position: 'absolute', 
+                            left: flipLeft ? 'auto' : 'calc(100% + 6px)', 
+                            right: flipLeft ? 'calc(100% + 6px)' : 'auto',
+                            top: '-4px', 
+                            ...actionPanelStyle(theme), 
+                            flexDirection: 'column', 
+                            minWidth: opt.customContent ? 'auto' : '140px', 
+                            padding: '4px', 
+                            zIndex: 10003 
+                          }}>
+                            <div style={{ position: 'absolute', left: flipLeft ? 'auto' : '-8px', right: flipLeft ? '-8px' : 'auto', top: 0, bottom: 0, width: '8px', background: 'transparent' }} />
                             {opt.customContent ? opt.customContent : (
                               <>
                                 {opt.submenuHeader && <div style={{ padding: '4px 8px 3px', fontSize: '9px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, opacity: 0.6 }}>{opt.submenuHeader}</div>}
@@ -343,6 +358,45 @@ export const ComponentContextMenu = ({
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" /></svg>
           <span>Pin Map</span>
         </button>
+
+        {programmableBoards.length > 0 && !/(arduino|esp32|stm32|rp2040|pico)/i.test(comp.type) && (
+          <div 
+            className="canvas-menu-item context-menu-item"
+            style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px', position: 'relative' }}
+            onMouseEnter={() => { setActiveSubmenu('wireto'); setShowInfo(false); }}
+            onMouseLeave={() => setActiveSubmenu(null)}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <span>Wire to</span>
+            <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+
+            {activeSubmenu === 'wireto' && (
+              <div style={{
+                position: 'absolute',
+                left: flipLeft ? 'auto' : 'calc(100% + 6px)',
+                right: flipLeft ? 'calc(100% + 6px)' : 'auto',
+                top: '-4px',
+                ...actionPanelStyle(theme),
+                flexDirection: 'column',
+                minWidth: '140px',
+                padding: '4px',
+                zIndex: 10002,
+              }}>
+                <div style={{ position: 'absolute', left: flipLeft ? 'auto' : '-8px', right: flipLeft ? '-8px' : 'auto', top: 0, bottom: 0, width: '8px', background: 'transparent' }} />
+                {programmableBoards.map((board, bIdx) => (
+                  <button
+                    key={bIdx}
+                    className="canvas-menu-item context-menu-item"
+                    style={{ fontSize: '11px', padding: '4px 8px', gap: '6px' }}
+                    onClick={(e) => { e.stopPropagation(); onWireToBoard?.(comp.id, board.id); onClose(); }}
+                  >
+                    {board.id}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         
         <div 
           className="canvas-menu-item context-menu-item" 
@@ -453,6 +507,8 @@ export const ComponentRenamePanel = ({
 
   if (!visible || !comp) return null;
 
+  const flipLeft = x + 180 > window.innerWidth;
+
   const handleSubmit = (e) => {
     e?.preventDefault();
     if (value.trim() && value.trim() !== comp.id) {
@@ -467,7 +523,8 @@ export const ComponentRenamePanel = ({
       ref={containerRef}
       style={{
         position: 'fixed',
-        left: x,
+        left: flipLeft ? 'auto' : x,
+        right: flipLeft ? (window.innerWidth - x) : 'auto',
         top: y,
         zIndex: 10002,
         pointerEvents: 'auto',
@@ -568,6 +625,8 @@ export const ComponentValuePanel = ({ x, y, comp, attrKey = 'value', visible, on
 
   if (!visible || !comp) return null;
 
+  const flipLeft = x + 180 > window.innerWidth;
+
   const handleSubmit = (e) => {
     e?.preventDefault();
     if (value.trim()) {
@@ -582,7 +641,8 @@ export const ComponentValuePanel = ({ x, y, comp, attrKey = 'value', visible, on
       ref={containerRef}
       style={{
         position: 'fixed',
-        left: x,
+        left: flipLeft ? 'auto' : x,
+        right: flipLeft ? (window.innerWidth - x) : 'auto',
         top: y,
         zIndex: 10002,
         pointerEvents: 'auto',

@@ -27,7 +27,7 @@ self.onmessage = async (e) => {
 
     switch (type) {
       case 'GENERATE_AUTONOMOUS_SETUP': {
-        const { components, newComp, manifest, boardId } = payload;
+        let { components, wires, newComp, manifest, boardId, allowBreadboard, isRewire } = payload;
         
         reset();
         
@@ -37,12 +37,13 @@ self.onmessage = async (e) => {
           ingestComponent(c.id, c.type, c.x, c.y, c.w || 40, c.h || 40, pins);
         });
 
-        // Ingest the new component too
+        // Ingest the target component
         const newPins = payload.pinDefs?.[newComp.type] || [];
         ingestComponent(newComp.id, newComp.type, newComp.x, newComp.y, newComp.w || 40, newComp.h || 40, newPins);
 
-        // Generate the autonomous plan (Placement + Wiring + Code)
-        const plan = generateAutonomousSetup(newComp, manifest, boardId, payload.wires || []);
+        // Generate the autonomous plan
+        // Rust engine now handles boardId selection if empty AND re-wiring cleanup if isRewire is true
+        const plan = generateAutonomousSetup(newComp, manifest, boardId || '', wires || [], allowBreadboard || false, !!isRewire);
         
         if (typeof plan === 'string') {
           throw new Error(plan);

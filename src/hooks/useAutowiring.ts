@@ -23,12 +23,12 @@ export function useAutowiring() {
     };
   }, []);
 
-  const generateAutonomousSetup = useCallback((components: any[], wires: any[], newComp: any, manifest: any, boardId: string, pinDefs: any) => {
+  const generateAutonomousSetup = useCallback((components: any[], wires: any[], newComp: any, manifest: any, boardId: string | null, pinDefs: any, allowBreadboard: boolean = false, isRewire: boolean = false) => {
     return new Promise((resolve) => {
       resolversRef.current.set('autonomous', resolve);
       workerRef.current?.postMessage({
         type: 'GENERATE_AUTONOMOUS_SETUP',
-        payload: { components, wires, newComp, manifest, boardId, pinDefs }
+        payload: { components, wires, newComp, manifest, boardId, pinDefs, allowBreadboard, isRewire }
       });
     });
   }, []);
