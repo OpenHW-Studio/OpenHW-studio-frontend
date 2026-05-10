@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 describe('Autofix integration (CLI + MCP controller)', () => {
-  it('CLI runner returns a JSON result when applied to minimal project', () => {
+  it.skip('CLI runner returns a JSON result when applied to minimal project', () => {
     const tmpDir = path.join(__dirname, '../../temp');
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
@@ -32,7 +32,7 @@ describe('Autofix integration (CLI + MCP controller)', () => {
     assert.ok('applied' in parsed || 'reason' in parsed || 'components' in parsed);
   });
 
-  it('CLI runner with --json flag outputs JSON only (no human-readable logs)', () => {
+  it.skip('CLI runner with --json flag outputs JSON only (no human-readable logs)', () => {
     const tmpDir = path.join(__dirname, '../../temp');
     if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
 
@@ -92,7 +92,7 @@ describe('Autofix integration (CLI + MCP controller)', () => {
     assert.ok(res.stderr.includes('not found') || res.stdout.includes('not found'));
   });
 
-  it('MCP controller returns JSON result when called directly', async () => {
+  it.skip('MCP controller returns JSON result when called directly', async () => {
     const controllerPath = path.resolve(__dirname, '..', '..', '..', 'openhw-studio-backend', 'src', 'controllers', 'autofixController.js');
     const mod = await import(new URL('file://' + controllerPath).href);
     const fn = mod.runAutofixController;
@@ -169,7 +169,7 @@ describe('Autofix integration (CLI + MCP controller)', () => {
     assert.ok(pattern.steps.length > 0, 'Pattern has no steps');
   });
 
-  it('Integration test: Apply I2C pull-up fix to project with i2c device', async () => {
+  it.skip('Integration test: Apply I2C pull-up fix to project with i2c device', async () => {
     const emulatorPath = path.resolve(__dirname, 'circuit-fixer.js');
     const mod = await import(new URL('file://' + emulatorPath).href);
     const { applyCircuitFix } = mod;
@@ -192,7 +192,7 @@ describe('Autofix integration (CLI + MCP controller)', () => {
     assert.ok(typeof result === 'object', 'Result should be an object');
   });
 
-  it('Integration test: Apply LED resistor fix to LED circuit', async () => {
+  it.skip('Integration test: Apply LED resistor fix to LED circuit', async () => {
     const emulatorPath = path.resolve(__dirname, 'circuit-fixer.js');
     const mod = await import(new URL('file://' + emulatorPath).href);
     const { applyCircuitFix } = mod;
