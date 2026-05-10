@@ -42,15 +42,19 @@ function makeOrthogonal(pts) {
 
 // ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
 export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
-  if (waypoints.length > 0 && waypoints[0]._corner) {
-    let pts = [p1, ...waypoints, p2];
-    pts = pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+  if (waypoints.length > 0) {
+    // If manual waypoints (canvas clicks) or interactive corners exist, 
+    // we follow them strictly and skip the automatic Manhattan routing logic.
+    const pts = [p1, e1, ...waypoints, e2, p2].filter((pt, i, arr) => 
+      i === 0 || Math.abs(pt.x - arr[i - 1].x) > 0.1 || Math.abs(pt.y - arr[i - 1].y) > 0.1
+    );
     return makeOrthogonal(pts);
   }
 
   // offset is now a laneIndex (0-6). trunkShift centres the bundle symmetrically.
+  // 7px inter-wire spacing with a 10px "Safety Offset" to prevent overlaps with pin centers.
   const laneIndex = offset;
-  const trunkShift = (laneIndex - 3) * 5;  // -15..+15 px
+  const trunkShift = (laneIndex - 3) * 7 + (laneIndex < 3 ? -10 : 10); 
 
   const se1 = { ...e1 }, se2 = { ...e2 };
   const sdx1 = se1.x - p1.x, sdy1 = se1.y - p1.y;
@@ -68,9 +72,15 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
       midX = (se1.x + se2.x) / 2 + trunkShift;
     } else {
       const base = dir1 > 0 ? Math.max(se1.x, se2.x) : Math.min(se1.x, se2.x);
-      midX = base + dir1 * (20 + Math.abs(trunkShift));
+      midX = base + dir1 * (25 + Math.abs(trunkShift));
     }
-    midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
+    // We add extra points to ensure the "trunk" is staggered away from the pin X
+    midPts = [
+      { x: se1.x, y: se1.y },
+      { x: midX, y: se1.y },
+      { x: midX, y: se2.y },
+      { x: se2.x, y: se2.y }
+    ];
 
   } else if (!e1Horiz && !e2Horiz) {
     const dir1 = Math.sign(sdy1) || 1;
@@ -80,33 +90,27 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
       midY = (se1.y + se2.y) / 2 + trunkShift;
     } else {
       const base = dir1 > 0 ? Math.max(se1.y, se2.y) : Math.min(se1.y, se2.y);
-      midY = base + dir1 * (20 + Math.abs(trunkShift));
+      midY = base + dir1 * (25 + Math.abs(trunkShift));
     }
-    midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
+    // We add extra points to ensure the "trunk" is staggered away from the pin Y
+    midPts = [
+      { x: se1.x, y: se1.y },
+      { x: se1.x, y: midY },
+      { x: se2.x, y: midY },
+      { x: se2.x, y: se2.y }
+    ];
 
   } else if (e1Horiz && !e2Horiz) {
-    const cornerX = se2.x;
-    const cornerY = se1.y;
-    const dir1 = Math.sign(sdx1) || 1;
-    const dir2 = Math.sign(sdy2) || 1;
-    if ((cornerX - se1.x) * dir1 >= 0 && (cornerY - se2.y) * dir2 >= 0) {
-      midPts = [{ x: cornerX, y: cornerY }];
-    } else {
-      const stepX = se1.x + dir1 * (20 + laneIndex * 5);
-      midPts = [{ x: stepX, y: se1.y }, { x: stepX, y: se2.y }];
-    }
+    // Mixed: E1 Horiz, E2 Vert. 
+    const midX = se2.x + trunkShift;
+    const midY = se1.y + trunkShift;
+    midPts = [{ x: midX, y: se1.y }, { x: midX, y: midY }];
 
   } else {
-    const cornerX = se1.x;
-    const cornerY = se2.y;
-    const dir1 = Math.sign(sdy1) || 1;
-    const dir2 = Math.sign(sdx2) || 1;
-    if ((cornerY - se1.y) * dir1 >= 0 && (cornerX - se2.x) * dir2 >= 0) {
-      midPts = [{ x: cornerX, y: cornerY }];
-    } else {
-      const stepY = se1.y + dir1 * (20 + laneIndex * 5);
-      midPts = [{ x: se1.x, y: stepY }, { x: se2.x, y: stepY }];
-    }
+    // Mixed: E1 Vert, E2 Horiz.
+    const midX = se1.x + trunkShift;
+    const midY = se2.y + trunkShift;
+    midPts = [{ x: se1.x, y: midY }, { x: midX, y: midY }];
   }
 
   return makeOrthogonal([p1, se1, ...midPts, se2, p2]);
@@ -114,10 +118,9 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
 
 // ─── BUILD FULL WIRE PATH STRING ───────────────────────────────────────────
 export function buildWirePath(p1, e1, e2, p2, waypoints = [], pathOverride = null, offset = 0) {
-  if (pathOverride && pathOverride.length >= 2) {
-    const pts = offset === 0 ? pathOverride : pathOverride.map((pt, i) => (i === 0 || i === pathOverride.length - 1) ? pt : { x: pt.x + offset, y: pt.y + offset });
-    return renderRoundedPath(makeOrthogonal(pts));
-  }
+  // If we have a pathOverride (from Autowiring), we still want to apply staggering 
+  // to prevent overlapping. We do this by passing it through our computeWireOrthoPoints
+  // unless it's a completely freeform custom path.
   const pts = computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
   return renderRoundedPath(pts);
 }

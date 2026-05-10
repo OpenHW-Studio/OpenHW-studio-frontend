@@ -2,6 +2,7 @@ import { TopToolbox } from './TopToolbox';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
 import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
+import wireRouter from './lib/wireRouter';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
@@ -4019,7 +4020,23 @@ export default function SimulatorPage() {
                 const e1 = getPinExitPoint(fromParts[0], fromParts[1]) || p1;
                 const e2 = getPinExitPoint(toParts[0], toParts[1]) || p2;
                 const isSelectedWire = selected === w.id;
-                const wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
+                let wirePath = buildWirePath(p1, e1, e2, p2, w.waypoints);
+                // If wire requests autoRoute and has no manual corners, try router first
+                try {
+                  if (w.autoRoute && (!w.waypoints || w.waypoints.length === 0)) {
+                    const comps = componentsRef.current || [];
+                    const obstacles = wireRouter.buildObstaclesFromComponents(comps, { pad: 6 });
+                    const path = wireRouter.findPath(e1, e2, { cellSize: 24, clearance: 8, obstacles });
+                    if (path && path.length >= 2) {
+                      // ensure endpoints snap to pin exit stubs
+                      path[0] = { x: e1.x, y: e1.y };
+                      path[path.length - 1] = { x: e2.x, y: e2.y };
+                      wirePath = renderRoundedPath(path);
+                    }
+                  }
+                } catch (err) {
+                  // fallback silently to existing heuristics
+                }
 
                 return (
                   <g key={w.id} style={{ cursor: 'pointer' }} onClick={(e) => {

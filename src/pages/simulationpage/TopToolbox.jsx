@@ -7,6 +7,10 @@ import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 const MenuDropdown = ({ items, visible, isSubmenu = false, theme, setActiveMenu }) => {
   const [hoveredIdx, setHoveredIdx] = useState(null);
 
+  useEffect(() => {
+    if (!visible) setHoveredIdx(null);
+  }, [visible]);
+
   if (!visible) return null;
 
   return (
