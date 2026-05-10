@@ -741,6 +741,26 @@ export class BaseComponent {
             // Non-fatal telemetry hook.
         }
 
+        // If the component didn't provide custom telemetry, create a lightweight
+        // best-effort snapshot from top-level state keys so grading receives
+        // useful signals without requiring per-component edits.
+        try {
+            const ct = this.telemetryRuntime.customTelemetry || {};
+            const hasCustom = Object.keys(ct).length > 0;
+            if (!hasCustom && this.state && typeof this.state === 'object') {
+                const keys = Object.keys(this.state).slice(0, 12);
+                for (const k of keys) {
+                    try {
+                        (this.telemetryRuntime.customTelemetry as any)[k] = this.normalizeStateForTelemetry(this.state[k]);
+                    } catch {
+                        // ignore individual key failures
+                    }
+                }
+            }
+        } catch {
+            // Best-effort; telemetry should never throw the host update path.
+        }
+
         const timing = this.getUpdateTimingMetrics();
 
         return {
