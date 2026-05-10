@@ -2144,7 +2144,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const serialIngressArbitrationRef = useRef(new Map());
   const serialPausedRef = useRef(false);
   const serialPausedQueueRef = useRef([]);
-  const canvasWorkerRef = useRef(null);
 
   const canvasRef = useRef(null)
   const innerCanvasRef = useRef(null)   // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
@@ -8158,119 +8157,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   };
 
-  const downloadPngWasm = async () => {
-    if (isExporting) return;
-    setIsExporting(true);
-    try {
-      if (!canvasWorkerRef.current) {
-        canvasWorkerRef.current = new Worker(new URL('../../worker/canvas-worker.ts', import.meta.url), { type: 'module' });
-      }
-
-      const SCALE = 2.5;
-      const PAD = 60;
-
-      // 1. Gather component SVG assets from DOM
-      const assets = {};
-      const canvasEl = canvasRef.current;
-      const types = new Set(components.map(c => c.kind || c.type));
-      console.log('[PNG Export WASM] Harvesting assets for types:', Array.from(types));
-
-      for (const type of types) {
-        const el = canvasEl.querySelector(type);
-        if (el && el.shadowRoot) {
-          const svg = el.shadowRoot.querySelector('svg');
-          if (svg) {
-            // usvg (Rust) is a strict XML parser. 
-            // It doesn't like &nbsp; and it definitely doesn't like <br> tags in SVG.
-            assets[type] = svg.outerHTML
-              .replace(/&nbsp;/g, '&#160;')
-              .replace(/<br\s*\/?>/gi, ' ');
-          } else {
-            console.warn(`[PNG Export WASM] No SVG found in shadowRoot for ${type}`);
-          }
-        } else {
-          console.warn(`[PNG Export WASM] Element or shadowRoot missing for ${type}`);
-        }
-      }
-      console.log(`[PNG Export WASM] Harvested ${Object.keys(assets).length} assets`);
-
-      // 2. Prepare payload
-      const project = {
-        board,
-        components: components.map(c => ({
-          id: c.id,
-          type: c.type || c.kind,
-          x: c.x,
-          y: c.y,
-          w: c.w,
-          h: c.h,
-          rotate: c.rotate,
-          attrs: c.attrs
-        })),
-        wires: wires.map(w => ({
-          from: w.from,
-          to: w.to,
-          color: w.color || 'green',
-          waypoints: w.waypoints
-        }))
-      };
-
-      const fullMetadata = buildProjectPayload({
-        board,
-        components,
-        wires,
-        code,
-        blocklyXml,
-        blocklyGeneratedCode,
-        useBlocklyCode,
-        projectFiles,
-        openCodeTabs,
-        activeCodeFileId,
-        exportedAt: new Date().toISOString(),
-      });
-
-      const options = {
-        scale: SCALE,
-        padding: PAD,
-        background: '#070b14'
-      };
-
-      const requestId = Date.now();
-
-      const result = await new Promise((resolve, reject) => {
-        const handler = (e) => {
-          if (e.data.id === requestId) {
-            canvasWorkerRef.current.removeEventListener('message', handler);
-            if (e.data.type === 'RENDER_RESULT') resolve(e.data.payload);
-            else reject(new Error(e.data.payload));
-          }
-        };
-        canvasWorkerRef.current.addEventListener('message', handler);
-        canvasWorkerRef.current.postMessage({
-          type: 'RENDER_PNG',
-          id: requestId,
-          payload: { project, assets, options, fullMetadata }
-        });
-      });
-
-      console.log('[PNG Export WASM] rendered in', result.ms, 'ms');
-
-      const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-').replace(':', '-');
-      const filename = `circuit_${board}_${dateStr}_wasm.png`;
-      const url = URL.createObjectURL(result.blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-    } catch (err) {
-      console.error('[PNG Export WASM] Error:', err);
-      alert('WASM PNG export failed: ' + err.message);
-    } finally {
-      setIsExporting(false);
-    }
-  };
 
   // ── View Panel helpers — SVG Schematic Generator ─────────────────────────
   const generateSchematic = useCallback(() => {
@@ -8979,7 +8865,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         )}
 
         {/* TOP BAR */}
-        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} downloadPngWasm={downloadPngWasm} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} />
+        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} />
         {studentAssignmentMode && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
             <div style={{ minWidth: 0 }}>
