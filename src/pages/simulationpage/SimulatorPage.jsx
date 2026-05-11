@@ -4582,9 +4582,8 @@ export function SimulatorPage({ gamificationMode = false }) {
             ...plan,
             added_components: [
               mainCompWithPos, 
-              ...(plan.added_components || []).map(ac => ({ ...ac, ownerId: id })) // Tag helpers
-            ],
-            added_wires: (plan.added_wires || []).map(aw => ({ ...aw, ownerId: id })) // Tag wires
+              ...(plan.added_components || [])
+            ]
           };
 
           const result = calculateProjectPlanApplication(adjustedPlan, components, wires, PIN_DEFS);
@@ -5450,15 +5449,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       const mainCompId = compId;
       const adjustedPlan = {
         ...plan,
-        added_components: (plan.added_components || []).map(ac => ({
-          ...ac,
-          id: ac.id.includes(mainCompId) ? ac.id : `${ac.id}_${mainCompId}`,
-          ownerId: mainCompId // Tag helpers with the main component's ID
-        })),
-        added_wires: (plan.added_wires || []).map(aw => ({
-          ...aw,
-          ownerId: mainCompId // Tag wires with the main component's ID
-        }))
+        added_components: (plan.added_components || [])
       };
 
       const result = calculateProjectPlanApplication(adjustedPlan, components, wires, PIN_DEFS);

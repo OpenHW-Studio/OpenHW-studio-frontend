@@ -17,6 +17,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
   const removedComponents = plan.removedComponents || plan.removed_components || [];
   const removedWires = plan.removedWires || plan.removed_wires || [];
   const transformations = plan.transformations || [];
+  const defaultOwnerId = plan.main_component?.id || plan.ownerId || null;
 
   // Deep clone to prevent mutations
   const nextComponents = JSON.parse(JSON.stringify(currentComponents));
@@ -49,10 +50,12 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
     const existing = finalComponents.find(c => c.id === ac.id);
     if (existing) {
       // Shared Ownership: Append new owner to existing component
-      if (ac.ownerId) {
+      const oid = ac.ownerId || defaultOwnerId;
+      if (oid) {
         const ids = new Set(existing.ownerIds || (existing.ownerId ? [existing.ownerId] : []));
-        ids.add(ac.ownerId);
+        ids.add(oid);
         existing.ownerIds = Array.from(ids);
+        delete existing.ownerId; // Modernize to array system
       }
     } else {
       // Grid Snapping for Breadboards (15px)
@@ -75,7 +78,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
         w: ac.w || defW,
         h: ac.h || defH,
         attrs: ac.attrs || {},
-        ownerIds: ac.ownerId ? [ac.ownerId] : (ac.ownerIds || [])
+        ownerIds: (ac.ownerId || defaultOwnerId) ? [ac.ownerId || defaultOwnerId] : (ac.ownerIds || [])
       };
       finalComponents.push(addedComp);
 
@@ -98,9 +101,10 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
     
     if (existing) {
       // Shared Ownership: Append new owner to existing wire
-      if (aw.ownerId) {
+      const oid = aw.ownerId || defaultOwnerId;
+      if (oid) {
         const ids = new Set(existing.ownerIds || (existing.ownerId ? [existing.ownerId] : []));
-        ids.add(aw.ownerId);
+        ids.add(oid);
         existing.ownerIds = Array.from(ids);
       }
     } else {
@@ -114,7 +118,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
         isBelow: aw.isBelow || false,
         isSocket: aw.isSocket || false,
         offset: aw.lane || 0,
-        ownerIds: aw.ownerId ? [aw.ownerId] : (aw.ownerIds || [])
+        ownerIds: (aw.ownerId || defaultOwnerId) ? [aw.ownerId || defaultOwnerId] : (aw.ownerIds || [])
       });
     }
   });
@@ -124,6 +128,14 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
     const comp = finalComponents.find(c => c.id === trans.componentId);
     if (comp) { comp.rotation = trans.rotation; }
   });
+  // Ownership Audit Log
+  console.group('🛡️ Shared Ownership Audit');
+  console.table(finalComponents.map(c => ({
+    id: c.id,
+    type: c.type,
+    owners: (c.ownerIds || []).join(', ') || 'N/A'
+  })));
+  console.groupEnd();
 
   return { components: finalComponents, wires: nextWires };
 }
