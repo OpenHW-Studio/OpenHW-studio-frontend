@@ -35,6 +35,9 @@ export default function LandingPage() {
           <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--nav" />
         </div>
         <div className="nav-actions">
+          {/* ABOUT US BUTTON ADDED HERE */}
+          <button className="btn btn-ghost" onClick={() => navigate('/about')}>About Us</button>
+          
           <button className="btn btn-ghost" onClick={toggleTheme} title="Toggle Dark/Light Mode">
             {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
           </button>
@@ -111,11 +114,11 @@ export default function LandingPage() {
         <div className="features-grid">
           {[
             { icon: '💡', title: 'LED Blink',          slug: 'led-blink',         board: 'Arduino Uno', difficulty: 'Beginner',     xp: 100 },
-            { icon: '🌈', title: 'RGB LED',             slug: 'rgb-led',            board: 'Arduino Uno', difficulty: 'Beginner',     xp: 150 },
-            { icon: '🔊', title: 'Buzzer',              slug: 'buzzer',             board: 'Arduino Uno', difficulty: 'Beginner',     xp: 150 },
-            { icon: '🎛️', title: 'Potentiometer',       slug: 'potentiometer',      board: 'Arduino Uno', difficulty: 'Beginner',     xp: 175 },
-            { icon: '🔘', title: 'Button & Debounce',   slug: 'button-debounce',    board: 'Arduino Uno', difficulty: 'Beginner',     xp: 200 },
-            { icon: '🌡️', title: 'Temperature Sensor',  slug: 'temperature-sensor', board: 'Arduino Uno', difficulty: 'Intermediate', xp: 250 },
+            { icon: '🌈', title: 'RGB LED',            slug: 'rgb-led',           board: 'Arduino Uno', difficulty: 'Beginner',     xp: 150 },
+            { icon: '🔊', title: 'Buzzer',             slug: 'buzzer',            board: 'Arduino Uno', difficulty: 'Beginner',     xp: 150 },
+            { icon: '🎛️', title: 'Potentiometer',       slug: 'potentiometer',     board: 'Arduino Uno', difficulty: 'Beginner',     xp: 175 },
+            { icon: '🔘', title: 'Button & Debounce',  slug: 'button-debounce',   board: 'Arduino Uno', difficulty: 'Beginner',     xp: 200 },
+            { icon: '🌡️', title: 'Temperature Sensor', slug: 'temperature-sensor', board: 'Arduino Uno', difficulty: 'Intermediate', xp: 250 },
           ].map((p) => (
             <div
               className="feature-card"
