@@ -54,5 +54,24 @@
             "y": 70,
             "type": "digital"
         }
-    ]
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "VCC", "to": "arduino:3V3" },
+            { "from": "GND", "to": "arduino:GND" },
+            { "from": "SCLK", "to": "arduino:SCK" },
+            { "from": "DN", "to": "arduino:MOSI" },
+            { "from": "SCE", "to": "arduino:10" },
+            { "from": "RST", "to": "arduino:9" },
+            { "from": "DC", "to": "arduino:8" },
+            { "from": "LED", "to": "arduino:3V3" }
+        ]
+    },
+    "autocoding": {
+        "libraries": ["Adafruit PCD8544 Nokia 5110 LCD library", "Adafruit GFX Library"],
+        "arduino": {
+            "setup": "#include <Adafruit_PCD8544.h>\n\nAdafruit_PCD8544 display = Adafruit_PCD8544(8, 10, 9);\n\nvoid setup() {\n  display.begin();\n  display.setContrast(50);\n  display.clearDisplay();\n  display.setTextSize(1);\n  display.setTextColor(BLACK);\n  display.setCursor(0,0);\n  display.println(\"OpenHW Studio\");\n  display.println(\"Nokia 5110\");\n  display.display();\n  delay(2000);\n}",
+            "loop": "display.clearDisplay();\ndisplay.setCursor(0,0);\ndisplay.print(\"Timer: \");\ndisplay.print(millis()/1000);\ndisplay.println(\"s\");\ndisplay.display();\ndelay(500);"
+        }
+    }
 }
