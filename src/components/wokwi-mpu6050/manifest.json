@@ -1,0 +1,26 @@
+{
+    "type": "wokwi-mpu6050",
+    "label": "MPU6050 IMU Sensor",
+    "group": "Sensors",
+    "w": 126,
+    "h": 180,
+    "attrs": {
+        "accelX": "0",
+        "accelY": "0",
+        "accelZ": "1",
+        "gyroX": "0",
+        "gyroY": "0",
+        "gyroZ": "0",
+        "temperature": "25"
+    },
+    "pins": [
+        { "id": "VCC", "x": 8, "y": 20,  "type": "input",         "description": "Power (3.3V or 5V)" },
+        { "id": "GND", "x": 8, "y": 40,  "type": "input",         "description": "Ground" },
+        { "id": "SCL", "x": 8, "y": 60,  "type": "input",         "description": "I2C Clock (Arduino A5)" },
+        { "id": "SDA", "x": 8, "y": 80,  "type": "bidirectional", "description": "I2C Data (Arduino A4)" },
+        { "id": "XDA", "x": 8, "y": 100, "type": "bidirectional", "description": "Auxiliary I2C Data" },
+        { "id": "XCL", "x": 8, "y": 120, "type": "output",        "description": "Auxiliary I2C Clock" },
+        { "id": "ADO", "x": 8, "y": 140, "type": "input",         "description": "I2C Slave Address LSB" },
+        { "id": "INT", "x": 8, "y": 160, "type": "output",        "description": "Interrupt output" }
+    ]
+}

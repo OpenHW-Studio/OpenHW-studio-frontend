@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Relay Module</title>
+<style>* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #c9d1d9; line-height: 1.7; padding: 56px 72px; max-width: 1060px; margin: 0 auto; }
+h1 { font-size: 40px; font-weight: 800; color: #ffffff; margin-bottom: 14px; letter-spacing: -0.5px; }
+.subtitle { font-size: 16px; color: #8b949e; margin-bottom: 36px; border-bottom: 1px solid #21262d; padding-bottom: 28px; max-width: 760px; line-height: 1.8; }
+.preview-card { display: flex; gap: 44px; align-items: center; background: #161b22; border: 1px solid #21262d; border-radius: 14px; padding: 36px 40px; margin-bottom: 44px; }
+.preview-svg-col { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.preview-svg-label { font-size: 12px; color: #8b949e; margin-top: 8px; }
+.preview-text { flex: 1; }
+.preview-text p { color: #8b949e; font-size: 15px; margin-bottom: 16px; line-height: 1.8; }
+.preview-text p strong { color: #e6edf3; font-weight: 600; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.tag { border: 1px solid #30363d; color: #8b949e; font-size: 13px; padding: 4px 14px; border-radius: 20px; }
+h2 { font-size: 22px; font-weight: 700; color: #e6edf3; margin: 44px 0 16px; padding-bottom: 10px; border-bottom: 1px solid #21262d; }
+p.section-desc { color: #8b949e; font-size: 15px; margin-bottom: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 12px; }
+th { background: #161b22; color: #8b949e; padding: 12px 16px; text-align: left; border: 1px solid #21262d; font-weight: 600; font-size: 13px; }
+td { padding: 12px 16px; border: 1px solid #21262d; color: #c9d1d9; vertical-align: top; }
+tr:nth-child(even) td { background: #0d1117; }
+.try-section { background: #161b22; border: 1px solid #21262d; border-radius: 14px; padding: 32px 40px; margin: 44px 0; }
+.try-section h3 { font-size: 20px; font-weight: 700; color: #ffffff; margin-bottom: 12px; }
+.try-section .try-desc { color: #8b949e; font-size: 15px; margin-bottom: 22px; line-height: 1.8; }
+.circuit-box { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; padding: 28px 20px; margin-bottom: 22px; display: flex; align-items: center; justify-content: center; min-height: 130px; }
+.try-btn { display: inline-flex; align-items: center; gap: 10px; background: #1f6feb; color: #fff; border: none; padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.try-btn:hover { background: #388bfd; }
+.code-block { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 22px 26px; font-family: 'Courier New', monospace; font-size: 13px; color: #e6edf3; overflow-x: auto; position: relative; margin-bottom: 12px; line-height: 1.7; }
+.copy-btn { position: absolute; top: 12px; right: 12px; background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 4px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+.copy-btn:hover { color: #e6edf3; }
+.kw { color: #ff7b72; } .cm { color: #484f58; font-style: italic; } .str { color: #a5d6ff; } .num { color: #79c0ff; } .fn { color: #d2a8ff; }
+.note { background: #0d1117; border-left: 3px solid #2ea043; padding: 14px 18px; border-radius: 0 8px 8px 0; font-size: 14px; color: #8b949e; margin-top: 16px; line-height: 1.7; }
+.warn { background: #0d1117; border-left: 3px solid #f85149; padding: 14px 18px; border-radius: 0 8px 8px 0; font-size: 14px; color: #f85149; margin-bottom: 16px; }
+code { font-family: monospace; background: #161b22; padding: 2px 7px; border-radius: 4px; color: #79c0ff; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>Relay Module</h1>
+<p class="subtitle">Single-channel 5V relay module. Electrically isolates a high-voltage or high-current load from the Arduino. Default trigger is active LOW — the relay energises when the IN pin is pulled LOW.</p>
+
+<div class="preview-card">
+  <div class="preview-svg-col">
+    <svg width="240" height="96" viewBox="0 0 100 40" style="font-family: sans-serif;">
+      <rect x="0" y="0" width="94" height="40" rx="1.5" fill="#002b5e" />
+      <rect x="0" y="0" width="94" height="40" rx="1.5" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1" />
+      <rect x="0" y="2" width="14" height="36" rx="1" fill="#0a5eb0" stroke="#063b73" stroke-width="0.5" />
+      <path d="M 0 14 L 14 14 M 0 26 L 14 26" stroke="#063b73" stroke-width="0.5" />
+      <circle cx="7" cy="8" r="3.5" fill="#d1d5db" stroke="#9ca3af" stroke-width="0.5" />
+      <line x1="4.5" y1="8" x2="9.5" y2="8" stroke="#4b5563" stroke-width="1" />
+      <circle cx="7" cy="20" r="3.5" fill="#d1d5db" stroke="#9ca3af" stroke-width="0.5" />
+      <line x1="5" y1="18" x2="9" y2="22" stroke="#4b5563" stroke-width="1" />
+      <circle cx="7" cy="32" r="3.5" fill="#d1d5db" stroke="#9ca3af" stroke-width="0.5" />
+      <line x1="5" y1="34" x2="9" y2="30" stroke="#4b5563" stroke-width="1" />
+      <text x="15.5" y="9.5" fill="#ffffff" font-size="3.5" font-weight="bold">NO</text>
+      <text x="15.5" y="21.5" fill="#ffffff" font-size="3.5" font-weight="bold">COM</text>
+      <text x="15.5" y="33.5" fill="#ffffff" font-size="3.5" font-weight="bold">NC</text>
+      <rect x="26" y="2" width="40" height="36" rx="1" fill="#0a5eb0" stroke="#063b73" stroke-width="0.5" />
+      <text x="46" y="14" fill="#ffffff" font-size="3.5" text-anchor="middle">JQC3F-5VDC-C</text>
+      <text x="46" y="24" fill="#ffffff" font-size="2.5" text-anchor="middle">10A 250VAC 10A 30VDC</text>
+      <text x="46" y="30" fill="#ffffff" font-size="2.5" text-anchor="middle">10A 125VAC 10A 28VDC</text>
+      <rect x="69" y="16" width="2.5" height="4" fill="#111" />
+      <rect x="73" y="16" width="2.5" height="4" fill="#111" />
+      <rect x="69" y="22" width="2.5" height="4" fill="#111" />
+      <rect x="73" y="23" width="3" height="2" fill="#222" />
+      <line x1="75.5" y1="23" x2="75.5" y2="25" stroke="#9ca3af" stroke-width="0.5" />
+      <circle cx="80" cy="10" r="2.5" fill="#ef4444" />
+      <circle cx="80" cy="10" r="1" fill="#fca5a5" />
+      <circle cx="80" cy="30" r="2.5" fill="#14532d" />
+      <circle cx="80" cy="30" r="1" fill="#052e16" />
+      <text x="85" y="10.5" fill="#ffffff" font-size="3.5" font-weight="bold" text-anchor="end">IN</text>
+      <text x="85" y="21.5" fill="#ffffff" font-size="3.5" font-weight="bold" text-anchor="end">GND</text>
+      <text x="85" y="32.5" fill="#ffffff" font-size="3.5" font-weight="bold" text-anchor="end">VCC</text>
+      <rect x="87" y="6" width="3" height="28" rx="0.5" fill="#1a1a1a" />
+      <rect x="90" y="8.75" width="10" height="1.5" fill="#fbbf24" stroke="#d97706" stroke-width="0.25" />
+      <rect x="90" y="19.75" width="10" height="1.5" fill="#fbbf24" stroke="#d97706" stroke-width="0.25" />
+      <rect x="90" y="30.75" width="10" height="1.5" fill="#fbbf24" stroke="#d97706" stroke-width="0.25" />
+    </svg>
+    <span class="preview-svg-label">5V Relay Module</span>
+  </div>
+  <div class="preview-text">
+    <p>The relay module acts as an electrically controlled switch. When the <strong>IN pin is pulled LOW</strong>, the coil energises and COM connects to the Normally Open (NO) terminal. When IN is HIGH, COM stays connected to Normally Closed (NC).</p>
+    <p>In OpenHW Studio, right-click the relay during simulation to toggle between <strong>Active LOW</strong> and Active HIGH trigger modes.</p>
+    <div class="tags"><span class="tag">Active LOW</span><span class="tag">Digital Output</span><span class="tag">5V Coil</span><span class="tag">Normally Open / Closed</span></div>
+  </div>
+</div>
+
+<h2>Pin Reference</h2>
+<table>
+  <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+  <tr><td>VCC</td><td>Input</td><td>Relay coil power. Connect to 5V.</td></tr>
+<tr><td>GND</td><td>Input</td><td>Ground. Connect to Arduino GND.</td></tr>
+<tr><td>IN</td><td>Input</td><td>Control signal. Active LOW by default. Connect to Arduino digital pin.</td></tr>
+<tr><td>NC</td><td>Passive</td><td>Normally Closed — connected to COM when relay is de-energised.</td></tr>
+<tr><td>COM</td><td>Passive</td><td>Common terminal. Connect your load here.</td></tr>
+
+</table>
+
+<h2>Attributes</h2>
+<table>
+  <tr><th>Attribute</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>triggerLevel</code></td><td><code>low</code></td><td>Active LOW or Active HIGH. Changeable during simulation via context menu.</td></tr>
+
+</table>
+
+<div class="try-section">
+  <h3>&#9658; Try it in the Simulator</h3>
+  <p class="try-desc">Relay connected to Arduino pin 7. The relay toggles ON and OFF every 2 seconds. Watch the state indicator change on the component.</p>
+  <div class="circuit-box">
+    <svg width="520" height="115" viewBox="0 0 520 115" style="font-family: sans-serif;">
+      <g transform="translate(8,10)">
+        <rect x="0" y="0" width="130" height="90" rx="5" fill="#1a5276" stroke="#0d3d60" stroke-width="1.5"/>
+        <rect x="12" y="0" width="106" height="6" rx="1" fill="#111" stroke="#333" stroke-width="0.4"/>
+        <circle cx="16" cy="3" r="1.2" fill="#bbb"/><circle cx="22" cy="3" r="1.2" fill="#bbb"/><circle cx="28" cy="3" r="1.2" fill="#bbb"/><circle cx="34" cy="3" r="1.2" fill="#bbb"/><circle cx="40" cy="3" r="1.2" fill="#bbb"/><circle cx="46" cy="3" r="1.2" fill="#bbb"/><circle cx="52" cy="3" r="1.2" fill="#bbb"/><circle cx="58" cy="3" r="1.2" fill="#bbb"/><circle cx="64" cy="3" r="1.2" fill="#bbb"/><circle cx="70" cy="3" r="1.2" fill="#bbb"/><circle cx="76" cy="3" r="1.2" fill="#bbb"/><circle cx="82" cy="3" r="1.2" fill="#bbb"/><circle cx="88" cy="3" r="1.2" fill="#bbb"/><circle cx="94" cy="3" r="1.2" fill="#bbb"/><circle cx="108" cy="3" r="1.2" fill="#bbb"/><circle cx="114" cy="3" r="1.2" fill="#bbb"/>
+        <text x="65" y="12" text-anchor="middle" font-size="3.5" fill="#5d9cca" font-family="monospace">DIGITAL (PWM ~)</text>
+        <rect x="0" y="22" width="11" height="20" rx="1" fill="#2c3e50" stroke="#1a252f" stroke-width="0.8"/>
+        <rect x="44" y="34" width="38" height="28" rx="2" fill="#111" stroke="#333" stroke-width="0.8"/>
+        <text x="63" y="47" text-anchor="middle" font-size="3.5" fill="#666" font-family="monospace">ATmega</text>
+        <text x="63" y="53" text-anchor="middle" font-size="3.5" fill="#666" font-family="monospace">328P</text>
+        <rect x="38" y="38" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="38" y="42" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="38" y="46" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="38" y="50" width="6" height="1.5" rx="0.3" fill="#777"/>
+        <rect x="82" y="38" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="82" y="42" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="82" y="46" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="82" y="50" width="6" height="1.5" rx="0.3" fill="#777"/>
+        <circle cx="25" cy="48" r="10" fill="none" stroke="#1a6b9a" stroke-width="1.5"/>
+        <text x="25" y="53" text-anchor="middle" font-size="4" fill="#1a6b9a" font-family="sans-serif" font-weight="bold">UNO</text>
+        <circle cx="108" cy="24" r="2.2" fill="#2ecc71"/>
+        <rect x="14" y="84" width="42" height="6" rx="1" fill="#111" stroke="#333" stroke-width="0.4"/>
+        <text x="35" y="80" text-anchor="middle" font-size="3" fill="#5d9cca" font-family="monospace">POWER</text>
+        <circle cx="18" cy="87" r="1.2" fill="#bbb"/><circle cx="24" cy="87" r="1.2" fill="#bbb"/><circle cx="30" cy="87" r="1.2" fill="#bbb"/><circle cx="36" cy="87" r="1.2" fill="#bbb"/><circle cx="42" cy="87" r="1.2" fill="#bbb"/><circle cx="48" cy="87" r="1.2" fill="#bbb"/>
+        <rect x="62" y="84" width="38" height="6" rx="1" fill="#111" stroke="#333" stroke-width="0.4"/>
+        <text x="81" y="80" text-anchor="middle" font-size="3" fill="#5d9cca" font-family="monospace">ANALOG IN</text>
+        <circle cx="66" cy="87" r="1.2" fill="#bbb"/><circle cx="72" cy="87" r="1.2" fill="#bbb"/><circle cx="78" cy="87" r="1.2" fill="#bbb"/><circle cx="84" cy="87" r="1.2" fill="#bbb"/><circle cx="90" cy="87" r="1.2" fill="#bbb"/><circle cx="96" cy="87" r="1.2" fill="#bbb"/>
+        <rect x="96" y="44" width="12" height="6" rx="2" fill="#d4ac0d" stroke="#b7950b" stroke-width="0.6"/>
+        <circle cx="14" cy="18" r="2" fill="#e74c3c"/>
+        <circle cx="132" cy="38" r="2.5" fill="#f6ad55"/><text x="136" y="42" font-size="5.5" fill="#f6ad55">5V</text>
+        <circle cx="132" cy="55" r="2.5" fill="#68d391"/><text x="136" y="59" font-size="5.5" fill="#68d391">D7</text>
+        <circle cx="132" cy="70" r="2.5" fill="#888"/><text x="136" y="74" font-size="5.5" fill="#888">GND</text>
+      </g>
+      
+      <path d="M 140 48 L 190 48 L 190 15 L 490 15 L 490 66 L 460 66" fill="none" stroke="#f6ad55" stroke-width="1.5"/>
+      <path d="M 140 65 L 180 65 L 180 25 L 480 25 L 480 42 L 460 42" fill="none" stroke="#68d391" stroke-width="1.5"/>
+      <path d="M 140 80 L 170 80 L 170 95 L 500 95 L 500 54 L 460 54" fill="none" stroke="#888" stroke-width="1.5"/>
+
+      <g transform="translate(340, 30) scale(1.2)">
+        <rect x="0" y="0" width="94" height="40" rx="1.5" fill="#002b5e" />
+        <rect x="0" y="0" width="94" height="40" rx="1.5" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1" />
+        <rect x="0" y="2" width="14" height="36" rx="1" fill="#0a5eb0" stroke="#063b73" stroke-width="0.5" />
+        <path d="M 0 14 L 14 14 M 0 26 L 14 26" stroke="#063b73" stroke-width="0.5" />
+        <circle cx="7" cy="8" r="3.5" fill="#d1d5db" stroke="#9ca3af" stroke-width="0.5" />
+        <line x1="4.5" y1="8" x2="9.5" y2="8" stroke="#4b5563" stroke-width="1" />
+        <circle cx="7" cy="20" r="3.5" fill="#d1d5db" stroke="#9ca3af" stroke-width="0.5" />
+        <line x1="5" y1="18" x2="9" y2="22" stroke="#4b5563" stroke-width="1" />
+        <circle cx="7" cy="32" r="3.5" fill="#d1d5db" stroke="#9ca3af" stroke-width="0.5" />
+        <line x1="5" y1="34" x2="9" y2="30" stroke="#4b5563" stroke-width="1" />
+        <text x="15.5" y="9.5" fill="#ffffff" font-size="3.5" font-weight="bold">NO</text>
+        <text x="15.5" y="21.5" fill="#ffffff" font-size="3.5" font-weight="bold">COM</text>
+        <text x="15.5" y="33.5" fill="#ffffff" font-size="3.5" font-weight="bold">NC</text>
+        <rect x="26" y="2" width="40" height="36" rx="1" fill="#0a5eb0" stroke="#063b73" stroke-width="0.5" />
+        <text x="46" y="14" fill="#ffffff" font-size="3.5" text-anchor="middle">JQC3F-5VDC-C</text>
+        <text x="46" y="24" fill="#ffffff" font-size="2.5" text-anchor="middle">10A 250VAC 10A 30VDC</text>
+        <text x="46" y="30" fill="#ffffff" font-size="2.5" text-anchor="middle">10A 125VAC 10A 28VDC</text>
+        <rect x="69" y="16" width="2.5" height="4" fill="#111" />
+        <rect x="73" y="16" width="2.5" height="4" fill="#111" />
+        <rect x="69" y="22" width="2.5" height="4" fill="#111" />
+        <rect x="73" y="23" width="3" height="2" fill="#222" />
+        <line x1="75.5" y1="23" x2="75.5" y2="25" stroke="#9ca3af" stroke-width="0.5" />
+        <circle cx="80" cy="10" r="2.5" fill="#ef4444" />
+        <circle cx="80" cy="10" r="1" fill="#fca5a5" />
+        <circle cx="80" cy="30" r="2.5" fill="#14532d" />
+        <circle cx="80" cy="30" r="1" fill="#052e16" />
+        <text x="85" y="10.5" fill="#ffffff" font-size="3.5" font-weight="bold" text-anchor="end">IN</text>
+        <text x="85" y="21.5" fill="#ffffff" font-size="3.5" font-weight="bold" text-anchor="end">GND</text>
+        <text x="85" y="32.5" fill="#ffffff" font-size="3.5" font-weight="bold" text-anchor="end">VCC</text>
+        <rect x="87" y="6" width="3" height="28" rx="0.5" fill="#1a1a1a" />
+        <rect x="90" y="8.75" width="10" height="1.5" fill="#fbbf24" stroke="#d97706" stroke-width="0.25" />
+        <rect x="90" y="19.75" width="10" height="1.5" fill="#fbbf24" stroke="#d97706" stroke-width="0.25" />
+        <rect x="90" y="30.75" width="10" height="1.5" fill="#fbbf24" stroke="#d97706" stroke-width="0.25" />
+      </g>
+    </svg>
+  </div>
+  <button class="try-btn" onclick="openSimulator()">&#9658; &nbsp;Try in Simulator</button>
+</div>
+
+<h2>Example Code</h2>
+
+
+<div class="code-block">
+  <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><span class="kw">const int</span> RELAY_PIN = <span class="num">7</span>;
+
+<span class="kw">void</span> <span class="fn">setup</span>() {
+  <span class="fn">pinMode</span>(RELAY_PIN, OUTPUT);
+  <span class="cm">// Active LOW: HIGH = relay OFF (safe default on startup)</span>
+  <span class="fn">digitalWrite</span>(RELAY_PIN, HIGH);
+}
+
+<span class="kw">void</span> <span class="fn">loop</span>() {
+  <span class="fn">digitalWrite</span>(RELAY_PIN, LOW);   <span class="cm">// Relay ON</span>
+  <span class="fn">delay</span>(<span class="num">2000</span>);
+  <span class="fn">digitalWrite</span>(RELAY_PIN, HIGH);  <span class="cm">// Relay OFF</span>
+  <span class="fn">delay</span>(<span class="num">2000</span>);
+}</pre>
+</div>
+<div class="note">💡 Right-click the relay during simulation to switch between Active LOW and Active HIGH modes.</div>
+
+<script>
+function copyCode(btn) {
+  navigator.clipboard.writeText(btn.nextElementSibling.innerText).then(() => {
+    btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
+}
+function openSimulator() {
+  const code = ["const int RELAY_PIN = 7;","","void setup() {","  pinMode(RELAY_PIN, OUTPUT);","  digitalWrite(RELAY_PIN, HIGH);","}","","void loop() {","  digitalWrite(RELAY_PIN, LOW);","  delay(2000);","  digitalWrite(RELAY_PIN, HIGH);","  delay(2000);","}"].join("\n"); const diagram = { version:1, board:"arduino_uno", components:[{id:"uno_1",type:"wokwi-arduino-uno",x:100,y:150,attrs:{}},{id:"relay_1",type:"wokwi-relay-module",x:420,y:140,attrs:{triggerLevel:"low"}}], connections:[["uno_1:5V","relay_1:VCC","red",[]],["uno_1:GND.2","relay_1:GND","black",[]],["uno_1:7","relay_1:IN","green",[]]], code }; window.open("http://localhost:5173/simulator?circuit="+encodeURIComponent(JSON.stringify(diagram)),"_blank");
+}
+</script>
+</body>
+</html>

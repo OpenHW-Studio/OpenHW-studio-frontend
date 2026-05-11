@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MPU6050 IMU Sensor</title>
+<style>* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #c9d1d9; line-height: 1.7; padding: 56px 72px; max-width: 1060px; margin: 0 auto; }
+h1 { font-size: 40px; font-weight: 800; color: #ffffff; margin-bottom: 14px; letter-spacing: -0.5px; }
+.subtitle { font-size: 16px; color: #8b949e; margin-bottom: 36px; border-bottom: 1px solid #21262d; padding-bottom: 28px; max-width: 760px; line-height: 1.8; }
+.preview-card { display: flex; gap: 44px; align-items: center; background: #161b22; border: 1px solid #21262d; border-radius: 14px; padding: 36px 40px; margin-bottom: 44px; }
+.preview-svg-col { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.preview-svg-label { font-size: 12px; color: #8b949e; margin-top: 8px; }
+.preview-text { flex: 1; }
+.preview-text p { color: #8b949e; font-size: 15px; margin-bottom: 16px; line-height: 1.8; }
+.preview-text p strong { color: #e6edf3; font-weight: 600; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.tag { border: 1px solid #30363d; color: #8b949e; font-size: 13px; padding: 4px 14px; border-radius: 20px; }
+h2 { font-size: 22px; font-weight: 700; color: #e6edf3; margin: 44px 0 16px; padding-bottom: 10px; border-bottom: 1px solid #21262d; }
+p.section-desc { color: #8b949e; font-size: 15px; margin-bottom: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 12px; }
+th { background: #161b22; color: #8b949e; padding: 12px 16px; text-align: left; border: 1px solid #21262d; font-weight: 600; font-size: 13px; }
+td { padding: 12px 16px; border: 1px solid #21262d; color: #c9d1d9; vertical-align: top; }
+tr:nth-child(even) td { background: #0d1117; }
+.try-section { background: #161b22; border: 1px solid #21262d; border-radius: 14px; padding: 32px 40px; margin: 44px 0; }
+.try-section h3 { font-size: 20px; font-weight: 700; color: #ffffff; margin-bottom: 12px; }
+.try-section .try-desc { color: #8b949e; font-size: 15px; margin-bottom: 22px; line-height: 1.8; }
+.circuit-box { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; padding: 28px 20px; margin-bottom: 22px; display: flex; align-items: center; justify-content: center; min-height: 180px; }
+.try-btn { display: inline-flex; align-items: center; gap: 10px; background: #1f6feb; color: #fff; border: none; padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.try-btn:hover { background: #388bfd; }
+.code-block { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 22px 26px; font-family: 'Courier New', monospace; font-size: 13px; color: #e6edf3; overflow-x: auto; position: relative; margin-bottom: 12px; line-height: 1.7; }
+.copy-btn { position: absolute; top: 12px; right: 12px; background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 4px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+.copy-btn:hover { color: #e6edf3; }
+.kw { color: #ff7b72; } .cm { color: #484f58; font-style: italic; } .str { color: #a5d6ff; } .num { color: #79c0ff; } .fn { color: #d2a8ff; }
+.note { background: #0d1117; border-left: 3px solid #2ea043; padding: 14px 18px; border-radius: 0 8px 8px 0; font-size: 14px; color: #8b949e; margin-top: 16px; line-height: 1.7; }
+code { font-family: monospace; background: #161b22; padding: 2px 7px; border-radius: 4px; color: #79c0ff; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>MPU6050 IMU Sensor</h1>
+<p class="subtitle">A 6-DOF (Degrees of Freedom) Inertial Measurement Unit featuring a 3-axis accelerometer and a 3-axis gyroscope. Communicates via I2C. Essential for motion tracking and balancing robots.</p>
+
+<div class="preview-card">
+  <div class="preview-svg-col">
+    <svg width="150" height="214" viewBox="0 0 126 180" style="font-family: sans-serif;">
+      <rect x="0" y="0" width="126" height="180" rx="4" fill="#0d47a1" />
+      <rect x="0" y="0" width="126" height="180" rx="4" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1" />
+      <circle cx="114" cy="14" r="4.5" fill="#0f172a" stroke="#d1d5db" stroke-width="1.5"/>
+      <circle cx="114" cy="166" r="4.5" fill="#0f172a" stroke="#d1d5db" stroke-width="1.5"/>
+      
+      <circle cx="8" cy="20" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+      <circle cx="8" cy="40" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+      <circle cx="8" cy="60" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+      <circle cx="8" cy="80" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+      <circle cx="8" cy="100" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+      <circle cx="8" cy="120" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+      <circle cx="8" cy="140" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+      <circle cx="8" cy="160" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+      
+      <g fill="#ffffff" font-size="8" font-weight="bold" text-anchor="start">
+          <text x="16" y="23">VCC</text>
+          <text x="16" y="43">GND</text>
+          <text x="16" y="63">SCL</text>
+          <text x="16" y="83">SDA</text>
+          <text x="16" y="103">XDA</text>
+          <text x="16" y="123">XCL</text>
+          <text x="16" y="143">ADO</text>
+          <text x="16" y="163">INT</text>
+      </g>
+      
+      <text x="120" y="90" transform="rotate(-90 120 90)" text-anchor="middle" font-size="8.5" fill="#ffffff" font-weight="bold" letter-spacing="1">ITG/MPU</text>
+      <g stroke="#ffffff" stroke-width="1" fill="none">
+          <path d="M 66 155 L 86 155 m -4 -3 l 4 3 l -4 3" stroke-linecap="round" stroke-linejoin="round" />
+          <text x="91" y="157" fill="#ffffff" font-size="6" stroke="none" font-weight="bold">X</text>
+          <path d="M 66 155 L 66 135 m -3 4 l 3 -4 l 3 4" stroke-linecap="round" stroke-linejoin="round" />
+          <text x="64" y="130" fill="#ffffff" font-size="6" stroke="none" font-weight="bold">Y</text>
+          <circle cx="66" cy="155" r="3" />
+          <circle cx="66" cy="155" r="0.5" fill="#ffffff" stroke="none" />
+      </g>
+      
+      <rect x="38" y="70" width="36" height="36" rx="1.5" fill="#1e1e1e" />
+      <path d="M 36 75 v 26 m 40 -26 v 26 m -33 -7 h 26 m -26 40 h 26" stroke="#888" stroke-width="1.5" stroke-dasharray="1, 2"/>
+      <circle cx="42" cy="74" r="1.5" fill="#333" />
+      <text x="56" y="85" text-anchor="middle" font-size="4" fill="#aaa">INVENSENSE</text>
+      <text x="56" y="92" text-anchor="middle" font-size="4.5" fill="#e2e8f0">MPU-6050</text>
+      
+      <rect x="81" y="78" width="10" height="20" rx="1" fill="#d4ac0d" />
+      <rect x="81" y="78" width="10" height="4" fill="#b7950b" />
+      <rect x="54" y="24" width="8" height="14" fill="#111" />
+      <path d="M 52 26 v 10 m 12 -10 v 10" stroke="#888" stroke-width="1.5" stroke-dasharray="1, 2.5"/>
+      <rect x="68" y="26" width="5" height="10" fill="#a8a29e" />
+      <rect x="68" y="42" width="5" height="10" fill="#a8a29e" />
+      
+      <rect x="38" y="16" width="60" height="40" rx="3" fill="#0a0a0a" stroke="#333" stroke-width="1" />
+      <circle cx="92" cy="22" r="2.5" fill="#2ecc71" stroke="#222" stroke-width="0.5"/>
+      <text x="42" y="26" font-size="5" fill="#63b3ed" font-family="monospace">A:0.0,0.0,1.0g</text>
+      <text x="42" y="36" font-size="5" fill="#fc8181" font-family="monospace">G:0,0,0&deg;</text>
+      <text x="42" y="46" font-size="5" fill="#68d391" font-family="monospace">T:25.0&deg;C</text>
+    </svg>
+    <span class="preview-svg-label">6-DOF IMU</span>
+  </div>
+  <div class="preview-text">
+    <p>The MPU6050 tracks linear acceleration and angular velocity. The on-board Digital Motion Processor (DMP) can fuse this data to provide precise roll, pitch, and yaw angles.</p>
+    <p>In OpenHW Studio, the sensor features a <strong>Live Data HUD</strong>. Right-click the component on the canvas during simulation to manipulate gravity, rotation speed, and temperature in real-time.</p>
+    <div class="tags"><span class="tag">I2C Interface</span><span class="tag">Accelerometer</span><span class="tag">Gyroscope</span><span class="tag">Temperature</span></div>
+  </div>
+</div>
+
+<h2>Pin Reference</h2>
+<table>
+  <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+  <tr><td>VCC</td><td>Input</td><td>Power supply. Typically works on 3.3V or 5V (board has LDO regulator).</td></tr>
+<tr><td>GND</td><td>Input</td><td>Ground. Connect to Arduino GND.</td></tr>
+<tr><td>SCL</td><td>Input</td><td>I2C Clock. Connect to Arduino A5.</td></tr>
+<tr><td>SDA</td><td>Bidirectional</td><td>I2C Data. Connect to Arduino A4.</td></tr>
+<tr><td>XDA / XCL</td><td>Bidirectional</td><td>Auxiliary I2C lines to connect external magnetometers (optional).</td></tr>
+<tr><td>ADO</td><td>Input</td><td>I2C Address Select. LOW = 0x68 (Default). HIGH = 0x69.</td></tr>
+<tr><td>INT</td><td>Output</td><td>Interrupt pin. Used when DMP data is ready (optional).</td></tr>
+
+</table>
+
+<div class="try-section">
+  <h3>&#9658; Try it in the Simulator</h3>
+  <p class="try-desc">MPU6050 connected to the I2C bus. Right-click the IMU to open the control panel and change its spatial orientation.</p>
+  <div class="circuit-box">
+    <svg width="520" height="170" viewBox="0 0 520 170">
+      <g transform="translate(8,20)">
+        <rect x="0" y="0" width="130" height="90" rx="5" fill="#1a5276" stroke="#0d3d60" stroke-width="1.5"/>
+        <rect x="12" y="0" width="106" height="6" rx="1" fill="#111" stroke="#333" stroke-width="0.4"/>
+        <circle cx="16" cy="3" r="1.2" fill="#bbb"/><circle cx="22" cy="3" r="1.2" fill="#bbb"/><circle cx="28" cy="3" r="1.2" fill="#bbb"/><circle cx="34" cy="3" r="1.2" fill="#bbb"/><circle cx="40" cy="3" r="1.2" fill="#bbb"/><circle cx="46" cy="3" r="1.2" fill="#bbb"/><circle cx="52" cy="3" r="1.2" fill="#bbb"/><circle cx="58" cy="3" r="1.2" fill="#bbb"/><circle cx="64" cy="3" r="1.2" fill="#bbb"/><circle cx="70" cy="3" r="1.2" fill="#bbb"/><circle cx="76" cy="3" r="1.2" fill="#bbb"/><circle cx="82" cy="3" r="1.2" fill="#bbb"/><circle cx="88" cy="3" r="1.2" fill="#bbb"/><circle cx="94" cy="3" r="1.2" fill="#bbb"/><circle cx="108" cy="3" r="1.2" fill="#bbb"/><circle cx="114" cy="3" r="1.2" fill="#bbb"/>
+        <text x="65" y="12" text-anchor="middle" font-size="3.5" fill="#5d9cca" font-family="monospace">DIGITAL (PWM ~)</text>
+        <circle cx="25" cy="48" r="10" fill="none" stroke="#1a6b9a" stroke-width="1.5"/>
+        <text x="25" y="53" text-anchor="middle" font-size="4" fill="#1a6b9a" font-family="sans-serif" font-weight="bold">UNO</text>
+        <rect x="62" y="84" width="38" height="6" rx="1" fill="#111" stroke="#333" stroke-width="0.4"/>
+        <text x="81" y="80" text-anchor="middle" font-size="3" fill="#5d9cca" font-family="monospace">ANALOG IN</text>
+        
+        <circle cx="132" cy="35" r="2.5" fill="#e74c3c"/><text x="136" y="39" font-size="5.5" fill="#e74c3c" font-family="sans-serif">5V</text>
+        <circle cx="132" cy="55" r="2.5" fill="#888"/><text x="136" y="59" font-size="5.5" fill="#888" font-family="sans-serif">GND</text>
+        <circle cx="132" cy="75" r="2.5" fill="#f1c40f"/><text x="136" y="79" font-size="5.5" fill="#f1c40f" font-family="sans-serif">A4 (SDA)</text>
+        <circle cx="132" cy="95" r="2.5" fill="#3498db"/><text x="136" y="99" font-size="5.5" fill="#3498db" font-family="sans-serif">A5 (SCL)</text>
+      </g>
+
+      <path d="M 140 55 L 180 55 L 180 16 L 351 16" fill="none" stroke="#e74c3c" stroke-width="1.5"/>
+      <path d="M 140 75 L 200 75 L 200 32 L 351 32" fill="none" stroke="#888" stroke-width="1.5"/>
+      <path d="M 140 115 L 220 115 L 220 48 L 351 48" fill="none" stroke="#3498db" stroke-width="1.5"/>
+      <path d="M 140 95 L 240 95 L 240 64 L 351 64" fill="none" stroke="#f1c40f" stroke-width="1.5"/>
+
+      <g transform="translate(345, 0) scale(0.8)">
+          <rect x="0" y="0" width="126" height="180" rx="4" fill="#0d47a1" />
+          <rect x="0" y="0" width="126" height="180" rx="4" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1" />
+          
+          <circle cx="8" cy="20" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+          <circle cx="8" cy="40" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+          <circle cx="8" cy="60" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+          <circle cx="8" cy="80" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+          <circle cx="8" cy="100" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+          <circle cx="8" cy="120" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+          <circle cx="8" cy="140" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+          <circle cx="8" cy="160" r="3.5" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5" />
+          
+          <g fill="#ffffff" font-size="8" font-weight="bold" text-anchor="start" font-family="sans-serif">
+              <text x="16" y="23">VCC</text>
+              <text x="16" y="43">GND</text>
+              <text x="16" y="63">SCL</text>
+              <text x="16" y="83">SDA</text>
+              <text x="16" y="103">XDA</text>
+              <text x="16" y="123">XCL</text>
+              <text x="16" y="143">ADO</text>
+              <text x="16" y="163">INT</text>
+          </g>
+          
+          <text x="120" y="90" transform="rotate(-90 120 90)" text-anchor="middle" font-size="8.5" fill="#ffffff" font-weight="bold">ITG/MPU</text>
+          
+          <rect x="38" y="70" width="36" height="36" rx="1.5" fill="#1e1e1e" />
+          <text x="56" y="92" text-anchor="middle" font-size="4.5" fill="#e2e8f0" font-family="sans-serif">MPU-6050</text>
+          <rect x="81" y="78" width="10" height="20" rx="1" fill="#d4ac0d" />
+          
+          <rect x="38" y="16" width="60" height="40" rx="3" fill="#0a0a0a" stroke="#333" stroke-width="1" />
+          <circle cx="92" cy="22" r="2.5" fill="#2ecc71" stroke="#222" stroke-width="0.5"/>
+          <text x="42" y="26" font-size="5" fill="#63b3ed" font-family="monospace">A:0.0,0.0,1.0g</text>
+      </g>
+    </svg>
+  </div>
+  <button class="try-btn" onclick="openSimulator()">&#9658; &nbsp;Try in Simulator</button>
+</div>
+
+<h2>Example Code</h2>
+<p class="section-desc">Install the <strong>Adafruit_MPU6050</strong> library before running.</p>
+<div class="code-block">
+  <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><span class="kw">#include</span> <span class="str">&lt;Adafruit_MPU6050.h&gt;</span>
+<span class="kw">#include</span> <span class="str">&lt;Adafruit_Sensor.h&gt;</span>
+<span class="kw">#include</span> <span class="str">&lt;Wire.h&gt;</span>
+
+Adafruit_MPU6050 mpu;
+
+<span class="kw">void</span> <span class="fn">setup</span>() {
+  Serial.<span class="fn">begin</span>(<span class="num">115200</span>);
+  <span class="kw">if</span> (!mpu.<span class="fn">begin</span>()) {
+    Serial.<span class="fn">println</span>(<span class="str">"Failed to find MPU6050"</span>);
+    <span class="kw">while</span> (<span class="num">1</span>);
+  }
+}
+
+<span class="kw">void</span> <span class="fn">loop</span>() {
+  sensors_event_t a, g, temp;
+  mpu.<span class="fn">getEvent</span>(&amp;a, &amp;g, &amp;temp);
+
+  Serial.<span class="fn">print</span>(<span class="str">"Acc X: "</span>); Serial.<span class="fn">print</span>(a.acceleration.x);
+  Serial.<span class="fn">print</span>(<span class="str">", Y: "</span>); Serial.<span class="fn">print</span>(a.acceleration.y);
+  Serial.<span class="fn">print</span>(<span class="str">", Z: "</span>); Serial.<span class="fn">println</span>(a.acceleration.z);
+  <span class="fn">delay</span>(<span class="num">500</span>);
+}</pre>
+</div>
+<div class="note">💡 Use the context menu during simulation to adjust XYZ forces in real time.</div>
+
+<script>
+function copyCode(btn) {
+  navigator.clipboard.writeText(btn.nextElementSibling.innerText).then(() => {
+    btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
+}
+function openSimulator() {
+  const code = ["#include <Adafruit_MPU6050.h>","#include <Adafruit_Sensor.h>","#include <Wire.h>","Adafruit_MPU6050 mpu;","void setup() { Serial.begin(115200); if (!mpu.begin()) while (1); }","void loop() { sensors_event_t a, g, temp; mpu.getEvent(&a, &g, &temp); Serial.print(\"X: \"); Serial.println(a.acceleration.x); delay(500); }"].join("\n"); 
+  const diagram = { 
+    version:1, 
+    board:"arduino_uno", 
+    components:[
+      {id:"uno_1",type:"wokwi-arduino-uno",x:80,y:150,attrs:{}},
+      {id:"mpu_1",type:"wokwi-mpu6050",x:420,y:130,attrs:{}}
+    ], 
+    connections:[
+      ["uno_1:5V","mpu_1:VCC","red",[]],
+      ["uno_1:GND.2","mpu_1:GND","black",[]],
+      ["uno_1:A4","mpu_1:SDA","yellow",[]],
+      ["uno_1:A5","mpu_1:SCL","blue",[]]
+    ], 
+    code 
+  }; 
+  window.open("http://localhost:5173/simulator?circuit="+encodeURIComponent(JSON.stringify(diagram)),"_blank");
+}
+</script>
+</body>
+</html>

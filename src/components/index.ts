@@ -61,5 +61,13 @@ export { default as wokwiArduinoMega } from './wokwi-arduino-mega';
 export { default as wokwiAttiny85 } from './wokwi-attiny85';
 export { default as wokwiHcSr04 } from './wokwi-hc-sr04';
 
+// ── New components ───────────────────────────────────────────────────────────
+export { default as wokwiBMP180 } from './wokwi-bmp180';
+export { default as wokwiDS1307RTC } from './wokwi-ds1307-rtc';
+
+export { default as wokwiMPU6050 } from './wokwi-mpu6050';
+export { default as wokwiNTCThermistor } from './wokwi-ntc-thermistor';
+export { default as wokwiRelayModule } from './wokwi-relay-module';
+
 export { FullCircuitValidator, analyzeCodeHardwareSync, applyCircuitFix, ProtocolAnalyzer } from '../circuit-validation/index.js';
 

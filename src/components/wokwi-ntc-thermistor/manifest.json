@@ -1,0 +1,42 @@
+{
+  "type": "wokwi-ntc-comparator-module",
+  "label": "NTC Thermistor Module",
+  "group": "Sensors",
+  "description": "An analog and digital temperature sensor module using an NTC thermistor and an LM393 comparator.",
+  "w": 80,
+  "h": 160,
+  "attrs": {
+    "temperature": "25",
+    "threshold": "512"
+  },
+  "pins": [
+    {
+      "id": "A0",
+      "x": 20,
+      "y": 152.5,
+      "type": "analog_output",
+      "description": "Analog output (Raw NTC voltage)"
+    },
+    {
+      "id": "D0",
+      "x": 33,
+      "y": 152.5,
+      "type": "digital_output",
+      "description": "Digital output (Active Low trigger)"
+    },
+    {
+      "id": "GND",
+      "x": 46,
+      "y": 152.5,
+      "type": "power",
+      "description": "Ground"
+    },
+    {
+      "id": "VCC",
+      "x": 59,
+      "y": 152.5,
+      "type": "power",
+      "description": "Voltage Input (3.3V - 5V typical)"
+    }
+  ]
+}

@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DS1307 RTC Module</title>
+<style>* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #c9d1d9; line-height: 1.7; padding: 56px 72px; max-width: 1060px; margin: 0 auto; }
+h1 { font-size: 40px; font-weight: 800; color: #ffffff; margin-bottom: 14px; letter-spacing: -0.5px; }
+.subtitle { font-size: 16px; color: #8b949e; margin-bottom: 36px; border-bottom: 1px solid #21262d; padding-bottom: 28px; max-width: 760px; line-height: 1.8; }
+.preview-card { display: flex; gap: 44px; align-items: center; background: #161b22; border: 1px solid #21262d; border-radius: 14px; padding: 36px 40px; margin-bottom: 44px; }
+.preview-svg-col { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.preview-svg-label { font-size: 12px; color: #8b949e; margin-top: 8px; }
+.preview-text { flex: 1; }
+.preview-text p { color: #8b949e; font-size: 15px; margin-bottom: 16px; line-height: 1.8; }
+.preview-text p strong { color: #e6edf3; font-weight: 600; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.tag { border: 1px solid #30363d; color: #8b949e; font-size: 13px; padding: 4px 14px; border-radius: 20px; }
+h2 { font-size: 22px; font-weight: 700; color: #e6edf3; margin: 44px 0 16px; padding-bottom: 10px; border-bottom: 1px solid #21262d; }
+p.section-desc { color: #8b949e; font-size: 15px; margin-bottom: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 12px; }
+th { background: #161b22; color: #8b949e; padding: 12px 16px; text-align: left; border: 1px solid #21262d; font-weight: 600; font-size: 13px; }
+td { padding: 12px 16px; border: 1px solid #21262d; color: #c9d1d9; vertical-align: top; }
+tr:nth-child(even) td { background: #0d1117; }
+.try-section { background: #161b22; border: 1px solid #21262d; border-radius: 14px; padding: 32px 40px; margin: 44px 0; }
+.try-section h3 { font-size: 20px; font-weight: 700; color: #ffffff; margin-bottom: 12px; }
+.try-section .try-desc { color: #8b949e; font-size: 15px; margin-bottom: 22px; line-height: 1.8; }
+.circuit-box { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; padding: 28px 20px; margin-bottom: 22px; display: flex; align-items: center; justify-content: center; min-height: 130px; }
+.try-btn { display: inline-flex; align-items: center; gap: 10px; background: #1f6feb; color: #fff; border: none; padding: 12px 28px; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.try-btn:hover { background: #388bfd; }
+.code-block { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 22px 26px; font-family: 'Courier New', monospace; font-size: 13px; color: #e6edf3; overflow-x: auto; position: relative; margin-bottom: 12px; line-height: 1.7; }
+.copy-btn { position: absolute; top: 12px; right: 12px; background: #21262d; border: 1px solid #30363d; color: #8b949e; padding: 4px 12px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+.copy-btn:hover { color: #e6edf3; }
+.kw { color: #ff7b72; } .cm { color: #484f58; font-style: italic; } .str { color: #a5d6ff; } .num { color: #79c0ff; } .fn { color: #d2a8ff; }
+.note { background: #0d1117; border-left: 3px solid #2ea043; padding: 14px 18px; border-radius: 0 8px 8px 0; font-size: 14px; color: #8b949e; margin-top: 16px; line-height: 1.7; }
+.warn { background: #0d1117; border-left: 3px solid #f85149; padding: 14px 18px; border-radius: 0 8px 8px 0; font-size: 14px; color: #f85149; margin-bottom: 16px; }
+code { font-family: monospace; background: #161b22; padding: 2px 7px; border-radius: 4px; color: #79c0ff; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>DS1307 RTC Module</h1>
+<p class="subtitle">Real-Time Clock module with I2C interface (address 0x68). Keeps accurate time using a 32.768 kHz crystal and a CR2032 backup battery. Compatible with the RTClib library.</p>
+
+<div class="preview-card">
+  <div class="preview-svg-col">
+    <svg width="160" height="160" viewBox="0 0 160 160" style="font-family: sans-serif;">
+      <rect x="20" y="0" width="120" height="160" rx="4" fill="#184a8c" />
+      <rect x="20" y="0" width="120" height="160" rx="4" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1" />
+      <circle cx="28" cy="10" r="3.5" fill="#0f172a" stroke="#d1d5db" stroke-width="1"/>
+      <circle cx="132" cy="150" r="3.5" fill="#0f172a" stroke="#d1d5db" stroke-width="1"/>
+      <circle cx="28" cy="150" r="3.5" fill="#0f172a" stroke="#d1d5db" stroke-width="1"/>
+      <text x="80" y="16" text-anchor="middle" font-size="10" fill="#ffffff" font-weight="bold">Tiny RTC I2C</text>
+
+      <rect x="0" y="38.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="26" cy="40" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="0" y="58.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="26" cy="60" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="0" y="78.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="26" cy="80" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="0" y="98.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="26" cy="100" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="0" y="118.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="26" cy="120" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+
+      <text x="34" y="42.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">DS</text>
+      <text x="34" y="62.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">SCL</text>
+      <text x="34" y="82.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">SDA</text>
+      <text x="34" y="102.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">VCC</text>
+      <text x="34" y="122.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">GND</text>
+
+      <rect x="140" y="18.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="134" cy="20" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="140" y="38.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="134" cy="40" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="140" y="58.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="134" cy="60" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="140" y="78.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="134" cy="80" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="140" y="98.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="134" cy="100" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="140" y="118.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="134" cy="120" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+      <rect x="140" y="138.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+      <circle cx="134" cy="140" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+
+      <text x="126" y="22.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">SQ</text>
+      <text x="126" y="42.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">DS</text>
+      <text x="126" y="62.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">SCL</text>
+      <text x="126" y="82.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">SDA</text>
+      <text x="126" y="102.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">VCC</text>
+      <text x="126" y="122.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">GND</text>
+      <text x="126" y="142.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">BAT</text>
+
+      <rect x="54" y="25" width="14" height="34" rx="7" fill="#cbd5e1" stroke="#94a3b8" stroke-width="1.5" />
+      <path d="M 58 59 L 58 68 M 64 59 L 64 68" stroke="#94a3b8" stroke-width="2" />
+      <text x="51" y="38" text-anchor="end" font-size="5.5" fill="#ffffff">X1</text>
+
+      <rect x="85" y="26" width="18" height="7" fill="#ef4444" stroke="#7f1d1d" stroke-width="0.5"/>
+      <rect x="99" y="26" width="4" height="7" fill="#111" />
+      <text x="82" y="30" text-anchor="end" font-size="5.5" fill="#ffffff">D1</text>
+      
+      <g fill="#111" stroke="#333" stroke-width="0.5">
+          <rect x="85" y="42" width="10" height="5" rx="1"/>
+          <rect x="85" y="52" width="10" height="5" rx="1"/>
+          <rect x="85" y="62" width="10" height="5" rx="1"/>
+          <rect x="75" y="42" width="5" height="10" rx="1"/>
+          <rect x="75" y="57" width="5" height="10" rx="1"/>
+      </g>
+
+      <rect x="44" y="82" width="20" height="16" rx="1" fill="#1e1e1e" />
+      <text x="54" y="92" text-anchor="middle" font-size="4.5" fill="#888">DS1307</text>
+      <text x="42" y="92" text-anchor="end" font-size="5" fill="#ffffff">U1</text>
+
+      <rect x="96" y="82" width="20" height="16" rx="1" fill="#1e1e1e" />
+      <text x="106" y="92" text-anchor="middle" font-size="4.5" fill="#888">24C32</text>
+      <text x="118" y="92" text-anchor="start" font-size="5" fill="#ffffff">U2</text>
+
+      <rect x="55" y="122" width="50" height="16" rx="1.5" fill="#0a0a0a" stroke="#111" stroke-width="1" />
+      <text x="80" y="130" text-anchor="middle" font-size="6" fill="#2ecc71" font-family="monospace" font-weight="bold">
+          08:00:00
+      </text>
+      <text x="80" y="136" text-anchor="middle" font-size="4.5" fill="#68d391" font-family="monospace">
+          2024-01-01
+      </text>
+    </svg>
+    <span class="preview-svg-label">PCB Module</span>
+  </div>
+  <div class="preview-text">
+    <p>The DS1307 maintains date and time even when the Arduino is powered off, thanks to the <strong>CR2032 backup battery</strong>. It communicates over I2C using address <code>0x68</code> and stores all values in BCD format.</p>
+    <p>In OpenHW Studio, right-click the DS1307 during simulation to <strong>set the starting date and time</strong>. The clock advances in real time while the simulation runs.</p>
+    <div class="tags"><span class="tag">I2C (0x68)</span><span class="tag">Real-Time Clock</span><span class="tag">Battery Backup</span><span class="tag">BCD Registers</span></div>
+  </div>
+</div>
+
+<h2>Pin Reference</h2>
+<table>
+  <tr><th>Pin</th><th>Type</th><th>Description</th></tr>
+  <tr><td>VCC</td><td>Input</td><td>Power supply. Connect to 5V.</td></tr>
+<tr><td>GND</td><td>Input</td><td>Ground. Connect to Arduino GND.</td></tr>
+<tr><td>SDA</td><td>Bidirectional</td><td>I2C Data. Connect to Arduino A4.</td></tr>
+<tr><td>SCL</td><td>Input</td><td>I2C Clock. Connect to Arduino A5.</td></tr>
+</table>
+
+<h2>Attributes</h2>
+<table>
+  <tr><th>Attribute</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>datetime</code></td><td><code>2024-01-01T00:00:00</code></td><td>Starting date and time for the simulation clock. Adjustable via context menu.</td></tr>
+</table>
+
+<div class="try-section">
+  <h3>&#9658; Try it in the Simulator</h3>
+  <p class="try-desc">DS1307 wired to I2C (A4/A5). The sketch reads the current time every second and prints it to the Serial Monitor.</p>
+  <div class="circuit-box">
+    <svg width="520" height="115" viewBox="0 0 520 115" style="font-family: sans-serif;">
+      <g transform="translate(8,10)">
+        <rect x="0" y="0" width="130" height="90" rx="5" fill="#1a5276" stroke="#0d3d60" stroke-width="1.5"/>
+        <rect x="12" y="0" width="106" height="6" rx="1" fill="#111" stroke="#333" stroke-width="0.4"/>
+        <circle cx="16" cy="3" r="1.2" fill="#bbb"/><circle cx="22" cy="3" r="1.2" fill="#bbb"/><circle cx="28" cy="3" r="1.2" fill="#bbb"/><circle cx="34" cy="3" r="1.2" fill="#bbb"/><circle cx="40" cy="3" r="1.2" fill="#bbb"/><circle cx="46" cy="3" r="1.2" fill="#bbb"/><circle cx="52" cy="3" r="1.2" fill="#bbb"/><circle cx="58" cy="3" r="1.2" fill="#bbb"/><circle cx="64" cy="3" r="1.2" fill="#bbb"/><circle cx="70" cy="3" r="1.2" fill="#bbb"/><circle cx="76" cy="3" r="1.2" fill="#bbb"/><circle cx="82" cy="3" r="1.2" fill="#bbb"/><circle cx="88" cy="3" r="1.2" fill="#bbb"/><circle cx="94" cy="3" r="1.2" fill="#bbb"/><circle cx="108" cy="3" r="1.2" fill="#bbb"/><circle cx="114" cy="3" r="1.2" fill="#bbb"/>
+        <text x="65" y="12" text-anchor="middle" font-size="3.5" fill="#5d9cca" font-family="monospace">DIGITAL (PWM ~)</text>
+        <rect x="0" y="22" width="11" height="20" rx="1" fill="#2c3e50" stroke="#1a252f" stroke-width="0.8"/>
+        <rect x="44" y="34" width="38" height="28" rx="2" fill="#111" stroke="#333" stroke-width="0.8"/>
+        <text x="63" y="47" text-anchor="middle" font-size="3.5" fill="#666" font-family="monospace">ATmega</text>
+        <text x="63" y="53" text-anchor="middle" font-size="3.5" fill="#666" font-family="monospace">328P</text>
+        <rect x="38" y="38" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="38" y="42" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="38" y="46" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="38" y="50" width="6" height="1.5" rx="0.3" fill="#777"/>
+        <rect x="82" y="38" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="82" y="42" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="82" y="46" width="6" height="1.5" rx="0.3" fill="#777"/><rect x="82" y="50" width="6" height="1.5" rx="0.3" fill="#777"/>
+        <circle cx="25" cy="48" r="10" fill="none" stroke="#1a6b9a" stroke-width="1.5"/>
+        <text x="25" y="53" text-anchor="middle" font-size="4" fill="#1a6b9a" font-family="sans-serif" font-weight="bold">UNO</text>
+        <circle cx="108" cy="24" r="2.2" fill="#2ecc71"/>
+        <rect x="14" y="84" width="42" height="6" rx="1" fill="#111" stroke="#333" stroke-width="0.4"/>
+        <text x="35" y="80" text-anchor="middle" font-size="3" fill="#5d9cca" font-family="monospace">POWER</text>
+        <circle cx="18" cy="87" r="1.2" fill="#bbb"/><circle cx="24" cy="87" r="1.2" fill="#bbb"/><circle cx="30" cy="87" r="1.2" fill="#bbb"/><circle cx="36" cy="87" r="1.2" fill="#bbb"/><circle cx="42" cy="87" r="1.2" fill="#bbb"/><circle cx="48" cy="87" r="1.2" fill="#bbb"/>
+        <rect x="62" y="84" width="38" height="6" rx="1" fill="#111" stroke="#333" stroke-width="0.4"/>
+        <text x="81" y="80" text-anchor="middle" font-size="3" fill="#5d9cca" font-family="monospace">ANALOG IN</text>
+        <circle cx="66" cy="87" r="1.2" fill="#bbb"/><circle cx="72" cy="87" r="1.2" fill="#bbb"/><circle cx="78" cy="87" r="1.2" fill="#bbb"/><circle cx="84" cy="87" r="1.2" fill="#bbb"/><circle cx="90" cy="87" r="1.2" fill="#bbb"/><circle cx="96" cy="87" r="1.2" fill="#bbb"/>
+        <rect x="96" y="44" width="12" height="6" rx="2" fill="#d4ac0d" stroke="#b7950b" stroke-width="0.6"/>
+        <circle cx="14" cy="18" r="2" fill="#e74c3c"/>
+        <circle cx="132" cy="38" r="2.5" fill="#f6ad55"/><text x="136" y="42" font-size="5.5" fill="#f6ad55">5V</text>
+        <circle cx="132" cy="53" r="2.5" fill="#888"/><text x="136" y="57" font-size="5.5" fill="#888">GND</text>
+        <circle cx="132" cy="68" r="2.5" fill="#68d391"/><text x="136" y="72" font-size="5.5" fill="#68d391">A4</text>
+        <circle cx="132" cy="83" r="2.5" fill="#63b3ed"/><text x="136" y="87" font-size="5.5" fill="#63b3ed">A5</text>
+      </g>
+
+      <path d="M 140 48 L 220 48 L 220 70 L 340 70" fill="none" stroke="#f6ad55" stroke-width="1.5"/>
+      <path d="M 140 63 L 240 63 L 240 84 L 340 84" fill="none" stroke="#888" stroke-width="1.5"/>
+      <path d="M 140 78 L 260 78 L 260 56 L 340 56" fill="none" stroke="#68d391" stroke-width="1.5"/>
+      <path d="M 140 93 L 280 93 L 280 42 L 340 42" fill="none" stroke="#63b3ed" stroke-width="1.5"/>
+
+      <g transform="translate(340, 0) scale(0.7)">
+          <rect x="20" y="0" width="120" height="160" rx="4" fill="#184a8c" />
+          <rect x="20" y="0" width="120" height="160" rx="4" fill="none" stroke="#ffffff" stroke-opacity="0.15" stroke-width="1" />
+          <circle cx="28" cy="10" r="3.5" fill="#0f172a" stroke="#d1d5db" stroke-width="1"/>
+          <circle cx="132" cy="150" r="3.5" fill="#0f172a" stroke="#d1d5db" stroke-width="1"/>
+          <circle cx="28" cy="150" r="3.5" fill="#0f172a" stroke="#d1d5db" stroke-width="1"/>
+          <text x="80" y="16" text-anchor="middle" font-size="10" fill="#ffffff" font-weight="bold">Tiny RTC I2C</text>
+          
+          <rect x="0" y="38.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="26" cy="40" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="0" y="58.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="26" cy="60" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="0" y="78.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="26" cy="80" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="0" y="98.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="26" cy="100" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="0" y="118.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="26" cy="120" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          
+          <text x="34" y="42.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">DS</text>
+          <text x="34" y="62.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">SCL</text>
+          <text x="34" y="82.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">SDA</text>
+          <text x="34" y="102.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">VCC</text>
+          <text x="34" y="122.5" text-anchor="start" font-size="6.5" fill="#ffffff" font-weight="bold">GND</text>
+          
+          <rect x="140" y="18.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="134" cy="20" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="140" y="38.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="134" cy="40" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="140" y="58.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="134" cy="60" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="140" y="78.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="134" cy="80" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="140" y="98.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="134" cy="100" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="140" y="118.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="134" cy="120" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          <rect x="140" y="138.5" width="20" height="3" fill="#fbbf24" stroke="#d97706" stroke-width="0.5" />
+          <circle cx="134" cy="140" r="2.5" fill="#0f172a" stroke="#fbbf24" stroke-width="0.8" />
+          
+          <text x="126" y="22.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">SQ</text>
+          <text x="126" y="42.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">DS</text>
+          <text x="126" y="62.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">SCL</text>
+          <text x="126" y="82.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">SDA</text>
+          <text x="126" y="102.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">VCC</text>
+          <text x="126" y="122.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">GND</text>
+          <text x="126" y="142.5" text-anchor="end" font-size="6.5" fill="#ffffff" font-weight="bold">BAT</text>
+          
+          <rect x="54" y="25" width="14" height="34" rx="7" fill="#cbd5e1" stroke="#94a3b8" stroke-width="1.5" />
+          <path d="M 58 59 L 58 68 M 64 59 L 64 68" stroke="#94a3b8" stroke-width="2" />
+          <text x="51" y="38" text-anchor="end" font-size="5.5" fill="#ffffff">X1</text>
+          
+          <rect x="85" y="26" width="18" height="7" fill="#ef4444" stroke="#7f1d1d" stroke-width="0.5"/>
+          <rect x="99" y="26" width="4" height="7" fill="#111" />
+          <text x="82" y="30" text-anchor="end" font-size="5.5" fill="#ffffff">D1</text>
+          
+          <g fill="#111" stroke="#333" stroke-width="0.5">
+              <rect x="85" y="42" width="10" height="5" rx="1"/>
+              <rect x="85" y="52" width="10" height="5" rx="1"/>
+              <rect x="85" y="62" width="10" height="5" rx="1"/>
+              <rect x="75" y="42" width="5" height="10" rx="1"/>
+              <rect x="75" y="57" width="5" height="10" rx="1"/>
+          </g>
+          
+          <rect x="44" y="82" width="20" height="16" rx="1" fill="#1e1e1e" />
+          <text x="54" y="92" text-anchor="middle" font-size="4.5" fill="#888">DS1307</text>
+          <text x="42" y="92" text-anchor="end" font-size="5" fill="#ffffff">U1</text>
+          
+          <rect x="96" y="82" width="20" height="16" rx="1" fill="#1e1e1e" />
+          <text x="106" y="92" text-anchor="middle" font-size="4.5" fill="#888">24C32</text>
+          <text x="118" y="92" text-anchor="start" font-size="5" fill="#ffffff">U2</text>
+          
+          <rect x="55" y="122" width="50" height="16" rx="1.5" fill="#0a0a0a" stroke="#111" stroke-width="1" />
+          <text x="80" y="130" text-anchor="middle" font-size="6" fill="#2ecc71" font-family="monospace" font-weight="bold">08:00:00</text>
+          <text x="80" y="136" text-anchor="middle" font-size="4.5" fill="#68d391" font-family="monospace">2024-01-01</text>
+      </g>
+    </svg>
+  </div>
+  <button class="try-btn" onclick="openSimulator()">&#9658; &nbsp;Try in Simulator</button>
+</div>
+
+<h2>Example Code</h2>
+
+<p class="section-desc">Install the <strong>RTClib</strong> library before running.</p>
+<div class="code-block">
+  <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+<pre><span class="kw">#include</span> <span class="str">&lt;Wire.h&gt;</span>
+<span class="kw">#include</span> <span class="str">&lt;RTClib.h&gt;</span>
+
+RTC_DS1307 rtc;
+
+<span class="kw">void</span> <span class="fn">setup</span>() {
+  Serial.<span class="fn">begin</span>(<span class="num">9600</span>);
+  Wire.<span class="fn">begin</span>();
+  rtc.<span class="fn">begin</span>();
+  <span class="kw">if</span> (!rtc.<span class="fn">isrunning</span>())
+    rtc.<span class="fn">adjust</span>(DateTime(F(__DATE__), F(__TIME__)));
+}
+
+<span class="kw">void</span> <span class="fn">loop</span>() {
+  DateTime now = rtc.<span class="fn">now</span>();
+  Serial.<span class="fn">print</span>(now.hour());  Serial.<span class="fn">print</span>(<span class="str">':'</span>);
+  Serial.<span class="fn">print</span>(now.minute()); Serial.<span class="fn">print</span>(<span class="str">':'</span>);
+  Serial.<span class="fn">println</span>(now.second());
+  <span class="fn">delay</span>(<span class="num">1000</span>);
+}</pre>
+</div>
+<div class="note">💡 Right-click the DS1307 during simulation to set the date and time. The clock ticks in real time.</div>
+
+<script>
+function copyCode(btn) {
+  navigator.clipboard.writeText(btn.nextElementSibling.innerText).then(() => {
+    btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
+}
+function openSimulator() {
+  const code = ["#include <Wire.h>","#include <RTClib.h>","RTC_DS1307 rtc;","void setup() { Serial.begin(9600); Wire.begin(); rtc.begin(); }","void loop() { DateTime now = rtc.now(); Serial.print(now.hour()); Serial.print(':'); Serial.print(now.minute()); Serial.print(':'); Serial.println(now.second()); delay(1000); }"].join("\n"); 
+  const diagram = { 
+    version:1, 
+    board:"arduino_uno", 
+    components:[
+      {id:"uno_1",type:"wokwi-arduino-uno",x:100,y:150,attrs:{}},
+      {id:"rtc_1",type:"wokwi-ds1307-rtc",x:420,y:140,attrs:{datetime:"2024-01-01T08:00:00"}}
+    ], 
+    connections:[
+      ["uno_1:5V","rtc_1:VCC_2","red",[]],
+      ["uno_1:GND.2","rtc_1:GND_2","black",[]],
+      ["uno_1:A4","rtc_1:SDA_2","blue",[]],
+      ["uno_1:A5","rtc_1:SCL_2","green",[]]
+    ], 
+    code 
+  }; 
+  window.open("http://localhost:5173/simulator?circuit="+encodeURIComponent(JSON.stringify(diagram)),"_blank");
+}
+</script>
+</body>
+</html>

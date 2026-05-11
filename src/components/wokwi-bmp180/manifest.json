@@ -1,0 +1,42 @@
+{
+  "type": "wokwi-bmp180-breakout",
+  "label": "BMP180 Pressure Sensor Breakout",
+  "group": "Sensors",
+  "description": "A breakout board for the Bosch BMP180 digital pressure and temperature sensor.",
+  "w": 72,
+  "h": 50,
+  "attrs": {
+    "pressure": "1013.25",
+    "temperature": "25.0"
+  },
+  "pins": [
+    {
+      "id": "VIN",
+      "x": 10,
+      "y": 48,
+      "type": "power",
+      "description": "Voltage Input (3.3V - 5V typical due to onboard regulator)"
+    },
+    {
+      "id": "GND",
+      "x": 25,
+      "y": 48,
+      "type": "power",
+      "description": "Ground"
+    },
+    {
+      "id": "SCL",
+      "x": 40,
+      "y": 48,
+      "type": "input",
+      "description": "I2C Serial Clock"
+    },
+    {
+      "id": "SDA",
+      "x": 55,
+      "y": 48,
+      "type": "bidirectional",
+      "description": "I2C Serial Data"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+    "type": "wokwi-relay-module",
+    "label": "Relay Module",
+    "group": "Outputs",
+    "w": 200,
+    "h": 80,
+    "attrs": {
+        "state": "off",
+        "triggerLevel": "low"
+    },
+    "pins": [
+        { "id": "NO",  "x": 0,   "y": 20, "type": "passive", "description": "Normally Open terminal" },
+        { "id": "COM", "x": 0,   "y": 40, "type": "passive", "description": "Common terminal" },
+        { "id": "NC",  "x": 0,   "y": 60, "type": "passive", "description": "Normally Closed terminal" },
+        { "id": "IN",  "x": 174, "y": 16, "type": "input",   "description": "Control signal from Arduino" },
+        { "id": "GND", "x": 174, "y": 40, "type": "input",   "description": "Ground" },
+        { "id": "VCC", "x": 174, "y": 64, "type": "input",   "description": "Power Supply (5V)" }
+    ]
+}

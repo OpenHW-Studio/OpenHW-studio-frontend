@@ -735,7 +735,8 @@ export class FullCircuitValidator {
     }
 
     getComponentRegistry() {
-        const registry = emulatorComponents.default || emulatorComponents.registry || emulatorComponents;
+        const mods = emulatorComponents;
+        const registry = mods['default'] || mods['registry'] || mods;
         return registry && typeof registry === 'object' ? registry : {};
     }
 

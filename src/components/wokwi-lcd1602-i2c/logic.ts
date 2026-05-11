@@ -20,8 +20,8 @@ export class Lcd1602I2CLogic extends BaseComponent {
     }
 
     onI2CStart(addr: number, isRead: boolean) {
-        // Default PCF8574 I2C address is usually 0x27
-        if (addr === 0x27) return true; 
+        const addr7 = (addr > 0x7F) ? (addr >> 1) : addr;
+        if (addr7 === 0x27) return true; 
         return false;
     }
 
