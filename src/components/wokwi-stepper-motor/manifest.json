@@ -8,44 +8,37 @@
         "step_angle": "1.8"
     },
     "pins": [
-        {
-            "id": "A+",
-            "x": 10,
-            "y": 50,
-            "type": "digital"
-        },
-        {
-            "id": "A-",
-            "x": 20,
-            "y": 50,
-            "type": "digital"
-        },
-        {
-            "id": "B+",
-            "x": 30,
-            "y": 50,
-            "type": "digital"
-        },
-        {
-            "id": "B-",
-            "x": 40,
-            "y": 50,
-            "type": "digital"
-        }
+        { "id": "A+", "x": 10, "y": 50, "type": "digital" },
+        { "id": "A-", "x": 20, "y": 50, "type": "digital" },
+        { "id": "B+", "x": 30, "y": 50, "type": "digital" },
+        { "id": "B-", "x": 40, "y": 50, "type": "digital" }
     ],
     "autowiring": {
+        "helpers": [
+            { "type": "wokwi-a4988", "id": "driver" },
+            { "type": "wokwi-power-supply", "id": "psu", "attrs": { "voltage": "12.0" } }
+        ],
         "connections": [
-            { "from": "A+", "to": "a4988_1:1A" },
-            { "from": "A-", "to": "a4988_1:2A" },
-            { "from": "B+", "to": "a4988_1:1B" },
-            { "from": "B-", "to": "a4988_1:2B" }
+            { "from": "A+", "to": "helper:driver:1A" },
+            { "from": "A-", "to": "helper:driver:2A" },
+            { "from": "B+", "to": "helper:driver:1B" },
+            { "from": "B-", "to": "helper:driver:2B" },
+            
+            { "from": "helper:driver:STEP",      "to": "arduino:8" },
+            { "from": "helper:driver:DIR",       "to": "arduino:9" },
+            { "from": "helper:driver:ENABLE",    "to": "arduino:10" },
+            { "from": "helper:driver:VDD",       "to": "arduino:5V" },
+            { "from": "helper:driver:GND_LOGIC", "to": "arduino:GND" },
+            { "from": "helper:driver:VMOT",      "to": "helper:psu:5V" },
+            { "from": "helper:driver:GND_MOT",   "to": "helper:psu:GND" },
+            { "from": "helper:driver:RESET",     "to": "helper:driver:SLEEP" }
         ]
     },
     "autocoding": {
         "libraries": ["AccelStepper"],
         "arduino": {
-            "setup": "#include <AccelStepper.h>\nAccelStepper stepper(AccelStepper::FULL4WIRE, 8, 10, 9, 11);\nstepper.setMaxSpeed(500);\nstepper.setAcceleration(100);",
-            "loop": "stepper.moveTo(200);\nstepper.runToPosition();\ndelay(500);\nstepper.moveTo(0);\nstepper.runToPosition();\ndelay(500);"
+            "setup": "// Stepper setup with A4988 (Step=8, Dir=9)\n#include <AccelStepper.h>\nAccelStepper stepper(AccelStepper::DRIVER, 8, 9);\n\nvoid setup() {\n  stepper.setMaxSpeed(1000);\n  stepper.setAcceleration(500);\n}",
+            "loop": "if (stepper.distanceToGo() == 0) {\n  stepper.moveTo(-stepper.currentPosition());\n  delay(1000);\n}\nstepper.run();"
         }
     }
 }

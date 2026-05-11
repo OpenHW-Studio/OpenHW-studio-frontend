@@ -1,25 +1,36 @@
 {
     "type": "wokwi-motor",
     "label": "DC Motor",
-    "description": "DC motor that converts electrical energy to rotational motion. Requires an H-bridge driver (e.g., L298N) for direction control and speed modulation via PWM.",
+    "description": "DC motor that converts electrical energy to rotational motion. Automatically wires to an L298N driver for bidirectional control.",
     "group": "Outputs",
     "w": 100,
     "h": 50,
     "attrs": {},
     "pins": [
-        {
-            "id": "1",
-            "x": -1,
-            "y": 21,
-            "type": "power",
-            "description": "Terminal 1"
-        },
-        {
-            "id": "2",
-            "x": -1,
-            "y": 41,
-            "type": "power",
-            "description": "Terminal 2"
+        { "id": "1", "x": -1, "y": 21, "type": "power", "description": "Terminal 1" },
+        { "id": "2", "x": -1, "y": 41, "type": "power", "description": "Terminal 2" }
+    ],
+    "autowiring": {
+        "helpers": [
+            { "type": "wokwi-motor-driver", "id": "driver" },
+            { "type": "wokwi-power-supply", "id": "psu", "attrs": { "voltage": "12.0" } }
+        ],
+        "connections": [
+            { "from": "1", "to": "helper:driver:OUT1|OUT3", "color": "green" },
+            { "from": "2", "to": "helper:driver:OUT2|OUT4", "color": "green" },
+            { "from": "helper:driver:IN1|IN3", "to": "arduino:6|4|8|10|12", "color": "orange" },
+            { "from": "helper:driver:IN2|IN4", "to": "arduino:7|2|9|11|13", "color": "orange" },
+            { "from": "helper:driver:ENA|ENB", "to": "arduino:5|3|A0|A1|A2", "color": "orange" },
+            { "from": "helper:driver:12V", "to": "helper:psu:5V", "color": "red" },
+            { "from": "helper:driver:GND", "to": "helper:psu:GND", "color": "black" },
+            { "from": "helper:driver:5V",  "to": "arduino:5V", "color": "red" },
+            { "from": "helper:driver:GND", "to": "arduino:GND", "color": "black" }
+        ]
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "// Motor Control Setup\nvoid setup() {\n  pinMode([[helper:driver:ENA|ENB]], OUTPUT);\n  pinMode([[helper:driver:IN1|IN3]], OUTPUT);\n  pinMode([[helper:driver:IN2|IN4]], OUTPUT);\n  analogWrite([[helper:driver:ENA|ENB]], 200);\n}",
+            "loop": "void loop() {\n  digitalWrite([[helper:driver:IN1|IN3]], HIGH); digitalWrite([[helper:driver:IN2|IN4]], LOW);\n  delay(2000);\n  digitalWrite([[helper:driver:IN1|IN3]], LOW); digitalWrite([[helper:driver:IN2|IN4]], LOW);\n  delay(500);\n}"
         }
-    ]
+    }
 }

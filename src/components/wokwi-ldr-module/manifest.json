@@ -41,8 +41,7 @@
     "connections": [
       { "from": "VCC", "to": "arduino:5V" },
       { "from": "GND", "to": "arduino:GND" },
-      { "from": "DO",  "to": "arduino:3" },
-      { "from": "AO",  "to": "arduino:A1" }
+      { "from": "AO", "to": "arduino:A0" }
     ]
   },
   "autocoding": {
