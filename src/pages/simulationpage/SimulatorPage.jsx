@@ -16,6 +16,7 @@ import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
 import { ChromeUIProvider } from './ChromeUIContext';
+import QuickAddPortal from './QuickAddPortal';
 
 
 
@@ -1714,6 +1715,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const suppressCodeSyncRef = useRef(false)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [isPaletteHovered, setIsPaletteHovered] = useState(false)
+  const hoverTimeoutRef = useRef(null)
   const [panelWidth, setPanelWidth] = useState(580)
   const [explorerWidth, setExplorerWidth] = useState(190)
   const [isDragging, setIsDragging] = useState(false)
@@ -1761,10 +1763,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   useEffect(() => {
     setIsPinMappingExpanded(false)
   }, [selected])
-  const [quickAdd, setQuickAdd] = useState(null)   // { screenX, screenY, canvasX, canvasY }
-  const [quickAddSearch, setQuickAddSearch] = useState('')
-  const [quickAddIdx, setQuickAddIdx] = useState(0)
-  const quickAddInputRef = useRef(null)
+  // quickAdd state lives in QuickAddPortal — opened via custom DOM event
+  const addComponentAtRef = useRef(null)
   const pageRef = useRef(null)
   const isPanningRef = useRef(false)
   const panStartRef = useRef({ x: 0, y: 0, ox: 0, oy: 0 })
@@ -3273,22 +3273,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     };
   }, [isRunning, isComponentDragging, isDragging, isExplorerDragging, segDrag, solverMode]);
 
-  // Quick-add menu: auto-focus input when menu opens
-  useEffect(() => {
-    if (quickAdd && quickAddInputRef.current) {
-      quickAddInputRef.current.focus();
-    }
-  }, [quickAdd]);
-
-  // Quick-add menu: close when clicking outside
-  useEffect(() => {
-    if (!quickAdd) return;
-    const handler = (e) => {
-      if (!e.target.closest('[data-quickadd]')) setQuickAdd(null);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [quickAdd]);
 
   // Persist favourite projects
   useEffect(() => {
@@ -9429,12 +9413,11 @@ export function SimulatorPage({ gamificationMode = false }) {
             </div>
 
             {/* Full palette content */}
-            {(isPaletteHovered || paletteContextMenu || showFilterDropdown) && (
-              <div style={{
-                width: 340, opacity: isPaletteHovered ? 1 : 0, transition: 'opacity 0.2s',
-                pointerEvents: isPaletteHovered ? 'auto' : 'none',
-                display: 'flex', flexDirection: 'column', height: '100%',
-              }}>
+            <div style={{
+              width: 340, opacity: isPaletteHovered ? 1 : 0, transition: 'opacity 0.2s',
+              pointerEvents: isPaletteHovered ? 'auto' : 'none',
+              display: 'flex', flexDirection: 'column', height: '100%',
+            }}>
                 {/* Sticky top section */}
                 <div style={{ flexShrink: 0, padding: '10px 8px 0', background: 'var(--bg2)' }}>
                   <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 pt-1 pb-2">Components</div>
@@ -9708,7 +9691,6 @@ export function SimulatorPage({ gamificationMode = false }) {
                   </div>
                 </div>
               </div>
-            )}
           </aside>
 
           {/* Palette right-click context menu */}
@@ -9873,9 +9855,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               const rect = canvasRef.current.getBoundingClientRect();
               const canvasX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
               const canvasY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-              setQuickAdd({ screenX: e.clientX, screenY: e.clientY, canvasX, canvasY });
-              setQuickAddSearch('');
-              setQuickAddIdx(0);
+              window.dispatchEvent(new CustomEvent('quick-add-open', {
+                detail: { screenX: e.clientX, screenY: e.clientY, canvasX, canvasY }
+              }));
             }}
           >
             {/* Zoom Wrapper — scales all circuit content */}
@@ -10938,116 +10920,12 @@ export function SimulatorPage({ gamificationMode = false }) {
               onDownload={downloadConsoleLog}
             />
 
-            {/* ── Quick-Add Popup (double-click on canvas) ── */}
-            {quickAdd && (() => {
-              const q = quickAddSearch.trim().toLowerCase();
-              const results = [];
-              if (q) {
-                outer: for (const group of LOCAL_CATALOG) {
-                  for (const item of group.items) {
-                    if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
-                      results.push(item);
-                      if (results.length >= 4) break outer;
-                    }
-                  }
-                }
-              }
-              const selIdx = Math.max(0, Math.min(quickAddIdx, results.length - 1));
-              const VW = window.innerWidth, VH = window.innerHeight;
-              const menuW = 240, approxH = 44 + results.length * 38 + (results.length === 0 ? 38 : 0);
-              const left = quickAdd.screenX + menuW > VW ? quickAdd.screenX - menuW - 4 : quickAdd.screenX + 4;
-              const top = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
-              return (
-                <div
-                  className="canvas-menu"
-                  data-quickadd="true"
-                  onMouseDown={e => e.stopPropagation()}
-                  onDoubleClick={e => e.stopPropagation()}
-                  onMouseLeave={() => setQuickAdd(null)}
-                  style={{
-                    position: 'fixed',
-                    left,
-                    top,
-                    zIndex: 10000,
-                    width: menuW,
-                    background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-                    backdropFilter: 'blur(16px) saturate(1.4)',
-                    WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                    border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                    borderRadius: 12,
-                    boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                    padding: '5px',
-                    animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                    transformOrigin: 'top left',
-                    fontFamily: "'Space Grotesk', sans-serif",
-                    willChange: 'transform, opacity, backdrop-filter',
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden',
-                  }}
-                >
-                  {/* Search input */}
-                  <div style={{ padding: '8px 10px', borderBottom: results.length > 0 ? '1px solid var(--border)' : 'none' }}>
-                    <input
-                      ref={quickAddInputRef}
-                      data-quickadd="true"
-                      value={quickAddSearch}
-                      onChange={e => { setQuickAddSearch(e.target.value); setQuickAddIdx(0); }}
-                      onKeyDown={e => {
-                        if (e.key === 'Escape') { e.preventDefault(); setQuickAdd(null); }
-                        else if (e.key === 'ArrowDown') { e.preventDefault(); setQuickAddIdx(i => Math.min(i + 1, results.length - 1)); }
-                        else if (e.key === 'ArrowUp') { e.preventDefault(); setQuickAddIdx(i => Math.max(i - 1, 0)); }
-                        else if (e.key === 'Enter' && results.length > 0) {
-                          e.preventDefault();
-                          addComponentAt(results[selIdx], quickAdd.canvasX, quickAdd.canvasY);
-                          setQuickAdd(null);
-                        }
-                      }}
-                      placeholder="Search component..."
-                      style={{
-                        width: '100%', boxSizing: 'border-box',
-                        background: theme === 'light' ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.2)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--text)', padding: '10px 14px',
-                        borderRadius: 10, fontFamily: 'inherit', fontSize: 14, outline: 'none',
-                        transition: 'all 0.2s',
-                      }}
-                      onFocus={e => e.currentTarget.style.borderColor = 'var(--accent)'}
-                      onBlur={e => e.currentTarget.style.borderColor = 'var(--border)'}
-                    />
-                  </div>
-                  {/* Result list */}
-                  {results.map((item, i) => (
-                    <div
-                      key={`${item.type}-${i}`}
-                      className="canvas-menu-item"
-                      data-quickadd="true"
-                      onMouseEnter={() => setQuickAddIdx(i)}
-                      onMouseDown={e => { e.preventDefault(); addComponentAt(item, quickAdd.canvasX, quickAdd.canvasY); setQuickAdd(null); }}
-                      style={{
-                        background: i === selIdx ? 'var(--accent)' : 'transparent',
-                        color: i === selIdx ? '#fff' : 'var(--text)',
-                        borderRadius: 8,
-                        margin: '2px 5px',
-                        width: 'calc(100% - 10px)',
-                        userSelect: 'none',
-                      }}
-                    >
-                      <span style={{ fontWeight: i === selIdx ? 700 : 500, flex: 1 }}>{item.label}</span>
-                      {i === selIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
-                    </div>
-                  ))}
-                  {/* Empty state */}
-                  {q && results.length === 0 && (
-                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>No components found</div>
-                  )}
-                  {!q && (
-                    <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--text3)' }}>Type to search components...</div>
-                  )}
-                </div>
-              );
-            })()}
+            {/* ── Quick-Add Portal — rendered to document.body, isolated from canvas re-renders ── */}
+            {(addComponentAtRef.current = addComponentAt, null)}
           </main>
 
+          {/* ── QuickAddPortal — mounts to document.body, zero canvas re-render cost ── */}
+          <QuickAddPortal catalog={LOCAL_CATALOG} onAddComponentRef={addComponentAtRef} />
 
           {/* RIGHT PANEL */}
           <RightPanel
