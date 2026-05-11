@@ -5,7 +5,8 @@ import {
   getComponentWorldPins,
   findNearestBreadboardHole,
   robustSnapComponent,
-  mergeCodeSnippet
+  mergeCodeSnippet,
+  getBoardColors
 } from './projectUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
@@ -2008,6 +2009,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (hardwareSerialTargetId && !ids.includes(hardwareSerialTargetId)) ids.push(hardwareSerialTargetId);
     return ['all', ...ids];
   }, [components, hardwareBoardId, hardwareSerialTargetId]);
+
+  const boardColors = useMemo(() => getBoardColors(serialBoardOptions), [serialBoardOptions]);
 
   const serialBoardLabels = useMemo(() => {
     const labels = { all: 'All Boards' };
@@ -6862,12 +6865,27 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Force re-validation after fix to continue "Speak & Hear" loop
     // We pass nextComponents/nextWires directly to bypass React's async state update
-    setTimeout(() => {
+    setTimeout(async () => {
       validationRunCacheRef.current = {}; // Clear cache
+      
+      // 1) Trigger Local Simulator Validation check against new topology 
       runCircuitValidation(nextComponents, nextWires);
+      
+      // 2) Optional: Call the backend Validation API dynamically to keep systems synced
+      try {
+        const engineConnections = nextWires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
+        await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/validation/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: { components: nextComponents, connections: engineConnections } })
+        });
+      } catch (e) {
+        console.warn("Backend validation out of sync:", e);
+      }
+      
       appendConsoleEntry('info', '📡 Re-validating circuit after repair...', 'simulator');
-    }, 50);
-  }, [components, wires, saveHistory, appendConsoleEntry]);
+    }, 150);
+  }, [components, wires, saveHistory, appendConsoleEntry, runCircuitValidation]);
 
   const handleApplyPlan = useCallback(() => {
     if (!autofixPlan) return;
@@ -7134,11 +7152,40 @@ export function SimulatorPage({ gamificationMode = false }) {
       runFpsTelemetryLastLogRef.current.clear();
       runLastBoardPinsRef.current = new Map();
 
-      if (!runCircuitValidation()) {
-        appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
-        // The useEffect will auto-trigger re-analysis when validationErrors state updates
-        runStartGuardRef.current = false;
-        return;
+      // Ensure consistent validation report across applications (Frontend, CLI, Autofix loop)
+      const engineConnections = wires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
+      try {
+        const valRes = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/validation/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: { components: components, connections: engineConnections } })
+        });
+        
+        if (valRes.ok) {
+          const valData = await valRes.json();
+          setValidationErrors(valData.errors || []);
+          if (!valData.safe) {
+            appendConsoleEntry('warn', 'Run blocked: validation errors found (via backend).', 'simulator');
+            runStartGuardRef.current = false;
+            setShowValidation(true);
+            return;
+          }
+        } else {
+           // Fallback to local
+           if (!runCircuitValidation()) {
+            appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
+            runStartGuardRef.current = false;
+            return;
+          }
+        }
+      } catch (err) {
+        // Fallback to local offline validation 
+        if (!runCircuitValidation()) {
+          appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
+          // The useEffect will auto-trigger re-analysis when validationErrors state updates
+          runStartGuardRef.current = false;
+          return;
+        }
       }
 
       setIsRunning(true);
@@ -12005,6 +12052,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             }}
             theme={theme}
             programmableBoards={components.filter(c => isProgrammableBoardType(c.type))}
+            boardColors={boardColors}
             onWireToBoard={handleWireToBoard}
           />
 

@@ -1,50 +1,9 @@
-/**
- * Autofix Web Worker (Rust WASM Edition)
- * Bridges the high-performance Rust engine with the simulator UI.
- */
+const fs = require('fs');
+const content = fs.readFileSync('c:/Users/Danish/Documents/simulator/OpenHW-studio-frontend/src/worker/autofix.worker.ts', 'utf8');
 
-import init, * as engine from '../wasm/openhw_studio_autofix_rust.js';
-import wasmUrl from '../wasm/openhw_studio_autofix_rust_bg.wasm?url';
-import { FullCircuitValidator } from '../../../openhw-studio-emulator/src/circuit-validation/engine.js';
-import { calculateProjectPlanApplication } from '../pages/simulationpage/projectUtils.js';
-
-let isInitialized = false;
-
-async function initEngine() {
-  if (isInitialized) return;
-  console.log("[AutofixWorker] Initializing Rust Engine (v2.0.0-rust)...");
-  
-  // wasm-bindgen handles the instantiation and memory management
-  await init({ module_or_path: wasmUrl });
-  
-  isInitialized = true;
-  console.log("Autofix Rust WASM Engine initialized.");
-}
-
-self.onmessage = async (e) => {
-  const { type, payload } = e.data;
-
-  if (type === 'init') {
-    self.postMessage({ type: 'status', payload: 'Initializing Rust Engine...' });
-    try {
-      await initEngine();
-      self.postMessage({ type: 'ready' });
-    } catch (err) {
-      console.error("[AutofixWorker] Initialization failed:", err);
-      self.postMessage({ type: 'status', payload: 'ERROR: Initialization failed' });
-    }
-    return;
-  }
-
-  if (!isInitialized) return;
-
-  switch (type) {
-    case 'analyze':
+const targetMethod = `    case 'analyze':
       try {
         const { diagram, violations } = payload;
-        console.group('[AutofixWorker] Starting Autofix Macro-Loop');
-        console.log('[AutofixWorker] Initial Violations:', violations);
-        console.log('[AutofixWorker] Initial Diagram State:', diagram);
         
         let currentDiagram = { components: [...(diagram.components || [])], connections: [...(diagram.connections || [])] };
         let currentViolations = [...(violations || [])];
@@ -54,10 +13,7 @@ self.onmessage = async (e) => {
 
         // Dynamic Iterative Loop
         while (currentViolations.length > 0 && limit < MACRO_LIMIT) {
-          console.group(`[AutofixWorker] Iteration ${limit + 1}`);
-          console.log('[AutofixWorker] Feeding violations to Rust Engine:', currentViolations);
-          
-          self.postMessage({ type: 'status', payload: `Analyzing iteration ${limit + 1} (Rust)...` });
+          self.postMessage({ type: 'status', payload: \`Analyzing iteration \${limit + 1} (Rust)...\` });
           engine.reset();
 
           // 1. Ingest current components
@@ -79,8 +35,8 @@ self.onmessage = async (e) => {
           });
 
           // 4. Generate partial plan
-          self.postMessage({ type: 'status', payload: `🧠 Calculating optimal repair strategy (${limit + 1}/5)...` });
-          
+          self.postMessage({ type: 'status', payload: \`🧠 Calculating optimal repair strategy (\${limit + 1}/5)...\` });
+          engine.analyze();
           const planCount = engine.getFixPlanCount();
 
           if (planCount === 0) break; // Engine gave up / ran out of patterns
@@ -141,9 +97,6 @@ self.onmessage = async (e) => {
             addedComponents, addedWires, removedWires, transformations, reasoning
           };
 
-          console.log('[AutofixWorker] Rust Engine generated plan:', iterPlan);
-          console.log('[AutofixWorker] Applying patch and re-validating...');
-
           totalSuggestions.push(iterPlan);
 
           // 5. Recursion Step - Simulate applying the patch
@@ -170,23 +123,16 @@ self.onmessage = async (e) => {
           const engineConnectionsFormat = nextWires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
           const validator = new FullCircuitValidator({ components: nextComponents, connections: engineConnectionsFormat });
           const isSafe = validator.runValidation({ profile: 'balanced' });
-          console.log('[AutofixWorker] Post-Patch Validation Results:', validator.errors);
 
           if (isSafe || validator.errors.length === 0) {
-            console.log('[AutofixWorker] Circuit is now completely fixed!');
-            console.groupEnd();
             break;
           } else {
             // Re-assign for the next cycle
             currentViolations = validator.errors;
-            console.log('[AutofixWorker] Remaining issues to fix in next tick:', currentViolations);
           }
 
-          console.groupEnd();
           limit++;
         }
-        console.log('[AutofixWorker] Complete Autofix Pipeline Finished. Final Plans:', totalSuggestions);
-        console.groupEnd();
         
         self.postMessage({ 
           type: 'results', 
@@ -202,11 +148,7 @@ self.onmessage = async (e) => {
           type: 'results', 
           payload: { planCount: 0, suggestions: [] } 
         });
-      }
+      }`;
 
-    case 'stop':
-      isInitialized = false;
-      self.postMessage({ type: 'stopped' });
-      break;
-  }
-};
+const newContent = content.substring(0, content.indexOf("    case 'analyze':")) + targetMethod + content.substring(content.indexOf("break;", content.indexOf("case 'analyze':") + 50) + 6);
+fs.writeFileSync('c:/Users/Danish/Documents/simulator/OpenHW-studio-frontend/src/worker/autofix.worker.ts', newContent);

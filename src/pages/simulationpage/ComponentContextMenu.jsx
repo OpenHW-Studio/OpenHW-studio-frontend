@@ -51,7 +51,7 @@ export const ComponentContextMenu = ({
   x, y, comp, info, visible, onClose, theme,
   onRename, onPinMap, onRotate, onDelete, onDoc,
   updateComponentAttr, onValueEdit,
-  programmableBoards = [], onWireToBoard
+  programmableBoards = [], boardColors = {}, onWireToBoard
 }) => {
   const menuRef = useRef(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -387,7 +387,12 @@ export const ComponentContextMenu = ({
                   <button
                     key={bIdx}
                     className="canvas-menu-item context-menu-item"
-                    style={{ fontSize: '11px', padding: '4px 8px', gap: '6px' }}
+                    style={{ 
+                      fontSize: '11px', 
+                      padding: '4px 8px', 
+                      gap: '6px',
+                      '--item-hover-bg': `${boardColors[board.id] || '#94a3b8'}4D`
+                    }}
                     onClick={(e) => { e.stopPropagation(); onWireToBoard?.(comp.id, board.id); onClose(); }}
                   >
                     {board.id}

@@ -6,6 +6,16 @@
 const HOLE_PITCH = 15;
 const RAIL_MAX   = 25;
 
+export const BOARD_COLOR_PALETTE = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#14b8a6', '#eab308', '#06b6d4', '#8b5cf6'];
+
+export function getBoardColors(boardOptions) {
+  const map = { all: '#94a3b8' };
+  (boardOptions || []).filter((id) => id !== 'all').forEach((id, idx) => {
+    map[id] = BOARD_COLOR_PALETTE[idx % BOARD_COLOR_PALETTE.length];
+  });
+  return map;
+}
+
 // ─── Core Plan Application ───────────────────────────────────────────────────
 
 export function calculateProjectPlanApplication(plan, currentComponents, currentWires, pinDefs = {}) {
