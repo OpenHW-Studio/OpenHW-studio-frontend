@@ -38,16 +38,16 @@
     ],
     "autowiring": {
         "connections": [
-            { "from": "R",   "to": "arduino:9",  "via": "wokwi-resistor", "attrs": { "value": "220" } },
-            { "from": "G",   "to": "arduino:10", "via": "wokwi-resistor", "attrs": { "value": "220" } },
-            { "from": "B",   "to": "arduino:11", "via": "wokwi-resistor", "attrs": { "value": "220" } },
+            { "from": "R",   "to": "arduino:9|6|3",   "via": "wokwi-resistor", "attrs": { "value": "220" } },
+            { "from": "G",   "to": "arduino:10|5|11", "via": "wokwi-resistor", "attrs": { "value": "220" } },
+            { "from": "B",   "to": "arduino:11|3|6",  "via": "wokwi-resistor", "attrs": { "value": "220" } },
             { "from": "COM", "to": "arduino:GND" }
         ]
     },
     "autocoding": {
         "arduino": {
-            "setup": "pinMode(9, OUTPUT);\npinMode(10, OUTPUT);\npinMode(11, OUTPUT);",
-            "loop": "analogWrite(9, 255); analogWrite(10, 0);   analogWrite(11, 0);   delay(500);\nanalogWrite(9, 0);   analogWrite(10, 255); analogWrite(11, 0);   delay(500);\nanalogWrite(9, 0);   analogWrite(10, 0);   analogWrite(11, 255); delay(500);"
+            "setup": "#define PIN_R arduino:9|6|3\n#define PIN_G arduino:10|5|11\n#define PIN_B arduino:11|3|6\n\nvoid setup() {\n  pinMode(PIN_R, OUTPUT);\n  pinMode(PIN_G, OUTPUT);\n  pinMode(PIN_B, OUTPUT);\n}",
+            "loop": "void loop() {\n  // Red\n  analogWrite(PIN_R, 255);\n  analogWrite(PIN_G, 0);\n  analogWrite(PIN_B, 0);\n  delay(500);\n\n  // Green\n  analogWrite(PIN_R, 0);\n  analogWrite(PIN_G, 255);\n  analogWrite(PIN_B, 0);\n  delay(500);\n\n  // Blue\n  analogWrite(PIN_R, 0);\n  analogWrite(PIN_G, 0);\n  analogWrite(PIN_B, 255);\n  delay(500);\n}"
         }
     }
 }
