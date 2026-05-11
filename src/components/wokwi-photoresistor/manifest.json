@@ -1,0 +1,48 @@
+{
+    "type": "wokwi-photoresistor",
+    "label": "Photoresistor (LDR)",
+    "description": "Light-dependent resistor. Resistance decreases with increasing light intensity.",
+    "group": "Sensors",
+    "w": 30,
+    "h": 30,
+    "attrs": {
+        "lux": "100",
+        "gamma": "0.7",
+        "r10": "10000",
+        "breadboard": {
+            "anchorPin": "p1"
+        }
+    },
+    "pins": [
+        {
+            "id": "p1",
+            "x": 5,
+            "y": 30,
+            "type": "passive"
+        },
+        {
+            "id": "p2",
+            "x": 25,
+            "y": 30,
+            "type": "passive"
+        }
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "p1", "to": "arduino:5V" },
+            { 
+                "from": "p2", 
+                "to": "arduino:A0|A1|A2|A3|A4|A5", 
+                "via": "wokwi-resistor", 
+                "mode": "divider", 
+                "attrs": { "value": "10000", "dividerTarget": "arduino:GND" } 
+            }
+        ]
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "Serial.begin(9600);",
+            "loop": "int sensorValue = analogRead(arduino:A0|A1|A2|A3|A4|A5);\nSerial.print(\"Light Level: \");\nSerial.println(sensorValue);\ndelay(100);"
+        }
+    }
+}
