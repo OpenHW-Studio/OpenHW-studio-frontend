@@ -18,7 +18,15 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    worker: {
+      format: 'es',
+    },
+    // ensure esbuild target supports optional catch binding and modern syntax
+    esbuild: {
+      target: 'es2020',
+    },
     build: {
+      target: 'es2020',
       minify: 'esbuild',
       cssMinify: true,
     },
@@ -59,6 +67,15 @@ export default defineConfig(({ mode }) => {
            },
          ],
       },
+    },
+    ssr: {
+      noExternal: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
+    },
+    test: {
+      environment: 'jsdom',
+      deps: {
+        inline: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
+      }
     },
     server: {
       fs: {

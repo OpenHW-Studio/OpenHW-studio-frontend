@@ -62,7 +62,7 @@ export async function getCachedComponents() {
       req.onsuccess = (e) => resolve(e.target.result || []);
       req.onerror = (e) => reject(e.target.error);
     });
-  } catch {
+  } catch (e) {
     return [];
   }
 }
@@ -75,7 +75,7 @@ export async function getCachedServerHash() {
   try {
     const row = await tx(META_STORE, 'readonly', s => s.get('serverHash'));
     return row?.value ?? null;
-  } catch {
+  } catch (e) {
     return null;
   }
 }

@@ -1,12 +1,173 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
 import { Btn } from './Btn';
+import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
+
+const MenuDropdown = ({ items, visible, isSubmenu = false, theme, setActiveMenu }) => {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+
+  useEffect(() => {
+    if (!visible) setHoveredIdx(null);
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <div 
+      style={{
+        position: 'absolute',
+        top: isSubmenu ? 0 : '100%',
+        left: isSubmenu ? '100%' : 0,
+        zIndex: 10000,
+        paddingTop: isSubmenu ? 0 : '4px',
+        paddingLeft: isSubmenu ? '4px' : 0,
+      }}
+    >
+      <div 
+        className="canvas-menu bg-[var(--bg2)] border border-[var(--border)] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] min-w-[200px]"
+        style={{
+          background: theme === 'light' ? 'rgba(248, 250, 252, 0.95)' : 'rgba(13, 21, 37, 0.94)',
+          backdropFilter: 'blur(16px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+          border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(30, 45, 71, 0.8)',
+          borderRadius: '12px',
+          boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+          minWidth: '200px',
+          padding: '5px',
+          transformOrigin: 'top left',
+          fontFamily: "'Space Grotesk', sans-serif",
+          willChange: 'transform, opacity, backdrop-filter',
+          backfaceVisibility: 'hidden',
+          WebkitBackfaceVisibility: 'hidden',
+        }}
+      >
+        {items.map((item, idx) => (
+          item.type === 'separator' ? (
+            <div key={idx} style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
+          ) : (
+            <div 
+              key={idx} 
+              style={{ position: 'relative' }}
+              onMouseEnter={() => setHoveredIdx(idx)}
+              onMouseLeave={() => setHoveredIdx(null)}
+            >
+              <button
+                className="canvas-menu-item"
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  if (!item.submenu) {
+                    item.onClick?.();
+                    setActiveMenu(null);
+                  }
+                }}
+                style={{
+                  background: hoveredIdx === idx ? 'var(--bg3)' : 'none',
+                  ...(item.style || {})
+                }}
+              >
+                <span>{item.label}</span>
+                {item.shortcut && <span style={{ color: 'var(--text3)', fontSize: '11px', marginLeft: '12px' }}>{item.shortcut}</span>}
+                {item.submenu && (
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: '10px' }}>
+                    <path d="M3 2L6 5L3 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+              {item.submenu && hoveredIdx === idx && (
+                <MenuDropdown items={item.submenu} visible={true} isSubmenu={true} theme={theme} setActiveMenu={setActiveMenu} />
+              )}
+            </div>
+          )
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const MenuButton = ({ label, menuKey, items, activeMenu, setActiveMenu, theme }) => (
+  <div 
+    style={{ position: 'relative', pointerEvents: 'auto' }}
+    onMouseLeave={() => setActiveMenu(null)}
+  >
+    <button
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        setActiveMenu(activeMenu === menuKey ? null : menuKey);
+      }}
+      style={{
+        background: activeMenu === menuKey ? 'rgba(255,255,255,0.05)' : 'none',
+        border: 'none',
+        color: activeMenu === menuKey ? 'var(--text)' : 'var(--text3)',
+        fontSize: '14px',
+        fontWeight: '500',
+        padding: '2px 8px',
+        cursor: 'pointer',
+        borderRadius: '4px',
+        transition: 'background 0.2s, color 0.2s',
+        pointerEvents: 'auto'
+      }}
+      onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = 'var(--text)'; }}
+      onMouseLeave={(e) => {
+        if (activeMenu !== menuKey) {
+          e.target.style.background = 'none';
+          e.target.style.color = 'var(--text3)';
+        }
+      }}
+    >
+      {label}
+    </button>
+    <MenuDropdown items={items} visible={activeMenu === menuKey} theme={theme} setActiveMenu={setActiveMenu} />
+  </div>
+);
+
+const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
+  if (!show) return null;
+  return (
+    <div style={{
+      position: 'fixed', top: '80px', right: '20px', width: `${width}px`,
+      background: 'rgba(23, 23, 23, 0.85)', backdropFilter: 'blur(20px)',
+      border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px',
+      boxShadow: '0 20px 50px rgba(0,0,0,0.5)', zIndex: 9999,
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      animation: 'panel-appear 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+    }}>
+      <div style={{
+        padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: 'rgba(255, 255, 255, 0.03)'
+      }}>
+        <span style={{ fontSize: '13px', fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }} 
+          style={{
+            background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', color: 'rgba(255, 255, 255, 0.6)',
+            cursor: 'pointer', padding: '6px', borderRadius: '8px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'all 0.2s'
+          }} onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(239, 68, 68, 0.2)'; e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.3)'; }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255, 255, 255, 0.6)'; e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'; e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'; }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+        {children}
+      </div>
+    </div>
+  );
+};
 
 function TopToolboxInternal(props) {
   // --- UI CONFIG ---
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, navigate, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], autofixPlan, autofixStatus, autofixLog, onApplyPlan, onRefresh, autoWiringEnabled, setAutoWiringEnabled, autoBreadboardEnabled, setAutoBreadboardEnabled, autoCodingEnabled, setAutoCodingEnabled, showAutofix, setShowAutofix } = props;
+  const navigate = useNavigate();
+
 
   const viewPanelRef = useRef(null);
   const connectPanelRef = useRef(null);
@@ -35,117 +196,12 @@ function TopToolboxInternal(props) {
 
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [showViewPanel, showConnectPanel, showProjectsDropdown, activeMenu, setShowViewPanel, setShowProjectsDropdown]);
+  }, [showConnectPanel, showProjectsDropdown, activeMenu, setShowConnectPanel, setShowProjectsDropdown]);
 
   const currentProject = (myProjects || []).find(p => p.id === currentProjectId);
   const projectName = projectNameProp || (currentProject ? (currentProject.name || currentProject.id) : (currentProjectId || 'Untitled Project'));
 
-  const Logo = () => (
-    <img
-      src="/logo-Photoroom.png"
-      alt="Logo"
-      style={{ height: '36px', width: 'auto', flexShrink: 0, cursor: 'pointer', marginLeft: '6px' }}
-      onClick={() => navigate('/')}
-    />
-  );
 
-  const MenuDropdown = ({ items, visible, isSubmenu = false }) => {
-    const [hoveredIdx, setHoveredIdx] = useState(null);
-
-    if (!visible) return null;
-
-    return (
-      <div 
-        className="canvas-menu bg-[var(--bg2)] border border-[var(--border)] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] min-w-[200px]"
-        onMouseLeave={() => !isSubmenu && setActiveMenu(null)}
-        style={{
-          position: 'absolute',
-          top: isSubmenu ? 0 : 'calc(100% + 4px)',
-          left: isSubmenu ? '100%' : 0,
-          zIndex: 10000,
-          background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-          backdropFilter: 'blur(16px) saturate(1.4)',
-          WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-          border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-          borderRadius: '12px',
-          boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-          minWidth: '200px',
-          padding: '5px',
-          transformOrigin: 'top left',
-          fontFamily: "'Space Grotesk', sans-serif",
-          willChange: 'transform, opacity, backdrop-filter',
-          backfaceVisibility: 'hidden',
-          WebkitBackfaceVisibility: 'hidden',
-        }}
-      >
-        {items.map((item, idx) => (
-          item.type === 'separator' ? (
-            <div key={idx} style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
-          ) : (
-            <div 
-              key={idx} 
-              style={{ position: 'relative' }}
-              onMouseEnter={() => setHoveredIdx(idx)}
-              onMouseLeave={() => setHoveredIdx(null)}
-            >
-              <button
-                className="canvas-menu-item"
-                onClick={() => {
-                  if (!item.submenu) {
-                    item.onClick?.();
-                    setActiveMenu(null);
-                  }
-                }}
-                style={{
-                  background: hoveredIdx === idx ? 'var(--bg3)' : 'none',
-                }}
-              >
-                <span>{item.label}</span>
-                {item.shortcut && <span style={{ color: 'var(--text3)', fontSize: '11px', marginLeft: '12px' }}>{item.shortcut}</span>}
-                {item.submenu && (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ marginLeft: '10px' }}>
-                    <path d="M3 2L6 5L3 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </button>
-              {item.submenu && hoveredIdx === idx && (
-                <MenuDropdown items={item.submenu} visible={true} isSubmenu={true} />
-              )}
-            </div>
-          )
-        ))}
-      </div>
-    );
-  };
-
-  const MenuButton = ({ label, menuKey, items }) => (
-    <div style={{ position: 'relative' }}>
-      <button
-        onClick={() => setActiveMenu(activeMenu === menuKey ? null : menuKey)}
-        style={{
-          background: activeMenu === menuKey ? 'rgba(255,255,255,0.05)' : 'none',
-          border: 'none',
-          color: activeMenu === menuKey ? 'var(--text)' : 'var(--text3)',
-          fontSize: '14px',
-          fontWeight: '500',
-          padding: '2px 8px',
-          cursor: 'pointer',
-          borderRadius: '4px',
-          transition: 'background 0.2s, color 0.2s',
-        }}
-        onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = 'var(--text)'; }}
-        onMouseLeave={(e) => {
-          if (activeMenu !== menuKey) {
-            e.target.style.background = 'none';
-            e.target.style.color = 'var(--text3)';
-          }
-        }}
-      >
-        {label}
-      </button>
-      <MenuDropdown items={items} visible={activeMenu === menuKey} />
-    </div>
-  );
 
   const fileMenuItems = [
     { label: 'New', onClick: handleNewProject },
@@ -160,6 +216,7 @@ function TopToolboxInternal(props) {
   const toolMenuItems = [
     { label: 'Schematic View', onClick: () => { setShowSchematic(true); generateSchematic(); } },
     { label: 'Component List', onClick: () => setShowComponentList(true) },
+    { label: 'Alignment Lab', onClick: () => navigate('/alignment-lab') },
     { type: 'separator' },
     { 
       label: 'Export', 
@@ -172,52 +229,53 @@ function TopToolboxInternal(props) {
     { label: 'Connect Hardware', onClick: () => setShowConnectPanel(true) }
   ];
 
-  const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
-    if (!show) return null;
-    return (
-      <div style={{
-        position: 'fixed', top: '80px', right: '20px', width: `${width}px`,
-        background: 'rgba(23, 23, 23, 0.85)', backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '16px',
-        boxShadow: '0 20px 50px rgba(0,0,0,0.5)', zIndex: 9999,
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        animation: 'panel-appear 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
-      }}>
-        <div style={{
-          padding: '16px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          background: 'rgba(255, 255, 255, 0.03)'
-        }}>
-          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: '#fff', letterSpacing: '0.02em' }}>{title}</h3>
-          <button onClick={onClose} style={{
-            background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)',
-            cursor: 'pointer', padding: '4px', borderRadius: '6px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'all 0.2s'
-          }} onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#fff'; }}
-             onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-          </button>
-        </div>
-        <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
-          {children}
-        </div>
-      </div>
-    );
-  };
+  const assistMenuItems = [
+    { 
+      label: `Auto-Wiring: ${autoWiringEnabled ? 'ON' : 'OFF'}`, 
+      onClick: () => setAutoWiringEnabled?.(!autoWiringEnabled),
+    },
+    { 
+      label: `Breadboard: ${autoBreadboardEnabled ? 'ON' : 'OFF'}`, 
+      onClick: autoWiringEnabled ? (() => setAutoBreadboardEnabled?.(!autoBreadboardEnabled)) : undefined,
+      style: { opacity: autoWiringEnabled ? 1 : 0.4, pointerEvents: autoWiringEnabled ? 'auto' : 'none' }
+    },
+    { 
+      label: `Auto-Coding: ${autoCodingEnabled ? 'ON' : 'OFF'}`, 
+      onClick: () => setAutoCodingEnabled?.(!autoCodingEnabled),
+    }
+  ];
 
   const helpMenuItems = [
     { label: 'Documentation', onClick: () => window.open('https://docs.openhw.org', '_blank') },
     { label: 'Keyboard Shortcuts', onClick: () => { } },
+    { 
+      label: 'Assist', 
+      submenu: assistMenuItems
+    },
     { type: 'separator' },
     { label: 'About OpenHW Studio', onClick: () => { } }
   ];
 
   return (
-    <header className="flex items-center gap-4 px-5 py-3 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
+    <header className="relative z-[1000] flex items-center gap-4 px-5 py-3 bg-[var(--bg2)] border-b border-[var(--border)] shrink-0 flex-wrap">
+      <style>{`
+        @keyframes panel-appear {
+          from { opacity: 0; transform: translateX(20px) scale(0.98); }
+          to { opacity: 1; transform: translateX(0) scale(1); }
+        }
+      `}</style>
+
       <div className="flex items-center gap-4">
-        <Logo />
-        <div className="flex flex-col" style={{ width: TITLE_WIDTH, flexShrink: 0, marginTop: '2px' }}>
+        <img
+          src="/logo-Photoroom.png"
+          alt="OpenHW Studio Logo"
+          title="Go to Landing Page"
+          draggable="false"
+          style={{ height: '36px', width: 'auto', flexShrink: 0, cursor: 'pointer', marginLeft: '6px' }}
+          onClick={() => navigate('/')}
+        />
+
+        <div className="flex flex-col" style={{ minWidth: TITLE_WIDTH, flexShrink: 0, marginTop: '2px' }}>
           <div style={{ height: '28px', position: 'relative', width: '100%' }}>
             {renamingProjectId === currentProjectId ? (
               <input
@@ -251,10 +309,10 @@ function TopToolboxInternal(props) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1 -ml-2" ref={menuRef}>
-            <MenuButton label="File" menuKey="file" items={fileMenuItems} />
-            <MenuButton label="Tool" menuKey="tool" items={toolMenuItems} />
-            <MenuButton label="Help" menuKey="help" items={helpMenuItems} />
+          <div className="flex items-center gap-1 -ml-2" ref={menuRef} style={{ position: 'relative', zIndex: 1500 }}>
+            <MenuButton label="File" menuKey="file" items={fileMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
+            <MenuButton label="Tool" menuKey="tool" items={toolMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
+            <MenuButton label="Help" menuKey="help" items={helpMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
           </div>
         </div>
       </div>
@@ -379,6 +437,23 @@ function TopToolboxInternal(props) {
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
             </svg>
           )}
+        </Btn>
+
+        {/* AUTOFIX BUTTON */}
+        <Btn
+          onClick={() => {
+            const next = !showAutofix;
+            setShowAutofix(next);
+            if (next) onRefresh?.();
+          }}
+          color={validationErrors?.length > 0 ? 'var(--orange)' : undefined}
+          disabled={!validationErrors?.length}
+          title={validationErrors?.length ? `Auto-fix available: ${validationErrors.length} issue(s)` : 'No issues to fix'}
+          iconOnly
+        >
+          <svg width="16" height="16" viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M29.5,24.5L16.563,11.563C16.84,10.758,17,9.899,17,9c0-4.411-3.589-8-8-8 C8.338,1,7.659,1.089,6.982,1.266c-0.347,0.09-0.619,0.359-0.713,0.706C6.175,2.317,6.273,2.687,6.527,2.941l2.645,2.645 C9.549,5.964,9.757,6.466,9.757,7c0,0.534-0.208,1.036-0.586,1.414L8.414,9.172C8.036,9.549,7.534,9.757,7,9.757 S5.964,9.549,5.586,9.172L2.941,6.526c-0.19-0.19-0.445-0.293-0.707-0.293c-0.087,0-0.175,0.011-0.262,0.035 C1.625,6.363,1.356,6.635,1.266,6.982C1.089,7.659,1,8.338,1,9c0,4.411,3.589,8,8,8c0.899,0,1.758-0.16,2.563-0.437L24.5,29.5 c0.69,0.69,1.595,1.036,2.5,1.036s1.81-0.345,2.5-1.036C30.881,28.119,30.881,25.881,29.5,24.5z M27,28c-0.552,0-1-0.448-1-1 c0-0.552,0.448-1,1-1s1,0.448,1,1C28,27.552,27.552,28,27,28z" />
+          </svg>
         </Btn>
       </div>
 
@@ -557,7 +632,21 @@ function TopToolboxInternal(props) {
           }}
           title="View and manage your saved projects"
         > {isAuthenticated ? (user?.name?.split(' ')[0] || 'User') : 'Local'}</Btn>
+
       </div>
+      <FloatingPanel title="Auto-fix" show={showAutofix} onClose={() => setShowAutofix(false)} width={380}>
+        <div style={{ padding: '12px 16px' }}>
+          <AutofixPreviewPanel 
+            project={{ components, connections: wires }} 
+            validationErrors={validationErrors || []} 
+            autofixPlan={autofixPlan}
+            autofixStatus={autofixStatus}
+            autofixLog={autofixLog || []}
+            onApplyPlan={onApplyPlan}
+            onRefresh={onRefresh}
+          />
+        </div>
+      </FloatingPanel>
       <FloatingPanel title="Schematic View" show={showSchematic} onClose={() => setShowSchematic(false)} width={420}>
         {schematicLoading ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>

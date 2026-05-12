@@ -45,7 +45,7 @@ export function GamificationProvider({ children }) {
         parsed.unlockedComponentTypes = [...set];
       }
       return parsed;
-    } catch {
+    } catch (e) {
       return DEFAULT_STATE;
     }
   });
@@ -59,7 +59,7 @@ export function GamificationProvider({ children }) {
         parsed.unlockedComponentTypes = [...set];
       }
       setState(parsed);
-    } catch {
+    } catch (e) {
       setState(DEFAULT_STATE);
     }
   }, [storageKey]);
@@ -69,7 +69,7 @@ export function GamificationProvider({ children }) {
   useEffect(() => {
     try {
       localStorage.setItem(storageKey, JSON.stringify(state));
-    } catch {}
+    } catch (e) {}
   }, [state, storageKey]);
 
   const pushNotification = useCallback((notification) => {

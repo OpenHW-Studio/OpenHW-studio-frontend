@@ -12,9 +12,9 @@ RUN rm -rf ./src/emulator/node_modules ./src/emulator/dist
 # 2. Update package.json to point to the new local path
 RUN sed -i 's|"@openhw/emulator": "file:../openhw-studio-emulator"|"@openhw/emulator": "file:./src/emulator"|' package.json
 
-# 3. Install dependencies and force Vite 5
+# 3. Install dependencies and native binaries for Linux
 RUN npm install --legacy-peer-deps && \
-    npm install vite@5 --save-dev --legacy-peer-deps
+    npm install --no-save @rollup/rollup-linux-x64-gnu lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu
 
 # Copy frontend source code
 COPY OpenHW-studio-frontend/ .

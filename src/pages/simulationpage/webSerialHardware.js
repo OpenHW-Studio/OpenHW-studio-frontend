@@ -39,8 +39,8 @@ export function useWebSerialHardware({
 
     try {
       if (hardwareReaderRef.current) {
-        try { await hardwareReaderRef.current.cancel(); } catch { }
-        try { hardwareReaderRef.current.releaseLock(); } catch { }
+        try { await hardwareReaderRef.current.cancel(); } catch (e) { }
+        try { hardwareReaderRef.current.releaseLock(); } catch (e) { }
       }
     } finally {
       hardwareReaderRef.current = null;
@@ -48,7 +48,7 @@ export function useWebSerialHardware({
 
     try {
       if (hardwarePortRef.current) {
-        try { await hardwarePortRef.current.close(); } catch { }
+        try { await hardwarePortRef.current.close(); } catch (e) { }
       }
     } finally {
       hardwarePortRef.current = null;
@@ -85,7 +85,7 @@ export function useWebSerialHardware({
         setHardwareStatus('Serial connection lost');
       }
     } finally {
-      try { reader.releaseLock(); } catch { }
+      try { reader.releaseLock(); } catch (e) { }
       hardwareReaderRef.current = null;
       if (!hardwareReadAbortRef.current) {
         setHardwareConnected(false);
@@ -145,7 +145,7 @@ export function useWebSerialHardware({
       const txLabel = previewText == null ? payload : String(previewText);
       pushSerialTxLine(txLabel, targetBoard || hardwareBoardId || 'hardware', 'hw');
     } finally {
-      try { writer.releaseLock(); } catch { }
+      try { writer.releaseLock(); } catch (e) { }
     }
   }, [hardwareConnected, hardwareBoardId, pushSerialTxLine]);
 

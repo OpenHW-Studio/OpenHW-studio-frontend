@@ -75,7 +75,7 @@ export async function getCachedHex(code, board) {
     // Touch timestamp so it stays fresh
     await tx(HEX_STORE, 'readwrite', s => s.put({ ...row, ts: Date.now() }));
     return row.result;
-  } catch {
+  } catch (e) {
     return null;
   }
 }
@@ -89,7 +89,7 @@ export async function setCachedHex(code, board, result) {
     const key = hexKey(code, board);
     await tx(HEX_STORE, 'readwrite', s => s.put({ key, result, ts: Date.now() }));
     await _evictOldHex();
-  } catch {
+  } catch (e) {
     // Non-fatal — in-memory ref still works as fallback
   }
 }
@@ -117,7 +117,7 @@ async function _evictOldHex() {
       };
       allReq.onerror = (e) => reject(e.target.error);
     });
-  } catch {
+  } catch (e) {
     // Eviction failure is non-fatal
   }
 }
@@ -147,7 +147,7 @@ export async function getQueuedComponents() {
       req.onsuccess = (e) => resolve(e.target.result || []);
       req.onerror = (e) => reject(e.target.error);
     });
-  } catch {
+  } catch (e) {
     return [];
   }
 }

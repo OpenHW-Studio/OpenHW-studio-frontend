@@ -9,7 +9,7 @@ function stringifyArg(arg) {
   if (arg instanceof Error) return arg.stack || arg.message || String(arg);
   try {
     return JSON.stringify(arg);
-  } catch {
+  } catch (e) {
     return String(arg);
   }
 }
@@ -49,10 +49,12 @@ export function TerminalIcon({ size = 16 }) {
 
 export function useSimulationConsole() {
   const [consoleEntries, setConsoleEntries] = useState([]);
+  const pendingEntriesRef = useRef([]);
+  const flushTimerRef = useRef(null);
   const [isConsoleOpen, setIsConsoleOpen] = useState(() => {
     try {
       return localStorage.getItem(CONSOLE_OPEN_KEY) === '1';
-    } catch {
+    } catch (e) {
       return false;
     }
   });
@@ -61,7 +63,7 @@ export function useSimulationConsole() {
       const v = Number(localStorage.getItem(CONSOLE_HEIGHT_KEY));
       if (Number.isFinite(v)) return Math.max(140, Math.min(540, v));
       return 220;
-    } catch {
+    } catch (e) {
       return 220;
     }
   });
@@ -69,6 +71,7 @@ export function useSimulationConsole() {
   const appendConsoleEntry = useCallback((level, message, source = 'app') => {
     const normalized = String(message || '').trim();
     if (!normalized || shouldSkipEntry(normalized)) return;
+    if (source === 'debug' && !isConsoleOpen) return;
 
     const now = new Date();
     const ts = `${now.toTimeString().slice(0, 8)}.${String(now.getMilliseconds()).padStart(3, '0')}`;
@@ -80,14 +83,23 @@ export function useSimulationConsole() {
       message: normalized,
     };
 
-    setConsoleEntries((prev) => {
-      const next = [...prev, entry];
-      if (next.length > MAX_CONSOLE_ENTRIES) {
-        return next.slice(next.length - MAX_CONSOLE_ENTRIES);
-      }
-      return next;
-    });
-  }, []);
+    pendingEntriesRef.current.push(entry);
+    if (flushTimerRef.current !== null) return;
+
+    flushTimerRef.current = setTimeout(() => {
+      flushTimerRef.current = null;
+      const pending = pendingEntriesRef.current;
+      if (pending.length === 0) return;
+      pendingEntriesRef.current = [];
+      setConsoleEntries((prev) => {
+        const next = [...prev, ...pending];
+        if (next.length > MAX_CONSOLE_ENTRIES) {
+          return next.slice(next.length - MAX_CONSOLE_ENTRIES);
+        }
+        return next;
+      });
+    }, 100);
+  }, [isConsoleOpen]);
 
   useEffect(() => {
     const originalLog = console.log;
@@ -119,7 +131,7 @@ export function useSimulationConsole() {
   useEffect(() => {
     try {
       localStorage.setItem(CONSOLE_OPEN_KEY, isConsoleOpen ? '1' : '0');
-    } catch {
+    } catch (e) {
       // Ignore storage failures (private mode/quota).
     }
   }, [isConsoleOpen]);
@@ -127,17 +139,26 @@ export function useSimulationConsole() {
   useEffect(() => {
     try {
       localStorage.setItem(CONSOLE_HEIGHT_KEY, String(consoleHeight));
-    } catch {
+    } catch (e) {
       // Ignore storage failures (private mode/quota).
     }
   }, [consoleHeight]);
+
+  useEffect(() => {
+    return () => {
+      if (flushTimerRef.current !== null) {
+        clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const clearConsoleEntries = useCallback(() => {
     setConsoleEntries([]);
   }, []);
 
   const downloadConsoleLog = useCallback(() => {
-    const content = consoleEntries.map(formatDownloadLine).join('\n');
+    const content = [...consoleEntries, ...pendingEntriesRef.current].map(formatDownloadLine).join('\n');
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -222,7 +243,10 @@ export function SimulationConsolePanel({
   return (
     <div
       data-export-ignore="true"
+      data-simulation-console="true"
+      onWheelCapture={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       style={{
         position: 'absolute',
@@ -357,6 +381,7 @@ export function SimulationConsolePanel({
       <div
         ref={bodyRef}
         onScroll={handleScroll}
+        onWheel={(e) => e.stopPropagation()}
         style={{
           overflowY: 'auto',
           flex: 1,

@@ -1,0 +1,260 @@
+name: Page Runtime Validation
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+permissions:
+  pull-requests: write
+
+jobs:
+  page-validation:
+    name: Validate Page Runtime & Console Errors
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout frontend code
+        uses: actions/checkout@v4
+        with:
+          path: OpenHW-studio-frontend
+
+      - name: Checkout emulator code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-emulator
+          path: openhw-studio-emulator
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
+
+      - name: Install dependencies
+        env:
+          NPM_CONFIG_OPTIONAL: "true"
+        working-directory: OpenHW-studio-frontend
+        run: |
+          npm ci --no-audit --no-fund --include=optional
+      - name: Cache Native Linux Binaries
+        uses: actions/cache@v4
+        id: native-bins-cache
+        with:
+          path: |
+            OpenHW-studio-frontend/node_modules/@rollup/rollup-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/lightningcss-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+          key: native-bins-${{ runner.os }}-${{ hashFiles('.github/workflows/page-validation.yml') }}
+
+      - name: Install native Linux binaries
+        if: steps.native-bins-cache.outputs.cache-hit != 'true'
+        working-directory: OpenHW-studio-frontend
+        run: |
+          npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
+
+      - name: Cache Vite build cache
+        uses: actions/cache@v4
+        with:
+          path: OpenHW-studio-frontend/node_modules/.vite
+          key: vite-build-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            vite-build-${{ runner.os }}-
+
+      - name: Build application
+        working-directory: OpenHW-studio-frontend
+        run: npm run build
+
+      - name: Create test results directory
+        working-directory: OpenHW-studio-frontend
+        run: mkdir -p test-results/page-validation test-results/console-errors
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        working-directory: OpenHW-studio-frontend
+        run: npx playwright install chromium
+
+      - name: Install Playwright dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npx playwright install-deps chromium
+
+
+      - name: Run page validation tests
+        working-directory: OpenHW-studio-frontend
+        run: |
+          npx playwright test e2e/page-validation.spec.js --reporter=list
+        continue-on-error: true
+
+      - name: Run console error check tests
+        working-directory: OpenHW-studio-frontend
+        run: |
+          npx playwright test e2e/console-error-check.spec.js --reporter=list
+        continue-on-error: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: page-validation-results
+          path: OpenHW-studio-frontend/test-results
+          retention-days: 30
+
+      - name: Comment on PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const marker = '<!-- page-validation -->';
+            const baseDir = path.join(process.env.GITHUB_WORKSPACE, 'OpenHW-studio-frontend/test-results');
+            const summaryPath = path.join(baseDir, 'console-errors/summary.json');
+            const validationPath = path.join(baseDir, 'page-validation/report.json');
+            
+            let reports = [];
+            let totalConsoleErrors = 0;
+            let totalNetworkErrors = 0;
+            let routesWithIssues = 0;
+            let issueDetails = [];
+            let tableRows = '';
+
+            // Try to load detailed validation report
+            if (fs.existsSync(validationPath)) {
+              reports = JSON.parse(fs.readFileSync(validationPath, 'utf8'));
+            } else if (fs.existsSync(summaryPath)) {
+              // Fallback to console error summary if detailed report is missing
+              const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+              reports = summary.routeDetails.map(r => ({
+                pageName: r.name,
+                passed: r.errors === 0 && r.networkErrors === 0,
+                results: [
+                  { test: 'Console Errors', passed: r.errors === 0, message: `${r.errors} error(s) found` },
+                  { test: 'Network Errors', passed: r.networkErrors === 0, message: `${r.networkErrors} error(s) found` }
+                ]
+              }));
+            }
+
+            if (reports.length > 0) {
+              reports.forEach(page => {
+                const consoleResult = page.results.find(r => r.test === 'Console Errors');
+                const networkResult = page.results.find(r => r.test === 'Network Errors');
+                const perfResult = page.results.find(r => r.test === 'Page Performance');
+                
+                const consoleCount = consoleResult ? (parseInt(consoleResult.message) || 0) : 0;
+                const networkCount = networkResult ? (parseInt(networkResult.message) || 0) : 0;
+                
+                let loadTime = '-';
+                if (perfResult && perfResult.message) {
+                  const match = perfResult.message.match(/\d+ms/);
+                  if (match) loadTime = match[0];
+                }
+                
+                totalConsoleErrors += consoleCount;
+                totalNetworkErrors += networkCount;
+                
+                const hasIssues = !page.passed || consoleCount > 0 || networkCount > 0;
+                if (hasIssues) {
+                  routesWithIssues++;
+                  let reasons = [];
+                  if (consoleCount > 0) reasons.push(`Console Error detected`);
+                  if (networkCount > 0) reasons.push(`Network error detected`);
+                  if (!page.passed) {
+                    const failingChecks = page.results.filter(r => !r.passed && r.test !== 'Console Errors' && r.test !== 'Network Errors');
+                    failingChecks.forEach(fc => reasons.push(`${fc.test} failed`));
+                  }
+                  issueDetails.push(`  - **${page.pageName}**: ${reasons.join(', ')}`);
+                }
+                
+                const statusEmoji = page.passed ? '✓' : '✗';
+                const warningEmoji = (consoleCount > 0 || networkCount > 0) ? '⚠️' : '';
+                
+                tableRows += `| ${page.pageName} | ${statusEmoji} ${warningEmoji} | ${consoleCount} | ${networkCount} | ${loadTime} |\n`;
+              });
+
+              const passedCount = reports.length - routesWithIssues;
+              const failedCount = routesWithIssues;
+              const overallEmoji = failedCount > 0 ? '❌' : (totalConsoleErrors > 0 ? '⚠️' : '✅');
+              const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
+              
+              let comment = marker + '\n';
+              comment += `## ${overallEmoji} Page Runtime Validation Results\n\n`;
+              comment += `**Runner**: [🔍 View Detailed Logs](${runUrl})\n\n`;
+              
+              comment += `### 📋 Summary\n`;
+              comment += `- **Total Pages Tested**: ${reports.length}\n`;
+              comment += `- **✓ Passed**: ${passedCount}\n`;
+              comment += `- **✗ Failed/Warning**: ${failedCount}\n`;
+              if (issueDetails.length > 0) {
+                comment += issueDetails.join('\n') + '\n';
+              }
+              comment += '\n';
+
+              comment += `### 📊 Metrics\n`;
+              comment += `- Total Console Errors: ${totalConsoleErrors} 🛑\n`;
+              comment += `- Total Network Errors: ${totalNetworkErrors} 🌐\n\n`;
+              
+              comment += `### 📄 Detailed Report\n`;
+              comment += `| Page | Status | Console | Network | Perf |\n`;
+              comment += `| :--- | :---: | :---: | :---: | :---: |\n`;
+              comment += tableRows + '\n';
+              
+              comment += '\n---\n*Please check the logs if you see ⚠️ or ✗.*';
+
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              });
+
+              const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body: comment
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: comment
+                });
+              }
+            } else {
+              console.log('No reports found at expected locations.');
+            }
+
+      - name: Fail job if critical errors found
+        if: always()
+        working-directory: OpenHW-studio-frontend
+        run: |
+          if [ -f test-results/console-errors/summary.json ]; then
+            FAILED=$(node -e "
+              const fs = require('fs');
+              const data = JSON.parse(fs.readFileSync('test-results/console-errors/summary.json', 'utf8'));
+              const failed = data.routeDetails.filter(r => r.errors > 0 && r.name.toLowerCase().includes('critical')).length;
+              console.log(failed);
+            ")
+            if [ "$FAILED" -gt 0 ]; then
+              echo "Critical console errors detected!"
+              exit 1
+            fi
+          fi

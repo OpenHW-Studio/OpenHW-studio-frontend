@@ -6,6 +6,10 @@ on:
       - develop
       - main
 
+permissions:
+  pull-requests: write
+  issues: write
+
 jobs:
   verify_pr:
     name: Lint, Test & Dry-Run Deploy
@@ -51,16 +55,58 @@ jobs:
           cache: 'npm'
           cache-dependency-path: OpenHW-studio-frontend/package-lock.json
 
-      - name: Install dependencies
+      - name: Cache Emulator Node Modules
+        uses: actions/cache@v4
+        id: emulator-cache
+        with:
+          path: openhw-studio-emulator/node_modules
+          key: emulator-modules-${{ runner.os }}-${{ hashFiles('openhw-studio-emulator/package-lock.json') }}
+
+      - name: Cache CLI Node Modules
+        uses: actions/cache@v4
+        id: cli-cache
+        with:
+          path: openhw-studio-cli/node_modules
+          key: cli-modules-${{ runner.os }}-${{ hashFiles('openhw-studio-cli/package-lock.json') }}
+
+      - name: Install Sub-Repository Dependencies
+        working-directory: OpenHW-studio-frontend
         run: |
           echo "Installing emulator deps..."
-          cd openhw-studio-emulator && npm ci
+          if [ "${{ steps.emulator-cache.outputs.cache-hit }}" != "true" ]; then
+            npm --prefix ../openhw-studio-emulator ci --include=optional
+          fi
+          
           echo "Installing CLI deps..."
-          cd ../openhw-studio-cli && npm install
-          echo "Installing frontend deps..."
-          cd ../OpenHW-studio-frontend && npm install
+          if [ "${{ steps.cli-cache.outputs.cache-hit }}" != "true" ]; then
+            npm --prefix ../openhw-studio-cli install
+          fi
+
+      - name: Install Frontend Core Dependencies
+        working-directory: OpenHW-studio-frontend
+        run: npm ci --include=optional
+
+      - name: Cache Native Linux Binaries
+        uses: actions/cache@v4
+        id: native-bins-cache
+        with:
+          path: |
+            OpenHW-studio-frontend/node_modules/@rollup/rollup-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/lightningcss-linux-x64-gnu
+            OpenHW-studio-frontend/node_modules/@tailwindcss/oxide-linux-x64-gnu
+          key: native-bins-${{ runner.os }}-${{ hashFiles('.github/workflows/pr-checks.yml') }}
+
+      - name: Install Native Linux Binaries
+        working-directory: OpenHW-studio-frontend
+        run: |
+          if [ "${{ steps.native-bins-cache.outputs.cache-hit }}" != "true" ]; then
+            echo "Installing native Linux binaries..."
+            npm install --no-save --include=optional @rollup/rollup-linux-x64-gnu@4.60.2 lightningcss-linux-x64-gnu@1.31.1 @tailwindcss/oxide-linux-x64-gnu@4.2.1
+          fi
+          node -e "require('@rollup/rollup-linux-x64-gnu'); require('lightningcss-linux-x64-gnu'); require('@tailwindcss/oxide'); console.log('Native binaries OK')"
 
       - name: Setup Arduino CLI
+
         uses: arduino/setup-arduino-cli@v2
 
       - name: Cache Arduino Cores
@@ -81,22 +127,28 @@ jobs:
           arduino-cli core install rp2040:rp2040
           arduino-cli core install arduino:avr
 
+      - name: Cache Vite build results
+        uses: actions/cache@v4
+        with:
+          path: OpenHW-studio-frontend/node_modules/.vite
+          key: vite-build-${{ runner.os }}-${{ hashFiles('OpenHW-studio-frontend/package-lock.json') }}
+          restore-keys: |
+            vite-build-${{ runner.os }}-
+
       - name: Verify Build
-        run: |
-          cd OpenHW-studio-frontend
-          npm run build
+
+        working-directory: OpenHW-studio-frontend
+        run: npm run build
         continue-on-error: false
 
       - name: Run Protocol Compliance Tests
-        run: |
-          cd OpenHW-studio-frontend
-          npm run test:protocol
+        working-directory: OpenHW-studio-frontend
+        run: npm run test:protocol
         continue-on-error: false
 
       - name: Run RP2040 Smoke Tests
-        run: |
-          cd OpenHW-studio-frontend
-          npm run test:rp2040-smoke
+        working-directory: OpenHW-studio-frontend
+        run: npm run test:rp2040-smoke
         continue-on-error: false
 
       - name: Dry-run Docker Deployment Build
@@ -111,3 +163,64 @@ jobs:
             VITE_EXAMPLES_BASE_URL=https://openhw-studio.fossee.in/examples
             VITE_GOOGLE_CLIENT_ID=test-id
             VITE_ADMIN_EMAILS=test@test.com
+
+      - name: Reference Platform Validation Summary
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "## Platform Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "See unified backend+emulator report: https://github.com/OpenHW-Studio/openhw-studio-backend/actions/workflows/platform-validation-summary.yml" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on PR with result
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- frontend-pr-checks -->';
+            const status = '${{ job.status }}';
+            const emoji = status === 'success' ? '✅' : status === 'failure' ? '❌' : '⚠️';
+            const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
+            
+            const body = [
+              marker,
+              `## ${emoji} Frontend PR Checks`,
+              '',
+              `**Overall Status**: ${status.toUpperCase()}`,
+              '',
+              '### 🛠️ Checks Performed:',
+              '- **Linting**: Prettier/ESLint verification',
+              '- **Build**: Production bundle generation',
+              '- **Protocol Compliance**: Core emulator interaction tests',
+              '- **RP2040 Smoke Tests**: Microcontroller lifecycle validation',
+              '- **Docker Dry-Run**: Deployment container integrity',
+              '',
+              `[🔍 View Detailed Build & Test Logs](${runUrl})`,
+              '',
+              '---',
+              'Failure in PR checks usually prevents deployment to prevent breaking the develop/main branches.'
+            ].join('\n');
+
+ 
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+ 
+            const existing = comments.find(c => c.user?.type === 'Bot' && c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body
+              });
+            }
+
