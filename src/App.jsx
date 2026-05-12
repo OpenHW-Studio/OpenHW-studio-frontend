@@ -145,13 +145,13 @@ export default function App() {
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/component-editor" element={<ComponentEditorPage />} />
             <Route path="/alignment-lab" element={<ComponentLab />} />
-            <Route path="/components/:componentId/theory" element={<TheoryPage />} />
-            <Route path="/components/:componentId/quiz" element={<QuizPage />} />
+            {/* <Route path="/components/:componentId/theory" element={<TheoryPage />} />
+            <Route path="/components/:componentId/quiz" element={<QuizPage />} /> */}
             <Route path="/adventure" element={<AdventureMapPage />} />
             <Route path="/grade" element={<GradingPage />} />
-            <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
+            {/* <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
 
-                        <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} />
+                        <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} /> */}
             {/* Guest accessible simulator */}
             <Route path="/simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
             <Route path="/mobile-simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />

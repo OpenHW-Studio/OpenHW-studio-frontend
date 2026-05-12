@@ -31,8 +31,8 @@ export default defineConfig(({ mode }) => {
       cssMinify: true,
     },
     resolve: {
-      alias: aliasPath ? {
-        '@openhw/emulator': aliasPath,
+      alias: resolvedEmulatorPath ? {
+        '@openhw/emulator': resolvedEmulatorPath,
       } : {},
     },
     optimizeDeps: {
@@ -81,7 +81,7 @@ export default defineConfig(({ mode }) => {
       fs: {
         allow: [
           path.resolve(__dirname, '..'),
-          ...(aliasPath ? [aliasPath] : []),
+          ...(resolvedEmulatorPath ? [resolvedEmulatorPath] : []),
         ],
       },
     },
