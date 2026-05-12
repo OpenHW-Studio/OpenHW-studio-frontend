@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 const timeoutMs = Math.max(30_000, Number(process.env.SMOKE_TIMEOUT_MS || 240_000));
-const command = 'npx --yes tsx src/worker/rp2040-smoke-matrix.ts';
+const command = 'npx vite-node src/worker/rp2040-smoke-matrix.ts';
 
 const child = spawn(command, {
   stdio: 'inherit',

@@ -1,0 +1,15 @@
+{
+  "name": "openhw-studio-grading-engine",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "openhw_studio_grading_engine_bg.wasm",
+    "openhw_studio_grading_engine.js",
+    "openhw_studio_grading_engine.d.ts"
+  ],
+  "main": "openhw_studio_grading_engine.js",
+  "types": "openhw_studio_grading_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

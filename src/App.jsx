@@ -1,4 +1,7 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import React from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useIsMobile } from './hooks/useIsMobile'
+
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { GamificationProvider } from './context/GamificationContext.jsx'
@@ -33,12 +36,95 @@ import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
 import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
 import GuidedSimulatorPage from './pages/GuidedsimulatorPage.jsx'
 import TeacherProjectContentEditor from './pages/teacher/TeacherProjectContentEditor.jsx'
+import MobileSimulatorPage from './pages/mobileui/SimulatorPage.jsx'
+import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
+import GradingPage from './pages/GradingPage.jsx';
+import MaintenancePage from './pages/MaintenancePage.jsx';
+
+import { fetchMaintenanceStatus } from './services/simulatorService.js';
+import axios from 'axios';
+
+
+
+const ResponsiveSimulatorRoute = ({ desktopElement, mobileElement }) => {
+  const isMobile = useIsMobile();
+  const location = useLocation();
+
+  const isMobilePath = location.pathname.startsWith('/mobile-simulator');
+  
+  // If we're on mobile but NOT on a mobile path, redirect to mobile
+  if (isMobile && !isMobilePath) {
+    const newPath = location.pathname.startsWith('/simulator') 
+      ? location.pathname.replace('/simulator', '/mobile-simulator')
+      : `/mobile-simulator${location.pathname}`;
+    return <Navigate to={newPath} replace />;
+  }
+
+  // If we're on desktop but ON a mobile path, redirect to desktop
+  if (!isMobile && isMobilePath) {
+    const newPath = location.pathname.replace('/mobile-simulator', '/simulator');
+    // If it was just /mobile-simulator, it goes to /simulator. 
+    // If it was /mobile-simulator/something, it goes to /simulator/something.
+    return <Navigate to={newPath === '' ? '/simulator' : newPath} replace />;
+  }
+
+  return isMobile ? mobileElement : desktopElement;
+};
+
+const MaintenanceGuard = ({ children }) => {
+  const [maintenance, setMaintenance] = React.useState(false);
+  const [checking, setChecking] = React.useState(true);
+  const location = useLocation();
+  const isAdminPath = location.pathname.startsWith('/admin');
+
+  React.useEffect(() => {
+    let isMounted = true;
+    const check = async () => {
+      const isMaint = await fetchMaintenanceStatus();
+      if (isMounted) {
+        setMaintenance(isMaint);
+        setChecking(false);
+      }
+    };
+
+    check();
+    const interval = setInterval(check, 30000); // Check every 30s
+
+    // Global Axios Interceptor for 503 / connection errors
+    const interceptor = axios.interceptors.response.use(
+      response => response,
+      error => {
+        if (!error.response || error.response.status === 503) {
+          if (isMounted) setMaintenance(true);
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+      axios.interceptors.response.eject(interceptor);
+    };
+  }, []);
+
+  if (checking && !isAdminPath) return null; // Wait for initial check unless admin
+
+  // Admins are never blocked from admin paths
+  if (maintenance && !isAdminPath) {
+    return <MaintenancePage />;
+  }
+
+  return children;
+};
 
 export default function App() {
+
   return (
     <BrowserRouter>
       <AuthProvider>
         <GamificationProvider>
+          <MaintenanceGuard>
 
           {/* Global toast notifications (level-up, badge earned, XP) */}
           <GamificationToasts />
@@ -58,14 +144,29 @@ export default function App() {
 <Route path="/projects" element={<ProjectsGallery />} />
             <Route path="/components" element={<ComponentsPage />} />
             <Route path="/component-editor" element={<ComponentEditorPage />} />
+            <Route path="/alignment-lab" element={<ComponentLab />} />
+            <Route path="/components/:componentId/theory" element={<TheoryPage />} />
+            <Route path="/components/:componentId/quiz" element={<QuizPage />} />
             <Route path="/adventure" element={<AdventureMapPage />} />
-            <Route path="/gamification-simulator" element={<Navigate to="/adventure" replace />} />
+            <Route path="/grade" element={<GradingPage />} />
+            <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
+
+                        <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} />
             {/* Guest accessible simulator */}
-            <Route path="/simulator" element={<SimulatorPage />} />
-            <Route path="/simulator/live/:liveCode" element={<SimulatorPage />} />
-            <Route path="/simulator/share/:shareId" element={<SimulatorPage />} />
-            <Route path="/simulator/share/:shareId/assignment/:classId/:assignmentId" element={<SimulatorPage />} />
-            <Route path="/:projectName/demo" element={<SimulatorPage />} />
+            <Route path="/simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+
+            <Route path="/simulator/live/:liveCode" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator/live/:liveCode" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            
+            <Route path="/simulator/share/:shareId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator/share/:shareId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            
+            <Route path="/simulator/share/:shareId/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator/share/:shareId/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+
+            <Route path="/:projectName/demo" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+
             <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
             <Route path="/:projectName/reading" element={<ProjectTheoryPage />} />
             <Route path="/:projectName/quiz" element={<ProjectQuizPage />} />
@@ -160,7 +261,8 @@ export default function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
 
-      </GamificationProvider>
+          </MaintenanceGuard>
+        </GamificationProvider>
       </AuthProvider>
     </BrowserRouter>
   )

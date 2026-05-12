@@ -75,7 +75,7 @@ export default function StudentDashboard() {
             ])
 
             return [classroom._id, { assignments, notices }]
-          } catch {
+          } catch (e) {
             return [classroom._id, { assignments: [], notices: [] }]
           }
         })
@@ -197,7 +197,7 @@ export default function StudentDashboard() {
     try {
       const clipText = await navigator.clipboard.readText()
       setJoinCode(normalizeJoinCode(clipText))
-    } catch {
+    } catch (e) {
       setJoinError('Clipboard access blocked. Paste the code manually.')
     }
   }

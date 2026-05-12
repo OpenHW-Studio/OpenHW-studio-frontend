@@ -8,6 +8,7 @@ import 'prismjs/components/prism-cpp';
 import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-json';
 import { Btn } from './Btn';
+import { getBoardColors } from './projectUtils';
 
 // Lazy-load the heavy Blockly editor to improve initial LCP metrics
 const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.jsx'));
@@ -139,14 +140,7 @@ function RightPanelInternal(props) {
     ? serialHistory
     : serialHistory.filter((entry) => entry.boardId === serialBoardFilter);
 
-  const boardColors = React.useMemo(() => {
-    const palette = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#14b8a6', '#eab308', '#06b6d4', '#8b5cf6'];
-    const map = { all: '#94a3b8' };
-    (serialBoardOptions || []).filter((id) => id !== 'all').forEach((id, idx) => {
-      map[id] = palette[idx % palette.length];
-    });
-    return map;
-  }, [serialBoardOptions]);
+  const boardColors = React.useMemo(() => getBoardColors(serialBoardOptions), [serialBoardOptions]);
 
   React.useEffect(() => {
     if (!serialBoardOptions?.length) {
@@ -281,28 +275,47 @@ function RightPanelInternal(props) {
                 </div>
                 <button className="bg-transparent border-none text-[var(--text3)] cursor-pointer text-sm font-inherit" onClick={() => setShowValidation(false)}>✕</button>
               </div>
-              {validationErrors.map((err, i) => (
+              {validationErrors.map((err, i) => {
+                const isError = err.severity === 'error' || err.type === 'error';
+                const confidence = err.confidence ? `${Math.round(err.confidence * 100)}%` : 'unknown';
+                return (
                 <div key={i} className="px-3 py-2 text-xs border-l-4 mb-0.5 leading-relaxed group relative" style={{
-                  borderLeftColor: err.type === 'error' ? 'var(--red)' : 'var(--orange)',
+                  borderLeftColor: isError ? 'var(--red)' : 'var(--orange)',
                   background: 'rgba(0,0,0,0.1)'
                 }}>
                   <div className="flex justify-between items-start gap-2">
-                    <span style={{ color: err.type === 'error' ? 'var(--red)' : 'var(--orange)' }}>
-                      {err.type === 'error' ? '🔴' : '🟡'} {err.message}
-                    </span>
+                    <div className="flex-1">
+                      <span style={{ color: isError ? 'var(--red)' : 'var(--orange)' }}>
+                        {isError ? '🔴' : '🟡'} {err.message}
+                      </span>
+                      {err.remediation && (
+                        <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '2px' }}>
+                          💡 {err.remediation}
+                        </div>
+                      )}
+                      {err.details?.rootCauseGroup && (
+                        <div style={{ fontSize: '9px', color: 'var(--text4)', marginTop: '2px' }}>
+                          Root cause: {err.details.rootCauseGroup}
+                        </div>
+                      )}
+                    </div>
                     {err.remediation && applyFix && (
-                      <button 
-                        onClick={() => applyFix(err)}
-                        className="shrink-0 bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all"
-                        title={err.remediation}
-                      >
-                        <span>🪄</span>
-                        <span>FIX</span>
-                      </button>
+                      <div className="shrink-0 flex gap-1">
+                        <button 
+                          onClick={() => applyFix(err)}
+                          className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all"
+                          title={`Fix with ${confidence} confidence`}
+                        >
+                          <span>🪄</span>
+                          <span>FIX</span>
+                          <span style={{ fontSize: '8px', opacity: 0.7 }}>({confidence})</span>
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
           )}
 
@@ -1107,6 +1120,7 @@ function RightPanelInternal(props) {
                     onToggleUseBlocklyCode={() => { if (!editingDisabled) setUseBlocklyCode(!useBlocklyCode); }}
                     visible={codeTab === 'block'}
                     boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
+                    isMobile={false}
                   />
                 </React.Suspense>
               )}

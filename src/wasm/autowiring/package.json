@@ -1,0 +1,18 @@
+{
+  "name": "openhw-studio-autowiring-engine",
+  "type": "module",
+  "collaborators": [
+    "danish9661 <110881758+danish9661@users.noreply.github.com>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "openhw_studio_autowiring_engine_bg.wasm",
+    "openhw_studio_autowiring_engine.js",
+    "openhw_studio_autowiring_engine.d.ts"
+  ],
+  "main": "openhw_studio_autowiring_engine.js",
+  "types": "openhw_studio_autowiring_engine.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
