@@ -1,16 +1,33 @@
 /* @ts-self-types="./openhw_studio_autowiring_engine.d.ts" */
 
 /**
+ * @param {number} x
+ * @param {number} y
+ * @returns {string | undefined}
+ */
+export function findNearestBoard(x, y) {
+    const ret = wasm.findNearestBoard(x, y);
+    let v1;
+    if (ret[0] !== 0) {
+        v1 = getStringFromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    }
+    return v1;
+}
+
+/**
  * @param {any} new_comp_json
  * @param {any} manifest_json
  * @param {string} board_id
- * @param {any} existing_wires_json
+ * @param {any} wires_json
+ * @param {boolean} allow_breadboard
+ * @param {boolean} is_rewire
  * @returns {any}
  */
-export function generateAutonomousSetup(new_comp_json, manifest_json, board_id, existing_wires_json) {
+export function generateAutonomousSetup(new_comp_json, manifest_json, board_id, wires_json, allow_breadboard, is_rewire) {
     const ptr0 = passStringToWasm0(board_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.generateAutonomousSetup(new_comp_json, manifest_json, ptr0, len0, existing_wires_json);
+    const ret = wasm.generateAutonomousSetup(new_comp_json, manifest_json, ptr0, len0, wires_json, allow_breadboard, is_rewire);
     return ret;
 }
 

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 const timeoutMs = Math.max(120_000, Number(process.env.CLI_HW_MATRIX_TIMEOUT_MS || 3_600_000));
-const command = 'npx --yes tsx src/worker/cli-hardware-compat-matrix.ts';
+const command = 'npx vite-node src/worker/cli-hardware-compat-matrix.ts';
 
 const child = spawn(command, {
   stdio: 'inherit',

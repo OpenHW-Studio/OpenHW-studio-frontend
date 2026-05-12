@@ -260,7 +260,7 @@ void loop() {
     tags: ['analog input', 'potentiometer', 'PWM'],
     startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-rgb-led', 'wokwi-buzzer', 'wokwi-potentiometer'],
     rewardComponents: [
-      { type: 'wokwi-photoresistor-sensor', name: 'Light Sensor (LDR)', icon: '🌞', description: 'Detects how bright or dark the room is. Like eyes for your Arduino!' },
+      { type: 'wokwi-photoresistor', name: 'Light Sensor (LDR)', icon: '🌞', description: 'Detects how bright or dark the room is. Like eyes for your Arduino!' },
     ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -331,13 +331,13 @@ void loop() {
     icon: '🌞',
     world: 1,
     tags: ['LDR', 'light sensor', 'analog input'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-photoresistor-sensor'],
+    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-photoresistor'],
     rewardComponents: [
       { type: 'wokwi-servo', name: 'Servo Motor', icon: '⚙️', description: 'A motor that can turn to any angle you set — like a robot arm!' },
     ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-photoresistor-sensor', label: 'Light Sensor (LDR)', qty: 1 },
+      { type: 'wokwi-photoresistor', label: 'Light Sensor (LDR)', qty: 1 },
       { type: 'wokwi-led', label: 'LED', qty: 1 },
       { type: 'wokwi-resistor', label: '10kΩ Resistor', qty: 1, attrs: { value: '10000' } },
       { type: 'wokwi-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },

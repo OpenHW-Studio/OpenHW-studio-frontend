@@ -2,7 +2,7 @@ import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction
 import { RP2040, GPIOPinState, ConsoleLogger, LogLevel, USBCDC, GDBServer, GDBConnection } from 'rp2040js';
 import { bootromB1 } from './rp2040-bootrom.ts';
 
-import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
+import { BaseComponent } from '@openhw/emulator';
 import { LEDLogic } from '@openhw/emulator/src/components/wokwi-led/logic.ts';
 import { UnoLogic } from '@openhw/emulator/src/components/wokwi-arduino-uno/logic.ts';
 import { PicoLogic } from './pico-logic.ts';
@@ -2475,7 +2475,7 @@ export type AVRRunnerOptions = {
     rp2040ExecutableRanges?: RP2040ExecutableRangeInput[];
     rp2040LogicalFlashBytes?: number | string;
     rp2040FlashPartitions?: RP2040FlashPartitionInput[];
-    solverMode?: 'logic' | 'nodal';
+    solverMode?: 'logic';
 };
 
 export type BoardRunner = {
@@ -2491,10 +2491,11 @@ export type BoardRunner = {
     setSerialBaudRate: (baud: number) => void;
     getSerialBaudRate: () => number;
     setSpeed: (speed: number) => void;
-    solverMode: 'logic' | 'nodal';
-    setSolverMode: (mode: 'logic' | 'nodal') => void;
+    solverMode: 'logic';
+    setSolverMode: (mode: 'logic') => void;
     setTelemetryEnabled: (enabled: boolean) => void;
-    getTelemetryReport: () => any;
+    getRichTelemetrySnapshot: (options?: { mode?: 'standard' | 'deep' | 'delta' }) => any;
+    getSimulatedTimeMs: () => number;
 };
 
 const RP2040_FLASH_BASE = 0x10000000;
@@ -3464,7 +3465,7 @@ export class AVRRunner {
     pinsChanged: boolean = true;
     speed: number = 1.0;
     boardId: string;
-    solverMode: 'logic' | 'nodal';
+    solverMode: 'logic';
     private serialBaudRate: number = 9600;
     private softSerialBaudRate: number = 9600;
     private serialByteBudget: number = 0;
@@ -3489,7 +3490,8 @@ export class AVRRunner {
     private circuitDirty: boolean = true;
     private topologyDirty: boolean = true;
     private lastPhysicsSolveAt: number = 0;
-    private lastStateEmitAt: number = 0;
+    private lastStateEmitCycle: number = 0;
+    private statusIntervalEmitCount: number = 0;
     private lastRunLoopMs: number = 0;
     private lastPhysicsMs: number = 0;
     private lastComponentUpdateMs: number = 0;
@@ -3511,7 +3513,7 @@ export class AVRRunner {
         this.onStateUpdate = onStateUpdate;
         this.onByteTransmitCb = options.onByteTransmit;
         this.speed = options.speed ?? 1.0;
-        this.solverMode = options.solverMode ?? 'logic';
+        this.solverMode = 'logic';
         this.circuitDirty = true;
         const fallbackBoard = (componentsDef || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
         this.boardId = options.boardId || fallbackBoard?.id || 'wokwi-arduino-uno_0';
@@ -3522,6 +3524,8 @@ export class AVRRunner {
         const { data } = parse(hexData);
         const u8 = new Uint8Array(program.buffer);
         u8.set(data);
+        const preview = Array.from(data.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        console.log(`AVRRunner: Flashed ${data.length} bytes. Start: [${preview}]`);
 
         this.cpu = new CPU(program, 0x2200);
         this.cpuCyclesAtStart = this.cpu.cycles;
@@ -3533,7 +3537,6 @@ export class AVRRunner {
         ];
 
         this.adc = new AVRADC(this.cpu, adcConfig);
-        this.initPhysicsWorker();
 
         this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
         this.usart.onByteTransmit = (value) => {
@@ -3710,63 +3713,6 @@ export class AVRRunner {
         this.running = true;
         this.lastTime = performance.now();
         this.runLoop();
-
-        // Send compact board state frequently, but coalesce large component payloads.
-        let statusIntervalEmitCount = 0;
-        this.statusInterval = setInterval(() => {
-            if (this.running && this.cpu) {
-                const msg: any = { type: 'state' };
-                const now = performance.now();
-                let shouldEmit = false;
-
-                // Always send pin states to maintain steady flow
-                msg.pins = this.pinStates;
-                shouldEmit = true;
-
-                if (this.pinsChanged) {
-                    this.pinsChanged = false;
-                }
-
-                if (this.adc) {
-                    msg.analog = Array.from(this.adc.channelValues);
-                }
-
-                const compStates: Array<{ id: string; state: any }> = [];
-                for (const inst of this.instances.values()) {
-                    if (!inst.stateChanged) continue;
-                    const syncState = inst.getSyncState();
-                    if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
-                    inst.stateChanged = false;
-                    compStates.push({
-                        id: inst.id,
-                        state: syncState,
-                        ...collectComponentTelemetry(inst),
-                    });
-                }
-
-                if (compStates.length > 0) {
-                    msg.components = compStates;
-                }
-
-                // Emit if there were any changes (pins or components)
-                // This naturally limits emission to when something happens, preventing empty messages
-                // but allows smooth flow without artificial throttling
-
-                if (shouldEmit) {
-                    msg.boardId = this.boardId;
-                    msg.perf = {
-                        lastRunLoopMs: Number(this.lastRunLoopMs.toFixed(3)),
-                        lastPhysicsMs: Number(this.lastPhysicsMs.toFixed(3)),
-                        lastComponentUpdateMs: Number(this.lastComponentUpdateMs.toFixed(3)),
-                    };
-                    this.lastStateEmitAt = now;
-                    statusIntervalEmitCount++;
-                    msg._emitSeq = statusIntervalEmitCount;
-                    msg._emitTime = now;
-                    this.onStateUpdate(msg);
-                }
-            }
-        }, 1000 / 30);
     }
 
     getSimulatedTimeMs() {
@@ -4011,79 +3957,7 @@ export class AVRRunner {
             visitNode(`${this.boardId}:${arduinoPinStr}`, voltage);
         };
 
-        this.updatePhysics = () => {
-            const now = performance.now();
-            if (this.topologyDirty) {
-                this.solver.reset();
-                this.netToNode.clear();
-                this.pinToNet.forEach((netId, pinStr) => {
-                    if (!this.netToNode.has(netId)) {
-                        const isGroundLikeEndpoint = (endpoint: string) => {
-                            const lower = String(endpoint || '').toLowerCase();
-                            if (lower.includes(':top_gnd') || lower.includes(':bottom_gnd')) return true;
-                            const pin = lower.includes(':') ? lower.split(':')[1] : lower;
-                            return pin === 'gnd'
-                                || pin === 'agnd'
-                                || pin === 'vss'
-                                || /^gnd[._]?\d+$/.test(pin);
-                        };
-
-                        const isGnd = Array.from(this.pinToNet.entries())
-                            .some(([p, n]) => n === netId && isGroundLikeEndpoint(p));
-                        
-                        if (isGnd) this.netToNode.set(netId, 0);
-                        else {
-                            this.solver.addPin(pinStr);
-                            this.netToNode.set(netId, (this.solver as any).nodes.get(pinStr));
-                        }
-                    }
-                    this.solver.addPin(pinStr, this.netToNode.get(netId));
-                });
-
-                // Add components
-                for (const [id, inst] of this.instances) {
-                    if (typeof (inst as any).getMnaStamps === 'function' || typeof (inst as any).getMnaPins === 'function') {
-                        this.solver.addComponent(inst);
-                    }
-                }
-                this.topologyDirty = false;
-            }
-
-            // Always update voltage sources even if topology is clean
-            (this.solver as any).voltageSources = [];
-            for (const [pinStr, netId] of this.pinToNet) {
-                if (pinStr.startsWith(this.boardId)) {
-                    const [_, pinId] = pinStr.split(':');
-                    const isHigh = !!this.pinStates[pinId];
-                    this.solver.addVoltageSource(pinStr, isHigh ? 5.0 : 0.0);
-                }
-            }
-
-            const voltages = this.solver.solve();
-            this.pinToNet.forEach((netId, pinStr) => {
-                const nodeId = this.netToNode.get(netId) ?? -1;
-                const v = voltages.get(nodeId) ?? 0;
-                const [compId, compPin] = pinStr.split(':');
-                const inst = this.instances.get(compId);
-                if (inst) inst.setPinVoltage(compPin, v);
-            });
-
-            // Special check for Serial RX
-            const checkPort = (port: AVRIOPort, pinNames: string[]) => {
-                pinNames.forEach((pin, i) => {
-                    let forcedLow = this.softSerialRxLineLow && (pin === this.softSerialRxPin || pin === `D${this.softSerialRxPin}`);
-                    if (!forcedLow) {
-                        const v = this.instances.get(this.boardId)?.getPinVoltage(pin) ?? 0;
-                        if (v < 0.5) forcedLow = true;
-                    }
-                    if (port) port.setPin(i, !forcedLow);
-                });
-            };
-
-            if (this.portB) checkPort(this.portB, UNO_DIGITAL_PINS.slice(8, 14));
-            if (this.portD) checkPort(this.portD, UNO_DIGITAL_PINS.slice(0, 8));
-            if (this.portC) checkPort(this.portC, UNO_ANALOG_PINS);
-        };
+        this.updatePhysics = () => {};
 
         const attachPort = (port: AVRIOPort, pinNames: string[]) => {
             port.addListener((value) => {
@@ -4136,62 +4010,16 @@ export class AVRRunner {
             const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
             if (this.updatePhysics && shouldSolvePhysics && (now - this.lastPhysicsSolveAt) >= 2) {
                 const physicsStart = performance.now();
-                if (this.solverMode === 'nodal') {
-                    this.requestPhysicsSolve();
-
-                    const physicsDeltaTime = now - this.lastPhysicsSolveAt;
-                    const instArray = Array.from(this.instances.values());
-                    const componentStart = performance.now();
-                    instArray.forEach(inst => {
-                        // Annotate component with netlist-aware wiring/safety info
-                        let isWired = false;
-                        let hasResistor = !!inst.state.hasResistor;
-                        for (const pinId in inst.pins) {
-                            const netId = this.pinToNet.get(`${inst.id}:${pinId}`);
-                            if (netId !== undefined) {
-                                isWired = true;
-                                if (this.netHasResistor.has(netId)) hasResistor = true;
-                            }
-                        }
-                        inst.state.isWired = isWired;
-                        inst.state.hasResistor = hasResistor;
-
-                        inst.update(physicsDeltaTime, this.currentWires, instArray);
-                    });
-                    this.lastComponentUpdateMs = performance.now() - componentStart;
-
-                    if (this.adc && this.cpu) {
-                        for (let i = 0; i < 8; i++) {
-                            const arduinoPin = `A${i}`;
-                            let voltage = 0;
-                            for (const w of this.currentWires) {
-                                const [fromComp, fromPin] = w.from.split(':');
-                                const [toComp, toPin] = w.to.split(':');
-
-                                if (fromComp === this.boardId && fromPin === arduinoPin) {
-                                    const inst = this.instances.get(toComp);
-                                    if (inst) voltage = Math.max(voltage, inst.getPinVoltage(toPin));
-                                } else if (toComp === this.boardId && toPin === arduinoPin) {
-                                    const inst = this.instances.get(fromComp);
-                                    if (inst) voltage = Math.max(voltage, inst.getPinVoltage(fromPin));
-                                }
-                            }
-                            this.adc.channelValues[i] = voltage;
-                        }
-                    }
-                } else {
-                    // Classic Logic mode: Event-driven propagation handles pins.
-                    // We only need occasional inst.update for UI/animations (throttled)
-                    const componentStart = performance.now();
-                    const instArray = Array.from(this.instances.values());
-                    const physicsDeltaTime = now - this.lastPhysicsSolveAt;
-                    instArray.forEach(inst => {
-                        // Lightweight update without netlist traversal
-                        inst.update(physicsDeltaTime, this.currentWires, instArray);
-                    });
-                    this.lastComponentUpdateMs = performance.now() - componentStart;
-                }
-                // --- END OF MOVING ---
+                // Classic Logic mode: event-driven propagation handles pins.
+                // We only need occasional inst.update for UI/animations (throttled).
+                const componentStart = performance.now();
+                const instArray = Array.from(this.instances.values());
+                const physicsDeltaTime = now - this.lastPhysicsSolveAt;
+                instArray.forEach(inst => {
+                    // Lightweight update without netlist traversal
+                    inst.update(physicsDeltaTime, this.currentWires, instArray);
+                });
+                this.lastComponentUpdateMs = performance.now() - componentStart;
 
                 physicsMs = performance.now() - physicsStart;
                 this.lastPhysicsSolveAt = now;
@@ -4222,9 +4050,51 @@ export class AVRRunner {
 
             this.lastPhysicsMs = physicsMs;
             this.lastRunLoopMs = performance.now() - loopStart;
+
+            // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
+            this.emitStateIfDue();
         }
 
         setTimeout(this.runLoop, 1);
+    }
+
+    private emitStateIfDue() {
+        if (!this.cpu) return;
+        if (this.cpu.cycles - this.lastStateEmitCycle >= 266666) {
+            const msg: any = { type: 'state', boardId: this.boardId };
+            msg.pins = this.pinStates;
+            this.pinsChanged = false;
+            
+            if (this.adc) {
+                msg.analog = Array.from(this.adc.channelValues);
+            }
+
+            const now = performance.now();
+            const compStates: Array<{ id: string; state: any }> = [];
+            for (const inst of this.instances.values()) {
+                if (!inst.stateChanged) continue;
+                const syncState = inst.getSyncState();
+                
+                // Respect the component's sync policy to avoid overloading the UI
+                if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+                
+                inst.stateChanged = false;
+                compStates.push({
+                    id: inst.id,
+                    state: syncState,
+                    ...collectComponentTelemetry(inst),
+                });
+            }
+            msg.components = compStates;
+
+            this.statusIntervalEmitCount++;
+            msg._emitSeq = this.statusIntervalEmitCount;
+            msg._emitTime = now;
+            msg.simTimeMs = this.getSimulatedTimeMs();
+            
+            this.lastStateEmitCycle = this.cpu.cycles;
+            this.onStateUpdate(msg);
+        }
     }
 
     private serialBuffer: number[] = [];
@@ -4257,67 +4127,13 @@ export class AVRRunner {
         return this.serialBaudRate;
     }
 
-    private initPhysicsWorker() {
-        try {
-            this.physicsWorker = new Worker(new URL('./physics.worker.ts', import.meta.url), { type: 'module' });
-            this.physicsWorker.onmessage = (e) => {
-                const { type, payload } = e.data;
-                if (type === 'voltages') {
-                    const voltages = new Map<number, number>(payload);
-                    this.pinToNet.forEach((netId, pinStr) => {
-                        const nodeId = this.netToNode.get(netId) ?? -1;
-                        const v = voltages.get(nodeId) ?? 0;
-                        const [compId, compPin] = pinStr.split(':');
-                        const inst = this.instances.get(compId);
-                        if (inst) inst.setPinVoltage(compPin, v);
-                    });
-                    this.physicsWorkerBusy = false;
-                }
-            };
-        } catch (e) {
-            console.error('Failed to init physics worker', e);
-        }
-    }
+    private initPhysicsWorker() {}
 
-    private requestPhysicsSolve() {
-        if (!this.physicsWorker || this.physicsWorkerBusy) return;
-        if (this.topologyDirty) {
-            this.updateTopologyForWorker();
-        }
-        const voltageSources: any[] = [];
-        for (const [pinStr, netId] of this.pinToNet) {
-            if (pinStr.startsWith(this.boardId)) {
-                const [_, pinId] = pinStr.split(':');
-                const isHigh = !!this.pinStates[pinId];
-                voltageSources.push({ pinId: pinStr, voltage: isHigh ? 5.0 : 0.0 });
-            }
-        }
-        this.physicsWorkerBusy = true;
-        this.physicsWorker.postMessage({ type: 'solve', payload: { voltageSources } });
-    }
+    private requestPhysicsSolve() {}
 
-    private updateTopologyForWorker() {
-        if (!this.physicsWorker) return;
-        this.netToNode.clear();
-        const pinNodes: Record<string, number> = {};
-        this.pinToNet.forEach((netId, pinStr) => {
-            if (!this.netToNode.has(netId)) {
-                const isGnd = Array.from(this.pinToNet.entries())
-                    .some(([p, n]) => n === netId && (p.toLowerCase().includes('gnd') || p.toLowerCase().includes('vss')));
-                if (isGnd) this.netToNode.set(netId, 0);
-                else {
-                    const newNodeId = this.netToNode.size + 1;
-                    this.netToNode.set(netId, newNodeId);
-                }
-            }
-            pinNodes[pinStr] = this.netToNode.get(netId)!;
-        });
-        const componentsData = Array.from(this.instances.values()).map(inst => ({ id: inst.id, type: inst.type }));
-        this.physicsWorker.postMessage({ type: 'topology', payload: { pinNodes, componentsData } });
-        this.topologyDirty = false;
-    }
+    private updateTopologyForWorker() {}
 
-    setSolverMode(mode: 'logic' | 'nodal') {
+    setSolverMode(mode: 'logic') {
         this.solverMode = mode;
         for (const key of Object.keys(this.pinStates)) {
             this.pinStates[key] = false;
@@ -4379,12 +4195,12 @@ export class AVRRunner {
         this.componentSyncMeta.clear();
     }
 
-    // â”€â”€â”€ SPI: chip-select awareness â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ——— SPI: chip-select awareness ———————————————————————————————————
     /**
      * Returns true if the component should receive the current SPI byte.
      * A component is selected when:
-     *   â€¢ It has no CS/SS pin  (single-slave wiring â†’ always selected), OR
-     *   â€¢ Its CS/SS pin voltage is < 0.5 V  (active-LOW chip select)
+     *   • It has no CS/SS pin  (single-slave wiring → always selected), OR
+     *   • Its CS/SS pin voltage is < 0.5 V  (active-LOW chip select)
      */
     private isSPISelected(inst: BaseComponent): boolean {
         const csNames = ['cs', 'ce', 'ss', 'ssel', 'nss', 'csn', 'cs_n', 'nce'];
@@ -4392,10 +4208,10 @@ export class AVRRunner {
             if (inst.pins[name])             return inst.getPinVoltage(name) < 0.5;
             if (inst.pins[name.toUpperCase()]) return inst.getPinVoltage(name.toUpperCase()) < 0.5;
         }
-        return true; // no CS pin â†’ always selected
+        return true; // no CS pin → always selected
     }
 
-    // â”€â”€â”€ I2S: bit-bang frame assembler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ——— I2S: bit-bang frame assembler ————————————————————————————————
     /**
      * Called from the pin-change traversal whenever any component has a pin
      * voltage updated.  If the changed pin is the component's BCLK or WS line
@@ -4404,8 +4220,8 @@ export class AVRRunner {
      * channel, onI2SFrame() is called.
      *
      * Left-justified format (no WS-delay):
-     *   WS=LOW  â†’ left  channel (channel 0)
-     *   WS=HIGH â†’ right channel (channel 1)
+     *   WS=LOW  → left  channel (channel 0)
+     *   WS=HIGH → right channel (channel 1)
      * Data is sampled on the BCLK **rising** edge, MSB first.
      */
     private tickI2S(inst: BaseComponent, compId: string, changedPin: string, isHigh: boolean): void {
@@ -4424,7 +4240,7 @@ export class AVRRunner {
 
         if (isWs) {
             if (state.wsLast !== isHigh) {
-                // WS edge â†’ end of the current-channel frame
+                // WS edge → end of the current-channel frame
                 const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
                 if (state.bitCount >= bpf) {
                     const channel = state.wsLast ? 1 : 0;
@@ -4807,7 +4623,7 @@ export class RP2040Runner implements BoardRunner {
     pinsChanged: boolean = true;
     speed: number = 1.0;
     boardId: string;
-    solverMode: 'logic' | 'nodal';
+    solverMode: 'logic';
     private serialBaudRate: number = 115200;
     private softSerialBaudRate: number = 9600;
     private serialByteBudget: number = 0;
@@ -4852,7 +4668,8 @@ export class RP2040Runner implements BoardRunner {
     private circuitDirty: boolean = true;
     private topologyDirty: boolean = true;
     private lastPhysicsSolveAt: number = 0;
-    private lastStateEmitAt: number = 0;
+    private lastStateEmitCycle: number = 0;
+    private statusIntervalEmitCount: number = 0;
     private lastPhysicsMs: number = 0;
     private lastRunLoopMs: number = 0;
     private lastComponentUpdateMs: number = 0;
@@ -4935,7 +4752,7 @@ export class RP2040Runner implements BoardRunner {
         startedAtMs: number;
         lastEmitMs: number;
     } | null = null;
-    private static readonly FAULT_GRACE_CYCLES = 6_000_000; // ~48ms simulated @ 125MHz â€“ covers bootrom + MicroPython init
+    private static readonly FAULT_GRACE_CYCLES = 6_000_000; // ~48ms simulated @ 125MHz – covers bootrom + MicroPython init
     private static readonly LOW_PC_ALIAS_REPEAT_LIMIT = 50_000_000;
     private static readonly INVALID_PC_STRIKE_LIMIT = 64;
     private static readonly PC_VALIDATION_INTERVAL_STEPS = 1024;
@@ -4956,9 +4773,9 @@ export class RP2040Runner implements BoardRunner {
         this.onStateUpdate = onStateUpdate;
         this.onByteTransmitCb = options.onByteTransmit;
         this.firmwareHex = String(hexData || '');
+        console.log(`RP2040Runner: firmware hex length=${this.firmwareHex.length}`);
         this.speed = options.speed ?? 1.0;
-        this.solverMode = options.solverMode ?? 'logic';
-        this.initPhysicsWorker();
+        this.solverMode = 'logic';
 
         const fallbackBoard = (componentsDef || []).find((c: any) => /(rp2040|pico)/i.test(String(c.type || '')));
         this.boardId = options.boardId || fallbackBoard?.id || 'wokwi-raspberry-pi-pico_0';
@@ -5099,42 +4916,6 @@ export class RP2040Runner implements BoardRunner {
         this.emitDebugSnapshot('start', this.lastTime, true);
         this.emitWirelessStubStatus('start', true);
         this.runLoop();
-
-        this.statusInterval = setInterval(() => {
-            if (this.running && this.cpu) {
-                const msg: any = { type: 'state', boardId: this.boardId };
-                let shouldEmit = false;
-                const now = performance.now();
-                this.emitWirelessStubStatus('tick');
-                if (this.pinsChanged) {
-                    msg.pins = this.pinStates;
-                    this.pinsChanged = false;
-                    shouldEmit = true;
-                }
-
-                const compStates: Array<{ id: string; state: any }> = [];
-                for (const inst of this.instances.values()) {
-                    if (!inst.stateChanged) continue;
-                    const syncState = inst.getSyncState();
-                    if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
-                    inst.stateChanged = false;
-                    compStates.push({
-                        id: inst.id,
-                        state: syncState,
-                        ...collectComponentTelemetry(inst),
-                    });
-                }
-
-                if (compStates.length > 0) {
-                    msg.components = compStates;
-                    shouldEmit = true;
-                }
-
-                if (shouldEmit) {
-                    this.onStateUpdate(msg);
-                }
-            }
-        }, 1000 / 30);
     }
 
     private shouldEmitComponentState(componentId: string, state: any, nowMs: number): boolean {
@@ -5924,6 +5705,8 @@ export class RP2040Runner implements BoardRunner {
             if (!i2c) return;
 
             let activeSlave: BaseComponent | null = null;
+            let transactionBytes: number[] = [];
+            let currentAddress: number = 0;
 
             i2c.onStart = (repeatedStart: boolean) => {
                 void repeatedStart;
@@ -5932,6 +5715,8 @@ export class RP2040Runner implements BoardRunner {
             };
 
             i2c.onConnect = (address: number, mode: number) => {
+                transactionBytes = [];
+                currentAddress = address & 0x7f;
                 this.i2cHardwareSeen.set(bus, true);
                 const isRead = Number(mode) === 1;
                 const devices = this.getRp2040ConnectedI2CDevices(bus);
@@ -5967,6 +5752,7 @@ export class RP2040Runner implements BoardRunner {
             };
 
             i2c.onWriteByte = (value: number) => {
+                transactionBytes.push(value & 0xff);
                 const devices = activeSlave ? [activeSlave] : this.getRp2040ConnectedI2CDevices(bus);
                 let ack = false;
                 for (const inst of devices) {
@@ -5989,10 +5775,20 @@ export class RP2040Runner implements BoardRunner {
                         byte = slave.readByte() & 0xff;
                     }
                 }
+                transactionBytes.push(byte);
                 i2c.completeRead(byte);
             };
 
             i2c.onStop = () => {
+                if (transactionBytes.length > 0) {
+                    const signature = transactionBytes.map(b => b.toString(16).padStart(2, '0')).join('');
+                    this.onStateUpdate({
+                        type: 'telemetry-i2c',
+                        address: currentAddress,
+                        signature,
+                        time_ms: this.getSimulatedTimeMs()
+                    });
+                }
                 const devices = activeSlave ? [activeSlave] : this.getRp2040ConnectedI2CDevices(bus);
                 for (const inst of devices) {
                     if (inst.onI2CStop) inst.onI2CStop();
@@ -6024,6 +5820,9 @@ export class RP2040Runner implements BoardRunner {
             const spi: any = (this.cpu as any)?.spi?.[index];
             if (!spi) return;
 
+            let spiTransactionBytes: number[] = [];
+            let lastSpiTime = 0;
+
             // rp2040js SPI doTX currently sets busy=true after invoking onTransmit().
             // Under high-throughput writes this can stall and/or drop bytes because
             // firmware keeps writing while TX stays artificially busy. Patch doTX once
@@ -6041,6 +5840,15 @@ export class RP2040Runner implements BoardRunner {
             }
 
             spi.onTransmit = (value: number) => {
+                const nowMs = this.getSimulatedTimeMs();
+                if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
+                     const signature = spiTransactionBytes.map(b => b.toString(16).padStart(2, '0')).join('');
+                     this.onStateUpdate({ type: 'telemetry-spi', signature, time_ms: lastSpiTime });
+                     spiTransactionBytes = [];
+                }
+                lastSpiTime = nowMs;
+                spiTransactionBytes.push(value & 0xff);
+
                 const byte = value & 0xff;
                 let response = 0xff;
                 const devices = this.getRp2040ConnectedSPIDevices(bus);
@@ -6544,50 +6352,7 @@ export class RP2040Runner implements BoardRunner {
         }
     }
 
-    private updatePhysicsInternal() {
-        if (this.topologyDirty) {
-            this.solver.reset();
-            this.netToNode.clear();
-            this.pinToNet.forEach((netId, pinStr) => {
-                if (!this.netToNode.has(netId)) {
-                    const isGnd = Array.from(this.pinToNet.entries())
-                        .some(([p, n]) => n === netId && (p.toLowerCase().includes('gnd') || p.toLowerCase().includes('vss')));
-                    
-                    if (isGnd) this.netToNode.set(netId, 0);
-                    else {
-                        this.solver.addPin(pinStr);
-                        this.netToNode.set(netId, (this.solver as any).nodes.get(pinStr));
-                    }
-                }
-                this.solver.addPin(pinStr, this.netToNode.get(netId));
-            });
-
-            // Add components
-            for (const [id, inst] of this.instances) {
-                if (typeof (inst as any).getMnaStamps === 'function' || typeof (inst as any).getMnaPins === 'function') {
-                    this.solver.addComponent(inst);
-                }
-            }
-            this.topologyDirty = false;
-        }
-
-        // Always update voltage sources
-        (this.solver as any).voltageSources = [];
-        for (let gp = 0; gp <= 28; gp++) {
-            const pinName = `GP${gp}`;
-            const isHigh = !!this.pinStates[pinName];
-            this.solver.addVoltageSource(`${this.boardId}:${pinName}`, isHigh ? 3.3 : 0.0);
-        }
-
-        const voltages = this.solver.solve();
-        this.pinToNet.forEach((netId, pinStr) => {
-            const nodeId = this.netToNode.get(netId) ?? -1;
-            const v = voltages.get(nodeId) ?? 0;
-            const [compId, compPin] = pinStr.split(':');
-            const inst = this.instances.get(compId);
-            if (inst) inst.setPinVoltage(compPin, v);
-        });
-    }
+    private updatePhysicsInternal() {}
 
     private propagateBoardPin(gpPin: string, isHigh: boolean) {
         const voltage = isHigh ? 3.3 : 0.0;
@@ -6738,11 +6503,7 @@ export class RP2040Runner implements BoardRunner {
         const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
         if (this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval) {
             const physicsStart = performance.now();
-            if (this.solverMode === 'nodal') {
-                this.requestPhysicsSolve();
-            } else {
-                // Classic Logic mode: Event-driven propagation is already handled by listeners.
-            }
+            // Classic Logic mode: event-driven propagation is already handled by listeners.
             this.updateGPIOInputsFromCircuit();
             this.lastPhysicsSolveAt = now;
             this.circuitDirty = false;
@@ -6914,6 +6675,8 @@ export class RP2040Runner implements BoardRunner {
         this.lastComponentUpdateMs = componentMs;
         this.lastRunLoopMs = performance.now() - loopStart;
 
+        this.emitStateIfDue();
+
         if (this.running) {
             this.emitDebugSnapshot('tick', now);
             this.lastTime = now;
@@ -7017,7 +6780,7 @@ export class RP2040Runner implements BoardRunner {
         }
     }
 
-    setSolverMode(mode: 'logic' | 'nodal') {
+    setSolverMode(mode: 'logic') {
         this.solverMode = mode;
         for (const key of Object.keys(this.pinStates)) {
             this.pinStates[key] = false;
@@ -7049,75 +6812,8 @@ export class RP2040Runner implements BoardRunner {
         this.serialBuffer = [];
         this.serialByteBudget = 0;
         this.activeUartIndex = 0;
-    }
 
-    private initPhysicsWorker() {
-        try {
-            this.physicsWorker = new Worker(new URL('./physics.worker.ts', import.meta.url), { type: 'module' });
-            this.physicsWorker.onmessage = (e) => {
-                const { type, payload } = e.data;
-                if (type === 'voltages') {
-                    const voltages = new Map<number, number>(payload);
-                    this.pinToNet.forEach((netId, pinStr) => {
-                        const nodeId = this.netToNode.get(netId) ?? -1;
-                        const v = voltages.get(nodeId) ?? 0;
-                        const [compId, compPin] = pinStr.split(':');
-                        const inst = this.instances.get(compId);
-                        if (inst) inst.setPinVoltage(compPin, v);
-                    });
-                    this.physicsWorkerBusy = false;
-                }
-            };
-        } catch (e) {
-            console.error('Failed to init physics worker', e);
-        }
-    }
-
-    private requestPhysicsSolve() {
-        if (!this.physicsWorker || this.physicsWorkerBusy) return;
-
-        if (this.topologyDirty) {
-            this.updateTopologyForWorker();
-        }
-
-        const voltageSources: any[] = [];
-        for (let gp = 0; gp <= 28; gp++) {
-            const pinName = `GP${gp}`;
-            const isHigh = !!this.pinStates[pinName];
-            voltageSources.push({ pinId: `${this.boardId}:${pinName}`, voltage: isHigh ? 3.3 : 0.0 });
-        }
-
-        this.physicsWorkerBusy = true;
-        this.physicsWorker.postMessage({ type: 'solve', payload: { voltageSources } });
-    }
-
-    private updateTopologyForWorker() {
-        if (!this.physicsWorker) return;
-        
-        this.netToNode.clear();
-        const pinNodes: Record<string, number> = {};
-        
-        this.pinToNet.forEach((netId, pinStr) => {
-            if (!this.netToNode.has(netId)) {
-                const isGnd = Array.from(this.pinToNet.entries())
-                    .some(([p, n]) => n === netId && (p.toLowerCase().includes('gnd') || p.toLowerCase().includes('vss')));
-                
-                if (isGnd) this.netToNode.set(netId, 0);
-                else {
-                    const newNodeId = this.netToNode.size + 1;
-                    this.netToNode.set(netId, newNodeId);
-                }
-            }
-            pinNodes[pinStr] = this.netToNode.get(netId)!;
-        });
-
-        const componentsData = Array.from(this.instances.values()).map(inst => ({
-            id: inst.id,
-            type: inst.type,
-        }));
-
-        this.physicsWorker.postMessage({ type: 'topology', payload: { pinNodes, componentsData } });
-        this.topologyDirty = false;
+        // Reset I2C/SPI/UART/USB peripherals
         this.softSerialRxQueue = [];
         this.softSerialRxFrame = null;
         this.softSerialRxOverrideActive = false;
@@ -7157,16 +6853,50 @@ export class RP2040Runner implements BoardRunner {
         this.rebuildPeripheralDeviceCache();
         this.installRp2040I2cAdapters();
         this.installRp2040SpiAdapters();
-        if (this.picoWirelessStub) {
-            const now = performance.now();
-            this.picoWirelessStub.startedAtMs = now;
-            this.picoWirelessStub.lastEmitMs = 0;
-            this.picoWirelessStub.status = this.picoWirelessStub.mode === 'off' ? 'off' : 'booting';
-            this.applyWirelessStubStateToBoard();
-        }
-        this.emitDebugSnapshot('reset', performance.now(), true);
-        this.emitWirelessStubStatus('reset', true);
     }
+
+    private emitStateIfDue() {
+        if (!this.cpu) return;
+        const currentCycles = Number(this.cpu.core.cycles);
+        if (currentCycles - this.lastStateEmitCycle >= 3125000) {
+            const msg: any = { type: 'state', boardId: this.boardId };
+            msg.pins = this.pinStates;
+            this.pinsChanged = false;
+            
+            const now = performance.now();
+            this.emitWirelessStubStatus('tick');
+
+            const compStates: Array<{ id: string; state: any }> = [];
+            for (const inst of this.instances.values()) {
+                if (!inst.stateChanged) continue;
+                const syncState = inst.getSyncState();
+                
+                if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+
+                inst.stateChanged = false;
+                compStates.push({
+                    id: inst.id,
+                    state: syncState,
+                    ...collectComponentTelemetry(inst),
+                });
+            }
+            msg.components = compStates;
+
+            this.statusIntervalEmitCount++;
+            msg._emitSeq = this.statusIntervalEmitCount;
+            msg._emitTime = now;
+            msg.simTimeMs = this.getSimulatedTimeMs();
+            
+            this.lastStateEmitCycle = currentCycles;
+            this.onStateUpdate(msg);
+        }
+    }
+
+    private initPhysicsWorker() {}
+
+    private requestPhysicsSolve() {}
+
+    private updateTopologyForWorker() {}
 
     /**
      * Get the current clock divider for the PIO state machines.
