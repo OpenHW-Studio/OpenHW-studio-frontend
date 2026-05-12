@@ -2344,7 +2344,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   });
   const backupRestoreInputRef = useRef(null);
 
-  const handleUploadZip = async (event) => {
+  const handleUploadZip = useCallback(async (event) => {
     const file = event.target.files[0];
     if (!file) return;
     appendConsoleEntry('info', `ZIP upload started: ${file.name}`, 'zip');
@@ -2454,7 +2454,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       alert(`Error processing ZIP: ${e.message}`);
     }
     event.target.value = '';
-  };
+  }, [appendConsoleEntry]);
 
   // ── Library Manager State ───────────────────────────────────────────────────
   const [libQuery, setLibQuery] = useState('')
