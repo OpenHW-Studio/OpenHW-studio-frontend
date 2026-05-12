@@ -5,7 +5,7 @@
 
 import init, * as engine from '../wasm/openhw_studio_autofix_rust.js';
 import wasmUrl from '../wasm/openhw_studio_autofix_rust_bg.wasm?url';
-import { FullCircuitValidator } from '../../../openhw-studio-emulator/src/circuit-validation/engine.js';
+import { FullCircuitValidator } from '@openhw/emulator';
 import { calculateProjectPlanApplication } from '../pages/simulationpage/projectUtils.js';
 
 let isInitialized = false;

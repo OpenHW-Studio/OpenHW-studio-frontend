@@ -2,7 +2,7 @@ import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction
 import { RP2040, GPIOPinState, ConsoleLogger, LogLevel, USBCDC, GDBServer, GDBConnection } from 'rp2040js';
 import { bootromB1 } from './rp2040-bootrom.ts';
 
-import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
+import { BaseComponent } from '@openhw/emulator';
 import { LEDLogic } from '@openhw/emulator/src/components/wokwi-led/logic.ts';
 import { UnoLogic } from '@openhw/emulator/src/components/wokwi-arduino-uno/logic.ts';
 import { PicoLogic } from './pico-logic.ts';
