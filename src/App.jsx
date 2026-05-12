@@ -40,7 +40,7 @@ import MobileSimulatorPage from './pages/mobileui/SimulatorPage.jsx'
 import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
 import GradingPage from './pages/GradingPage.jsx';
 import MaintenancePage from './pages/MaintenancePage.jsx';
-
+import AboutUs from './pages/AboutUsPage.jsx'
 import { fetchMaintenanceStatus } from './services/simulatorService.js';
 import axios from 'axios';
 
@@ -132,6 +132,7 @@ export default function App() {
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />
+            <Route path="/about" element={<AboutUs />} />
             <Route path="/login" element={<UserLoginPage />} />
             <Route path="/signin" element={<Navigate to="/classroom/signin" replace />} />
             <Route path="/signup" element={<Navigate to="/classroom/signup" replace />} />
