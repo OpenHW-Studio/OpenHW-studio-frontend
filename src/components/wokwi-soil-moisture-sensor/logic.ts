@@ -22,4 +22,16 @@ export class SoilMoistureSensorLogic extends BaseComponent {
 
         this.setPinVoltage('SIG', outSig);
     }
+
+    onCustomTelemetry() {
+        const vcc = this.getPinVoltage('VCC');
+        const sig = this.getPinVoltage('SIG');
+        
+        this.setCustomTelemetry({
+            moisturePercent: Number(this.state.moisture.toFixed(1)),
+            vccVoltage: Number(vcc.toFixed(2)),
+            outputVoltage: Number(sig.toFixed(2)),
+            sensorType: 'Capacitive Soil Moisture',
+        });
+    }
 }

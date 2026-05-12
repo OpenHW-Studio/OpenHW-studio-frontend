@@ -17,6 +17,16 @@ jobs:
             "repo": "${{ github.event.repository.name }}",
             "prTitle": "${{ github.event.head_commit.message }}",
             "prDescription": "Commit pushed by ${{ github.actor }}",
-            "secret": "5d2f8e1a9c3b4d7e0f2a5b8d1c4e7f9a",
+            "secret": "${{ secrets.NOTIFY_SECRET }}",
             "filesChanged": []
+          }'
+
+      - name: Send Message to Telegram
+        run: |
+          curl -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+          -H "Content-Type: application/json" \
+          -d '{
+            "chat_id": "${{ secrets.TELEGRAM_CHAT_ID }}",
+            "text": "🚀 <b>Update Successful</b>\n\n📦 <b>Repo:</b> ${{ github.repository }}\n🏷️ <b>Version:</b> ${{ github.sha }}\n👤 <b>Author:</b> ${{ github.actor }}\n💬 <b>Message:</b> ${{ github.event.head_commit.message }}\n🔗 <a href=\"${{ github.event.head_commit.url }}\">View Commit</a>",
+            "parse_mode": "HTML"
           }'

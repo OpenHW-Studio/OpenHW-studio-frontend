@@ -36,6 +36,11 @@ export const PushbuttonUI = ({ state, attrs, isRunning }: { state: any, attrs: a
     // Local animation state for immediate feedback
     const [isPressed, setIsPressed] = useState(false);
 
+    const nativeW = 68;
+    const nativeH = 44;
+    const scaleX = BOUNDS.w / nativeW;
+    const scaleY = BOUNDS.h / nativeH;
+
     const handlePress = () => {
         setIsPressed(true);
         if (attrs.onInteract) attrs.onInteract('press');
@@ -50,7 +55,13 @@ export const PushbuttonUI = ({ state, attrs, isRunning }: { state: any, attrs: a
     const pressed = isPressed || state?.pressed;
 
     return (
-        <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0 }}>
+        <div style={{ 
+            pointerEvents: 'none', 
+            position: 'absolute', 
+            inset: 0,
+            width: BOUNDS.w,
+            height: BOUNDS.h
+        }}>
             <div
                 onPointerDown={(e) => {
                     e.stopPropagation();
@@ -67,16 +78,17 @@ export const PushbuttonUI = ({ state, attrs, isRunning }: { state: any, attrs: a
                 className={`btn-wrapper ${pressed ? 'pressed' : ''}`}
                 style={{
                     position: 'relative',
-                    width: 68,
-                    height: 44,
+                    width: nativeW,
+                    height: nativeH,
                     transition: 'transform 0.05s cubic-bezier(0.4, 0, 0.2, 1), filter 0.05s',
-                    transform: pressed ? 'scale(0.92)' : 'scale(1)',
+                    transform: `scale(${scaleX}, ${scaleY}) ${pressed ? 'scale(0.92)' : ''}`,
+                    transformOrigin: '0 0',
                     filter: pressed ? 'brightness(0.8) drop-shadow(0 0 3px rgba(0,0,0,0.5))' : 'drop-shadow(0 4px 6px rgba(0,0,0,0.3))',
                     cursor: 'pointer',
                     pointerEvents: isRunning ? 'auto' : 'none'
                 }}>
                 {React.createElement('wokwi-pushbutton', {
-                    style: { pointerEvents: 'none' },
+                    style: { pointerEvents: 'none', display: 'block', width: nativeW, height: nativeH },
                     ...attrs
                 })}
             </div>

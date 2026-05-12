@@ -62,5 +62,22 @@
       "type": "digital",
       "description": "Master In / Slave Out"
     }
-  ]
+  ],
+  "autowiring": {
+    "connections": [
+      { "from": "VCC", "to": "arduino:5V" },
+      { "from": "GND", "to": "arduino:GND" },
+      { "from": "SCK", "to": "arduino:SCK" },
+      { "from": "MOSI", "to": "arduino:MOSI" },
+      { "from": "MISO", "to": "arduino:MISO" },
+      { "from": "CS", "to": "arduino:10" }
+    ]
+  },
+  "autocoding": {
+    "libraries": ["SD"],
+    "arduino": {
+      "setup": "#include <SPI.h>\n#include <SD.h>\n\nvoid setup() {\n  Serial.begin(9600);\n  while (!Serial);\n  Serial.print(\"Initializing SD card...\");\n  if (!SD.begin(10)) {\n    Serial.println(\"initialization failed!\");\n    return;\n  }\n  Serial.println(\"initialization done.\");\n}",
+      "loop": "// SD Card ready for datalogging."
+    }
+  }
 }

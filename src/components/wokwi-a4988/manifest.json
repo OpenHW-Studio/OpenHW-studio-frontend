@@ -6,101 +6,42 @@
     "h": 80,
     "attrs": {},
     "pins": [
-        {
-            "id": "ENABLE",
-            "x": 5,
-            "y": 10,
-            "type": "digital"
-        },
-        {
-            "id": "MS1",
-            "x": 5,
-            "y": 20,
-            "type": "digital"
-        },
-        {
-            "id": "MS2",
-            "x": 5,
-            "y": 30,
-            "type": "digital"
-        },
-        {
-            "id": "MS3",
-            "x": 5,
-            "y": 40,
-            "type": "digital"
-        },
-        {
-            "id": "RESET",
-            "x": 5,
-            "y": 50,
-            "type": "digital"
-        },
-        {
-            "id": "SLEEP",
-            "x": 5,
-            "y": 60,
-            "type": "digital"
-        },
-        {
-            "id": "STEP",
-            "x": 5,
-            "y": 70,
-            "type": "digital"
-        },
-        {
-            "id": "DIR",
-            "x": 5,
-            "y": 80,
-            "type": "digital"
-        },
-        {
-            "id": "VMOT",
-            "x": 45,
-            "y": 10,
-            "type": "power"
-        },
-        {
-            "id": "GND_MOT",
-            "x": 45,
-            "y": 20,
-            "type": "power"
-        },
-        {
-            "id": "2B",
-            "x": 45,
-            "y": 30,
-            "type": "digital"
-        },
-        {
-            "id": "2A",
-            "x": 45,
-            "y": 40,
-            "type": "digital"
-        },
-        {
-            "id": "1A",
-            "x": 45,
-            "y": 50,
-            "type": "digital"
-        },
-        {
-            "id": "1B",
-            "x": 45,
-            "y": 60,
-            "type": "digital"
-        },
-        {
-            "id": "VDD",
-            "x": 45,
-            "y": 70,
-            "type": "power"
-        },
-        {
-            "id": "GND_LOGIC",
-            "x": 45,
-            "y": 80,
-            "type": "power"
+        { "id": "ENABLE", "x": 5, "y": 10, "type": "digital" },
+        { "id": "MS1",    "x": 5, "y": 20, "type": "digital" },
+        { "id": "MS2",    "x": 5, "y": 30, "type": "digital" },
+        { "id": "MS3",    "x": 5, "y": 40, "type": "digital" },
+        { "id": "RESET",  "x": 5, "y": 50, "type": "digital" },
+        { "id": "SLEEP",  "x": 5, "y": 60, "type": "digital" },
+        { "id": "STEP",   "x": 5, "y": 70, "type": "digital" },
+        { "id": "DIR",    "x": 5, "y": 80, "type": "digital" },
+        { "id": "VMOT",   "x": 45, "y": 10, "type": "power" },
+        { "id": "GND_MOT","x": 45, "y": 20, "type": "power" },
+        { "id": "2B",     "x": 45, "y": 30, "type": "digital" },
+        { "id": "2A",     "x": 45, "y": 40, "type": "digital" },
+        { "id": "1A",     "x": 45, "y": 50, "type": "digital" },
+        { "id": "1B",     "x": 45, "y": 60, "type": "digital" },
+        { "id": "VDD",    "x": 45, "y": 70, "type": "power" },
+        { "id": "GND_LOGIC","x": 45, "y": 80, "type": "power" }
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "STEP",      "to": "arduino:8" },
+            { "from": "DIR",       "to": "arduino:9" },
+            { "from": "ENABLE",    "to": "arduino:10" },
+            { "from": "VDD",       "to": "arduino:5V" },
+            { "from": "GND_LOGIC", "to": "arduino:GND" },
+            { "from": "VMOT",      "to": "powersupply:5V" },
+            { "from": "GND_MOT",   "to": "powersupply:GND" },
+            { "from": "RESET",     "to": "arduino:5V" },
+            { "from": "SLEEP",     "to": "arduino:5V" }
+        ],
+        "externalPower": true,
+        "externalVoltage": "12.0"
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "pinMode(8, OUTPUT);\npinMode(9, OUTPUT);\npinMode(10, OUTPUT);\ndigitalWrite(10, LOW);",
+            "loop": "digitalWrite(9, HIGH);\nfor(int i=0;i<200;i++){digitalWrite(8,HIGH);delayMicroseconds(1000);digitalWrite(8,LOW);delayMicroseconds(1000);}\ndelay(500);\ndigitalWrite(9, LOW);\nfor(int i=0;i<200;i++){digitalWrite(8,HIGH);delayMicroseconds(1000);digitalWrite(8,LOW);delayMicroseconds(1000);}\ndelay(500);"
         }
-    ]
+    }
 }

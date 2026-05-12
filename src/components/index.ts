@@ -50,6 +50,8 @@ export { default as wokwiArduinoSensorShield } from './wokwi-arduino-sensor-shie
 export { default as wokwiArduinoNano } from './wokwi-arduino-nano';
 export { default as wokwiBattery } from './wokwi-battery';
 export { default as wokwiCharger } from './wokwi-charger';
+export { default as wokwiPhotoresistor } from './wokwi-photoresistor';
+export { default as wokwiNtcTemperatureSensor } from './wokwi-ntc-temperature-sensor';
 
 export { default as logicMux2to1 } from './logic-mux-2to1';
 export { default as logicDFlipFlop } from './logic-d-flipflop';

@@ -8,6 +8,11 @@ export const BOUNDS = { x: 0, y: 0, w: 75, h: 75 };
 export const PotentiometerUI = ({ state, attrs, isRunning }: { state: any, attrs: any, isRunning: boolean }) => {
     const elRef = useRef<any>(null);
 
+    const nativeW = 75;
+    const nativeH = 75;
+    const scaleX = BOUNDS.w / nativeW;
+    const scaleY = BOUNDS.h / nativeH;
+
     useLayoutEffect(() => {
         const el = elRef.current;
         if (!el) return;
@@ -35,12 +40,26 @@ export const PotentiometerUI = ({ state, attrs, isRunning }: { state: any, attrs
     }, [attrs.onInteract]);
 
     return (
-        <div style={{ pointerEvents: 'none' }}>
+        <div style={{ 
+            pointerEvents: 'none',
+            width: BOUNDS.w,
+            height: BOUNDS.h,
+            position: 'relative',
+            overflow: 'visible'
+        }}>
             {React.createElement('wokwi-potentiometer', {
                 ref: elRef,
                 value: state?.value ?? attrs?.value ?? 50,
                 ...attrs,
-                style: { ...attrs.style, pointerEvents: isRunning ? 'auto' : 'none' },
+                style: { 
+                    ...attrs.style, 
+                    display: 'block',
+                    width: nativeW,
+                    height: nativeH,
+                    transform: `scale(${scaleX}, ${scaleY})`,
+                    transformOrigin: '0 0',
+                    pointerEvents: isRunning ? 'auto' : 'none' 
+                },
                 onMouseDown: (e: any) => e.stopPropagation(),
                 onPointerDown: (e: any) => e.stopPropagation(),
                 onDoubleClick: (e: any) => e.stopPropagation(),
