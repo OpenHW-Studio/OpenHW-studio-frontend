@@ -17,7 +17,11 @@ export default defineConfig(({ mode }) => {
   const useAlias = !!resolvedEmulatorPath && fs.existsSync(resolvedEmulatorPath)
 
   return {
-    plugins: [react()],
+    plugins: [
+      react({
+        exclude: [/src[\\\/]worker[\\\/].*/, /openhw-studio-emulator[\\\/].*/],
+      })
+    ],
     worker: {
       format: 'es',
     },

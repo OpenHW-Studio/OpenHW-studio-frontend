@@ -1,3 +1,18 @@
+if (typeof window === 'undefined') {
+    (self as any).window = self;
+    (self as any).document = {
+        createElement: () => ({ style: {} }),
+        getElementsByTagName: () => [],
+        createTextNode: () => ({}),
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        addEventListener: () => {},
+        removeEventListener: () => {},
+    };
+}
+(self as any).$RefreshReg$ = () => {};
+(self as any).$RefreshSig$ = () => () => (type: any) => type;
+
 import { BoardRunner, createRunnerForBoard, LOGIC_REGISTRY, COMPONENT_PINS, buildFatFsImage, buildLittleFsImage } from './execute';
 import { BaseComponent } from '@openhw/emulator';
 import {
@@ -5,6 +20,11 @@ import {
     resolveUartRoute,
     areBoardsSoftSerialConnected,
 } from './protocol-routing.js';
+
+self.onerror = (msg, url, line, col, error) => {
+    console.error(`[SimWorker] Global Error: ${msg} at ${line}:${col}`, error);
+    return false;
+};
 
 let runner: BoardRunner | null = null;
 let boardRunners: Map<string, BoardRunner> = new Map();

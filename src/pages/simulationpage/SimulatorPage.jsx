@@ -1915,6 +1915,14 @@ export function SimulatorPage({ gamificationMode = false }) {
       return 'nl';
     }
   });
+  const [boardLineEndings, setBoardLineEndings] = useState({}); // { boardId: string }
+  const [boardAutoscrolls, setBoardAutoscrolls] = useState({}); // { boardId: boolean }
+  const [boardBaudRates, setBoardBaudRates] = useState({}); // { boardId: number }
+  const [boardPausedStates, setBoardPausedStates] = useState({}); // { boardId: boolean }
+  const [boardInputs, setBoardInputs] = useState({}); // { boardId: string }
+  const [isSerialSplit, setIsSerialSplit] = useState(false);
+  const [serialSplitRatio, setSerialSplitRatio] = useState(0.5);
+  const [serialBoardFilter2, setSerialBoardFilter2] = useState('all');
   const [rp2040DebugTelemetryEnabled, setRp2040DebugTelemetryEnabled] = useState(() => {
     try {
       const saved = String(localStorage.getItem('openhw.rp2040.debugTelemetry') || '').toLowerCase();
@@ -1973,10 +1981,10 @@ export function SimulatorPage({ gamificationMode = false }) {
   // Pinch-to-zoom state refs
 
   // Plotter State
-  const [plotData, setPlotData] = useState([]);
-  const [selectedPlotPins, setSelectedPlotPins] = useState(['13', 'A0']);
-  const plotterCanvasRef = useRef(null);
+  const plotDataRef = useRef([]);
+  const [selectedPlotPins, setSelectedPlotPins] = useState([]); // Array<{ boardId, pinId }>
   const [plotterPaused, setPlotterPaused] = useState(false);
+  const [plotterTimeDiv, setPlotterTimeDiv] = useState(1000); // ms per division (not used as divisions yet, but as total window size)
 
   const serializedStateEquals = (a, b) => {
     if (a === b) return true;
@@ -4036,190 +4044,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     });
   }, [isRunning, serialBaudRate, serialBoardFilter]);
 
-  // ── Plotter Rendering Loop ───────────────────────────────────────────────────
-  useEffect(() => {
-    const canvas = plotterCanvasRef.current;
-    if (!canvas || codeTab !== 'serial' || serialViewMode !== 'plotter' || plotData.length === 0 || selectedPlotPins.length === 0) return;
-    if (plotterPaused) return; // Freeze canvas when paused
 
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-
-    ctx.clearRect(0, 0, width, height);
-
-    const Y_LABEL_W = 35;
-
-    const scopedPlotData = serialBoardFilter === 'all'
-      ? plotData
-      : plotData.filter(pt => pt.boardId === serialBoardFilter);
-
-    if (scopedPlotData.length === 0) return;
-
-    // Separate selected pins into serial vs logic
-    const logicPins = selectedPlotPins.filter(p => !isNaN(parseInt(p)) || p.startsWith('A'));
-    const serialVars = selectedPlotPins.filter(p => isNaN(parseInt(p)) && !p.startsWith('A'));
-
-    const hasSerial = serialVars.length > 0;
-    const logicTrackCount = logicPins.length;
-    // Serial track takes up half the height if logic pins exist, otherwise full height
-    const serialHeight = hasSerial ? (logicTrackCount > 0 ? height * 0.6 : height) : 0;
-    const logicAreaHeight = height - serialHeight;
-    const logicTrackHeight = logicTrackCount > 0 ? logicAreaHeight / logicTrackCount : 0;
-
-    // --- Draw Serial Track ---
-    if (hasSerial) {
-      const trackBaseY = serialHeight - 20;
-      const trackTopY = 20;
-
-      // Calculate global min/max for serial vars
-      let sMin = Infinity, sMax = -Infinity;
-      scopedPlotData.forEach(pt => {
-        if (!pt.serialVars) return;
-        serialVars.forEach(sv => {
-          const v = pt.serialVars[sv];
-          if (v !== undefined) {
-            if (v < sMin) sMin = v;
-            if (v > sMax) sMax = v;
-          }
-        });
-      });
-      if (sMin === Infinity) { sMin = 0; sMax = 1; }
-      if (sMin === sMax) { sMin -= 1; sMax += 1; }
-
-      // Draw grid/guides
-      ctx.setLineDash([4, 6]);
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      // zero line
-      const zeroY = trackBaseY - ((0 - sMin) / (sMax - sMin) * (trackBaseY - trackTopY));
-      if (zeroY >= trackTopY && zeroY <= trackBaseY) {
-        ctx.moveTo(Y_LABEL_W, zeroY); ctx.lineTo(width, zeroY);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Axis labels
-      ctx.font = '9px JetBrains Mono';
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.textAlign = 'right';
-      ctx.fillText(sMax.toFixed(2), Y_LABEL_W - 2, trackTopY + 4);
-      ctx.fillText(sMin.toFixed(2), Y_LABEL_W - 2, trackBaseY);
-      ctx.textAlign = 'left';
-
-      // Draw traces
-      const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-      serialVars.forEach((sv, i) => {
-        const color = colors[i % colors.length];
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-
-        const maxPts = width - Y_LABEL_W;
-        const pts = scopedPlotData.slice(-maxPts);
-        const xStep = maxPts / Math.max(pts.length, 1);
-
-        let hasStarted = false;
-        pts.forEach((pt, idx) => {
-          const x = Y_LABEL_W + (maxPts - ((pts.length - 1 - idx) * xStep));
-          const v = pt.serialVars?.[sv];
-          if (v !== undefined) {
-            const y = trackBaseY - ((v - sMin) / (sMax - sMin)) * (trackBaseY - trackTopY);
-            if (!hasStarted) { ctx.moveTo(x, y); hasStarted = true; }
-            else { ctx.lineTo(x, y); }
-          }
-        });
-        ctx.stroke();
-
-        // Custom Label on graph
-        ctx.fillStyle = color;
-        ctx.font = 'bold 10px JetBrains Mono';
-        ctx.fillText(sv, Y_LABEL_W + 4 + (i * 60), trackTopY - 5);
-      });
-
-      // Separator
-      if (logicTrackCount > 0) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, serialHeight);
-        ctx.lineTo(width, serialHeight);
-        ctx.stroke();
-      }
-    }
-
-    // --- Draw Logic Tracks ---
-    logicPins.forEach((pinStr, logicIdx) => {
-      const trackBaseY = serialHeight + logicTrackHeight * (logicIdx + 1) - 10;
-      const trackTopY = serialHeight + logicTrackHeight * logicIdx + 10;
-      const isAnalog = pinStr.startsWith('A');
-      const color = isAnalog ? '#3498db' : '#2ecc71';
-
-      // Track separator
-      if (logicIdx < logicPins.length - 1) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, serialHeight + logicTrackHeight * (logicIdx + 1));
-        ctx.lineTo(width, serialHeight + logicTrackHeight * (logicIdx + 1));
-        ctx.stroke();
-      }
-
-      // Baseline (LOW / 0V) dashed guide
-      ctx.setLineDash([4, 6]);
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(Y_LABEL_W, trackBaseY);
-      ctx.lineTo(width, trackBaseY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Y-axis labels
-      ctx.font = '9px JetBrains Mono';
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.textAlign = 'right';
-      ctx.fillText(isAnalog ? '5V' : 'HIGH', Y_LABEL_W - 2, trackTopY + 9);
-      ctx.fillText(isAnalog ? '0V' : 'LOW', Y_LABEL_W - 2, trackBaseY);
-      ctx.textAlign = 'left';
-
-      // Pin label
-      ctx.fillStyle = color;
-      ctx.font = 'bold 10px JetBrains Mono';
-      ctx.fillText(`Pin ${pinStr}`, Y_LABEL_W + 4, trackTopY + 10);
-
-      // Signal trace
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-
-      const maxPts = width - Y_LABEL_W;
-      const pts = scopedPlotData.slice(-maxPts);
-      const xStep = maxPts / Math.max(pts.length, 1);
-
-      pts.forEach((pt, i) => {
-        const x = Y_LABEL_W + (maxPts - ((pts.length - 1 - i) * xStep));
-        let val = 0;
-        if (isAnalog) {
-          const ch = parseInt(pinStr.substring(1));
-          val = Math.max(0, Math.min(1, (pt.analog[ch] || 0) / 5.0));
-        } else {
-          val = pt.pins[pinStr] ? 1 : 0;
-        }
-        const y = trackBaseY - (val * (trackBaseY - trackTopY));
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-    });
-
-    // X-axis label
-    ctx.font = '9px JetBrains Mono';
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.textAlign = 'left';
-    ctx.fillText('← time', Y_LABEL_W + 4, height - 4);
-  }, [plotData, codeTab, selectedPlotPins, plotterPaused, serialViewMode, serialBoardFilter]);
 
   // -- Get absolute pin position on canvas --
   const componentsMap = useMemo(() => {
@@ -7168,9 +6993,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           const kind = normalizeBoardKind(boardComp.type);
           const targetFqbn = resolveBoardFqbnForComponent(boardComp, kind);
           const defaultBaud = Number(BOARD_DEFAULT_BAUD[kind] || BOARD_DEFAULT_BAUD.arduino_uno);
-          boardBaudMap[boardComp.id] = selectedRunBoardId
-            ? (boardComp.id === selectedRunBoardId ? selectedRunBaud : defaultBaud)
-            : selectedRunBaud;
+          boardBaudMap[boardComp.id] = Number(boardBaudRates[boardComp.id] || selectedRunBaud);
 
           const useUploaded = !!boardComp?.attrs?.useUploadedFirmware;
           const uploadedFirmware = useUploaded ? String(
@@ -7737,20 +7560,27 @@ export function SimulatorPage({ gamificationMode = false }) {
           }
 
           livePinStatesRef.current = msg.pins;
-          if (codeTab === 'serial' && serialViewMode === 'plotter' && !plotterPaused) {
+          if (codeTab === 'serial' && !plotterPaused) {
             // Only grow plot history when the plotter is visible.
-            setPlotData(prev => {
-              const serialVars = {};
-              latestParsedSerialRef.current.forEach((val, idx) => {
-                const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
-                serialVars[lbl] = val;
-              });
-              const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars, boardId: msg.boardId || 'default' };
-              const next = [...prev, newPt];
-              if (next.length > 800) return next.slice(next.length - 800);
-              return next;
+            const serialVars = {};
+            latestParsedSerialRef.current.forEach((val, idx) => {
+              const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
+              serialVars[lbl] = val;
             });
+            const newPt = { 
+              time: Date.now(), 
+              pins: msg.pins, 
+              analog: msg.analog || [], 
+              serialVars, 
+              boardId: msg.boardId || 'default' 
+            };
+            
+            plotDataRef.current.push(newPt);
+            if (plotDataRef.current.length > 1000) {
+              plotDataRef.current.shift();
+            }
           }
+
         }
         if (msg.type === 'state' && msg.neopixels) {
           const boardIdKey = String(msg.boardId || 'default');
@@ -7796,7 +7626,9 @@ export function SimulatorPage({ gamificationMode = false }) {
           const emitTimeMs = Number(msg._emitTime || 0);
           if (emitSeq >= 0 && emitTimeMs > 0 && telemetryLogEligible) {
             const msgAgeMs = (performance.now() - msgArrivalMs) + emitTimeMs;
+/*
             appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
+*/
           }
           const perfRunMs = Number(perf?.lastRunLoopMs);
           const perfPhysicsMs = Number(perf?.lastPhysicsMs);
@@ -7823,7 +7655,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               `components=${componentsCount}`,
             ];
 
+/*
             appendConsoleEntry(slowStateGap || slowWorker ? 'warn' : 'info', line.join(' | '), 'debug');
+*/
             runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs });
           }
         }
@@ -7850,7 +7684,12 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       worker.onerror = (err) => {
         console.error('Worker Error:', err);
-        appendConsoleEntry('error', `Worker error: ${err?.message || 'Unknown error'}`, 'simulator');
+        let errorMsg = 'Unknown error';
+        if (err && typeof err === 'object') {
+          if (err.message) errorMsg = err.message;
+          else if (err.type) errorMsg = `Event type: ${err.type}`;
+        }
+        appendConsoleEntry('error', `[SIM] Worker crash: ${errorMsg}`, 'simulator');
         logSerial('Worker threw an error', 'var(--red)');
         handleStop();
       };
@@ -7989,7 +7828,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     liveOopStatesRef.current = neopixelOffStates;
     Object.keys(neopixelOffStates).forEach(notifyLiveOopStateListeners);
     setSerialHistory([]);
-    setPlotData([]);
+    plotDataRef.current = [];
     setSerialPaused(false);
     setPlotterPaused(false);
     serialPlotBufferRef.current = '';
@@ -8041,24 +7880,26 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   };
 
-  const sendSerialInput = useCallback((targetBoardOverride) => {
-    const txt = String(serialInput || '');
+  const sendSerialInput = useCallback((targetBoardOverride, inputOverride, lineEndingOverride, baudRateOverride) => {
+    const txt = String(inputOverride !== undefined ? inputOverride : (serialInput || ''));
     if (!txt.trim()) return;
-    const lineEnding = SERIAL_LINE_ENDINGS[serialLineEnding] ?? '\n';
+    const lineEnding = SERIAL_LINE_ENDINGS[lineEndingOverride || serialLineEnding] ?? '\n';
     const payload = txt + lineEnding;
 
     const requestedBoard = targetBoardOverride || serialBoardFilter;
     const targetBoardId = requestedBoard !== 'all' ? requestedBoard : undefined;
+
+    const baudRate = baudRateOverride || serialBaudRate;
 
     if (workerRef.current && isRunning) {
       workerRef.current.postMessage({
         type: 'SERIAL_INPUT',
         data: payload,
         targetBoardId,
-        baudRate: serialBaudRate,
+        baudRate: baudRate,
       });
       pushSerialTxLine(txt, targetBoardId || 'all', 'sim');
-      setSerialInput('');
+      if (inputOverride === undefined) setSerialInput('');
       return;
     }
 
@@ -8067,7 +7908,9 @@ export function SimulatorPage({ gamificationMode = false }) {
         ? targetBoardId
         : (hardwareSerialTargetRef.current || hardwareBoardId || 'hardware');
       sendHardwareSerialLine(payload, targetBoard, txt)
-        .then(() => setSerialInput(''))
+        .then(() => {
+          if (inputOverride === undefined) setSerialInput('');
+        })
         .catch((err) => {
           console.error('[WebSerial] TX failed:', err);
           alert(`Hardware serial write failed: ${err?.message || 'Unknown error'}`);
@@ -8076,7 +7919,28 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
 
     alert('Run simulator or connect hardware serial before sending data.');
-  }, [serialInput, serialLineEnding, workerRef, isRunning, serialBoardFilter, serialBaudRate, pushSerialTxLine, hardwareConnected, hardwareBoardId, sendHardwareSerialLine]);
+  }, [serialInput, serialLineEnding, workerRef, isRunning, serialBoardFilter, serialBaudRate, pushSerialTxLine, hardwareConnected, hardwareBoardId, sendHardwareSerialLine, setSerialInput]);
+
+  const updateBoardBaudRate = useCallback((boardId, baud) => {
+    setBoardBaudRates(prev => ({ ...prev, [boardId]: baud }));
+    if (workerRef.current && isRunning) {
+      workerRef.current.postMessage({
+        type: 'SERIAL_SET_BAUD',
+        targetBoardId: boardId !== 'all' ? boardId : undefined,
+        baudRate: baud,
+      });
+    }
+  }, [isRunning]);
+
+  const updateGlobalBaudRate = useCallback((baud) => {
+    setSerialBaudRate(baud);
+    if (workerRef.current && isRunning) {
+      workerRef.current.postMessage({
+        type: 'SERIAL_SET_BAUD',
+        baudRate: baud,
+      });
+    }
+  }, [isRunning]);
 
   const openComponentEditor = useCallback(() => {
     try {
@@ -10537,13 +10401,23 @@ export function SimulatorPage({ gamificationMode = false }) {
             onCreateCodeFile={createCodeFile} onCreateCodeTab={createCodeTab} onUploadCodeFile={uploadCodeFile}
             libQuery={libQuery} setLibQuery={setLibQuery} handleSearchLibraries={handleSearchLibraries} isSearchingLib={isSearchingLib} libMessage={libMessage} libInstalled={libInstalled} libResults={libResults} handleInstallLibrary={handleInstallLibrary} installingLib={installingLib}
             serialPaused={serialPaused} setSerialPaused={setSerialPaused} isRunning={isRunning} serialHistory={serialHistory} setSerialHistory={setSerialHistory} serialOutputRef={serialOutputRef} serialInput={serialInput} setSerialInput={setSerialInput} sendSerialInput={sendSerialInput} clearSerialMonitor={clearSerialMonitor}
-            serialViewMode={serialViewMode} setSerialViewMode={setSerialViewMode} serialBoardFilter={serialBoardFilter} setSerialBoardFilter={setSerialBoardFilter} serialBoardOptions={serialBoardOptions} serialBoardLabels={serialBoardLabels} serialBoardKinds={serialBoardKinds} serialBoardSourceModes={rp2040BoardSourceModes} serialBaudRate={serialBaudRate} setSerialBaudRate={setSerialBaudRate} serialBaudOptions={serialBaudOptions} serialLineEnding={serialLineEnding} setSerialLineEnding={setSerialLineEnding}
+            serialViewMode={serialViewMode} setSerialViewMode={setSerialViewMode} serialBoardFilter={serialBoardFilter} setSerialBoardFilter={setSerialBoardFilter} serialBoardOptions={serialBoardOptions} serialBoardLabels={serialBoardLabels} serialBoardKinds={serialBoardKinds} serialBoardSourceModes={rp2040BoardSourceModes}
+            serialBaudRate={serialBaudRate} setSerialBaudRate={updateGlobalBaudRate} serialBaudOptions={serialBaudOptions} serialLineEnding={serialLineEnding} setSerialLineEnding={setSerialLineEnding}
             hardwareConnected={hardwareConnected}
-            plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
+            plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotDataRef={plotDataRef} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} serialPlotLabelsRef={serialPlotLabelsRef}
+            plotterTimeDiv={plotterTimeDiv} setPlotterTimeDiv={setPlotterTimeDiv}
             showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
             boardComponentMap={boardComponentMap} onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
             editingDisabled={liveEditingDisabled}
             editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required before you can edit this live simulation.' : 'Editing is disabled.'}
+            boardLineEndings={boardLineEndings} setBoardLineEndings={setBoardLineEndings}
+            boardAutoscrolls={boardAutoscrolls} setBoardAutoscrolls={setBoardAutoscrolls}
+            boardBaudRates={boardBaudRates} setBoardBaudRates={updateBoardBaudRate}
+            boardPausedStates={boardPausedStates} setBoardPausedStates={setBoardPausedStates}
+            boardInputs={boardInputs} setBoardInputs={setBoardInputs}
+            isSerialSplit={isSerialSplit} setIsSerialSplit={setIsSerialSplit}
+            serialSplitRatio={serialSplitRatio} setSerialSplitRatio={setSerialSplitRatio}
+            serialBoardFilter2={serialBoardFilter2} setSerialBoardFilter2={setSerialBoardFilter2}
           />
 
           {/* MY PROJECTS SIDEBAR */}
