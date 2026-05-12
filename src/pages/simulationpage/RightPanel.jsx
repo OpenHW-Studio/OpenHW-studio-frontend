@@ -8,6 +8,7 @@ import 'prismjs/components/prism-cpp';
 import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-json';
 import { Btn } from './Btn';
+import { getBoardColors } from './projectUtils';
 
 // Lazy-load the heavy Blockly editor to improve initial LCP metrics
 const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.jsx'));
@@ -139,14 +140,7 @@ function RightPanelInternal(props) {
     ? serialHistory
     : serialHistory.filter((entry) => entry.boardId === serialBoardFilter);
 
-  const boardColors = React.useMemo(() => {
-    const palette = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#14b8a6', '#eab308', '#06b6d4', '#8b5cf6'];
-    const map = { all: '#94a3b8' };
-    (serialBoardOptions || []).filter((id) => id !== 'all').forEach((id, idx) => {
-      map[id] = palette[idx % palette.length];
-    });
-    return map;
-  }, [serialBoardOptions]);
+  const boardColors = React.useMemo(() => getBoardColors(serialBoardOptions), [serialBoardOptions]);
 
   React.useEffect(() => {
     if (!serialBoardOptions?.length) {

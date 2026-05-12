@@ -55,6 +55,15 @@ export default defineConfig(({ mode }) => {
         ],
       },
     },
+    ssr: {
+      noExternal: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
+    },
+    test: {
+      environment: 'jsdom',
+      deps: {
+        inline: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
+      }
+    },
     server: {
       fs: {
         allow: [

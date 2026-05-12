@@ -1,0 +1,8 @@
+# Keep only essential WASM engines and JS bridges
+*
+!*/
+!.gitignore
+!*.js
+!*.wasm
+!*.d.ts
+!package.json

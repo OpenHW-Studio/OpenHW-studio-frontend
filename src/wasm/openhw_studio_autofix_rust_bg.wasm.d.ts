@@ -1,0 +1,34 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const getAddedComponentId: (a: number, b: number) => [number, number];
+export const getAddedComponentType: (a: number, b: number) => [number, number];
+export const getAddedComponentX: (a: number, b: number) => number;
+export const getAddedComponentY: (a: number, b: number) => number;
+export const getAddedWireFrom: (a: number, b: number) => [number, number];
+export const getAddedWirePathPointCount: (a: number, b: number) => number;
+export const getAddedWirePathPointX: (a: number, b: number, c: number) => number;
+export const getAddedWirePathPointY: (a: number, b: number, c: number) => number;
+export const getAddedWireTo: (a: number, b: number) => [number, number];
+export const getFixAddedComponentCount: (a: number) => number;
+export const getFixAddedWireCount: (a: number) => number;
+export const getFixDescription: (a: number) => [number, number];
+export const getFixPlanCount: () => number;
+export const getFixReasoningCount: (a: number) => number;
+export const getFixReasoningStep: (a: number, b: number) => [number, number];
+export const getFixRemovedWireCount: (a: number) => number;
+export const getFixTargetRuleId: (a: number) => [number, number];
+export const getFixTransformationCount: (a: number) => number;
+export const getRemovedWireFrom: (a: number, b: number) => [number, number];
+export const getRemovedWireTo: (a: number, b: number) => [number, number];
+export const getTransformationComponentId: (a: number, b: number) => [number, number];
+export const getTransformationRotation: (a: number, b: number) => number;
+export const ingestComponent: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+export const ingestViolation: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => void;
+export const ingestWire: (a: number, b: number, c: number, d: number, e: number, f: number) => void;
+export const reset: () => void;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_start: () => void;

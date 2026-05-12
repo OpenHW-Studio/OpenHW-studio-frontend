@@ -3,8 +3,10 @@
  * Bridges the high-performance Rust engine with the simulator UI.
  */
 
-import init, * as engine from '../wasm/autofix_rust.js';
-import wasmUrl from '../wasm/autofix_rust.wasm?url';
+import init, * as engine from '../wasm/openhw_studio_autofix_rust.js';
+import wasmUrl from '../wasm/openhw_studio_autofix_rust_bg.wasm?url';
+import { FullCircuitValidator } from '@openhw/emulator';
+import { calculateProjectPlanApplication } from '../pages/simulationpage/projectUtils.js';
 
 let isInitialized = false;
 
@@ -13,7 +15,7 @@ async function initEngine() {
   console.log("[AutofixWorker] Initializing Rust Engine (v2.0.0-rust)...");
   
   // wasm-bindgen handles the instantiation and memory management
-  await init(wasmUrl);
+  await init({ module_or_path: wasmUrl });
   
   isInitialized = true;
   console.log("Autofix Rust WASM Engine initialized.");
@@ -40,109 +42,155 @@ self.onmessage = async (e) => {
     case 'analyze':
       try {
         const { diagram, violations } = payload;
+        console.group('[AutofixWorker] Starting Autofix Macro-Loop');
+        console.log('[AutofixWorker] Initial Violations:', violations);
+        console.log('[AutofixWorker] Initial Diagram State:', diagram);
         
-        // 0. Reset state
-        self.postMessage({ type: 'status', payload: 'Analyzing diagram (Rust)...' });
-        engine.reset();
+        let currentDiagram = { components: [...(diagram.components || [])], connections: [...(diagram.connections || [])] };
+        let currentViolations = [...(violations || [])];
+        let totalSuggestions = [];
+        let limit = 0;
+        const MACRO_LIMIT = 5; // Prevent infinite recursive autofixing
 
-        // 1. Ingest components
-        (diagram.components || []).forEach((c: any) => {
-          engine.ingestComponent(c.id, c.type, c.x || 0, c.y || 0, c.rotation || 0);
-        });
+        // Dynamic Iterative Loop
+        while (currentViolations.length > 0 && limit < MACRO_LIMIT) {
+          console.group(`[AutofixWorker] Iteration ${limit + 1}`);
+          console.log('[AutofixWorker] Feeding violations to Rust Engine:', currentViolations);
+          
+          self.postMessage({ type: 'status', payload: `Analyzing iteration ${limit + 1} (Rust)...` });
+          engine.reset();
 
-        // 2. Ingest wires
-        (diagram.connections || []).forEach((w: any) => {
-          engine.ingestWire(w.from, w.to, w.color || 'green');
-        });
+          // 1. Ingest current components
+          currentDiagram.components.forEach((c) => {
+            engine.ingestComponent(c.id, c.type, c.x || 0, c.y || 0, c.rotation || 0);
+          });
 
-        // 3. Ingest violations
-        self.postMessage({ type: 'status', payload: 'Calculating repairs (A*)...' });
-        (violations || []).forEach((v: any) => {
-          const rawIds = v.componentIds || v.compIds || [];
-          const compIdsStr = (Array.isArray(rawIds) ? rawIds : [rawIds]).join(',');
-          const ruleId = v.ruleId || v.id || 'unknown-rule';
-          engine.ingestViolation(ruleId, v.message || 'Unknown issue', compIdsStr, v.severity || 'error');
-        });
+          // 2. Ingest wires
+          currentDiagram.connections.forEach((w) => {
+            engine.ingestWire(w.from, w.to, w.color || 'green');
+          });
 
-        // 4. Generate plan
-        const planCount = engine.getFixPlanCount();
-        const suggestions = [];
+          // 3. Ingest current violations
+          currentViolations.forEach((v) => {
+            const rawIds = v.componentIds || v.compIds || [];
+            const compIdsStr = (Array.isArray(rawIds) ? rawIds : [rawIds]).join(',');
+            const ruleId = v.ruleId || v.id || 'unknown-rule';
+            engine.ingestViolation(ruleId, v.message || 'Unknown issue', compIdsStr, v.severity || 'error');
+          });
 
-        for (let i = 0; i < planCount; i++) {
+          // 4. Generate partial plan
+          self.postMessage({ type: 'status', payload: `🧠 Calculating optimal repair strategy (${limit + 1}/5)...` });
+          
+          const planCount = engine.getFixPlanCount();
+
+          if (planCount === 0) break; // Engine gave up / ran out of patterns
+
+          // Take the primary fix (most severe usually sorted first)
+          const i = 0; 
           const description = engine.getFixDescription(i);
           
           const addedComponents = [];
-          const compCount = engine.getFixAddedComponentCount(i);
-          for (let j = 0; j < compCount; j++) {
+          for (let j = 0; j <  engine.getFixAddedComponentCount(i); j++) {
             addedComponents.push({
               id: engine.getAddedComponentId(i, j),
               type: engine.getAddedComponentType(i, j),
               x: engine.getAddedComponentX(i, j),
               y: engine.getAddedComponentY(i, j),
-              w: 0,
-              h: 0,
-              rotation: 0
+              w: 0, h: 0, rotation: 0
             });
           }
 
           const addedWires = [];
-          const wireCount = engine.getFixAddedWireCount(i);
-          for (let j = 0; j < wireCount; j++) {
+          for (let j = 0; j < engine.getFixAddedWireCount(i); j++) {
             const path = [];
-            const pointCount = engine.getAddedWirePathPointCount(i, j);
-            for (let k = 0; k < pointCount; k++) {
-              path.push({
-                x: engine.getAddedWirePathPointX(i, j, k),
-                y: engine.getAddedWirePathPointY(i, j, k)
-              });
+            for (let k = 0; k < engine.getAddedWirePathPointCount(i, j); k++) {
+              path.push({ x: engine.getAddedWirePathPointX(i, j, k), y: engine.getAddedWirePathPointY(i, j, k) });
             }
-
             addedWires.push({
               from: engine.getAddedWireFrom(i, j).replace('.', ':'),
               to: engine.getAddedWireTo(i, j).replace('.', ':'),
-              color: '#38bdf8',
-              isNew: true,
+              color: '#38bdf8', isNew: true,
               path: path.length > 0 ? path : null
             });
           }
 
           const removedWires = [];
-          const removedCount = engine.getFixRemovedWireCount(i);
-          for (let j = 0; j < removedCount; j++) {
+          for (let j = 0; j < engine.getFixRemovedWireCount(i); j++) {
             removedWires.push({
               from: engine.getRemovedWireFrom(i, j).replace('.', ':'),
               to: engine.getRemovedWireTo(i, j).replace('.', ':')
             });
           }
 
-          const reasoning = [];
-          const reasoningCount = engine.getFixReasoningCount(i);
-          for (let j = 0; j < reasoningCount; j++) {
-            reasoning.push(engine.getFixReasoningStep(i, j));
-          }
-
           const transformations = [];
-          const transCount = engine.getFixTransformationCount(i);
-          for (let j = 0; j < transCount; j++) {
+          for (let j = 0; j < engine.getFixTransformationCount(i); j++) {
             transformations.push({
               componentId: engine.getTransformationComponentId(i, j),
               rotation: engine.getTransformationRotation(i, j)
             });
           }
 
-          suggestions.push({
+          const reasoning = [];
+          for (let j = 0; j < engine.getFixReasoningCount(i); j++) {
+            reasoning.push(engine.getFixReasoningStep(i, j));
+          }
+
+          const iterPlan = {
             description,
-            addedComponents,
-            addedWires,
-            removedWires,
-            transformations,
-            reasoning
-          });
+            targetRuleId: engine.getFixTargetRuleId(i),
+            addedComponents, addedWires, removedWires, transformations, reasoning
+          };
+
+          console.log('[AutofixWorker] Rust Engine generated plan:', iterPlan);
+          console.log('[AutofixWorker] Applying patch and re-validating...');
+
+          totalSuggestions.push(iterPlan);
+
+          // 5. Recursion Step - Simulate applying the patch
+          const nextComponents = [];
+          const nextWires = [];
+          try {
+            const result = calculateProjectPlanApplication(
+              iterPlan, 
+              currentDiagram.components, 
+              currentDiagram.connections, 
+              {} // PIN_DEFS
+            );
+            nextComponents.push(...result.components);
+            nextWires.push(...result.wires);
+          } catch(e) {
+            console.error(e);
+            break;
+          }
+
+          currentDiagram.components = nextComponents;
+          currentDiagram.connections = nextWires;
+
+          // 6. Re-validate
+          const engineConnectionsFormat = nextWires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
+          const validator = new FullCircuitValidator({ components: nextComponents, connections: engineConnectionsFormat });
+          const isSafe = validator.runValidation({ profile: 'balanced' });
+          console.log('[AutofixWorker] Post-Patch Validation Results:', validator.errors);
+
+          if (isSafe || validator.errors.length === 0) {
+            console.log('[AutofixWorker] Circuit is now completely fixed!');
+            console.groupEnd();
+            break;
+          } else {
+            // Re-assign for the next cycle
+            currentViolations = validator.errors;
+            console.log('[AutofixWorker] Remaining issues to fix in next tick:', currentViolations);
+          }
+
+          console.groupEnd();
+          limit++;
         }
+        console.log('[AutofixWorker] Complete Autofix Pipeline Finished. Final Plans:', totalSuggestions);
+        console.groupEnd();
         
         self.postMessage({ 
           type: 'results', 
-          payload: { planCount, suggestions } 
+          payload: { planCount: totalSuggestions.length, suggestions: totalSuggestions, masterPlan: true } 
         });
       } catch (err) {
         console.error('[AutofixWorker] Rust execution error:', err);
@@ -155,7 +203,6 @@ self.onmessage = async (e) => {
           payload: { planCount: 0, suggestions: [] } 
         });
       }
-      break;
 
     case 'stop':
       isInitialized = false;

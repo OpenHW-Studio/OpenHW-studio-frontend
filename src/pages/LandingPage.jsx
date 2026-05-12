@@ -7,14 +7,6 @@ export default function LandingPage() {
   const { isAuthenticated, role } = useAuth()
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      if (role === 'teacher') navigate('/teacher/dashboard')
-      else if (role === 'student') navigate('/student/dashboard')
-      else navigate('/user/dashboard')
-    }
-  }, [isAuthenticated, role, navigate])
-
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark'
     setTheme(newTheme)

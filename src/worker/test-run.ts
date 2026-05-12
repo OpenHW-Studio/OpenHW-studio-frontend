@@ -1,4 +1,4 @@
-import { SlidePotLogic } from '../../../openhw-studio-emulator/src/components/wokwi-slide-potentiometer/logic.js';
+import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.js';
 
 const components = [
     { id: 'wokwi-arduino-uno_4', type: 'wokwi-arduino-uno', attrs: {} },

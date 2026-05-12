@@ -1,5 +1,5 @@
 import { BoardRunner, createRunnerForBoard, LOGIC_REGISTRY, COMPONENT_PINS, buildFatFsImage, buildLittleFsImage } from './execute';
-import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
+import { BaseComponent } from '@openhw/emulator';
 import {
     isProgrammableBoardType,
     resolveUartRoute,
@@ -1112,15 +1112,6 @@ self.onmessage = async (e) => {
                 runner.setSpeed(nextSpeed);
             } else {
                 boardRunners.forEach((br) => br.setSpeed(nextSpeed));
-            }
-        }
-    } else if (data.type === 'SET_SOLVER_MODE') {
-        const nextMode = data.mode;
-        if (nextMode === 'logic' || nextMode === 'nodal') {
-            if (mode === 'single' && runner) {
-                (runner as any).setSolverMode?.(nextMode);
-            } else {
-                boardRunners.forEach((br) => (br as any).setSolverMode?.(nextMode));
             }
         }
     } else if (data.type === 'SERIAL_SET_BAUD') {
