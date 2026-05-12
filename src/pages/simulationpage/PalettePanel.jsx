@@ -207,12 +207,11 @@ const PalettePanel = memo(({
           zIndex: 10,
           pointerEvents: liveEditingDisabled ? 'none' : 'auto',
           opacity: liveEditingDisabled ? 0.65 : 1,
-          willChange: 'width',
         }}
-        onMouseEnter={() => requestAnimationFrame(() => setIsPaletteHovered(true))}
-        onMouseLeave={() => requestAnimationFrame(() => {
+        onMouseEnter={() => setIsPaletteHovered(true)}
+        onMouseLeave={() => {
           if (!paletteContextMenu) { setIsPaletteHovered(false); setShowFilterDropdown(false); }
-        })}
+        }}
         onDoubleClick={(e) => e.stopPropagation()}
       >
         {/* Collapsed indicator — visible only when closed */}
@@ -230,7 +229,6 @@ const PalettePanel = memo(({
           opacity: isPaletteHovered ? 1 : 0,
           transition: 'opacity 0.2s',
           pointerEvents: isPaletteHovered ? 'auto' : 'none',
-          willChange: 'opacity',
           display: 'flex', flexDirection: 'column', height: '100%',
         }}>
             {/* Sticky top section */}

@@ -1,5 +1,5 @@
 import { BoardRunner, createRunnerForBoard, LOGIC_REGISTRY, COMPONENT_PINS, buildFatFsImage, buildLittleFsImage } from './execute';
-import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
+import { BaseComponent } from '@openhw/emulator';
 import {
     isProgrammableBoardType,
     resolveUartRoute,
