@@ -59,5 +59,25 @@
       "y": 235,
       "type": "digital"
     }
-  ]
+  ],
+  "autowiring": {
+    "connections": [
+      { "from": "VCC", "to": "arduino:5V" },
+      { "from": "GND", "to": "arduino:GND" },
+      { "from": "SCK", "to": "arduino:SCK" },
+      { "from": "MOSI", "to": "arduino:MOSI" },
+      { "from": "MISO", "to": "arduino:MISO" },
+      { "from": "CS", "to": "arduino:10" },
+      { "from": "DC", "to": "arduino:9" },
+      { "from": "RESET", "to": "arduino:8" },
+      { "from": "LED", "to": "arduino:5V" }
+    ]
+  },
+  "autocoding": {
+    "libraries": ["Adafruit ILI9341", "Adafruit GFX Library"],
+    "arduino": {
+      "setup": "#include \"Adafruit_GFX.h\"\n#include \"Adafruit_ILI9341.h\"\n\n#define TFT_DC 9\n#define TFT_CS 10\n\nAdafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);\n\nvoid setup() {\n  tft.begin();\n  tft.setRotation(1);\n  tft.fillScreen(ILI9341_BLACK);\n  tft.setCursor(20, 100);\n  tft.setTextColor(ILI9341_WHITE);\n  tft.setTextSize(3);\n  tft.println(\"OpenHW Studio\");\n  tft.setCursor(20, 140);\n  tft.setTextSize(2);\n  tft.println(\"TFT ILI9341 Ready\");\n  delay(2000);\n}",
+      "loop": "tft.fillRect(100, 180, 50, 20, ILI9341_BLACK);\ntft.setCursor(20, 180);\ntft.setTextSize(2);\ntft.print(\"Time: \");\ntft.print(millis()/1000);\ntft.println(\"s\");\ndelay(500);"
+    }
+  }
 }

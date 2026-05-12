@@ -39,5 +39,18 @@
             "type": "power",
             "description": "VCC"
         }
-    ]
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "1",   "to": "arduino:GND" },
+            { "from": "SIG", "to": "arduino:A0" },
+            { "from": "2",   "to": "arduino:5V" }
+        ]
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "Serial.begin(9600);\n// Potentiometer connected to A0",
+            "loop": "int potVal = analogRead(A0);\nfloat voltage = potVal * (5.0 / 1023.0);\nSerial.print(\"Pot: \");\nSerial.print(potVal);\nSerial.print(\" | \");\nSerial.print(voltage, 2);\nSerial.println(\" V\");\ndelay(200);"
+        }
+    }
 }

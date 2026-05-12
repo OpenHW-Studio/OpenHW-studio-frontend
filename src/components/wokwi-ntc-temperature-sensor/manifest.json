@@ -1,0 +1,48 @@
+{
+    "type": "wokwi-ntc-temperature-sensor",
+    "label": "Temperature Sensor (NTC)",
+    "description": "Negative Temperature Coefficient (NTC) thermistor. Resistance decreases as temperature increases. Used for precision temperature monitoring.",
+    "group": "Sensors",
+    "w": 30,
+    "h": 30,
+    "attrs": {
+        "temperature": "25",
+        "beta": "3950",
+        "r25": "10000",
+        "breadboard": {
+            "anchorPin": "p1"
+        }
+    },
+    "pins": [
+        {
+            "id": "p1",
+            "x": 5,
+            "y": 30,
+            "type": "passive"
+        },
+        {
+            "id": "p2",
+            "x": 25,
+            "y": 30,
+            "type": "passive"
+        }
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "p1", "to": "arduino:5V" },
+            { 
+                "from": "p2", 
+                "to": "arduino:A0|A1|A2|A3|A4|A5", 
+                "via": "wokwi-resistor", 
+                "mode": "divider", 
+                "attrs": { "value": "10000", "dividerTarget": "arduino:GND" } 
+            }
+        ]
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "Serial.begin(9600);",
+            "loop": "const float BETA = 3950;\nint analogValue = analogRead(arduino:A0|A1|A2|A3|A4|A5);\nfloat celsius = 1 / (log(1 / (1023. / analogValue - 1)) / BETA + 1.0 / 298.15) - 273.15;\nSerial.print(\"Temperature: \");\nSerial.print(celsius);\nSerial.println(\" ℃\");\ndelay(500);"
+        }
+    }
+}

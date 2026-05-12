@@ -1,34 +1,28 @@
 {
     "type": "wokwi-servo",
     "label": "Servo Motor",
-    "description": "Hobby servo motor with precise angular position control (0–180°) via PWM signal. Operates at 5 V; signal pulse width of 1–2 ms controls the shaft angle.",
+    "description": "Hobby servo motor with precise angular position control (0-180 degrees) via PWM signal.",
     "group": "Actuators",
-    "w": 165,
-    "h": 120,
-    "attrs": {
-        "angle": "0"
-    },
+    "w": 165, "h": 120,
+    "attrs": { "angle": "0" },
     "pins": [
-        {
-            "id": "GND",
-            "x": 7,
-            "y": 50,
-            "type": "power",
-            "description": "Ground"
-        },
-        {
-            "id": "V+",
-            "x": 7,
-            "y": 59.5,
-            "type": "power",
-            "description": "5V Power"
-        },
-        {
-            "id": "PWM",
-            "x": 7,
-            "y": 69,
-            "type": "digital",
-            "description": "PWM Input"
+        { "id": "GND", "x": 7, "y": 50,   "type": "power",   "description": "Ground" },
+        { "id": "V+",  "x": 7, "y": 59.5, "type": "power",   "description": "5V Power" },
+        { "id": "PWM", "x": 7, "y": 69,   "type": "digital", "description": "PWM Input" }
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "GND", "to": "arduino:GND" },
+            { "from": "V+",  "to": "powersupply:5V" },
+            { "from": "PWM", "to": "arduino:6" }
+        ],
+        "externalPower": true,
+        "externalVoltage": "5.0"
+    },
+    "autocoding": {
+        "arduino": {
+            "setup": "#include <Servo.h>\nServo myServo;\nmyServo.attach(6);\nmyServo.write(0);\ndelay(500);",
+            "loop": "for (int pos = 0; pos <= 180; pos++) {\n  myServo.write(pos);\n  delay(10);\n}\nfor (int pos = 180; pos >= 0; pos--) {\n  myServo.write(pos);\n  delay(10);\n}"
         }
-    ]
+    }
 }

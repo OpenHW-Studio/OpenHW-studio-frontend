@@ -101,6 +101,16 @@ export class Lcd1602I2CLogic extends BaseComponent {
 
     update(cpuCycles: number, wires: any, allComponents: any) {}
 
+    onCustomTelemetry() {
+        const textContent = this.linesData.map(l => l.trimEnd()).join("\n").trimEnd();
+        this.setCustomTelemetry({
+            textContent: textContent || "<empty>",
+            backlight: this.backlight,
+            lineCount: 2,
+            charsPerLine: 16,
+        });
+    }
+
     getSyncState() {
         return { ...this.state };
     }

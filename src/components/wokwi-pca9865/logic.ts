@@ -88,4 +88,30 @@ export class PCA9865Logic extends BaseComponent {
             this.setPinVoltage(`S${ch}`, 5.0 * duty);
         }
     }
+
+    onCustomTelemetry() {
+        const dutyCycles: Record<number, number> = {};
+        let activePWMChannels = 0;
+
+        for (let ch = 0; ch < 16; ch++) {
+            const base = 0x06 + 4 * ch;
+            const onVal = this.pwmRegs[base] | ((this.pwmRegs[base + 1] & 0x0F) << 8);
+            const offVal = this.pwmRegs[base + 2] | ((this.pwmRegs[base + 3] & 0x0F) << 8);
+
+            let duty = (offVal - onVal) / 4096.0;
+            if (duty < 0) duty += 1.0;
+            if (this.pwmRegs[base + 1] & 0x10) duty = 1.0;
+            else if (this.pwmRegs[base + 3] & 0x10) duty = 0.0;
+
+            dutyCycles[ch] = Number((duty * 100).toFixed(1));
+            if (duty > 0.01 && duty < 0.99) activePWMChannels++;
+        }
+
+        this.setCustomTelemetry({
+            i2cAddress: `0x${this.i2cAddress.toString(16).padStart(2, '0')}`,
+            activePWMChannels: activePWMChannels,
+            dutyCycles: dutyCycles,
+            resolution: '8-bit GPIO expander',
+        });
+    }
 }

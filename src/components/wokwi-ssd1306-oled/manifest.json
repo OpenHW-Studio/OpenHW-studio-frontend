@@ -1,41 +1,32 @@
 {
-  "type": "wokwi-ssd1306-oled",
-  "label": "SSD1306 OLED 128x64",
-  "group": "Outputs",
-  "w": 150,
-  "h": 140,
-  "attrs": {},
-  "telemetry": {
-    "template": "vramDirty=${state.vramDirty}, updateCount=${state.updateCount}, i2cBytes=${state.i2cBytes}",
-    "criticalKeys": [
-      "state.vramDirty",
-      "state.updateCount"
-    ]
-  },
-  "pins": [
-    {
-      "id": "GND",
-      "x": 50,
-      "y": 15,
-      "type": "power"
+    "type": "wokwi-ssd1306-oled",
+    "label": "SSD1306 OLED 128x64",
+    "group": "Outputs",
+    "w": 150, "h": 140,
+    "attrs": { "breadboard": { "anchorPin": "GND" } },
+    "telemetry": {
+        "template": "vramDirty=${state.vramDirty}, updateCount=${state.updateCount}, i2cBytes=${state.i2cBytes}",
+        "criticalKeys": ["state.vramDirty", "state.updateCount"]
     },
-    {
-      "id": "VCC",
-      "x": 67,
-      "y": 15,
-      "type": "power"
+    "pins": [
+        { "id": "GND", "x": 50,  "y": 15, "type": "power" },
+        { "id": "VCC", "x": 67,  "y": 15, "type": "power" },
+        { "id": "SCL", "x": 84,  "y": 15, "type": "input" },
+        { "id": "SDA", "x": 101, "y": 15, "type": "bidirectional" }
+    ],
+    "autowiring": {
+        "connections": [
+            { "from": "GND", "to": "arduino:GND" },
+            { "from": "VCC", "to": "arduino:3V3" },
+            { "from": "SCL", "to": "arduino:A5", "i2c": true },
+            { "from": "SDA", "to": "arduino:A4", "i2c": true }
+        ]
     },
-    {
-      "id": "SCL",
-      "x": 84,
-      "y": 15,
-      "type": "input"
-    },
-    {
-      "id": "SDA",
-      "x": 101,
-      "y": 15,
-      "type": "bidirectional"
+    "autocoding": {
+        "libraries": ["Adafruit SSD1306", "Adafruit GFX Library"],
+        "arduino": {
+            "setup": "#include <Wire.h>\n#include <Adafruit_GFX.h>\n#include <Adafruit_SSD1306.h>\nAdafruit_SSD1306 display(128, 64, &Wire, -1);\ndisplay.begin(SSD1306_SWITCHCAPVCC, 0x3C);\ndisplay.clearDisplay();\ndisplay.setTextSize(2);\ndisplay.setTextColor(SSD1306_WHITE);\ndisplay.setCursor(8, 20);\ndisplay.println(\"OpenHW!\");\ndisplay.display();\ndelay(2000);",
+            "loop": "unsigned long t = millis() / 1000;\ndisplay.clearDisplay();\ndisplay.setTextSize(1);\ndisplay.setCursor(0, 0);\ndisplay.println(\"Welcome to OpenHW!\");\ndisplay.setTextSize(2);\ndisplay.setCursor(20, 30);\ndisplay.print(t);\ndisplay.print(\" s\");\ndisplay.display();\ndelay(500);"
+        }
     }
-  ]
 }

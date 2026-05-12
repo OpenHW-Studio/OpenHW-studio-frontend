@@ -25,5 +25,20 @@
     { "id": "IRD", "x": 42.5,  "y": 8, "type": "digital" },
     { "id": "RD",  "x": 56.8,  "y": 8, "type": "digital" },
     { "id": "NC",  "x": 72, "y": 8, "type": "nc"      }
-  ]
+  ],
+  "autowiring": {
+      "connections": [
+          { "from": "VIN", "to": "arduino:3V3" },
+          { "from": "GND", "to": "arduino:GND" },
+          { "from": "SDA", "to": "arduino:SDA" },
+          { "from": "SCL", "to": "arduino:SCL" }
+      ]
+  },
+  "autocoding": {
+      "libraries": ["MAX30105"],
+      "arduino": {
+          "setup": "#include <Wire.h>\n#include \"MAX30105.h\"\n\nMAX30105 particleSensor;\n\nvoid setup() {\n  Serial.begin(9600);\n  if (!particleSensor.begin(Wire, I2C_SPEED_FAST)) {\n    Serial.println(\"MAX30102 not found\");\n    while (1);\n  }\n  particleSensor.setup();\n}",
+          "loop": "Serial.print(\" R:\"); Serial.print(particleSensor.getRed());\nSerial.print(\" IR:\"); Serial.print(particleSensor.getIR());\nSerial.println();\ndelay(100);"
+      }
+  }
 }

@@ -741,6 +741,26 @@ export class BaseComponent {
             // Non-fatal telemetry hook.
         }
 
+        // If the component didn't provide custom telemetry, create a lightweight
+        // best-effort snapshot from top-level state keys so grading receives
+        // useful signals without requiring per-component edits.
+        try {
+            const ct = this.telemetryRuntime.customTelemetry || {};
+            const hasCustom = Object.keys(ct).length > 0;
+            if (!hasCustom && this.state && typeof this.state === 'object') {
+                const keys = Object.keys(this.state).slice(0, 12);
+                for (const k of keys) {
+                    try {
+                        (this.telemetryRuntime.customTelemetry as any)[k] = this.normalizeStateForTelemetry(this.state[k]);
+                    } catch {
+                        // ignore individual key failures
+                    }
+                }
+            }
+        } catch {
+            // Best-effort; telemetry should never throw the host update path.
+        }
+
         const timing = this.getUpdateTimingMetrics();
 
         return {
@@ -825,6 +845,7 @@ export class BaseComponent {
         return {
             id: this.id,
             type: this.type,
+            state: this.getSyncState(),
             metrics: this.getUniversalMetrics(),
             heuristics: this.applyHeuristics(),
             capturedAt: new Date().toISOString()
@@ -833,12 +854,30 @@ export class BaseComponent {
 
     getDeltaMetrics() {
         const full = this.getRawMetrics();
-        const currentJson = JSON.stringify(full.metrics);
+        
+        // Stabilize metrics for comparison (remove volatile timing fields)
+        const stableMetrics = { ...full.metrics };
+        if (stableMetrics.lifecycle) {
+            stableMetrics.lifecycle = { ...stableMetrics.lifecycle };
+            delete (stableMetrics.lifecycle as any).idleMs;
+        }
+        if (stableMetrics.ioThroughput) {
+            stableMetrics.ioThroughput = { ...stableMetrics.ioThroughput };
+            delete (stableMetrics.ioThroughput as any).lastIoAtMs;
+        }
+        if (stableMetrics.interactionAudit) {
+            stableMetrics.interactionAudit = { ...stableMetrics.interactionAudit };
+            delete (stableMetrics.interactionAudit as any).lastEventAtMs;
+        }
+
+        const currentJson = JSON.stringify(stableMetrics);
         if (currentJson === this.lastReportedJson) {
             return {
                 id: this.id,
                 type: this.type,
+                state: this.getSyncState(),
                 delta: false,
+                metrics: full.metrics,  // CRITICAL: Always include metrics so telemetry capture doesn't lose custom metrics
                 heuristics: full.heuristics,
                 capturedAt: full.capturedAt
             };
@@ -846,6 +885,7 @@ export class BaseComponent {
         this.lastReportedJson = currentJson;
         return {
             ...full,
+            state: this.getSyncState(),
             delta: true
         };
     }

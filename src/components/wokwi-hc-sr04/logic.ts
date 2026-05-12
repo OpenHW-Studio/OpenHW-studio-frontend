@@ -46,4 +46,16 @@ export class HCSR04Logic extends BaseComponent {
             this.isEchoing = false;
         }
     }
+
+    onCustomTelemetry() {
+        const distance = parseFloat(this.attrs?.distance || '100');
+        const echoDurationUs = distance * 58; // Speed of sound: 340 m/s
+        
+        this.setCustomTelemetry({
+            configuredDistance: distance,
+            echoDurationUs: Number(echoDurationUs.toFixed(1)),
+            isEchoing: this.isEchoing,
+            lastMeasurement: this.state.distance || distance,
+        });
+    }
 }

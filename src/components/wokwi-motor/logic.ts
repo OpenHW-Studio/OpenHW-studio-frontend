@@ -95,4 +95,13 @@ export class MotorLogic extends BaseComponent {
             this.stateChanged = true;
         }
     }
+
+    onCustomTelemetry() {
+        this.setCustomTelemetry({
+            speed: Number(this.actualSpeed.toFixed(3)),
+            speedPercent: Number((Math.abs(this.actualSpeed) * 100).toFixed(1)),
+            direction: this.actualSpeed > 0 ? 'forward' : this.actualSpeed < 0 ? 'reverse' : 'stopped',
+            stateChange: this.stateChanged,
+        });
+    }
 }

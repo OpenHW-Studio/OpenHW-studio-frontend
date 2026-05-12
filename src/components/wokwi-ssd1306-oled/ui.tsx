@@ -1,5 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 
+// Bounding box for the selection ring
+export const BOUNDS = { x: 0, y: 0, w: 150, h: 140 };
+
 export const SSD1306UI = ({ state, attrs }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef(state);
@@ -82,7 +85,13 @@ export const SSD1306UI = ({ state, attrs }) => {
   }, []);
 
   return (
-    <svg width="150" height="140" viewBox="0 0 150 140" xmlns="http://www.w3.org/2000/svg">
+    <svg 
+        width="100%" 
+        height="100%" 
+        viewBox="0 0 150 140" 
+        xmlns="http://www.w3.org/2000/svg"
+        style={{ display: 'block' }}
+    >
       <path d="M 0,0 H 150 V 140 H 105 A 5,5 0 0,1 100,135 V 125 H 50 V 135 A 5,5 0 0,1 45,140 H 0 Z" fill="#104271" />
 
       {/* Mounting holes */}

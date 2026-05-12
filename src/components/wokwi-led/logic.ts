@@ -115,6 +115,7 @@ export class LEDLogic extends BaseComponent {
 
         this.setCustomTelemetry({
             status,
+            glow: !!this.state.glow,
             color: this.state.color,
             voltageDrop: (this.state.voltageDrop || 0).toFixed(2) + ' V',
             current: ((this.state.current || 0) * 1000).toFixed(2) + ' mA'

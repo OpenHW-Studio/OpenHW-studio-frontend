@@ -75,5 +75,21 @@
       "y": 60,
       "type": "output"
     }
-  ]
+  ],
+  "autowiring": {
+    "connections": [
+      { "from": "VCC", "to": "arduino:5V" },
+      { "from": "GND", "to": "arduino:GND" },
+      { "from": "CLK", "to": "arduino:SCK" },
+      { "from": "DIN", "to": "arduino:MOSI" },
+      { "from": "CS", "to": "arduino:10" }
+    ]
+  },
+  "autocoding": {
+    "libraries": ["LedControl"],
+    "arduino": {
+      "setup": "#include <LedControl.h>\n\nLedControl lc = LedControl(11, 13, 10, 1);\n\nvoid setup() {\n  lc.shutdown(0, false);\n  lc.setIntensity(0, 8);\n  lc.clearDisplay(0);\n  // Welcome Message (H)\n  lc.setRow(0,0,B01100110);\n  lc.setRow(0,1,B01100110);\n  lc.setRow(0,2,B01100110);\n  lc.setRow(0,3,B01111110);\n  lc.setRow(0,4,B01111110);\n  lc.setRow(0,5,B01100110);\n  lc.setRow(0,6,B01100110);\n  lc.setRow(0,7,B01100110);\n  delay(2000);\n}",
+      "loop": "// Dot Matrix ready for animation."
+    }
+  }
 }
