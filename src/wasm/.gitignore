@@ -6,4 +6,4 @@
 !*.wasm
 !*.d.ts
 !package.json
-!README.md
+!vite-env.d.ts
