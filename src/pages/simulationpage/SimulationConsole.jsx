@@ -6,12 +6,35 @@ const CONSOLE_HEIGHT_KEY = 'sim.console.height';
 
 function stringifyArg(arg) {
   if (typeof arg === 'string') return arg;
-  if (arg instanceof Error) return arg.stack || arg.message || String(arg);
-  try {
-    return JSON.stringify(arg);
-  } catch (e) {
-    return String(arg);
+  if (arg === null) return 'null';
+  if (arg === undefined) return 'undefined';
+
+  if (arg instanceof Error) {
+    return `Error: ${arg.name}: ${arg.message}\nStack: ${arg.stack}`;
   }
+  
+  // Handle ErrorEvent or any object that looks like one
+  if (typeof arg === 'object') {
+    if ('message' in arg && 'filename' in arg) {
+       return `ErrorEvent: ${arg.message} at ${arg.filename}:${arg.lineno}:${arg.colno}`;
+    }
+    
+    if (arg instanceof Event || (arg.type && 'isTrusted' in arg)) {
+       return `Event: ${arg.type} (target: ${arg.target?.constructor?.name || 'unknown'})`;
+    }
+
+    try {
+      return JSON.stringify(arg, (key, value) => {
+        if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack };
+        if (value instanceof Event) return { type: value.type, isTrusted: value.isTrusted };
+        return value;
+      }, 2);
+    } catch (e) {
+      return `[Object: ${arg.constructor?.name || 'Object'}]`;
+    }
+  }
+
+  return String(arg);
 }
 
 function normalizeMessage(args) {

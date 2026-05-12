@@ -1,4 +1,3 @@
-// Polyfill for libraries that expect a browser environment (like React Refresh injected by Vite)
 if (typeof window === 'undefined') {
     (self as any).window = self;
     (self as any).document = {
@@ -11,10 +10,9 @@ if (typeof window === 'undefined') {
         removeEventListener: () => {},
     };
 }
-
-// React Refresh Mocks (Vite HMR)
 (self as any).$RefreshReg$ = () => {};
 (self as any).$RefreshSig$ = () => () => (type: any) => type;
+
 
 console.log("[HEARTBEAT] Worker [v3.8]: Environment Polyfilled.");
 self.postMessage({ type: 'LOG', msg: "Worker is ALIVE (Dynamic Loader Mode)." });

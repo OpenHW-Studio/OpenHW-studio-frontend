@@ -9,6 +9,11 @@ import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-json';
 import { Btn } from './Btn';
 import { getBoardColors } from './projectUtils';
+import PlotterCanvas from './PlotterCanvas';
+ 
+const PLOTTER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
+
+
 
 // Lazy-load the heavy Blockly editor to improve initial LCP metrics
 const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.jsx'));
@@ -16,6 +21,7 @@ const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.js
 const DISABLED_FILE_SUFFIX = '.disabled';
 
 function RightPanelInternal(props) {
+
   const {
     isPanelOpen, panelWidth, isDragging, onMouseDownResize, setIsPanelOpen,
     explorerWidth, isExplorerDragging, onMouseDownExplorerResize,
@@ -32,7 +38,7 @@ function RightPanelInternal(props) {
     serialPaused, setSerialPaused, isRunning, serialHistory, setSerialHistory, serialOutputRef, serialInput, setSerialInput, sendSerialInput, clearSerialMonitor,
     serialViewMode, setSerialViewMode, serialBoardFilter, setSerialBoardFilter, serialBoardOptions, serialBoardLabels, serialBoardKinds, serialBoardSourceModes, serialBaudRate, setSerialBaudRate, serialBaudOptions, serialLineEnding, setSerialLineEnding,
     hardwareConnected,
-    plotterPaused, setPlotterPaused, plotData, setPlotData, selectedPlotPins, setSelectedPlotPins, plotterCanvasRef, serialPlotLabelsRef,
+    plotterPaused, setPlotterPaused, plotDataRef, selectedPlotPins, setSelectedPlotPins, serialPlotLabelsRef,
     showConnectionsPanel, wires, updateWireColor, deleteWire,
     selected, setSelected,
     blocklyDisabled, setBlocklyDisabled,
@@ -41,6 +47,15 @@ function RightPanelInternal(props) {
     projectName,
     editingDisabled = false,
     editingDisabledMessage = 'Editing is disabled.',
+    boardLineEndings, setBoardLineEndings,
+    boardAutoscrolls, setBoardAutoscrolls,
+    boardBaudRates, setBoardBaudRates,
+    boardPausedStates, setBoardPausedStates,
+    boardInputs, setBoardInputs,
+    isSerialSplit, setIsSerialSplit,
+    serialSplitRatio, setSerialSplitRatio,
+    serialBoardFilter2, setSerialBoardFilter2,
+    plotterTimeDiv, setPlotterTimeDiv
   } = props;
 
   const [fileMenu, setFileMenu] = React.useState(null); // { x, y, fileId }
@@ -50,8 +65,62 @@ function RightPanelInternal(props) {
     serialBoardFilter && serialBoardFilter !== 'all' ? serialBoardFilter : 'all'
   );
   const [showSendTargetMenu, setShowSendTargetMenu] = React.useState(false);
+
   const [isLibPanelOpen, setIsLibPanelOpen] = React.useState(false);
+  const [plotterPaused2, setPlotterPaused2] = React.useState(false);
+  const [showAddChannel, setShowAddChannel] = React.useState(false);
+
   const sendMenuRef = React.useRef(null);
+  const sendMenuRef2 = React.useRef(null);
+  const serialOutputRef2 = React.useRef(null);
+
+  const [isSerialResizing, setIsSerialResizing] = React.useState(false);
+
+  React.useEffect(() => {
+    if (isSerialSplit && !serialBoardFilter2) {
+      const boards = (serialBoardOptions || []).filter(id => id !== 'all');
+      if (boards.length > 1) {
+        setSerialBoardFilter2(boards[1]);
+      } else if (boards.length > 0) {
+        setSerialBoardFilter2(boards[0]);
+      }
+    }
+  }, [isSerialSplit, serialBoardOptions, serialBoardFilter2]);
+
+  const onPointerDownSerialResize = React.useCallback((e) => {
+    e.preventDefault();
+    e.target.setPointerCapture(e.pointerId);
+    setIsSerialResizing(true);
+  }, []);
+
+  const onPointerMoveSerialResize = React.useCallback((e) => {
+    if (!isSerialResizing) return;
+    const serialContainer = document.getElementById('serial-container');
+    if (!serialContainer) return;
+    
+    const rect = serialContainer.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    const ratio = relativeY / rect.height;
+
+    // Snap-to-close logic
+    if (ratio < 0.05) {
+      setSerialBoardFilter(serialBoardFilter2);
+      setIsSerialSplit(false);
+      setIsSerialResizing(false);
+      return;
+    }
+    if (ratio > 0.95) {
+      setIsSerialSplit(false);
+      setIsSerialResizing(false);
+      return;
+    }
+
+    setSerialSplitRatio(Math.max(0.1, Math.min(0.9, ratio)));
+  }, [isSerialResizing, serialBoardFilter2]);
+
+  const onPointerUpSerialResize = React.useCallback((e) => {
+    setIsSerialResizing(false);
+  }, []);
 
   // ── Block Editor enable/disable toggle (persisted via props from SimulatorPage) ─
   const toggleBlocklyDisabled = React.useCallback(() => {
@@ -139,6 +208,24 @@ function RightPanelInternal(props) {
   const filteredSerialHistory = serialBoardFilter === 'all'
     ? serialHistory
     : serialHistory.filter((entry) => entry.boardId === serialBoardFilter);
+
+  const filteredSerialHistory2 = serialBoardFilter2 === 'all'
+    ? serialHistory
+    : serialHistory.filter((entry) => entry.boardId === serialBoardFilter2);
+
+  React.useEffect(() => {
+    const autoscroll = boardAutoscrolls[serialBoardFilter] ?? true;
+    if (autoscroll && serialOutputRef.current) {
+      serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
+    }
+  }, [filteredSerialHistory, serialBoardFilter, boardAutoscrolls]);
+
+  React.useEffect(() => {
+    const autoscroll = boardAutoscrolls[serialBoardFilter2] ?? true;
+    if (autoscroll && serialOutputRef2.current) {
+      serialOutputRef2.current.scrollTop = serialOutputRef2.current.scrollHeight;
+    }
+  }, [filteredSerialHistory2, serialBoardFilter2, boardAutoscrolls]);
 
   const boardColors = React.useMemo(() => getBoardColors(serialBoardOptions), [serialBoardOptions]);
 
@@ -1126,379 +1213,314 @@ function RightPanelInternal(props) {
               )}
             </div>
             {codeTab === 'serial' && (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden' }}>
-                {/* Serial panel toolbar */}
-                <div className="px-2.5 py-1.5 border-b border-[var(--border)] bg-[var(--bg2)] shrink-0" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div id="serial-container" style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden', position: 'relative' }}>
+                {/* Topmost Header */}
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between', 
+                  padding: '8px 12px', 
+                  borderBottom: '1px solid var(--border)',
+                  background: 'var(--bg2)',
+                  height: 48,
+                  flexShrink: 0
+                }}>
+                  {/* Reuse existing Monitor/Plotter slider style */}
+                  <div style={{
+                    position: 'relative',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    width: 160,
+                    height: 32,
+                    borderRadius: 999,
+                    border: '1px solid var(--border)',
+                    background: 'var(--card)',
+                    overflow: 'hidden',
+                  }}>
                     <div style={{
-                      position: 'relative',
-                      display: 'grid',
-                      gridTemplateColumns: '1fr 1fr',
-                      width: 168,
-                      height: 26,
+                      position: 'absolute',
+                      top: 1,
+                      left: serialViewMode === 'monitor' ? 1 : '50%',
+                      width: 'calc(50% - 2px)',
+                      height: 28,
                       borderRadius: 999,
-                      border: '1px solid var(--border)',
-                      background: 'var(--card)',
-                      overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        position: 'absolute',
-                        top: 1,
-                        left: serialViewMode === 'monitor' ? 1 : '50%',
-                        width: 'calc(50% - 2px)',
-                        height: 22,
-                        borderRadius: 999,
-                        background: 'var(--accent)',
-                        transition: 'left .2s ease',
-                        boxShadow: '0 2px 8px rgba(0,0,0,.25)',
-                      }} />
-                      {['monitor', 'plotter'].map((mode) => (
-                        <button
-                          key={mode}
-                          onClick={() => setSerialViewMode(mode)}
-                          style={{
-                            position: 'relative',
-                            zIndex: 1,
-                            border: 'none',
-                            background: 'transparent',
-                            color: serialViewMode === mode ? '#fff' : 'var(--text2)',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            textTransform: 'capitalize',
-                          }}
-                        >
-                          {mode}
-                        </button>
-                      ))}
-                    </div>
+                      background: 'var(--accent)',
+                      transition: 'left .2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: '0 2px 8px rgba(0,0,0,.2)',
+                    }} />
+                    {['monitor', 'plotter'].map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setSerialViewMode(mode)}
+                        style={{
+                          position: 'relative',
+                          zIndex: 1,
+                          border: 'none',
+                          background: 'transparent',
+                          color: serialViewMode === mode ? '#000' : 'var(--text2)',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
 
-                    <div style={{ flex: 1 }} />
-
-                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>Board</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, textTransform: 'uppercase' }}>Baud</span>
                     <select
-                      value={serialBoardFilter}
-                      onChange={(e) => setSerialBoardFilter(e.target.value)}
+                      value={serialBoardFilter === 'all' ? serialBaudRate : (boardBaudRates[serialBoardFilter] || serialBaudRate)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (serialBoardFilter === 'all') {
+                          setSerialBaudRate(val);
+                        } else {
+                          setBoardBaudRates(prev => ({ ...prev, [serialBoardFilter]: val }));
+                        }
+                      }}
                       style={{
                         background: 'var(--card)',
                         border: '1px solid var(--border)',
                         color: 'var(--text2)',
-                        borderRadius: 6,
-                        padding: '2px 6px',
+                        borderRadius: 8,
+                        padding: '4px 10px',
                         fontSize: 11,
-                        cursor: 'pointer'
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        outline: 'none'
                       }}
-                      title="Select board"
-                    >
-                      {serialBoardOptions.map((id) => (
-                        <option key={id} value={id} style={{ color: boardColors[id] || 'var(--text2)' }}>
-                          {`● ${serialBoardLabels?.[id] || (id === 'all' ? 'All Boards' : id)}`}
-                        </option>
-                      ))}
-                    </select>
-
-                    <span style={{ fontSize: 11, color: 'var(--text3)' }}>Baud</span>
-                    <select
-                      value={serialBaudRate}
-                      onChange={(e) => setSerialBaudRate(e.target.value)}
-                      style={{
-                        background: 'var(--card)',
-                        border: '1px solid var(--border)',
-                        color: 'var(--text2)',
-                        borderRadius: 6,
-                        padding: '2px 6px',
-                        fontSize: 11,
-                        cursor: 'pointer'
-                      }}
-                      title="Baud rate"
                     >
                       {(serialBaudOptions && serialBaudOptions.length ? serialBaudOptions : ['9600', '19200', '38400', '57600', '115200']).map((baud) => (
                         <option key={baud} value={baud}>{baud}</option>
                       ))}
                     </select>
                   </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{
-                      display: 'flex', alignItems: 'center', gap: 5, fontSize: 11,
-                      color: (serialViewMode === 'monitor' ? serialPaused : plotterPaused) ? 'var(--text3)' : 'var(--green)'
-                    }}>
-                      <span style={{
-                        width: 7, height: 7, borderRadius: '50%',
-                        background: (serialViewMode === 'monitor' ? serialPaused : plotterPaused) ? 'var(--text3)' : 'var(--green)',
-                        boxShadow: (serialViewMode === 'monitor' ? serialPaused : plotterPaused) ? 'none' : '0 0 6px var(--green)',
-                        animation: (!(serialViewMode === 'monitor' ? serialPaused : plotterPaused) && isRunning) ? 'pulse 1.2s infinite' : 'none',
-                        flexShrink: 0
-                      }} />
-                      {(serialViewMode === 'monitor' ? serialPaused : plotterPaused) ? 'Paused' : (isRunning || hardwareConnected) ? 'Live' : 'Idle'}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {serialViewMode === 'monitor' ? `${filteredSerialHistory.length} lines` : `${plotData.length} samples`}
-                    </span>
-                    <div style={{ flex: 1 }} />
-                    <button
-                      className="bg-transparent border border-[var(--border)] text-[var(--text2)] rounded-md px-2 py-0.5 text-[11px] cursor-pointer font-inherit whitespace-nowrap"
-                      onClick={() => serialViewMode === 'monitor' ? setSerialPaused(p => !p) : setPlotterPaused(p => !p)}
-                      title={serialViewMode === 'monitor' ? (serialPaused ? 'Resume serial monitor' : 'Pause serial monitor') : (plotterPaused ? 'Resume plotting' : 'Pause plotting')}
-                    >
-                      {(serialViewMode === 'monitor' ? serialPaused : plotterPaused) ? '▶ Resume' : '⏸ Pause'}
-                    </button>
-                    {serialViewMode === 'monitor' && (
-                      <select
-                        value={serialLineEnding || 'nl'}
-                        onChange={(e) => setSerialLineEnding(e.target.value)}
-                        title="Serial line ending"
-                        style={{
-                          background: 'var(--card)',
-                          border: '1px solid var(--border)',
-                          color: 'var(--text2)',
-                          borderRadius: 6,
-                          padding: '2px 6px',
-                          fontSize: 11,
-                          cursor: 'pointer'
-                        }}
-                      >
-                        <option value="nl">\\n</option>
-                        <option value="crlf">\\r\\n</option>
-                        <option value="cr">\\r</option>
-                        <option value="none">None</option>
-                      </select>
-                    )}
-                    <button
-                      className="bg-transparent border border-[var(--border)] text-[var(--text2)] rounded-md px-2 py-0.5 text-[11px] cursor-pointer font-inherit whitespace-nowrap" style={{ color: 'var(--red)', borderColor: 'rgba(255,68,68,0.3)' }}
-                      onClick={() => serialViewMode === 'monitor' ? (clearSerialMonitor ? clearSerialMonitor() : setSerialHistory([])) : setPlotData([])}
-                      title={serialViewMode === 'monitor' ? 'Clear all output' : 'Clear plot'}
-                    >
-                      🗑 Clear
-                    </button>
-                  </div>
                 </div>
-                {serialViewMode === 'monitor' ? (
-                  <>
-                    {/* Output Area */}
-                    <div ref={serialOutputRef} className="flex-1 overflow-y-auto py-1.5 flex flex-col panel-scroll" >
-                      {filteredSerialHistory.length === 0 ? (
-                        <div style={{ color: 'var(--text3)', fontSize: 12, padding: '20px 0', textAlign: 'center' }}>
-                          {isRunning ? 'Waiting for serial output...' : 'Run the simulator to see serial output.'}
-                        </div>
-                      ) : (
-                        filteredSerialHistory.map((entry, i) => {
-                          const badgeColor = entry.dir === 'rx' ? '#2ecc71' : entry.dir === 'tx' ? '#3498db' : '#888';
-                          const badgeBg = entry.dir === 'rx' ? 'rgba(46,204,113,0.12)' : entry.dir === 'tx' ? 'rgba(52,152,219,0.12)' : 'rgba(128,128,128,0.12)';
-                          const boardColor = boardColors[entry.boardId] || '#64748b';
-                          return (
-                            <div key={i} className="flex items-start gap-2 px-3 py-0.5 text-[11px] font-mono border-b border-[var(--border)]">
-                              <span className="text-[var(--text3)] text-[10px] min-w-[84px] shrink-0 pt-[1px]" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: boardColor, boxShadow: `0 0 0 1px ${boardColor}55` }} />
-                                {entry.ts || ''}
-                              </span>
-                              <span className="inline-block text-[9px] font-bold rounded-[3px] px-1 py-[1px] shrink-0 mt-[1px]" style={{ color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}40` }}>
-                                {entry.dir?.toUpperCase() || 'RX'}
-                              </span>
-                              <span style={{ flex: 1, color: entry.dir === 'tx' ? '#3498db' : entry.dir === 'sys' ? 'var(--text3)' : 'var(--green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-                                {entry.text}
-                              </span>
-                              <span style={{ color: 'var(--text3)', fontSize: 10, minWidth: 90, textAlign: 'right' }}>
-                                {entry.boardId || '-'}
-                              </span>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
 
-                    {/* TX Input Row */}
-                    <div style={{ display: 'flex', gap: 6, padding: '8px 10px', borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg2)' }}>
-                      <input
-                        className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs outline-none font-inherit" style={{ flex: 1, fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                        placeholder="Send message to Arduino..."
-                        value={serialInput}
-                        onChange={e => setSerialInput(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') {
-                            sendSerialInput(serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter);
-                          }
-                        }}
-                        disabled={!isRunning && !hardwareConnected}
-                      />
-                      <div ref={sendMenuRef} style={{ position: 'relative', display: 'inline-flex' }}>
-                        <button
-                          onClick={() => sendSerialInput(serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter)}
-                          disabled={(!isRunning && !hardwareConnected) || !serialInput.trim()}
-                          style={{
-                            background: ((isRunning || hardwareConnected) && serialInput.trim()) ? 'var(--accent)' : 'transparent',
-                            border: '1px solid var(--accent)',
-                            borderRight: serialBoardFilter === 'all' ? 'none' : '1px solid var(--accent)',
-                            color: ((isRunning || hardwareConnected) && serialInput.trim()) ? '#fff' : 'var(--text3)',
-                            borderRadius: serialBoardFilter === 'all' ? '8px 0 0 8px' : '8px',
-                            padding: '6px 10px',
-                            fontSize: 11,
-                            fontWeight: 700,
-                            cursor: ((isRunning || hardwareConnected) && serialInput.trim()) ? 'pointer' : 'not-allowed',
-                            fontFamily: 'inherit',
-                            transition: 'all .15s',
-                            whiteSpace: 'nowrap',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
+                {/* Main Serial Content */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                  {serialViewMode === 'monitor' ? (
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                      {/* Pane 1 */}
+                      <div style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        height: isSerialSplit ? `${serialSplitRatio * 100}%` : '100%',
+                        minHeight: isSerialSplit ? 100 : '100%',
+                        overflow: 'hidden'
+                      }}>
+                        <SerialTabBar 
+                          activeBoard={serialBoardFilter}
+                          otherActiveBoard={isSerialSplit ? serialBoardFilter2 : null}
+                          setBoard={setSerialBoardFilter}
+                          isPaused={boardPausedStates[serialBoardFilter] ?? false}
+                          onTogglePause={() => setBoardPausedStates(p => ({ ...p, [serialBoardFilter]: !(p[serialBoardFilter] ?? false) }))}
+                          autoscroll={boardAutoscrolls[serialBoardFilter] ?? true}
+                          onToggleAutoscroll={(val) => setBoardAutoscrolls(p => ({ ...p, [serialBoardFilter]: val }))}
+                          onClear={() => setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter))}
+                          onToggleSplit={() => setIsSerialSplit(!isSerialSplit)}
+                          isSplit={isSerialSplit}
+                          boardOptions={serialBoardOptions}
+                          boardColors={boardColors}
+                          boardLabels={serialBoardLabels}
+                          boardKinds={serialBoardKinds}
+                        />
+                        <SerialOutputPane 
+                          boardId={serialBoardFilter}
+                          history={serialHistory}
+                          outputRef={serialOutputRef}
+                          isPaused={boardPausedStates[serialBoardFilter] ?? false}
+                          boardColors={boardColors}
+                          isRunning={isRunning}
+                        />
+                        <SerialSendRow 
+                          boardId={serialBoardFilter}
+                          input={boardInputs[serialBoardFilter] || ''}
+                          setInput={(val) => setBoardInputs(p => ({ ...p, [serialBoardFilter]: val }))}
+                          onSend={(id, text, ending, baud) => {
+                            sendSerialInput(id, text, ending, baud);
+                            setBoardInputs(p => ({ ...p, [id]: '' }));
                           }}
-                          title={`Send to ${serialBoardLabels?.[(serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter)] || (serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter)}`}
-                        >
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: boardColors[serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter] || '#94a3b8', boxShadow: `0 0 0 1px ${(boardColors[serialBoardFilter === 'all' ? serialSendTarget : serialBoardFilter] || '#94a3b8')}66` }} />
-                          Send
-                        </button>
-
-                        {serialBoardFilter === 'all' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowSendTargetMenu((v) => !v);
-                            }}
-                            disabled={!isRunning && !hardwareConnected}
-                            style={{
-                              background: ((isRunning || hardwareConnected) && serialInput.trim()) ? 'var(--accent)' : 'transparent',
-                              border: '1px solid var(--accent)',
-                              color: ((isRunning || hardwareConnected) && serialInput.trim()) ? '#fff' : 'var(--text3)',
-                              borderRadius: '0 8px 8px 0',
-                              padding: '6px 7px',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              cursor: (!isRunning && !hardwareConnected) ? 'not-allowed' : 'pointer',
-                              fontFamily: 'inherit',
-                              transition: 'all .15s',
-                              whiteSpace: 'nowrap'
-                            }}
-                            title="Choose board to send"
-                          >
-                            ▾
-                          </button>
-                        )}
-
-                        {serialBoardFilter === 'all' && showSendTargetMenu && (
-                          <div 
-                            className="canvas-menu"
-                            onMouseLeave={() => setShowSendTargetMenu(false)}
-                            style={{
-                              position: 'absolute',
-                              right: 0,
-                              bottom: 'calc(100% + 6px)',
-                              minWidth: 180,
-                              background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-                              backdropFilter: 'blur(16px) saturate(1.4)',
-                              WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                              border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                              borderRadius: 12,
-                              boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                              padding: '5px',
-                              zIndex: 10000, // Increased z-index to match other menus
-                              animation: 'canvasMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                              transformOrigin: 'bottom right',
-                              fontFamily: "'Space Grotesk', sans-serif"
-                            }}
-                          >
-                            {(serialBoardOptions || []).filter((id) => id !== 'all').map((id) => {
-                              const active = serialSendTarget === id;
-                              return (
-                                <button
-                                  key={`send-target-${id}`}
-                                  className="canvas-menu-item"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSerialSendTarget(id);
-                                    setShowSendTargetMenu(false);
-                                  }}
-                                  style={{
-                                    background: active ? 'rgba(0,255,255,0.08)' : 'transparent',
-                                    color: active ? 'var(--accent)' : 'var(--text2)',
-                                  }}
-                                >
-                                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: boardColors[id] || '#94a3b8', boxShadow: `0 0 0 1px ${(boardColors[id] || '#94a3b8')}66` }} />
-                                  <span>{serialBoardLabels?.[id] || id}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
+                          isRunning={isRunning}
+                          hardwareConnected={hardwareConnected}
+                          serialLineEnding={boardLineEndings[serialBoardFilter] || 'none'}
+                          setSerialLineEnding={(val) => setBoardLineEndings(p => ({ ...p, [serialBoardFilter]: val }))}
+                          serialBaudRate={boardBaudRates[serialBoardFilter] || serialBaudRate}
+                          setSerialBaudRate={(val) => setBoardBaudRates(p => ({ ...p, [serialBoardFilter]: val }))}
+                          boardLabels={serialBoardLabels}
+                          theme={theme}
+                        />
                       </div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    {/* Pin Selector */}
-                    <div style={{ padding: '6px 8px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: 11, color: 'var(--text3)', flexShrink: 0 }}>Pins:</span>
-                      {availablePins.map((pin, i) => {
-                        const isSel = selectedPlotPins.includes(pin);
-                        const isAna = pin.startsWith('A');
-                        const isLogic = basePins.includes(pin);
-                        let bg = isAna ? 'rgba(52,152,219,0.2)' : 'rgba(46,204,113,0.2)';
-                        let br = isAna ? '#3498db' : '#2ecc71';
-                        if (!isLogic) {
-                          const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-                          const c = colors[i % colors.length];
-                          bg = `${c}33`; br = c;
-                        }
-                        return (
-                          <button
-                            key={pin}
-                            onClick={() => setSelectedPlotPins(prev => {
-                              if (prev.includes(pin)) return prev.filter(p => p !== pin);
-                              if (prev.length >= 8) return [...prev.slice(1), pin];
-                              return [...prev, pin];
-                            })}
-                            style={{
-                              background: isSel ? bg : 'transparent',
-                              border: `1px solid ${isSel ? br : 'var(--border)'}`,
-                              color: isSel ? br : 'var(--text3)',
-                              borderRadius: 4, padding: '1px 5px', fontSize: 10, cursor: 'pointer'
-                            }}
-                          >{pin}</button>
-                        );
-                      })}
-                    </div>
 
-                    {/* Legend */}
-                    {selectedPlotPins.length > 0 && (
-                      <div className="flex flex-wrap gap-y-1 gap-x-4 px-2.5 py-1 border-b border-[var(--border)] shrink-0">
-                        {selectedPlotPins.map((pin, i) => {
-                          let bg = pin.startsWith('A') ? '#3498db' : '#2ecc71';
-                          let lbl = `Pin ${pin}`;
-                          if (isNaN(parseInt(pin)) && !pin.startsWith('A')) {
-                            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-                            const serialVars = selectedPlotPins.filter(p => isNaN(parseInt(p)) && !p.startsWith('A'));
-                            bg = colors[serialVars.indexOf(pin) % colors.length];
-                            lbl = pin;
-                          }
-                          return (
-                            <span key={pin} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, cursor: 'pointer' }}
-                              onClick={() => setSelectedPlotPins(prev => prev.filter(p => p !== pin))}
-                              title="Click to remove" >
-                              <span style={{ width: 10, height: 10, borderRadius: 2, background: bg, flexShrink: 0 }} />
-                              <span style={{ color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace' }}>{lbl}</span>
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Canvas */}
-                    <div style={{ flex: 1, position: 'relative' }}>
-                      {!isRunning && plotData.length === 0 ? (
-                        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text3)', gap: 8, fontSize: 13 }}>
-                          <span style={{ fontSize: 28 }}>📈</span>
-                          Run simulator to trace signals.
-                        </div>
-                      ) : (
-                        <canvas
-                          ref={plotterCanvasRef}
-                          width={800}
-                          height={600}
-                          style={{ position: 'absolute', width: '100%', height: '100%', background: '#070b14' }}
+                      {/* Resizer */}
+                      {isSerialSplit && (
+                        <div 
+                          onPointerDown={onPointerDownSerialResize}
+                          onPointerMove={onPointerMoveSerialResize}
+                          onPointerUp={onPointerUpSerialResize}
+                          style={{ 
+                            height: 6, 
+                            cursor: 'row-resize', 
+                            background: isSerialResizing ? 'var(--accent)' : 'var(--bg3)',
+                            borderTop: '1px solid var(--border)',
+                            borderBottom: '1px solid var(--border)',
+                            zIndex: 10,
+                            transition: 'background 0.2s',
+                            pointerEvents: 'auto',
+                            touchAction: 'none'
+                          }} 
+                          className="hover:bg-[var(--accent)]"
                         />
                       )}
+
+                      {/* Pane 2 */}
+                      {isSerialSplit && (
+                        <div style={{ 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          height: `${(1 - serialSplitRatio) * 100}%`,
+                          minHeight: 100,
+                          overflow: 'hidden'
+                        }}>
+                          <SerialTabBar 
+                            activeBoard={serialBoardFilter2}
+                            otherActiveBoard={serialBoardFilter}
+                            setBoard={setSerialBoardFilter2}
+                            isPaused={boardPausedStates[serialBoardFilter2] ?? false}
+                            onTogglePause={() => setBoardPausedStates(p => ({ ...p, [serialBoardFilter2]: !(p[serialBoardFilter2] ?? false) }))}
+                            autoscroll={boardAutoscrolls[serialBoardFilter2] ?? true}
+                            onToggleAutoscroll={(val) => setBoardAutoscrolls(p => ({ ...p, [serialBoardFilter2]: val }))}
+                            onClear={() => setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter2))}
+                            onToggleSplit={() => setIsSerialSplit(false)}
+                            isSplit={true}
+                            boardOptions={serialBoardOptions}
+                            boardColors={boardColors}
+                            boardLabels={serialBoardLabels}
+                            boardKinds={serialBoardKinds}
+                          />
+                          <SerialOutputPane 
+                            boardId={serialBoardFilter2}
+                            history={serialHistory}
+                            outputRef={serialOutputRef2}
+                            isPaused={boardPausedStates[serialBoardFilter2] ?? false}
+                            boardColors={boardColors}
+                            isRunning={isRunning}
+                          />
+                        <SerialSendRow 
+                          boardId={serialBoardFilter2}
+                          input={boardInputs[serialBoardFilter2] || ''}
+                          setInput={(val) => setBoardInputs(p => ({ ...p, [serialBoardFilter2]: val }))}
+                          onSend={(id, text, ending, baud) => {
+                            sendSerialInput(id, text, ending, baud);
+                            setBoardInputs(p => ({ ...p, [id]: '' }));
+                          }}
+                          isRunning={isRunning}
+                          hardwareConnected={hardwareConnected}
+                          serialLineEnding={boardLineEndings[serialBoardFilter2] || 'none'}
+                          setSerialLineEnding={(val) => setBoardLineEndings(p => ({ ...p, [serialBoardFilter2]: val }))}
+                          serialBaudRate={boardBaudRates[serialBoardFilter2] || serialBaudRate}
+                          setSerialBaudRate={(val) => setBoardBaudRates(p => ({ ...p, [serialBoardFilter2]: val }))}
+                          boardLabels={serialBoardLabels}
+                          theme={theme}
+                        />
+                        </div>
+                      )}
                     </div>
-                  </>
-                )}
+                  ) : (
+                    /* Plotter Mode - Modernized with Per-Board Management */
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+                      <PlotterToolbar 
+                        onAddChannel={() => setShowAddChannel(!showAddChannel)}
+                        isPaused={plotterPaused}
+                        onTogglePause={() => setPlotterPaused(!plotterPaused)}
+                        onClear={() => { if(plotDataRef.current) plotDataRef.current = []; }}
+                        timeDiv={plotterTimeDiv}
+                        setTimeDiv={setPlotterTimeDiv}
+                      />
+                      
+                      {showAddChannel && (
+                        <AddChannelPanel 
+                          boardOptions={serialBoardOptions}
+                          boardLabels={serialBoardLabels}
+                          boardKinds={serialBoardKinds}
+                          boardColors={boardColors}
+                          selectedPins={selectedPlotPins}
+                          setSelectedPins={setSelectedPlotPins}
+                          onClose={() => setShowAddChannel(false)}
+                        />
+                      )}
+                      
+                      {/* Plotter Layout - Scrollable Container */}
+                      <div className="panel-scroll" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}>
+                        <div style={{ display: 'flex', minHeight: '100%', width: '100%' }}>
+                          {/* Label Column */}
+                          {selectedPlotPins.length > 0 && (
+                            <div style={{ 
+                              width: 65, 
+                              background: 'var(--bg2)', 
+                              borderRight: '1px solid var(--border)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              flexShrink: 0,
+                              zIndex: 2
+                            }}>
+                              {selectedPlotPins.map((chan, i) => {
+                                const color = PLOTTER_COLORS[i % PLOTTER_COLORS.length];
+                                const boardLabel = serialBoardLabels[chan.boardId] || chan.boardId;
+                                return (
+                                  <div key={`${chan.boardId}:${chan.pinId}`} style={{ 
+                                    height: 80, 
+                                    display: 'flex', 
+                                    flexDirection: 'column', 
+                                    alignItems: 'center', 
+                                    justifyContent: 'center',
+                                    borderBottom: '1px solid var(--border)',
+                                    padding: '4px 2px',
+                                    gap: 3,
+                                    position: 'relative',
+                                    background: i % 2 === 1 ? 'rgba(255,255,255,0.01)' : 'transparent',
+                                    boxSizing: 'border-box'
+                                  }}>
+                                    <span style={{ fontSize: 9, color: 'var(--text4)', textTransform: 'lowercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', textAlign: 'center' }} title={boardLabel}>
+                                      {boardLabel}
+                                    </span>
+                                    <span style={{ fontSize: 11, fontWeight: 800, color: color, fontFamily: 'JetBrains Mono, monospace' }}>
+                                      {chan.pinId}
+                                    </span>
+                                    <button 
+                                      onClick={() => setSelectedPlotPins(prev => prev.filter(p => p.boardId !== chan.boardId || p.pinId !== chan.pinId))}
+                                      style={{ background: 'transparent', border: 'none', color: 'var(--text4)', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
+                                      className="hover:text-[var(--red)] transition-colors"
+                                      title="Remove channel"
+                                    >
+                                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Canvas Area */}
+                          <PlotterCanvas 
+                            plotDataRef={plotDataRef}
+                            selectedPlotPins={selectedPlotPins}
+                            plotterPaused={plotterPaused}
+                            plotterTimeDiv={plotterTimeDiv}
+                            theme={theme}
+                            isRunning={isRunning}
+                          />
+
+                        </div>
+                      </div>
+
+
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1507,6 +1529,856 @@ function RightPanelInternal(props) {
     </aside>
   );
 }
-export const RightPanel = React.memo(RightPanelInternal);
+const RightPanelBase = ({ 
+  isPanelOpen, panelWidth, isDragging, onMouseDownResize, setIsPanelOpen,
+  explorerWidth, isExplorerDragging, onMouseDownExplorerResize,
+  selected, setSelected, theme, projectName,
+  validationErrors, showValidation, setShowValidation,
+  healthScore, applyFix,
+  codeTab, setCodeTab, code, setCode,
+  blocklyXml, setBlocklyXml,
+  blocklyGeneratedCode, setBlocklyGeneratedCode,
+  useBlocklyCode, setUseBlocklyCode,
+  blocklyDisabled, setBlocklyDisabled,
+  projectFiles, openCodeTabs, activeCodeFileId, showCodeExplorer, onToggleCodeExplorer, onOpenCodeFile, onCloseCodeTab,
+  onSaveCodeFile, onDuplicateCodeFile, onRenameCodeFile, onDeleteCodeFile, onDownloadCodeFile,
+  onToggleCodeFileDisabled,
+  onCreateCodeFile, onCreateCodeTab, onUploadCodeFile,
+  libQuery, setLibQuery, handleSearchLibraries, isSearchingLib, libMessage, libInstalled, libResults, handleInstallLibrary, installingLib,
+  serialPaused, setSerialPaused, isRunning, serialHistory, setSerialHistory, serialOutputRef, serialInput, setSerialInput, sendSerialInput, clearSerialMonitor,
+  serialViewMode, setSerialViewMode, serialBoardFilter, setSerialBoardFilter, serialBoardOptions, serialBoardLabels, serialBoardKinds, serialBoardSourceModes, serialBaudRate, setSerialBaudRate, serialBaudOptions, serialLineEnding, setSerialLineEnding,
+  hardwareConnected,
+  plotterPaused, setPlotterPaused, plotDataRef, selectedPlotPins, setSelectedPlotPins, serialPlotLabelsRef,
+  showConnectionsPanel, wires, updateWireColor, deleteWire,
+  boardComponentMap, onToggleBoardFirmwareSource,
+  editingDisabled,
+  editingDisabledMessage,
+  boardLineEndings, setBoardLineEndings,
+  boardAutoscrolls, setBoardAutoscrolls,
+  boardBaudRates, setBoardBaudRates,
+  boardPausedStates, setBoardPausedStates,
+  boardInputs, setBoardInputs,
+  isSerialSplit, setIsSerialSplit,
+  serialSplitRatio, setSerialSplitRatio,
+  serialBoardFilter2, setSerialBoardFilter2,
+  plotterTimeDiv, setPlotterTimeDiv
+}) => {
+
+  const [activePanel, setActivePanel] = React.useState('code');
+  
+  React.useEffect(() => {
+    if (codeTab === 'serial') setActivePanel('serial');
+    else setActivePanel('code');
+  }, [codeTab]);
+
+  return (
+    <RightPanelInternal 
+      {...{
+        isPanelOpen, panelWidth, isDragging, onMouseDownResize, setIsPanelOpen,
+        explorerWidth, isExplorerDragging, onMouseDownExplorerResize,
+        selected, setSelected, theme, projectName,
+        validationErrors, showValidation, setShowValidation,
+        healthScore, applyFix,
+        codeTab, setCodeTab, code, setCode,
+        blocklyXml, setBlocklyXml,
+        blocklyGeneratedCode, setBlocklyGeneratedCode,
+        useBlocklyCode, setUseBlocklyCode,
+        blocklyDisabled, setBlocklyDisabled,
+        projectFiles, openCodeTabs, activeCodeFileId, showCodeExplorer, onToggleCodeExplorer, onOpenCodeFile, onCloseCodeTab,
+        onSaveCodeFile, onDuplicateCodeFile, onRenameCodeFile, onDeleteCodeFile, onDownloadCodeFile,
+        onToggleCodeFileDisabled,
+        onCreateCodeFile, onCreateCodeTab, onUploadCodeFile,
+        libQuery, setLibQuery, handleSearchLibraries, isSearchingLib, libMessage, libInstalled, libResults, handleInstallLibrary, installingLib,
+        serialPaused, setSerialPaused, isRunning, serialHistory, setSerialHistory, serialOutputRef, serialInput, setSerialInput, sendSerialInput, clearSerialMonitor,
+        serialViewMode, setSerialViewMode, serialBoardFilter, setSerialBoardFilter, serialBoardOptions, serialBoardLabels, serialBoardKinds, serialBoardSourceModes, serialBaudRate, setSerialBaudRate, serialBaudOptions, serialLineEnding, setSerialLineEnding,
+        hardwareConnected,
+        plotterPaused, setPlotterPaused, plotDataRef, selectedPlotPins, setSelectedPlotPins, serialPlotLabelsRef,
+        showConnectionsPanel, wires, updateWireColor, deleteWire,
+        boardComponentMap, onToggleBoardFirmwareSource,
+        editingDisabled,
+        editingDisabledMessage,
+        boardLineEndings, setBoardLineEndings,
+        boardAutoscrolls, setBoardAutoscrolls,
+        boardBaudRates, setBoardBaudRates,
+        boardPausedStates, setBoardPausedStates,
+        boardInputs, setBoardInputs,
+        isSerialSplit, setIsSerialSplit,
+        serialSplitRatio, setSerialSplitRatio,
+        serialBoardFilter2, setSerialBoardFilter2,
+        plotterTimeDiv, setPlotterTimeDiv
+      }}
+    />
+  );
+};
+
+const PlotterToolbar = ({ onAddChannel, isPaused, onTogglePause, onClear, timeDiv, setTimeDiv }) => {
+  return (
+    <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border)', display: 'flex', gap: 10, alignItems: 'center', background: 'var(--bg2)', flexShrink: 0 }}>
+      <button 
+        onClick={onAddChannel}
+        style={{
+          background: 'var(--accent)',
+          color: '#000',
+          border: 'none',
+          borderRadius: 6,
+          padding: '4px 12px',
+          fontSize: 11,
+          fontWeight: 700,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6
+        }}
+        className="hover:brightness-110 active:scale-95 transition-all"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Channel
+      </button>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+        <span style={{ fontSize: 10, color: 'var(--text3)', fontWeight: 600 }}>Window:</span>
+        <select 
+          value={timeDiv}
+          onChange={(e) => setTimeDiv(Number(e.target.value))}
+          style={{
+            background: 'var(--bg3)',
+            border: '1px solid var(--border)',
+            color: 'var(--text2)',
+            borderRadius: 4,
+            fontSize: 10,
+            padding: '2px 4px',
+            outline: 'none',
+            cursor: 'pointer'
+          }}
+        >
+          <option value={1}>1ms</option>
+          <option value={10}>10ms</option>
+          <option value={100}>100ms</option>
+          <option value={500}>500ms</option>
+          <option value={1000}>1000ms</option>
+          <option value={2000}>2000ms</option>
+        </select>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 10, borderLeft: '1px solid var(--border)' }}>
+        <button 
+          onClick={onTogglePause}
+          title={isPaused ? 'Resume' : 'Pause'}
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: isPaused ? 'var(--orange)' : 'var(--text3)', padding: 2, display: 'flex', alignItems: 'center' }}
+        >
+          {isPaused ? <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> : <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>}
+        </button>
+        <button 
+          onClick={onClear}
+          title="Clear Plot"
+          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--red)', padding: 2, display: 'flex', alignItems: 'center' }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardColors, selectedPins, setSelectedPins, onClose }) => {
+  const boards = (boardOptions || []).filter(id => id !== 'all');
+  const [selectedBoardId, setSelectedBoardId] = React.useState(boards[0] || null);
+  
+  const tabsRef = React.useRef(null);
+  const [canScroll, setCanScroll] = React.useState({ left: false, right: false });
+
+  const checkScroll = React.useCallback(() => {
+    if (!tabsRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = tabsRef.current;
+    setCanScroll({
+      left: scrollLeft > 2,
+      right: scrollLeft + clientWidth < scrollWidth - 2
+    });
+  }, []);
+
+  const scrollTabs = (direction) => {
+    if (!tabsRef.current) return;
+    const amount = 120;
+    tabsRef.current.scrollBy({
+      left: direction === 'left' ? -amount : amount,
+      behavior: 'smooth'
+    });
+  };
+
+  const panelRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (panelRef.current && !panelRef.current.contains(e.target)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside, true);
+    return () => document.removeEventListener('mousedown', handleClickOutside, true);
+  }, [onClose]);
+
+  React.useEffect(() => {
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    return () => window.removeEventListener('resize', checkScroll);
+  }, [checkScroll, boards.length]);
+
+  const UNO_BASE_PINS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', 'A0', 'A1', 'A2', 'A3', 'A4', 'A5'];
+  const PICO_BASE_PINS = Array.from({ length: 29 }, (_, idx) => `GP${idx}`);
+
+  const activeBoardId = selectedBoardId || boards[0];
+  const activeKind = boardKinds[activeBoardId] || 'arduino_uno';
+  const activePins = activeKind === 'rp2040' ? PICO_BASE_PINS : UNO_BASE_PINS;
+  const activeBoardColor = boardColors[activeBoardId] || 'var(--accent)';
+
+  return (
+    <div ref={panelRef} style={{
+      position: 'absolute', top: 42, left: 12, right: 12, 
+      maxHeight: 'calc(100% - 60px)',
+      background: 'var(--bg1)',
+      border: '1px solid var(--border)',
+      borderRadius: 12,
+      boxShadow: '0 10px 30px rgba(0,0,0,0.6)',
+      zIndex: 150,
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      animation: 'slideInPlotter 0.2s cubic-bezier(0,0,0.2,1)',
+      backdropFilter: 'blur(20px)',
+      boxShadow: '0 20px 50px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.05)'
+    }}>
+      <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg3)' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent)' }}><path d="M12 20v-6M6 20V10M18 20V4"/></svg>
+          <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text1)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Add Channel</span>
+        </div>
+        <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 16 }} className="hover:text-[var(--red)] transition-colors">✕</button>
+      </div>
+
+      {/* Board Selection Bar */}
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        background: 'var(--bg2)', 
+        borderBottom: '1px solid var(--border)',
+        height: 38,
+        position: 'relative',
+        padding: '0 4px'
+      }}>
+        {canScroll.left && (
+          <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 24, zIndex: 2, background: 'linear-gradient(90deg, var(--bg2) 40%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+             <button onClick={() => scrollTabs('left')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text3)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+             </button>
+          </div>
+        )}
+        
+        <div 
+          ref={tabsRef}
+          onScroll={checkScroll}
+          className="panel-scroll"
+          style={{ 
+            display: 'flex', 
+            flex: 1, 
+            overflowX: 'auto', 
+            overflowY: 'hidden',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            padding: '4px 0'
+          }}
+        >
+          {boards.map(id => (
+            <button
+              key={id}
+              onClick={() => setSelectedBoardId(id)}
+              style={{
+                flexShrink: 0,
+                padding: '4px 12px',
+                margin: '0 2px',
+                fontSize: 11,
+                fontWeight: 700,
+                color: activeBoardId === id ? 'var(--accent)' : 'var(--text3)',
+                background: activeBoardId === id ? 'rgba(0,255,255,0.08)' : 'transparent',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                whiteSpace: 'nowrap',
+                transition: 'all 0.2s'
+              }}
+            >
+              <span style={{ 
+                width: 6, 
+                height: 6, 
+                borderRadius: '50%', 
+                background: boardColors[id] || 'var(--text4)',
+                boxShadow: activeBoardId === id ? `0 0 6px ${boardColors[id] || 'var(--text4)'}` : 'none'
+              }} />
+              {boardLabels[id] || id}
+            </button>
+          ))}
+        </div>
+
+        {canScroll.right && (
+          <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 24, zIndex: 2, background: 'linear-gradient(-90deg, var(--bg2) 40%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+             <button onClick={() => scrollTabs('right')} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--text3)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+             </button>
+          </div>
+        )}
+      </div>
+      
+      <div style={{ flex: 1, overflowY: 'auto', padding: 14 }} className="panel-scroll">
+        {!activeBoardId ? (
+          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text3)', fontSize: 12 }}>
+            No boards detected in circuit.
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(42px, 1fr))', gap: 6 }}>
+              {activePins.map(pin => {
+                const pinIdx = selectedPins.findIndex(p => p.boardId === activeBoardId && p.pinId === pin);
+                const isSelected = pinIdx >= 0;
+                
+                const PLOTTER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
+                const selectedColor = isSelected ? PLOTTER_COLORS[pinIdx % PLOTTER_COLORS.length] : 'var(--accent)';
+
+                return (
+                  <button
+                    key={pin}
+                    onClick={() => {
+                      setSelectedPins(prev => {
+                        if (isSelected) return prev.filter(p => p.boardId !== activeBoardId || p.pinId !== pin);
+                        if (prev.length >= 12) return prev; // Limit channels
+                        return [...prev, { boardId: activeBoardId, pinId: pin }];
+                      });
+                    }}
+                    style={{
+                      padding: '8px 2px',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      background: isSelected ? `${selectedColor}25` : 'rgba(255,255,255,0.02)',
+                      color: isSelected ? selectedColor : 'var(--text3)',
+                      border: `1px solid ${isSelected ? selectedColor : 'var(--border)'}`,
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: isSelected ? `inset 0 0 10px ${selectedColor}15` : 'none'
+                    }}
+                    className={isSelected ? '' : 'hover:border-[var(--text4)] hover:bg-white/5'}
+                  >{pin}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes slideInPlotter { from { opacity: 0; transform: translateY(-8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+      `}</style>
+    </div>
+  );
+};
+
+export const RightPanel = React.memo(RightPanelBase);
+
+// ── Serial UI Sub-Components ────────────────────────────────────────────────
+
+const SerialTabBar = ({ 
+  activeBoard, 
+  otherActiveBoard, 
+  setBoard,
+  isPaused, 
+  onTogglePause, 
+  autoscroll, 
+  onToggleAutoscroll, 
+  onClear, 
+  onToggleSplit, 
+  isSplit,
+  boardOptions,
+  boardColors,
+  boardLabels,
+  boardKinds
+}) => {
+  const boards = (boardOptions || []).filter(id => id !== 'all');
+  const tabsRef = React.useRef(null);
+  const [canScroll, setCanScroll] = React.useState({ left: false, right: false });
+  const [isHovered, setIsHovered] = React.useState(false);
+
+  const checkScroll = React.useCallback(() => {
+    if (!tabsRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = tabsRef.current;
+    setCanScroll({
+      left: scrollLeft > 2,
+      right: scrollLeft + clientWidth < scrollWidth - 2
+    });
+  }, []);
+
+  const scrollTabs = (direction) => {
+    if (!tabsRef.current) return;
+    const amount = 150;
+    tabsRef.current.scrollBy({
+      left: direction === 'left' ? -amount : amount,
+      behavior: 'smooth'
+    });
+  };
+
+  React.useEffect(() => {
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    return () => window.removeEventListener('resize', checkScroll);
+  }, [checkScroll, boards.length]);
+
+  return (
+    <div 
+      style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 2, 
+        padding: '4px 8px 0', 
+        background: 'var(--bg2)', 
+        borderBottom: '1px solid var(--border)',
+        height: 36,
+        flexShrink: 0,
+        position: 'relative'
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div style={{ position: 'relative', flex: 1, display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+        {/* Left Indicator */}
+        {isHovered && canScroll.left && (
+          <button 
+            onClick={() => scrollTabs('left')}
+            style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0, width: 28,
+              background: 'linear-gradient(to right, var(--bg2) 60%, transparent)',
+              display: 'flex', alignItems: 'center', paddingLeft: 4, zIndex: 10,
+              border: 'none', cursor: 'pointer', color: 'var(--accent)',
+              animation: 'fadeIn 0.2s'
+            }}
+            className="hover:scale-110 transition-transform"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+        )}
+
+        <div 
+          ref={tabsRef}
+          onScroll={checkScroll}
+          style={{ display: 'flex', gap: 2, flex: 1, overflowX: 'auto', scrollbarWidth: 'none' }} 
+          className="hide-scrollbar"
+        >
+          {boards.map(id => {
+            const isActive = activeBoard === id;
+            const isDisabled = otherActiveBoard === id;
+            const boardColor = boardColors[id] || '#64748b';
+            const kind = boardKinds?.[id] || 'arduino_uno';
+            
+            return (
+              <button
+                key={id}
+                onClick={() => !isDisabled && setBoard(id)}
+                disabled={isDisabled}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  fontSize: 11,
+                  fontWeight: isActive ? 700 : 500,
+                  color: isActive ? 'var(--accent)' : isDisabled ? 'var(--text4)' : 'var(--text2)',
+                  background: isActive ? 'rgba(0,255,255,0.08)' : 'transparent',
+                  border: 'none',
+                  borderBottom: isActive ? '2px solid var(--accent)' : '2px solid transparent',
+                  cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.2s',
+                  opacity: isDisabled ? 0.4 : 1,
+                  fontFamily: 'JetBrains Mono, monospace'
+                }}
+              >
+                <span style={{ 
+                  width: 7, 
+                  height: 7, 
+                  borderRadius: kind === 'rp2040' ? '1px' : '50%', 
+                  background: boardColor,
+                  boxShadow: isActive ? `0 0 6px ${boardColor}` : 'none'
+                }} />
+                {boardLabels?.[id] || id}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right Indicator */}
+        {isHovered && canScroll.right && (
+          <button 
+            onClick={() => scrollTabs('right')}
+            style={{
+              position: 'absolute', right: 0, top: 0, bottom: 0, width: 28,
+              background: 'linear-gradient(to left, var(--bg2) 60%, transparent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingRight: 4, zIndex: 10,
+              border: 'none', cursor: 'pointer', color: 'var(--accent)',
+              animation: 'fadeIn 0.2s'
+            }}
+            className="hover:scale-110 transition-transform"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        )}
+      </div>
+
+      <style>{`
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+      `}</style>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 8, borderLeft: '1px solid var(--border)', marginLeft: 2 }}>
+        <button 
+          onClick={() => onToggleAutoscroll(!autoscroll)}
+          style={{ 
+            background: autoscroll ? 'rgba(0, 255, 255, 0.08)' : 'transparent',
+            border: `1px solid ${autoscroll ? 'var(--accent)' : 'var(--border)'}`,
+            color: autoscroll ? 'var(--accent)' : 'var(--text3)',
+            padding: '3px 8px',
+            borderRadius: 4,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 5,
+            transition: 'all 0.2s',
+            userSelect: 'none',
+            marginRight: 4
+          }}
+          className="hover:border-[var(--accent)]"
+        >
+          <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Autoscroll</span>
+        </button>
+
+        <button 
+          onClick={onTogglePause}
+          title={isPaused ? 'Resume' : 'Pause'}
+          style={{ 
+            background: 'transparent', border: 'none', cursor: 'pointer', padding: 2, borderRadius: 4,
+            color: isPaused ? 'var(--orange)' : 'var(--text3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}
+          className="hover:bg-white/5"
+        >
+          {isPaused ? (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          ) : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+          )}
+        </button>
+
+        <button 
+          onClick={onClear}
+          title="Clear Output"
+          style={{ 
+            background: 'transparent', border: 'none', cursor: 'pointer', padding: 2, borderRadius: 4,
+            color: 'var(--red)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}
+          className="hover:bg-[rgba(255,68,68,0.1)]"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+          </svg>
+        </button>
+
+        <button 
+          onClick={onToggleSplit}
+          title={isSplit ? 'Single View' : 'Split View'}
+          style={{ 
+            background: isSplit ? 'rgba(0,255,255,0.1)' : 'transparent', 
+            border: `1px solid ${isSplit ? 'var(--accent)' : 'transparent'}`, 
+            cursor: 'pointer', padding: 2, borderRadius: 4,
+            color: isSplit ? 'var(--accent)' : 'var(--text3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}
+          className="hover:bg-white/5"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="3" y1="12" x2="21" y2="12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const SerialOutputPane = ({ boardId, history, outputRef, isPaused, boardColors, isRunning }) => {
+  const filtered = boardId === 'all' ? history : history.filter(e => e.boardId === boardId);
+  
+  return (
+    <div ref={outputRef} className="flex-1 overflow-y-auto py-1.5 flex flex-col panel-scroll" style={{ background: 'var(--bg)' }}>
+      {filtered.length === 0 ? (
+        <div style={{ color: 'var(--text3)', fontSize: 12, padding: '40px 0', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+          <span style={{ fontSize: 24, opacity: 0.5 }}>📡</span>
+          {isRunning ? `Waiting for serial output from ${boardId}...` : 'Start simulation to see serial output.'}
+        </div>
+      ) : (
+        filtered.map((entry, i) => {
+          const badgeColor = entry.dir === 'rx' ? '#2ecc71' : entry.dir === 'tx' ? '#3498db' : '#888';
+          const badgeBg = entry.dir === 'rx' ? 'rgba(46,204,113,0.12)' : entry.dir === 'tx' ? 'rgba(52,152,219,0.12)' : 'rgba(128,128,128,0.12)';
+          const boardColor = boardColors[entry.boardId] || '#64748b';
+          return (
+            <div key={i} className="flex items-start gap-2 px-3 py-0.5 text-[11px] font-mono border-b border-[var(--border)] hover:bg-white/[0.02] transition-colors">
+              <span className="text-[var(--text3)] text-[10px] min-w-[84px] shrink-0 pt-[1px]" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: boardColor }} />
+                {entry.ts || ''}
+              </span>
+              <span className="inline-block text-[8px] font-bold rounded-[3px] px-1 py-[0px] shrink-0 mt-[2px] leading-tight" style={{ color: badgeColor, background: badgeBg, border: `1px solid ${badgeColor}40` }}>
+                {entry.dir?.toUpperCase() || 'RX'}
+              </span>
+              <span style={{ flex: 1, color: entry.dir === 'tx' ? '#3498db' : entry.dir === 'sys' ? 'var(--text3)' : 'var(--green)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                {entry.text}
+              </span>
+              {boardId === 'all' && (
+                <span style={{ color: 'var(--text3)', fontSize: 9, minWidth: 60, textAlign: 'right', opacity: 0.7 }}>
+                  {entry.boardId || '-'}
+                </span>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+};
+
+const BaudRateSelector = ({ value, onChange, theme }) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const menuRef = React.useRef(null);
+  const options = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 74880, 115200, 230400, 250000, 500000, 1000000, 2000000];
+
+  React.useEffect(() => {
+    const handleClick = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setIsOpen(false); };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div style={{ position: 'relative' }} ref={menuRef}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 6,
+          padding: '6px 10px', fontSize: 11, color: 'var(--text2)', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.2s', minWidth: 80,
+          fontFamily: 'JetBrains Mono, monospace'
+        }}
+        className="hover:border-[var(--accent)]"
+      >
+        <span style={{ flex: 1, textAlign: 'left' }}>{value}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {isOpen && (
+        <div style={{
+          position: 'absolute', bottom: '100%', right: 0, marginBottom: 8, width: 100,
+          background: 'rgba(20, 20, 25, 0.85)', backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: 8,
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)', padding: 4, zIndex: 100,
+          maxHeight: 200, overflowY: 'auto'
+        }} className="hide-scrollbar">
+          {options.map(opt => (
+            <div
+              key={opt}
+              onClick={() => { onChange(opt); setIsOpen(false); }}
+              style={{
+                padding: '6px 10px', fontSize: 11, color: opt === value ? 'var(--accent)' : 'var(--text2)',
+                cursor: 'pointer', borderRadius: 4, transition: 'all 0.15s',
+                background: opt === value ? 'rgba(0, 255, 255, 0.08)' : 'transparent',
+                fontFamily: 'JetBrains Mono, monospace'
+              }}
+              className="hover:bg-white/5"
+            >
+              {opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const SerialSendRow = ({ 
+  boardId, 
+  input, 
+  setInput, 
+  onSend, 
+  isRunning, 
+  hardwareConnected, 
+  serialLineEnding, 
+  setSerialLineEnding,
+  serialBaudRate,
+  setSerialBaudRate,
+  boardLabels,
+  theme 
+}) => {
+  return (
+    <div style={{ display: 'flex', gap: 6, padding: '8px 10px', borderTop: '1px solid var(--border)', flexShrink: 0, background: 'var(--bg2)', alignItems: 'center' }}>
+      <input
+        className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] outline-none font-inherit" 
+        style={{ 
+          flex: 1, 
+          fontFamily: 'JetBrains Mono, monospace', 
+          fontSize: 11, 
+          transition: 'border-color 0.2s',
+          borderRadius: 6,
+          padding: '6px 14px'
+        }}
+        placeholder={`Send to ${boardLabels?.[boardId] || boardId}...`}
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') onSend(boardId, input, serialLineEnding, serialBaudRate);
+        }}
+        disabled={!isRunning && !hardwareConnected}
+      />
+      <LineEndingSelector value={serialLineEnding} onChange={setSerialLineEnding} theme={theme} />
+      <button 
+        onClick={() => onSend(boardId, input, serialLineEnding, serialBaudRate)}
+        disabled={!isRunning && !hardwareConnected}
+        style={{ 
+          background: (isRunning || hardwareConnected) ? 'var(--accent)' : 'var(--bg3)', 
+          color: (isRunning || hardwareConnected) ? '#000' : 'var(--text4)', 
+          border: 'none', 
+          cursor: (isRunning || hardwareConnected) ? 'pointer' : 'not-allowed', 
+          padding: '6px 20px', 
+          borderRadius: 10, 
+          fontSize: 11, 
+          fontWeight: 800,
+          transition: 'all 0.2s',
+          fontFamily: "'Space Grotesk', sans-serif",
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}
+        className="hover:opacity-90 active:scale-95"
+      >
+        Send
+      </button>
+    </div>
+  );
+};
+
+const LineEndingSelector = ({ value, onChange, theme }) => {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [hoveredIdx, setHoveredIdx] = React.useState(null);
+  const menuRef = React.useRef(null);
+  
+  const options = [
+    { label: 'No line ending', value: 'none' },
+    { label: 'Newline', value: 'nl' },
+    { label: 'Carriage return', value: 'cr' },
+    { label: 'Both NL & CR', value: 'crlf' }
+  ];
+
+  const currentOption = options.find(o => o.value === value) || options[1];
+
+  React.useEffect(() => {
+    const handleDown = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setIsOpen(false);
+    };
+    if (isOpen) document.addEventListener('mousedown', handleDown);
+    return () => document.removeEventListener('mousedown', handleDown);
+  }, [isOpen]);
+
+  return (
+    <div style={{ position: 'relative' }} ref={menuRef}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          color: 'var(--text2)',
+          padding: '6px 14px',
+          fontSize: 10,
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          borderRadius: 20,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+          transition: 'all 0.2s',
+          fontFamily: "'Space Grotesk', sans-serif"
+        }}
+        className="hover:text-[var(--accent)] hover:border-[var(--accent)]"
+      >
+        {currentOption.label}
+        <svg 
+          width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"
+          style={{ transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}
+        >
+          <path d="M6 9l6 6 6-6"/>
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          bottom: 'calc(100% + 8px)',
+          right: 0,
+          background: theme === 'light' ? 'rgba(248, 250, 252, 0.95)' : 'rgba(13, 21, 37, 0.94)',
+          backdropFilter: 'blur(16px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
+          border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(30, 45, 71, 0.8)',
+          borderRadius: 12,
+          boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+          zIndex: 1000,
+          minWidth: 160,
+          overflow: 'hidden',
+          padding: '5px',
+          fontFamily: "'Space Grotesk', sans-serif",
+          animation: 'serialMenuIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          transformOrigin: 'bottom right'
+        }}>
+          {options.map((opt, idx) => (
+            <div 
+              key={opt.value}
+              onClick={() => { onChange(opt.value); setIsOpen(false); }}
+              onMouseEnter={() => setHoveredIdx(idx)}
+              onMouseLeave={() => setHoveredIdx(null)}
+              style={{
+                padding: '8px 14px',
+                fontSize: 12,
+                fontWeight: value === opt.value ? 600 : 500,
+                color: value === opt.value ? 'var(--text)' : 'var(--text2)',
+                background: hoveredIdx === idx ? 'var(--bg3)' : (value === opt.value ? 'rgba(52, 152, 219, 0.1)' : 'transparent'),
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderRadius: 8,
+                margin: '1px 0'
+              }}
+            >
+              {opt.label}
+              {value === opt.value && (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <style>{`
+        @keyframes serialMenuIn {
+          from { opacity: 0; transform: translateY(10px) scale(0.95); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}</style>
+    </div>
+  );
+};
 
 
