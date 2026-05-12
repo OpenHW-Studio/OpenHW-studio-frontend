@@ -1,0 +1,167 @@
+{
+  "public": [
+    {
+      "path": "/",
+      "name": "Landing Page",
+      "description": "Main landing page",
+      "requiresAuth": false,
+      "priority": "critical"
+    },
+    {
+      "path": "/login",
+      "name": "Login",
+      "description": "User login page",
+      "requiresAuth": false,
+      "priority": "high"
+    },
+    {
+      "path": "/classroom/signin",
+      "name": "Classroom Sign In",
+      "description": "Classroom signin page",
+      "requiresAuth": false,
+      "priority": "high"
+    },
+    {
+      "path": "/classroom/signup",
+      "name": "Classroom Sign Up",
+      "description": "Classroom signup page",
+      "requiresAuth": false,
+      "priority": "high"
+    },
+    {
+      "path": "/forgot-password",
+      "name": "Forgot Password",
+      "description": "Forgot password page",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
+      "path": "/select-role",
+      "name": "Role Selection",
+      "description": "User role selection page",
+      "requiresAuth": false,
+      "priority": "high"
+    },
+    {
+      "path": "/projects",
+      "name": "Projects Gallery",
+      "description": "Projects gallery page",
+      "requiresAuth": false,
+      "priority": "critical"
+    },
+    {
+      "path": "/components",
+      "name": "Components",
+      "description": "Components page",
+      "requiresAuth": false,
+      "priority": "critical"
+    },
+    {
+      "path": "/component-editor",
+      "name": "Component Editor",
+      "description": "Component editor page",
+      "requiresAuth": false,
+      "priority": "high"
+    },
+    {
+      "path": "/simulator",
+      "name": "Simulator",
+      "description": "Main simulator page",
+      "requiresAuth": false,
+      "priority": "critical"
+    },
+    {
+      "path": "/mobile-simulator",
+      "name": "Mobile Simulator",
+      "description": "Mobile simulator page",
+      "requiresAuth": false,
+      "priority": "critical"
+    },
+    {
+      "path": "/adventure",
+      "name": "Adventure Map",
+      "description": "Adventure/gamification map",
+      "requiresAuth": false,
+      "priority": "high"
+    },
+    {
+      "path": "/gamification-simulator",
+      "name": "Gamification Simulator",
+      "description": "Gamification simulator page",
+      "requiresAuth": false,
+      "priority": "high"
+    },
+    {
+      "path": "/admin",
+      "name": "Admin Landing",
+      "description": "Admin landing page",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
+      "path": "/admin/login",
+      "name": "Admin Login",
+      "description": "Admin login page",
+      "requiresAuth": false,
+      "priority": "medium"
+    }
+  ],
+  "protected": [
+    {
+      "path": "/user/dashboard",
+      "name": "User Dashboard",
+      "description": "General user dashboard",
+      "requiresAuth": true,
+      "role": "user",
+      "priority": "high"
+    },
+    {
+      "path": "/student/dashboard",
+      "name": "Student Dashboard",
+      "description": "Student dashboard page",
+      "requiresAuth": true,
+      "role": "student",
+      "priority": "high"
+    },
+    {
+      "path": "/student/profile",
+      "name": "Student Profile",
+      "description": "Student profile page",
+      "requiresAuth": true,
+      "role": "student",
+      "priority": "medium"
+    },
+    {
+      "path": "/teacher/dashboard",
+      "name": "Teacher Dashboard",
+      "description": "Teacher dashboard page",
+      "requiresAuth": true,
+      "role": "teacher",
+      "priority": "high"
+    },
+    {
+      "path": "/teacher/profile",
+      "name": "Teacher Profile",
+      "description": "Teacher profile page",
+      "requiresAuth": true,
+      "role": "teacher",
+      "priority": "medium"
+    },
+    {
+      "path": "/admin/dashboard",
+      "name": "Admin Dashboard",
+      "description": "Admin dashboard page",
+      "requiresAuth": true,
+      "role": "admin",
+      "priority": "high"
+    }
+  ],
+  "testConfig": {
+    "timeout": 30000,
+    "consoleErrorThreshold": "error",
+    "screenshotOnFailure": true,
+    "captureNetworkErrors": true,
+    "minDomElements": 5,
+    "checkForBlankContent": true
+  }
+}

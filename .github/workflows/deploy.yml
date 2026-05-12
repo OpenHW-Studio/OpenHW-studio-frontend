@@ -1,0 +1,199 @@
+name: Frontend CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+jobs:
+  test_and_build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout frontend code
+        uses: actions/checkout@v4
+        with:
+          path: OpenHW-studio-frontend
+
+      - name: Checkout emulator code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-emulator
+          path: openhw-studio-emulator
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout examples code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-examples
+          path: openhw-studio-examples
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout cli code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/OpenHW-studio--cli
+          path: openhw-studio-cli
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout backend code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-backend
+          path: openhw-studio-backend
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: OpenHW-studio-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          echo "Installing emulator deps..."
+          cd openhw-studio-emulator && npm ci
+          echo "Installing CLI deps..."
+          cd ../openhw-studio-cli && npm install
+          echo "Installing frontend deps..."
+          cd ../OpenHW-studio-frontend && npm install
+
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache Arduino Cores
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.arduino15/packages
+            ~/.arduino15/staging
+          key: ${{ runner.os }}-arduino-cores-${{ hashFiles('**/OpenHW-studio-frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-arduino-cores-
+
+      - name: Install Arduino Cores
+        run: |
+          arduino-cli config init --overwrite
+          arduino-cli config add board_manager.additional_urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
+          arduino-cli core update-index
+          arduino-cli core install rp2040:rp2040
+          arduino-cli core install arduino:avr
+
+      - name: Run Protocol Compliance Tests
+        run: |
+          cd OpenHW-studio-frontend
+          npm run test:protocol
+        continue-on-error: false
+
+      - name: Run RP2040 Smoke Tests
+        run: |
+          cd OpenHW-studio-frontend
+          npm run test:rp2040-smoke
+        continue-on-error: false
+
+      # - name: Run CLI Hardware Compat Matrix (Optional/Manual)
+      #   run: |
+      #     cd OpenHW-studio-frontend
+      #     npm run test:cli-hw-matrix:watchdog
+      #   continue-on-error: false
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./OpenHW-studio-frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:develop
+            ${{ secrets.DOCKER_USERNAME }}/openhw-frontend:${{ github.sha }}
+          build-args: |
+            VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}
+            VITE_EXAMPLES_BASE_URL=${{ secrets.VITE_EXAMPLES_BASE_URL }}
+            VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+            VITE_ADMIN_EMAILS=${{ secrets.VITE_ADMIN_EMAILS }}
+
+  notify_admin:
+    name: Notify Dashboard
+    needs: test_and_build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Webhook to Backend
+        run: |
+          curl -X POST https://openhw-studio.fossee.in/api/deploy/notify \
+          -H "Content-Type: application/json" \
+          -d '{
+            "repo": "${{ github.event.repository.name }}",
+            "prTitle": "Frontend Build Successful: Ready for Approval",
+            "prDescription": "Commit: ${{ github.event.head_commit.message }}",
+            "secret": "${{ secrets.NOTIFY_SECRET }}",
+            "filesChanged": []
+          }'
+
+  notify_telegram:
+    name: Notify Telegram
+    needs: test_and_build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Message to Telegram
+        run: |
+          curl -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+          -H "Content-Type: application/json" \
+          -d '{
+            "chat_id": "${{ secrets.TELEGRAM_CHAT_ID }}",
+            "text": "🚀 <b>Build Successful: Waiting for Deployment Approval</b>\n\n📦 <b>Repo:</b> ${{ github.repository }}\n👤 <b>Author:</b> ${{ github.actor }}\n💬 <b>Message:</b> ${{ github.event.head_commit.message }}\n#️⃣ <b>Hash:</b> ${{ github.sha }}\n\n⚠️ <i>Please go to GitHub Actions to approve the deployment to production.</i>",
+            "parse_mode": "HTML"
+          }'
+
+  deploy:
+    name: Deploy to Production
+    needs: test_and_build
+    runs-on: self-hosted
+    environment:
+      name: production # This environment requires manual approval in GitHub
+      url: https://openhw-studio.fossee.in
+    steps:
+      - name: Pull and Restart Container Locally
+        run: |
+          cd /opt/openhw/backend
+          
+          # Pull latest orchestration files from GitHub
+          git pull origin develop
+          
+          # Update the local .env file with the new frontend tag for persistence
+          sed -i '/^FRONTEND_TAG=/d' .env || true
+          echo "FRONTEND_TAG=${{ github.sha }}" >> .env
+          
+          # Ensure Docker Hub credentials are available
+          export DOCKER_USERNAME=${{ secrets.DOCKER_USERNAME }}
+          
+          # Log in to Docker Hub (required if your images are private or to avoid rate limits)
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+          
+          docker compose -f docker-compose.prod.yml pull frontend
+          docker compose -f docker-compose.prod.yml up -d frontend
+          
+          # Clean up old images to save disk space
+          docker image prune -af
+
+  notify_deployed:
+    name: Notify Deployed
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Deployment Success to Telegram
+        run: |
+          curl -X POST https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage \
+          -H "Content-Type: application/json" \
+          -d '{
+            "chat_id": "${{ secrets.TELEGRAM_CHAT_ID }}",
+            "text": "✅ <b>Deployment Successful</b>\n\n📦 <b>Repo:</b> ${{ github.repository }}\n🏷️ <b>Version:</b> ${{ github.sha }}\n👤 <b>Author:</b> ${{ github.actor }}\n\n🚀 The containers have been restarted on the production VM.",
+            "parse_mode": "HTML"
+          }'
