@@ -21,9 +21,6 @@ COPY OpenHW-studio-frontend/ .
 
 # Build-time environment variables
 ARG VITE_API_BASE_URL
-ARG VITE_EXAMPLES_BASE_URL
-ARG VITE_GOOGLE_CLIENT_ID
-ARG VITE_ADMIN_EMAILS
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 ARG VITE_EXAMPLES_BASE_URL
@@ -38,6 +35,7 @@ ENV VITE_ADMIN_EMAILS=$VITE_ADMIN_EMAILS
 # Build the app
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
+# Production stage
 FROM nginx:stable-alpine
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 
