@@ -35,9 +35,17 @@ ENV VITE_ADMIN_EMAILS=$VITE_ADMIN_EMAILS
 # Build the app
 RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
+# Build documentation
+WORKDIR /app/docs
+COPY openhw-studio-docs/package*.json ./
+RUN npm install
+COPY openhw-studio-docs/ .
+RUN npm run docs:build
+
 # Production stage
 FROM nginx:stable-alpine
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
+COPY --from=build /app/docs/.vitepress/dist /usr/share/nginx/html/docs
 
 # Custom nginx config to handle SPA routing and Reverse Proxy
 COPY OpenHW-studio-frontend/nginx.conf /etc/nginx/conf.d/default.conf
