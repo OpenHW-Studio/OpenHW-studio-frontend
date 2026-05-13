@@ -40,7 +40,7 @@ import MobileSimulatorPage from './pages/mobileui/SimulatorPage.jsx'
 import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
 import GradingPage from './pages/GradingPage.jsx';
 import MaintenancePage from './pages/MaintenancePage.jsx';
-
+import AboutUs from './pages/AboutUsPage.jsx'
 import { fetchMaintenanceStatus } from './services/simulatorService.js';
 import axios from 'axios';
 
@@ -132,6 +132,7 @@ export default function App() {
           <Routes>
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />
+            <Route path="/about" element={<AboutUs />} />
             <Route path="/login" element={<UserLoginPage />} />
             <Route path="/signin" element={<Navigate to="/classroom/signin" replace />} />
             <Route path="/signup" element={<Navigate to="/classroom/signup" replace />} />
@@ -163,6 +164,7 @@ export default function App() {
             <Route path="/mobile-simulator/share/:shareId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
             
             <Route path="/simulator/share/:shareId/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/simulator/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
             <Route path="/mobile-simulator/share/:shareId/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
 
             <Route path="/:projectName/demo" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
