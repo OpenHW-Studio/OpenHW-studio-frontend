@@ -52,3 +52,15 @@ export const getAttachmentLabel = (url, index) => {
 
   return `Link ${index + 1}`;
 };
+
+export const getShareIdFromUrl = (url) => {
+  if (!url) return null;
+  try {
+    const parts = url.split("/");
+    const shareIdx = parts.indexOf("share");
+    if (shareIdx !== -1 && parts[shareIdx + 1]) {
+      return parts[shareIdx + 1];
+    }
+  } catch (e) {}
+  return null;
+};

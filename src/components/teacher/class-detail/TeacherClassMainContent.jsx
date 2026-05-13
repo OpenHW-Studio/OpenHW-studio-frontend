@@ -160,17 +160,24 @@ function TeacherClassworkTab({
                         <strong className="teacher-classwork-card__title">
                           {assignment.title}
                         </strong>
-                        <span
-                          className={`teacher-classwork-card__badge teacher-classwork-card__badge--${
-                            status.key === "open"
-                              ? "open"
-                              : status.key === "closed"
-                                ? "closed"
-                                : "neutral"
-                          }`}
-                        >
-                          {status.label}
-                        </span>
+                        <div className="teacher-classwork-card__badges">
+                          {(assignment.isAutogradingEnabled || assignment.autogradingKey) && (
+                            <span className="teacher-classwork-card__badge teacher-classwork-card__badge--autograde">
+                              Autograde
+                            </span>
+                          )}
+                          <span
+                            className={`teacher-classwork-card__badge teacher-classwork-card__badge--${
+                              status.key === "open"
+                                ? "open"
+                                : status.key === "closed"
+                                  ? "closed"
+                                  : "neutral"
+                            }`}
+                          >
+                            {status.label}
+                          </span>
+                        </div>
                       </div>
 
                       <p className="teacher-classwork-card__meta">

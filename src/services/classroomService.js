@@ -128,27 +128,39 @@ export const removeClassroomStudent = async (classId, studentId) => {
 }
 
 export const getClassAssignments = async (classId) => {
-  const response = await fetch(
-    `${BASE_URL}/classroom/assignments?classId=${encodeURIComponent(classId)}&limit=8`,
-    {
-      method: 'GET',
-      headers: authHeaders()
-    }
-  )
+  try {
+    const response = await fetch(
+      `${BASE_URL}/classroom/assignments?classId=${encodeURIComponent(classId)}&limit=8`,
+      {
+        method: 'GET',
+        headers: authHeaders()
+      }
+    )
 
-  const data = await parseResponse(response, 'Failed to fetch assignments')
-  return data.assignments || []
+    const data = await parseResponse(response, 'Failed to fetch assignments')
+    console.log('[API] Fetched assignments:', data.assignments?.map(a => ({ id: a._id, autograde: a.isAutogradingEnabled, hasKey: !!a.autogradingKey })));
+    return data.assignments || []
+  } catch (err) {
+    console.error('[API] Error fetching assignments:', err);
+    throw err;
+  }
 }
 
 export const createClassAssignment = async (classId, assignmentPayload) => {
-  const response = await fetch(`${BASE_URL}/classroom/${classId}/assignments`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(assignmentPayload)
-  })
-
-  const data = await parseResponse(response, 'Failed to create assignment')
-  return data.assignment
+  try {
+    console.log('[API] Creating assignment with payload:', assignmentPayload);
+    const response = await fetch(`${BASE_URL}/classroom/${classId}/assignments`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(assignmentPayload)
+    })
+    const data = await parseResponse(response, 'Failed to create assignment')
+    console.log('[API] Assignment created successfully:', data);
+    return data.assignment
+  } catch (err) {
+    console.error('[API] Error creating assignment:', err);
+    throw err;
+  }
 }
 
 export const deleteClassAssignment = async (classId, assignmentId) => {
