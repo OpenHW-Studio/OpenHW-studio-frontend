@@ -480,9 +480,11 @@ async function readLittleFsWasmBinaryForNode(): Promise<Uint8Array | null> {
     if (!readFile) return null;
 
     const candidates = [
+        // In production browser, this will be at /wasm/littlefs.wasm
+        // In dev/node, we try to resolve from node_modules
+        new URL('/wasm/littlefs.wasm', import.meta.url),
+        /* @vite-ignore */
         new URL('../../node_modules/littlefs/dist/littlefs.wasm', import.meta.url),
-        new URL('../node_modules/littlefs/dist/littlefs.wasm', import.meta.url),
-        new URL('./node_modules/littlefs/dist/littlefs.wasm', import.meta.url),
     ];
 
     const seen = new Set<string>();
