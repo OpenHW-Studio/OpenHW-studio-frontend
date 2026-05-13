@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx' 
+const DOCS_URL = import.meta.env.VITE_DOCS_URL || 'https://danish9661.github.io/Arduino-simulator/'
 
 export default function LandingPage() {
   const navigate = useNavigate()
@@ -161,7 +162,7 @@ export default function LandingPage() {
         <p>Open Source Hardware Simulation & Learning Platform</p>
         <div className="footer-links">
           <a href="#">GitHub</a>
-          <a href="#">Documentation</a>
+          <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">Documentation</a>
           <a href="#">Examples</a>
         </div>
       </footer>

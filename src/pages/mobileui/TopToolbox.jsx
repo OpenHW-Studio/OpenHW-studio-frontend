@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+const DOCS_URL = import.meta.env.VITE_DOCS_URL || 'https://danish9661.github.io/Arduino-simulator/';
 
 import { Btn } from './Btn';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
@@ -75,7 +76,7 @@ function TopToolboxInternal(props) {
   ];
 
   const helpMenuItems = [
-    { label: 'Documentation', onClick: () => window.open('https://docs.openhw.org', '_blank') },
+    { label: 'Documentation', onClick: () => window.open(DOCS_URL, '_blank') },
     { label: 'About OpenHW Studio', onClick: () => { } }
   ];
 
