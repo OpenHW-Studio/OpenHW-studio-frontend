@@ -5863,7 +5863,7 @@ useEffect(() => {
       return;
     }
 
-    if (!isAuthenticated) {
+    if (!isAnyAuthenticated) {
       alert('Please sign in to share this simulation.');
       navigate('/login');
       return;

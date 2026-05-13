@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@babel/standalone": "^7.29.1",
+    "@monaco-editor/react": "^4.7.0",
     "@openhw/emulator": "file:../openhw-studio-emulator",
     "@react-oauth/google": "^0.13.4",
     "@tailwindcss/postcss": "^4.2.1",
@@ -63,9 +64,9 @@
   "optionalDependencies": {
     "@rollup/rollup-linux-x64-gnu": "4.60.2",
     "@rollup/rollup-win32-x64-msvc": "4.60.2",
-    "lightningcss-linux-x64-gnu": "1.31.1",
-    "lightningcss-win32-x64-msvc": "1.31.1",
     "@tailwindcss/oxide-linux-x64-gnu": "4.2.1",
-    "@tailwindcss/oxide-win32-x64-msvc": "4.2.1"
+    "@tailwindcss/oxide-win32-x64-msvc": "4.2.1",
+    "lightningcss-linux-x64-gnu": "1.31.1",
+    "lightningcss-win32-x64-msvc": "1.31.1"
   }
 }
