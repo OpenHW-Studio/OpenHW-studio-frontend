@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx' 
-const DOCS_URL = import.meta.env.VITE_DOCS_URL || 'https://danish9661.github.io/Arduino-simulator/'
+const DOCS_URL = import.meta.env.VITE_DOCS_URL || 'https://openhw-studio.fossee.in/docs/';
 
 export default function LandingPage() {
   const navigate = useNavigate()

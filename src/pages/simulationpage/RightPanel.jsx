@@ -1738,7 +1738,6 @@ const AddChannelPanel = ({ boardOptions, boardLabels, boardKinds, boardColors, s
       background: 'var(--bg1)',
       border: '1px solid var(--border)',
       borderRadius: 12,
-      boxShadow: '0 10px 30px rgba(0,0,0,0.6)',
       zIndex: 150,
       display: 'flex',
       flexDirection: 'column',
