@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-const DOCS_URL = import.meta.env.VITE_DOCS_URL || 'https://danish9661.github.io/Arduino-simulator/';
+const DOCS_URL = import.meta.env.VITE_DOCS_URL || 'https://openhw-studio.fossee.in/docs/';
 
 import { Btn } from './Btn';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
