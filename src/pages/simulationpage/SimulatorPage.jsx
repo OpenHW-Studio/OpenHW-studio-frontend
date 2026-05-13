@@ -6353,12 +6353,13 @@ export function SimulatorPage({ gamificationMode = false }) {
   };
 
   const handleShareSimulation = async () => {
+    console.log("[SimulatorPage] handleShareSimulation - activeUser:", activeUser);
     if (!['teacher', 'user', 'admin'].includes(activeUser?.role)) {
       alert('Only signed-in teachers and users can share simulator templates.');
       return;
     }
 
-    if (!isAuthenticated) {
+    if (!isAnyAuthenticated) {
       alert('Please sign in to share this simulation.');
       navigate('/login');
       return;
@@ -8975,27 +8976,28 @@ export function SimulatorPage({ gamificationMode = false }) {
           }
         }
 
-        if (e.key.toLowerCase() === 'r' && selected && !isRunning && !liveEditingDisabled) {
+        if (e.altKey && e.shiftKey && e.code === 'KeyR' && selected && !isRunning && !liveEditingDisabled) {
+          e.preventDefault();
           if (components.find(c => c.id === selected)) {
             rotateComponent(selected);
           }
         }
 
-        if (e.key.toLowerCase() === 'h') {
+        if (e.altKey && e.code === 'KeyH') {
           setShowShortcuts(prev => !prev);
         }
 
-        if (e.key.toLowerCase() === 'v') {
+        if (e.altKey && e.code === 'KeyV') {
           setIsPanelOpen(prev => !prev);
         }
 
-        if (e.key === '+' || e.key === '=') {
+        if (e.altKey && (e.key === '+' || e.key === '=')) {
           applyZoomAtCenter(Math.min(2, parseFloat((canvasZoomRef.current + 0.25).toFixed(2))));
         }
-        if (e.key === '-' || e.key === '_') {
+        if (e.altKey && (e.key === '-' || e.key === '_')) {
           applyZoomAtCenter(Math.max(0.25, parseFloat((canvasZoomRef.current - 0.25).toFixed(2))));
         }
-        if (e.key === '0') {
+        if (e.altKey && e.key === '0') {
           setCanvasZoom(1);
           setCanvasOffset({ x: 0, y: 0 });
           canvasZoomRef.current = 1;
@@ -9056,7 +9058,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
 
         // Canvas Actions
-        if (e.key.toLowerCase() === 'f' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
+        if (e.altKey && e.code === 'KeyF') {
+          e.preventDefault();
           fitToView('fit');
         }
 
