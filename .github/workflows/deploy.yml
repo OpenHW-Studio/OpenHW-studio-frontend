@@ -44,6 +44,13 @@ jobs:
           path: openhw-studio-backend
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Checkout documentation code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-docs
+          path: openhw-studio-docs
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -119,6 +126,7 @@ jobs:
             VITE_EXAMPLES_BASE_URL=${{ secrets.VITE_EXAMPLES_BASE_URL }}
             VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             VITE_ADMIN_EMAILS=${{ secrets.VITE_ADMIN_EMAILS }}
+            VITE_DOCS_URL=https://openhw-studio.fossee.in/docs/
 
   notify_admin:
     name: Notify Dashboard
