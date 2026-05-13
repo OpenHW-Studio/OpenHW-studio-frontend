@@ -163,6 +163,7 @@ export default function App() {
             <Route path="/mobile-simulator/share/:shareId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
             
             <Route path="/simulator/share/:shareId/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/simulator/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
             <Route path="/mobile-simulator/share/:shareId/assignment/:classId/:assignmentId" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
 
             <Route path="/:projectName/demo" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />

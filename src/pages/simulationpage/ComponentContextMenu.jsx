@@ -383,21 +383,30 @@ export const ComponentContextMenu = ({
                 zIndex: 10002,
               }}>
                 <div style={{ position: 'absolute', left: flipLeft ? 'auto' : '-8px', right: flipLeft ? '-8px' : 'auto', top: 0, bottom: 0, width: '8px', background: 'transparent' }} />
-                {programmableBoards.map((board, bIdx) => (
-                  <button
-                    key={bIdx}
-                    className="canvas-menu-item context-menu-item"
-                    style={{ 
-                      fontSize: '11px', 
-                      padding: '4px 8px', 
-                      gap: '6px',
-                      '--item-hover-bg': `${boardColors[board.id] || '#94a3b8'}4D`
-                    }}
-                    onClick={(e) => { e.stopPropagation(); onWireToBoard?.(comp.id, board.id); onClose(); }}
-                  >
-                    {board.id}
-                  </button>
-                ))}
+                  {programmableBoards.map((board, bIdx) => {
+                    const isActive = comp.attrs?.targetBoard === board.id;
+                    return (
+                      <button
+                        key={bIdx}
+                        className="canvas-menu-item context-menu-item"
+                        style={{ 
+                          fontSize: '11px', 
+                          padding: '4px 8px', 
+                          gap: '6px',
+                          background: isActive ? (boardColors[board.id] ? `${boardColors[board.id]}25` : 'var(--accent)15') : 'transparent',
+                          color: isActive ? 'var(--accent)' : 'inherit',
+                          fontWeight: isActive ? 700 : 500,
+                          '--item-hover-bg': `${boardColors[board.id] || '#94a3b8'}4D`
+                        }}
+                        onClick={(e) => { e.stopPropagation(); onWireToBoard?.(comp.id, board.id); onClose(); }}
+                      >
+                        {board.id}
+                        {isActive && (
+                          <svg style={{ marginLeft: 'auto' }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        )}
+                      </button>
+                    );
+                  })}
               </div>
             )}
           </div>

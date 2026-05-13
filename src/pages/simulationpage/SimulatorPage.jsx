@@ -1,5 +1,5 @@
 import { TopToolbox } from './TopToolbox';
-import { 
+import {
   calculateProjectPlanApplication,
   getRotatedPoint,
   getComponentWorldPins,
@@ -153,7 +153,7 @@ Object.entries(EmulatorComponents).forEach(([key, module]) => {
         ...(raw.docRaw ? { doc: raw.docRaw } : {}),
       }
       : module;
-      
+
     // ── REGISTER BUILTIN PINS ──
     if (module.manifest.pins) {
       LOCAL_PIN_DEFS[compId] = module.manifest.pins;
@@ -1560,7 +1560,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
-  const assignmentMode = Boolean(shareId && classId && assignmentId)
+  const assignmentMode = Boolean(classId && assignmentId)
   const studentAssignmentMode = assignmentMode && activeUser?.role === 'student'
   const liveSessionCode = String(liveCode || '').trim().toUpperCase()
   const currentLiveUserId = String(activeUser?._id || activeUser?.id || '')
@@ -2810,7 +2810,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, []);
 
   useEffect(() => {
-    if (!shareId) return;
+    if (!shareId || shareId === 'new') return;
 
     let cancelled = false;
 
@@ -3088,7 +3088,9 @@ export function SimulatorPage({ gamificationMode = false }) {
   };
 
   const handleSubmitClassAssignment = async () => {
-    if (!assignmentSubmissionAssignment) return;
+    if (!assignmentSubmissionAssignment) {
+      return;
+    }
 
     if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
       setAssignmentSubmissionState((current) => ({
@@ -3121,27 +3123,74 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
       const simulationUrl = `${window.location.origin}/simulator/share/${simulationShareId}`;
 
-      const response = await submitAssignment(classId, assignmentId, {
-        notes: assignmentSubmissionForm.notes,
-        attachments: assignmentSubmissionForm.attachments,
-        simulationShareId,
-        simulationUrl,
-      });
+      // Auto-capture PNG of the current circuit
+      let finalAttachments = [...assignmentSubmissionForm.attachments];
+      try {
+        const pngBlob = await downloadPng({ returnBlob: true });
+        if (pngBlob) {
+          console.log('[Submission] Captured circuit PNG, uploading...');
+          // Cache locally for immediate feedback after redirect
+          try {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(pngBlob);
+            });
+            sessionStorage.setItem(`ohw_preview_${assignmentId}`, dataUrl);
+          } catch (e) {
+            console.warn('[Submission] Failed to cache preview locally:', e);
+          }
 
-      const submission = response?.submission || null;
+          const pngFile = new File([pngBlob], `submission_${assignmentId}_${Date.now()}.png`, { type: 'image/png' });
+          const uploadedUrls = await uploadClassroomFiles([pngFile], { classId, category: 'submissions' });
+
+          if (uploadedUrls && uploadedUrls.length > 0) {
+            console.log('[Submission] PNG uploaded successfully:', uploadedUrls[0]);
+            finalAttachments.push(uploadedUrls[0]);
+          } else {
+            console.error('[Submission] PNG upload returned no URLs');
+          }
+        }
+      } catch (pngErr) {
+        console.warn('[Submission] Failed to auto-capture circuit PNG:', pngErr);
+      }
+
+      // Store as a draft in sessionStorage for the dashboard modal to pick up
+      const draftData = {
+        notes: assignmentSubmissionForm.notes,
+        attachments: finalAttachments,
+        simulationShareId: simulationShareId,
+        simulationUrl: simulationUrl,
+        isDraft: true,
+        updatedAt: new Date().toISOString()
+      };
+
+      console.log('[Submission] Saving draft to sessionStorage:', draftData);
+      sessionStorage.setItem(`ohw_submission_draft_${assignmentId}`, JSON.stringify(draftData));
+
       setAssignmentSubmissionState({
         loading: false,
         saving: false,
         error: '',
-        data: submission,
+        data: assignmentSubmissionState.data,
       });
-      setAssignmentSubmissionForm({
-        notes: submission?.notes || '',
-        links: submission?.links?.length ? submission.links : [''],
-        attachments: submission?.attachments || submission?.files || [],
+
+      const targetClassId = classId || assignmentSubmissionAssignment?.classId;
+      const targetAssignmentId = assignmentId || assignmentSubmissionAssignment?._id;
+      const targetUrl = `/student/classes/${targetClassId}?openAssignment=${targetAssignmentId}`;
+
+      console.log('[Submission] Stored draft and redirecting', {
+        classId,
+        assignmentId,
+        targetUrl
       });
-      setAssignmentSubmissionOpen(false);
-      alert('Assignment submitted successfully.');
+
+      if (targetClassId && targetAssignmentId) {
+        navigate(targetUrl);
+      } else {
+        alert('Simulation captured! Please return to your dashboard to finalize submission.');
+      }
     } catch (error) {
       setAssignmentSubmissionState((current) => ({
         ...current,
@@ -4363,7 +4412,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           const adjustedPlan = {
             ...plan,
             added_components: [
-              mainCompWithPos, 
+              mainCompWithPos,
               ...(plan.added_components || [])
             ]
           };
@@ -5212,7 +5261,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     saveHistory();
 
     const manifest = COMPONENT_REGISTRY[comp.type]?.manifest || {};
-    
+
     // Trigger WASM setup with isRewire flag
     // The worker will handle cleaning up old wires and helper components
     const plan = await generateAutonomousSetup(
@@ -5235,8 +5284,13 @@ export function SimulatorPage({ gamificationMode = false }) {
       };
 
       const result = calculateProjectPlanApplication(adjustedPlan, components, wires, PIN_DEFS);
-      
-      setComponents(result.components);
+
+      // Persist the target board selection in attributes for UI selection state
+      const finalComponents = result.components.map(c =>
+        c.id === compId ? { ...c, attrs: { ...c.attrs, targetBoard: targetBoardId } } : c
+      );
+
+      setComponents(finalComponents);
       setWires(result.wires);
     }
   };
@@ -5272,9 +5326,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               return { ...w, ownerIds: w.ownerIds.filter(oid => oid !== id) };
             }
             return w;
-          }).filter(w => 
-            !w.from.startsWith(id + ':') && 
-            !w.to.startsWith(id + ':') && 
+          }).filter(w =>
+            !w.from.startsWith(id + ':') &&
+            !w.to.startsWith(id + ':') &&
             (!w.ownerIds || w.ownerIds.length > 0)
           ));
           setSelected(null);
@@ -6646,10 +6700,10 @@ export function SimulatorPage({ gamificationMode = false }) {
     // We pass nextComponents/nextWires directly to bypass React's async state update
     setTimeout(async () => {
       validationRunCacheRef.current = {}; // Clear cache
-      
+
       // 1) Trigger Local Simulator Validation check against new topology 
       runCircuitValidation(nextComponents, nextWires);
-      
+
       // 2) Optional: Call the backend Validation API dynamically to keep systems synced
       try {
         const engineConnections = nextWires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
@@ -6661,7 +6715,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       } catch (e) {
         console.warn("Backend validation out of sync:", e);
       }
-      
+
       appendConsoleEntry('info', '📡 Re-validating circuit after repair...', 'simulator');
     }, 150);
   }, [components, wires, saveHistory, appendConsoleEntry, runCircuitValidation]);
@@ -6939,7 +6993,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project: { components: components, connections: engineConnections } })
         });
-        
+
         if (valRes.ok) {
           const valData = await valRes.json();
           setValidationErrors(valData.errors || []);
@@ -6950,8 +7004,8 @@ export function SimulatorPage({ gamificationMode = false }) {
             return;
           }
         } else {
-           // Fallback to local
-           if (!runCircuitValidation()) {
+          // Fallback to local
+          if (!runCircuitValidation()) {
             appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
             runStartGuardRef.current = false;
             return;
@@ -7567,14 +7621,14 @@ export function SimulatorPage({ gamificationMode = false }) {
               const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
               serialVars[lbl] = val;
             });
-            const newPt = { 
-              time: Date.now(), 
-              pins: msg.pins, 
-              analog: msg.analog || [], 
-              serialVars, 
-              boardId: msg.boardId || 'default' 
+            const newPt = {
+              time: Date.now(),
+              pins: msg.pins,
+              analog: msg.analog || [],
+              serialVars,
+              boardId: msg.boardId || 'default'
             };
-            
+
             plotDataRef.current.push(newPt);
             if (plotDataRef.current.length > 1000) {
               plotDataRef.current.shift();
@@ -7626,9 +7680,9 @@ export function SimulatorPage({ gamificationMode = false }) {
           const emitTimeMs = Number(msg._emitTime || 0);
           if (emitSeq >= 0 && emitTimeMs > 0 && telemetryLogEligible) {
             const msgAgeMs = (performance.now() - msgArrivalMs) + emitTimeMs;
-/*
-            appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
-*/
+            /*
+                        appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
+            */
           }
           const perfRunMs = Number(perf?.lastRunLoopMs);
           const perfPhysicsMs = Number(perf?.lastPhysicsMs);
@@ -7655,9 +7709,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               `components=${componentsCount}`,
             ];
 
-/*
-            appendConsoleEntry(slowStateGap || slowWorker ? 'warn' : 'info', line.join(' | '), 'debug');
-*/
+            /*
+                        appendConsoleEntry(slowStateGap || slowWorker ? 'warn' : 'info', line.join(' | '), 'debug');
+            */
             runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs });
           }
         }
@@ -7951,7 +8005,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [navigate]);
 
   // ── PNG Export ────────────────────────────────────────────────────────────
-  const downloadPng = async () => {
+  const downloadPng = async (options = {}) => {
+    const { returnBlob = false } = options;
     if (isExporting) return;
     setIsExporting(true);
     try {
@@ -8036,6 +8091,10 @@ export function SimulatorPage({ gamificationMode = false }) {
         try {
           const combined = cached.bytes;
           const finalBlob = new Blob([combined], { type: 'image/png' });
+          if (returnBlob) {
+            setIsExporting(false);
+            return finalBlob;
+          }
           const url = URL.createObjectURL(finalBlob);
           const a = document.createElement('a');
           a.href = url;
@@ -8232,32 +8291,43 @@ export function SimulatorPage({ gamificationMode = false }) {
       // 4. Append metadata bytes after PNG IEND → still renders fine in all image viewers
       const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-').replace(':', '-');
       const filename = `circuit_${board}_${dateStr}.png`;
-      out.toBlob(async (blob) => {
-        const t_blob_start = performance.now();
-        const pngBuf = await blob.arrayBuffer();
-        const pngBytes = new Uint8Array(pngBuf);
-        const metaBytes = new TextEncoder().encode(jsonPayload);
-        const combined = new Uint8Array(pngBytes.length + metaBytes.length);
-        combined.set(pngBytes);
-        combined.set(metaBytes, pngBytes.length);
-        const finalBlob = new Blob([combined], { type: 'image/png' });
-        const t_blob_end = performance.now();
-        console.log('[PNG Export] compose+blob ms:', Math.round(t_blob_end - t_blob_start));
-        console.log('[PNG Export] total ms:', Math.round(t_blob_end - t_start));
-        const url = URL.createObjectURL(finalBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        // Cache combined bytes for identical future exports in this session
-        try {
-          _exportPngResultCache.set(signature, { bytes: combined, filename, createdAt: Date.now() });
-        } catch (err) {
-          // Best-effort cache; ignore failures silently
-          console.warn('[PNG Export] cache store failed', err);
-        }
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      }, 'image/png');
+      const blobResult = await new Promise((resolve) => {
+        out.toBlob(async (blob) => {
+          const t_blob_start = performance.now();
+          const pngBuf = await blob.arrayBuffer();
+          const pngBytes = new Uint8Array(pngBuf);
+          const metaBytes = new TextEncoder().encode(jsonPayload);
+          const combined = new Uint8Array(pngBytes.length + metaBytes.length);
+          combined.set(pngBytes);
+          combined.set(metaBytes, pngBytes.length);
+          const finalBlob = new Blob([combined], { type: 'image/png' });
+          const t_blob_end = performance.now();
+          console.log('[PNG Export] compose+blob ms:', Math.round(t_blob_end - t_blob_start));
+          console.log('[PNG Export] total ms:', Math.round(t_blob_end - t_start));
+
+          if (returnBlob) {
+            resolve(finalBlob);
+            return;
+          }
+
+          const url = URL.createObjectURL(finalBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+          // Cache combined bytes for identical future exports in this session
+          try {
+            _exportPngResultCache.set(signature, { bytes: combined, filename, createdAt: Date.now() });
+          } catch (err) {
+            // Best-effort cache; ignore failures silently
+            console.warn('[PNG Export] cache store failed', err);
+          }
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+          resolve(null);
+        }, 'image/png');
+      });
+
+      if (returnBlob) return blobResult;
     } catch (err) {
       console.error('[PNG Export] Error:', err);
       alert('PNG export failed: ' + err.message);
@@ -8937,9 +9007,9 @@ export function SimulatorPage({ gamificationMode = false }) {
             </div>
             <Btn
               color="var(--accent)"
-              onClick={() => setAssignmentSubmissionOpen(true)}
-              disabled={assignmentSubmissionState.loading || !assignmentSubmissionAssignment || isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
-              title={isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Submit assignment'}
+              onClick={handleSubmitClassAssignment}
+              disabled={assignmentSubmissionState.saving || !assignmentSubmissionAssignment || isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
+              title={assignmentSubmissionState.saving ? 'Submitting...' : isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Submit assignment'}
             >
               {assignmentSubmissionState.data ? 'Update Submission' : 'Submit Assignment'}
             </Btn>
@@ -9082,28 +9152,6 @@ export function SimulatorPage({ gamificationMode = false }) {
           </div>
         )}
 
-        {assignmentSubmissionOpen && studentAssignmentMode && (
-          <StudentAssignmentModal
-            assignment={assignmentSubmissionAssignment}
-            submissionState={assignmentSubmissionState}
-            submissionForm={assignmentSubmissionForm}
-            onClose={() => setAssignmentSubmissionOpen(false)}
-            onNotesChange={(value) =>
-              setAssignmentSubmissionForm((current) => ({
-                ...current,
-                notes: value,
-              }))
-            }
-            onLinkChange={() => { }}
-            onAddLink={() => { }}
-            onRemoveLink={() => { }}
-            onFilesChange={handleAssignmentSubmissionFilesChange}
-            onRemoveFile={handleRemoveAssignmentSubmissionFile}
-            onSubmit={handleSubmitClassAssignment}
-            onPreviewFile={() => { }}
-            isClosed={isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
-          />
-        )}
         {gamificationMode && gamProject && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
@@ -9479,44 +9527,44 @@ export function SimulatorPage({ gamificationMode = false }) {
                   />
                 )}
               </svg>
- 
-               {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
-               {(() => {
-                 const comp = components.find(c => c.id === selected);
-                 if (!comp) return null;
-                 const reg = COMPONENT_REGISTRY[comp.type];
-                 if (!reg?.ContextMenu) return null;
-                 const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
-                 if (isRunning && !showDuringRun) return null;
-                 if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
-                 return (
-                   <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
-                     position: 'absolute',
-                     left: comp.x + comp.w / 2,
-                     top: comp.y - 14,
-                     transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
-                     transformOrigin: 'bottom center',
-                     background: 'var(--bg2)', border: '1px solid var(--border)',
-                     display: 'flex', alignItems: 'center', gap: 8,
-                     padding: '6px 10px', borderRadius: '10px',
-                     boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                     pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
-                   }}
-                     onMouseDown={e => e.stopPropagation()}
-                     onClick={e => e.stopPropagation()}
-                     onDoubleClick={e => e.stopPropagation()}
-                   >
-                     {React.createElement(reg.ContextMenu, {
-                       attrs: getComponentStateAttrs(comp),
-                       onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
-                     })}
-                     <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                     <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
-                   </div>
-                 );
-               })()}
- 
-               {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
+
+              {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
+              {(() => {
+                const comp = components.find(c => c.id === selected);
+                if (!comp) return null;
+                const reg = COMPONENT_REGISTRY[comp.type];
+                if (!reg?.ContextMenu) return null;
+                const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
+                if (isRunning && !showDuringRun) return null;
+                if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
+                return (
+                  <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
+                    position: 'absolute',
+                    left: comp.x + comp.w / 2,
+                    top: comp.y - 14,
+                    transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
+                    transformOrigin: 'bottom center',
+                    background: 'var(--bg2)', border: '1px solid var(--border)',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 10px', borderRadius: '10px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
+                    pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
+                  }}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
+                    onDoubleClick={e => e.stopPropagation()}
+                  >
+                    {React.createElement(reg.ContextMenu, {
+                      attrs: getComponentStateAttrs(comp),
+                      onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
+                    })}
+                    <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
+                    <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                  </div>
+                );
+              })()}
+
+              {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
               {(() => {
                 const w = wires.find(w => w.id === selected);
                 if (!w || isRunning) return null;
@@ -11369,9 +11417,9 @@ export function SimulatorPage({ gamificationMode = false }) {
                   return { ...w, ownerIds: w.ownerIds.filter(oid => oid !== id) };
                 }
                 return w;
-              }).filter(w => 
-                !w.from.startsWith(id + ':') && 
-                !w.to.startsWith(id + ':') && 
+              }).filter(w =>
+                !w.from.startsWith(id + ':') &&
+                !w.to.startsWith(id + ':') &&
                 (!w.ownerIds || w.ownerIds.length > 0)
               ));
               if (selected === id) setSelected(null);
