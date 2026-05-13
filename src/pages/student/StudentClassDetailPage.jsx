@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { BookOpen, ClipboardList, FileQuestion, Home, Monitor, Search } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import {
@@ -31,12 +31,14 @@ const getSubmissionStatus = (assignment) => {
   return new Date(assignment.dueDate) < new Date() ? 'overdue' : 'upcoming'
 }
 
+
+
 const isAssignmentClosed = (assignment) => (
   Boolean(assignment?.dueDate) && new Date(assignment.dueDate) < new Date()
 )
 
 const getAssignmentTemplateShareId = (assignment) => {
-  console.log('Getting template share ID for assignment:', assignment.templateUrl)
+  if (!assignment || !assignment.templateUrl) return ''
   if (assignment?.templateShareId) return assignment.templateShareId
   const templateUrl = assignment?.templateUrl || ''
   return templateUrl.match(/\/simulator\/share\/([^/?#]+)/)?.[1] || ''
@@ -45,6 +47,8 @@ const getAssignmentTemplateShareId = (assignment) => {
 export default function StudentClassDetailPage() {
   const { classId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const openAssignmentId = searchParams.get('openAssignment') || new URLSearchParams(window.location.search).get('openAssignment')
   const { user, logout } = useAuth()
 
   const [activeTab, setActiveTab] = useState('stream')
@@ -65,10 +69,23 @@ export default function StudentClassDetailPage() {
   const [submissionForm, setSubmissionForm] = useState({
     notes: '',
     links: [''],
-    attachments: []
+    attachments: [],
+    simulationShareId: ''
   })
   const [previewFile, setPreviewFile] = useState(null)
   const [liveMeetingCode, setLiveMeetingCode] = useState('')
+
+  useEffect(() => {
+    if (assignments.length > 0) {
+      console.log('[Dashboard] Assignments Data Sync Check:', assignments.map(a => ({
+        id: a._id,
+        title: a.title,
+        isAutogradingEnabled: a.isAutogradingEnabled,
+        hasKey: !!a.autogradingKey,
+        keyLength: a.autogradingKey?.length
+      })));
+    }
+  }, [assignments]);
 
   const avatarInitials = useMemo(() => getAvatarLetters(user?.name, 'S'), [user?.name])
 
@@ -140,13 +157,22 @@ export default function StudentClassDetailPage() {
     loadClassDetail()
   }, [classId])
 
+  // Handle auto-opening of assignment if requested via URL params
+  useEffect(() => {
+    if (openAssignmentId && assignments.length > 0) {
+      handleOpenAssignmentFromStream(openAssignmentId)
+    }
+  }, [openAssignmentId, assignments])
+
   const handleSelectAssignment = async (assignmentId, options = {}) => {
     const { forceOpen = false } = options
+    const assignment = assignments.find(a => a._id === assignmentId);
+    console.log('[Dashboard] Selecting assignment:', assignmentId, 'Autograde:', assignment?.isAutogradingEnabled, 'Key:', !!assignment?.autogradingKey);
 
     if (!forceOpen && activeAssignmentId === assignmentId) {
       setActiveAssignmentId(null)
       setSubmissionState({ loading: false, saving: false, error: '', data: null })
-      setSubmissionForm({ notes: '', links: [''], attachments: [] })
+      setSubmissionForm({ notes: '', links: [''], attachments: [], simulationShareId: '' })
       return
     }
 
@@ -156,12 +182,31 @@ export default function StudentClassDetailPage() {
     try {
       const response = await getMyAssignmentSubmission(classId, assignmentId)
       const submission = response?.submission || null
+      
+      // Check for simulator draft in session storage
+      let draft = null;
+      try {
+        const draftJson = sessionStorage.getItem(`ohw_submission_draft_${assignmentId}`);
+        if (draftJson) {
+          draft = JSON.parse(draftJson);
+          console.log('[Dashboard] Found draft in sessionStorage:', draft);
+          // Only remove if we are successfully loading it
+          sessionStorage.removeItem(`ohw_submission_draft_${assignmentId}`);
+        }
+      } catch (e) {
+        console.warn('[Dashboard] Failed to parse submission draft', e);
+      }
+
       setSubmissionState({ loading: false, saving: false, error: '', data: submission })
-      setSubmissionForm({
-        notes: submission?.notes || '',
-        links: submission?.links?.length ? submission.links : [''],
-        attachments: submission?.attachments || submission?.files || []
-      })
+      const finalForm = {
+        notes: draft?.notes || submission?.notes || '',
+        links: draft?.links?.length ? draft.links : (submission?.links?.length ? submission.links : (submission?.simulationUrl ? [submission.simulationUrl] : [''])),
+        attachments: draft?.attachments || submission?.attachments || submission?.files || [],
+        simulationShareId: draft?.simulationShareId || submission?.simulationShareId || ''
+      };
+      
+      console.log('[Dashboard] Setting submission form:', finalForm);
+      setSubmissionForm(finalForm)
     } catch (submissionError) {
       setSubmissionState({
         loading: false,
@@ -257,11 +302,33 @@ export default function StudentClassDetailPage() {
 
     setSubmissionState((current) => ({ ...current, saving: true, error: '' }))
 
+    // Final check for the PNG preview URL from local cache
+    let finalAttachments = [...(submissionForm.attachments || [])];
+    try {
+      const cachedPng = sessionStorage.getItem(`ohw_preview_${assignmentId}`);
+      if (cachedPng && cachedPng.startsWith('http') && !finalAttachments.includes(cachedPng)) {
+        console.log('[Dashboard] Auto-attaching cached PNG URL to submission:', cachedPng);
+        finalAttachments.push(cachedPng);
+      }
+    } catch (e) {
+      console.warn('[Dashboard] Error checking cached PNG:', e);
+    }
+
+    console.log('[Dashboard] Submitting assignment:', assignmentId, 'Payload:', {
+      notes: submissionForm.notes,
+      attachments: finalAttachments,
+      links: (submissionForm.links || []).filter(l => l && l.trim()),
+      simulationShareId: submissionForm.simulationShareId
+    });
+
     try {
       const response = await submitAssignment(classId, assignmentId, {
         notes: submissionForm.notes,
-        attachments: submissionForm.attachments
+        attachments: finalAttachments,
+        links: (submissionForm.links || []).filter(l => l && l.trim()),
+        simulationShareId: submissionForm.simulationShareId
       })
+      console.log('[Dashboard] Submission successful. Response:', response);
 
       const submission = response?.submission || null
       setSubmissionState({
@@ -451,9 +518,14 @@ export default function StudentClassDetailPage() {
                                 <div className="teacher-classwork-card__copy">
                                   <div className="teacher-classwork-card__title-row">
                                     <strong className="teacher-classwork-card__title">{assignment.title}</strong>
-                                    <span className={`teacher-classwork-card__badge teacher-classwork-card__badge--${statusKey === 'upcoming' ? 'open' : statusKey === 'overdue' ? 'closed' : 'neutral'}`}>
-                                      {statusKey === 'overdue' ? 'Overdue' : statusKey === 'upcoming' ? 'Due Soon' : 'No Due Date'}
-                                    </span>
+                                    <div className="teacher-classwork-card__badges">
+                                      {(assignment.isAutogradingEnabled || assignment.autogradingKey) && (
+                                        <span className="teacher-classwork-card__badge teacher-classwork-card__badge--autograde">Autograde</span>
+                                      )}
+                                      <span className={`teacher-classwork-card__badge teacher-classwork-card__badge--${statusKey === 'upcoming' ? 'open' : statusKey === 'overdue' ? 'closed' : 'neutral'}`}>
+                                        {statusKey === 'overdue' ? 'Overdue' : statusKey === 'upcoming' ? 'Due Soon' : 'No Due Date'}
+                                      </span>
+                                    </div>
                                   </div>
 
                                   <p className="teacher-classwork-card__meta">
@@ -610,7 +682,7 @@ export default function StudentClassDetailPage() {
           onClose={() => {
             setActiveAssignmentId(null)
             setSubmissionState({ loading: false, saving: false, error: '', data: null })
-            setSubmissionForm({ notes: '', links: [''], attachments: [] })
+            setSubmissionForm({ notes: '', links: [''], attachments: [], simulationShareId: '' })
           }}
           onNotesChange={(value) =>
             setSubmissionForm((current) => ({

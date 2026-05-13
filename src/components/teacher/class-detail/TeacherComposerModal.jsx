@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import {
   Link2,
   BookOpenCheck,
@@ -8,7 +9,10 @@ import {
   FileText,
   Upload,
   X,
+  FileCheck,
+  Loader2,
 } from "lucide-react";
+import TeacherGradingPanel from "./TeacherGradingPanel.jsx";
 import { getAttachmentLabel } from "./helpers.js";
 
 export default function TeacherComposerModal({
@@ -33,6 +37,20 @@ export default function TeacherComposerModal({
   onRemoveNoticeFile,
   postingNotice,
 }) {
+  const [isGradingStep, setIsGradingStep] = useState(false);
+
+  const handleAssignmentSubmit = (e) => {
+    if (e) e.preventDefault();
+    
+    // If autograding is enabled and we aren't in the grading step yet, switch to it.
+    if (assignmentForm.isAutogradingEnabled && !isGradingStep) {
+      setIsGradingStep(true);
+      return;
+    }
+    
+    // Otherwise, call the original create handler
+    onCreateAssignment(e);
+  };
   return (
     <div
       className="teacher-composer-modal"
@@ -54,27 +72,70 @@ export default function TeacherComposerModal({
           </button>
         </header>
 
-        <div className="teacher-fab__switches">
-          <button
-            type="button"
-            className={composerMode === "assignment" ? "is-active" : ""}
-            onClick={() => onComposerModeChange("assignment")}
-          >
-            <FilePlus2 size={14} />
-            <span>Assignment</span>
-          </button>
-          <button
-            type="button"
-            className={composerMode === "notice" ? "is-active" : ""}
-            onClick={() => onComposerModeChange("notice")}
-          >
-            <BookOpenCheck size={14} />
-            <span>Notice</span>
-          </button>
-        </div>
+        {!isGradingStep && (
+          <div className="teacher-fab__switches">
+            <button
+              type="button"
+              className={composerMode === "assignment" ? "is-active" : ""}
+              onClick={() => onComposerModeChange("assignment")}
+            >
+              <FilePlus2 size={14} />
+              <span>Assignment</span>
+            </button>
+            <button
+              type="button"
+              className={composerMode === "notice" ? "is-active" : ""}
+              onClick={() => onComposerModeChange("notice")}
+            >
+              <BookOpenCheck size={14} />
+              <span>Notice</span>
+            </button>
+          </div>
+        )}
 
         {composerMode === "assignment" ? (
-          <form className="teacher-assignment-form" onSubmit={onCreateAssignment}>
+          <form className="teacher-assignment-form" onSubmit={handleAssignmentSubmit}>
+            {isGradingStep ? (
+              <div className="teacher-grading-step">
+                <header className="teacher-grading-step__header">
+                  <button 
+                    type="button" 
+                    className="teacher-grading-step__back"
+                    onClick={() => setIsGradingStep(false)}
+                  >
+                    Back to Details
+                  </button>
+                  <div className="teacher-grading-step__title">
+                    <h4>Grading Setup</h4>
+                    <p>Configure the reference circuit and logic validation.</p>
+                  </div>
+                </header>
+
+                <TeacherGradingPanel 
+                  isEnabled={true}
+                  autogradingKey={assignmentForm.autogradingKey}
+                  isEnabled={assignmentForm.isAutogradingEnabled}
+                  onKeyGenerated={(key) => {
+                    onAssignmentInputChange({
+                      target: {
+                        name: 'autogradingKey',
+                        value: key
+                      }
+                    });
+                    // Automatically enable if a key is generated
+                    if (key) {
+                      onAssignmentInputChange({
+                        target: {
+                          name: 'isAutogradingEnabled',
+                          value: true
+                        }
+                      });
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <>
             <section className="teacher-assignment-section">
               <div className="teacher-assignment-section__header">
                 <div className="teacher-assignment-section__icon">
@@ -118,6 +179,28 @@ export default function TeacherComposerModal({
                     onChange={onAssignmentInputChange}
                   />
                 </label>
+                <div className="teacher-assignment-form__field--full">
+                  <div className="teacher-assignment-toggle">
+                    <div className="teacher-assignment-toggle__copy">
+                      <strong>Enable Autograding</strong>
+                      <small>Automatically validate student circuit logic and behavior.</small>
+                    </div>
+                    <label className="teacher-switch">
+                      <input
+                        type="checkbox"
+                        name="isAutogradingEnabled"
+                        checked={assignmentForm.isAutogradingEnabled}
+                        onChange={(e) => onAssignmentInputChange({
+                          target: {
+                            name: 'isAutogradingEnabled',
+                            value: e.target.checked
+                          }
+                        })}
+                      />
+                      <span className="teacher-switch__slider"></span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -258,8 +341,13 @@ export default function TeacherComposerModal({
                 ) : null}
               </div>
             </section>
-            <button type="submit" disabled={postingAssignment}>
-              {postingAssignment ? "Creating..." : "Add Assignment"}
+              </>
+            )}
+            <button 
+              type="submit" 
+              disabled={postingAssignment || (isGradingStep && !assignmentForm.autogradingKey)}
+            >
+              {postingAssignment ? "Creating..." : isGradingStep ? "Finish & Create Assignment" : "Add Assignment"}
             </button>
           </form>
         ) : (

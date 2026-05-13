@@ -104,18 +104,40 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
   
   // 4. Add new wires
   addedWires.forEach(aw => {
-    // Deduplicate: don't add if a wire with same pins already exists
     const from = (aw.from || '').replace('.', ':');
     const to = (aw.to || '').replace('.', ':');
-    const existing = nextWires.find(w => (w.from === from && w.to === to) || (w.from === to && w.to === from));
     
-    if (existing) {
+    // Primary Deduplication: by ID
+    const existingById = aw.id ? nextWires.find(w => w.id === aw.id) : null;
+    if (existingById) {
+      existingById.from = from;
+      existingById.to = to;
+      existingById.color = (aw.color === '#38bdf8' || !aw.color) ? 'green' : aw.color;
+      existingById.waypoints = aw.waypoints || [];
+      existingById.path = aw.path || null;
+      existingById.isBelow = aw.isBelow || false;
+      existingById.isSocket = aw.isSocket || false;
+      existingById.offset = aw.lane || 0;
+      
+      const oid = aw.ownerId || defaultOwnerId;
+      if (oid) {
+        const ids = new Set(existingById.ownerIds || (existingById.ownerId ? [existingById.ownerId] : []));
+        ids.add(oid);
+        existingById.ownerIds = Array.from(ids);
+      }
+      return;
+    }
+
+    // Secondary Deduplication: by pin-pair match (for shared connectivity)
+    const existingByPins = nextWires.find(w => (w.from === from && w.to === to) || (w.from === to && w.to === from));
+    
+    if (existingByPins) {
       // Shared Ownership: Append new owner to existing wire
       const oid = aw.ownerId || defaultOwnerId;
       if (oid) {
-        const ids = new Set(existing.ownerIds || (existing.ownerId ? [existing.ownerId] : []));
+        const ids = new Set(existingByPins.ownerIds || (existingByPins.ownerId ? [existingByPins.ownerId] : []));
         ids.add(oid);
-        existing.ownerIds = Array.from(ids);
+        existingByPins.ownerIds = Array.from(ids);
       }
     } else {
       nextWires.push({
@@ -146,8 +168,20 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
     owners: (c.ownerIds || []).join(', ') || 'N/A'
   })));
   console.groupEnd();
+  
+  // Final Deduplication Pass: Ensure no duplicate IDs reach the React state
+  const uniqueWires = [];
+  const seenIds = new Set();
+  // Process from newest to oldest to keep the most recent updates
+  for (let i = nextWires.length - 1; i >= 0; i--) {
+    const w = nextWires[i];
+    if (!seenIds.has(w.id)) {
+      uniqueWires.unshift(w);
+      seenIds.add(w.id);
+    }
+  }
 
-  return { components: finalComponents, wires: nextWires };
+  return { components: finalComponents, wires: uniqueWires };
 }
 
 // ─── Geometric & Breadboard Utilities (Active) ────────────────────────────────
