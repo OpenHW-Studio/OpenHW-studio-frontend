@@ -1,3 +1,18 @@
+if (typeof window === 'undefined') {
+    (self as any).window = self;
+    (self as any).document = {
+        createElement: () => ({ style: {} }),
+        getElementsByTagName: () => [],
+        createTextNode: () => ({}),
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        addEventListener: () => {},
+        removeEventListener: () => {},
+    };
+}
+(self as any).$RefreshReg$ = () => {};
+(self as any).$RefreshSig$ = () => () => (type: any) => type;
+
 /**
  * Autofix Web Worker (Rust WASM Edition)
  * Bridges the high-performance Rust engine with the simulator UI.
@@ -7,6 +22,11 @@ import init, * as engine from '../wasm/openhw_studio_autofix_rust.js';
 import wasmUrl from '../wasm/openhw_studio_autofix_rust_bg.wasm?url';
 import { FullCircuitValidator } from '@openhw/emulator';
 import { calculateProjectPlanApplication } from '../pages/simulationpage/projectUtils.js';
+
+self.onerror = (msg, url, line, col, error) => {
+  console.error(`[AutofixWorker] Global Error: ${msg} at ${line}:${col}`, error);
+  return false;
+};
 
 let isInitialized = false;
 

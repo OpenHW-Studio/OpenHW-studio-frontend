@@ -1,5 +1,5 @@
 import { TopToolbox } from './TopToolbox';
-import { 
+import {
   calculateProjectPlanApplication,
   getRotatedPoint,
   getComponentWorldPins,
@@ -153,7 +153,7 @@ Object.entries(EmulatorComponents).forEach(([key, module]) => {
         ...(raw.docRaw ? { doc: raw.docRaw } : {}),
       }
       : module;
-      
+
     // ── REGISTER BUILTIN PINS ──
     if (module.manifest.pins) {
       LOCAL_PIN_DEFS[compId] = module.manifest.pins;
@@ -1560,7 +1560,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
-  const assignmentMode = Boolean(shareId && classId && assignmentId)
+  const assignmentMode = Boolean(classId && assignmentId)
   const studentAssignmentMode = assignmentMode && activeUser?.role === 'student'
   const liveSessionCode = String(liveCode || '').trim().toUpperCase()
   const currentLiveUserId = String(activeUser?._id || activeUser?.id || '')
@@ -1915,6 +1915,14 @@ export function SimulatorPage({ gamificationMode = false }) {
       return 'nl';
     }
   });
+  const [boardLineEndings, setBoardLineEndings] = useState({}); // { boardId: string }
+  const [boardAutoscrolls, setBoardAutoscrolls] = useState({}); // { boardId: boolean }
+  const [boardBaudRates, setBoardBaudRates] = useState({}); // { boardId: number }
+  const [boardPausedStates, setBoardPausedStates] = useState({}); // { boardId: boolean }
+  const [boardInputs, setBoardInputs] = useState({}); // { boardId: string }
+  const [isSerialSplit, setIsSerialSplit] = useState(false);
+  const [serialSplitRatio, setSerialSplitRatio] = useState(0.5);
+  const [serialBoardFilter2, setSerialBoardFilter2] = useState('all');
   const [rp2040DebugTelemetryEnabled, setRp2040DebugTelemetryEnabled] = useState(() => {
     try {
       const saved = String(localStorage.getItem('openhw.rp2040.debugTelemetry') || '').toLowerCase();
@@ -1973,10 +1981,10 @@ export function SimulatorPage({ gamificationMode = false }) {
   // Pinch-to-zoom state refs
 
   // Plotter State
-  const [plotData, setPlotData] = useState([]);
-  const [selectedPlotPins, setSelectedPlotPins] = useState(['13', 'A0']);
-  const plotterCanvasRef = useRef(null);
+  const plotDataRef = useRef([]);
+  const [selectedPlotPins, setSelectedPlotPins] = useState([]); // Array<{ boardId, pinId }>
   const [plotterPaused, setPlotterPaused] = useState(false);
+  const [plotterTimeDiv, setPlotterTimeDiv] = useState(1000); // ms per division (not used as divisions yet, but as total window size)
 
   const serializedStateEquals = (a, b) => {
     if (a === b) return true;
@@ -2802,7 +2810,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, []);
 
   useEffect(() => {
-    if (!shareId) return;
+    if (!shareId || shareId === 'new') return;
 
     let cancelled = false;
 
@@ -3080,7 +3088,9 @@ export function SimulatorPage({ gamificationMode = false }) {
   };
 
   const handleSubmitClassAssignment = async () => {
-    if (!assignmentSubmissionAssignment) return;
+    if (!assignmentSubmissionAssignment) {
+      return;
+    }
 
     if (isAssignmentSubmissionClosed(assignmentSubmissionAssignment)) {
       setAssignmentSubmissionState((current) => ({
@@ -3113,27 +3123,74 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
       const simulationUrl = `${window.location.origin}/simulator/share/${simulationShareId}`;
 
-      const response = await submitAssignment(classId, assignmentId, {
-        notes: assignmentSubmissionForm.notes,
-        attachments: assignmentSubmissionForm.attachments,
-        simulationShareId,
-        simulationUrl,
-      });
+      // Auto-capture PNG of the current circuit
+      let finalAttachments = [...assignmentSubmissionForm.attachments];
+      try {
+        const pngBlob = await downloadPng({ returnBlob: true });
+        if (pngBlob) {
+          console.log('[Submission] Captured circuit PNG, uploading...');
+          // Cache locally for immediate feedback after redirect
+          try {
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result);
+              reader.onerror = reject;
+              reader.readAsDataURL(pngBlob);
+            });
+            sessionStorage.setItem(`ohw_preview_${assignmentId}`, dataUrl);
+          } catch (e) {
+            console.warn('[Submission] Failed to cache preview locally:', e);
+          }
 
-      const submission = response?.submission || null;
+          const pngFile = new File([pngBlob], `submission_${assignmentId}_${Date.now()}.png`, { type: 'image/png' });
+          const uploadedUrls = await uploadClassroomFiles([pngFile], { classId, category: 'submissions' });
+
+          if (uploadedUrls && uploadedUrls.length > 0) {
+            console.log('[Submission] PNG uploaded successfully:', uploadedUrls[0]);
+            finalAttachments.push(uploadedUrls[0]);
+          } else {
+            console.error('[Submission] PNG upload returned no URLs');
+          }
+        }
+      } catch (pngErr) {
+        console.warn('[Submission] Failed to auto-capture circuit PNG:', pngErr);
+      }
+
+      // Store as a draft in sessionStorage for the dashboard modal to pick up
+      const draftData = {
+        notes: assignmentSubmissionForm.notes,
+        attachments: finalAttachments,
+        simulationShareId: simulationShareId,
+        simulationUrl: simulationUrl,
+        isDraft: true,
+        updatedAt: new Date().toISOString()
+      };
+
+      console.log('[Submission] Saving draft to sessionStorage:', draftData);
+      sessionStorage.setItem(`ohw_submission_draft_${assignmentId}`, JSON.stringify(draftData));
+
       setAssignmentSubmissionState({
         loading: false,
         saving: false,
         error: '',
-        data: submission,
+        data: assignmentSubmissionState.data,
       });
-      setAssignmentSubmissionForm({
-        notes: submission?.notes || '',
-        links: submission?.links?.length ? submission.links : [''],
-        attachments: submission?.attachments || submission?.files || [],
+
+      const targetClassId = classId || assignmentSubmissionAssignment?.classId;
+      const targetAssignmentId = assignmentId || assignmentSubmissionAssignment?._id;
+      const targetUrl = `/student/classes/${targetClassId}?openAssignment=${targetAssignmentId}`;
+
+      console.log('[Submission] Stored draft and redirecting', {
+        classId,
+        assignmentId,
+        targetUrl
       });
-      setAssignmentSubmissionOpen(false);
-      alert('Assignment submitted successfully.');
+
+      if (targetClassId && targetAssignmentId) {
+        navigate(targetUrl);
+      } else {
+        alert('Simulation captured! Please return to your dashboard to finalize submission.');
+      }
     } catch (error) {
       setAssignmentSubmissionState((current) => ({
         ...current,
@@ -4036,190 +4093,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     });
   }, [isRunning, serialBaudRate, serialBoardFilter]);
 
-  // ── Plotter Rendering Loop ───────────────────────────────────────────────────
-  useEffect(() => {
-    const canvas = plotterCanvasRef.current;
-    if (!canvas || codeTab !== 'serial' || serialViewMode !== 'plotter' || plotData.length === 0 || selectedPlotPins.length === 0) return;
-    if (plotterPaused) return; // Freeze canvas when paused
 
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-
-    ctx.clearRect(0, 0, width, height);
-
-    const Y_LABEL_W = 35;
-
-    const scopedPlotData = serialBoardFilter === 'all'
-      ? plotData
-      : plotData.filter(pt => pt.boardId === serialBoardFilter);
-
-    if (scopedPlotData.length === 0) return;
-
-    // Separate selected pins into serial vs logic
-    const logicPins = selectedPlotPins.filter(p => !isNaN(parseInt(p)) || p.startsWith('A'));
-    const serialVars = selectedPlotPins.filter(p => isNaN(parseInt(p)) && !p.startsWith('A'));
-
-    const hasSerial = serialVars.length > 0;
-    const logicTrackCount = logicPins.length;
-    // Serial track takes up half the height if logic pins exist, otherwise full height
-    const serialHeight = hasSerial ? (logicTrackCount > 0 ? height * 0.6 : height) : 0;
-    const logicAreaHeight = height - serialHeight;
-    const logicTrackHeight = logicTrackCount > 0 ? logicAreaHeight / logicTrackCount : 0;
-
-    // --- Draw Serial Track ---
-    if (hasSerial) {
-      const trackBaseY = serialHeight - 20;
-      const trackTopY = 20;
-
-      // Calculate global min/max for serial vars
-      let sMin = Infinity, sMax = -Infinity;
-      scopedPlotData.forEach(pt => {
-        if (!pt.serialVars) return;
-        serialVars.forEach(sv => {
-          const v = pt.serialVars[sv];
-          if (v !== undefined) {
-            if (v < sMin) sMin = v;
-            if (v > sMax) sMax = v;
-          }
-        });
-      });
-      if (sMin === Infinity) { sMin = 0; sMax = 1; }
-      if (sMin === sMax) { sMin -= 1; sMax += 1; }
-
-      // Draw grid/guides
-      ctx.setLineDash([4, 6]);
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      // zero line
-      const zeroY = trackBaseY - ((0 - sMin) / (sMax - sMin) * (trackBaseY - trackTopY));
-      if (zeroY >= trackTopY && zeroY <= trackBaseY) {
-        ctx.moveTo(Y_LABEL_W, zeroY); ctx.lineTo(width, zeroY);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Axis labels
-      ctx.font = '9px JetBrains Mono';
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.textAlign = 'right';
-      ctx.fillText(sMax.toFixed(2), Y_LABEL_W - 2, trackTopY + 4);
-      ctx.fillText(sMin.toFixed(2), Y_LABEL_W - 2, trackBaseY);
-      ctx.textAlign = 'left';
-
-      // Draw traces
-      const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c'];
-      serialVars.forEach((sv, i) => {
-        const color = colors[i % colors.length];
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-
-        const maxPts = width - Y_LABEL_W;
-        const pts = scopedPlotData.slice(-maxPts);
-        const xStep = maxPts / Math.max(pts.length, 1);
-
-        let hasStarted = false;
-        pts.forEach((pt, idx) => {
-          const x = Y_LABEL_W + (maxPts - ((pts.length - 1 - idx) * xStep));
-          const v = pt.serialVars?.[sv];
-          if (v !== undefined) {
-            const y = trackBaseY - ((v - sMin) / (sMax - sMin)) * (trackBaseY - trackTopY);
-            if (!hasStarted) { ctx.moveTo(x, y); hasStarted = true; }
-            else { ctx.lineTo(x, y); }
-          }
-        });
-        ctx.stroke();
-
-        // Custom Label on graph
-        ctx.fillStyle = color;
-        ctx.font = 'bold 10px JetBrains Mono';
-        ctx.fillText(sv, Y_LABEL_W + 4 + (i * 60), trackTopY - 5);
-      });
-
-      // Separator
-      if (logicTrackCount > 0) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, serialHeight);
-        ctx.lineTo(width, serialHeight);
-        ctx.stroke();
-      }
-    }
-
-    // --- Draw Logic Tracks ---
-    logicPins.forEach((pinStr, logicIdx) => {
-      const trackBaseY = serialHeight + logicTrackHeight * (logicIdx + 1) - 10;
-      const trackTopY = serialHeight + logicTrackHeight * logicIdx + 10;
-      const isAnalog = pinStr.startsWith('A');
-      const color = isAnalog ? '#3498db' : '#2ecc71';
-
-      // Track separator
-      if (logicIdx < logicPins.length - 1) {
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, serialHeight + logicTrackHeight * (logicIdx + 1));
-        ctx.lineTo(width, serialHeight + logicTrackHeight * (logicIdx + 1));
-        ctx.stroke();
-      }
-
-      // Baseline (LOW / 0V) dashed guide
-      ctx.setLineDash([4, 6]);
-      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(Y_LABEL_W, trackBaseY);
-      ctx.lineTo(width, trackBaseY);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Y-axis labels
-      ctx.font = '9px JetBrains Mono';
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.textAlign = 'right';
-      ctx.fillText(isAnalog ? '5V' : 'HIGH', Y_LABEL_W - 2, trackTopY + 9);
-      ctx.fillText(isAnalog ? '0V' : 'LOW', Y_LABEL_W - 2, trackBaseY);
-      ctx.textAlign = 'left';
-
-      // Pin label
-      ctx.fillStyle = color;
-      ctx.font = 'bold 10px JetBrains Mono';
-      ctx.fillText(`Pin ${pinStr}`, Y_LABEL_W + 4, trackTopY + 10);
-
-      // Signal trace
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-
-      const maxPts = width - Y_LABEL_W;
-      const pts = scopedPlotData.slice(-maxPts);
-      const xStep = maxPts / Math.max(pts.length, 1);
-
-      pts.forEach((pt, i) => {
-        const x = Y_LABEL_W + (maxPts - ((pts.length - 1 - i) * xStep));
-        let val = 0;
-        if (isAnalog) {
-          const ch = parseInt(pinStr.substring(1));
-          val = Math.max(0, Math.min(1, (pt.analog[ch] || 0) / 5.0));
-        } else {
-          val = pt.pins[pinStr] ? 1 : 0;
-        }
-        const y = trackBaseY - (val * (trackBaseY - trackTopY));
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      });
-      ctx.stroke();
-    });
-
-    // X-axis label
-    ctx.font = '9px JetBrains Mono';
-    ctx.fillStyle = 'rgba(255,255,255,0.25)';
-    ctx.textAlign = 'left';
-    ctx.fillText('← time', Y_LABEL_W + 4, height - 4);
-  }, [plotData, codeTab, selectedPlotPins, plotterPaused, serialViewMode, serialBoardFilter]);
 
   // -- Get absolute pin position on canvas --
   const componentsMap = useMemo(() => {
@@ -4538,7 +4412,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           const adjustedPlan = {
             ...plan,
             added_components: [
-              mainCompWithPos, 
+              mainCompWithPos,
               ...(plan.added_components || [])
             ]
           };
@@ -5387,7 +5261,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     saveHistory();
 
     const manifest = COMPONENT_REGISTRY[comp.type]?.manifest || {};
-    
+
     // Trigger WASM setup with isRewire flag
     // The worker will handle cleaning up old wires and helper components
     const plan = await generateAutonomousSetup(
@@ -5410,8 +5284,13 @@ export function SimulatorPage({ gamificationMode = false }) {
       };
 
       const result = calculateProjectPlanApplication(adjustedPlan, components, wires, PIN_DEFS);
-      
-      setComponents(result.components);
+
+      // Persist the target board selection in attributes for UI selection state
+      const finalComponents = result.components.map(c =>
+        c.id === compId ? { ...c, attrs: { ...c.attrs, targetBoard: targetBoardId } } : c
+      );
+
+      setComponents(finalComponents);
       setWires(result.wires);
     }
   };
@@ -5447,9 +5326,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               return { ...w, ownerIds: w.ownerIds.filter(oid => oid !== id) };
             }
             return w;
-          }).filter(w => 
-            !w.from.startsWith(id + ':') && 
-            !w.to.startsWith(id + ':') && 
+          }).filter(w =>
+            !w.from.startsWith(id + ':') &&
+            !w.to.startsWith(id + ':') &&
             (!w.ownerIds || w.ownerIds.length > 0)
           ));
           setSelected(null);
@@ -6821,10 +6700,10 @@ export function SimulatorPage({ gamificationMode = false }) {
     // We pass nextComponents/nextWires directly to bypass React's async state update
     setTimeout(async () => {
       validationRunCacheRef.current = {}; // Clear cache
-      
+
       // 1) Trigger Local Simulator Validation check against new topology 
       runCircuitValidation(nextComponents, nextWires);
-      
+
       // 2) Optional: Call the backend Validation API dynamically to keep systems synced
       try {
         const engineConnections = nextWires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
@@ -6836,7 +6715,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       } catch (e) {
         console.warn("Backend validation out of sync:", e);
       }
-      
+
       appendConsoleEntry('info', '📡 Re-validating circuit after repair...', 'simulator');
     }, 150);
   }, [components, wires, saveHistory, appendConsoleEntry, runCircuitValidation]);
@@ -7114,7 +6993,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project: { components: components, connections: engineConnections } })
         });
-        
+
         if (valRes.ok) {
           const valData = await valRes.json();
           setValidationErrors(valData.errors || []);
@@ -7125,8 +7004,8 @@ export function SimulatorPage({ gamificationMode = false }) {
             return;
           }
         } else {
-           // Fallback to local
-           if (!runCircuitValidation()) {
+          // Fallback to local
+          if (!runCircuitValidation()) {
             appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
             runStartGuardRef.current = false;
             return;
@@ -7168,9 +7047,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           const kind = normalizeBoardKind(boardComp.type);
           const targetFqbn = resolveBoardFqbnForComponent(boardComp, kind);
           const defaultBaud = Number(BOARD_DEFAULT_BAUD[kind] || BOARD_DEFAULT_BAUD.arduino_uno);
-          boardBaudMap[boardComp.id] = selectedRunBoardId
-            ? (boardComp.id === selectedRunBoardId ? selectedRunBaud : defaultBaud)
-            : selectedRunBaud;
+          boardBaudMap[boardComp.id] = Number(boardBaudRates[boardComp.id] || selectedRunBaud);
 
           const useUploaded = !!boardComp?.attrs?.useUploadedFirmware;
           const uploadedFirmware = useUploaded ? String(
@@ -7737,20 +7614,27 @@ export function SimulatorPage({ gamificationMode = false }) {
           }
 
           livePinStatesRef.current = msg.pins;
-          if (codeTab === 'serial' && serialViewMode === 'plotter' && !plotterPaused) {
+          if (codeTab === 'serial' && !plotterPaused) {
             // Only grow plot history when the plotter is visible.
-            setPlotData(prev => {
-              const serialVars = {};
-              latestParsedSerialRef.current.forEach((val, idx) => {
-                const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
-                serialVars[lbl] = val;
-              });
-              const newPt = { time: Date.now(), pins: msg.pins, analog: msg.analog || [], serialVars, boardId: msg.boardId || 'default' };
-              const next = [...prev, newPt];
-              if (next.length > 800) return next.slice(next.length - 800);
-              return next;
+            const serialVars = {};
+            latestParsedSerialRef.current.forEach((val, idx) => {
+              const lbl = serialPlotLabelsRef.current[idx] || `SVar${idx}`;
+              serialVars[lbl] = val;
             });
+            const newPt = {
+              time: Date.now(),
+              pins: msg.pins,
+              analog: msg.analog || [],
+              serialVars,
+              boardId: msg.boardId || 'default'
+            };
+
+            plotDataRef.current.push(newPt);
+            if (plotDataRef.current.length > 1000) {
+              plotDataRef.current.shift();
+            }
           }
+
         }
         if (msg.type === 'state' && msg.neopixels) {
           const boardIdKey = String(msg.boardId || 'default');
@@ -7796,7 +7680,9 @@ export function SimulatorPage({ gamificationMode = false }) {
           const emitTimeMs = Number(msg._emitTime || 0);
           if (emitSeq >= 0 && emitTimeMs > 0 && telemetryLogEligible) {
             const msgAgeMs = (performance.now() - msgArrivalMs) + emitTimeMs;
-            appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
+            /*
+                        appendConsoleEntry('info', `EMIT_TRACE ${boardIdKey} | seq=${emitSeq} | workerEmitTime=${emitTimeMs.toFixed(0)}ms | age=${msgAgeMs.toFixed(1)}ms`, 'debug');
+            */
           }
           const perfRunMs = Number(perf?.lastRunLoopMs);
           const perfPhysicsMs = Number(perf?.lastPhysicsMs);
@@ -7823,7 +7709,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               `components=${componentsCount}`,
             ];
 
-            appendConsoleEntry(slowStateGap || slowWorker ? 'warn' : 'info', line.join(' | '), 'debug');
+            /*
+                        appendConsoleEntry(slowStateGap || slowWorker ? 'warn' : 'info', line.join(' | '), 'debug');
+            */
             runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs });
           }
         }
@@ -7850,7 +7738,12 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       worker.onerror = (err) => {
         console.error('Worker Error:', err);
-        appendConsoleEntry('error', `Worker error: ${err?.message || 'Unknown error'}`, 'simulator');
+        let errorMsg = 'Unknown error';
+        if (err && typeof err === 'object') {
+          if (err.message) errorMsg = err.message;
+          else if (err.type) errorMsg = `Event type: ${err.type}`;
+        }
+        appendConsoleEntry('error', `[SIM] Worker crash: ${errorMsg}`, 'simulator');
         logSerial('Worker threw an error', 'var(--red)');
         handleStop();
       };
@@ -7989,7 +7882,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     liveOopStatesRef.current = neopixelOffStates;
     Object.keys(neopixelOffStates).forEach(notifyLiveOopStateListeners);
     setSerialHistory([]);
-    setPlotData([]);
+    plotDataRef.current = [];
     setSerialPaused(false);
     setPlotterPaused(false);
     serialPlotBufferRef.current = '';
@@ -8041,24 +7934,26 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   };
 
-  const sendSerialInput = useCallback((targetBoardOverride) => {
-    const txt = String(serialInput || '');
+  const sendSerialInput = useCallback((targetBoardOverride, inputOverride, lineEndingOverride, baudRateOverride) => {
+    const txt = String(inputOverride !== undefined ? inputOverride : (serialInput || ''));
     if (!txt.trim()) return;
-    const lineEnding = SERIAL_LINE_ENDINGS[serialLineEnding] ?? '\n';
+    const lineEnding = SERIAL_LINE_ENDINGS[lineEndingOverride || serialLineEnding] ?? '\n';
     const payload = txt + lineEnding;
 
     const requestedBoard = targetBoardOverride || serialBoardFilter;
     const targetBoardId = requestedBoard !== 'all' ? requestedBoard : undefined;
+
+    const baudRate = baudRateOverride || serialBaudRate;
 
     if (workerRef.current && isRunning) {
       workerRef.current.postMessage({
         type: 'SERIAL_INPUT',
         data: payload,
         targetBoardId,
-        baudRate: serialBaudRate,
+        baudRate: baudRate,
       });
       pushSerialTxLine(txt, targetBoardId || 'all', 'sim');
-      setSerialInput('');
+      if (inputOverride === undefined) setSerialInput('');
       return;
     }
 
@@ -8067,7 +7962,9 @@ export function SimulatorPage({ gamificationMode = false }) {
         ? targetBoardId
         : (hardwareSerialTargetRef.current || hardwareBoardId || 'hardware');
       sendHardwareSerialLine(payload, targetBoard, txt)
-        .then(() => setSerialInput(''))
+        .then(() => {
+          if (inputOverride === undefined) setSerialInput('');
+        })
         .catch((err) => {
           console.error('[WebSerial] TX failed:', err);
           alert(`Hardware serial write failed: ${err?.message || 'Unknown error'}`);
@@ -8076,7 +7973,28 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
 
     alert('Run simulator or connect hardware serial before sending data.');
-  }, [serialInput, serialLineEnding, workerRef, isRunning, serialBoardFilter, serialBaudRate, pushSerialTxLine, hardwareConnected, hardwareBoardId, sendHardwareSerialLine]);
+  }, [serialInput, serialLineEnding, workerRef, isRunning, serialBoardFilter, serialBaudRate, pushSerialTxLine, hardwareConnected, hardwareBoardId, sendHardwareSerialLine, setSerialInput]);
+
+  const updateBoardBaudRate = useCallback((boardId, baud) => {
+    setBoardBaudRates(prev => ({ ...prev, [boardId]: baud }));
+    if (workerRef.current && isRunning) {
+      workerRef.current.postMessage({
+        type: 'SERIAL_SET_BAUD',
+        targetBoardId: boardId !== 'all' ? boardId : undefined,
+        baudRate: baud,
+      });
+    }
+  }, [isRunning]);
+
+  const updateGlobalBaudRate = useCallback((baud) => {
+    setSerialBaudRate(baud);
+    if (workerRef.current && isRunning) {
+      workerRef.current.postMessage({
+        type: 'SERIAL_SET_BAUD',
+        baudRate: baud,
+      });
+    }
+  }, [isRunning]);
 
   const openComponentEditor = useCallback(() => {
     try {
@@ -8087,7 +8005,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [navigate]);
 
   // ── PNG Export ────────────────────────────────────────────────────────────
-  const downloadPng = async () => {
+  const downloadPng = async (options = {}) => {
+    const { returnBlob = false } = options;
     if (isExporting) return;
     setIsExporting(true);
     try {
@@ -8172,6 +8091,10 @@ export function SimulatorPage({ gamificationMode = false }) {
         try {
           const combined = cached.bytes;
           const finalBlob = new Blob([combined], { type: 'image/png' });
+          if (returnBlob) {
+            setIsExporting(false);
+            return finalBlob;
+          }
           const url = URL.createObjectURL(finalBlob);
           const a = document.createElement('a');
           a.href = url;
@@ -8368,32 +8291,43 @@ export function SimulatorPage({ gamificationMode = false }) {
       // 4. Append metadata bytes after PNG IEND → still renders fine in all image viewers
       const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-').replace(':', '-');
       const filename = `circuit_${board}_${dateStr}.png`;
-      out.toBlob(async (blob) => {
-        const t_blob_start = performance.now();
-        const pngBuf = await blob.arrayBuffer();
-        const pngBytes = new Uint8Array(pngBuf);
-        const metaBytes = new TextEncoder().encode(jsonPayload);
-        const combined = new Uint8Array(pngBytes.length + metaBytes.length);
-        combined.set(pngBytes);
-        combined.set(metaBytes, pngBytes.length);
-        const finalBlob = new Blob([combined], { type: 'image/png' });
-        const t_blob_end = performance.now();
-        console.log('[PNG Export] compose+blob ms:', Math.round(t_blob_end - t_blob_start));
-        console.log('[PNG Export] total ms:', Math.round(t_blob_end - t_start));
-        const url = URL.createObjectURL(finalBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        // Cache combined bytes for identical future exports in this session
-        try {
-          _exportPngResultCache.set(signature, { bytes: combined, filename, createdAt: Date.now() });
-        } catch (err) {
-          // Best-effort cache; ignore failures silently
-          console.warn('[PNG Export] cache store failed', err);
-        }
-        setTimeout(() => URL.revokeObjectURL(url), 5000);
-      }, 'image/png');
+      const blobResult = await new Promise((resolve) => {
+        out.toBlob(async (blob) => {
+          const t_blob_start = performance.now();
+          const pngBuf = await blob.arrayBuffer();
+          const pngBytes = new Uint8Array(pngBuf);
+          const metaBytes = new TextEncoder().encode(jsonPayload);
+          const combined = new Uint8Array(pngBytes.length + metaBytes.length);
+          combined.set(pngBytes);
+          combined.set(metaBytes, pngBytes.length);
+          const finalBlob = new Blob([combined], { type: 'image/png' });
+          const t_blob_end = performance.now();
+          console.log('[PNG Export] compose+blob ms:', Math.round(t_blob_end - t_blob_start));
+          console.log('[PNG Export] total ms:', Math.round(t_blob_end - t_start));
+
+          if (returnBlob) {
+            resolve(finalBlob);
+            return;
+          }
+
+          const url = URL.createObjectURL(finalBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.click();
+          // Cache combined bytes for identical future exports in this session
+          try {
+            _exportPngResultCache.set(signature, { bytes: combined, filename, createdAt: Date.now() });
+          } catch (err) {
+            // Best-effort cache; ignore failures silently
+            console.warn('[PNG Export] cache store failed', err);
+          }
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+          resolve(null);
+        }, 'image/png');
+      });
+
+      if (returnBlob) return blobResult;
     } catch (err) {
       console.error('[PNG Export] Error:', err);
       alert('PNG export failed: ' + err.message);
@@ -9073,9 +9007,9 @@ export function SimulatorPage({ gamificationMode = false }) {
             </div>
             <Btn
               color="var(--accent)"
-              onClick={() => setAssignmentSubmissionOpen(true)}
-              disabled={assignmentSubmissionState.loading || !assignmentSubmissionAssignment || isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
-              title={isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Submit assignment'}
+              onClick={handleSubmitClassAssignment}
+              disabled={assignmentSubmissionState.saving || !assignmentSubmissionAssignment || isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
+              title={assignmentSubmissionState.saving ? 'Submitting...' : isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Submit assignment'}
             >
               {assignmentSubmissionState.data ? 'Update Submission' : 'Submit Assignment'}
             </Btn>
@@ -9218,28 +9152,6 @@ export function SimulatorPage({ gamificationMode = false }) {
           </div>
         )}
 
-        {assignmentSubmissionOpen && studentAssignmentMode && (
-          <StudentAssignmentModal
-            assignment={assignmentSubmissionAssignment}
-            submissionState={assignmentSubmissionState}
-            submissionForm={assignmentSubmissionForm}
-            onClose={() => setAssignmentSubmissionOpen(false)}
-            onNotesChange={(value) =>
-              setAssignmentSubmissionForm((current) => ({
-                ...current,
-                notes: value,
-              }))
-            }
-            onLinkChange={() => { }}
-            onAddLink={() => { }}
-            onRemoveLink={() => { }}
-            onFilesChange={handleAssignmentSubmissionFilesChange}
-            onRemoveFile={handleRemoveAssignmentSubmissionFile}
-            onSubmit={handleSubmitClassAssignment}
-            onPreviewFile={() => { }}
-            isClosed={isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
-          />
-        )}
         {gamificationMode && gamProject && (
           <div style={{
             display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
@@ -9615,44 +9527,44 @@ export function SimulatorPage({ gamificationMode = false }) {
                   />
                 )}
               </svg>
- 
-               {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
-               {(() => {
-                 const comp = components.find(c => c.id === selected);
-                 if (!comp) return null;
-                 const reg = COMPONENT_REGISTRY[comp.type];
-                 if (!reg?.ContextMenu) return null;
-                 const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
-                 if (isRunning && !showDuringRun) return null;
-                 if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
-                 return (
-                   <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
-                     position: 'absolute',
-                     left: comp.x + comp.w / 2,
-                     top: comp.y - 14,
-                     transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
-                     transformOrigin: 'bottom center',
-                     background: 'var(--bg2)', border: '1px solid var(--border)',
-                     display: 'flex', alignItems: 'center', gap: 8,
-                     padding: '6px 10px', borderRadius: '10px',
-                     boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                     pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
-                   }}
-                     onMouseDown={e => e.stopPropagation()}
-                     onClick={e => e.stopPropagation()}
-                     onDoubleClick={e => e.stopPropagation()}
-                   >
-                     {React.createElement(reg.ContextMenu, {
-                       attrs: getComponentStateAttrs(comp),
-                       onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
-                     })}
-                     <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                     <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
-                   </div>
-                 );
-               })()}
- 
-               {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
+
+              {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
+              {(() => {
+                const comp = components.find(c => c.id === selected);
+                if (!comp) return null;
+                const reg = COMPONENT_REGISTRY[comp.type];
+                if (!reg?.ContextMenu) return null;
+                const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
+                if (isRunning && !showDuringRun) return null;
+                if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
+                return (
+                  <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
+                    position: 'absolute',
+                    left: comp.x + comp.w / 2,
+                    top: comp.y - 14,
+                    transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
+                    transformOrigin: 'bottom center',
+                    background: 'var(--bg2)', border: '1px solid var(--border)',
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '6px 10px', borderRadius: '10px',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
+                    pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
+                  }}
+                    onMouseDown={e => e.stopPropagation()}
+                    onClick={e => e.stopPropagation()}
+                    onDoubleClick={e => e.stopPropagation()}
+                  >
+                    {React.createElement(reg.ContextMenu, {
+                      attrs: getComponentStateAttrs(comp),
+                      onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
+                    })}
+                    <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
+                    <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
+                  </div>
+                );
+              })()}
+
+              {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
               {(() => {
                 const w = wires.find(w => w.id === selected);
                 if (!w || isRunning) return null;
@@ -10537,13 +10449,23 @@ export function SimulatorPage({ gamificationMode = false }) {
             onCreateCodeFile={createCodeFile} onCreateCodeTab={createCodeTab} onUploadCodeFile={uploadCodeFile}
             libQuery={libQuery} setLibQuery={setLibQuery} handleSearchLibraries={handleSearchLibraries} isSearchingLib={isSearchingLib} libMessage={libMessage} libInstalled={libInstalled} libResults={libResults} handleInstallLibrary={handleInstallLibrary} installingLib={installingLib}
             serialPaused={serialPaused} setSerialPaused={setSerialPaused} isRunning={isRunning} serialHistory={serialHistory} setSerialHistory={setSerialHistory} serialOutputRef={serialOutputRef} serialInput={serialInput} setSerialInput={setSerialInput} sendSerialInput={sendSerialInput} clearSerialMonitor={clearSerialMonitor}
-            serialViewMode={serialViewMode} setSerialViewMode={setSerialViewMode} serialBoardFilter={serialBoardFilter} setSerialBoardFilter={setSerialBoardFilter} serialBoardOptions={serialBoardOptions} serialBoardLabels={serialBoardLabels} serialBoardKinds={serialBoardKinds} serialBoardSourceModes={rp2040BoardSourceModes} serialBaudRate={serialBaudRate} setSerialBaudRate={setSerialBaudRate} serialBaudOptions={serialBaudOptions} serialLineEnding={serialLineEnding} setSerialLineEnding={setSerialLineEnding}
+            serialViewMode={serialViewMode} setSerialViewMode={setSerialViewMode} serialBoardFilter={serialBoardFilter} setSerialBoardFilter={setSerialBoardFilter} serialBoardOptions={serialBoardOptions} serialBoardLabels={serialBoardLabels} serialBoardKinds={serialBoardKinds} serialBoardSourceModes={rp2040BoardSourceModes}
+            serialBaudRate={serialBaudRate} setSerialBaudRate={updateGlobalBaudRate} serialBaudOptions={serialBaudOptions} serialLineEnding={serialLineEnding} setSerialLineEnding={setSerialLineEnding}
             hardwareConnected={hardwareConnected}
-            plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotData={plotData} setPlotData={setPlotData} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} plotterCanvasRef={plotterCanvasRef} serialPlotLabelsRef={serialPlotLabelsRef}
+            plotterPaused={plotterPaused} setPlotterPaused={setPlotterPaused} plotDataRef={plotDataRef} selectedPlotPins={selectedPlotPins} setSelectedPlotPins={setSelectedPlotPins} serialPlotLabelsRef={serialPlotLabelsRef}
+            plotterTimeDiv={plotterTimeDiv} setPlotterTimeDiv={setPlotterTimeDiv}
             showConnectionsPanel={showConnectionsPanel} wires={wires} updateWireColor={updateWireColor} deleteWire={deleteWire}
             boardComponentMap={boardComponentMap} onToggleBoardFirmwareSource={toggleBoardFirmwareSource}
             editingDisabled={liveEditingDisabled}
             editingDisabledMessage={liveMeetingMode ? 'Teacher approval is required before you can edit this live simulation.' : 'Editing is disabled.'}
+            boardLineEndings={boardLineEndings} setBoardLineEndings={setBoardLineEndings}
+            boardAutoscrolls={boardAutoscrolls} setBoardAutoscrolls={setBoardAutoscrolls}
+            boardBaudRates={boardBaudRates} setBoardBaudRates={updateBoardBaudRate}
+            boardPausedStates={boardPausedStates} setBoardPausedStates={setBoardPausedStates}
+            boardInputs={boardInputs} setBoardInputs={setBoardInputs}
+            isSerialSplit={isSerialSplit} setIsSerialSplit={setIsSerialSplit}
+            serialSplitRatio={serialSplitRatio} setSerialSplitRatio={setSerialSplitRatio}
+            serialBoardFilter2={serialBoardFilter2} setSerialBoardFilter2={setSerialBoardFilter2}
           />
 
           {/* MY PROJECTS SIDEBAR */}
@@ -11495,9 +11417,9 @@ export function SimulatorPage({ gamificationMode = false }) {
                   return { ...w, ownerIds: w.ownerIds.filter(oid => oid !== id) };
                 }
                 return w;
-              }).filter(w => 
-                !w.from.startsWith(id + ':') && 
-                !w.to.startsWith(id + ':') && 
+              }).filter(w =>
+                !w.from.startsWith(id + ':') &&
+                !w.to.startsWith(id + ':') &&
                 (!w.ownerIds || w.ownerIds.length > 0)
               ));
               if (selected === id) setSelected(null);

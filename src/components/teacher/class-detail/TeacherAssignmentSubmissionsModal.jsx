@@ -54,7 +54,12 @@ export default function TeacherAssignmentSubmissionsModal({
               <ChevronRight size={14} />
               <span>Classwork</span>
             </div>
-            <h3>{assignment.title}</h3>
+            <div className="flex items-center gap-3">
+              <h3>{assignment.title}</h3>
+              {(assignment.isAutogradingEnabled || assignment.autogradingKey) && (
+                <span className="teacher-classwork-card__badge teacher-classwork-card__badge--autograde">Autograde</span>
+              )}
+            </div>
           </div>
           <button type="button" onClick={onClose} aria-label="Close modal">
             <X size={16} />
