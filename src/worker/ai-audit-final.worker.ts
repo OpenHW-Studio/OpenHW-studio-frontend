@@ -1,3 +1,18 @@
+if (typeof window === 'undefined') {
+    (self as any).window = self;
+    (self as any).document = {
+        createElement: () => ({ style: {} }),
+        getElementsByTagName: () => [],
+        createTextNode: () => ({}),
+        querySelector: () => null,
+        querySelectorAll: () => [],
+        addEventListener: () => {},
+        removeEventListener: () => {},
+    };
+}
+(self as any).$RefreshReg$ = () => {};
+(self as any).$RefreshSig$ = () => () => (type: any) => type;
+
 // Explicitly disable WebGPU and enforce WASM for max compatibility
 let env: any;
 let pipeline: any;
@@ -9,6 +24,10 @@ const jsonLogs: Array<{time: string, source: string, level: string, message: str
 const teacherCache = new Map<string, any>();
 
 // Ultimate Debugger: Intercept all possible data sources
+self.onerror = (msg, url, line, col, error) => {
+    console.error(`[AIAuditWorker] Global Error: ${msg} at ${line}:${col}`, error);
+    return false;
+};
 const originalFetch = self.fetch;
 (self as any).fetch = async (...args: any[]) => {
     const url = args[0] instanceof URL ? args[0].href : args[0];

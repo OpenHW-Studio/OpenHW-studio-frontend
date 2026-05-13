@@ -57,6 +57,8 @@ export default function TeacherClassDetailPage() {
     dueDate: "",
     templateUrl: "",
     links: [""],
+    isAutogradingEnabled: false,
+    autogradingKey: "",
   });
 
   const [noticeFiles, setNoticeFiles] = useState([]);
@@ -478,9 +480,19 @@ export default function TeacherClassDetailPage() {
         links: normalizedLinks,
         attachments: normalizedAttachments,
         files: normalizedAttachments,
+        isAutogradingEnabled: !!assignmentForm.isAutogradingEnabled,
+        autogradingKey: assignmentForm.autogradingKey || undefined,
       });
 
-      setAssignmentForm({ title: "", description: "", dueDate: "", templateUrl: "", links: [""] });
+      setAssignmentForm({ 
+        title: "", 
+        description: "", 
+        dueDate: "", 
+        templateUrl: "", 
+        links: [""],
+        isAutogradingEnabled: false,
+        autogradingKey: "",
+      });
       setAssignmentFiles([]);
       setAssignments(await getClassAssignments(classId));
       setShowComposer(false);
