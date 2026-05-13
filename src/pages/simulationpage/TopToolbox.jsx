@@ -153,7 +153,26 @@ const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12" /></svg>
         </button>
       </div>
-      <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: rgba(255, 255, 255, 0.02);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 10px;
+          border: 2px solid transparent;
+          background-clip: content-box;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.2);
+          background-clip: content-box;
+        }
+      `}</style>
+      <div className="custom-scrollbar" style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
         {children}
       </div>
     </div>
@@ -165,7 +184,7 @@ function TopToolboxInternal(props) {
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], autofixPlan, autofixStatus, autofixLog, onApplyPlan, onRefresh, autoWiringEnabled, setAutoWiringEnabled, autoBreadboardEnabled, setAutoBreadboardEnabled, autoCodingEnabled, setAutoCodingEnabled, showAutofix, setShowAutofix } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], autofixPlan, autofixStatus, autofixLog, onApplyPlan, onRefresh, autoWiringEnabled, setAutoWiringEnabled, autoBreadboardEnabled, setAutoBreadboardEnabled, autoCodingEnabled, setAutoCodingEnabled, showAutofix, setShowAutofix, showShortcuts, setShowShortcuts } = props;
   const navigate = useNavigate();
 
 
@@ -247,7 +266,7 @@ function TopToolboxInternal(props) {
 
   const helpMenuItems = [
     { label: 'Documentation', onClick: () => window.open('https://docs.openhw.org', '_blank') },
-    { label: 'Keyboard Shortcuts', onClick: () => { } },
+    { label: 'Keyboard Shortcuts', shortcut: 'H', onClick: () => setShowShortcuts(true) },
     { 
       label: 'Assist', 
       submenu: assistMenuItems
@@ -747,6 +766,60 @@ function TopToolboxInternal(props) {
             </button>
           </div>
         )}
+      </FloatingPanel>
+      <FloatingPanel title="Keyboard Shortcuts" show={showShortcuts} onClose={() => setShowShortcuts(false)} width={450}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {[
+            { group: 'General', shortcuts: [
+              { key: 'F5 / ⌘ Enter', desc: 'Run / Stop' },
+              { key: 'Esc', desc: 'Cancel / Clear / Stop' },
+              { key: '⌘ + S', desc: 'Save Project' },
+              { key: '⌘ + O', desc: 'Toggle Projects' },
+              { key: '⌘ + Alt + N', desc: 'New Project' },
+              { key: 'H', desc: 'Toggle Shortcuts Help' },
+            ]},
+            { group: 'Edit', shortcuts: [
+              { key: '⌘ + Z', desc: 'Undo' },
+              { key: '⌘ + Y', desc: 'Redo' },
+              { key: 'Del / Backspace', desc: 'Delete Selected' },
+              { key: 'R', desc: 'Rotate Component' },
+            ]},
+            { group: 'View & Panels', shortcuts: [
+              { key: '+ / -', desc: 'Zoom In / Out' },
+              { key: '0', desc: 'Reset Zoom' },
+              { key: 'V', desc: 'Toggle Right Panel' },
+              { key: '⌘ + B', desc: 'Toggle Console' },
+              { key: 'Alt + C', desc: 'Open Code Panel' },
+              { key: 'Alt + S', desc: 'Open Serial Panel' },
+              { key: '⌘ + G', desc: 'Toggle Grid' },
+              { key: '⌘ + L', desc: 'Toggle Canvas Lock' },
+              { key: 'F', desc: 'Fit to View' },
+              { key: 'Alt + T', desc: 'Wires Top / Bottom' },
+              { key: '⌘ + ⇧ + Del', desc: 'Clear Canvas' },
+            ]},
+          ].map((g, i) => (
+            <div key={i} style={{ marginBottom: '8px' }}>
+              <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', opacity: 0.8 }}>{g.group}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {g.shortcuts.map((s, j) => (
+                  <div key={j} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>{s.desc}</span>
+                    <kbd style={{ 
+                      background: 'rgba(255,255,255,0.1)', 
+                      padding: '2px 6px', 
+                      borderRadius: '4px', 
+                      fontSize: '11px', 
+                      fontFamily: 'JetBrains Mono, monospace',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      boxShadow: '0 2px 0 rgba(0,0,0,0.2)'
+                    }}>{s.key}</kbd>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </FloatingPanel>
     </header>
   );
