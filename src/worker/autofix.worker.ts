@@ -20,7 +20,8 @@ if (typeof window === 'undefined') {
 
 import init, * as engine from '../wasm/openhw_studio_autofix_rust.js';
 import wasmUrl from '../wasm/openhw_studio_autofix_rust_bg.wasm?url';
-import { FullCircuitValidator } from '@openhw/emulator';
+import * as EmulatorComponents from '@openhw/emulator';
+const { FullCircuitValidator, runUnifiedValidation } = EmulatorComponents;
 import { calculateProjectPlanApplication } from '../pages/simulationpage/projectUtils.js';
 
 self.onerror = (msg, url, line, col, error) => {
@@ -186,19 +187,24 @@ self.onmessage = async (e) => {
           currentDiagram.components = nextComponents;
           currentDiagram.connections = nextWires;
 
-          // 6. Re-validate
-          const engineConnectionsFormat = nextWires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
-          const validator = new FullCircuitValidator({ components: nextComponents, connections: engineConnectionsFormat });
-          const isSafe = validator.runValidation({ profile: 'balanced' });
-          console.log('[AutofixWorker] Post-Patch Validation Results:', validator.errors);
+          // 6. Re-validate using the Unified Engine
+          const { safe: isSafe, errors: iterationErrors } = runUnifiedValidation({ 
+            components: nextComponents, 
+            connections: nextWires 
+          }, { 
+            profile: 'balanced',
+            registry: EmulatorComponents
+          });
 
-          if (isSafe || validator.errors.length === 0) {
+          console.log('[AutofixWorker] Post-Patch Validation Results:', iterationErrors);
+
+          if (isSafe || iterationErrors.length === 0) {
             console.log('[AutofixWorker] Circuit is now completely fixed!');
             console.groupEnd();
             break;
           } else {
             // Re-assign for the next cycle
-            currentViolations = validator.errors;
+            currentViolations = iterationErrors;
             console.log('[AutofixWorker] Remaining issues to fix in next tick:', currentViolations);
           }
 

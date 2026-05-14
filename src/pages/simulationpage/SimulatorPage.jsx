@@ -11,7 +11,9 @@ import {
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
-import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
+import { ProjectsSidebar } from './components/ProjectsSidebar';
+import { multiRoutePath, wireColor } from './wireUtils';
+import { useSimulatorShortcuts } from './hooks/useSimulatorShortcuts';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
@@ -25,7 +27,7 @@ import PalettePanel from './PalettePanel';
 
 
 
-import React, { useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
@@ -38,6 +40,7 @@ import { uploadClassroomFiles } from '../../components/teacher/class-detail/uplo
 import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { ComponentContextMenu, ComponentRenamePanel, ComponentValuePanel } from './ComponentContextMenu';
+import { CanvasSceneLayer } from './components/CanvasSceneLayer';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
@@ -79,6 +82,7 @@ import * as EmulatorComponents from "@openhw/emulator";
 const {
   FullCircuitValidator,
   analyzeCodeHardwareSync,
+  runUnifiedValidation,
   ProtocolAnalyzer: SharedProtocolAnalyzer
 } = EmulatorComponents;
 
@@ -1386,166 +1390,6 @@ function getPinCategory(pId, pDesc, compType) {
 
   return categories.length > 0 ? categories : null;
 }
-
-// ─── Memoized Wire Component ────────────────────────────────────────────────
-const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset), [p1, e1, e2, p2, wire.waypoints, wire.path, offset]);
-  const isOrphaned = p1.isFallback || p2.isFallback;
-
-  // Logic: 
-  // - If forced to top: non-selected wires use 0.6 opacity/1.5px (Feedback)
-  // - If at bottom: non-selected wires use 1.0 opacity/2.0px (Normal)
-  const isBelow = !wiresAlwaysOnTop && !isSelected;
-  const useFeedback = wiresAlwaysOnTop && !isSelected;
-
-  return (
-    <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
-      <path id={`wire-path-hit-${wire.id}`} d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-      <path id={`wire-path-ui-${wire.id}`} d={wirePath}
-        stroke={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))}
-        strokeWidth={isSelected ? 2.5 : (useFeedback ? 1.8 : 2.0)}
-        fill="none"
-        strokeDasharray={isSelected || wire.isNew || isOrphaned ? "6 4" : "none"}
-        strokeLinecap="round"
-        opacity={useFeedback ? 0.75 : 1.0}
-        style={{ animation: (wire.isNew || isOrphaned) ? 'autofixWirePulse 1.5s infinite linear' : 'none' }}
-      />
-      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
-      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, _, i, arr) => {
-        if (i < 1 || i >= arr.length - 2) return acc;
-        const a = arr[i], b = arr[i + 1];
-        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-        if (segLen < 20) return acc;
-        const isHoriz = Math.abs(b.y - a.y) < 1;
-        const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-        acc.push(
-          <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
-            fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
-            stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
-            opacity={isSelected ? 1 : 0.55}
-            style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-            title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-            onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr)}
-            onClick={ev => ev.stopPropagation()}
-          />
-        );
-        return acc;
-      }, [])}
-    </g>
-  );
-});
-
-// ─── Memoized Component Wrapper ──────────────────────────────────────────────
-const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
-  const liveState = useSyncExternalStore(
-    useCallback((onStoreChange) => subscribeLiveOopState(comp.id, onStoreChange), [comp.id, subscribeLiveOopState]),
-    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot]),
-    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot])
-  );
-
-  const rad = ((comp.rotation || 0) * Math.PI) / 180;
-  const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
-
-  const getBounds = () => {
-    const reg = COMPONENT_REGISTRY[comp.type];
-    if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-    if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-    return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-  };
-  const b = getBounds();
-
-  const attrs = getComponentStateAttrs(comp, liveState);
-  const isOverloaded = attrs.glow === true || attrs.isOverloaded === true;
-
-  return (
-    <React.Fragment>
-      {isOverloaded && (
-        <div
-          className="overload-glow"
-          style={{
-            position: 'absolute',
-            left: comp.x + b.x - 10, top: comp.y + b.y - 10,
-            width: b.w + 20, height: b.h + 20,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(239,68,68,0.5) 0%, transparent 70%)',
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        />
-      )}
-      <div
-        id={`comp-hit-${comp.id}`}
-        style={{
-          position: 'absolute',
-          left: 0, top: 0,
-          width: comp.w, height: comp.h,
-          zIndex: isSelected ? 4 : 2,
-          userSelect: 'none',
-          pointerEvents: 'none',
-          transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-          transformOrigin: 'center center',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            left: b.x, top: b.y,
-            width: b.w, height: b.h,
-            cursor: 'move',
-            pointerEvents: 'auto',
-            zIndex: 0,
-          }}
-          onMouseDown={onMouseDown}
-          onClick={onClick}
-          onDoubleClick={e => e.stopPropagation()}
-        />
-
-        {/* Autofix preview panel intentionally rendered at page level (not per-component) */}
-        {isSelected && (
-          <div style={{
-            position: 'absolute',
-            left: b.x - 6, top: b.y - 6,
-            width: b.w + 12, height: b.h + 12,
-            borderRadius: 8,
-            border: '2px solid var(--accent)',
-            boxShadow: '0 0 16px var(--glow)',
-            pointerEvents: 'none', zIndex: 10,
-          }} />
-        )}
-        {hasError && (
-          <div
-            className="safety-pulse"
-            style={{
-              position: 'absolute',
-              left: b.x - 8, top: b.y - 8,
-              width: b.w + 16, height: b.h + 16,
-              borderRadius: 12,
-              border: '2px solid #ef4444',
-              boxShadow: '0 0 20px rgba(239,68,68,0.6)',
-              pointerEvents: 'none', zIndex: 9,
-              background: 'rgba(239,68,68,0.05)',
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'flex-end',
-              padding: '4px'
-            }}
-          >
-            <div style={{
-              background: '#ef4444',
-              borderRadius: '50%',
-              width: '18px', height: '18px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'white', fontSize: '12px', fontWeight: 'bold',
-              boxShadow: '0 0 8px rgba(239,68,68,0.8)',
-              transform: 'translate(4px, -4px)'
-            }}>!</div>
-          </div>
-        )}
-      </div>
-    </React.Fragment>
-  );
-});
 
 const EMPTY_LIVE_STATE = {};
 
@@ -6458,16 +6302,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const runCircuitValidation = useCallback((overriddenComponents, overriddenWires) => {
     try {
-      if (isRunning) {
-        return true;
-      }
+      if (isRunning) return true;
 
-      if (typeof FullCircuitValidator !== 'function') {
-        console.warn('[Validation] FullCircuitValidator not available in this build.');
-        return true;
-      }
-
-      // Use overridden state if provided (e.g. after autofix), otherwise use current state
       const targetComponents = overriddenComponents || components;
       const targetWires = overriddenWires || wires;
 
@@ -6487,98 +6323,49 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       }
 
-      // Adapter: convert frontend format (comp:pin) → engine format (comp.pin)
-      const engineConnections = (targetWires || []).map(w => ({
-        from: String(w.from || '').replace(':', '.'),
-        to: String(w.to || '').replace(':', '.'),
-      }));
-
       const projectData = {
-        components: targetComponents,      // engine reads .id, .type, .pins[], .attrs{}
-        connections: engineConnections,
-      };
-
-      const validator = new FullCircuitValidator(projectData);
-      const isSafe = validator.runValidation({
-        profile: 'balanced',
-        useCache: true,
-        cacheKey: overriddenComponents ? 'force-new' : buildValidationSignature(),
-        incremental: true,
-        incrementalScope: 'webui',
-      });
-
-      // ── Software-Hardware Sync Analysis ──────────────────────────────────
-      const projectForSync = {
-        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
         components: targetComponents,
         connections: targetWires,
-        activeCodeFileId: activeCodeFileId
+        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
+        activeCodeFileId
       };
-      const syncResult = typeof analyzeCodeHardwareSync === 'function'
-        ? analyzeCodeHardwareSync(projectForSync)
-        : { passed: true, issues: [] };
 
-      let allowRun = true;
+      // USE UNIFIED ENGINE (Locally)
+      const { safe, physicsSafe, errors, healthScore } = runUnifiedValidation(projectData, {
+        profile: 'balanced',
+        incremental: true,
+        incrementalScope: 'webui',
+        registry: EmulatorComponents // Pass the full component library for rule discovery
+      });
+
+      setHealthScore(healthScore);
+      setValidationErrors(errors);
+
+      const hasFatalPhysics = errors.some(e => e.severity === 'error' || e.type === 'error');
+      const allowRun = physicsSafe && !hasFatalPhysics; // Block if physics is unsafe (short circuit etc)
+
       let nextToast = null;
-
-      if (!isSafe || !syncResult.passed) {
-        const physicsErrors = validator.errors || [];
-
-        const syncErrors = (syncResult.issues || []).map(issue => ({
-          severity: 'warn',
-          type: 'warn',
-          message: issue.message,
-          compIds: []
-        }));
-
-        const formattedErrors = [...physicsErrors, ...syncErrors];
-
-        // Use emulator's Health Score engine
-        const score = validator.calculateHealthScore(syncErrors);
-        setHealthScore(score);
-
-        const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
-
-        setValidationErrors(formattedErrors);
-
-        // Trigger Intelligent Autofix Analysis (only if panel is active)
-        if (formattedErrors.length > 0 && showAutofix) {
-          triggerAutofixAnalysis(formattedErrors, targetComponents, targetWires);
+      if (!safe) {
+        if (errors.length > 0 && showAutofix) {
+          triggerAutofixAnalysis(errors, targetComponents, targetWires);
         }
         setShowValidation(true);
         if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
 
-        setValidationToast({
-          title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-          reasons: formattedErrors.slice(0, 3).map(e => e.message),
-        });
-
         nextToast = {
           title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-          reasons: formattedErrors.slice(0, 3).map(e => e.message),
+          reasons: errors.slice(0, 3).map(e => e.message),
         };
-
-        // Only block the run if there is a fatal physics error
-        if (hasFatalPhysics) {
-          allowRun = false;
-        }
-      }
-
-      if (isSafe && syncResult.passed) {
-        setValidationErrors([]);
+        setValidationToast(nextToast);
+      } else {
         setValidationToast(null);
-        setHealthScore(100);
       }
 
       validationRunCacheRef.current = {
         signature: overriddenComponents ? 'invalidated' : buildValidationSignature(),
         allowRun,
-        errors: (isSafe && syncResult.passed) ? [] : (validator.errors || []).concat(
-          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
-        ),
-        healthScore: isSafe && syncResult.passed ? 100 : validator.calculateHealthScore(
-          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
-        ),
+        errors,
+        healthScore,
         toast: nextToast,
       };
 
@@ -6679,18 +6466,6 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       // 1) Trigger Local Simulator Validation check against new topology 
       runCircuitValidation(nextComponents, nextWires);
-
-      // 2) Optional: Call the backend Validation API dynamically to keep systems synced
-      try {
-        const engineConnections = nextWires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
-        await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/validation/run`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project: { components: nextComponents, connections: engineConnections } })
-        });
-      } catch (e) {
-        console.warn("Backend validation out of sync:", e);
-      }
 
       appendConsoleEntry('info', '📡 Re-validating circuit after repair...', 'simulator');
     }, 150);
@@ -6929,6 +6704,14 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [hardwareConnected, resolvedHardwarePort, hardwareBoardId]);
 
   const handleUploadToHardware = useCallback(async () => {
+    // RUN VALIDATION BEFORE FLASHING
+    appendConsoleEntry('info', '🔍 Validating circuit health before hardware flash...', 'hardware');
+    if (!runCircuitValidation()) {
+      appendConsoleEntry('error', '❌ Flash blocked: The circuit has electrical/safety violations. Fix them first.', 'hardware');
+      setHardwareStatus('Flash blocked: validation failed');
+      return;
+    }
+
     // Disconnect browser Web Serial first to release COM port lock for arduino-cli upload.
     if (hardwareConnected) {
       setHardwareStatus('Disconnecting Web Serial before flash...');
@@ -6937,7 +6720,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
 
     await uploadToHardware();
-  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry]);
+  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry, runCircuitValidation]);
 
   const handleRun = async () => {
     try {
@@ -6947,6 +6730,16 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
 
       runStartGuardRef.current = true;
+
+      // 1. Unified Validation Gate (BLOCKING)
+      appendConsoleEntry('info', '🔍 Validating circuit health...', 'simulator');
+      if (!runCircuitValidation()) {
+        appendConsoleEntry('error', '❌ Run blocked: The circuit has electrical or safety violations.', 'simulator');
+        runStartGuardRef.current = false;
+        return;
+      }
+      appendConsoleEntry('info', '✅ Circuit validated. Initializing simulation...', 'simulator');
+
       appendConsoleEntry('info', 'Run requested.', 'simulator');
       rp2040GdbLastLogRef.current.clear();
       rp2040WirelessLastLogRef.current.clear();
@@ -6960,42 +6753,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       runLagTelemetryLastLogRef.current.clear();
       runFpsTelemetryLastLogRef.current.clear();
       runLastBoardPinsRef.current = new Map();
-
-      // Ensure consistent validation report across applications (Frontend, CLI, Autofix loop)
-      const engineConnections = wires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
-      try {
-        const valRes = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/validation/run`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project: { components: components, connections: engineConnections } })
-        });
-
-        if (valRes.ok) {
-          const valData = await valRes.json();
-          setValidationErrors(valData.errors || []);
-          if (!valData.safe) {
-            appendConsoleEntry('warn', 'Run blocked: validation errors found (via backend).', 'simulator');
-            runStartGuardRef.current = false;
-            setShowValidation(true);
-            return;
-          }
-        } else {
-          // Fallback to local
-          if (!runCircuitValidation()) {
-            appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
-            runStartGuardRef.current = false;
-            return;
-          }
-        }
-      } catch (err) {
-        // Fallback to local offline validation 
-        if (!runCircuitValidation()) {
-          appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
-          // The useEffect will auto-trigger re-analysis when validationErrors state updates
-          runStartGuardRef.current = false;
-          return;
-        }
-      }
 
       setIsRunning(true);
       setIsCompiling(true);
@@ -8903,186 +8660,14 @@ export function SimulatorPage({ gamificationMode = false }) {
     };
 
     // Global Keyboard Shortcuts
-    useEffect(() => {
-      const onKey = (e) => {
-        if (e.key === 'F1') {
-          e.preventDefault();
-          setShowF1Menu(prev => !prev);
-          return;
-        }
-        
-        // Shortcuts that work even if input is focused
-        if (e.ctrlKey && e.key.toLowerCase() === 's') {
-          e.preventDefault();
-          handleSave();
-          return;
-        }
-
-        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
-
-        // Undo/Redo
-        if (e.ctrlKey && e.key.toLowerCase() === 'z') {
-          e.preventDefault();
-          undo();
-          return;
-        }
-        if (e.ctrlKey && e.key.toLowerCase() === 'y') {
-          e.preventDefault();
-          redo();
-          return;
-        }
-
-        // Simulation Control
-        if (e.key === 'F5' || (e.ctrlKey && e.key === 'Enter')) {
-          e.preventDefault();
-          if (!isRunning) handleRun();
-          else handleStop();
-          return;
-        }
-
-        if (e.key === 'Escape') { 
-          if (wireStart) setWireStart(null);
-          else if (selected) setSelected(null);
-          else if (isRunning) handleStop();
-          setWireClickPos(null); 
-        }
-
-        // Edit
-        if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning && !liveEditingDisabled) {
-          saveHistory();
-          if (selected.match(/^w\d+$/)) {
-            setWires(prev => prev.filter(w => w.id !== selected))
-          } else {
-            // Shared Ownership Cleanup: Only delete if no other owners exist
-            const id = selected;
-            setComponents(prev => prev.map(c => {
-              if (c.ownerIds?.includes(id)) {
-                return { ...c, ownerIds: c.ownerIds.filter(oid => oid !== id) };
-              }
-              return c;
-            }).filter(c => c.id !== id && (!c.ownerIds || c.ownerIds.length > 0)));
-
-            setWires(prev => prev.map(w => {
-              if (w.ownerIds?.includes(id)) {
-                return { ...w, ownerIds: w.ownerIds.filter(oid => oid !== id) };
-              }
-              return w;
-            }).filter(w =>
-              !w.from.startsWith(id + ':') &&
-              !w.to.startsWith(id + ':') &&
-              (!w.ownerIds || w.ownerIds.length > 0)
-            ));
-            setSelected(null);
-          }
-        }
-
-        if (e.altKey && e.shiftKey && e.code === 'KeyR' && selected && !isRunning && !liveEditingDisabled) {
-          e.preventDefault();
-          if (components.find(c => c.id === selected)) {
-            rotateComponent(selected);
-          }
-        }
-
-        if (e.altKey && e.code === 'KeyH') {
-          setShowShortcuts(prev => !prev);
-        }
-
-        if (e.altKey && e.code === 'KeyV') {
-          setIsPanelOpen(prev => !prev);
-        }
-
-        if (e.altKey && (e.key === '+' || e.key === '=')) {
-          applyZoomAtCenter(Math.min(2, parseFloat((canvasZoomRef.current + 0.25).toFixed(2))));
-        }
-        if (e.altKey && (e.key === '-' || e.key === '_')) {
-          applyZoomAtCenter(Math.max(0.25, parseFloat((canvasZoomRef.current - 0.25).toFixed(2))));
-        }
-        if (e.altKey && e.key === '0') {
-          setCanvasZoom(1);
-          setCanvasOffset({ x: 0, y: 0 });
-          canvasZoomRef.current = 1;
-          canvasOffsetRef.current = { x: 0, y: 0 };
-          if (innerCanvasRef.current) {
-            innerCanvasRef.current.style.transform = `translate(0px, 0px) scale(1)`;
-          }
-        }
-
-        // Projects
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
-          e.preventDefault();
-          setShowProjectsSidebar(prev => !prev);
-          if (!showProjectsSidebar) setProjectsSidebarTab('projects');
-        }
-
-        if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'n') {
-          e.preventDefault();
-          handleNewProject();
-        }
-
-        // Panels & UI
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
-          e.preventDefault();
-          setIsConsoleOpen(prev => !prev);
-        }
-
-        if (e.altKey && e.code === 'KeyC') {
-          e.preventDefault();
-          console.log('[Shortcut] Alt+C pressed. Panel:', isPanelOpen, 'Tab:', codeTab);
-          if (isPanelOpen && codeTab === 'code') {
-            setIsPanelOpen(false);
-          } else {
-            setIsPanelOpen(true);
-            setCodeTab('code');
-          }
-        }
-
-        if (e.altKey && e.code === 'KeyS') {
-          e.preventDefault();
-          console.log('[Shortcut] Alt+S pressed. Panel:', isPanelOpen, 'Tab:', codeTab);
-          if (isPanelOpen && codeTab === 'serial') {
-            setIsPanelOpen(false);
-          } else {
-            setIsPanelOpen(true);
-            setCodeTab('serial');
-          }
-        }
-
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
-          e.preventDefault();
-          setShowGrid(prev => !prev);
-        }
-
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
-          e.preventDefault();
-          setIsCanvasLocked(prev => !prev);
-        }
-
-        // Canvas Actions
-        if (e.altKey && e.code === 'KeyF') {
-          e.preventDefault();
-          fitToView('fit');
-        }
-
-        if (e.altKey && e.code === 'KeyT') {
-          e.preventDefault();
-          setWiresAlwaysOnTop(v => !v);
-        }
-
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'Delete' || e.key === 'Backspace')) {
-          e.preventDefault();
-          if (!isRunning) {
-            if (window.confirm('Clear all components and wires from the canvas?')) {
-              saveHistory();
-              setComponents([]);
-              setWires([]);
-              setSelected(null);
-            }
-          }
-        }
-      }
-      window.addEventListener('keydown', onKey, true)
-      return () => window.removeEventListener('keydown', onKey, true)
-    }, [selected, isRunning, liveEditingDisabled, saveHistory, handleSave, undo, redo, handleRun, handleStop, rotateComponent, components, setShowShortcuts, setCanvasZoom, setCanvasOffset, setShowProjectsSidebar, setProjectsSidebarTab, wireStart, applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked, isPanelOpen, setIsPanelOpen, codeTab, setCodeTab, fitToView, setWiresAlwaysOnTop, setComponents, setWires, setSelected]);
+    useSimulatorShortcuts({
+      selected, isRunning, liveEditingDisabled, saveHistory, handleSave, undo, redo, handleRun, handleStop,
+      rotateComponent, components, setShowShortcuts, setCanvasZoom, setCanvasOffset, setShowProjectsSidebar,
+      setProjectsSidebarTab, wireStart, setWireStart, setSelected, setWireClickPos, setWires, setComponents,
+      applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked,
+      isPanelOpen, setIsPanelOpen, codeTab, setCodeTab, fitToView, setWiresAlwaysOnTop, setShowCodeExplorer,
+      setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef
+    });
 
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
@@ -9523,504 +9108,57 @@ export function SimulatorPage({ gamificationMode = false }) {
             {/* Zoom Wrapper — scales all circuit content */}
             {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
                React state (canvasOffset) is only committed once on mouseup. */}
-            <div ref={innerCanvasRef} style={{
-              position: 'absolute', top: 0, left: 0,
-              width: '10000px', height: '8000px',
-              transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
-            }}>
-              {/* BOTTOM SVG layer for wires (Below Components) */}
-              <svg
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
-              >
-                {/* Placed wires (Bottom layer) - All non-selected wires when alwaysOnTop is disabled */}
-                {wires.filter(w => !wiresAlwaysOnTop && selected !== w.id).map((w, index) => {
-                  const fromParts = w.from.split(':')
-                  const toParts = w.to.split(':')
-                  const fromComp = components.find(c => c.id === fromParts[0]);
-                  const toComp = components.find(c => c.id === toParts[0]);
-                  let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                  let p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                  if (!p1 || !p2) {
-                    if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-                    if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-                  }
-                  const globalIndex = wires.findIndex(ww => ww.id === w.id);
-                  const offset = (globalIndex !== -1 ? globalIndex : index) % 7;
-                  const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
-                  const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
-
-                  return (
-                    <CanvasWire
-                      key={w.id}
-                      wire={w}
-                      p1={p1} p2={p2} e1={e1} e2={e2}
-                      isSelected={selected === w.id}
-                      offset={offset}
-                      wirepointsEnabled={wirepointsEnabled}
-                      theme={theme}
-                      wiresAlwaysOnTop={wiresAlwaysOnTop}
-                      onSelect={(e) => {
-                        e.stopPropagation();
-                        setSelected(w.id);
-                        const rect = canvasRef.current.getBoundingClientRect();
-                        setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                      }}
-                      onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
-                        if (selected !== wire.id) { setSelected(wire.id); return; }
-                        const rect = canvasRef.current.getBoundingClientRect();
-                        const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                        const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                        const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                        segDragRef.current = dragData;
-                        setSegDrag(dragData);
-                      }}
-                    />
-                  );
-                })}
-                {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
-                  const fromParts = (w.from || '').split(':');
-                  const toParts = (w.to || '').split(':');
-                  let p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
-                  let p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
-                  if (!p1 || !p2) {
-                    if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-                    if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-                  }
-                  const e1 = p1; // Simplify ghost exits for preview
-                  const e2 = p2;
-                  return (
-                    <CanvasWire
-                      key={`ghost-${w.id}`}
-                      wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
-                      p1={p1} p2={p2} e1={e1} e2={e2}
-                      isGhost={true}
-                      theme={theme}
-                    />
-                  );
-                })}
-                {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
-                  const fromParts = (w.from || '').split(':');
-                  const toParts = (w.to || '').split(':');
-                  let p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
-                  let p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
-                  if (!p1 || !p2) {
-                    if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-                    if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-                  }
-                  const e1 = p1;
-                  const e2 = p2;
-                  return (
-                    <CanvasWire
-                      key={`ghost-${w.id}`}
-                      wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
-                      p1={p1} p2={p2} e1={e1} e2={e2}
-                      isGhost={true}
-                      theme={theme}
-                    />
-                  );
-                })}
-              </svg>
-
-              {/* TOP SVG layer for wires (Above Components) & Context Menu */}
-              <svg
-                ref={svgRef}
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
-              >
-                {/* Placed wires (Top layer) - Selected wire OR all wires if enabled */}
-                {wires.filter(w => wiresAlwaysOnTop || selected === w.id).map((w, index) => {
-                  const fromParts = w.from.split(':')
-                  const toParts = w.to.split(':')
-                  const fromComp = components.find(c => c.id === fromParts[0]);
-                  const toComp = components.find(c => c.id === toParts[0]);
-                  let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                  let p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                  if (!p1 || !p2) {
-                    if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-                    if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-                  }
-                  const globalIndexTop = wires.findIndex(ww => ww.id === w.id);
-                  const offset = (globalIndexTop !== -1 ? globalIndexTop : index) % 7;
-                  const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
-                  const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
-
-                  return (
-                    <CanvasWire
-                      key={w.id}
-                      wire={w}
-                      p1={p1} p2={p2} e1={e1} e2={e2}
-                      isSelected={selected === w.id}
-                      offset={offset}
-                      wirepointsEnabled={wirepointsEnabled}
-                      theme={theme}
-                      wiresAlwaysOnTop={wiresAlwaysOnTop}
-                      onSelect={(e) => {
-                        e.stopPropagation();
-                        setSelected(w.id);
-                        const rect = canvasRef.current.getBoundingClientRect();
-                        setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                      }}
-                      onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
-                        if (selected !== wire.id) { setSelected(wire.id); return; }
-                        const rect = canvasRef.current.getBoundingClientRect();
-                        const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                        const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                        const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                        segDragRef.current = dragData;
-                        setSegDrag(dragData);
-                      }}
-                    />
-                  );
-                })}
-
-                {/* Preview wire while drawing */}
-                {wireStart && (
-                  <path
-                    d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
-                    stroke="var(--orange)"
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                    fill="none"
-                    strokeLinecap="round"
-                    opacity={0.8}
-                  />
-                )}
-              </svg>
-
-              {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
-              {(() => {
-                const comp = components.find(c => c.id === selected);
-                if (!comp) return null;
-                const reg = COMPONENT_REGISTRY[comp.type];
-                if (!reg?.ContextMenu) return null;
-                const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
-                if (isRunning && !showDuringRun) return null;
-                if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
-                return (
-                  <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
-                    position: 'absolute',
-                    left: comp.x + comp.w / 2,
-                    top: comp.y - 14,
-                    transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
-                    transformOrigin: 'bottom center',
-                    background: 'var(--bg2)', border: '1px solid var(--border)',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 10px', borderRadius: '10px',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                    pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
-                  }}
-                    onMouseDown={e => e.stopPropagation()}
-                    onClick={e => e.stopPropagation()}
-                    onDoubleClick={e => e.stopPropagation()}
-                  >
-                    {React.createElement(reg.ContextMenu, {
-                      attrs: getComponentStateAttrs(comp),
-                      onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
-                    })}
-                    <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                    <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
-                  </div>
-                );
-              })()}
-
-              {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
-              {(() => {
-                const w = wires.find(w => w.id === selected);
-                if (!w || isRunning) return null;
-
-                const fromParts = w.from.split(':')
-                const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                if (!p1 || !p2) return null
-
-                // Use click position, fall back to wire midpoint
-                const pts = [p1, ...(w.waypoints || []), p2];
-                const midPt = pts[Math.floor(pts.length / 2)];
-                const menuPos = wireClickPos || midPt;
-
-                // Build connection label — "LED [anode]" style, no instance number
-                const fromComp = components.find(c => c.id === fromParts[0]);
-                const toComp = components.find(c => c.id === toParts[0]);
-                const fromLabel = `${fromComp?.label || fromParts[0]} [${w.fromLabel || fromParts[1]}]`;
-                const toLabel = `${toComp?.label || toParts[0]} [${w.toLabel || toParts[1]}]`;
-
-                return (
-                  <div key={`menu-${w.id}`} style={{
-                    position: 'absolute',
-                    left: menuPos.x,
-                    top: menuPos.y - 8,
-                    transform: 'translateX(-50%) translateY(-100%)',
-                    zIndex: 50,
-                    background: 'var(--bg2)', border: '1px solid var(--border)',
-                    display: 'flex', flexDirection: 'column', gap: 6,
-                    padding: '8px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                    minWidth: 180,
-                  }}
-                    onPointerDown={e => e.stopPropagation()}
-                    onClick={e => e.stopPropagation()}>
-                    {/* Row 1: connection info — two lines, centered */}
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5, textAlign: 'center' }}
-                      title={`${fromLabel} → ${toLabel}`}>
-                      <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{fromLabel}</div>
-                      <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{toLabel}</div>
-                    </div>
-                    {/* Row 2: controls — centered */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
-                      <button
-                        style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                        title="Reset route to auto"
-                        onPointerDown={e => e.stopPropagation()}
-                        onClick={e => {
-                          e.stopPropagation();
-                          saveHistory();
-                          setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: [] } : ww));
-                        }}
-                      >↺</button>
-                      <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={(e) => { e.stopPropagation(); deleteWire(w.id); }} onClick={(e) => { e.stopPropagation(); deleteWire(w.id); }} title="Delete Wire">✕</button>
-                    </div>
-                    <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                    <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
-                  </div>
-                )
-              })()}
-
-              {/* Empty state */}
-              {components.length === 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text3)] text-center pointer-events-none">
-                  <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
-                  <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
-                  <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                    Arduino Uno · LED · Resistor · Button · Servo · LCD
-                  </p>
-                </div>
-              )}
-
-              {/* Components (Layered: Breadboards on Bottom) */}
-              {(() => {
-                const renderComponent = (comp) => {
-                  const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || []
-                  const hasError = errorCompIds.has(comp.id)
-                  const isSelected = selected === comp.id
-                  const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
-
-                  const rad = ((comp.rotation || 0) * Math.PI) / 180;
-                  const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
-                  const visualHalfHeight = visualH / 2;
-
-                  return (
-                    <div
-                      key={comp.id}
-                      id={comp.isGhost ? `ghost-${comp.id}` : `comp-master-${comp.id}`}
-                      style={{
-                        position: 'absolute',
-                        left: comp.x, top: comp.y,
-                        zIndex: comp.type.startsWith('wokwi-breadboard')
-                          ? (isSelected ? 4 : 2)
-                          : (isSelected ? 10 : 5),
-                        opacity: comp.isGhost ? 0.4 : 1,
-                        filter: comp.isGhost ? 'grayscale(0.5) blur(0.5px)' : 'none',
-                        pointerEvents: comp.isGhost ? 'none' : 'auto',
-                      }}
-                      onContextMenu={e => onCompContextMenu(e, comp.id)}
-                    >
-                      <CanvasComponent
-                        comp={comp}
-                        isSelected={isSelected}
-                        hasError={hasError}
-                        onMouseDown={e => onCompMouseDown(e, comp.id)}
-                        onClick={e => onCompClick(e, comp.id)}
-                        getComponentStateAttrs={getComponentStateAttrs}
-                        COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-                        PIN_DEFS={PIN_DEFS}
-                        getLiveOopStateSnapshot={getLiveOopStateSnapshot}
-                        subscribeLiveOopState={subscribeLiveOopState}
-                      />
-
-                      {/* Wrapper for the actual emulator component and its dynamic pins */}
-                      <div style={{
-                        position: 'absolute',
-                        left: 0, top: 0,
-                        width: comp.w, height: comp.h,
-                        userSelect: 'none',
-                        pointerEvents: 'none',
-                        transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-                        transformOrigin: 'center center',
-                      }}>
-                        {/* Serial-target board ring */}
-                        {isSerialBoardSelected && (() => {
-                          const getBounds = () => {
-                            const reg = COMPONENT_REGISTRY[comp.type];
-                            if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                            if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                            return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                          };
-                          const b = getBounds();
-                          return (
-                            <>
-                              <div style={{
-                                position: 'absolute',
-                                left: b.x - 10, top: b.y - 10,
-                                width: b.w + 20, height: b.h + 20,
-                                borderRadius: 10,
-                                border: '2px dashed #38bdf8',
-                                boxShadow: '0 0 18px rgba(56,189,248,.45)',
-                                pointerEvents: 'none', zIndex: 9,
-                              }} />
-                              <div style={{
-                                position: 'absolute',
-                                left: b.x - 10,
-                                top: b.y - 26,
-                                background: '#0c4a6e',
-                                color: '#e0f2fe',
-                                border: '1px solid #38bdf8',
-                                borderRadius: 6,
-                                fontSize: 9,
-                                padding: '1px 6px',
-                                letterSpacing: '0.04em',
-                                fontFamily: 'JetBrains Mono, monospace',
-                                pointerEvents: 'none',
-                                zIndex: 11,
-                              }}>
-                                SERIAL TARGET
-                              </div>
-                            </>
-                          );
-                        })()}
-
-                        {/* Component Render — wrapped to allow pass-through to Hit Box */}
-                        <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
-                          {COMPONENT_REGISTRY[comp.type] ? (
-                            // Local UI component rendering SVG
-                            React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                              state: getLiveOopStateSnapshot(comp.id),
-                              attrs: getComponentStateAttrs(comp, getLiveOopStateSnapshot(comp.id)),
-                              isRunning: isRunning,
-                              comp: comp
-                            })
-                          ) : (
-                            // Fallback for unsupported components (if any left)
-                            <div
-                              style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                              ref={el => {
-                                if (comp.type === 'wokwi-neopixel-matrix' && el) {
-                                  neopixelRefs.current[comp.id] = el;
-                                }
-                              }}
-                            >
-                              {React.createElement(comp.type, getComponentStateAttrs(comp))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Pins */}
-                        {pins.map(pin => {
-                          const pinStrRef = `${comp.id}:${pin.id}`;
-                          const isHovered = hoveredPin === pinStrRef;
-                          const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-
-                          // Snapping highlight
-                          const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
-
-                          // Hovered pin's category for passive highlighting
-                          const hoverCompId = hoveredPin?.split(':')[0];
-                          const hoverPinId = hoveredPin?.split(':')[1];
-                          const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
-                          const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
-
-                          const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
-                          const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-
-                          const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                          const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
-
-                          const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
-
-                          // Check if a wire is connected to this pin
-                          const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                          const isSocket = connectedWire?.isSocket;
-
-                          // Check if the component is "seated" (has at least one socket wire)
-                          const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
-                          const isBreadboard = comp.type.startsWith('wokwi-breadboard');
-                          const isFloating = !isBreadboard && isCompSeated && !isSocket;
-
-                          const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
-                          const pinBorder = isSnapping ? '#fff' : (isSocket ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
-
-                          return (
-                            <div
-                              key={pin.id}
-                              id={`pin-dot-${comp.id}-${pin.id}`}
-                              title={`${pin.description || pin.id} — click to wire`}
-                              style={{
-                                position: 'absolute',
-                                left: pin.x, top: pin.y,
-                                width: 5, height: 5,
-                                background: pinColor === 'none' ? 'none' : pinColor,
-                                border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
-                                borderRadius: '0%', /* matching task3.html */
-                                cursor: 'crosshair',
-                                zIndex: isHovered || isSuggested || isSnapping ? 30 : 20, /* matching task3.html hover and port z-index */
-                                transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                                transition: '0.2s', /* matching task3.html transition */
-                                pointerEvents: 'all', /* Fix hit detection */
-                                boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
-                              }}
-                              onMouseEnter={() => setHoveredPin(pinStrRef)}
-                              onMouseLeave={() => setHoveredPin(null)}
-                              onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                            >
-                              {/* Pin label tooltip */}
-                              {isHovered && (
-                                <div style={{
-                                  position: 'absolute', bottom: 18, left: '50%',
-                                  transform: 'translateX(-50%)',
-                                  background: '#111', color: '#fff',
-                                  padding: '4px 8px', borderRadius: 4,
-                                  fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                                  pointerEvents: 'none', border: '1px solid #444',
-                                  boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                                }}>
-                                  {pin.description || pin.id}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {/* Component label (Outside rotated container) */}
-                      <div style={{
-                        position: 'absolute',
-                        top: (comp.rotation === 90 || comp.rotation === 270)
-                          ? comp.h / 2 + comp.w / 2 + 4
-                          : comp.h + 4,
-                        left: comp.w / 2,
-                        transform: 'translateX(-50%)',
-                        fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                        whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                        pointerEvents: 'none',
-                        zIndex: 5,
-                      }}>
-                        {comp.label}
-                      </div>
-                    </div>
-                  );
-                };
-
-                const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
-                const others = components.filter(c => !c.type.startsWith('wokwi-breadboard'));
-
-                return (
-                  <>
-                    {breadboards.map(renderComponent)}
-                    {others.map(renderComponent)}
-                    {autofixPlan?.addedComponents?.map(c => renderComponent({ ...c, isGhost: true }))}
-                  </>
-                );
-              })()}
-            </div>{/* end zoom wrapper */}
+            <CanvasSceneLayer
+              innerCanvasRef={innerCanvasRef}
+              canvasOffset={canvasOffset}
+              canvasZoom={canvasZoom}
+              wires={wires}
+              wiresAlwaysOnTop={wiresAlwaysOnTop}
+              selected={selected}
+              components={components}
+              getPinPos={getPinPos}
+              getPinExitPoint={getPinExitPoint}
+              wirepointsEnabled={wirepointsEnabled}
+              theme={theme}
+              setSelected={setSelected}
+              canvasRef={canvasRef}
+              setWireClickPos={setWireClickPos}
+              canvasOffsetRef={canvasOffsetRef}
+              canvasZoomRef={canvasZoomRef}
+              setSegDrag={setSegDrag}
+              segDragRef={segDragRef}
+              autofixPlan={autofixPlan}
+              getPinPosWithGhosts={getPinPosWithGhosts}
+              wireStart={wireStart}
+              mousePos={mousePos}
+              multiRoutePath={multiRoutePath}
+              svgRef={svgRef}
+              isRunning={isRunning}
+              COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+              getComponentStateAttrs={getComponentStateAttrs}
+              updateComponentAttr={updateComponentAttr}
+              wireClickPos={wireClickPos}
+              updateWireColor={updateWireColor}
+              saveHistory={saveHistory}
+              setWires={setWires}
+              deleteWire={deleteWire}
+              PIN_DEFS={PIN_DEFS}
+              errorCompIds={errorCompIds}
+              serialBoardFilter={serialBoardFilter}
+              onCompContextMenu={onCompContextMenu}
+              onCompMouseDown={onCompMouseDown}
+              onCompClick={onCompClick}
+              getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+              subscribeLiveOopState={subscribeLiveOopState}
+              neopixelRefs={neopixelRefs}
+              hoveredPin={hoveredPin}
+              setHoveredPin={setHoveredPin}
+              snappingHoles={snappingHoles}
+              getPinCategory={getPinCategory}
+              hasCategoryIntersection={hasCategoryIntersection}
+              onPinClick={onPinClick}
+              setWireStart={setWireStart}
+            />
 
             {/* Minimalist Runtime panel (top-left) */}
             {isRunning && !isCompiling && (
@@ -10626,241 +9764,18 @@ export function SimulatorPage({ gamificationMode = false }) {
             serialBoardFilter2={serialBoardFilter2} setSerialBoardFilter2={setSerialBoardFilter2}
           />
 
-          {/* MY PROJECTS SIDEBAR */}
-          <aside
-            className="bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden transition-[width] duration-200"
-            style={{ width: showProjectsSidebar ? 320 : 0, borderLeft: showProjectsSidebar ? '1px solid var(--border)' : 'none' }}
-          >
-            {showProjectsSidebar && (
-              <>
-                <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
-                  <span className="text-sm font-bold text-[var(--text)] tracking-tight">My Projects</span>
-                  <button
-                    onClick={() => setShowProjectsSidebar(false)}
-                    className="bg-[var(--card)] hover:bg-[var(--bg)] border border-[var(--border)] text-[var(--text3)] hover:text-[var(--text)] rounded-lg w-7 h-7 flex items-center justify-center transition-all active:scale-95"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                  </button>
-                </div>
-
-                <div className="px-5 pb-4 shrink-0">
-                  <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
-                    {[
-                      { id: 'favourites', label: 'Fav' },
-                      { id: 'projects', label: 'Projects' },
-                      { id: 'custom', label: 'Custom' },
-                      { id: 'settings', label: 'Settings' },
-                    ].map((tab) => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setProjectsSidebarTab(tab.id)}
-                        className={`flex-1 py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all duration-200
-                        ${projectsSidebarTab === tab.id
-                            ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm'
-                            : 'text-[var(--text3)] hover:text-[var(--text2)]'
-                          }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-2">
-                  {projectsSidebarTab === 'favourites' && (
-                    <div>
-                      <div className="text-[11px] text-[var(--text3)] px-1 py-1.5">Starred projects appear here.</div>
-                      {myProjects.filter(p => favouriteProjectIds.includes(p.id)).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                          <div className="w-16 h-16 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                          </div>
-                          <div className="text-sm font-bold text-[var(--text)] mb-1">No Favourites Yet</div>
-                          <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Star a project from the Projects tab to see it here.</div>
-                        </div>
-                      ) : myProjects.filter(p => favouriteProjectIds.includes(p.id)).map(proj => (
-                        <ProjectCard
-                          key={proj.id}
-                          proj={proj}
-                          currentProjectId={currentProjectId}
-                          renamingProjectId={renamingProjectId}
-                          renameValue={renameValue}
-                          setRenameValue={setRenameValue}
-                          handleConfirmRename={handleConfirmRename}
-                          setRenamingProjectId={setRenamingProjectId}
-                          handleLoadProject={handleLoadProject}
-                          isRunning={isRunning}
-                          setShowProjectsSidebar={setShowProjectsSidebar}
-                          onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
-                          formatProjectDate={formatProjectDate}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {projectsSidebarTab === 'projects' && (
-                    <div>
-                      <div className="flex justify-between items-center mb-4 px-1">
-                        <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Your Library</div>
-                        <button
-                          onClick={() => { setShowProjectsSidebar(false); handleNewProject(); }}
-                          className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                          NEW
-                        </button>
-                      </div>
-                      {myProjects.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-2xl bg-[var(--bg)]/30">
-                          <div className="w-14 h-14 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
-                          </div>
-                          <div className="text-sm font-bold text-[var(--text)] mb-1">No saved projects</div>
-                          <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Your circuits are auto-saved as you work.</div>
-                        </div>
-                      ) : myProjects.map(proj => (
-                        <ProjectCard
-                          key={proj.id}
-                          proj={proj}
-                          currentProjectId={currentProjectId}
-                          renamingProjectId={renamingProjectId}
-                          renameValue={renameValue}
-                          setRenameValue={setRenameValue}
-                          handleConfirmRename={handleConfirmRename}
-                          setRenamingProjectId={setRenamingProjectId}
-                          handleLoadProject={handleLoadProject}
-                          isRunning={isRunning}
-                          setShowProjectsSidebar={setShowProjectsSidebar}
-                          onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
-                          formatProjectDate={formatProjectDate}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {projectsSidebarTab === 'custom' && (
-                    <div>
-                      <div className="flex justify-between items-center mb-4 px-1">
-                        <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Custom Parts</div>
-                        <button
-                          onClick={() => setShowCreateComponentModal(true)}
-                          className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                          CREATE
-                        </button>
-                      </div>
-                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-xl">
-                        <div className="text-sm font-bold text-[var(--text)] mb-1 opacity-50">Nothing here yet</div>
-                        <div className="text-[11px] text-[var(--text3)] leading-normal">Custom components will appear here.</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {projectsSidebarTab === 'settings' && (
-                    <div className="flex flex-col gap-2 py-1">
-                      <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Preferences</div>
-                      <div className="flex items-center justify-between bg-[var(--card)] border border-[var(--border)] rounded-lg px-3 py-2.5 shadow-sm">
-                        <div className="flex flex-col">
-                          <span className="text-[12px] font-bold text-[var(--text)]">Auto-save Projects</span>
-                          <span className="text-[9px] text-[var(--text3)]">Saves changes every 2.5s</span>
-                        </div>
-                        <button
-                          onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
-                          className={`w-9 h-5 rounded-full relative transition-all duration-300 ${autoSaveEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--bg3)]'}`}
-                        >
-                          <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-300 ${autoSaveEnabled ? 'translate-x-4' : ''}`} />
-                        </button>
-                      </div>
-
-                      <div className="h-px bg-[var(--border)] my-1 opacity-50" />
-                      <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Data Management</div>
-                      <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleBackupWorkflow}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                        Backup
-                        <span className="ml-auto text-[11px] text-[var(--text3)]">Download ZIP</span>
-                      </button>
-                      <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => backupRestoreInputRef.current?.click()}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                        Restore
-                        <span className="ml-auto text-[11px] text-[var(--text3)]">From ZIP</span>
-                      </button>
-                      {isAuthenticated && (
-                        <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleSyncToCloud}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>
-                          Sync to Cloud
-                          <span className="ml-auto text-[11px] text-[var(--text3)]">Upload</span>
-                        </button>
-                      )}
-                      {isAuthenticated && (
-                        <>
-                          <div className="h-px bg-[var(--border)] my-1" />
-                          <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Account</div>
-                          <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--red)] text-[var(--red)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => { logout(); setShowProjectsSidebar(false); }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-                            Logout
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-[var(--border)] p-4 bg-[var(--bg2)] flex flex-col gap-3 shrink-0">
-                  {!isAnyAuthenticated ? (
-                    <button
-                      onClick={() => { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); }}
-                      className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] text-white py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-[0.98] transition-all"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>
-                      Sign In to Sync
-                    </button>
-                  ) : (
-                    <div
-                      className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] group cursor-pointer hover:border-[var(--text3)] transition-all"
-                      onClick={() => {
-                        if (activeUser?.role === 'teacher') navigate('/teacher/dashboard')
-                        else if (activeUser?.role === 'student') navigate('/student/dashboard')
-                        else if (activeUser?.role === 'admin') navigate('/admin/dashboard')
-                        else navigate('/user/dashboard')
-                      }}
-                      title="Go to dashboard"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold uppercase">
-                        {activeUser?.name?.[0] || 'U'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold text-[var(--text)] truncate">{activeUser?.name || 'User'}</div>
-                        <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{activeUser?.role || 'Developer'}</div>
-                      </div>
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                    </div>
-                  )}
-
-                  <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)] shadow-inner">
-                    <button
-                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
-                      ${!isAuthenticated
-                          ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm border border-[var(--border)]'
-                          : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
-                      onClick={() => { if (isAnyAuthenticated) { if (activeUser?.email) localStorage.setItem('ohw_last_email', activeUser.email); logout(); } }}
-                    >
-                      Local
-                    </button>
-                    <button
-                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
-                      ${isAuthenticated
-                          ? 'bg-[var(--accent)] text-white shadow-md'
-                          : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
-                      onClick={() => { if (!isAuthenticated) { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); } }}
-                    >
-                      Cloud
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </aside>
+          <ProjectsSidebar
+            showProjectsSidebar={showProjectsSidebar} setShowProjectsSidebar={setShowProjectsSidebar}
+            projectsSidebarTab={projectsSidebarTab} setProjectsSidebarTab={setProjectsSidebarTab}
+            favouriteProjectIds={favouriteProjectIds} myProjects={myProjects} currentProjectId={currentProjectId}
+            renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId}
+            renameValue={renameValue} setRenameValue={setRenameValue}
+            handleConfirmRename={handleConfirmRename} setProjContextMenu={setProjContextMenu}
+            formatProjectDate={formatProjectDate} handleNewProject={handleNewProject} handleLoadProject={handleLoadProject}
+            isRunning={isRunning} isAnyAuthenticated={isAnyAuthenticated}
+            navigate={navigate} logout={logout}
+            autoSaveEnabled={autoSaveEnabled} setAutoSaveEnabled={setAutoSaveEnabled}
+          />
 
           {/* GAMIFICATION GUIDE PANEL */}
           {gamificationMode && gamPanelOpen && (
@@ -11632,80 +10547,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     );
   }
 
-  function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, setRenameValue, handleConfirmRename, setRenamingProjectId, handleLoadProject, isRunning, setShowProjectsSidebar, onContextMenu, formatProjectDate }) {
-    const isCurrent = proj.id === currentProjectId;
-
-    return (
-      <div
-        className={`group relative rounded-xl p-3.5 mb-3 cursor-pointer transition-all duration-200 border shadow-sm
-        ${isCurrent
-            ? 'bg-[rgba(var(--accent-rgb,100,180,255),0.08)] border-[var(--accent)]'
-            : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--text3)] hover:shadow-md'
-          }`}
-        onClick={() => { if (renamingProjectId !== proj.id) handleLoadProject(proj); }}
-        onContextMenu={(e) => { e.preventDefault(); onContextMenu(proj, e.clientX, e.clientY); }}
-      >
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              {renamingProjectId === proj.id ? (
-                <input
-                  autoFocus
-                  className="bg-[var(--bg)] border border-[var(--accent)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-sm w-full outline-none ring-2 ring-[var(--accent)]/20"
-                  value={renameValue}
-                  onChange={e => setRenameValue(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleConfirmRename(proj.id); if (e.key === 'Escape') setRenamingProjectId(null); }}
-                  onBlur={() => handleConfirmRename(proj.id)}
-                  onClick={e => e.stopPropagation()}
-                />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-[var(--text)] truncate block leading-tight">
-                    {proj.name || 'Untitled Project'}
-                  </span>
-                  {isCurrent && (
-                    <span className="flex h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] shrink-0 animate-pulse" title="Currently open" />
-                  )}
-                </div>
-              )}
-            </div>
-            {!renamingProjectId && (
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity translate-x-1 group-hover:translate-x-0">
-                <button
-                  className="bg-[var(--accent)] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-sm hover:brightness-110 active:scale-95 transition-all"
-                  onClick={(e) => { e.stopPropagation(); handleLoadProject(proj); setShowProjectsSidebar(false); }}
-                  disabled={isRunning}
-                >
-                  Load
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <div className="flex items-center gap-1.5 text-[11px] text-[var(--text3)] font-medium">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12L12 6L18 12" /><path d="M6 18L12 12L18 18" /></svg>
-              {proj.board === 'arduino_uno' ? 'Arduino Uno' : (proj.board || 'Custom Board')}
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-[var(--text3)] font-medium">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
-              {proj.components?.length ?? 0} components
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-[var(--text3)] opacity-70 ml-auto">
-              {formatProjectDate(proj.savedAt)}
-            </div>
-          </div>
-        </div>
-
-        {renamingProjectId === proj.id && (
-          <div className="flex gap-2 mt-3 justify-end">
-            <button className="px-3 py-1.5 text-xs font-semibold text-[var(--text3)] hover:text-[var(--text)] transition-colors" onClick={(e) => { e.stopPropagation(); setRenamingProjectId(null); }}>Cancel</button>
-            <button className="px-4 py-1.5 bg-[var(--accent)] text-white text-xs font-bold rounded-lg shadow-md" onClick={(e) => { e.stopPropagation(); handleConfirmRename(proj.id); }}>Rename</button>
-          </div>
-        )}
-      </div>
-    );
-  }
 
 }
 

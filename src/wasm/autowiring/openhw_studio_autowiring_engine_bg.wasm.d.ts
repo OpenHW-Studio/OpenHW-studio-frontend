@@ -3,6 +3,7 @@
 export const memory: WebAssembly.Memory;
 export const findNearestBoard: (a: number, b: number) => [number, number];
 export const generateAutonomousSetup: (a: any, b: any, c: number, d: number, e: any, f: number, g: number) => any;
+export const generateCodeForComponent: (a: number, b: number, c: any, d: any, e: any) => any;
 export const ingestComponent: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: any) => void;
 export const reset: () => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
