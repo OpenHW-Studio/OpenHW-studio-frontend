@@ -6,12 +6,11 @@ import {
   findNearestBreadboardHole,
   robustSnapComponent,
   mergeCodeSnippet,
-removeCodeSnippet,
+  removeCodeSnippet,
   getBoardColors
 } from './projectUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
-import { useSimulatorEngine } from './hooks/useSimulatorEngine';
 import { RightPanel } from './RightPanel';
 import { ProjectsSidebar } from './components/ProjectsSidebar';
 import { multiRoutePath, wireColor } from './wireUtils';
@@ -1541,6 +1540,51 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [renameState, setRenameState] = useState({ id: null, x: 0, y: 0 });
   const [valueState, setValueState] = useState({ id: null, x: 0, y: 0, key: 'value' });
   const [showEngineSelector, setShowEngineSelector] = useState(false)
+  const [showTour, setShowTour] = useState(false);
+  const [tourActiveStep, setTourActiveStep] = useState(null);
+
+  useEffect(() => {
+    const tourCompleted = localStorage.getItem('openhw_tour_completed');
+    if (!tourCompleted) {
+      setShowTour(true);
+    }
+  }, []);
+
+  const demoComponentIdRef = useRef(null);
+
+  const handleFinishTour = useCallback(() => {
+    setShowTour(false);
+    setTourActiveStep(null);
+    localStorage.setItem('openhw_tour_completed', 'true');
+    // Cleanup demo component if it exists
+    if (demoComponentIdRef.current) {
+      setComponents(prev => prev.filter(c => c.id !== demoComponentIdRef.current));
+      demoComponentIdRef.current = null;
+    }
+  }, []);
+
+  const handleTourDemoAction = useCallback((action) => {
+    if (action === 'add-component') {
+      const id = 'demo-comp-' + Date.now();
+      const newComp = {
+        id,
+        type: 'arduino_uno',
+        x: 600,
+        y: 300,
+        state: {},
+        attrs: {},
+        isDemo: true
+      };
+      setComponents(prev => [...prev, newComp]);
+      demoComponentIdRef.current = id;
+    } else if (action === 'remove-component') {
+      if (demoComponentIdRef.current) {
+        setComponents(prev => prev.filter(c => c.id !== demoComponentIdRef.current));
+        demoComponentIdRef.current = null;
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (navigator.gpu) {
       setWebGpuSupported(true);
@@ -5157,7 +5201,201 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       setComponents(finalComponents);
       setWires(result.wires);
+
+      // Remove any existing autocoded snippet for this component from all project files
+      setProjectFiles(prev => prev.map(f => {
+        if (f.content) {
+          const newContent = removeCodeSnippet(f.content, compId);
+          if (activeCodeFileId === f.id && code !== newContent) {
+            setCode(newContent);
+          }
+          return { ...f, content: newContent };
+        }
+        return f;
+      }));
     }
+  };
+
+  const handleOpenCode = (comp) => {
+    console.log('[handleOpenCode] Triggered for component:', comp.id, comp.type);
+    const boardKind = normalizeBoardKind(comp.type);
+    const filename = getDefaultMainFileName(boardKind, comp.id, {
+      rp2040Mode: comp.attrs?.env || 'native'
+    });
+    
+    // Try to find existing file by boardId or filename or just the first code file
+    let targetFile = projectFiles.find(f => f.boardId === comp.id || f.id === filename || f.name === filename);
+    if (!targetFile) {
+        // Fallback: if there's only one code file, just use it
+        const codeFiles = projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
+        if (codeFiles.length > 0) {
+            targetFile = codeFiles[0];
+            console.log('[handleOpenCode] Fallback to first code file:', targetFile.id);
+        } else {
+            console.log('[handleOpenCode] File not found, creating new file:', filename);
+            // Create the file
+            targetFile = {
+                id: filename,
+                path: filename,
+                name: filename,
+                kind: 'code',
+                boardId: comp.id,
+                boardKind: boardKind,
+                content: createDefaultMainCode(boardKind, comp.id, { rp2040Mode: comp.attrs?.env || 'native' }),
+                dirty: false
+            };
+            setProjectFiles(prev => [...prev, targetFile]);
+        }
+    } else {
+        console.log('[handleOpenCode] Found existing file:', targetFile.id);
+    }
+
+    if (!openCodeTabs.includes(targetFile.id)) {
+      setOpenCodeTabs(prev => [...prev, targetFile.id]);
+    }
+    setActiveCodeFileId(targetFile.id);
+    setCodeTab('code');
+    setIsPanelOpen(true);
+    setShowCodeExplorer(true);
+  };
+
+  const handleAutoCode = async (compId) => {
+    console.log('[handleAutoCode] Triggered for component:', compId);
+    const comp = components.find(c => c.id === compId);
+    if (!comp) {
+        console.error('[handleAutoCode] Component not found in state:', compId);
+        return;
+    }
+
+    // Find the board it is connected to (Recursive Tracing)
+    const findConnectedBoardId = (currentId, visited = new Set()) => {
+      if (visited.has(currentId)) return null;
+      visited.add(currentId);
+
+      // Check if current is a board
+      const comp = components.find(c => c.id === currentId);
+      if (comp && isProgrammableBoardType(comp.type)) return comp.id;
+
+      // Find all neighbors via wires
+      for (const w of wires) {
+        const fromParts = w.from.split(':');
+        const toParts = w.to.split(':');
+        
+        let neighborId = null;
+        if (fromParts[0] === currentId) neighborId = toParts[0];
+        else if (toParts[0] === currentId) neighborId = fromParts[0];
+
+        if (neighborId) {
+          const boardId = findConnectedBoardId(neighborId, visited);
+          if (boardId) return boardId;
+        }
+      }
+      return null;
+    };
+
+    let targetBoardId = findConnectedBoardId(compId);
+
+    if (!targetBoardId) {
+      console.warn('[handleAutoCode] No target board found for component:', compId);
+      alert('Component must be wired to a board first to generate code.');
+      return;
+    }
+
+    console.log('[handleAutoCode] Target board found:', targetBoardId);
+    const manifest = COMPONENT_REGISTRY[comp.type]?.manifest || {};
+    
+    // Call the worker
+    console.log('[handleAutoCode] Sending request to worker...');
+    const worker = new Worker(new URL('../../workers/autowiring.worker.ts', import.meta.url), { type: 'module' });
+    worker.postMessage({
+      type: 'GENERATE_CODE_SNIPPET',
+      payload: { compId, wires, manifest, components }
+    });
+
+    worker.onmessage = async (e) => {
+      const { type, payload } = e.data;
+      if (type === 'AUTONOMOUS_RESULT') {
+        const snippet = payload.code_snippet;
+        console.log('[handleAutoCode] Worker returned snippet:', snippet);
+        if (snippet) {
+          const boardComp = components.find(c => c.id === targetBoardId);
+          const boardKind = normalizeBoardKind(boardComp.type);
+          const filename = getDefaultMainFileName(boardKind, targetBoardId, {
+            rp2040Mode: boardComp.attrs?.env || 'native'
+          });
+
+          // Inject libraries if any
+          if (payload.libraries && payload.libraries.length > 0) {
+            console.log('[handleAutoCode] Libraries required:', payload.libraries);
+            alert(`Note: This component requires libraries: ${payload.libraries.join(', ')}.\nPlease ensure they are installed.`);
+          }
+
+          setProjectFiles(prev => {
+            let targetFile = prev.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename);
+            if (!targetFile) {
+                const codeFiles = prev.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
+                if (codeFiles.length > 0) {
+                    targetFile = codeFiles[0];
+                } else {
+                    console.log('[handleAutoCode] Creating new file for injection:', filename);
+                    targetFile = {
+                        id: filename,
+                        path: filename,
+                        name: filename,
+                        kind: 'code',
+                        boardId: targetBoardId,
+                        boardKind: boardKind,
+                        content: createDefaultMainCode(boardKind, targetBoardId, { rp2040Mode: boardComp.attrs?.env || 'native' }),
+                        dirty: false
+                    };
+                    prev = [...prev, targetFile];
+                }
+            }
+
+            console.log('[handleAutoCode] Injecting code into file:', targetFile.id);
+            return prev.map(f => {
+              if (f.id === targetFile.id) {
+                const newContent = mergeCodeSnippet(f.content, snippet, compId);
+                // Also update live code if it's the active file
+                if (activeCodeFileId === targetFile.id) {
+                  setCode(newContent);
+                }
+                return { ...f, content: newContent };
+              }
+              return f;
+            });
+          });
+          
+          setOpenCodeTabs(prevTabs => {
+            // Re-find the target file ID since state update is asynchronous
+            const targetFile = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
+                               || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                               || { id: filename };
+            if (!prevTabs.includes(targetFile.id)) {
+              return [...prevTabs, targetFile.id];
+            }
+            return prevTabs;
+          });
+          
+          // Re-find to set active
+          setTimeout(() => {
+              const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
+              setActiveCodeFileId(prev => {
+                   const file = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
+                               || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                               || { id: filename };
+                   return file.id;
+              });
+              setCodeTab('code');
+              setIsPanelOpen(true);
+              setShowCodeExplorer(true);
+          }, 0);
+        } else {
+            console.warn('[handleAutoCode] Worker returned empty snippet.');
+        }
+      }
+      worker.terminate();
+    };
   };
 
 
@@ -10504,16 +10742,16 @@ export function SimulatorPage({ gamificationMode = false }) {
 
               // Remove AutoCode snippet
               if (compToDelete) {
-                 setProjectFiles(prev => prev.map(f => {
-                   if (f.content) {
-                     const newContent = removeCodeSnippet(f.content, id);
-                     if (activeCodeFileId === f.id && code !== newContent) {
-                       setCode(newContent);
-                     }
-                     return { ...f, content: newContent };
-                   }
-                   return f;
-                 }));
+                setProjectFiles(prev => prev.map(f => {
+                  if (f.content) {
+                    const newContent = removeCodeSnippet(f.content, id);
+                    if (activeCodeFileId === f.id && code !== newContent) {
+                      setCode(newContent);
+                    }
+                    return { ...f, content: newContent };
+                  }
+                  return f;
+                }));
               }
               if (selected === id) setSelected(null);
             }}
@@ -10537,6 +10775,8 @@ export function SimulatorPage({ gamificationMode = false }) {
             programmableBoards={components.filter(c => isProgrammableBoardType(c.type))}
             boardColors={boardColors}
             onWireToBoard={handleWireToBoard}
+            onOpenCode={handleOpenCode}
+            onAutoCode={handleAutoCode}
           />
 
           <ComponentRenamePanel
@@ -10547,6 +10787,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             onConfirm={(newId) => handleRenameComponentId(renameState.id, newId)}
             onCancel={() => setRenameState({ id: null, x: 0, y: 0 })}
             theme={theme}
+          />
 
           {showTour && (
             <TourGuide
@@ -10555,7 +10796,6 @@ export function SimulatorPage({ gamificationMode = false }) {
               onDemoAction={handleTourDemoAction}
             />
           )}
-          />
 
           <ComponentValuePanel
             comp={components.find(c => c.id === valueState.id)}
