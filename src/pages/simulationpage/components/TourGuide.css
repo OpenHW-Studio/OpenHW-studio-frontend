@@ -187,12 +187,12 @@
   position: fixed;
   top: 50%;
   left: 50%;
-  width: 32px;
-  height: 32px;
+  width: 48px;
+  height: 48px;
   z-index: 100000;
   pointer-events: none;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-  transition: transform 1s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.5));
+  transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s;
 }
 
 .tour-ghost-comp-small {
@@ -219,13 +219,13 @@
 }
 
 .tour-ghost-cursor.step-drag-demo.phase-1 {
-  transform: translate(10vw, -10vh); /* Drag to x:600, y:300 relative to center */
+  transform: translate(25vw, 15vh); /* Adjusted to match new drop pos x:800, y:400 */
 }
 
 .tour-ghost-cursor.step-drag-demo.phase-2,
 .tour-ghost-cursor.step-drag-demo.phase-3 {
-  transform: translate(0, 0);
-  opacity: 0.5;
+  transform: translate(25vw, 15vh);
+  opacity: 0.2;
 }
 
 @keyframes cursorMoveToPalette {

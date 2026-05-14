@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { removeCodeSnippet } from '../projectUtils';
 
 /**
  * Custom hook to manage global keyboard shortcuts for the Simulator.
@@ -10,7 +11,8 @@ export function useSimulatorShortcuts({
   setProjectsSidebarTab, wireStart, setWireStart, setSelected, setWireClickPos, setWires, setComponents,
   applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked,
   isPanelOpen, setIsPanelOpen, codeTab, setCodeTab, fitToView, setWiresAlwaysOnTop, setShowCodeExplorer,
-  setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef
+  setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef,
+  setProjectFiles, activeCodeFileId, code, setCode
 }) {
   useEffect(() => {
     const onKey = (e) => {
@@ -81,6 +83,19 @@ export function useSimulatorShortcuts({
             !w.to.startsWith(id + ':') &&
             (!w.ownerIds || w.ownerIds.length > 0)
           ));
+
+          // Cleanup Autocode snippets
+          setProjectFiles(prev => prev.map(f => {
+            if (f.content) {
+              const newContent = removeCodeSnippet(f.content, id);
+              if (activeCodeFileId === f.id && code !== newContent) {
+                setCode(newContent);
+              }
+              return { ...f, content: newContent };
+            }
+            return f;
+          }));
+
           setSelected(null);
         }
       }
