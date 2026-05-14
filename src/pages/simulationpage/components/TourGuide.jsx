@@ -173,12 +173,12 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
     <div className="tour-overlay">
       {/* Ghost Cursor */}
       <div className={`tour-ghost-cursor step-${STEPS[currentStep].id} phase-${demoPhase}`}>
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="#2563eb" stroke="white" strokeWidth="1.5" style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.4))' }}>
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="var(--accent, #00b4ff)" stroke="white" strokeWidth="1.2" style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.4))' }}>
           <path d="M5.636 5.636l12.728 4.243-5.657 1.414-1.414 5.657-4.243-12.728z" strokeLinejoin="round" />
         </svg>
         {STEPS[currentStep].id === 'drag-demo' && demoPhase === 1 && (
           <div className="tour-ghost-comp-small">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5">
               <rect x="3" y="3" width="18" height="18" rx="3" ry="3" />
               <line x1="9" y1="3" x2="9" y2="21" />
             </svg>

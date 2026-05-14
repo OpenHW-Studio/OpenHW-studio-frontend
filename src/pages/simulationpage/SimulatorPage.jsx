@@ -1569,8 +1569,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       const newComp = {
         id,
         type: 'arduino_uno',
-        x: 600,
-        y: 300,
+        x: 1200,
+        y: 400,
         state: {},
         attrs: {},
         isDemo: true
@@ -8908,7 +8908,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       setProjectsSidebarTab, wireStart, setWireStart, setSelected, setWireClickPos, setWires, setComponents,
       applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked,
       isPanelOpen, setIsPanelOpen, codeTab, setCodeTab, fitToView, setWiresAlwaysOnTop, setShowCodeExplorer,
-      setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef
+      setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef,
+      setProjectFiles, activeCodeFileId, code, setCode
     });
 
     return (
@@ -10746,7 +10747,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               ));
 
               // Remove AutoCode snippet
-              if (compToDelete) {
+              if (id) {
                 setProjectFiles(prev => prev.map(f => {
                   if (f.content) {
                     const newContent = removeCodeSnippet(f.content, id);
@@ -10819,8 +10820,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       </div>
     );
   }
-
-
 }
 
 export default SimulatorPage;
