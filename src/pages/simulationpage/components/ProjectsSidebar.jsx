@@ -83,9 +83,11 @@ export function ProjectsSidebar({
   renameValue, setRenameValue,
   handleConfirmRename, setProjContextMenu,
   formatProjectDate, handleNewProject, handleLoadProject,
-  isRunning, isAnyAuthenticated,
+  isRunning, isAnyAuthenticated, isAuthenticated, activeUser,
   navigate, logout,
-  autoSaveEnabled, setAutoSaveEnabled
+  autoSaveEnabled, setAutoSaveEnabled,
+  handleBackupWorkflow, backupRestoreInputRef, handleSyncToCloud,
+  setShowCreateComponentModal
 }) {
   return (
     <>
