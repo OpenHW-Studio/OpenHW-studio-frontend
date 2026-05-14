@@ -10017,8 +10017,13 @@ export function SimulatorPage({ gamificationMode = false }) {
             handleConfirmRename={handleConfirmRename} setProjContextMenu={setProjContextMenu}
             formatProjectDate={formatProjectDate} handleNewProject={handleNewProject} handleLoadProject={handleLoadProject}
             isRunning={isRunning} isAnyAuthenticated={isAnyAuthenticated}
+            isAuthenticated={isAuthenticated} activeUser={activeUser}
             navigate={navigate} logout={logout}
             autoSaveEnabled={autoSaveEnabled} setAutoSaveEnabled={setAutoSaveEnabled}
+            handleBackupWorkflow={handleBackupWorkflow}
+            backupRestoreInputRef={backupRestoreInputRef}
+            handleSyncToCloud={handleSyncToCloud}
+            setShowCreateComponentModal={setShowCreateComponentModal}
           />
 
           {/* GAMIFICATION GUIDE PANEL */}
