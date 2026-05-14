@@ -259,53 +259,77 @@ export function robustSnapComponent(comp, components, pinDefs) {
   return { snappedWires, hasPerfectSnap, snapMatches };
 }
 
-export function mergeCodeSnippet(currentCode, snippet, reasoning = []) {
+export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
   if (!snippet) return currentCode;
   
+  // First, remove any existing block for this component to ensure a clean update
+  let code = removeCodeSnippet(currentCode, compId);
+
+  let globalsSnippet = snippet.globals || '';
   let setupSnippet = snippet.setup || '';
   let loopSnippet = snippet.loop || '';
 
   // ── Multi-Bus Renaming Layer ──
-  // If reasoning indicates Bus 1 was used, we rename Wire/Serial to Wire1/Serial1
   const isI2cBus1 = reasoning.some(r => r.includes('I2C') && r.includes('Bus 1'));
   const isUartBus1 = reasoning.some(r => r.includes('UART') && r.includes('Bus 1'));
 
   if (isI2cBus1) {
+    globalsSnippet = globalsSnippet.replace(/\bWire\./g, 'Wire1.');
     setupSnippet = setupSnippet.replace(/\bWire\./g, 'Wire1.');
     loopSnippet = loopSnippet.replace(/\bWire\./g, 'Wire1.');
   }
   if (isUartBus1) {
+    globalsSnippet = globalsSnippet.replace(/\bSerial\./g, 'Serial1.');
     setupSnippet = setupSnippet.replace(/\bSerial\./g, 'Serial1.');
     loopSnippet = loopSnippet.replace(/\bSerial\./g, 'Serial1.');
   }
 
-  if (!currentCode || !currentCode.trim())
-    return `void setup() {\n  ${(setupSnippet || '').split('\n').join('\n  ')}\n}\n\nvoid loop() {\n  ${(loopSnippet || '').split('\n').join('\n  ')}\n}`;
+  if (!code || !code.trim()) {
+    let base = '';
+    if (globalsSnippet) base += `// autocoding for ${compId} start\n${globalsSnippet}\n// autocoding for ${compId} end\n\n`;
+    base += `void setup() {\n`;
+    if (setupSnippet) base += `  // autocoding for ${compId} start\n  ${setupSnippet.split('\n').join('\n  ')}\n  // autocoding for ${compId} end\n`;
+    base += `}\n\nvoid loop() {\n`;
+    if (loopSnippet) base += `  // autocoding for ${compId} start\n  ${loopSnippet.split('\n').join('\n  ')}\n  // autocoding for ${compId} end\n`;
+    base += `}\n`;
+    return base;
+  }
 
-  let code = currentCode;
-  const injectIntoBlock = (src, blockName, lines) => {
-    const existing = lines.filter(l => {
-      const lt = l.trim();
-      return lt && src.includes(lt);
-    });
-    const toAdd = lines.filter(l => !existing.includes(l));
-    if (!toAdd.length) return src;
-    const marker = `${blockName}() {`;
+  // 1. Inject Globals at the very top (before setup/loop)
+  if (globalsSnippet) {
+    const block = `// autocoding for ${compId} start\n${globalsSnippet}\n// autocoding for ${compId} end\n\n`;
+    const setupIdx = code.indexOf('void setup');
+    const loopIdx = code.indexOf('void loop');
+    const insertIdx = [setupIdx, loopIdx].filter(i => i !== -1).sort((a,b)=>a-b)[0] ?? 0;
+    code = code.slice(0, insertIdx) + block + code.slice(insertIdx);
+  }
+
+  // Helper for injecting into function blocks
+  const injectIntoFunction = (src, funcName, snippet) => {
+    if (!snippet) return src;
+    const marker = `${funcName}() {`;
     const idx = src.indexOf(marker);
-    if (idx !== -1)
-      return src.slice(0, idx + marker.length) + '\n  ' + toAdd.join('\n  ') + src.slice(idx + marker.length);
-    return src + `\n\n${blockName}() {\n  ${toAdd.join('\n  ')}\n}`;
+    const block = `  // autocoding for ${compId} start\n  ${snippet.split('\n').join('\n  ')}\n  // autocoding for ${compId} end\n`;
+    
+    if (idx !== -1) {
+      // Inject at the top of the function block
+      return src.slice(0, idx + marker.length) + '\n' + block + src.slice(idx + marker.length);
+    }
+    // Fallback: append function if missing
+    return src + `\n\n${funcName}() {\n${block}}\n`;
   };
 
-  if (setupSnippet) {
-    const lines = setupSnippet.split('\n').map(l => l.trim()).filter(Boolean);
-    code = injectIntoBlock(code, 'void setup', lines);
-  }
-  if (loopSnippet) {
-    const lines = loopSnippet.split('\n').map(l => l.trim()).filter(Boolean);
-    code = injectIntoBlock(code, 'void loop', lines);
-  }
+  code = injectIntoFunction(code, 'void setup', setupSnippet);
+  code = injectIntoFunction(code, 'void loop', loopSnippet);
+
   return code;
+}
+
+export function removeCodeSnippet(currentCode, compId) {
+  if (!currentCode || !compId) return currentCode;
+  // Match `// autocoding for {compId} start` ... `// autocoding for {compId} end` and any surrounding newlines
+  const regex = new RegExp(`[ \\t]*\\/\\/\\s*autocoding for ${compId} start[\\s\\S]*?\\/\\/\\s*autocoding for ${compId} end\\s*\\n?`, 'g');
+  return currentCode.replace(regex, '');
 }
 
 // ─── Legacy Auto-Setup Utilities (Commented out for future use) ──────────────

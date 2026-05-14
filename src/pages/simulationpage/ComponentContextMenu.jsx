@@ -47,33 +47,34 @@ const actionPanelStyle = (theme) => ({
   gap: '4px',
 });
 
-export const ComponentContextMenu = ({ 
+export const ComponentContextMenu = ({
   x, y, comp, info, visible, onClose, theme,
   onRename, onPinMap, onRotate, onDelete, onDoc,
   updateComponentAttr, onValueEdit,
-  programmableBoards = [], boardColors = {}, onWireToBoard
+  programmableBoards = [], boardColors = {}, onWireToBoard,
+  onOpenCode, onAutoCode
 }) => {
   const menuRef = useRef(null);
   const [showInfo, setShowInfo] = useState(false);
-  const [activeSubmenu, setActiveSubmenu] = useState(null); 
+  const [activeSubmenu, setActiveSubmenu] = useState(null);
   const [activeNestedSubmenu, setActiveNestedSubmenu] = useState(null);
 
   const submenus = useMemo(() => {
     if (!comp) return [];
     const kind = normalizeBoardKind(comp.type);
-    
+
     if (kind === 'rp2040') {
       const currentEnv = resolveComponentAttrString(comp?.attrs, 'env', 'native');
       const currentBuilder = resolveComponentAttrString(comp?.attrs, 'builder', 'arduino-pico');
-      
+
       return [
         {
           label: 'Env',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
+          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>,
           options: [
-            { 
-              label: 'None', 
-              active: currentEnv === 'native' || currentEnv === 'ino', 
+            {
+              label: 'None',
+              active: currentEnv === 'native' || currentEnv === 'ino',
               onClick: () => updateComponentAttr?.(comp.id, 'env', 'native'),
               submenuHeader: 'BUILDER',
               submenu: [
@@ -101,7 +102,7 @@ export const ComponentContextMenu = ({
       return [
         {
           label: 'Color',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>,
+          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg>,
           options: ledColors.map(c => ({
             label: c.label,
             active: currentColor === c.value,
@@ -118,29 +119,29 @@ export const ComponentContextMenu = ({
       return [
         {
           label: 'Config',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="2" y1="14" x2="6" y2="14"/><line x1="10" y1="8" x2="14" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/></svg>,
+          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="2" y1="14" x2="6" y2="14" /><line x1="10" y1="8" x2="14" y2="8" /><line x1="18" y1="16" x2="22" y2="16" /></svg>,
           options: [
-            { 
-              label: 'Rows', 
+            {
+              label: 'Rows',
               valueDisplay: rows,
               submenu: true, // Marker for showing custom content
               customContent: (
-                <ComponentCyclePicker 
-                  value={rows} 
-                  onChange={(v) => updateComponentAttr?.(comp.id, 'rows', v)} 
-                  theme={theme} 
+                <ComponentCyclePicker
+                  value={rows}
+                  onChange={(v) => updateComponentAttr?.(comp.id, 'rows', v)}
+                  theme={theme}
                 />
               )
             },
-            { 
-              label: 'Cols', 
+            {
+              label: 'Cols',
               valueDisplay: cols,
               submenu: true,
               customContent: (
-                <ComponentCyclePicker 
-                  value={cols} 
-                  onChange={(v) => updateComponentAttr?.(comp.id, 'cols', v)} 
-                  theme={theme} 
+                <ComponentCyclePicker
+                  value={cols}
+                  onChange={(v) => updateComponentAttr?.(comp.id, 'cols', v)}
+                  theme={theme}
                 />
               )
             },
@@ -154,7 +155,7 @@ export const ComponentContextMenu = ({
       return [
         {
           label: 'Value',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7h-9m3 10H5"/><path d="M16 13l-4-4-4 4 4 4 4-4z"/></svg>,
+          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7h-9m3 10H5" /><path d="M16 13l-4-4-4 4 4 4 4-4z" /></svg>,
           valueDisplay: formatResistance(val) + ' Ω',
           onClick: () => { onValueEdit?.(comp.id, 'value'); onClose(); }
         }
@@ -166,7 +167,7 @@ export const ComponentContextMenu = ({
       return [
         {
           label: 'Voltage',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>,
+          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
           valueDisplay: val + ' V',
           onClick: () => { onValueEdit?.(comp.id, 'voltage'); onClose(); }
         }
@@ -201,8 +202,12 @@ export const ComponentContextMenu = ({
 
   if (!visible || !comp) return null;
 
+  const isBoard = /(arduino|esp32|stm32|rp2040|pico)/i.test(comp.type);
+  const accentColor = boardColors[comp.id] || 'var(--accent)';
+  const shadow = theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)';
+
   return (
-    <div 
+    <div
       ref={menuRef}
       style={{
         position: 'fixed',
@@ -226,7 +231,7 @@ export const ComponentContextMenu = ({
           transform: scale(0.98);
         }
       `}</style>
-      <div 
+      <div
         className="canvas-menu"
         style={{
           background: theme === 'light' ? 'rgba(248, 250, 252, 0.95)' : 'rgba(13, 21, 37, 0.94)',
@@ -234,19 +239,31 @@ export const ComponentContextMenu = ({
           WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
           border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(30, 45, 71, 0.8)',
           borderRadius: '10px',
-          boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+          boxShadow: shadow,
           minWidth: '135px',
           padding: '4px',
           fontFamily: "'Space Grotesk', sans-serif",
           position: 'relative'
         }}
       >
-        <div style={{ padding: '4px 8px 3px', fontSize: '9px', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 800, opacity: 0.6 }}>
+        <div style={{
+          padding: '5px 8px 4px',
+          fontSize: '9.5px',
+          color: accentColor,
+          background: `${accentColor}45`, // Dull background
+          borderRadius: '6px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+          fontWeight: 800,
+          marginBottom: '4px',
+          textAlign: 'center',
+          border: `1px solid ${accentColor}80`
+        }}>
           {comp.id}
         </div>
-        
+
         <button className="canvas-menu-item context-menu-item" style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px' }} onClick={(e) => { e.stopPropagation(); onRename(); onClose(); }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
           <span>Rename</span>
           <span style={{ marginLeft: 'auto', fontSize: '8.5px', opacity: 0.4, fontWeight: 700 }}>ID</span>
         </button>
@@ -254,9 +271,9 @@ export const ComponentContextMenu = ({
         {submenus.map((sub, idx) => (
           <div key={`sub-${idx}`}>
             {sub.options ? (
-              <div 
+              <div
                 className={`canvas-menu-item context-menu-item ${sub.disabled ? 'disabled' : ''}`}
-                style={{ 
+                style={{
                   fontSize: '11.5px', padding: '4px 8px', gap: '6px', position: 'relative',
                   opacity: sub.disabled ? 0.4 : 1,
                   cursor: sub.disabled ? 'not-allowed' : 'default'
@@ -265,10 +282,10 @@ export const ComponentContextMenu = ({
                 onMouseLeave={() => setActiveSubmenu(null)}
               >
                 {sub.icon || (
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
                 )}
                 <span>{sub.label}</span>
-                <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
 
                 {activeSubmenu === sub.label && !sub.disabled && (
                   <div style={{
@@ -287,8 +304,8 @@ export const ComponentContextMenu = ({
                       <div key={oIdx} style={{ position: 'relative' }} onMouseEnter={() => { if (opt.submenu) setActiveNestedSubmenu(opt.label); else setActiveNestedSubmenu(null); }}>
                         <button
                           className={`canvas-menu-item context-menu-item ${opt.disabled ? 'disabled' : ''}`}
-                          style={{ 
-                            fontSize: '11px', padding: '4px 8px', gap: '6px', 
+                          style={{
+                            fontSize: '11px', padding: '4px 8px', gap: '6px',
                             background: opt.active ? (opt.hoverBg ? `${opt.hoverBg}25` : 'var(--accent)15') : 'transparent',
                             color: opt.active ? 'var(--accent)' : (opt.disabled ? 'var(--text3)' : 'inherit'),
                             fontWeight: opt.active ? 700 : 500,
@@ -300,24 +317,24 @@ export const ComponentContextMenu = ({
                         >
                           {opt.label}
                           {opt.active && !opt.submenu && (
-                            <svg style={{ marginLeft: 'auto' }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                            <svg style={{ marginLeft: 'auto' }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                           )}
                           {opt.submenu && (
-                            <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                            <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                           )}
                         </button>
 
                         {opt.submenu && activeNestedSubmenu === opt.label && (
-                          <div style={{ 
-                            position: 'absolute', 
-                            left: flipLeft ? 'auto' : 'calc(100% + 6px)', 
+                          <div style={{
+                            position: 'absolute',
+                            left: flipLeft ? 'auto' : 'calc(100% + 6px)',
                             right: flipLeft ? 'calc(100% + 6px)' : 'auto',
-                            top: '-4px', 
-                            ...actionPanelStyle(theme), 
-                            flexDirection: 'column', 
-                            minWidth: opt.customContent ? 'auto' : '140px', 
-                            padding: '4px', 
-                            zIndex: 10003 
+                            top: '-4px',
+                            ...actionPanelStyle(theme),
+                            flexDirection: 'column',
+                            minWidth: opt.customContent ? 'auto' : '140px',
+                            padding: '4px',
+                            zIndex: 10003
                           }}>
                             <div style={{ position: 'absolute', left: flipLeft ? 'auto' : '-8px', right: flipLeft ? '-8px' : 'auto', top: 0, bottom: 0, width: '8px', background: 'transparent' }} />
                             {opt.customContent ? opt.customContent : (
@@ -326,7 +343,7 @@ export const ComponentContextMenu = ({
                                 {opt.submenu.map((nOpt, nIdx) => (
                                   <button key={nIdx} className="canvas-menu-item context-menu-item" style={{ fontSize: '11px', padding: '4px 8px', gap: '6px', background: nOpt.active ? (nOpt.hoverBg ? `${nOpt.hoverBg}25` : 'var(--accent)15') : 'transparent', color: nOpt.active ? 'var(--accent)' : 'inherit', fontWeight: nOpt.active ? 700 : 500, '--item-hover-bg': nOpt.hoverBg ? `${nOpt.hoverBg}26` : 'var(--bg3)' }} onClick={(e) => { e.stopPropagation(); nOpt.onClick(); onClose(); }}>
                                     {nOpt.label}
-                                    {nOpt.active && <svg style={{ marginLeft: 'auto' }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                                    {nOpt.active && <svg style={{ marginLeft: 'auto' }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
                                   </button>
                                 ))}
                               </>
@@ -339,7 +356,7 @@ export const ComponentContextMenu = ({
                 )}
               </div>
             ) : (
-              <button 
+              <button
                 className={`canvas-menu-item context-menu-item ${sub.disabled ? 'disabled' : ''}`}
                 style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px' }}
                 onClick={(e) => { e.stopPropagation(); sub.onClick?.(); }}
@@ -359,16 +376,28 @@ export const ComponentContextMenu = ({
           <span>Pin Map</span>
         </button>
 
+        {/(arduino|esp32|stm32|rp2040|pico)/i.test(comp.type) ? (
+          <button className="canvas-menu-item context-menu-item" style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px' }} onClick={(e) => { e.stopPropagation(); onOpenCode?.(comp); onClose(); }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></svg>
+            <span>Code</span>
+          </button>
+        ) : (
+          <button className="canvas-menu-item context-menu-item" style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px' }} onClick={(e) => { e.stopPropagation(); onAutoCode?.(comp.id); onClose(); }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>
+            <span>AutoCode</span>
+          </button>
+        )}
+
         {programmableBoards.length > 0 && !/(arduino|esp32|stm32|rp2040|pico)/i.test(comp.type) && (
-          <div 
+          <div
             className="canvas-menu-item context-menu-item"
             style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px', position: 'relative' }}
             onMouseEnter={() => { setActiveSubmenu('wireto'); setShowInfo(false); }}
             onMouseLeave={() => setActiveSubmenu(null)}
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
             <span>Wire to</span>
-            <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+            <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
 
             {activeSubmenu === 'wireto' && (
               <div style={{
@@ -383,44 +412,44 @@ export const ComponentContextMenu = ({
                 zIndex: 10002,
               }}>
                 <div style={{ position: 'absolute', left: flipLeft ? 'auto' : '-8px', right: flipLeft ? '-8px' : 'auto', top: 0, bottom: 0, width: '8px', background: 'transparent' }} />
-                  {programmableBoards.map((board, bIdx) => {
-                    const isActive = comp.attrs?.targetBoard === board.id;
-                    return (
-                      <button
-                        key={bIdx}
-                        className="canvas-menu-item context-menu-item"
-                        style={{ 
-                          fontSize: '11px', 
-                          padding: '4px 8px', 
-                          gap: '6px',
-                          background: isActive ? (boardColors[board.id] ? `${boardColors[board.id]}25` : 'var(--accent)15') : 'transparent',
-                          color: isActive ? 'var(--accent)' : 'inherit',
-                          fontWeight: isActive ? 700 : 500,
-                          '--item-hover-bg': `${boardColors[board.id] || '#94a3b8'}4D`
-                        }}
-                        onClick={(e) => { e.stopPropagation(); onWireToBoard?.(comp.id, board.id); onClose(); }}
-                      >
-                        {board.id}
-                        {isActive && (
-                          <svg style={{ marginLeft: 'auto' }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                        )}
-                      </button>
-                    );
-                  })}
+                {programmableBoards.map((board, bIdx) => {
+                  const isActive = comp.attrs?.targetBoard === board.id;
+                  return (
+                    <button
+                      key={bIdx}
+                      className="canvas-menu-item context-menu-item"
+                      style={{
+                        fontSize: '11px',
+                        padding: '4px 8px',
+                        gap: '6px',
+                        background: isActive ? (boardColors[board.id] ? `${boardColors[board.id]}25` : 'var(--accent)15') : 'transparent',
+                        color: isActive ? 'var(--accent)' : 'inherit',
+                        fontWeight: isActive ? 700 : 500,
+                        '--item-hover-bg': `${boardColors[board.id] || '#94a3b8'}4D`
+                      }}
+                      onClick={(e) => { e.stopPropagation(); onWireToBoard?.(comp.id, board.id); onClose(); }}
+                    >
+                      {board.id}
+                      {isActive && (
+                        <svg style={{ marginLeft: 'auto' }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
         )}
-        
-        <div 
-          className="canvas-menu-item context-menu-item" 
+
+        <div
+          className="canvas-menu-item context-menu-item"
           style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px', cursor: 'default', position: 'relative' }}
           onMouseEnter={() => { setShowInfo(true); setActiveSubmenu(null); }}
           onMouseLeave={() => setShowInfo(false)}
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
           <span>Info</span>
-          <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+          <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
 
           {showInfo && info && (
             <div style={{
@@ -438,7 +467,7 @@ export const ComponentContextMenu = ({
             }}>
               {/* Bridge */}
               <div style={{ position: 'absolute', left: '-8px', top: 0, bottom: 0, width: '8px', background: 'transparent', pointerEvents: 'auto' }} />
-              
+
               <div style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text)', lineHeight: 1.2 }}>{info.label}</div>
               <div style={{ display: 'inline-flex', padding: '2px 6px', background: 'var(--accent)15', border: '1px solid var(--accent)33', borderRadius: '4px', fontSize: '9px', fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', width: 'fit-content' }}>
                 {info.group}
@@ -452,29 +481,29 @@ export const ComponentContextMenu = ({
 
         {onDoc && (
           <button className="canvas-menu-item context-menu-item" style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px' }} onClick={(e) => { e.stopPropagation(); onDoc(); onClose(); }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
             <span>Docs</span>
           </button>
         )}
 
         <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0', opacity: 0.4 }} />
-        
+
         <button className="canvas-menu-item context-menu-item" style={{ fontSize: '11.5px', padding: '4px 8px', gap: '6px' }} onClick={(e) => { e.stopPropagation(); onRotate(); onClose(); }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 4v6h-6" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
           <span>Rotate</span>
           <span style={{ marginLeft: 'auto', fontSize: '8.5px', opacity: 0.4, fontWeight: 700 }}>{comp.rotation || 0}°</span>
         </button>
-        
-        <button 
-          className="canvas-menu-item context-menu-item" 
-          style={{ 
+
+        <button
+          className="canvas-menu-item context-menu-item"
+          style={{
             fontSize: '11.5px', padding: '4px 8px', gap: '6px',
             color: 'var(--red)',
             '--item-hover-bg': 'rgba(255, 68, 68, 0.12)'
-          }} 
+          }}
           onClick={(e) => { e.stopPropagation(); onDelete(); onClose(); }}
         >
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" /></svg>
           <span>Delete</span>
         </button>
       </div>
@@ -485,10 +514,10 @@ export const ComponentContextMenu = ({
 /**
  * Focused Rename Panel for Component IDs - Small and Minimal
  */
-export const ComponentRenamePanel = ({ 
-  comp, x, y, visible, 
-  onConfirm, onCancel, 
-  theme 
+export const ComponentRenamePanel = ({
+  comp, x, y, visible,
+  onConfirm, onCancel,
+  theme
 }) => {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
@@ -533,7 +562,7 @@ export const ComponentRenamePanel = ({
   };
 
   return (
-    <div 
+    <div
       ref={containerRef}
       style={{
         position: 'fixed',
@@ -558,11 +587,11 @@ export const ComponentRenamePanel = ({
         }
       `}</style>
       <form onSubmit={handleSubmit} style={actionPanelStyle(theme)}>
-        
-        <input 
+
+        <input
           ref={inputRef}
           value={value}
-          onChange={(e) => setValue(e.target.value.replace(/\s+/g, '_'))} 
+          onChange={(e) => setValue(e.target.value.replace(/\s+/g, '_'))}
           onKeyDown={(e) => {
             if (e.key === 'Escape') onCancel();
           }}
@@ -579,13 +608,13 @@ export const ComponentRenamePanel = ({
             width: '110px',
           }}
         />
-        <button 
+        <button
           type="submit"
-          style={{ 
-            background: 'var(--accent)', 
-            color: '#fff', 
-            border: 'none', 
-            borderRadius: '6px', 
+          style={{
+            background: 'var(--accent)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '6px',
             padding: '0 8px',
             fontSize: '9px',
             fontWeight: '800',
@@ -651,7 +680,7 @@ export const ComponentValuePanel = ({ x, y, comp, attrKey = 'value', visible, on
   };
 
   return (
-    <div 
+    <div
       ref={containerRef}
       style={{
         position: 'fixed',
@@ -669,10 +698,10 @@ export const ComponentValuePanel = ({ x, y, comp, attrKey = 'value', visible, on
     >
       <form onSubmit={handleSubmit} style={{ ...actionPanelStyle(theme), alignItems: 'center' }}>
         <span style={{ fontSize: '10px', color: 'var(--text3)', fontWeight: 800, paddingLeft: '8px' }}>{unit}</span>
-        <input 
+        <input
           ref={inputRef}
           value={value}
-          onChange={(e) => setValue(e.target.value.replace(/[^0-9.kM]/g, ''))} 
+          onChange={(e) => setValue(e.target.value.replace(/[^0-9.kM]/g, ''))}
           onKeyDown={(e) => {
             if (e.key === 'Escape') onCancel();
           }}
@@ -715,9 +744,9 @@ export const ComponentCyclePicker = ({ value, onChange, min = 1, max = 24, theme
     const handleWheel = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      
+
       scrollAccRef.current += e.deltaY;
-      
+
       if (Math.abs(scrollAccRef.current) >= SCROLL_THRESHOLD) {
         const steps = Math.sign(scrollAccRef.current);
         let next = currentVal + steps;
@@ -764,7 +793,7 @@ export const ComponentCyclePicker = ({ value, onChange, min = 1, max = 24, theme
   }
 
   return (
-    <div 
+    <div
       ref={containerRef}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}

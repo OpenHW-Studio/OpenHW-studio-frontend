@@ -1,9 +1,9 @@
 import React from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useIsMobile } from './hooks/useIsMobile'
 
 import ProtectedRoute from './components/auth/ProtectedRoute.jsx'
-import { AuthProvider } from './context/AuthContext.jsx'
+import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import { GamificationProvider } from './context/GamificationContext.jsx'
 import { GamificationToasts } from './services/gamification/Gamificationpanel.jsx'
 // Pages
@@ -77,6 +77,9 @@ const MaintenanceGuard = ({ children }) => {
   const location = useLocation();
   const isAdminPath = location.pathname.startsWith('/admin');
 
+  const { logout, adminLogout } = useAuth();
+  const navigate = useNavigate();
+
   React.useEffect(() => {
     let isMounted = true;
     const check = async () => {
@@ -90,11 +93,25 @@ const MaintenanceGuard = ({ children }) => {
     check();
     const interval = setInterval(check, 30000); // Check every 30s
 
-    // Global Axios Interceptor for 503 / connection errors
+    // Global Axios Interceptor for 503 / connection errors AND 401 Session Expiry
     const interceptor = axios.interceptors.response.use(
       response => response,
       error => {
-        if (!error.response || error.response.status === 503) {
+        if (error.response?.status === 401) {
+          const isAdm = location.pathname.startsWith('/admin');
+          const message = error.response.data?.message || "";
+          
+          if (message.toLowerCase().includes("expired") || message.toLowerCase().includes("invalid")) {
+            if (isMounted) {
+              if (isAdm) adminLogout();
+              else logout();
+              
+              alert("Your session has expired. Please log in again.");
+              navigate(isAdm ? '/admin/login' : '/login');
+            }
+          }
+        }
+        else if (!error.response || error.response.status === 503) {
           if (isMounted) setMaintenance(true);
         }
         return Promise.reject(error);

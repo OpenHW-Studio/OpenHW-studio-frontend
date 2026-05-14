@@ -20,9 +20,16 @@ const PalettePanel = memo(({
   buildUiSourceFromRegistry,
   buildValidationSourceFromRegistry,
   buildIndexSourceFromRegistry,
-  writeEditCopyPayload
+  writeEditCopyPayload,
+  forceExpand = false
 }) => {
   const [isPaletteHovered, setIsPaletteHovered] = useState(false);
+
+  useEffect(() => {
+    if (forceExpand) {
+      setIsPaletteHovered(true);
+    }
+  }, [forceExpand]);
   const [paletteContextMenu, setPaletteContextMenu] = useState(null);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState('');

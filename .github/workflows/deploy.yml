@@ -188,12 +188,15 @@ jobs:
           # Check space and proactive cleanup
           df -h
           docker image prune -af
+          df -h
           
           docker compose -f docker-compose.prod.yml pull frontend
           docker compose -f docker-compose.prod.yml up -d frontend
           
           # Clean up old images to save disk space
+          df -h
           docker image prune -af
+          df -h
 
   notify_deployed:
     name: Notify Deployed

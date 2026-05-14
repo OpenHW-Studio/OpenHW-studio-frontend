@@ -148,6 +148,9 @@ export default function TeacherGradingPanel({ isEnabled, autogradingKey, onKeyGe
           check_breadboard: true,
           check_overlap: true,
           ignore_pin_changes: false
+        },
+        config: {
+          compilerUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api'}/compile`
         }
       });
 
