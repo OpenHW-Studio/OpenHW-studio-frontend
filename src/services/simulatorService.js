@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { getAdminToken, getToken } from './authService.js';
 
-const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5001/api';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5001/api';
+const COMPILER_URL = API_BASE_URL;
 const API_ORIGIN = COMPILER_URL.replace(/\/api$/, '');
 
 const getUserAuthConfig = () => {
