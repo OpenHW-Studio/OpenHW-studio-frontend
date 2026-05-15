@@ -1,54 +1,96 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import './TourGuide.css';
 
 const STEPS = [
   {
     id: 'welcome',
-    title: 'Welcome to OpenHW Studio!',
-    content: 'The most powerful way to design, code, and simulate hardware in your browser. Let\'s take a quick tour of the main features.',
+    title: 'Welcome to OpenHW Studio! 🚀',
+    content: 'Let\'s take a quick 1-minute tour to see how you can build and simulate Arduino projects right in your browser.',
+    target: null,
     position: 'center'
   },
   {
-    id: 'palette',
-    target: 'aside.border-r',
-    title: 'Component Palette',
-    content: 'Browse through hundreds of sensors, displays, and controllers. (Automatically expands for you!)',
-    position: 'right'
+    id: 'quick-add',
+    target: 'main',
+    title: 'Quick Add Portal',
+    content: 'Double-click anywhere on the canvas to instantly find and add components. It\'s the fastest way to build your circuit.',
+    position: 'bottom',
+    action: 'quick-add'
   },
   {
     id: 'drag-demo',
     target: 'main',
-    title: 'Try It Out!',
-    content: 'Simply drag any component onto the canvas to add it to your project. Watch how it\'s done below!',
-    position: 'center'
+    title: 'Component Movement',
+    content: 'Simply drag any component to reposition it. Components snap to the grid for professional, clean layouts.',
+    position: 'bottom',
+    action: 'drag'
   },
   {
-    id: 'canvas',
+    id: 'wiring',
     target: 'main',
-    title: 'Interactive Canvas',
-    content: 'This is your workspace. Place components, connect wires, and interact with hardware in real-time.',
-    position: 'center'
+    title: 'Intelligent Wiring',
+    content: 'Connect pins by clicking and dragging. The simulator automatically calculates the best path for your wires.',
+    position: 'bottom',
+    action: 'wire'
   },
   {
-    id: 'toolbox',
-    target: 'header',
-    title: 'Simulation Controls',
-    content: 'Use the Run and Stop buttons to start your simulation. You can also save your projects or access the settings menu.',
-    position: 'bottom'
+    id: 'projects',
+    target: 'aside.border-r',
+    title: 'Project Management',
+    content: 'Access your cloud-synced projects, create backups, or manage your components from the sidebar.',
+    position: 'right'
   },
   {
-    id: 'editor',
+    id: 'ide',
     target: 'aside.border-l',
     title: 'Integrated IDE',
-    content: 'Write firmware in C++ or Python, or use the Blockly visual editor. Monitor serial output directly from the "Serial" tab.',
+    content: 'A professional-grade editor for your firmware. Supports multi-file projects and real-time syntax checking.',
     position: 'left'
+  },
+  {
+    id: 'blockly',
+    target: 'aside.border-l',
+    title: 'Visual Block Coding',
+    content: 'Prefer visual logic? Switch to Blockly to build your firmware with drag-and-drop blocks.',
+    position: 'left',
+    action: 'switch-blockly'
+  },
+  {
+    id: 'library',
+    target: 'aside.border-l',
+    title: 'Library Manager',
+    content: 'Install thousands of community-built libraries for sensors, displays, and communication protocols.',
+    position: 'left',
+    action: 'switch-library'
+  },
+  {
+    id: 'serial',
+    target: 'aside.border-l',
+    title: 'Serial Monitor',
+    content: 'Interact with your simulated hardware in real-time. Send commands and view debug output instantly.',
+    position: 'left',
+    action: 'switch-serial'
+  },
+  {
+    id: 'plotter',
+    target: 'aside.border-l',
+    title: 'Real-time Plotter',
+    content: 'Visualize high-frequency sensor data with our built-in oscilloscope and telemetry plotter.',
+    position: 'left',
+    action: 'switch-plotter'
   },
   {
     id: 'console',
     target: '[data-simulation-console="true"]',
     title: 'System Console',
-    content: 'Check for compilation errors, system logs, and hardware status messages here.',
+    content: 'Check for compilation logs, system warnings, and hardware connection status here.',
     position: 'top'
+  },
+  {
+    id: 'finish',
+    title: 'Ready to Create!',
+    content: 'You\'re all set! Start building your first project or explore the examples library to see what\'s possible.',
+    position: 'center'
   }
 ];
 
@@ -57,6 +99,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
   const [spotlightRect, setSpotlightRect] = useState(null);
   const [isVisible, setIsVisible] = useState(false);
   const [demoPhase, setDemoPhase] = useState(0);
+  const [ghostMousePos, setGhostMousePos] = useState({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const spotlightRef = useRef(null);
 
   useEffect(() => {
@@ -73,22 +116,87 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
     return () => clearTimeout(timer);
   }, [currentStep]);
 
-  // Demo Loop for drag-demo
-  useEffect(() => {
-    if (STEPS[currentStep].id !== 'drag-demo') return;
+  // Intelligent Coordinate Tracking
+  useLayoutEffect(() => {
+    if (!isVisible) return;
+    const step = STEPS[currentStep];
+    
+    const updateGhostPosition = () => {
+      let targetSelector = null;
+      
+      // Map phases to specific DOM targets using data-tour attributes
+      if (step.id === 'quick-add') targetSelector = 'main';
+      if (step.id === 'drag-demo') {
+        if (demoPhase <= 1) targetSelector = '[data-tour-type="wokwi-arduino-uno"]';
+        else targetSelector = '[id*="comp-master-demo-comp-tour"]';
+      }
+      if (step.id === 'wiring') {
+        if (demoPhase <= 2) targetSelector = '[id*="pin-dot-demo-comp-tour-13"]';
+        else targetSelector = '[id*="pin-dot-demo-comp-tour-GND"]';
+      }
+      if (step.action?.includes('switch-blockly')) targetSelector = '[data-tour-id="tab-block"]';
+      if (step.action?.includes('switch-library')) targetSelector = '[data-tour-id="tab-code"]'; // Fallback to Code tab for now
+      if (step.action?.includes('switch-serial')) targetSelector = '[data-tour-id="tab-serial"]';
 
+      if (targetSelector) {
+        const el = document.querySelector(targetSelector);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          setGhostMousePos({
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2
+          });
+        }
+      }
+    };
+
+    const animFrame = requestAnimationFrame(updateGhostPosition);
+    return () => cancelAnimationFrame(animFrame);
+  }, [currentStep, demoPhase, isVisible]);
+
+  // Handle Demo Actions based on Phase
+  useEffect(() => {
+    if (!isVisible || !onDemoAction) return;
+    const step = STEPS[currentStep];
+
+    // Interaction Triggers
+    if (step.id === 'drag-demo') {
+      if (demoPhase === 2) onDemoAction('add-component');
+      if (demoPhase === 0) onDemoAction('remove-component');
+    }
+
+    if (step.id === 'quick-add') {
+      if (demoPhase === 2) onDemoAction('show-quick-add');
+      if (demoPhase === 5) onDemoAction('hide-quick-add');
+    }
+
+    if (step.id === 'wiring') {
+      if (demoPhase === 4) onDemoAction('add-demo-wire');
+      if (demoPhase === 0) {
+        onDemoAction('remove-demo-wire');
+        onDemoAction('remove-component');
+      }
+      if (demoPhase === 1) onDemoAction('add-component'); // Ensure board exists for wiring
+    }
+
+    if (step.action?.startsWith('switch-')) {
+      if (demoPhase === 2) onDemoAction(step.action);
+    }
+  }, [demoPhase, currentStep, isVisible, onDemoAction]);
+
+  // Comprehensive Demo Loop
+  useEffect(() => {
+    const interactionInterval = 1800; // Eased timing for realistic feel
     const interval = setInterval(() => {
-      setDemoPhase(prev => {
-        const next = (prev + 1) % 4;
-        if (next === 2) onDemoAction?.('add-component');
-        if (next === 0) onDemoAction?.('remove-component');
-        return next;
-      });
-    }, 1500);
+      setDemoPhase(prev => (prev + 1) % 6);
+    }, interactionInterval);
 
     return () => {
       clearInterval(interval);
+      // Cleanup all demo state on step leave
       onDemoAction?.('remove-component');
+      onDemoAction?.('hide-quick-add');
+      onDemoAction?.('remove-demo-wire');
     };
   }, [currentStep, onDemoAction]);
 
@@ -114,7 +222,6 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
         height: rect.height
       });
     } else {
-      // If target not found, default to center (like welcome)
       setSpotlightRect(null);
     }
   };
@@ -140,7 +247,6 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
 
   const step = STEPS[currentStep];
 
-  // Tooltip positioning logic
   const getTooltipStyle = () => {
     if (!spotlightRect) {
       return {
@@ -155,15 +261,21 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
 
     switch (step.position) {
       case 'bottom':
-        return { top: top + height + margin, left: left + width / 2 - 160 };
+        // Special case: if targeting 'main' (full canvas), position at bottom of viewport
+        if (step.target === 'main') {
+          return { bottom: 40, top: 'auto', left: '50%', transform: 'translateX(-50%)' };
+        }
+        return { top: top + height + margin, bottom: 'auto', left: Math.max(20, left + width / 2 - 160) };
       case 'top':
-        return { top: top - 320 - margin, left: left + width / 2 - 160 };
+        return { top: top - 320 - margin, bottom: 'auto', left: Math.max(20, left + width / 2 - 160) };
       case 'left':
-        return { top: top + height / 2 - 100, left: left - 320 - margin };
+        return { top: top + height / 2 - 100, bottom: 'auto', left: left - 320 - margin, right: 'auto' };
       case 'right':
-        return { top: top + height / 2 - 100, left: left + width + margin };
+        return { top: top + height / 2 - 100, bottom: 'auto', left: left + width + margin, right: 'auto' };
+      case 'center':
+        return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', bottom: 'auto', right: 'auto' };
       default:
-        return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+        return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', bottom: 'auto', right: 'auto' };
     }
   };
 
@@ -171,18 +283,38 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
 
   return (
     <div className="tour-overlay">
-      {/* Ghost Cursor */}
-      <div className={`tour-ghost-cursor step-${STEPS[currentStep].id} phase-${demoPhase}`}>
+      {/* Ghost Cursor with Dynamic State */}
+      <div 
+        className={`tour-ghost-cursor step-${step.id} phase-${demoPhase}`}
+        style={{
+          position: 'fixed',
+          left: ghostMousePos.x,
+          top: ghostMousePos.y,
+          transition: 'all 0.6s cubic-bezier(0.23, 1, 0.32, 1)',
+          zIndex: 9999999,
+          pointerEvents: 'none'
+        }}
+      >
         <svg width="48" height="48" viewBox="0 0 24 24" fill="var(--accent, #00b4ff)" stroke="white" strokeWidth="1.2" style={{ filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.4))' }}>
           <path d="M5.636 5.636l12.728 4.243-5.657 1.414-1.414 5.657-4.243-12.728z" strokeLinejoin="round" />
         </svg>
-        {STEPS[currentStep].id === 'drag-demo' && demoPhase === 1 && (
+
+        {/* Click/Ripple Effect */}
+        {(demoPhase === 2 || demoPhase === 4) && <div className="tour-ghost-ripple" />}
+
+        {/* Dragging Preview */}
+        {step.id === 'drag-demo' && demoPhase >= 2 && demoPhase <= 4 && (
           <div className="tour-ghost-comp-small">
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5">
               <rect x="3" y="3" width="18" height="18" rx="3" ry="3" />
               <line x1="9" y1="3" x2="9" y2="21" />
             </svg>
           </div>
+        )}
+
+        {/* Wiring Line Preview */}
+        {step.id === 'wiring' && demoPhase >= 3 && demoPhase <= 4 && (
+          <div className="tour-ghost-wire-preview" />
         )}
       </div>
 
@@ -199,35 +331,31 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       )}
 
       <div
-        className={`tour-tooltip-container ${step.position}`}
-        style={getTooltipStyle()}
+        className="tour-tooltip"
+        style={{
+          ...getTooltipStyle(),
+          display: 'flex',
+          opacity: 1,
+          visibility: 'visible',
+          background: '#1a1a1a',
+          border: '2px solid #00b4ff',
+          color: 'white',
+          zIndex: 10000000
+        }}
       >
-        <div className="tour-tooltip">
-          <div className="tour-title">{step.title}</div>
-          <div className="tour-content">{step.content}</div>
-
-          <div className="tour-footer">
-            <div className="tour-progress">
-              STEP {currentStep + 1} / {STEPS.length}
-            </div>
-            <div className="tour-btns">
-              <button className="tour-btn tour-btn-skip" onClick={handleFinish}>
-                Skip
-              </button>
-              {currentStep > 0 && (
-                <button className="tour-btn tour-btn-back" onClick={handleBack}>
-                  Back
-                </button>
-              )}
-              <button
-                className={`tour-btn ${currentStep === STEPS.length - 1 ? 'tour-btn-finish' : 'tour-btn-next'}`}
-                onClick={handleNext}
-              >
-                {currentStep === STEPS.length - 1 ? 'Finish' : 'Next'}
-              </button>
-            </div>
+        <h3 style={{ color: '#00b4ff', margin: '0 0 10px 0' }}>{step.title}</h3>
+        <p style={{ color: '#ccc', margin: '0 0 20px 0' }}>{step.content}</p>
+        
+        <div className="tour-footer">
+          <div className="tour-steps-indicator">
+            Step {currentStep + 1} of {STEPS.length}
           </div>
-          <div className="tour-arrow" />
+          <div className="tour-btns">
+            <button className="tour-btn skip" onClick={handleFinish} style={{ background: 'transparent', color: '#888', border: 'none', cursor: 'pointer' }}>Skip</button>
+            <button className="tour-btn next" onClick={handleNext} style={{ background: '#00b4ff', color: 'white', border: 'none', padding: '6px 16px', borderRadius: '4px', cursor: 'pointer' }}>
+              {currentStep === STEPS.length - 1 ? 'Finish' : 'Next'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

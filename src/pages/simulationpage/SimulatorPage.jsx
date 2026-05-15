@@ -21,6 +21,7 @@ import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './Si
 import { ChromeUIProvider } from './ChromeUIContext';
 import QuickAddPortal from './QuickAddPortal';
 import TourGuide from './components/TourGuide';
+import { useTourLogic } from './hooks/useTourLogic';
 
 import PalettePanel from './PalettePanel';
 
@@ -1540,50 +1541,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [renameState, setRenameState] = useState({ id: null, x: 0, y: 0 });
   const [valueState, setValueState] = useState({ id: null, x: 0, y: 0, key: 'value' });
   const [showEngineSelector, setShowEngineSelector] = useState(false)
-  const [showTour, setShowTour] = useState(false);
-  const [tourActiveStep, setTourActiveStep] = useState(null);
 
-  useEffect(() => {
-    const tourCompleted = localStorage.getItem('openhw_tour_completed');
-    if (!tourCompleted) {
-      setShowTour(true);
-    }
-  }, []);
-
-  const demoComponentIdRef = useRef(null);
-
-  const handleFinishTour = useCallback(() => {
-    setShowTour(false);
-    setTourActiveStep(null);
-    localStorage.setItem('openhw_tour_completed', 'true');
-    // Cleanup demo component if it exists
-    if (demoComponentIdRef.current) {
-      setComponents(prev => prev.filter(c => c.id !== demoComponentIdRef.current));
-      demoComponentIdRef.current = null;
-    }
-  }, []);
-
-  const handleTourDemoAction = useCallback((action) => {
-    if (action === 'add-component') {
-      const id = 'demo-comp-' + Date.now();
-      const newComp = {
-        id,
-        type: 'arduino_uno',
-        x: 1200,
-        y: 400,
-        state: {},
-        attrs: {},
-        isDemo: true
-      };
-      setComponents(prev => [...prev, newComp]);
-      demoComponentIdRef.current = id;
-    } else if (action === 'remove-component') {
-      if (demoComponentIdRef.current) {
-        setComponents(prev => prev.filter(c => c.id !== demoComponentIdRef.current));
-        demoComponentIdRef.current = null;
-      }
-    }
-  }, []);
 
   useEffect(() => {
     if (navigator.gpu) {
@@ -1616,6 +1574,20 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [showInspector, setShowInspector] = useState(false);
   const [hoveredElement, setHoveredElement] = useState(null); // { type: 'wire'|'pin'|'comp', id, data }
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  const {
+    showTour,
+    setShowTour,
+    tourActiveStep,
+    setTourActiveStep,
+    handleFinishTour,
+    handleTourDemoAction
+  } = useTourLogic({
+    setComponents,
+    setWires,
+    setCodeTab,
+    setIsPanelOpen
+  });
 
   useEffect(() => {
     if (showInspector) {

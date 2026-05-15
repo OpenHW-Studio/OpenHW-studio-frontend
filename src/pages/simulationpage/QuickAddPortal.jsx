@@ -63,7 +63,7 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
   useEffect(() => {
     if (!quickAdd) return;
     const handler = (e) => {
-      if (!e.target.closest('[data-quickadd="true"]')) setQuickAdd(null);
+      if (e.target.closest && !e.target.closest('[data-quickadd="true"]')) setQuickAdd(null);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
