@@ -185,7 +185,7 @@ function TopToolboxInternal(props) {
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], autofixPlan, autofixStatus, autofixLog, onApplyPlan, onRefresh, autoWiringEnabled, setAutoWiringEnabled, autoBreadboardEnabled, setAutoBreadboardEnabled, autoCodingEnabled, setAutoCodingEnabled, showAutofix, setShowAutofix, showShortcuts, setShowShortcuts } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], autofixPlan, autofixStatus, autofixLog, onApplyPlan, onRefresh, autoWiringEnabled, setAutoWiringEnabled, autoBreadboardEnabled, setAutoBreadboardEnabled, autoCodingEnabled, setAutoCodingEnabled, showAutofix, setShowAutofix, showShortcuts, setShowShortcuts, onStartTour } = props;
   const navigate = useNavigate();
 
 
@@ -266,6 +266,7 @@ function TopToolboxInternal(props) {
   ];
 
   const helpMenuItems = [
+    { label: 'Start Tour', onClick: onStartTour },
     { label: 'Documentation', onClick: () => window.open(DOCS_URL, '_blank') },
     { label: 'Keyboard Shortcuts', shortcut: 'H', onClick: () => setShowShortcuts(true) },
     { 
@@ -791,6 +792,7 @@ function TopToolboxInternal(props) {
               { key: 'Alt + V', desc: 'Toggle Right Panel' },
               { key: '⌘ + B', desc: 'Toggle Console' },
               { key: 'Alt + C', desc: 'Open Code Panel' },
+              { key: 'Alt + E', desc: 'Toggle Code Explorer' },
               { key: 'Alt + S', desc: 'Open Serial Panel' },
               { key: '⌘ + G', desc: 'Toggle Grid' },
               { key: '⌘ + L', desc: 'Toggle Canvas Lock' },

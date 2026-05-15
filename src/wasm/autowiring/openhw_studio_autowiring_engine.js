@@ -32,6 +32,20 @@ export function generateAutonomousSetup(new_comp_json, manifest_json, board_id, 
 }
 
 /**
+ * @param {string} comp_id
+ * @param {any} wires_json
+ * @param {any} manifest_json
+ * @param {any} components_json
+ * @returns {any}
+ */
+export function generateCodeForComponent(comp_id, wires_json, manifest_json, components_json) {
+    const ptr0 = passStringToWasm0(comp_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.generateCodeForComponent(ptr0, len0, wires_json, manifest_json, components_json);
+    return ret;
+}
+
+/**
  * @param {string} id
  * @param {string} kind
  * @param {number} x
