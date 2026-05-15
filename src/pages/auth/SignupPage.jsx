@@ -25,7 +25,7 @@ export default function SignupPage() {
     if (isAuthenticated) {
       if (role === 'teacher') navigate('/teacher/dashboard')
       else if (role === 'student') navigate('/student/dashboard')
-      else navigate('/user/dashboard')
+      else navigate(`/${role || 'user'}/dashboard`)
     }
   }, [isAuthenticated, role, navigate])
 
@@ -44,7 +44,7 @@ export default function SignupPage() {
       const handleRedirect = (userRole) => {
         if (userRole === 'teacher') navigate('/teacher/dashboard')
         else if (userRole === 'student') navigate('/student/dashboard')
-        else navigate('/user/dashboard')
+        else navigate(`/${role || 'user'}/dashboard`)
       }
       handleRedirect(data.user.role)
     } catch (err) {

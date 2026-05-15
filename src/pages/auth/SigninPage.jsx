@@ -23,9 +23,9 @@ export default function SigninPage() {
     if (isAuthenticated) {
       if (selectedRole === 'teacher') navigate('/teacher/dashboard')
       else if (selectedRole === 'student') navigate('/student/dashboard')
-      else navigate('/user/dashboard')
+      else navigate(`/${role || selectedRole || 'user'}/dashboard`)
     }
-  }, [isAuthenticated, navigate, selectedRole])
+  }, [isAuthenticated, role, navigate, selectedRole])
 
   const handleInputChange = (e) => {
     const value = e.target.type === 'email' ? e.target.value.trim() : e.target.value
@@ -46,7 +46,7 @@ export default function SigninPage() {
       const handleRedirect = () => {
         if (selectedRole === 'teacher') navigate('/teacher/dashboard')
         else if (selectedRole === 'student') navigate('/student/dashboard')
-        else navigate('/user/dashboard')
+        else navigate(`/${role || selectedRole || 'user'}/dashboard`)
       }
       handleRedirect()
     } catch (err) {
@@ -71,7 +71,7 @@ export default function SigninPage() {
         const handleRedirect = () => {
           if (selectedRole === 'teacher') navigate('/teacher/dashboard')
           else if (selectedRole === 'student') navigate('/student/dashboard')
-          else navigate('/user/dashboard')
+          else navigate(`/${role || selectedRole || 'user'}/dashboard`)
         }
         handleRedirect()
       } catch (err) {
