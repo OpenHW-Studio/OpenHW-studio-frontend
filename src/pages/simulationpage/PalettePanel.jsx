@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect, memo } from 'react';
 
 const PalettePanel = memo(({
+  isPaletteHovered,
+  setIsPaletteHovered,
   theme,
   liveEditingDisabled,
   addComponentAtCenter,
@@ -23,7 +25,6 @@ const PalettePanel = memo(({
   writeEditCopyPayload,
   forceExpand = false
 }) => {
-  const [isPaletteHovered, setIsPaletteHovered] = useState(false);
 
   useEffect(() => {
     if (forceExpand) {
@@ -210,12 +211,17 @@ const PalettePanel = memo(({
         className="bg-[var(--bg2)] border-r border-[var(--border)] overflow-y-auto overflow-x-hidden flex flex-col shrink-0"
         data-tour-id="palette-panel"
         style={{
-          width: isPaletteHovered ? 340 : 38,
-          transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-          position: 'relative',
-          zIndex: 10,
-          pointerEvents: liveEditingDisabled ? 'none' : 'auto',
-          opacity: liveEditingDisabled ? 0.65 : 1,
+          width: 340,
+          position: 'fixed',
+          top: 50,
+          left: 0,
+          height: 'calc(100vh - 50px)',
+          zIndex: 50,
+          transform: `translateX(${isPaletteHovered ? '0' : '-302px'})`,
+          opacity: 1,
+          pointerEvents: 'auto',
+          transition: 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
+          willChange: 'transform',
         }}
         onMouseEnter={() => setIsPaletteHovered(true)}
         onMouseLeave={() => {
@@ -225,11 +231,28 @@ const PalettePanel = memo(({
       >
         {/* Collapsed indicator — visible only when closed */}
         <div style={{
-          position: 'absolute', inset: 0,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6,
-          opacity: isPaletteHovered ? 0 : 1, transition: 'opacity 0.15s', pointerEvents: 'none',
+          position: 'absolute', 
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 38,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          opacity: isPaletteHovered ? 0 : 1, 
+          transition: 'opacity 0.2s ease-in-out', 
+          pointerEvents: 'none',
         }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', writingMode: 'vertical-rl', letterSpacing: '0.1em' }}>Components</span>
+          <span style={{ 
+            fontSize: 10, 
+            fontWeight: 800, 
+            color: 'var(--text3)', 
+            textTransform: 'uppercase', 
+            writingMode: 'vertical-rl', 
+            letterSpacing: '0.15em',
+            opacity: 0.8,
+            transform: 'rotate(180deg)'
+          }}>
+            COMPONENTS
+          </span>
         </div>
 
         {/* Full palette content */}
