@@ -93,12 +93,12 @@ function CanvasSceneLayerBase({
                 const rect = canvasRef.current.getBoundingClientRect();
                 setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
               }}
-              onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+              onMouseDownSegment={(ev, wire, i, isHoriz, arr, mode) => {
                 if (selected !== wire.id) { setSelected(wire.id); return; }
                 const rect = canvasRef.current.getBoundingClientRect();
                 const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
                 const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false, mode };
                 segDragRef.current = dragData;
                 setSegDrag(dragData);
               }}
@@ -185,12 +185,12 @@ function CanvasSceneLayerBase({
                 const rect = canvasRef.current.getBoundingClientRect();
                 setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
               }}
-              onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+              onMouseDownSegment={(ev, wire, i, isHoriz, arr, mode) => {
                 if (selected !== wire.id) { setSelected(wire.id); return; }
                 const rect = canvasRef.current.getBoundingClientRect();
                 const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
                 const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false, mode };
                 segDragRef.current = dragData;
                 setSegDrag(dragData);
               }}

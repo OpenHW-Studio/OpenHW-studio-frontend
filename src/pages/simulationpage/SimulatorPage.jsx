@@ -15,7 +15,8 @@ import { RightPanel } from './RightPanel';
 import { ProjectsSidebarChrome } from './components/ProjectsSidebar';
 import { multiRoutePath, wireColor } from './wireUtils';
 import { useSimulatorShortcuts } from './hooks/useSimulatorShortcuts';
-import { useCodeExplorerState } from './hooks/useCodeExplorerState';
+import { simplifyOrthogonalPath } from './utils/wireHitDetection';
+import { useEditorStore } from './store/useEditorStore';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
@@ -1547,7 +1548,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [hoveredPin, setHoveredPin] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
-  const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
+  const { code, setCode } = useEditorStore();
   const [solverMode, setSolverMode] = useState('logic')
   const [webGpuSupported, setWebGpuSupported] = useState(false)
   const [blocklyXml, setBlocklyXml] = useState('')
@@ -1588,11 +1589,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     renameCodeFile,
     toggleCodeFileDisabled,
     deleteCodeFile,
-  } = useCodeExplorerState({
-    fileExt,
-    isFileDisabled,
-    disabledFileSuffix: DISABLED_FILE_SUFFIX,
-  });
+  } = useEditorStore();
   const suppressCodeSyncRef = useRef(false)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [panelWidth, setPanelWidth] = useState(580)
@@ -1608,6 +1605,12 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [showInspector, setShowInspector] = useState(false);
   const [hoveredElement, setHoveredElement] = useState(null); // { type: 'wire'|'pin'|'comp', id, data }
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const rightPanelRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const isExplorerDraggingRef = useRef(false);
+
+  useEffect(() => { isDraggingRef.current = isDragging; }, [isDragging]);
+  useEffect(() => { isExplorerDraggingRef.current = isExplorerDragging; }, [isExplorerDragging]);
 
   const {
     showTour,
@@ -1949,7 +1952,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const projectFileMap = useMemo(() => {
     const m = new Map();
-    projectFiles.forEach((f) => m.set(f.id, f));
+    (projectFiles || []).forEach((f) => m.set(f.id, f));
     return m;
   }, [projectFiles]);
 
@@ -1958,7 +1961,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const boardComponents = useMemo(() => components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type)), [components]);
   const boardComponentMap = useMemo(() => {
     const map = new Map();
-    boardComponents.forEach((component) => {
+    (boardComponents || []).forEach((component) => {
       map.set(component.id, component);
     });
     return map;
@@ -3193,7 +3196,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const signature = `${dragMode}:${Math.round(fps)}:${Math.round(worstFrameMs)}:${solverMode}`;
         const prev = runFpsTelemetryLastLogRef.current.get('browser') || null;
 
-        if (prev !== signature) {
+        if (prev !== signature && !isDragging && !isExplorerDragging) {
           const line = [
             'FPS browser',
             `mode=${dragMode}`,
@@ -3579,18 +3582,25 @@ export function SimulatorPage({ gamificationMode = false }) {
   // ── Handle Panel Resize ──────────────────────────────────────────────────────
   const onMouseDownResize = useCallback((e) => {
     e.preventDefault();
+    const startWidth = panelWidth;
+    if (rightPanelRef.current?.aside) {
+      rightPanelRef.current.aside.style.width = `${startWidth}px`;
+    }
     setIsDragging(true);
     const startX = e.clientX;
-    const startWidth = panelWidth;
+    let finalWidth = startWidth;
 
     const onMouseMove = (moveEvent) => {
       const delta = startX - moveEvent.clientX; // Left drag increases width
-      const newWidth = Math.max(250, Math.min(800, startWidth + delta));
-      setPanelWidth(newWidth);
+      finalWidth = Math.max(250, Math.min(800, startWidth + delta));
+      if (rightPanelRef.current?.aside) {
+        rightPanelRef.current.aside.style.width = `${finalWidth}px`;
+      }
     };
 
     const onMouseUp = () => {
       setIsDragging(false);
+      setPanelWidth(finalWidth);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -3622,24 +3632,33 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const onMouseDownExplorerResize = useCallback((e) => {
     e.preventDefault();
+    if (rightPanelRef.current?.explorer) {
+      rightPanelRef.current.explorer.style.width = `${explorerWidth}px`;
+    }
     setIsExplorerDragging(true);
-  }, []);
+  }, [explorerWidth]);
 
   useEffect(() => {
     if (!isExplorerDragging) return;
+    let finalExpWidth = explorerWidth;
     const onMouseMove = (e) => {
       const rightPanelStart = window.innerWidth - panelWidth;
-      const newWidth = e.clientX - rightPanelStart;
-      setExplorerWidth(Math.max(120, Math.min(panelWidth - 100, newWidth)));
+      finalExpWidth = Math.max(120, Math.min(panelWidth - 100, e.clientX - rightPanelStart));
+      if (rightPanelRef.current?.explorer) {
+        rightPanelRef.current.explorer.style.width = `${finalExpWidth}px`;
+      }
     };
-    const onMouseUp = () => setIsExplorerDragging(false);
+    const onMouseUp = () => {
+      setIsExplorerDragging(false);
+      setExplorerWidth(finalExpWidth);
+    };
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [isExplorerDragging, panelWidth]);
+  }, [isExplorerDragging, panelWidth, explorerWidth]);
 
   // ── Close palette context menu on outside click ──────────────────────────
   // paletteContextMenu effect moved to PalettePanel
@@ -4593,6 +4612,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     // store it in a ref, then schedule one rAF callback to do all state updates.
     // This caps React renders at 60fps regardless of mouse polling rate.
     const onMove = (e) => {
+      // If we are resizing panels, BAIL OUT of all canvas mouse tracking to save CPU and prevent re-renders
+      if (isDraggingRef.current || isExplorerDraggingRef.current) return;
+
       // ── Synchronously read event data ───
       let compUpdate = null;
       let wireUpdate = null;
@@ -4657,24 +4679,36 @@ export function SimulatorPage({ gamificationMode = false }) {
           }
         }
       } else if (sd && canvasRef.current) {
-        // Fix #2 ─ wire segment drag
+        // Advanced Wire Interaction: Segment or Waypoint drag
         const rect = canvasRef.current.getBoundingClientRect();
         const mx = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
         const my = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
         const ddx = mx - sd.startMouseCanvas.x;
         const ddy = my - sd.startMouseCanvas.y;
+        
         if (Math.abs(ddx) >= 1 || Math.abs(ddy) >= 1) {
           sd.hasMoved = true;
           const newPts = sd.startPts.map(pt => ({ ...pt }));
-          const { segIdx, isHoriz } = sd;
-          if (isHoriz) {
-            newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
-            newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+          const { segIdx, isHoriz, mode } = sd;
+
+          if (mode === 'waypoint') {
+            // Free move waypoint
+            newPts[segIdx].x += ddx;
+            newPts[segIdx].y += ddy;
           } else {
-            newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
-            newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+            // Orthogonal segment drag
+            if (isHoriz) {
+              newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+            } else {
+              newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+            }
           }
-          wireUpdate = { wireId: sd.wireId, cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) };
+          wireUpdate = { 
+            wireId: sd.wireId, 
+            cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) 
+          };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
         // Fix #4 ─ canvas panning via direct DOM transform (zero React renders mid-pan)
@@ -5012,6 +5046,23 @@ export function SimulatorPage({ gamificationMode = false }) {
       isPanningRef.current = false;
       if (segDragRef.current) {
         if (segDragRef.current.hasMoved) {
+          const wireId = segDragRef.current.wireId;
+          // Apply simplification to clean up redundant segments/waypoints
+          setWires(prev => prev.map(w => {
+            if (w.id === wireId && w.waypoints?.length) {
+              const fromParts = w.from.split(':');
+              const toParts = w.to.split(':');
+              const p1 = getPinPosRef.current(fromParts[0], fromParts.slice(1).join(':'));
+              const p2 = getPinPosRef.current(toParts[0], toParts.slice(1).join(':'));
+              if (p1 && p2) {
+                const fullPath = [p1, ...w.waypoints, p2];
+                const simplified = simplifyOrthogonalPath(fullPath);
+                return { ...w, waypoints: simplified.slice(1, -1) };
+              }
+            }
+            return w;
+          }));
+
           // Save undo snapshot using pre-drag wires captured at drag start
           const pre = segDragRef.current.preWires;
           setHistory(h => ({ past: [...h.past.slice(-20), { components: JSON.parse(JSON.stringify(componentsRef.current)), wires: JSON.parse(JSON.stringify(pre)) }], future: [] }));
@@ -5393,8 +5444,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           setTimeout(() => {
               const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
               setActiveCodeFileId(prev => {
-                   const file = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
-                               || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                   const file = (projectFiles || []).find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
+                               || (projectFiles || []).filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
                                || { id: filename };
                    return file.id;
               });
@@ -5483,7 +5534,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     const prefFile = projectFileMap.get(preferred);
     if (prefFile && prefFile.content && !isFileDisabled(prefFile.path)) return prefFile.content;
 
-    const ino = projectFiles.find(
+    const ino = (projectFiles || []).find(
       (f) => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino' && !isFileDisabled(f.path)
     );
     if (ino?.content) return ino.content;
@@ -5493,7 +5544,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const getBoardCompileFiles = useCallback((boardId, preferredMainPath = '') => {
     // Virtualize project files to include current editor changes
-    const virtualProjectFiles = projectFiles.map(f => ({
+    const virtualProjectFiles = (projectFiles || []).map(f => ({
       ...f,
       content: f.id === activeCodeFileId ? code : (f.content || '')
     }));
@@ -9268,6 +9319,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           {/* RIGHT PANEL */}
           <RightPanel
+            ref={rightPanelRef}
             isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
             explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
             selected={selected} setSelected={setSelected} theme={theme}
