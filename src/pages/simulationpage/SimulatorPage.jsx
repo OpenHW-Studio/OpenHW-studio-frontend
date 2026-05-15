@@ -2196,6 +2196,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentProjectName, setCurrentProjectName] = useState('Untitled');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [isPaletteHovered, setIsPaletteHovered] = useState(false);
   const [showF1Menu, setShowF1Menu] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1.0);
   const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
@@ -9037,6 +9038,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           {/* PALETTE — hover to expand */}
           <PalettePanel
+            isPaletteHovered={isPaletteHovered}
+            setIsPaletteHovered={setIsPaletteHovered}
             theme={theme}
             liveEditingDisabled={liveEditingDisabled}
             addComponentAtCenter={addComponentAtCenter}
@@ -9075,6 +9078,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               touchAction: 'none', // Block browser pinch-to-zoom
               pointerEvents: liveEditingDisabled ? 'none' : 'auto',
               opacity: liveEditingDisabled ? 0.8 : 1,
+              transform: `translateX(${isPaletteHovered ? '302px' : '0'})`,
+              transition: 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
+              willChange: 'transform'
             }}
             ref={canvasRef}
             onTouchStart={onTouchStart}
