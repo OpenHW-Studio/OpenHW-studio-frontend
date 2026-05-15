@@ -8029,21 +8029,27 @@ export function SimulatorPage({ gamificationMode = false }) {
       const actualW = Math.min(bboxW, MAX_EXPORT_DIM);
       const actualH = Math.min(bboxH, MAX_EXPORT_DIM);
 
-      // 1. Tag EVERY element in the circuit for style teleportation
+      // 1. Deep Tagging with Identity Mapping
       const t_tag_start = performance.now();
-      const circuitElements = [];
+      let tagCount = 0;
+      const elementMap = new Map(); // id -> liveElement
       const zoomWrapper = innerCanvasRef.current;
       if (!zoomWrapper) throw new Error('Zoom wrapper not found');
 
-      const elementsToTag = [zoomWrapper, ...Array.from(zoomWrapper.querySelectorAll('*'))];
-      elementsToTag.forEach((el, idx) => {
-        const id = `h2c-p-${idx}`;
-        el.setAttribute('data-h2c-id', id);
-        circuitElements.push(el);
-      });
+      const deepTag = (root) => {
+        const elements = [root, ...Array.from(root.querySelectorAll('*'))];
+        elements.forEach(el => {
+          if (!el.getAttribute) return;
+          const id = `h2c-p-${tagCount++}`;
+          el.setAttribute('data-h2c-id', id);
+          elementMap.set(id, el);
+          if (el.shadowRoot) deepTag(el.shadowRoot);
+        });
+      };
       
-      const shadowHostEls = circuitElements.filter(el => !!el.shadowRoot);
-      console.log(`[PNG Export] Tagged ${circuitElements.length} elements in ${Math.round(performance.now() - t_tag_start)}ms`);
+      deepTag(zoomWrapper);
+      const shadowHostEls = Array.from(elementMap.values()).filter(el => !!el.shadowRoot);
+      console.log(`[PNG Export] Mapped ${tagCount} elements in ${Math.round(performance.now() - t_tag_start)}ms`);
 
       // Dummy canvas used to filter itself out in ignoreElements
       const filterCanvas = document.createElement('canvas');
@@ -8085,14 +8091,16 @@ export function SimulatorPage({ gamificationMode = false }) {
         idoc.body.appendChild(circuitClone);
         
         // 4. Filtered Style Teleportation (Live HTML Mode)
-        console.log(`[PNG Export] Teleporting styles for ${circuitElements.length} elements...`);
+        console.log(`[PNG Export] Teleporting styles for ${tagCount} elements...`);
         
         // 4a. Inline Shadow DOM Content as Live HTML
+        let inlinedCount = 0;
         shadowHostEls.forEach((liveEl) => {
           const dataId = liveEl.getAttribute('data-h2c-id');
           const clonedHost = idoc.querySelector(`[data-h2c-id="${dataId}"]`);
           if (!clonedHost) return;
 
+          inlinedCount++;
           // Copy adopted styles (the component's internal design)
           if (liveEl.shadowRoot.adoptedStyleSheets) {
             liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
@@ -8107,44 +8115,87 @@ export function SimulatorPage({ gamificationMode = false }) {
             clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
           }
         });
+        console.log(`[PNG Export] Inlined shadow content for ${inlinedCount}/${shadowHostEls.length} components`);
 
-        // 4b. Deep Computed Style Copying (With Safety Filters)
+        // 4b. Total Parity Style Teleportation
+        console.log(`[PNG Export] Teleporting styles for ${tagCount} nodes...`);
+        
         const propsToCopy = [
-          'display', 'position', 'left', 'top', 'transform', 
+          'display', 'position', 'left', 'top', 'width', 'height', 'transform', 'transformOrigin',
           'color', 'fontSize', 'fontWeight', 'fontFamily', 'textAlign', 
-          'visibility', 'opacity', 'backgroundColor', 'zIndex'
+          'visibility', 'opacity', 'backgroundColor', 'zIndex',
+          'border', 'borderWidth', 'borderStyle', 'borderColor', 'borderRadius',
+          'padding', 'margin', 'lineHeight', 'overflow', 'boxSizing',
+          'clipPath', 'mask', 'filter', 'mixBlendMode', 'outline',
+          'boxShadow', 'textShadow', 'cursor'
         ];
 
-        idoc.querySelectorAll('[data-h2c-id]').forEach(cloned => {
+        const svgProps = [
+          'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 
+          'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-opacity',
+          'fill-opacity', 'fill-rule', 'marker-start', 'marker-mid', 'marker-end'
+        ];
+
+        const clonedNodes = [idoc.body, ...Array.from(idoc.body.querySelectorAll('*'))];
+        let styleCount = 0;
+        let wireCount = 0;
+        
+        clonedNodes.forEach(cloned => {
           const dataId = cloned.getAttribute('data-h2c-id');
-          const liveEl = zoomWrapper.querySelector(`[data-h2c-id="${dataId}"]`);
+          if (!dataId) return;
+          
+          const liveEl = elementMap.get(dataId);
           if (!liveEl) return;
+
+          styleCount++;
+          if (cloned.tagName === 'path' || cloned.tagName === 'line') wireCount++;
 
           const s = window.getComputedStyle(liveEl);
           
-          // Apply general styles
+          // Copy Layout and Visual Styles with FORCED priority
           propsToCopy.forEach(p => {
-            // SAFETY FILTER: Don't force font-size on SVG text (prevents Giant Text bug)
+            // SAFETY: Prevent Giant Text bug
             if (p === 'fontSize' && (cloned.tagName === 'text' || cloned.tagName === 'tspan')) return;
-            cloned.style[p] = s[p];
+            cloned.style.setProperty(p, s.getPropertyValue(p), 'important');
           });
-          
-          // SAFETY FILTER: Only copy width/height for NON-components (prevents Squashing)
-          if (!liveEl.shadowRoot) {
-            cloned.style.width = s.width;
-            cloned.style.height = s.height;
-          } else {
-            cloned.style.overflow = 'visible'; // Ensure motor parts don't get cut
+
+          // Copy SVG-specific properties with FORCED priority
+          if (['path', 'circle', 'rect', 'line', 'polygon', 'text', 'ellipse', 'g', 'svg'].includes(cloned.tagName)) {
+            svgProps.forEach(attr => {
+              const val = liveEl.getAttribute(attr) || s.getPropertyValue(attr);
+              if (val) {
+                const finalVal = val.includes('color(') ? '#777' : val;
+                cloned.setAttribute(attr, finalVal);
+                // Also set as important style if it's a CSS-mappable property
+                if (['fill', 'stroke', 'stroke-width', 'opacity', 'visibility'].includes(attr)) {
+                  cloned.style.setProperty(attr, finalVal, 'important');
+                }
+              }
+            });
+            
+            // Hardcode width/height attributes to match computed logical size
+            const w = s.getPropertyValue('width');
+            const h = s.getPropertyValue('height');
+            if (w && w !== 'auto' && w !== '100%') {
+              cloned.setAttribute('width', w.replace('px', ''));
+              cloned.style.setProperty('width', w, 'important');
+            }
+            if (h && h !== 'auto' && h !== '100%') {
+              cloned.setAttribute('height', h.replace('px', ''));
+              cloned.style.setProperty('height', h, 'important');
+            }
           }
           
-          // Copy SVG-specific attributes
-          if (liveEl.tagName === 'path' || liveEl.tagName === 'circle' || liveEl.tagName === 'rect') {
-            ['fill', 'stroke', 'stroke-width'].forEach(attr => {
-              const val = liveEl.getAttribute(attr) || s[attr];
-              if (val) cloned.setAttribute(attr, val);
-            });
+          // Final Safety: Ensure nothing is accidentally hidden
+          cloned.style.setProperty('visibility', 'visible', 'important');
+          cloned.style.setProperty('opacity', s.opacity || '1', 'important');
+          if (liveEl.shadowRoot) {
+            cloned.style.setProperty('overflow', 'visible', 'important');
           }
         });
+        
+        console.log(`[PNG Export] Successfully styled ${styleCount} elements, including ${wireCount} wires`);
+        elementMap.clear(); 
 
 
         // Ensure all components are visible
