@@ -7921,7 +7921,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const canvasEl = canvasRef.current;
-      const SCALE = 2.0;
+      const SCALE = 1.5; // High-res (Retina) but uses ~44% less RAM than 2.0
       const PAD = 60; // padding around content in canvas-space pixels
       const pinPosCache = new Map();
       const getCachedPinPos = (compId, pinId) => {
@@ -8029,19 +8029,22 @@ export function SimulatorPage({ gamificationMode = false }) {
       const actualW = Math.min(bboxW, MAX_EXPORT_DIM);
       const actualH = Math.min(bboxH, MAX_EXPORT_DIM);
 
-      // Pre-tag live elements that have shadow roots so we can find them in the clone
+      // 1. Tag shadow hosts using stable data-attributes
+      const t_tag_start = performance.now();
       const shadowHostEls = [];
-      const shadowHostMap = new Map();
-      
-      const elementsToTag = [canvasEl, ...Array.from(canvasEl.querySelectorAll('*'))];
-      elementsToTag.forEach(el => {
+      const zoomWrapper = innerCanvasRef.current;
+      if (!zoomWrapper) throw new Error('Zoom wrapper not found');
+
+      // Tag ONLY within the zoomWrapper
+      const elementsToTag = [zoomWrapper, ...Array.from(zoomWrapper.querySelectorAll('*'))];
+      elementsToTag.forEach((el, idx) => {
         if (el.shadowRoot) {
-          const id = `h2c-shadow-host-${shadowHostEls.length}`;
-          el.classList.add(id); // Use unique class for reliable identification
+          const id = `h2c-sh-${idx}`;
+          el.setAttribute('data-h2c-id', id);
           shadowHostEls.push(el);
-          shadowHostMap.set(id, el);
         }
       });
+      console.log(`[PNG Export] Tagged ${shadowHostEls.length} components in ${Math.round(performance.now() - t_tag_start)}ms`);
 
       // Dummy canvas used to filter itself out in ignoreElements
       const filterCanvas = document.createElement('canvas');
@@ -8049,104 +8052,120 @@ export function SimulatorPage({ gamificationMode = false }) {
       let circuitCanvas;
       try {
         const h2c = await getHtml2canvas();
-        const t_html2c_start = performance.now();
+        const t_prep_start = performance.now();
+        console.log('[PNG Export] Initializing Isolated Iframe...');
+
+        // 1. Create a hidden iframe to isolate the DOM tree
+        const iframe = document.createElement('iframe');
+        Object.assign(iframe.style, {
+          position: 'fixed', left: '-10000px', top: '-10000px',
+          width: actualW + 'px', height: actualH + 'px'
+        });
+        document.body.appendChild(iframe);
+
+        const idoc = iframe.contentDocument || iframe.contentWindow.document;
+        idoc.open();
+        idoc.write('<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#070b14;"></body></html>');
+        idoc.close();
+
+        // 2. Minimal Styles (Only what's needed for the circuit)
+        Array.from(document.styleSheets).forEach(sheet => {
+          try {
+            if (sheet.href) {
+              const link = idoc.createElement('link');
+              link.rel = 'stylesheet'; link.href = sheet.href;
+              idoc.head.appendChild(link);
+            } else {
+              const style = idoc.createElement('style');
+              const css = Array.from(sheet.cssRules).map(r => r.cssText).join('\n');
+              // Only copy internal styles that are likely related to the simulator/components
+              if (css.length < 100000) { 
+                style.textContent = css;
+                idoc.head.appendChild(style);
+              }
+            }
+          } catch (e) {}
+        });
+
+        const filterKiller = idoc.createElement('style');
+        filterKiller.textContent = '* { filter: none !important; box-shadow: none !important; }';
+        idoc.head.appendChild(filterKiller);
+
+        // 3. Clone and Inject
+        const circuitClone = idoc.importNode(zoomWrapper, true);
+        idoc.body.appendChild(circuitClone);
         
-        circuitCanvas = await h2c(canvasEl, {
+        // 4. Pre-Inline Shadow DOM (Done here for 100% reliability)
+        console.log(`[PNG Export] Pre-inlining ${shadowHostEls.length} components into isolated iframe...`);
+        let inlinedCount = 0;
+        shadowHostEls.forEach((liveEl) => {
+          const dataId = liveEl.getAttribute('data-h2c-id');
+          const clonedHost = idoc.querySelector(`[data-h2c-id="${dataId}"]`);
+          if (!clonedHost) return;
+
+          const wrapper = idoc.createElement(liveEl.tagName.toLowerCase());
+          const liveStyle = window.getComputedStyle(liveEl);
+          wrapper.style.cssText = liveStyle.cssText;
+          wrapper.style.width = liveStyle.width;
+          wrapper.style.height = liveStyle.height;
+          wrapper.style.visibility = 'visible';
+          wrapper.style.opacity = '1';
+
+          // Adopt Styles
+          if (liveEl.shadowRoot.adoptedStyleSheets?.length) {
+            liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
+              const styleEl = idoc.createElement('style');
+              styleEl.textContent = getSerializedShadowSheet(sheet);
+              wrapper.appendChild(styleEl);
+            });
+          }
+          // Copy Shadow Content
+          for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
+            wrapper.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
+          }
+          clonedHost.replaceWith(wrapper);
+          inlinedCount++;
+        });
+        console.log(`[PNG Export] Pre-inlining finished: ${inlinedCount}/${shadowHostEls.length} successful.`);
+
+        // 5. Adjust clone for capture
+        Object.assign(circuitClone.style, {
+          transform: `translate(${-minX}px, ${-minY}px) scale(1)`,
+          transformOrigin: '0 0',
+          width: actualW + 'px', height: actualH + 'px',
+          display: 'block', margin: '0', padding: '0'
+        });
+
+        console.log(`[PNG Export] Isolation prep finished. Nodes in iframe: ${idoc.querySelectorAll('*').length}`);
+
+        const t_html2c_start = performance.now();
+        circuitCanvas = await h2c(idoc.body, {
           backgroundColor: '#070b14',
           scale: SCALE,
           useCORS: true,
           allowTaint: false,
-          logging: false,
-          imageTimeout: 5000, 
-          skipFonts: true, 
+          logging: true,
+          imageTimeout: 10000, 
+          skipFonts: true,
           width: actualW,
           height: actualH,
-          x: 0,
-          y: 0,
-          ignoreElements: (element) => {
-            if (element.tagName?.toLowerCase() === 'canvas' && element !== filterCanvas) return true;
-            return false;
-          },
           onclone: (_clonedDoc, clonedEl) => {
-            console.log('[PNG Export] onclone: targeting', clonedEl.tagName, 'size:', clonedEl.offsetWidth, 'x', clonedEl.offsetHeight);
-
-            // 1. Center the circuit in the clone and FORCE size
-            clonedEl.style.overflow = 'hidden'; // Changed from visible to hidden to prevent spillover
-            clonedEl.style.width = actualW + 'px';
-            clonedEl.style.height = actualH + 'px';
-            clonedEl.style.minWidth = actualW + 'px';
-            clonedEl.style.maxWidth = actualW + 'px';
-            clonedEl.style.minHeight = actualH + 'px';
-            clonedEl.style.maxHeight = actualH + 'px';
-            clonedEl.style.backgroundImage = 'none';
-            clonedEl.style.margin = '0';
-            clonedEl.style.padding = '0';
-            clonedEl.style.position = 'relative';
-            
-            const zoomWrapper = clonedEl.querySelector(':scope > div');
-            if (zoomWrapper) {
-              zoomWrapper.style.transform = `translate(${-minX}px, ${-minY}px) scale(1)`;
-              zoomWrapper.style.transformOrigin = '0 0';
-              zoomWrapper.style.width = actualW + 'px';
-              zoomWrapper.style.height = actualH + 'px';
-            }
-
-            // 2. Hide overlays
-            clonedEl.querySelectorAll('[data-export-ignore="true"]').forEach(el => { 
-              el.style.display = 'none'; 
-            });
-
-            // 3. Inline Shadow DOM
-            shadowHostEls.forEach((liveEl) => {
-              const classId = Array.from(liveEl.classList).find(c => c.startsWith('h2c-shadow-host-'));
-              if (!classId) return;
-
-              const cloned = _clonedDoc.querySelector(`.${classId}`);
-              if (!cloned) return;
-              
-              const wrapper = _clonedDoc.createElement((liveEl.tagName || 'div').toLowerCase());
-              for (let i = 0; i < cloned.attributes.length; i++) {
-                const attr = cloned.attributes[i];
-                if (!attr.name.startsWith('h2c-shadow-host-')) wrapper.setAttribute(attr.name, attr.value);
-              }
-              if (cloned.style.cssText) wrapper.style.cssText = cloned.style.cssText;
-              
-              try {
-                const comp = window.getComputedStyle(liveEl);
-                wrapper.style.width = comp.width;
-                wrapper.style.height = comp.height;
-                wrapper.style.transform = comp.transform;
-                wrapper.style.transformOrigin = comp.transformOrigin;
-                wrapper.style.display = comp.display;
-                wrapper.style.position = comp.position;
-              } catch (e) {}
-
-              if (liveEl.shadowRoot.adoptedStyleSheets?.length) {
-                liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
-                  const styleEl = _clonedDoc.createElement('style');
-                  styleEl.textContent = getSerializedShadowSheet(sheet);
-                  wrapper.appendChild(styleEl);
-                });
-              }
-              
-              for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
-                wrapper.appendChild(_clonedDoc.importNode(liveEl.shadowRoot.childNodes[i], true));
-              }
-              
-              cloned.replaceWith(wrapper);
-            });
-            
-            // 4. Color Fix
+            // Already inlined in the iframe! Just doing final color cleanup.
             clonedEl.querySelectorAll('path, rect, circle, polygon, text').forEach(el => {
               const fill = el.getAttribute('fill');
               if (fill && fill.includes('color(')) el.setAttribute('fill', '#777');
               const stroke = el.getAttribute('stroke');
               if (stroke && stroke.includes('color(')) el.setAttribute('stroke', '#777');
             });
-          },
+          }
         });
+        
+        // Memory Flush: Clear the iframe content immediately to free RAM
+        idoc.body.innerHTML = '';
+        idoc.head.innerHTML = '';
+        document.body.removeChild(iframe);
         const t_html2c_end = performance.now();
-        console.log('[PNG Export] html2canvas ms:', Math.round(t_html2c_end - t_html2c_start));
+        console.log('[PNG Export] Isolated html2canvas ms:', Math.round(t_html2c_end - t_html2c_start));
       } finally {
         // Remove temporary classes from live elements
         shadowHostEls.forEach(el => {
