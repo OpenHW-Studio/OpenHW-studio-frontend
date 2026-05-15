@@ -1,6 +1,28 @@
 import React, { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { buildWirePath, getWirePoints } from '../wireUtils';
 
+const samePoint = (prev, next) => (
+  prev === next || (
+    !!prev &&
+    !!next &&
+    prev.x === next.x &&
+    prev.y === next.y &&
+    !!prev.isFallback === !!next.isFallback
+  )
+);
+
+const areCanvasWirePropsEqual = (prev, next) => (
+  prev.wire === next.wire &&
+  samePoint(prev.p1, next.p1) &&
+  samePoint(prev.p2, next.p2) &&
+  samePoint(prev.e1, next.e1) &&
+  samePoint(prev.e2, next.e2) &&
+  prev.isSelected === next.isSelected &&
+  prev.wirepointsEnabled === next.wirepointsEnabled &&
+  prev.offset === next.offset &&
+  prev.wiresAlwaysOnTop === next.wiresAlwaysOnTop
+);
+
 export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false }) => {
   const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset), [p1, e1, e2, p2, wire.waypoints, wire.path, offset]);
   const isOrphaned = p1.isFallback || p2.isFallback;
@@ -46,7 +68,17 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
       }, [])}
     </g>
   );
-});
+}, areCanvasWirePropsEqual);
+
+const areCanvasComponentPropsEqual = (prev, next) => (
+  prev.comp === next.comp &&
+  prev.isSelected === next.isSelected &&
+  prev.hasError === next.hasError &&
+  prev.getComponentStateAttrs === next.getComponentStateAttrs &&
+  prev.COMPONENT_REGISTRY === next.COMPONENT_REGISTRY &&
+  prev.getLiveOopStateSnapshot === next.getLiveOopStateSnapshot &&
+  prev.subscribeLiveOopState === next.subscribeLiveOopState
+);
 
 export const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
   const liveState = useSyncExternalStore(
@@ -153,4 +185,4 @@ export const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouse
       </div>
     </React.Fragment>
   );
-});
+}, areCanvasComponentPropsEqual);

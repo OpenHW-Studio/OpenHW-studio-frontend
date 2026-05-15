@@ -1,7 +1,7 @@
 import React from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
 
-export function CanvasSceneLayer({
+function CanvasSceneLayerBase({
   innerCanvasRef,
   canvasOffset,
   canvasZoom,
@@ -527,3 +527,5 @@ export function CanvasSceneLayer({
     </div>
   );
 }
+
+export const CanvasSceneLayer = React.memo(CanvasSceneLayerBase);
