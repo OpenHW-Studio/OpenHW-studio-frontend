@@ -2,6 +2,7 @@ let init: any;
 let reset: any;
 let ingestComponent: any;
 let generateAutonomousSetup: any;
+let generateCodeForComponent: any;
 
 let isWasmInitialized = false;
 
@@ -16,6 +17,7 @@ self.onmessage = async (e) => {
       reset = mod.reset;
       ingestComponent = mod.ingestComponent;
       generateAutonomousSetup = mod.generateAutonomousSetup;
+      generateCodeForComponent = mod.generateCodeForComponent;
 
       console.log('[AutowiringWorker] Initializing WASM...');
       await init();
@@ -55,6 +57,23 @@ self.onmessage = async (e) => {
         }
 
         console.log('[AutowiringWorker] Generated Plan:', plan);
+        self.postMessage({ type: 'AUTONOMOUS_RESULT', payload: plan });
+        break;
+      }
+
+      case 'GENERATE_CODE_SNIPPET': {
+        let { compId, wires, manifest, components } = payload;
+        
+        reset(); // reset engine state just in case, though this pure function might not strictly need it
+        
+        const snippet = generateCodeForComponent(compId, wires || [], manifest, components || []);
+        
+        let plan: any = { code_snippet: snippet };
+        if (manifest?.autocoding?.libraries) {
+            plan.libraries = manifest.autocoding.libraries;
+        }
+
+        console.log('[AutowiringWorker] Generated Code Snippet:', snippet);
         self.postMessage({ type: 'AUTONOMOUS_RESULT', payload: plan });
         break;
       }

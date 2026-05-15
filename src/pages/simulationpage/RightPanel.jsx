@@ -619,6 +619,7 @@ function RightPanelInternal(props) {
                 ].map(({ id, label, icon }) => (
                   <button
                     key={id}
+                    data-tour-id={`tab-${id}`}
                     onClick={() => setCodeTab(id)}
                     className="group"
                     style={{

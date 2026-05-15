@@ -69,6 +69,7 @@ import * as EmulatorComponents from "@openhw/emulator";
 const { 
   FullCircuitValidator, 
   analyzeCodeHardwareSync, 
+  runUnifiedValidation,
   applyCircuitFix: sharedApplyCircuitFix,
   initializeCircuitFixEngine,
   getFixHistory,
@@ -5962,14 +5963,7 @@ useEffect(() => {
 
   const runCircuitValidation = useCallback(() => {
     try {
-      if (isRunning) {
-        return true;
-      }
-
-      if (typeof FullCircuitValidator !== 'function') {
-        console.warn('[Validation] FullCircuitValidator not available in this build.');
-        return true;
-      }
+      if (isRunning) return true;
 
       const validationSignature = buildValidationSignature();
       const cachedValidation = validationRunCacheRef.current;
@@ -5984,93 +5978,46 @@ useEffect(() => {
         return cachedValidation.allowRun !== false;
       }
 
-      // Adapter: convert frontend format (comp:pin) → engine format (comp.pin)
-      const engineConnections = (wires || []).map(w => ({
-        from: String(w.from || '').replace(':', '.'),
-        to:   String(w.to   || '').replace(':', '.'),
-      }));
-
       const projectData = {
-        components: components,      // engine reads .id, .type, .pins[], .attrs{}
-        connections: engineConnections,
-      };
-
-      const validator = new FullCircuitValidator(projectData);
-      const isSafe = validator.runValidation({
-        profile: 'balanced',
-        useCache: true,
-        cacheKey: validationSignature,
-        incremental: true,
-        incrementalScope: 'webui',
-      });
-
-      // ── Software-Hardware Sync Analysis ──────────────────────────────────
-      const projectForSync = {
-        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
         components: components,
         connections: wires,
-        activeCodeFileId: activeCodeFileId
+        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
+        activeCodeFileId
       };
-      const syncResult = typeof analyzeCodeHardwareSync === 'function' 
-        ? analyzeCodeHardwareSync(projectForSync) 
-        : { passed: true, issues: [] };
 
-      let allowRun = true;
+      // USE UNIFIED ENGINE (Locally)
+      const { safe, physicsSafe, errors, healthScore } = runUnifiedValidation(projectData, {
+        profile: 'balanced',
+        incremental: true,
+        incrementalScope: 'webui',
+        registry: EmulatorComponents
+      });
+
+      setHealthScore(healthScore);
+      setValidationErrors(errors);
+
+      const hasFatalPhysics = errors.some(e => e.severity === 'error' || e.type === 'error');
+      const allowRun = physicsSafe && !hasFatalPhysics;
+
       let nextToast = null;
-
-      if (!isSafe || !syncResult.passed) {
-        const physicsErrors = validator.errors || [];
-
-        const syncErrors = (syncResult.issues || []).map(issue => ({
-          severity: 'warn',
-          type: 'warn',
-          message: issue.message,
-          compIds: []
-        }));
-
-        const formattedErrors = [...physicsErrors, ...syncErrors];
-        
-        // Use emulator's Health Score engine
-        const score = validator.calculateHealthScore(syncErrors);
-        setHealthScore(score);
-
-        const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
-
-        setValidationErrors(formattedErrors);
+      if (!safe) {
         setShowValidation(true);
         if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
-        
-        setValidationToast({
-          title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-          reasons: formattedErrors.slice(0, 3).map(e => e.message),
-        });
 
         nextToast = {
           title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-          reasons: formattedErrors.slice(0, 3).map(e => e.message),
+          reasons: errors.slice(0, 3).map(e => e.message),
         };
-
-        // Only block the run if there is a fatal physics error
-        if (hasFatalPhysics) {
-          allowRun = false;
-        }
-      }
-
-      if (isSafe && syncResult.passed) {
-        setValidationErrors([]);
+        setValidationToast(nextToast);
+      } else {
         setValidationToast(null);
-        setHealthScore(100);
       }
 
       validationRunCacheRef.current = {
-        signature: validationSignature,
+        signature: buildValidationSignature(),
         allowRun,
-        errors: (isSafe && syncResult.passed) ? [] : (validator.errors || []).concat(
-          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
-        ),
-        healthScore: isSafe && syncResult.passed ? 100 : validator.calculateHealthScore(
-          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
-        ),
+        errors,
+        healthScore,
         toast: nextToast,
       };
 
@@ -6402,6 +6349,14 @@ useEffect(() => {
   }, [hardwareConnected, resolvedHardwarePort, hardwareBoardId]);
 
   const handleUploadToHardware = useCallback(async () => {
+    // RUN VALIDATION BEFORE FLASHING
+    appendConsoleEntry('info', '🔍 Validating circuit health before hardware flash...', 'hardware');
+    if (!runCircuitValidation()) {
+      appendConsoleEntry('error', '❌ Flash blocked: The circuit has electrical/safety violations. Fix them first.', 'hardware');
+      setHardwareStatus('Flash blocked: validation failed');
+      return;
+    }
+
     // Disconnect browser Web Serial first to release COM port lock for arduino-cli upload.
     if (hardwareConnected) {
       setHardwareStatus('Disconnecting Web Serial before flash...');
@@ -6410,7 +6365,7 @@ useEffect(() => {
     }
 
     await uploadToHardware();
-  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry]);
+  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry, runCircuitValidation]);
 
   const handleRun = async () => {
     try {
@@ -6420,6 +6375,16 @@ useEffect(() => {
       }
 
       runStartGuardRef.current = true;
+      
+      // 1. Unified Validation Gate (BLOCKING)
+      appendConsoleEntry('info', '🔍 Validating circuit health...', 'simulator');
+      if (!runCircuitValidation()) {
+        appendConsoleEntry('error', '❌ Run blocked: The circuit has electrical or safety violations.', 'simulator');
+        runStartGuardRef.current = false;
+        return;
+      }
+      appendConsoleEntry('info', '✅ Circuit validated. Initializing simulation...', 'simulator');
+
       appendConsoleEntry('info', 'Run requested.', 'simulator');
       rp2040GdbLastLogRef.current.clear();
       rp2040WirelessLastLogRef.current.clear();
@@ -6430,12 +6395,6 @@ useEffect(() => {
       runComponentUpdateCountsRef.current = {};
       runPinTransitionCountsRef.current = {};
       runLastBoardPinsRef.current = new Map();
-
-      if (!runCircuitValidation()) {
-        appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
-        runStartGuardRef.current = false;
-        return;
-      }
 
       setIsRunning(true);
       setIsCompiling(true);

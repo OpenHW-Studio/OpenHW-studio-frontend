@@ -20,9 +20,16 @@ const PalettePanel = memo(({
   buildUiSourceFromRegistry,
   buildValidationSourceFromRegistry,
   buildIndexSourceFromRegistry,
-  writeEditCopyPayload
+  writeEditCopyPayload,
+  forceExpand = false
 }) => {
   const [isPaletteHovered, setIsPaletteHovered] = useState(false);
+
+  useEffect(() => {
+    if (forceExpand) {
+      setIsPaletteHovered(true);
+    }
+  }, [forceExpand]);
   const [paletteContextMenu, setPaletteContextMenu] = useState(null);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const [paletteSearch, setPaletteSearch] = useState('');
@@ -125,6 +132,7 @@ const PalettePanel = memo(({
                 return (
                   <div
                     key={item.type}
+                    data-tour-type={item.type}
                     draggable={!locked}
                     onDragStart={e => !locked && onPaletteDragStart(e, item)}
                     onClick={() => {
@@ -200,6 +208,7 @@ const PalettePanel = memo(({
       {/* PALETTE — hover to expand */}
       <aside
         className="bg-[var(--bg2)] border-r border-[var(--border)] overflow-y-auto overflow-x-hidden flex flex-col shrink-0"
+        data-tour-id="palette-panel"
         style={{
           width: isPaletteHovered ? 340 : 38,
           transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
