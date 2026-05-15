@@ -74,6 +74,17 @@ const getHtml2canvas = async () => {
   return _h2cMod;
 };
 let _exportLogoPromise = null;
+const ensureExportLogo = () => {
+  if (!_exportLogoPromise) {
+    _exportLogoPromise = new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null); // Fallback to no logo rather than failing export
+      img.src = '/logo-Photoroom.png';
+    });
+  }
+  return _exportLogoPromise;
+};
 const _exportShadowSheetCache = new WeakMap();
 // In-memory cache for export results during a session. Keyed by render signature.
 const _exportPngResultCache = new Map();
@@ -7910,7 +7921,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const canvasEl = canvasRef.current;
-      const SCALE = 2.5;
+      const SCALE = 2.0;
       const PAD = 60; // padding around content in canvas-space pixels
       const pinPosCache = new Map();
       const getCachedPinPos = (compId, pinId) => {
@@ -7961,6 +7972,9 @@ export function SimulatorPage({ gamificationMode = false }) {
         if (tp) { minX = Math.min(minX, tp.x); minY = Math.min(minY, tp.y); maxX = Math.max(maxX, tp.x); maxY = Math.max(maxY, tp.y); }
       });
       if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+      
+      // DIAGNOSTIC LOG: See the calculated bounds
+      console.log('[PNG Export] Raw Bounds:', { minX, minY, maxX, maxY });
 
       minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
       const bboxW = maxX - minX;
@@ -7978,7 +7992,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         projectFiles: (projectFiles || []).map(f => ({ id: f.id, content: typeof f.content === 'string' ? f.content : String(f.content || '') })),
         openCodeTabs: openCodeTabs || [],
         activeCodeFileId: activeCodeFileId || '',
-        options: { SCALE, PAD },
+        options: { SCALE: 2.0, PAD },
       };
       const signature = computeRenderSyncHash(exportSignaturePayload);
 
@@ -8007,112 +8021,106 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       }
 
-      // 2. Prepare a cloned canvas and adjust clone for full-content capture
+      // 2. Capture the canvas
       const t_start = performance.now();
       console.log('[PNG Export] signature:', signature);
-      // We avoid mutating the live DOM (which causes visible layout shifts)
+      
+      const MAX_EXPORT_DIM = 4000;
+      const actualW = Math.min(bboxW, MAX_EXPORT_DIM);
+      const actualH = Math.min(bboxH, MAX_EXPORT_DIM);
+
+      // Pre-tag live elements that have shadow roots so we can find them in the clone
       const shadowHostEls = [];
-      // Tag live elements that have shadow roots so we can inline their shadow DOM
-      canvasEl.querySelectorAll('*').forEach(el => {
+      const shadowHostMap = new Map();
+      
+      const elementsToTag = [canvasEl, ...Array.from(canvasEl.querySelectorAll('*'))];
+      elementsToTag.forEach(el => {
         if (el.shadowRoot) {
-          el.dataset.h2cShadow = String(shadowHostEls.length);
+          const id = `h2c-shadow-host-${shadowHostEls.length}`;
+          el.classList.add(id); // Use unique class for reliable identification
           shadowHostEls.push(el);
+          shadowHostMap.set(id, el);
         }
       });
 
-      // Deep-clone the canvas element and operate on the clone
-      const clonedCanvas = canvasEl.cloneNode(true);
-      // Place clone off-screen so it doesn't affect layout
-      const holder = document.createElement('div');
-      holder.style.position = 'fixed';
-      holder.style.left = '-9999px';
-      holder.style.top = '0';
-      holder.style.pointerEvents = 'none';
-      holder.appendChild(clonedCanvas);
-      document.body.appendChild(holder);
-
-      // Hide overlays inside the clone only
-      const cloneOverlays = clonedCanvas.querySelectorAll('[data-export-ignore="true"]');
-      cloneOverlays.forEach(el => { el.style.visibility = 'hidden'; });
-
-      // Find the zoom wrapper inside the clone (first absolutely-positioned child)
-      const zoomWrapperClone = clonedCanvas.querySelector(':scope > div');
-
-      // Apply temporary sizing/transform to the clone to fit all content at scale 1
-      clonedCanvas.style.overflow = 'visible';
-      clonedCanvas.style.width = bboxW + 'px';
-      clonedCanvas.style.height = bboxH + 'px';
-      clonedCanvas.style.flex = 'none';
-      clonedCanvas.style.minWidth = bboxW + 'px';
-      clonedCanvas.style.minHeight = bboxH + 'px';
-      clonedCanvas.style.backgroundImage = 'none'; // hide grid dots from export
-      if (zoomWrapperClone) {
-        zoomWrapperClone.style.transform = `translate(${-minX}px, ${-minY}px) scale(1)`;
-        zoomWrapperClone.style.width = bboxW + 'px';
-        zoomWrapperClone.style.height = bboxH + 'px';
-      }
+      // Dummy canvas used to filter itself out in ignoreElements
+      const filterCanvas = document.createElement('canvas');
 
       let circuitCanvas;
       try {
-        const html2canvas = await getHtml2canvas();
+        const h2c = await getHtml2canvas();
         const t_html2c_start = performance.now();
-        circuitCanvas = await html2canvas(clonedCanvas, {
+        
+        circuitCanvas = await h2c(canvasEl, {
           backgroundColor: '#070b14',
           scale: SCALE,
           useCORS: true,
-          allowTaint: true,
+          allowTaint: false,
           logging: false,
-          width: bboxW,
-          height: bboxH,
+          imageTimeout: 5000, 
+          skipFonts: true, 
+          width: actualW,
+          height: actualH,
           x: 0,
           y: 0,
-          scrollX: 0,
-          scrollY: 0,
+          ignoreElements: (element) => {
+            if (element.tagName?.toLowerCase() === 'canvas' && element !== filterCanvas) return true;
+            return false;
+          },
           onclone: (_clonedDoc, clonedEl) => {
-            // Fix for "unsupported color function color()" error in html2canvas
-            const allElements = clonedEl.querySelectorAll('*');
-            allElements.forEach(el => {
-              if (!el.style) return;
-              const props = ['color', 'backgroundColor', 'borderColor', 'fill', 'stroke', 'outlineColor', 'stopColor'];
-              props.forEach(prop => {
-                const val = el.style[prop];
-                if (val && val.includes('color(')) {
-                  // html2canvas fails on color(display-p3 ...) or color(srgb ...)
-                  // We strip it to a fallback or attempt a simple regex replacement if possible
-                  // For now, replacing with a visible fallback to avoid crash
-                  el.style[prop] = '#777';
-                }
-              });
+            console.log('[PNG Export] onclone: targeting', clonedEl.tagName, 'size:', clonedEl.offsetWidth, 'x', clonedEl.offsetHeight);
+
+            // 1. Center the circuit in the clone and FORCE size
+            clonedEl.style.overflow = 'hidden'; // Changed from visible to hidden to prevent spillover
+            clonedEl.style.width = actualW + 'px';
+            clonedEl.style.height = actualH + 'px';
+            clonedEl.style.minWidth = actualW + 'px';
+            clonedEl.style.maxWidth = actualW + 'px';
+            clonedEl.style.minHeight = actualH + 'px';
+            clonedEl.style.maxHeight = actualH + 'px';
+            clonedEl.style.backgroundImage = 'none';
+            clonedEl.style.margin = '0';
+            clonedEl.style.padding = '0';
+            clonedEl.style.position = 'relative';
+            
+            const zoomWrapper = clonedEl.querySelector(':scope > div');
+            if (zoomWrapper) {
+              zoomWrapper.style.transform = `translate(${-minX}px, ${-minY}px) scale(1)`;
+              zoomWrapper.style.transformOrigin = '0 0';
+              zoomWrapper.style.width = actualW + 'px';
+              zoomWrapper.style.height = actualH + 'px';
+            }
+
+            // 2. Hide overlays
+            clonedEl.querySelectorAll('[data-export-ignore="true"]').forEach(el => { 
+              el.style.display = 'none'; 
             });
 
-            // Inline shadow DOM content from live elements into the cloned document
-            shadowHostEls.forEach((liveEl, idx) => {
-              const cloned = clonedEl.querySelector(`[data-h2c-shadow="${idx}"]`);
-              if (!cloned || !liveEl.shadowRoot) return;
+            // 3. Inline Shadow DOM
+            shadowHostEls.forEach((liveEl) => {
+              const classId = Array.from(liveEl.classList).find(c => c.startsWith('h2c-shadow-host-'));
+              if (!classId) return;
+
+              const cloned = _clonedDoc.querySelector(`.${classId}`);
+              if (!cloned) return;
+              
               const wrapper = _clonedDoc.createElement((liveEl.tagName || 'div').toLowerCase());
-              // Preserve the original element identity and inline styles so board-specific CSS keeps applying.
-              Array.from(cloned.attributes).forEach(attr => {
-                if (attr.name === 'data-h2c-shadow') return;
-                wrapper.setAttribute(attr.name, attr.value);
-              });
-              // Preserve inline styles from the cloned host element
-              Array.from(cloned.style).forEach(p =>
-                wrapper.style.setProperty(p, cloned.style.getPropertyValue(p))
-              );
-              // Also copy computed styles (more reliable for transforms/size)
+              for (let i = 0; i < cloned.attributes.length; i++) {
+                const attr = cloned.attributes[i];
+                if (!attr.name.startsWith('h2c-shadow-host-')) wrapper.setAttribute(attr.name, attr.value);
+              }
+              if (cloned.style.cssText) wrapper.style.cssText = cloned.style.cssText;
+              
               try {
                 const comp = window.getComputedStyle(liveEl);
-                // copy transform, width, height, display
-                if (comp.transform) wrapper.style.transform = comp.transform;
-                if (comp.transformOrigin) wrapper.style.transformOrigin = comp.transformOrigin;
-                if (comp.width) wrapper.style.width = comp.width;
-                if (comp.height) wrapper.style.height = comp.height;
-                if (comp.display) wrapper.style.display = comp.display;
-                if (comp.position) wrapper.style.position = comp.position;
-              } catch (e) {
-                // ignore getComputedStyle failures in some environments
-              }
-              // Deep-copy shadow root children into the wrapper so html2canvas sees them
+                wrapper.style.width = comp.width;
+                wrapper.style.height = comp.height;
+                wrapper.style.transform = comp.transform;
+                wrapper.style.transformOrigin = comp.transformOrigin;
+                wrapper.style.display = comp.display;
+                wrapper.style.position = comp.position;
+              } catch (e) {}
+
               if (liveEl.shadowRoot.adoptedStyleSheets?.length) {
                 liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
                   const styleEl = _clonedDoc.createElement('style');
@@ -8120,19 +8128,31 @@ export function SimulatorPage({ gamificationMode = false }) {
                   wrapper.appendChild(styleEl);
                 });
               }
-              liveEl.shadowRoot.childNodes.forEach(node =>
-                wrapper.appendChild(_clonedDoc.importNode(node, true))
-              );
+              
+              for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
+                wrapper.appendChild(_clonedDoc.importNode(liveEl.shadowRoot.childNodes[i], true));
+              }
+              
               cloned.replaceWith(wrapper);
+            });
+            
+            // 4. Color Fix
+            clonedEl.querySelectorAll('path, rect, circle, polygon, text').forEach(el => {
+              const fill = el.getAttribute('fill');
+              if (fill && fill.includes('color(')) el.setAttribute('fill', '#777');
+              const stroke = el.getAttribute('stroke');
+              if (stroke && stroke.includes('color(')) el.setAttribute('stroke', '#777');
             });
           },
         });
         const t_html2c_end = performance.now();
         console.log('[PNG Export] html2canvas ms:', Math.round(t_html2c_end - t_html2c_start));
       } finally {
-        // Clean up: remove clone holder and temporary data attributes on live elements
-        holder.remove();
-        shadowHostEls.forEach(el => { delete el.dataset.h2cShadow; });
+        // Remove temporary classes from live elements
+        shadowHostEls.forEach(el => {
+          const classId = Array.from(el.classList).find(c => c.startsWith('h2c-shadow-host-'));
+          if (classId) el.classList.remove(classId);
+        });
       }
 
       const t_compose_start = performance.now();
@@ -8151,21 +8171,15 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       // Branding logo (bottom-right)
       try {
-        if (!_exportLogoPromise) {
-          _exportLogoPromise = new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve(img);
-            img.onerror = reject;
-            img.src = '/logo-Photoroom.png';
-          });
+        const logo = await ensureExportLogo();
+        if (logo) {
+          const logoW = Math.min(Math.round(130 * SCALE), Math.max(96 * SCALE, Math.round(CW * 0.16)));
+          const logoH = Math.round(logoW * (logo.height / logo.width));
+          ctx.save();
+          ctx.globalAlpha = 0.62;
+          ctx.drawImage(logo, CW - logoW - 14 * SCALE, CH - logoH - 14 * SCALE, logoW, logoH);
+          ctx.restore();
         }
-        const logo = await _exportLogoPromise;
-        const logoW = Math.min(Math.round(130 * SCALE), Math.max(96 * SCALE, Math.round(CW * 0.16)));
-        const logoH = Math.round(logoW * (logo.height / logo.width));
-        ctx.save();
-        ctx.globalAlpha = 0.62;
-        ctx.drawImage(logo, CW - logoW - 14 * SCALE, CH - logoH - 14 * SCALE, logoW, logoH);
-        ctx.restore();
       } catch (logoErr) {
         // Ignore logo load failures so export still succeeds.
       }
