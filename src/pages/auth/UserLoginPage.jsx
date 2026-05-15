@@ -27,7 +27,7 @@ export default function UserLoginPage() {
       navigate(from)
       return
     }
-    navigate('/user/dashboard')
+    navigate(`${role || 'user'}/dashboard`)
   }
 
   useEffect(() => {
