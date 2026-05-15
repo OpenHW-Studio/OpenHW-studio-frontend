@@ -1,3 +1,9 @@
+import { normalizeProjectFiles } from '../../utils/projectCompilerUtils';
+import { COMPONENT_REGISTRY } from './utils/componentRegistry';
+import { allocateComponentId } from './utils/simulatorUtils';
+import * as hardwareUtils from './utils/hardwareUtils';
+import { wireColor } from './wireUtils';
+
 /**
  * projectUtils.js
  * Central hub for circuit editing, plan application, and geometric utilities.
@@ -526,3 +532,247 @@ function injectI2cPullups(compId, bb, boardId, updatedComponents, updatedWires, 
     updatedWires.push({ id: `w_i2c_vcc_${Date.now()}`, from: `${boardId}:3V3`, to: vccRailSda, color: 'red' });
 }
 */
+export function getDefaultMainFileName(boardKind, boardId, options = {}, hardwareUtils) {
+  if (boardKind === 'rp2040') {
+    const rp2040Mode = hardwareUtils.normalizeRp2040Env(options?.rp2040Mode || 'native');
+    if (hardwareUtils.isRp2040PythonEnv(rp2040Mode)) {
+      return hardwareUtils.getRp2040PythonEntryFileName(rp2040Mode);
+    }
+    return `${boardId}.ino`;
+  }
+  return `${boardId}.ino`;
+}
+
+export function toBoardRelativePath(boardId, fullPath) {
+  const prefix = `project/${boardId}/`;
+  const raw = String(fullPath || '').replace(/\\/g, '/');
+  if (!raw.startsWith(prefix)) {
+    return String(raw.split('/').pop() || '').trim();
+  }
+
+  const relative = raw.slice(prefix.length).trim();
+  const parts = relative
+    .split('/')
+    .map((part) => part.trim())
+    .filter((part) => part && part !== '.' && part !== '..');
+  return parts.join('/');
+}
+
+export function normalizeOpenCodeTabs(tabs, projectFiles) {
+  const list = Array.isArray(tabs) ? tabs : [];
+  const fileIds = new Set((projectFiles || []).map((f) => f.id));
+  const seen = new Set();
+  const out = [];
+
+  list.forEach((tabId) => {
+    const id = String(tabId || '').trim();
+    if (!id || seen.has(id) || !fileIds.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  });
+
+  return out;
+}
+
+export function buildProjectPayload({
+  name = '',
+  board = 'arduino_uno',
+  components = [],
+  wires = [],
+  code = '',
+  includeCode = true,
+  blocklyXml = '',
+  blocklyGeneratedCode = '',
+  useBlocklyCode = false,
+  projectFiles = [],
+  openCodeTabs = [],
+  activeCodeFileId = '',
+  exportedAt = ''
+} = {}) {
+  const componentsArray = Array.isArray(components) ? components : [];
+  const detectedBoardComponent = componentsArray.find((component) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(component?.type || '')));
+  const resolvedBoard = detectedBoardComponent?.type || String(board || 'arduino_uno');
+
+  const normalizedFiles = normalizeProjectFiles(projectFiles)
+    .filter((file) => file.id !== 'project/diagram.json')
+    .map((file) => ({
+      ...file,
+      content: typeof file.content === 'string' ? file.content : String(file.content ?? ''),
+    }));
+  const normalizedTabs = normalizeOpenCodeTabs(openCodeTabs, normalizedFiles);
+  const preferredActive = String(activeCodeFileId || '').trim();
+  const resolvedActiveId = normalizedFiles.some((file) => file.id === preferredActive)
+    ? preferredActive
+    : (normalizedTabs[0] || normalizedFiles[0]?.id || '');
+
+  const payload = {
+    schemaVersion: 'openhw-project-v2',
+    board: resolvedBoard,
+    components: componentsArray.map((component) => {
+      const isSnapped = (Array.isArray(wires) ? wires : []).some(w => w.isSocket && (w.from.startsWith(component.id + ':') || w.to.startsWith(component.id + ':')));
+      return {
+        id: String(component?.id || ''),
+        type: String(component?.type || ''),
+        label: String(component?.label || ''),
+        x: Number(component?.x ?? 0),
+        y: Number(component?.y ?? 0),
+        w: Number(component?.w ?? 0),
+        h: Number(component?.h ?? 0),
+        rotation: Number(component?.rotation ?? 0),
+        attrs: component?.attrs && typeof component.attrs === 'object' ? component.attrs : {},
+        snap: isSnapped || undefined,
+      };
+    }),
+    connections: (Array.isArray(wires) ? wires : []).map((wire) => ({
+      id: String(wire?.id || ''),
+      from: String(wire?.from || ''),
+      to: String(wire?.to || ''),
+      color: String(wire?.color || ''),
+      waypoints: Array.isArray(wire?.waypoints) ? wire.waypoints : [],
+      isBelow: wire?.isBelow === true,
+      isSocket: wire?.isSocket === true,
+      isHidden: wire?.isHidden === true,
+      isHelp: wire?.isHelp === true,
+      fromLabel: String(wire?.fromLabel || ''),
+      toLabel: String(wire?.toLabel || ''),
+    })),
+    blocklyXml: String(blocklyXml || ''),
+    blocklyGeneratedCode: String(blocklyGeneratedCode || ''),
+    useBlocklyCode: !!useBlocklyCode,
+    projectFiles: normalizedFiles,
+    openCodeTabs: normalizedTabs,
+    activeCodeFileId: resolvedActiveId,
+  };
+
+  if (includeCode) {
+    payload.code = String(code || '');
+  }
+
+  if (name) payload.name = String(name);
+  if (exportedAt) payload.exportedAt = String(exportedAt);
+  return payload;
+}
+
+export function normalizeImportedCircuitData(rawComponents, rawConnections) {
+  const componentsInput = Array.isArray(rawComponents) ? rawComponents : [];
+  const wiresInput = Array.isArray(rawConnections) ? rawConnections : [];
+
+  const usedComponentIds = new Set();
+  let layoutSlot = 0;
+
+  const normalizedComponents = componentsInput
+    .map((component) => {
+      if (!component || typeof component !== 'object') return null;
+      const type = String(component.type || '').trim();
+      if (!type) return null;
+
+      const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
+
+      const rawId = String(component.id || '').trim();
+      const id = rawId && !usedComponentIds.has(rawId)
+        ? (usedComponentIds.add(rawId), rawId)
+        : allocateComponentId(type, usedComponentIds);
+
+      const defaultW = Number(regManifest.w ?? 80);
+      const defaultH = Number(regManifest.h ?? 60);
+      const width = Number(component.w);
+      const height = Number(component.h);
+
+      const hasX = Number.isFinite(Number(component.x));
+      const hasY = Number.isFinite(Number(component.y));
+      let x = Number(component.x);
+      let y = Number(component.y);
+      if (!hasX || !hasY) {
+        const col = layoutSlot % 4;
+        const row = Math.floor(layoutSlot / 4);
+        x = 120 + col * 220;
+        y = 80 + row * 170;
+        layoutSlot += 1;
+      }
+
+      const attrs = component.attrs && typeof component.attrs === 'object'
+        ? { ...component.attrs }
+        : {};
+      if (hardwareUtils.normalizeBoardKind(type) === 'rp2040') {
+        attrs.env = hardwareUtils.normalizeRp2040Env(hardwareUtils.resolveComponentAttrString(attrs, 'env', 'native'));
+      }
+
+      return {
+        ...component,
+        id,
+        type,
+        label: String(component.label || regManifest.label || type),
+        x,
+        y,
+        w: Number.isFinite(width) && width > 0
+          ? width
+          : (Number.isFinite(defaultW) && defaultW > 0 ? defaultW : 80),
+        h: Number.isFinite(height) && height > 0
+          ? height
+          : (Number.isFinite(defaultH) && defaultH > 0 ? defaultH : 60),
+        rotation: Number.isFinite(Number(component.rotation))
+          ? ((Number(component.rotation) % 360) + 360) % 360
+          : 0,
+        attrs,
+      };
+    })
+    .filter(Boolean);
+
+  const endpointLabel = (endpoint) => {
+    const parts = String(endpoint || '').split(':');
+    return parts.length > 1 ? parts.slice(1).join(':') : '';
+  };
+
+  const normalizeWaypoint = (point) => {
+    if (!point || typeof point !== 'object') return null;
+    const x = Number(point.x);
+    const y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y, ...(point._corner ? { _corner: true } : {}) };
+  };
+
+  const usedWireIds = new Set();
+  const allocateWireId = () => {
+    let idx = 1;
+    let candidate = `w${idx}`;
+    while (usedWireIds.has(candidate)) {
+      idx += 1;
+      candidate = `w${idx}`;
+    }
+    usedWireIds.add(candidate);
+    return candidate;
+  };
+
+  const normalizedWires = wiresInput
+    .map((wire) => {
+      if (!wire || typeof wire !== 'object') return null;
+      const from = String(wire.from || '').trim();
+      const to = String(wire.to || '').trim();
+      if (!from || !to) return null;
+
+      const rawWireId = String(wire.id || '').trim();
+      const id = rawWireId && !usedWireIds.has(rawWireId)
+        ? (usedWireIds.add(rawWireId), rawWireId)
+        : allocateWireId();
+
+      return {
+        ...wire,
+        id,
+        from,
+        to,
+        color: typeof wire.color === 'string' && wire.color.trim() ? wire.color : wireColor(),
+        waypoints: Array.isArray(wire.waypoints)
+          ? wire.waypoints.map(normalizeWaypoint).filter(Boolean)
+          : [],
+        isBelow: wire.isBelow === true,
+        isSocket: wire.isSocket === true,
+        isHidden: wire.isHidden === true,
+        isHelp: wire.isHelp === true,
+        fromLabel: String(wire.fromLabel || endpointLabel(from) || ''),
+        toLabel: String(wire.toLabel || endpointLabel(to) || ''),
+      };
+    })
+    .filter(Boolean);
+
+  return { components: normalizedComponents, wires: normalizedWires };
+}

@@ -1,3 +1,36 @@
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { useGamification } from '../../context/GamificationContext.jsx'
+import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
+import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
+import {
+  compileCode,
+  flashFirmware,
+  fetchInstalledLibraries,
+  searchLibraries,
+  installLibrary,
+  submitCustomComponent,
+  fetchInstalledComponentsWithFiles,
+  createSharedSimulation,
+  fetchSharedSimulation,
+  fetchLiveSimulationSession,
+  buildLiveSimulationWsUrl,
+  fetchPublicInstalledComponents,
+  fetchComponentsVersion,
+  API_BASE_URL
+} from '../../services/simulatorService.js'
+import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
+import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
+import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
+import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
+import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
+import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
+import html2canvas from 'html2canvas'
+import JSZip from 'jszip';
+import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared, extractProjectMetaFromPng } from '../../utils/projectCompilerUtils';
+
+// Modular Imports
 import { TopToolbox } from './TopToolbox';
 import {
   calculateProjectPlanApplication,
@@ -7,7 +40,12 @@ import {
   robustSnapComponent,
   mergeCodeSnippet,
   removeCodeSnippet,
-  getBoardColors
+  getBoardColors,
+  getDefaultMainFileName,
+  toBoardRelativePath,
+  normalizeOpenCodeTabs,
+  buildProjectPayload,
+  normalizeImportedCircuitData
 } from './projectUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
@@ -23,27 +61,8 @@ import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './Si
 import QuickAddPortal from './QuickAddPortal';
 import TourGuide from './components/TourGuide';
 import { useTourLogic } from './hooks/useTourLogic';
-
 import PalettePanel from './PalettePanel';
 
-
-
-
-
-
-
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext.jsx'
-import { useGamification } from '../../context/GamificationContext.jsx'
-import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
-import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion } from '../../services/simulatorService.js'
-import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
-import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
-import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
-import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
-import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { ComponentContextMenu, ComponentRenamePanel, ComponentValuePanel } from './ComponentContextMenu';
 import { CanvasSceneLayer } from './components/CanvasSceneLayer';
 import { CreateComponentModal } from './components/CreateComponentModal';
@@ -56,52 +75,6 @@ import { SimulatorRuntimePanel } from './components/SimulatorRuntimePanel';
 import { CanvasBottomControls } from './components/CanvasBottomControls';
 import { F1MenuOverlay } from './components/F1MenuOverlay';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
-import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
-import html2canvas from 'html2canvas'
-import JSZip from 'jszip';
-import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared, extractProjectMetaFromPng } from '../../utils/projectCompilerUtils';
-
-// ── Lazy loaders — heavy libs loaded on first use, NOT on page paint ──────────
-// @babel/standalone is ~800KB — loading it eagerly was causing the 3.73s LCP.
-// html2canvas is ~120KB — only needed for PNG export.
-let _babelMod = null;
-const getBabel = async () => {
-  if (!_babelMod) _babelMod = await import('@babel/standalone');
-  return _babelMod;
-};
-let _h2cMod = null;
-const getHtml2canvas = async () => {
-  if (!_h2cMod) _h2cMod = (await import('html2canvas')).default;
-  return _h2cMod;
-};
-let _exportLogoPromise = null;
-const ensureExportLogo = () => {
-  if (!_exportLogoPromise) {
-    _exportLogoPromise = new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null); // Fallback to no logo rather than failing export
-      img.src = '/logo-Photoroom.png';
-    });
-  }
-  return _exportLogoPromise;
-};
-const _exportShadowSheetCache = new WeakMap();
-// In-memory cache for export results during a session. Keyed by render signature.
-const _exportPngResultCache = new Map();
-
-function getSerializedShadowSheet(sheet) {
-  if (!sheet) return '';
-  if (_exportShadowSheetCache.has(sheet)) return _exportShadowSheetCache.get(sheet);
-  let cssText = '';
-  try {
-    cssText = Array.from(sheet.cssRules || []).map(rule => rule.cssText).join('\n');
-  } catch (error) {
-    cssText = '';
-  }
-  _exportShadowSheetCache.set(sheet, cssText);
-  return cssText;
-}
 
 import * as EmulatorComponents from "@openhw/emulator";
 const {
@@ -111,6 +84,85 @@ const {
   ProtocolAnalyzer: SharedProtocolAnalyzer
 } = EmulatorComponents;
 
+import {
+  BOARD_BAUD_PRESETS,
+  BOARD_DEFAULT_BAUD,
+  SERIAL_LINE_ENDINGS,
+  BOARD_FQBN,
+  BOARD_DISPLAY_NAME,
+  UF2_PAYLOAD_PREFIX,
+  DEFAULT_PICO_MICROPYTHON_UF2_URL,
+  DEFAULT_PICO_CIRCUITPYTHON_UF2_URL,
+  DEFAULT_PICO_CIRCUITPYTHON_VERSION,
+  DISABLED_FILE_SUFFIX,
+  ARDUINO_CODE_EXTENSIONS,
+  ROOT_UPLOADABLE_EXTENSIONS,
+  RP2040_NATIVE_ALLOWED_EXTENSIONS,
+  RP2040_MICROPYTHON_ALLOWED_EXTENSIONS,
+  GROUP_MAPPING
+} from './constants/simulatorConstants';
+
+import { GROUP_ICON_SVG, GROUP_COLORS } from './constants/groupVisuals';
+
+import {
+  COMPONENT_REGISTRY,
+  LOCAL_PIN_DEFS,
+  BUILTIN_COMPONENT_TYPES,
+  LOCAL_CATALOG,
+  injectComponentsIntoRegistry,
+  buildCatalog,
+  buildUiSourceFromRegistry,
+  buildLogicSourceFromRegistry,
+  buildValidationSourceFromRegistry,
+  buildIndexSourceFromRegistry
+} from './utils/componentRegistry';
+
+import {
+  fnv1aHash,
+  computeRenderSyncHash,
+  normalizeHashValue,
+  extractCompileSummaryLines,
+  formatRunDuration,
+  toPascalCase,
+  extractFunctionSource,
+  allocateComponentId,
+  resolveComponentIdFormat,
+  arrayBufferToBase64
+} from './utils/simulatorUtils';
+
+import {
+  getBabel,
+  getHtml2canvas,
+  ensureExportLogo,
+  getSerializedShadowSheet,
+  cleanupEditCopyPayloadStorage,
+  writeEditCopyPayload
+} from './utils/exportUtils';
+
+import {
+  normalizeBoardKind,
+  boardKindToDisplayName,
+  boardCompToDisplayName,
+  resolveBoardFqbnForComponent,
+  normalizeRp2040Env,
+  createDefaultMainCode,
+  isRp2040PythonEnv,
+  getRp2040PythonEntryFileName,
+  mapRp2040EnvForLegacyContextMenu,
+  looksLikeMicroPythonSource,
+  arduinoBlinkToMicroPython,
+  arduinoSerialToMicroPython,
+  prepareRp2040SketchForSimulation,
+  resolveRp2040SourceMode,
+  resolveComponentAttrString,
+  ensureMicroPythonSerialProbe,
+  applyRp2040MicroPythonCompat,
+  isProgrammableBoardType,
+  endpointAliases,
+  hasCategoryIntersection,
+  getPinCategory
+} from './utils/hardwareUtils';
+
 // Web Editor features
 import EditorComponent from 'react-simple-code-editor';
 const Editor = EditorComponent.default || EditorComponent;
@@ -119,7 +171,6 @@ import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
-// Import a Prism theme (or we can inject our own CSS wrapper)
 import 'prismjs/themes/prism-tomorrow.css';
 
 const EDIT_COPY_KEY = 'openhw_edit_copy';
@@ -132,1291 +183,25 @@ function assertSafeDynamicModule(code, label) {
   }
 }
 
-function collectRawComponentSources() {
-  const rawFiles = {
-    ...import.meta.glob('../../../emulator/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../emulator/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../emulator/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../emulator/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../emulator/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
-  };
-
-  const out = {};
-  Object.entries(rawFiles).forEach(([filePath, raw]) => {
-    const normalized = String(filePath || '').replace(/\\/g, '/').replace(/\?raw$/, '');
-    const match = normalized.match(/\/components\/([^/]+)\/(.+)$/);
-    if (!match) return;
-
-    const [, componentType, leaf] = match;
-    if (!out[componentType]) out[componentType] = {};
-    const text = String(raw || '');
-
-    if (leaf === 'ui.tsx') out[componentType].uiRaw = text;
-    if (leaf === 'logic.ts') out[componentType].logicRaw = text;
-    if (leaf === 'validation.ts') out[componentType].validationRaw = text;
-    if (leaf === 'index.ts') out[componentType].indexRaw = text;
-    if (leaf === 'doc/index.html') out[componentType].docRaw = text;
-  });
-
-  return out;
-}
-
-const COMPONENT_RAW_SOURCES = collectRawComponentSources();
-
-const LOCAL_CATALOG = [];
-const LOCAL_PIN_DEFS = {};
-
-// Build Catalog & UI Registry dynamically from local backend imports
-const COMPONENT_REGISTRY = {};
-
-Object.entries(EmulatorComponents).forEach(([key, module]) => {
-  if (key === 'BaseComponent') return;
-
-  if (module && module.manifest) {
-    const compId = module.manifest.type || module.manifest.id || key;
-    const raw = COMPONENT_RAW_SOURCES[compId] || COMPONENT_RAW_SOURCES[key];
-    COMPONENT_REGISTRY[compId] = raw
-      ? {
-        ...module,
-        ...raw,
-        ...(raw.docRaw ? { doc: raw.docRaw } : {}),
-      }
-      : module;
-
-    // ── REGISTER BUILTIN PINS ──
-    if (module.manifest.pins) {
-      LOCAL_PIN_DEFS[compId] = module.manifest.pins;
-    }
-  }
-});
-
-// Types that are natively compiled into the frontend and should not be overwritten by dynamic sync
-const BUILTIN_COMPONENT_TYPES = new Set(
-  Object.values(EmulatorComponents)
-    .filter(m => m && m.manifest)
-    .map(m => m.manifest.type || m.manifest.id)
-    .filter(Boolean)
-);
-
-// Compatibility aliases: accept WS2812 naming variants used in imported diagrams.
-const neopixelBaseModule = COMPONENT_REGISTRY['wokwi-neopixel-matrix'];
-if (neopixelBaseModule?.manifest) {
-  ['wokwi-ws2812b', 'wokwi-ws2821b'].forEach((aliasType) => {
-    if (COMPONENT_REGISTRY[aliasType]) return;
-    COMPONENT_REGISTRY[aliasType] = {
-      ...neopixelBaseModule,
-      manifest: {
-        ...neopixelBaseModule.manifest,
-        type: aliasType,
-        hiddenAlias: true,
-      },
-    };
-  });
-}
-
-const GROUP_MAPPING = {
-  'Basic': 'basic',
-  'Passives': 'basic',
-  'Power': 'basic',
-  'Outputs': 'output',
-  'Inputs': 'input',
-  'Sensors': 'sensor',
-  'Displays': 'display',
-  'Memory': 'misc',
-  'Logic': 'logic'
-};
-
-function normalizeGroupName(name) {
-  return GROUP_MAPPING[name] || name;
-}
-
-function sortCatalog(catalog) {
-  const GROUP_ORDER = ['Boards', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
-  catalog.sort((a, b) => {
-    const idxA = GROUP_ORDER.indexOf(a.group);
-    const idxB = GROUP_ORDER.indexOf(b.group);
-    if (idxA === -1 && idxB === -1) return a.group.localeCompare(b.group);
-    if (idxA === -1) return 1;
-    if (idxB === -1) return -1;
-    return idxA - idxB;
-  });
-}
-
-function resolveUiExport(exportsUI) {
-  if (!exportsUI) return null;
-
-  if (exportsUI.default && typeof exportsUI.default === 'function') return exportsUI.default;
-  if (exportsUI.UI && typeof exportsUI.UI === 'function') return exportsUI.UI;
-
-  const keys = Object.keys(exportsUI);
-  const blocked = (k) => {
-    const l = String(k).toLowerCase();
-    return l.includes('contextmenu') || l === 'bounds' || l === 'contextmenuduringrun' || l === 'contextmenuonlyduringrun';
-  };
-
-  const fnKey = keys.find((k) => typeof exportsUI[k] === 'function' && !blocked(k));
-  if (fnKey) return exportsUI[fnKey];
-
-  const anyKey = keys.find((k) => !blocked(k));
-  if (anyKey) return exportsUI[anyKey];
-
-  return null;
-}
-
-function toPascalCase(value) {
-  const safe = String(value || 'component');
-  return safe
-    .replace(/[^a-zA-Z0-9]+(.)/g, (_, c) => c.toUpperCase())
-    .replace(/^[a-z]/, c => c.toUpperCase())
-    .replace(/[^a-zA-Z0-9]/g, '') || 'Component';
-}
-
-function extractFunctionSource(fn) {
-  if (typeof fn !== 'function') return '';
-  try {
-    let src = String(fn).trim();
-    // Remove common fast-refresh signature calls that may appear in function bodies.
-    src = src.replace(/\b_s\s*\([^)]*\);?/g, '');
-    src = src.replace(/\$RefreshSig\$\s*\([^)]*\)/g, '(() => {})');
-    src = src.replace(/\$RefreshReg\$\s*\([^)]*\);?/g, '');
-    return src.trim();
-  } catch (e) {
-    return '';
-  }
-}
-
-function buildUiSourceFromRegistry(registryInfo, fallbackType) {
-  if (registryInfo?.uiRaw) return registryInfo.uiRaw;
-
-  const manifest = registryInfo?.manifest || {};
-  const name = toPascalCase(manifest.type || fallbackType || 'component');
-  const uiFn = extractFunctionSource(registryInfo?.UI);
-  if (!uiFn) return '';
-
-  const b = registryInfo?.BOUNDS;
-  const bounds = (b && typeof b === 'object')
-    ? b
-    : { x: 5, y: 5, w: Math.max((manifest.w || 100) - 10, 10), h: Math.max((manifest.h || 80) - 10, 10) };
-
-  const lines = [
-    "import React from 'react';",
-    '',
-    `export const BOUNDS = { x: ${Number(bounds.x) || 0}, y: ${Number(bounds.y) || 0}, w: ${Number(bounds.w) || 10}, h: ${Number(bounds.h) || 10} };`,
-  ];
-
-  if (registryInfo?.contextMenuDuringRun || manifest.contextMenuDuringRun) {
-    lines.push('export const contextMenuDuringRun = true;');
-  }
-  if (registryInfo?.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun) {
-    lines.push('export const contextMenuOnlyDuringRun = true;');
-  }
-
-  lines.push('', `export const ${name}UI = ${uiFn};`);
-
-  const ctxFn = extractFunctionSource(registryInfo?.ContextMenu);
-  if (ctxFn) {
-    lines.push('', `export const ContextMenu = ${ctxFn};`);
-  }
-
-  return lines.join('\n');
-}
-
-function buildLogicSourceFromRegistry(registryInfo, fallbackType) {
-  if (registryInfo?.logicRaw) return registryInfo.logicRaw;
-
-  const logicClassSrc = extractFunctionSource(registryInfo?.LogicClass);
-  if (logicClassSrc.startsWith('class ')) {
-    return `import { BaseComponent } from '../BaseComponent';\n\nexport ${logicClassSrc}\n`;
-  }
-
-  const name = toPascalCase(registryInfo?.manifest?.type || fallbackType || 'component');
-  return `import { BaseComponent } from '../BaseComponent';\n\nexport class ${name}Logic extends BaseComponent {\n  reset() {}\n  update() {}\n}\n`;
-}
-
-function buildValidationSourceFromRegistry(registryInfo) {
-  if (registryInfo?.validationRaw) return registryInfo.validationRaw;
-  const validation = registryInfo?.validation;
-  if (Array.isArray(validation)) {
-    const rows = validation.map((rule) => {
-      const id = JSON.stringify(rule?.id || 'rule');
-      const description = JSON.stringify(rule?.description || '');
-      const check = typeof rule?.check === 'function'
-        ? String(rule.check)
-        : '() => ({ pass: true })';
-      return `  {\n    id: ${id},\n    description: ${description},\n    check: ${check},\n  }`;
-    });
-    return `export const validation = [\n${rows.join(',\n')}\n];\n`;
-  }
-  if (typeof validation === 'function') {
-    return `export const validation = ${String(validation)};\n`;
-  }
-  return 'export const validation = [];\n';
-}
-
-function buildIndexSourceFromRegistry(registryInfo, fallbackType) {
-  if (registryInfo?.indexRaw) return registryInfo.indexRaw;
-  const manifest = registryInfo?.manifest || {};
-  const name = toPascalCase(manifest.type || fallbackType || 'component');
-  const hasCtxMenu = typeof registryInfo?.ContextMenu === 'function';
-  const hasDuringRun = !!(registryInfo?.contextMenuDuringRun || manifest.contextMenuDuringRun);
-  const hasOnlyDuringRun = !!(registryInfo?.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun);
-
-  return `import manifest from './manifest.json';\nimport { ${name}UI, BOUNDS${hasDuringRun ? ', contextMenuDuringRun' : ''}${hasOnlyDuringRun ? ', contextMenuOnlyDuringRun' : ''}${hasCtxMenu ? ', ContextMenu' : ''} } from './ui';\nimport { ${name}Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n  manifest,\n  UI: ${name}UI,\n  LogicClass: ${name}Logic,\n  BOUNDS,\n  validation,${hasCtxMenu ? '\n  ContextMenu,' : ''}${hasDuringRun ? '\n  contextMenuDuringRun,' : ''}${hasOnlyDuringRun ? '\n  contextMenuOnlyDuringRun,' : ''}\n};\n`;
-}
-
-function cleanupEditCopyPayloadStorage() {
-  const removeMatching = (storageLike) => {
-    try {
-      const keys = [];
-      for (let i = 0; i < storageLike.length; i += 1) {
-        const k = storageLike.key(i);
-        if (k && k.startsWith(EDIT_COPY_PAYLOAD_PREFIX)) keys.push(k);
-      }
-      keys.forEach((k) => storageLike.removeItem(k));
-    } catch (_) {
-      // Ignore storage access failures (private mode, disabled storage, etc.)
-    }
-  };
-
-  removeMatching(sessionStorage);
-  removeMatching(localStorage);
-}
-
-function writeEditCopyPayload(data) {
-  const serialized = JSON.stringify(data || {});
-  const payloadKey = `${EDIT_COPY_PAYLOAD_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-  const pointer = JSON.stringify({
-    __openhwEditCopyPointer: true,
-    version: 2,
-    storage: 'session',
-    key: payloadKey,
-    createdAt: Date.now(),
-  });
-
-  const writePointerPayload = () => {
-    sessionStorage.setItem(payloadKey, serialized);
-    localStorage.setItem(EDIT_COPY_KEY, pointer);
-  };
-
-  try {
-    writePointerPayload();
-    return { ok: true };
-  } catch (_) {
-    // Fall through to next strategy
-  }
-
-  try {
-    localStorage.setItem(EDIT_COPY_KEY, serialized);
-    return { ok: true };
-  } catch (_) {
-    // Fall through to cleanup + retry
-  }
-
-  cleanupEditCopyPayloadStorage();
-
-  try {
-    writePointerPayload();
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error };
-  }
-}
-
-Object.values(COMPONENT_REGISTRY).forEach(module => {
-  const manifest = module.manifest;
-  if (!manifest) return;
-
-  if (manifest.pins) {
-    LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
-  }
-
-  if (manifest.hiddenAlias) {
-    return;
-  }
-
-  const groupName = normalizeGroupName(manifest.group);
-  let group = LOCAL_CATALOG.find(g => g.group === groupName);
-  if (!group) {
-    group = { group: groupName, items: [] };
-    LOCAL_CATALOG.push(group);
-  }
-
-  const { pins: _pins, group: _, ...catalogItem } = manifest;
-  group.items.push(catalogItem);
-});
-
-sortCatalog(LOCAL_CATALOG);
-
 // Tracks component types that were dynamically injected from the backend (not built-in).
 const BACKEND_INJECTED_TYPES = new Set();
 
-/**
- * Injects an array of pre-transpiled backend components into the global registry and catalog.
- * Works for both cached (IDB) and freshly fetched components.
- * @param {Array<{id, manifest, transpiledUI, transpiledLogic, uiRaw, logicRaw, validationRaw, indexRaw}>} comps
- */
-function injectComponentsIntoRegistry(comps) {
-  for (const comp of comps) {
-    const { id, manifest, transpiledUI, transpiledLogic, uiRaw, logicRaw, validationRaw, indexRaw } = comp;
-    if (!manifest || !transpiledUI) continue;
+// Cache for high-fidelity PNG exports to prevent redundant rendering
+const _exportPngResultCache = new Map();
 
-    // Skip core components natively present in the frontend bundle
-    if (BUILTIN_COMPONENT_TYPES.has(manifest.type)) continue;
-    try {
-      const exportsUI = {};
-      const evalUI = new Function('exports', 'require', 'React', transpiledUI);
-      evalUI(exportsUI, (mod) => {
-        if (mod === 'react') return React;
-        if (mod.endsWith('manifest.json')) return manifest;
-        return null;
-      }, React);
-
-      const uiComponent = resolveUiExport(exportsUI);
-      if (!uiComponent) continue;
-
-      COMPONENT_REGISTRY[manifest.type] = {
-        manifest,
-        UI: uiComponent,
-        BOUNDS: exportsUI.BOUNDS,
-        ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))] || null,
-        contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
-        contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
-        logicCode: transpiledLogic,
-        uiRaw: uiRaw || '',
-        logicRaw: logicRaw || '',
-        validationRaw: validationRaw || '',
-        indexRaw: indexRaw || '',
-        isDynamic: true,
-      };
-
-      if (manifest.pins) LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
-      BACKEND_INJECTED_TYPES.add(manifest.type);
-
-      const groupName = normalizeGroupName(manifest.group);
-      let group = LOCAL_CATALOG.find(g => g.group === groupName);
-      if (!group) { group = { group: groupName, items: [] }; LOCAL_CATALOG.push(group); }
-      group.items = group.items.filter(i => i.type !== manifest.type);
-      const { pins: _p, group: _g, ...catalogItem } = manifest;
-      group.items.push(catalogItem);
-    } catch (err) {
-      console.warn(`[ComponentCache] Failed to inject component ${id}:`, err);
-    }
-  }
-  sortCatalog(LOCAL_CATALOG);
-}
 
 let nextWireId = 1
-
-// ─── SYNC WIRE ID COUNTER AFTER LOADING EXTERNAL DATA ──────────────────────
-function syncNextIds(_comps, ws) {
-  for (const w of (ws || [])) {
-    const m = w.id && w.id.match(/^w(\d+)$/);
-    if (m) nextWireId = Math.max(nextWireId, parseInt(m[1]) + 1);
-  }
-}
-
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api').replace(/\/$/, '');
-
-// ── Palette group visual helpers ─────────────────────────────────────────────
-const GROUP_ICON_SVG = {
-  'Boards': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="18" x2="8" y2="22" /><line x1="16" y1="18" x2="16" y2="22" /><line x1="2" y1="8" x2="6" y2="8" /><line x1="2" y1="16" x2="6" y2="16" /><line x1="18" y1="8" x2="22" y2="8" /><line x1="18" y1="16" x2="22" y2="16" /><rect x="8" y="8" width="8" height="8" rx="1" fill={c} fillOpacity="0.2" /></svg>,
-  'output': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="5" /><path d="M12 15v4M9 19h6M8.5 7.5A5 5 0 0 1 12 5" /></svg>,
-  'input': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="10" width="12" height="8" rx="2" /><circle cx="12" cy="10" r="2" fill={c} fillOpacity="0.3" /><line x1="12" y1="2" x2="12" y2="8" /><line x1="4" y1="18" x2="6" y2="18" /><line x1="18" y1="18" x2="20" y2="18" /></svg>,
-  'basic': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="12" x2="6" y2="12" /><rect x="6" y="8" width="12" height="8" rx="1" /><line x1="18" y1="12" x2="22" y2="12" /></svg>,
-  'Actuators': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" /></svg>,
-  'misc': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="5" width="16" height="14" rx="2" /><line x1="8" y1="5" x2="8" y2="19" /><line x1="12" y1="5" x2="12" y2="19" /><line x1="16" y1="5" x2="16" y2="19" /></svg>,
-  'display': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="14" rx="2" /><line x1="8" y1="22" x2="16" y2="22" /><line x1="12" y1="18" x2="12" y2="22" /></svg>,
-  'sensor': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5.5 5.5A11 11 0 0 0 5.5 18.5M18.5 5.5A11 11 0 0 1 18.5 18.5M8.5 8.5A6 6 0 0 0 8.5 15.5M15.5 8.5A6 6 0 0 1 15.5 15.5" /><circle cx="12" cy="12" r="1.5" fill={c} /></svg>,
-  'logic': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h8c3.3 0 6 2.7 6 6s-2.7 6-6 6H4z" /><line x1="4" y1="4" x2="4" y2="20" /><line x1="2" y1="11" x2="4" y2="11" /><line x1="2" y1="17" x2="4" y2="17" /><line x1="18" y1="14" x2="22" y2="14" /></svg>,
-};
-const GROUP_COLORS = {
-  'Boards': '#6366f1', 'output': '#22c55e', 'input': '#3b82f6',
-  'basic': '#f59e0b', 'Actuators': '#06b6d4',
-  'misc': '#8b5cf6', 'display': '#ec4899', 'sensor': '#14b8a6', 'logic': '#8b5cf6',
-};
-
-const BOARD_BAUD_PRESETS = {
-  arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
-  esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
-  stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
-  rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
-};
-
-const BOARD_DEFAULT_BAUD = {
-  arduino_uno: '9600',
-  esp32: '115200',
-  stm32: '115200',
-  rp2040: '115200',
-};
-
-const SERIAL_LINE_ENDINGS = {
-  none: '',
-  nl: '\n',
-  crlf: '\r\n',
-  cr: '\r',
-};
-
-const BOARD_FQBN = {
-  arduino_uno: 'arduino:avr:uno',
-  esp32: 'esp32:esp32:esp32',
-  stm32: 'STMicroelectronics:stm32:GenF1',
-  rp2040: 'rp2040:rp2040:rpipico',
-};
-
-const BOARD_DISPLAY_NAME = {
-  arduino_uno: 'Arduino Uno',
-  esp32: 'ESP32',
-  stm32: 'STM32',
-  rp2040: 'Raspberry Pi Pico',
-};
-
-const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
-const DEFAULT_PICO_MICROPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/micropython-uf2`;
-const DEFAULT_PICO_CIRCUITPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/circuitpython-uf2`;
-const DEFAULT_PICO_CIRCUITPYTHON_VERSION = '8.2.7';
-const DISABLED_FILE_SUFFIX = '.disabled';
-const ARDUINO_CODE_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
-const ROOT_UPLOADABLE_EXTENSIONS = new Set(['.ino', '.cpp', '.h', '.hpp', '.c', '.txt', '.json', '.xml', '.py', '.uf2']);
-const RP2040_NATIVE_ALLOWED_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp', '.txt', '.json', '.xml', '.uf2']);
-const RP2040_MICROPYTHON_ALLOWED_EXTENSIONS = new Set(['.py', '.txt', '.json', '.xml', '.uf2']);
-
-function boardKindToDisplayName(kind) {
-  const normalized = normalizeBoardKind(kind);
-  return BOARD_DISPLAY_NAME[normalized] || BOARD_DISPLAY_NAME.arduino_uno;
-}
-
-function boardCompToDisplayName(boardComp, fallbackKind = 'arduino_uno') {
-  if (!boardComp || typeof boardComp !== 'object') {
-    return boardKindToDisplayName(fallbackKind);
-  }
-
-  const boardLabel = String(boardComp.label || '').trim();
-  if (boardLabel) return boardLabel;
-  const boardId = String(boardComp.id || '').trim();
-  const kindLabel = boardKindToDisplayName(boardComp.type || fallbackKind);
-  return boardId ? `${kindLabel} (${boardId})` : kindLabel;
-}
-
-function extractCompileSummaryLines(stdoutText) {
-  const text = String(stdoutText || '');
-  if (!text.trim()) return [];
-
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const summaryPatterns = [
-    /^Sketch uses\s+/i,
-    /^Global variables use\s+/i,
-    /^Program\s+size\s*:/i,
-    /^Flash\s*:/i,
-    /^RAM\s*:/i,
-    /\btext\s+data\s+bss\s+dec\s+hex\b/i,
-    /^\d+\s+\d+\s+\d+\s+\d+\s+[0-9a-f]+\s+/i,
-  ];
-
-  const dedup = new Set();
-  const out = [];
-  lines.forEach((line) => {
-    if (!summaryPatterns.some((pattern) => pattern.test(line))) return;
-    if (dedup.has(line)) return;
-    dedup.add(line);
-    out.push(line);
-  });
-
-  return out.slice(0, 8);
-}
-
-function formatRunDuration(secondsValue) {
-  const totalSeconds = Math.max(0, Math.floor(Number(secondsValue || 0)));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function normalizeHashValue(value, depth = 0) {
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
-
-  if (ArrayBuffer.isView(value)) {
-    const len = Number(value.length || 0);
-    return {
-      kind: 'typed-array',
-      length: len,
-      preview: Array.from(value).slice(0, 24),
-    };
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length > 64) {
-      return {
-        kind: 'array',
-        length: value.length,
-        preview: value.slice(0, 64).map((entry) => normalizeHashValue(entry, depth + 1)),
-      };
-    }
-    return value.map((entry) => normalizeHashValue(entry, depth + 1));
-  }
-
-  if (typeof value === 'object') {
-    const keys = Object.keys(value);
-    if (depth > 4 && keys.length > 24) {
-      return {
-        kind: 'object',
-        keys: keys.sort().slice(0, 24),
-        size: keys.length,
-      };
-    }
-
-    const out = {};
-    keys
-      .sort((a, b) => a.localeCompare(b))
-      .forEach((key) => {
-        out[key] = normalizeHashValue(value[key], depth + 1);
-      });
-    return out;
-  }
-
-  return String(value);
-}
-
-function fnv1aHash(input) {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
-}
-
-function computeRenderSyncHash(payload) {
-  return fnv1aHash(JSON.stringify(normalizeHashValue(payload, 0)));
-}
-
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
-function normalizeRp2040Env(source) {
-  const value = String(source || '').trim().toLowerCase();
-  if (!value || value === 'none' || value === 'native' || value === 'ino') return 'native';
-  if (value === 'cp' || value === 'circuitpy' || value === 'circuitpython') return 'circuitpython';
-  if (value.startsWith('circuitpython')) return 'circuitpython';
-  if (value === 'py' || value === 'python') return 'micropython';
-  if (value.startsWith('micropython')) return 'micropython';
-  return 'native';
-}
-
-function isRp2040PythonEnv(source) {
-  const env = normalizeRp2040Env(source);
-  return env === 'micropython' || env === 'circuitpython';
-}
-
-function getRp2040PythonEntryFileName(source) {
-  return normalizeRp2040Env(source) === 'circuitpython' ? 'code.py' : 'main.py';
-}
-
-function mapRp2040EnvForLegacyContextMenu(source) {
-  const env = normalizeRp2040Env(source);
-  if (env === 'micropython') return 'micropython-20241129-v1.24.1';
-  if (env === 'circuitpython') return `circuitpython-${DEFAULT_PICO_CIRCUITPYTHON_VERSION}`;
-  return '';
-}
-
-function resolveComponentIdFormat(type) {
-  const rawType = String(type || '').toLowerCase();
-
-  if (rawType.includes('arduino') && rawType.includes('uno')) {
-    return { prefix: 'uno', separator: '' };
-  }
-  if (rawType.includes('pico-w') || rawType.includes('picow')) {
-    return { prefix: 'picow', separator: '' };
-  }
-  if (rawType.includes('rp2040') || rawType.includes('pico')) {
-    return { prefix: 'pico', separator: '' };
-  }
-
-  const fallback = String(type || 'component')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase() || 'component';
-
-  return { prefix: fallback, separator: '_' };
-}
-
-function allocateComponentId(type, usedIdsInput) {
-  const usedIds = usedIdsInput instanceof Set
-    ? usedIdsInput
-    : new Set(Array.isArray(usedIdsInput) ? usedIdsInput : []);
-  const { prefix, separator } = resolveComponentIdFormat(type);
-  const pattern = new RegExp(`^${prefix}${separator}(\\d+)$`, 'i');
-
-  let maxIndex = 0;
-  usedIds.forEach((id) => {
-    const match = String(id || '').match(pattern);
-    if (!match) return;
-    const parsed = Number(match[1]);
-    if (Number.isFinite(parsed)) {
-      maxIndex = Math.max(maxIndex, parsed);
-    }
-  });
-
-  let index = Math.max(1, maxIndex + 1);
-  let candidate = `${prefix}${separator}${index}`;
-  while (usedIds.has(candidate)) {
-    index += 1;
-    candidate = `${prefix}${separator}${index}`;
-  }
-
-  usedIds.add(candidate);
-  return candidate;
-}
-
-function normalizeBoardKind(source) {
-  const s = String(source || '').toLowerCase();
-  if (s.includes('esp32')) return 'esp32';
-  if (s.includes('stm32')) return 'stm32';
-  if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
-  return 'arduino_uno';
-}
-
-
-function resolveBoardFqbnForComponent(boardComp, boardKind) {
-  const type = String(boardComp?.type || '').toLowerCase();
-  if (type.includes('pico-w') || type.includes('picow')) {
-    return 'rp2040:rp2040:rpipicow';
-  }
-  return BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
-}
-
-function createDefaultMainCode(boardKind, boardId, options = {}) {
-  const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
-
-  if (boardKind === 'rp2040' && rp2040Mode === 'micropython') {
-    return `# ${boardId} MicroPython script\nfrom machine import Pin\nfrom time import sleep\n\nled = Pin('LED', Pin.OUT)\n\nwhile True:\n  led.toggle()\n  sleep(0.5)\n`;
-  }
-  if (boardKind === 'rp2040' && rp2040Mode === 'circuitpython') {
-    return `# ${boardId} CircuitPython script\nimport time\nimport board\nimport digitalio\n\nled = digitalio.DigitalInOut(board.LED)\nled.direction = digitalio.Direction.OUTPUT\n\nwhile True:\n  led.value = not led.value\n  time.sleep(0.5)\n`;
-  }
-  if (boardKind === 'esp32' || boardKind === 'stm32' || boardKind === 'rp2040') {
-    return `// ${boardId} main sketch\nvoid setup() {\n  // Serial.begin(${BOARD_DEFAULT_BAUD[boardKind] || 115200});\n}\n\nvoid loop() {\n  delay(1000);\n}\n`;
-  }
-  return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(13, OUTPUT);\n  // Serial.begin(${BOARD_DEFAULT_BAUD.arduino_uno});\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(500);\n  digitalWrite(13, LOW);\n  delay(500);\n}\n`;
-}
-
-function getDefaultMainFileName(boardKind, boardId, options = {}) {
-  if (boardKind === 'rp2040') {
-    const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
-    if (isRp2040PythonEnv(rp2040Mode)) {
-      return getRp2040PythonEntryFileName(rp2040Mode);
-    }
-    return `${boardId}.ino`;
-  }
-  return `${boardId}.ino`;
-}
-
-
-function toBoardRelativePath(boardId, fullPath) {
-  const prefix = `project/${boardId}/`;
-  const raw = String(fullPath || '').replace(/\\/g, '/');
-  if (!raw.startsWith(prefix)) {
-    return String(raw.split('/').pop() || '').trim();
-  }
-
-  const relative = raw.slice(prefix.length).trim();
-  const parts = relative
-    .split('/')
-    .map((part) => part.trim())
-    .filter((part) => part && part !== '.' && part !== '..');
-  return parts.join('/');
-}
-
-
-function baseFileExt(pathLike) {
-  const normalized = isFileDisabled(pathLike)
-    ? String(pathLike || '').slice(0, -DISABLED_FILE_SUFFIX.length)
-    : String(pathLike || '');
-  return fileExt(normalized);
-}
-
-
-function normalizeOpenCodeTabs(tabs, projectFiles) {
-  const list = Array.isArray(tabs) ? tabs : [];
-  const fileIds = new Set((projectFiles || []).map((f) => f.id));
-  const seen = new Set();
-  const out = [];
-
-  list.forEach((tabId) => {
-    const id = String(tabId || '').trim();
-    if (!id || seen.has(id) || !fileIds.has(id)) return;
-    seen.add(id);
-    out.push(id);
-  });
-
-  return out;
-}
-
-function buildProjectPayload({
-  name = '',
-  board = 'arduino_uno',
-  components = [],
-  wires = [],
-  code = '',
-  includeCode = true,
-  blocklyXml = '',
-  blocklyGeneratedCode = '',
-  useBlocklyCode = false,
-  projectFiles = [],
-  openCodeTabs = [],
-  activeCodeFileId = '',
-  exportedAt = '',
-} = {}) {
-  const componentsArray = Array.isArray(components) ? components : [];
-  const detectedBoardComponent = componentsArray.find((component) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(component?.type || '')));
-  const resolvedBoard = detectedBoardComponent?.type || String(board || 'arduino_uno');
-
-  const normalizedFiles = normalizeProjectFiles(projectFiles)
-    .filter((file) => file.id !== 'project/diagram.json')
-    .map((file) => ({
-      ...file,
-      content: typeof file.content === 'string' ? file.content : String(file.content ?? ''),
-    }));
-  const normalizedTabs = normalizeOpenCodeTabs(openCodeTabs, normalizedFiles);
-  const preferredActive = String(activeCodeFileId || '').trim();
-  const resolvedActiveId = normalizedFiles.some((file) => file.id === preferredActive)
-    ? preferredActive
-    : (normalizedTabs[0] || normalizedFiles[0]?.id || '');
-
-  const payload = {
-    schemaVersion: 'openhw-project-v2',
-    board: resolvedBoard,
-    components: componentsArray.map((component) => {
-      const isSnapped = (Array.isArray(wires) ? wires : []).some(w => w.isSocket && (w.from.startsWith(component.id + ':') || w.to.startsWith(component.id + ':')));
-      return {
-        id: String(component?.id || ''),
-        type: String(component?.type || ''),
-        label: String(component?.label || ''),
-        x: Number(component?.x ?? 0),
-        y: Number(component?.y ?? 0),
-        w: Number(component?.w ?? 0),
-        h: Number(component?.h ?? 0),
-        rotation: Number(component?.rotation ?? 0),
-        attrs: component?.attrs && typeof component.attrs === 'object' ? component.attrs : {},
-        snap: isSnapped || undefined,
-      };
-    }),
-    connections: (Array.isArray(wires) ? wires : []).map((wire) => ({
-      id: String(wire?.id || ''),
-      from: String(wire?.from || ''),
-      to: String(wire?.to || ''),
-      color: String(wire?.color || ''),
-      waypoints: Array.isArray(wire?.waypoints) ? wire.waypoints : [],
-      isBelow: wire?.isBelow === true,
-      isSocket: wire?.isSocket === true,
-      isHidden: wire?.isHidden === true,
-      isHelp: wire?.isHelp === true,
-      fromLabel: String(wire?.fromLabel || ''),
-      toLabel: String(wire?.toLabel || ''),
-    })),
-    blocklyXml: String(blocklyXml || ''),
-    blocklyGeneratedCode: String(blocklyGeneratedCode || ''),
-    useBlocklyCode: !!useBlocklyCode,
-    projectFiles: normalizedFiles,
-    openCodeTabs: normalizedTabs,
-    activeCodeFileId: resolvedActiveId,
-  };
-
-  if (includeCode) {
-    payload.code = String(code || '');
-  }
-
-  if (name) payload.name = String(name);
-  if (exportedAt) payload.exportedAt = String(exportedAt);
-  return payload;
-}
-
-function normalizeImportedCircuitData(rawComponents, rawConnections) {
-  const componentsInput = Array.isArray(rawComponents) ? rawComponents : [];
-  const wiresInput = Array.isArray(rawConnections) ? rawConnections : [];
-
-  const usedComponentIds = new Set();
-  let layoutSlot = 0;
-
-  const normalizedComponents = componentsInput
-    .map((component) => {
-      if (!component || typeof component !== 'object') return null;
-      const type = String(component.type || '').trim();
-      if (!type) return null;
-
-      const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
-
-      const rawId = String(component.id || '').trim();
-      const id = rawId && !usedComponentIds.has(rawId)
-        ? (usedComponentIds.add(rawId), rawId)
-        : allocateComponentId(type, usedComponentIds);
-
-      const defaultW = Number(regManifest.w ?? 80);
-      const defaultH = Number(regManifest.h ?? 60);
-      const width = Number(component.w);
-      const height = Number(component.h);
-
-      const hasX = Number.isFinite(Number(component.x));
-      const hasY = Number.isFinite(Number(component.y));
-      let x = Number(component.x);
-      let y = Number(component.y);
-      if (!hasX || !hasY) {
-        const col = layoutSlot % 4;
-        const row = Math.floor(layoutSlot / 4);
-        x = 120 + col * 220;
-        y = 80 + row * 170;
-        layoutSlot += 1;
-      }
-
-      const attrs = component.attrs && typeof component.attrs === 'object'
-        ? { ...component.attrs }
-        : {};
-      if (normalizeBoardKind(type) === 'rp2040') {
-        attrs.env = normalizeRp2040Env(resolveComponentAttrString(attrs, 'env', 'native'));
-      }
-
-      return {
-        ...component,
-        id,
-        type,
-        label: String(component.label || regManifest.label || type),
-        x,
-        y,
-        w: Number.isFinite(width) && width > 0
-          ? width
-          : (Number.isFinite(defaultW) && defaultW > 0 ? defaultW : 80),
-        h: Number.isFinite(height) && height > 0
-          ? height
-          : (Number.isFinite(defaultH) && defaultH > 0 ? defaultH : 60),
-        rotation: Number.isFinite(Number(component.rotation))
-          ? ((Number(component.rotation) % 360) + 360) % 360
-          : 0,
-        attrs,
-      };
-    })
-    .filter(Boolean);
-
-  const endpointLabel = (endpoint) => {
-    const parts = String(endpoint || '').split(':');
-    return parts.length > 1 ? parts.slice(1).join(':') : '';
-  };
-
-  const normalizeWaypoint = (point) => {
-    if (!point || typeof point !== 'object') return null;
-    const x = Number(point.x);
-    const y = Number(point.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y, ...(point._corner ? { _corner: true } : {}) };
-  };
-
-  const usedWireIds = new Set();
-  const allocateWireId = () => {
-    let idx = 1;
-    let candidate = `w${idx}`;
-    while (usedWireIds.has(candidate)) {
-      idx += 1;
-      candidate = `w${idx}`;
-    }
-    usedWireIds.add(candidate);
-    return candidate;
-  };
-
-  const normalizedWires = wiresInput
-    .map((wire) => {
-      if (!wire || typeof wire !== 'object') return null;
-      const from = String(wire.from || '').trim();
-      const to = String(wire.to || '').trim();
-      if (!from || !to) return null;
-
-      const rawWireId = String(wire.id || '').trim();
-      const id = rawWireId && !usedWireIds.has(rawWireId)
-        ? (usedWireIds.add(rawWireId), rawWireId)
-        : allocateWireId();
-
-      return {
-        ...wire,
-        id,
-        from,
-        to,
-        color: typeof wire.color === 'string' && wire.color.trim() ? wire.color : wireColor(),
-        waypoints: Array.isArray(wire.waypoints)
-          ? wire.waypoints.map(normalizeWaypoint).filter(Boolean)
-          : [],
-        isBelow: wire.isBelow === true,
-        isSocket: wire.isSocket === true,
-        isHidden: wire.isHidden === true,
-        isHelp: wire.isHelp === true,
-        fromLabel: String(wire.fromLabel || endpointLabel(from) || ''),
-        toLabel: String(wire.toLabel || endpointLabel(to) || ''),
-      };
-    })
-    .filter(Boolean);
-
-  return { components: normalizedComponents, wires: normalizedWires };
-}
-
-function isRp2040CoreMissingError(err) {
-  const msg = String(err?.message || err || '').toLowerCase();
-  return msg.includes("platform 'rp2040:rp2040' not found")
-    || msg.includes('platform rp2040:rp2040 is not found')
-    || msg.includes('platform not installed');
-}
-
-function looksLikeMicroPythonSource(source) {
-  const text = String(source || '').trim();
-  if (!text) return false;
-  const lower = text.toLowerCase();
-
-  return lower.includes('from machine import')
-    || lower.includes('import machine')
-    || lower.includes('machine.pin(')
-    || lower.includes('while true:')
-    || lower.includes('sleep_ms(')
-    || lower.includes('sleep_us(');
-}
-
-/**
- * Best-effort converter: takes a simple Arduino blink sketch and returns
- * a MicroPython equivalent. Extracts the LED pin from #define / const,
- * and delay values from delay() calls. Falls back gracefully.
- */
-function arduinoBlinkToMicroPython(sourceCode, boardId) {
-  const src = String(sourceCode || '');
-
-  // Extract LED pin number: #define LED <n> or const int LED = <n> or similar
-  const pinMatch =
-    src.match(/#define\s+\w*LED\w*\s+(\d+)/i) ||
-    src.match(/const\s+\w+\s+\w*LED\w*\s*=\s*(\d+)/i) ||
-    src.match(/int\s+\w*LED\w*\s*=\s*(\d+)/i) ||
-    src.match(/LED_BUILTIN\b/);
-
-  let pinExpr;
-  if (pinMatch && pinMatch[1]) {
-    pinExpr = pinMatch[1]; // bare numeric pin string, e.g. "20"
-  } else if (src.includes('LED_BUILTIN')) {
-    pinExpr = "'LED'"; // MicroPython Pico built-in LED
-  } else {
-    // Try to find any pin used with pinMode or digitalWrite
-    const pinModeMatch = src.match(/pinMode\s*\(\s*(\d+)/) ||
-      src.match(/digitalWrite\s*\(\s*(\d+)/);
-    pinExpr = pinModeMatch ? pinModeMatch[1] : "'LED'";
-  }
-
-  // Extract delay values (ms) from delay() calls (skip delayMicroseconds)
-  const delayMatches = [...src.matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(m => Number(m[1]));
-  const delayOn = delayMatches[0] ?? 1000;
-  const delayOff = delayMatches[1] ?? delayOn;
-
-  // Numeric pin → bare int; quoted string stays as is
-  const pinArg = /^\d+$/.test(String(pinExpr)) ? Number(pinExpr) : pinExpr;
-
-  return (
-    `# Auto-converted from Arduino sketch for ${boardId}\n` +
-    `from machine import Pin\n` +
-    `from time import sleep_ms\n` +
-    `\n` +
-    `led = Pin(${pinArg}, Pin.OUT)\n` +
-    `\n` +
-    `while True:\n` +
-    `    led.value(1)   # LED ON\n` +
-    `    sleep_ms(${delayOn})\n` +
-    `    led.value(0)   # LED OFF\n` +
-    `    sleep_ms(${delayOff})\n`
-  );
-}
-
-function arduinoSerialToMicroPython(sourceCode, boardId) {
-  const src = String(sourceCode || '');
-  if (!/\bSerial1?\s*\.\s*println\s*\(/.test(src)) return '';
-
-  const printMatches = [...src.matchAll(/\bSerial1?\s*\.\s*println\s*\(([^)]*)\)\s*;/g)]
-    .map((m) => String(m[1] || '').trim())
-    .filter(Boolean);
-  if (printMatches.length === 0) return '';
-
-  const pyLiteral = (expr) => {
-    const e = String(expr || '').trim();
-    if (/^"[\s\S]*"$/.test(e) || /^'[\s\S]*'$/.test(e)) return e;
-    if (/^[0-9.+\-*/ ()]+$/.test(e)) return `str(${e})`;
-    return `str(${JSON.stringify(e)})`;
-  };
-
-  const setupMsg = pyLiteral(printMatches[0]);
-  const loopMsg = pyLiteral(printMatches[1] || printMatches[0]);
-  const delayMatch = src.match(/\bdelay\s*\(\s*(\d+)\s*\)/i);
-  const loopDelay = delayMatch ? Math.max(1, Number(delayMatch[1])) : 1000;
-
-  return [
-    `# Auto-converted Serial sketch for ${boardId}`,
-    'from time import sleep_ms',
-    '',
-    `print(${setupMsg})`,
-    '',
-    'while True:',
-    `  print(${loopMsg})`,
-    `  sleep_ms(${loopDelay})`,
-    '',
-  ].join('\n');
-}
-
-function prepareRp2040SketchForSimulation(sourceCode) {
-  const source = String(sourceCode || '');
-  if (!source.trim()) return source;
-  if (!/\bSerial1?\b/.test(source)) return source;
-  if (/OPENHW_SIM_SERIAL_REWRITE/.test(source)) return source;
-
-  const hasBlockingSerialWaitCondition = (condition) => {
-    const cond = String(condition || '');
-    if (!/!\s*Serial1?\b/.test(cond)) return false;
-    // Keep loops like !Serial1.available() intact; only strip plain readiness waits.
-    if (/!\s*Serial1?\s*(?:\.|\[)/.test(cond)) return false;
-    return true;
-  };
-
-  const stripBlockingSerialWaits = (text) => String(text || '')
-    // Many Arduino RP2040 sketches block forever in simulation with
-    // while (!Serial) { ... } because USB CDC is not attached.
-    .replace(/\bwhile\s*\(([^)]*)\)\s*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ))
-    .replace(/\bwhile\s*\(([^)]*)\)\s*\{/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
-        : match
-    ))
-    .replace(/\bwhile\s*\(([^)]*)\)\s*(?!\{|;)[^;\n]*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ))
-    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*\{/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
-        : match
-    ))
-    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ));
-
-  const rewritten = stripBlockingSerialWaits(source.replace(/\bSerial\b(?!1)/g, 'Serial1'));
-  if (rewritten === source) return source;
-
-  const serialShim = [
-    '#ifdef ARDUINO_ARCH_RP2040',
-    '// OPENHW_SIM_SERIAL_REWRITE: route Serial monitor traffic to UART0 (GP0/GP1)',
-    '// and prevent blocking while(!Serial...) waits in simulator mode.',
-    '#endif',
-    '',
-  ].join('\n');
-
-  return `${serialShim}${rewritten}`;
-}
-
-const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
-
-function resolveRp2040SourceMode({
-  configuredMode,
-  activePrefersIno,
-  activePrefersPy,
-  hasNativeSketch,
-  hasPythonSource,
-  prefersNativeFromSyntax = false,
-}) {
-  const mode = String(configuredMode || 'auto').toLowerCase();
-
-  if (mode === 'cp' || mode === 'circuitpy' || mode === 'circuitpython') {
-    return 'cp';
-  }
-
-  if (mode === 'py' || mode === 'python' || mode === 'micropython') {
-    return 'py';
-  }
-
-  if (mode === 'ino' || mode === 'native' || mode === 'none') return 'ino';
-
-  if (activePrefersIno) return 'ino';
-  if (activePrefersPy) return mode === 'cp' ? 'cp' : 'py';
-
-  if (hasNativeSketch || prefersNativeFromSyntax) return 'ino';
-  if (hasPythonSource) return mode === 'cp' ? 'cp' : 'py';
-  return 'ino';
-}
-
-function resolveComponentAttrString(attrs, key, fallback = '') {
-  const raw = attrs?.[key];
-  if (typeof raw === 'string') return raw;
-  if (raw && typeof raw === 'object') {
-    if (typeof raw.value === 'string') return raw.value;
-    if (typeof raw.default === 'string') return raw.default;
-    if (raw.value != null) return String(raw.value);
-    if (raw.default != null) return String(raw.default);
-  }
-  if (raw == null) return fallback;
-  return String(raw);
-}
-
-function ensureMicroPythonSerialProbe(sourceCode, boardId) {
-  const script = String(sourceCode || '').trim();
-  const marker = 'OpenHW RP2040 UART0 ready';
-  if (script.includes(marker)) return script;
-
-  const probe = `print("${marker}: ${boardId}")`;
-  if (!script) return `${probe}\n`;
-  return `${probe}\n${script}\n`;
-}
-
-function applyRp2040MicroPythonCompat(sourceCode) {
-  const script = String(sourceCode || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
-  if (!script) return script;
-  if (script.includes('OPENHW_RP2040_SLEEP_COMPAT')) return script;
-
-  const needsSleepCompat = /\btime\.sleep_ms\s*\(|\bsleep_ms\s*\(/.test(script);
-  if (!needsSleepCompat) return script;
-
-  const prelude = [
-    '# OPENHW_RP2040_SLEEP_COMPAT',
-    'def _openhw_sleep_ms(ms):',
-    '    ms = int(ms)',
-    '    if ms <= 0:',
-    '        return',
-    '    for _ in range(ms * 500):',
-    '        pass',
-    '',
-  ].join('\n');
-
-  const rewritten = script
-    .replace(/\btime\.sleep_ms\s*\(/g, '_openhw_sleep_ms(')
-    .replace(/\bsleep_ms\s*\(/g, '_openhw_sleep_ms(');
-
-  return `${prelude}\n${rewritten}\n`;
-}
-
-function isProgrammableBoardType(type) {
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
-}
-
-
-function endpointAliases(endpoint) {
-  const [compId, pinIdRaw] = String(endpoint || '').split(':');
-  const pinId = String(pinIdRaw || '');
-  if (!compId || !pinId) return [String(endpoint || '')];
-
-  const aliases = new Set([`${compId}:${pinId}`]);
-  if (/^\d+$/.test(pinId)) aliases.add(`${compId}:D${pinId}`);
-  if (/^D\d+$/i.test(pinId)) aliases.add(`${compId}:${pinId.substring(1)}`);
-  if (/^gnd(_\d+)?$/i.test(pinId) || /^GND$/i.test(pinId)) aliases.add(`${compId}:gnd`);
-  if (/^5v$/i.test(pinId) || /^VCC$/i.test(pinId)) aliases.add(`${compId}:5V`);
-  return Array.from(aliases);
-}
-
-/**
- * Helper to check if two category sets (strings or arrays) have any common elements.
- * Used by the canvas pin-matching and suggestion UI.
- */
-function hasCategoryIntersection(cat1, cat2) {
-  if (!cat1 || !cat2) return false;
-  const arr1 = Array.isArray(cat1) ? cat1 : [cat1];
-  const arr2 = Array.isArray(cat2) ? cat2 : [cat2];
-  return arr1.some(c => arr2.includes(c));
-}
-
-/**
- * Determines the logical category (or categories) of a pin.
- * Returns an array of strings, or null if no category matches.
- * Used by the canvas pin-matching and suggestion UI.
- */
-function getPinCategory(pId, pDesc, compType) {
-  const sId = String(pId || '').toLowerCase();
-  const sDesc = String(pDesc || '').toLowerCase();
-  const matches = (regex) => regex.test(sId) || regex.test(sDesc);
-  const categories = [];
-
-  // 1. GND
-  if (matches(/^([a-z0-9]+[._])?(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) categories.push('GND');
-
-  // 2. POWER
-  if (matches(/^([a-z0-9]+[._])?(vcc|vdd|5v|3v3|3\.3v|v\+|power|vcc[12]|vbat|1\.8v|led|light|vout)([._]?\d+)?$/i)) {
-    if (compType?.includes('arduino') && (sId === 'vin' || sId.includes('vin.'))) {
-      categories.push('VIN');
-    } else {
-      categories.push('POWER');
-    }
-  }
-
-  // 3. I2C
-  if (matches(/^sda([._]?\d+)?$/i)) categories.push('I2C_SDA');
-  if (matches(/^scl([._]?\d+)?$/i)) categories.push('I2C_SCL');
-  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano')) {
-    if (sId === 'a4') categories.push('I2C_SDA');
-    if (sId === 'a5') categories.push('I2C_SCL');
-  }
-
-  // 4. SPI
-  if (matches(/^(mosi|din|dn|sdi)([._]?\d+)?$/i)) categories.push('SPI_MOSI');
-  if (matches(/^(miso|dout|sdo)([._]?\d+)?$/i)) categories.push('SPI_MISO');
-  if (matches(/^(sck|sclk|clk|clock)([._]?\d+)?$/i)) categories.push('SPI_SCK');
-
-  // 5. ANALOG
-  if (matches(/^(a\d+|vrx|vry|an|adc|out)([._]?\d+)?$/i)) {
-    if (sId === 'vrx' || (compType?.includes('arduino') && sId === 'a0')) categories.push('ANALOG_X');
-    if (sId === 'vry' || (compType?.includes('arduino') && sId === 'a1')) categories.push('ANALOG_Y');
-    categories.push('ANALOG');
-  }
-
-  // 6. PWM
-  if (matches(/^(pwm|~)([._]?\d+)?$/i)) categories.push('PWM');
-  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
-  if (compType === 'wokwi-arduino-mega') {
-    const pinNum = parseInt(sId);
-    if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
-  }
-
-  // 7. Motor Driver / EN Special
-  if (matches(/^en([._]?\d+(,\d+)?)?$/i)) {
-    if (!categories.includes('PWM')) categories.push('PWM');
-    if (!categories.includes('POWER')) categories.push('POWER');
-  }
-
-  // 8. MOTOR OUTPUT
-  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((compType === 'wokwi-motor' || compType === 'wokwi-stepper-motor') && /^\d+$/.test(sId))) {
-    categories.push('MOTOR');
-  }
-
-  // 9. DIGITAL
-  if (matches(/^(d\d+|io\d+|gpio\d+|sw|joy_sw|dc|rst|reset|cs|ce|sce|ss|rs|en|enable|in\d+|\d+)([._]?\d+)?$/i)) {
-    if (!(compType?.includes('arduino') && sId.startsWith('a'))) {
-      if (!categories.includes('DIGITAL')) categories.push('DIGITAL');
-    }
-  }
-
-  // 10. Breadboard
-  if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
-    const colNum = sId.match(/^\d+/)[0];
-    const rowLetter = sId.slice(-1);
-    const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
-    categories.push(`BB_${colNum}_${rowHalf}`);
-  }
-
-  return categories.length > 0 ? categories : null;
-}
-
 const EMPTY_LIVE_STATE = {};
+
+function syncNextIds(components, wires) {
+  let max = 0;
+  (wires || []).forEach(w => {
+    const m = String(w.id || '').match(/^w(\d+)$/);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  nextWireId = max + 1;
+}
+
 
 export function SimulatorPage({ gamificationMode = false }) {
   const { isAuthenticated, isAdminAuthenticated, user, adminUser, token, logout, loading: authLoading } = useAuth()
@@ -2623,6 +1408,11 @@ export function SimulatorPage({ gamificationMode = false }) {
     openCodeTabs,
     activeCodeFileId,
   }), [activeCodeFileId, board, code, components, currentProjectName, openCodeTabs, projectFiles, wires]);
+  const replaceFilePath = useCallback((oldPath, newPath) => {
+    const nextName = String(newPath || '').split('/').pop();
+    if (nextName) renameCodeFile(oldPath, nextName);
+  }, [renameCodeFile]);
+
   const applyLiveMeetingSnapshot = useCallback((snapshot) => {
     const normalizedSnapshot = snapshot && typeof snapshot === 'object' ? snapshot : {};
     lastLiveSyncPayloadRef.current = JSON.stringify(normalizedSnapshot);
@@ -3591,10 +2381,15 @@ export function SimulatorPage({ gamificationMode = false }) {
     let finalWidth = startWidth;
 
     const onMouseMove = (moveEvent) => {
+      const start = performance.now();
       const delta = startX - moveEvent.clientX; // Left drag increases width
       finalWidth = Math.max(250, Math.min(800, startWidth + delta));
       if (rightPanelRef.current?.aside) {
         rightPanelRef.current.aside.style.width = `${finalWidth}px`;
+      }
+      const duration = performance.now() - start;
+      if (duration > 5) {
+        console.warn(`[Performance] onMouseDownResize.onMouseMove took ${duration.toFixed(2)}ms`);
       }
     };
 
@@ -3642,10 +2437,15 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (!isExplorerDragging) return;
     let finalExpWidth = explorerWidth;
     const onMouseMove = (e) => {
+      const start = performance.now();
       const rightPanelStart = window.innerWidth - panelWidth;
       finalExpWidth = Math.max(120, Math.min(panelWidth - 100, e.clientX - rightPanelStart));
       if (rightPanelRef.current?.explorer) {
         rightPanelRef.current.explorer.style.width = `${finalExpWidth}px`;
+      }
+      const duration = performance.now() - start;
+      if (duration > 5) {
+        console.warn(`[Performance] onMouseDownExplorerResize.onMouseMove took ${duration.toFixed(2)}ms`);
       }
     };
     const onMouseUp = () => {
@@ -3847,7 +2647,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const hasEnabledMainForMode = result.some((file) => {
           if (!file.path.startsWith(`${basePath}/`)) return false;
           if (isFileDisabled(file.path)) return false;
-          const ext = baseFileExt(file.path);
+          const ext = fileExt(file.path);
           if (kind !== 'rp2040') return ext === '.ino';
           return isRp2040PythonEnv(rp2040Mode) ? ext === '.py' : ext === '.ino';
         });
@@ -3872,7 +2672,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             .map((file) => file.path);
 
           boardFilePaths.forEach((pathLike) => {
-            const ext = baseFileExt(pathLike);
+            const ext = fileExt(pathLike);
             const disabled = isFileDisabled(pathLike);
             const shouldDisable = isRp2040PythonEnv(rp2040Mode)
               ? ARDUINO_CODE_EXTENSIONS.has(ext)
@@ -9099,7 +7899,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             openComponentEditor={openComponentEditor}
             showLockToast={showLockToast}
             isPaletteItemLocked={isPaletteItemLocked}
-            CATALOG={CATALOG}
+            CATALOG={LOCAL_CATALOG}
             GROUP_COLORS={GROUP_COLORS}
             GROUP_ICON_SVG={GROUP_ICON_SVG}
             COMPONENT_REGISTRY={COMPONENT_REGISTRY}
@@ -9593,7 +8393,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             info={(() => {
               const comp = components.find(c => c.id === compContextMenu?.compId);
               if (!comp) return null;
-              for (const g of CATALOG) {
+              for (const g of LOCAL_CATALOG) {
                 const item = g.items.find(i => i.type === comp.type);
                 if (item) return { ...item, group: g.group };
               }
