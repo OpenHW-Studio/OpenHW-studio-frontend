@@ -12,7 +12,7 @@ import {
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
-import { ProjectsSidebar } from './components/ProjectsSidebar';
+import { ProjectsSidebarChrome } from './components/ProjectsSidebar';
 import { multiRoutePath, wireColor } from './wireUtils';
 import { useSimulatorShortcuts } from './hooks/useSimulatorShortcuts';
 import { useCodeExplorerState } from './hooks/useCodeExplorerState';
@@ -46,9 +46,14 @@ import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequ
 import { ComponentContextMenu, ComponentRenamePanel, ComponentValuePanel } from './ComponentContextMenu';
 import { CanvasSceneLayer } from './components/CanvasSceneLayer';
 import { CreateComponentModal } from './components/CreateComponentModal';
+import { ComponentInspectorPanel } from './components/ComponentInspectorPanel';
 import { GamificationGuidePanel } from './components/GamificationGuidePanel';
 import { SimulatorDialogsGroup } from './components/SimulatorDialogsGroup';
 import { SimulatorChromeOverlays } from './components/SimulatorChromeOverlays';
+import { SimulatorStatusBanners } from './components/SimulatorStatusBanners';
+import { SimulatorRuntimePanel } from './components/SimulatorRuntimePanel';
+import { CanvasBottomControls } from './components/CanvasBottomControls';
+import { F1MenuOverlay } from './components/F1MenuOverlay';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
@@ -8829,114 +8834,26 @@ export function SimulatorPage({ gamificationMode = false }) {
         {/* TOP BAR */}
         <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
 
-        {studentAssignmentMode && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
-            <div style={{ minWidth: 0 }}>
-              <strong style={{ display: 'block', fontSize: 13 }}>{assignmentSubmissionAssignment?.title || 'Assignment Template'}</strong>
-              <span style={{ color: 'var(--text3)', fontSize: 12 }}>
-                {isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Complete the simulation and submit your work here.'}
-              </span>
-            </div>
-            <Btn
-              color="var(--accent)"
-              onClick={handleSubmitClassAssignment}
-              disabled={assignmentSubmissionState.saving || !assignmentSubmissionAssignment || isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
-              title={assignmentSubmissionState.saving ? 'Submitting...' : isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Submit assignment'}
-            >
-              {assignmentSubmissionState.data ? 'Update Submission' : 'Submit Assignment'}
-            </Btn>
-          </div>
-        )}
-
-        {liveMeetingMode && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(90deg, rgba(37,99,235,0.12), rgba(14,165,233,0.08))', flexShrink: 0 }}>
-            <div style={{ minWidth: 0 }}>
-              <strong style={{ display: 'block', fontSize: 13 }}>
-                {isLiveTeacher ? 'Live simulation host' : (liveCanEdit ? 'Live simulation editor' : 'Live simulation viewer')}
-              </strong>
-              <span style={{ color: 'var(--text3)', fontSize: 12 }}>
-                Code {liveMeetingShareCode || liveSessionCode} • {liveMeetingStatus || 'Connecting'}
-                {liveMeetingParticipantCounts.students ? ` • ${liveMeetingParticipantCounts.students} student${liveMeetingParticipantCounts.students > 1 ? 's' : ''} connected` : ''}
-              </span>
-            </div>
-            {isLiveTeacher && (
-              <Btn
-                color="var(--accent)"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(liveMeetingShareCode || liveSessionCode);
-                  } catch (error) {
-                    console.error('Failed to copy live meeting code', error);
-                  }
-                }}
-                title="Copy the live meeting code"
-              >
-                Copy Code
-              </Btn>
-            )}
-            {!isLiveTeacher && !liveCanEdit && (
-              <Btn
-                color="var(--orange)"
-                onClick={handleRequestLiveEditAccess}
-                disabled={liveEditRequestPending}
-                title="Ask the teacher for edit access"
-              >
-                {liveEditRequestPending ? 'Request Sent' : 'Request Edit Access'}
-              </Btn>
-            )}
-            {!isLiveTeacher && liveCanEdit && (
-              <Btn
-                color="var(--red)"
-                onClick={handleEndLiveEditAccess}
-                title="End your edit permission"
-              >
-                End Edit Access
-              </Btn>
-            )}
-          </div>
-        )}
-
-        {isLiveTeacher && liveGrantedEditors.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
-            <strong style={{ fontSize: 12 }}>Editors with access:</strong>
-            {liveGrantedEditors.map((editor) => (
-              <div key={editor.userId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--card)' }}>
-                <span style={{ fontSize: 12 }}>{editor.userName || 'Student'}</span>
-                <button type="button" onClick={() => handleRespondToLiveEditRequest(editor.userId, 'revoke')} style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {isLiveTeacher && livePendingEditRequests.length > 0 && (
-          <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Live edit requests">
-            <div className="teacher-modal__backdrop" />
-            <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
-              <header className="teacher-modal__header">
-                <h3>Simulation Edit Request</h3>
-              </header>
-              <p className="simulator-share-dialog__copy">
-                Students are read-only by default. Approve a request to temporarily let that student update the shared simulation.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {livePendingEditRequests.map((request) => (
-                  <div key={request.userId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg)' }}>
-                    <div>
-                      <strong style={{ display: 'block', fontSize: 13 }}>{request.userName || 'Student'}</strong>
-                      <span style={{ color: 'var(--text3)', fontSize: 12 }}>Wants permission to edit the live simulation.</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" className="simulator-share-dialog__secondary" onClick={() => handleRespondToLiveEditRequest(request.userId, 'deny')}>Deny</button>
-                      <button type="button" className="simulator-share-dialog__primary" onClick={() => handleRespondToLiveEditRequest(request.userId, 'approve')}>Allow</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
+        <SimulatorStatusBanners
+          studentAssignmentMode={studentAssignmentMode}
+          assignmentSubmissionAssignment={assignmentSubmissionAssignment}
+          isAssignmentSubmissionClosed={isAssignmentSubmissionClosed}
+          assignmentSubmissionState={assignmentSubmissionState}
+          handleSubmitClassAssignment={handleSubmitClassAssignment}
+          liveMeetingMode={liveMeetingMode}
+          isLiveTeacher={isLiveTeacher}
+          liveCanEdit={liveCanEdit}
+          liveMeetingShareCode={liveMeetingShareCode}
+          liveSessionCode={liveSessionCode}
+          liveMeetingStatus={liveMeetingStatus}
+          liveMeetingParticipantCounts={liveMeetingParticipantCounts}
+          liveEditRequestPending={liveEditRequestPending}
+          handleRequestLiveEditAccess={handleRequestLiveEditAccess}
+          handleEndLiveEditAccess={handleEndLiveEditAccess}
+          liveGrantedEditors={liveGrantedEditors}
+          handleRespondToLiveEditRequest={handleRespondToLiveEditRequest}
+          livePendingEditRequests={livePendingEditRequests}
+        />
 
         <SimulatorDialogsGroup
           activeUser={activeUser}
@@ -8987,6 +8904,22 @@ export function SimulatorPage({ gamificationMode = false }) {
           handleGamificationSubmit={handleGamificationSubmit}
           lockToast={lockToast}
           wireStart={wireStart}
+        />
+
+        <F1MenuOverlay
+          showF1Menu={showF1Menu}
+          setShowF1Menu={setShowF1Menu}
+          downloadSimulationJson={downloadSimulationJson}
+          openFirmwareDownloadDialog={openFirmwareDownloadDialog}
+          openFirmwareUploadDialog={openFirmwareUploadDialog}
+          rp2040DebugTelemetryEnabled={rp2040DebugTelemetryEnabled}
+          setRp2040DebugTelemetryEnabled={setRp2040DebugTelemetryEnabled}
+          setShowSpeedDialog={setShowSpeedDialog}
+          simulationSpeed={simulationSpeed}
+          setSimulationSpeed={setSimulationSpeed}
+          isRunning={isRunning}
+          workerRef={workerRef}
+          handleStartGDB={handleStartGDB}
         />
 
         <div className="flex flex-1 overflow-hidden" onClick={() => setProjContextMenu(null)}>
@@ -9127,562 +9060,86 @@ export function SimulatorPage({ gamificationMode = false }) {
               setWireStart={setWireStart}
             />
 
-            {/* Minimalist Runtime panel (top-left) */}
-            {isRunning && !isCompiling && (
-              <div
-                data-export-ignore="true"
-                onClick={e => e.stopPropagation()}
-                onMouseDown={e => e.stopPropagation()}
-                style={{
-                  position: 'absolute',
-                  top: 14,
-                  left: 14,
-                  zIndex: 90,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '16px',
-                  background: 'rgba(25, 25, 25, 0.65)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '10px',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                  padding: '6px 12px',
-                  pointerEvents: 'auto'
-                }}
-              >
-                {/* Duration Segment */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10 2h4" /><path d="M12 14v-4" /><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6V13z" />
-                    </svg>
-                  </div>
-                  <span style={{
-                    color: 'var(--text)',
-                    fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    letterSpacing: '0.02em',
-                    minWidth: '65px'
-                  }}>
-                    {formatRunDuration(runDurationSec)}
-                  </span>
-                </div>
+            <SimulatorRuntimePanel
+              isRunning={isRunning}
+              isCompiling={isCompiling}
+              isPaused={isPaused}
+              runDurationSec={runDurationSec}
+              simulationSpeedPercent={simulationSpeedPercent}
+              formatRunDuration={formatRunDuration}
+            />
 
-                {/* Divider */}
-                <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.1)' }} />
+            <ComponentInspectorPanel
+              selectedComponentInfo={selectedComponentInfo}
+              showComponentDesc={showComponentDesc}
+              setShowComponentDesc={setShowComponentDesc}
+              selected={selected}
+              components={components}
+              wires={wires}
+              COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+              GROUP_COLORS={GROUP_COLORS}
+              LOCAL_PIN_DEFS={LOCAL_PIN_DEFS}
+              getPinCategory={getPinCategory}
+              hasCategoryIntersection={hasCategoryIntersection}
+              pendingPinColors={pendingPinColors}
+              setPendingPinColors={setPendingPinColors}
+              updateWireColor={updateWireColor}
+              setWires={setWires}
+              setWireStart={setWireStart}
+              isPinMappingExpanded={isPinMappingExpanded}
+              setIsPinMappingExpanded={setIsPinMappingExpanded}
+            />
 
-                {/* Speed Segment */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />
-                    </svg>
-                  </div>
-                  <span style={{
-                    color: 'var(--accent)',
-                    fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    minWidth: '35px'
-                  }}>
-                    {simulationSpeedPercent}%
-                  </span>
-                </div>
-
-                {/* Paused Indicator Overlay */}
-                {isPaused && (
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: 'rgba(245, 158, 11, 0.15)',
-                    borderRadius: '10px',
-                    border: '1px solid var(--orange)',
-                    zIndex: -1,
-                    animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-                  }} />
-                )}
-              </div>
-            )}
-
-            {/* Component Description Panel — shows info of canvas-selected component */}
-            {showComponentDesc && selectedComponentInfo && (
-              <div
-                data-export-ignore="true"
-                onClick={e => e.stopPropagation()}
-                onMouseDown={e => e.stopPropagation()}
-                onDoubleClick={e => e.stopPropagation()}
-                style={{
-                  position: 'absolute',
-                  top: 12,
-                  right: 12,
-                  zIndex: 90,
-                  width: 220,
-                  background: 'var(--bg2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 12,
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                  overflow: 'hidden',
-                  maxHeight: 'calc(100vh - 130px)', // Limit height to stay above zoom controls
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-                data-no-canvas-scroll="true"
-              >
-                {/* Header */}
-                <div style={{
-                  padding: '16px 16px 14px',
-                  borderBottom: '1px solid var(--border)',
-                  flexShrink: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
-                  background: 'linear-gradient(to bottom, var(--bg2), var(--bg1))'
-                }}>
-                  <div style={{
-                    fontSize: 15,
-                    fontWeight: 800,
-                    color: 'var(--text)',
-                    letterSpacing: '-0.02em',
-                    lineHeight: '1.1'
-                  }}>
-                    {selectedComponentInfo.label}
-                  </div>
-
-
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
-                  }}>
-                    {/* Category Chip */}
-                    <div style={{
-                      height: 24,
-                      fontSize: 9,
-                      fontWeight: 800,
-                      color: GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)',
-                      background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}12`,
-                      borderRadius: 6,
-                      padding: '0 10px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`
-                    }}>
-                      {selectedComponentInfo.group}
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
-                        if (doc) {
-                          // Replace hardcoded localhost URLs with current origin
-                          const finalDoc = doc.replace(/http:\/\/localhost:5173/g, window.location.origin);
-                          const b = new Blob([finalDoc], { type: 'text/html' });
-                          window.open(URL.createObjectURL(b), '_blank');
-                        } else {
-                          window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
-                        }
-                      }}
-                      style={{
-                        height: 24,
-                        background: 'var(--bg3)',
-                        border: '1px solid var(--border)',
-                        padding: '0 12px',
-                        color: 'var(--text2)',
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        borderRadius: 6,
-                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                      }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.background = 'var(--bg4)';
-                        e.currentTarget.style.borderColor = 'var(--accent)';
-                        e.currentTarget.style.color = 'var(--accent)';
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.background = 'var(--bg3)';
-                        e.currentTarget.style.borderColor = 'var(--border)';
-                        e.currentTarget.style.color = 'var(--text2)';
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
-                      }}
-                    >
-                      <svg
-                        width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                      </svg>
-                      Documentation
-                    </button>
-                  </div>
-                </div>
-
-                {/* Pin Wiring Dropdowns */}
-                <div className="panel-scroll" style={{ padding: '10px 12px', flex: 1, overflowY: 'auto' }}>
-                  <div
-                    onClick={() => setIsPinMappingExpanded(!isPinMappingExpanded)}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 'bold',
-                      color: 'var(--text3)',
-                      textTransform: 'uppercase',
-                      letterSpacing: 1,
-                      marginBottom: 8,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                      padding: '4px 0'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.color = 'var(--text2)'}
-                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
-                  >
-                    <span>Pin Mapping</span>
-                    <svg
-                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                      style={{
-                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        transform: isPinMappingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                        opacity: 0.6
-                      }}
-                    >
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </div>
-                  {isPinMappingExpanded && (() => {
-                    const compPins = LOCAL_PIN_DEFS[selectedComponentInfo.type] || [];
-                    if (compPins.length === 0) {
-                      return <div style={{ fontSize: 12, color: 'var(--text3)' }}>No pins exposed.</div>;
-                    }
-
-                    // Gather ALL components for destination endpoints (excluding self)
-                    const validTargets = components.filter(c => c.id !== selected);
-                    const targetOptions = [];
-                    validTargets.forEach(b => {
-                      const bPins = LOCAL_PIN_DEFS[b.type] || [];
-                      bPins.forEach(p => targetOptions.push({
-                        id: `${b.id}:${p.id}`,
-                        label: `${b.label || b.id} : ${p.id}`,
-                        type: b.type,
-                        description: p.description
-                      }));
-                    });
-
-                    return compPins.map(pin => {
-                      const pinIdStr = `${selected}:${pin.id}`;
-                      const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
-
-                      // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
-                      const filteredOptions = targetOptions.filter(opt => {
-                        if (!currentPinCat) return true; // Show all for unmapped/general pins
-                        const targetPinCat = getPinCategory(opt.id.split(':')[1], opt.description, opt.type);
-                        return hasCategoryIntersection(currentPinCat, targetPinCat);
-                      });
-
-                      // Find if any wire is connected to this pin specifically
-                      const connectedWire = wires.find(w => w.from === pinIdStr || w.to === pinIdStr);
-                      // Determine current dropdown value
-                      let currentVal = '';
-                      if (connectedWire) {
-                        currentVal = connectedWire.from === pinIdStr ? connectedWire.to : connectedWire.from;
-                      }
-
-                      const pinPreferredColor = pendingPinColors[pinIdStr] || (connectedWire ? connectedWire.color : wireColor(pin.id));
-
-                      return (
-                        <div key={pin.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 4 }}>
-                          <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, width: 44 }} title={pin.description || pin.id}>
-                            {pin.id}
-                          </span>
-
-                          {/* Interactive Arrow & Color Picker */}
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const picker = e.currentTarget.querySelector('input[type="color"]');
-                              if (picker) picker.click();
-                            }}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                              opacity: connectedWire ? 1 : 0.6,
-                              transition: 'all 0.2s ease',
-                              position: 'relative',
-                              padding: '0 4px',
-                              flexShrink: 0
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.opacity = '1';
-                              e.currentTarget.style.transform = 'scale(1.1)';
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.opacity = connectedWire ? '1' : '0.6';
-                              e.currentTarget.style.transform = 'scale(1)';
-                            }}
-                            title={connectedWire ? "Change wire color" : "Set wire color before connecting"}
-                          >
-                            <svg
-                              width="14" height="14" viewBox="0 0 24 24" fill="none"
-                              stroke={pinPreferredColor}
-                              strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                            >
-                              <line x1="5" y1="12" x2="19" y2="12"></line>
-                              <polyline points="12 5 19 12 12 19"></polyline>
-                            </svg>
-                            <input
-                              type="color"
-                              value={pinPreferredColor}
-                              onChange={(e) => {
-                                const newColor = e.target.value;
-                                setPendingPinColors(prev => ({ ...prev, [pinIdStr]: newColor }));
-                                if (connectedWire) {
-                                  updateWireColor(connectedWire.id, newColor);
-                                }
-                              }}
-                              style={{
-                                position: 'absolute',
-                                top: 0, left: 0, width: 0, height: 0, opacity: 0, padding: 0, border: 'none', pointerEvents: 'none'
-                              }}
-                            />
-                          </div>
-
-                          <select
-                            value={currentVal}
-                            onChange={(e) => {
-                              const selectedTarget = e.target.value;
-                              setWires(prev => {
-                                // 1. Generate the exact same wire syntax as manual mapping
-                                const toPinLabel = selectedTarget ? (selectedTarget.includes(':') ? selectedTarget.split(':').slice(1).join(':') : '') : '';
-                                const finalColor = pendingPinColors[pinIdStr] || wireColor(toPinLabel);
-
-                                const newWire = selectedTarget ? {
-                                  id: `w${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-                                  from: pinIdStr,
-                                  to: selectedTarget,
-                                  fromLabel: pin.id,
-                                  toLabel: toPinLabel,
-                                  color: finalColor,
-                                  waypoints: []
-                                } : null;
-
-                                // 2. Filter cleanly using a map proxy to avoid reference staleness
-                                const filtered = prev.filter(w => w.from !== pinIdStr && w.to !== pinIdStr);
-
-                                setWireStart(null); // Cancel manual wire draw
-                                return newWire ? [...filtered, newWire] : filtered;
-                              });
-                            }}
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              padding: '3px 6px',
-                              background: 'var(--card)',
-                              border: '1px solid var(--border)',
-                              color: currentVal ? 'var(--accent)' : 'var(--text2)',
-                              borderRadius: 4,
-                              fontSize: 10,
-                              fontFamily: 'JetBrains Mono, monospace',
-                              cursor: 'pointer',
-                              outline: 'none'
-                            }}
-                          >
-                            <option value="">Disconnected</option>
-                            {filteredOptions.map(opt => (
-                              <option key={opt.id} value={opt.id}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-            )}
-
-            {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
-            {validationToast && (
-              <div
-                className="validation-toast-canvas"
-                role="alert"
-                data-export-ignore="true"
-                onClick={e => e.stopPropagation()}
-                onMouseDown={e => e.stopPropagation()}
-              >
-                <div className="validation-toast-canvas__header">
-                  <span>{validationToast.title}</span>
-                  <button
-                    type="button"
-                    className="validation-toast-canvas__close"
-                    onClick={() => setValidationToast(null)}
-                    aria-label="Close validation notification"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-                    </svg>
-                  </button>
-                </div>
-                <ul className="validation-toast-canvas__list">
-                  {validationToast.reasons.map((reason, idx) => (
-                    <li key={idx}>{reason}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div
-              data-export-ignore="true"
-              style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '4px 6px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-              onDoubleClick={e => e.stopPropagation()}
-            >
-              <button
-                className="zoom-btn"
-                onClick={() => setIsConsoleOpen(v => !v)}
-                style={{
-                  background: isConsoleOpen ? 'var(--card)' : 'none',
-                  border: isConsoleOpen ? '1px solid var(--accent)' : 'none',
-                  color: isConsoleOpen ? 'var(--accent)' : 'var(--text)',
-                  cursor: 'pointer',
-                  lineHeight: 1,
-                  padding: '4px 7px',
-                  borderRadius: 6,
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-                title="Toggle Console"
-              >
-                <TerminalIcon size={16} />
-              </button>
-              <button
-                className="zoom-btn"
-                onClick={() => applyZoomAtCenter(Math.max(0.25, parseFloat((canvasZoomRef.current - 0.25).toFixed(2))))}
-                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', lineHeight: 1, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                title="Zoom Out"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  <line x1="8" y1="11" x2="14" y2="11" />
-                </svg>
-              </button>
-              <button
-                onClick={handleZoomTextClick}
-                style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 6, minWidth: 40, fontFamily: 'JetBrains Mono, monospace' }}
-                title="Center & Reset Zoom (Click) | Center Only (Double Click)"
-              >{Math.round(canvasZoom * 100)}%</button>
-              <button
-                className="zoom-btn"
-                onClick={() => applyZoomAtCenter(Math.min(2, parseFloat((canvasZoomRef.current + 0.25).toFixed(2))))}
-                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', lineHeight: 1, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                title="Zoom In"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  <line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" />
-                </svg>
-              </button>
-              <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={() => chrome.setShowCanvasMenu(m => !m)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 7px', borderRadius: 6 }}
-                  title="Canvas Menu"
-                >⋮</button>
-                {showCanvasMenu && (
-                  <div
-                    className="canvas-menu"
-                    onMouseLeave={() => chrome.setShowCanvasMenu(false)}
-                    style={{
-                      position: 'absolute',
-                      bottom: '100%',
-                      right: 0,
-                      marginBottom: 10,
-                      zIndex: 10000,
-                      background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-                      backdropFilter: 'blur(16px) saturate(1.4)',
-                      WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                      border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                      borderRadius: 12,
-                      boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                      padding: '5px',
-                      minWidth: 190,
-                      animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                      transformOrigin: 'bottom right',
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      willChange: 'transform, opacity, backdrop-filter',
-                      backfaceVisibility: 'hidden',
-                      WebkitBackfaceVisibility: 'hidden',
-                    }}
-                  >
-                    <button className="canvas-menu-item" onClick={() => { fitToView('fit'); chrome.setShowCanvasMenu(false); }}>Fit to Canvas</button>
-                    <button className={`canvas-menu-item${history.past.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { undo(); chrome.setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning}>Undo</button>
-                    <button className={`canvas-menu-item${history.future.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { redo(); chrome.setShowCanvasMenu(false); }} disabled={history.future.length === 0 || isRunning}>Redo</button>
-                    <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                    <button className="canvas-menu-item" onClick={() => { chrome.setShowInspector(v => !v); chrome.setShowCanvasMenu(false); }}>
-                      {showInspector ? 'Disable Inspector' : 'Enable Component Inspector'}
-                    </button>
-                    <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                    <button className="canvas-menu-item" onClick={() => { chrome.setShowGrid(g => !g); chrome.setShowCanvasMenu(false); }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
-                    <button className="canvas-menu-item" onClick={() => { chrome.setIsCanvasLocked(l => !l); chrome.setShowCanvasMenu(false); }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
-                    <button className="canvas-menu-item" onClick={() => { toggleFullscreen(); chrome.setShowCanvasMenu(false); }}>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</button>
-                    <button className="canvas-menu-item" onClick={() => {
-                      const enabling = !wirepointsEnabled;
-                      setWirepointsEnabled(enabling);
-                      setShowCanvasMenu(false);
-                    }}>{wirepointsEnabled ? 'Disable Wire Waypoints' : 'Enable Wire Waypoints'}</button>
-                    <button className="canvas-menu-item" onClick={() => { chrome.setShowComponentDesc(d => !d); chrome.setShowCanvasMenu(false); }}>{showComponentDesc ? 'Hide Component Info' : 'Show Component Info'}</button>
-                    <button className="canvas-menu-item" onClick={() => {
-                      setWiresAlwaysOnTop(v => !v);
-                      chrome.setShowCanvasMenu(false);
-                    }}>{wiresAlwaysOnTop ? 'Move Wires to Bottom' : 'Move Wires to Top'}</button>
-                    <button className="canvas-menu-item" onClick={() => { chrome.setShowConnectionsPanel(p => !p); chrome.setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
-                    <button
-                      className="canvas-menu-item"
-                      onClick={() => {
-                        const next = !blocklyDisabled;
-                        setBlocklyDisabled(next);
-                        try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) { }
-                        setShowCanvasMenu(false);
-                      }}
-                      title={blocklyDisabled ? 'Re-enable block code editor (uses more CPU)' : 'Disable block code editor to improve canvas performance'}
-                    >
-                      {blocklyDisabled ? 'Enable Block Coding' : 'Disable Block Coding'}
-                    </button>
-                    <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                    <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } chrome.setShowCanvasMenu(false); }}>Clear Canvas</button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <SimulationConsolePanel
-              isOpen={isConsoleOpen}
-              height={consoleHeight}
-              entries={consoleEntries}
-              activeTab={activeConsoleTab}
-              onTabChange={setActiveConsoleTab}
+            <CanvasBottomControls
+              validationToast={validationToast}
+              setValidationToast={setValidationToast}
+              isConsoleOpen={isConsoleOpen}
+              setIsConsoleOpen={setIsConsoleOpen}
+              consoleHeight={consoleHeight}
+              consoleEntries={consoleEntries}
+              activeConsoleTab={activeConsoleTab}
+              setActiveConsoleTab={setActiveConsoleTab}
               protocolLogs={protocolLogs}
-              onResizeStart={onMouseDownConsoleResize}
-              onClose={() => setIsConsoleOpen(false)}
-              onClear={() => {
-                if (activeConsoleTab === 'protocol') setProtocolLogs([]);
-                else clearConsoleEntries();
+              setProtocolLogs={setProtocolLogs}
+              onMouseDownConsoleResize={onMouseDownConsoleResize}
+              clearConsoleEntries={clearConsoleEntries}
+              downloadConsoleLog={downloadConsoleLog}
+              showCanvasMenu={showCanvasMenu}
+              setShowCanvasMenu={setShowCanvasMenu}
+              theme={theme}
+              history={history}
+              isRunning={isRunning}
+              showInspector={showInspector}
+              showGrid={showGrid}
+              isCanvasLocked={isCanvasLocked}
+              isFullscreen={isFullscreen}
+              wirepointsEnabled={wirepointsEnabled}
+              showComponentDesc={showComponentDesc}
+              showConnectionsPanel={showConnectionsPanel}
+              blocklyDisabled={blocklyDisabled}
+              fitToView={fitToView}
+              undo={undo}
+              redo={redo}
+              toggleFullscreen={toggleFullscreen}
+              setWirepointsEnabled={setWirepointsEnabled}
+              setWiresAlwaysOnTop={setWiresAlwaysOnTop}
+              wiresAlwaysOnTop={wiresAlwaysOnTop}
+              saveHistory={saveHistory}
+              setComponents={setComponents}
+              setWires={setWires}
+              setSelected={setSelected}
+              chrome={{
+                setShowInspector: chrome.setShowInspector,
+                setShowGrid: chrome.setShowGrid,
+                setIsCanvasLocked: chrome.setIsCanvasLocked,
+                setShowComponentDesc: chrome.setShowComponentDesc,
+                setShowConnectionsPanel: chrome.setShowConnectionsPanel,
+                setBlocklyDisabled: setBlocklyDisabled,
               }}
-              onDownload={downloadConsoleLog}
+              applyZoomAtCenter={applyZoomAtCenter}
+              canvasZoomRef={canvasZoomRef}
+              canvasZoom={canvasZoom}
+              handleZoomTextClick={handleZoomTextClick}
             />
 
             {/* ── Quick-Add Portal — rendered to document.body, isolated from canvas re-renders ── */}
@@ -9731,13 +9188,13 @@ export function SimulatorPage({ gamificationMode = false }) {
             serialBoardFilter2={serialBoardFilter2} setSerialBoardFilter2={setSerialBoardFilter2}
           />
 
-          <ProjectsSidebar
+          <ProjectsSidebarChrome
             showProjectsSidebar={showProjectsSidebar} setShowProjectsSidebar={setShowProjectsSidebar}
             projectsSidebarTab={projectsSidebarTab} setProjectsSidebarTab={setProjectsSidebarTab}
             favouriteProjectIds={favouriteProjectIds} myProjects={myProjects} currentProjectId={currentProjectId}
             renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId}
             renameValue={renameValue} setRenameValue={setRenameValue}
-            handleConfirmRename={handleConfirmRename} setProjContextMenu={setProjContextMenu}
+            handleConfirmRename={handleConfirmRename}
             formatProjectDate={formatProjectDate} handleNewProject={handleNewProject} handleLoadProject={handleLoadProject}
             isRunning={isRunning} isAnyAuthenticated={isAnyAuthenticated}
             isAuthenticated={isAuthenticated} activeUser={activeUser}
@@ -9747,6 +9204,12 @@ export function SimulatorPage({ gamificationMode = false }) {
             backupRestoreInputRef={backupRestoreInputRef}
             handleSyncToCloud={handleSyncToCloud}
             setShowCreateComponentModal={setShowCreateComponentModal}
+            projContextMenu={projContextMenu}
+            toggleFavourite={toggleFavourite}
+            handleCopyProject={handleCopyProject}
+            handleStartRename={handleStartRename}
+            handleDeleteProject={handleDeleteProject}
+            setProjContextMenu={setProjContextMenu}
           />
 
           {gamificationMode && gamPanelOpen && (
@@ -9760,104 +9223,6 @@ export function SimulatorPage({ gamificationMode = false }) {
               navigate={navigate}
               handleGamificationSubmit={handleGamificationSubmit}
             />
-          )}
-          {/* F1 MENU */}
-          {showF1Menu && (
-            <div
-              className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]"
-              onClick={() => setShowF1Menu(false)}
-            >
-              <div
-                className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="text-base font-bold mb-5 text-[var(--text)] tracking-tight">Quick Actions (F1)</div>
-                <div className="flex flex-col gap-3">
-                  <Btn
-                    onClick={() => {
-                      downloadSimulationJson();
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Download Simulation JSON
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      openFirmwareDownloadDialog();
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Download Firmware
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      openFirmwareUploadDialog();
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Board Firmware Manager
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      setRp2040DebugTelemetryEnabled((prev) => !prev);
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    {rp2040DebugTelemetryEnabled ? 'Disable RP2040 dbg Telemetry' : 'Enable RP2040 dbg Telemetry'}
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      setShowEngineSelector(true);
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Select Simulation Engine
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      chrome.setShowSpeedDialog(true);
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Simulation Speed ({simulationSpeed.toFixed(1)}x)
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      const resetSpeed = 1.0;
-                      setSimulationSpeed(resetSpeed);
-                      if (isRunning && workerRef.current) {
-                        workerRef.current.postMessage({ type: 'SET_SPEED', speed: resetSpeed });
-                      }
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Reset Simulation Speed (1.0x)
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      handleStartGDB();
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Start GDB Session
-                  </Btn>
-                </div>
-                <button
-                  className="mt-6 w-full px-3 py-2 text-xs font-bold text-[var(--text3)] hover:text-[var(--text)] transition-colors uppercase tracking-widest"
-                  onClick={() => chrome.setShowF1Menu(false)}
-                >
-                  Close (Esc)
-                </button>
-              </div>
-            </div>
           )}
 
           {/* ── SIMULATION SPEED DIALOG ─────────────────────────────────────── */}
@@ -9972,81 +9337,6 @@ export function SimulatorPage({ gamificationMode = false }) {
               </div>
             </div>
           )}
-
-          {/* Project right-click context menu */}
-          {projContextMenu && (
-            <div
-              className="canvas-menu"
-              onMouseDown={e => e.stopPropagation()}
-              onClick={e => e.stopPropagation()}
-              onMouseLeave={() => setProjContextMenu(null)}
-              style={{
-                position: 'fixed',
-                left: projContextMenu.x,
-                top: Math.min(projContextMenu.y, window.innerHeight - 240),
-                zIndex: 10000,
-                background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-                backdropFilter: 'blur(16px) saturate(1.4)',
-                WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                borderRadius: 12,
-                boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                minWidth: 200,
-                padding: '5px',
-                animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                transformOrigin: 'top left',
-                fontFamily: "'Space Grotesk', sans-serif",
-                willChange: 'transform, opacity, backdrop-filter',
-                backfaceVisibility: 'hidden',
-                WebkitBackfaceVisibility: 'hidden',
-              }}
-            >
-              <div className="px-4 py-2.5 text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider border-b border-[var(--border)] bg-[var(--bg)]/40 flex items-center justify-between">
-                <span className="truncate mr-2">{projContextMenu.proj.name || 'Untitled Project'}</span>
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]/30" />
-                  <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]/50" />
-                </div>
-              </div>
-
-              <div className="p-1 flex flex-col gap-0.5">
-                <button
-                  className="canvas-menu-item"
-                  onClick={() => { toggleFavourite(projContextMenu.proj.id); setProjContextMenu(null); }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "none"} stroke={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "currentColor"} strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                  {favouriteProjectIds.includes(projContextMenu.proj.id) ? 'Unfavourite' : 'Favourite'}
-                </button>
-
-                <button
-                  className="canvas-menu-item"
-                  onClick={() => { handleCopyProject(projContextMenu.proj); setProjContextMenu(null); }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                  Make a Copy
-                </button>
-
-                <button
-                  className="canvas-menu-item"
-                  onClick={() => { handleStartRename(projContextMenu.proj, { stopPropagation: () => { } }); setProjContextMenu(null); setProjectsSidebarTab('projects'); }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                  Rename Project
-                </button>
-
-                <div className="h-px bg-[var(--border)] my-1 mx-2 opacity-50" />
-
-                <button
-                  className="canvas-menu-item canvas-menu-item--danger"
-                  onClick={() => { handleDeleteProject(projContextMenu.proj.id); setProjContextMenu(null); }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
-                  Delete Project
-                </button>
-              </div>
-            </div>
-          )}
-
 
           {/* COMPONENT INSPECTOR HUD - High Performance Telemetry */}
           {showInspector && hoveredElement && (
