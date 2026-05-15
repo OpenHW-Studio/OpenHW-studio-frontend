@@ -86,11 +86,22 @@ export function ProjectsSidebar({
     <>
           {/* MY PROJECTS SIDEBAR */}
           <aside
-            className="bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out"
-            style={{ width: showProjectsSidebar ? 320 : 0, borderLeft: showProjectsSidebar ? '1px solid var(--border)' : 'none' }}
+            className="bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden"
+            style={{ 
+              width: 320, 
+              position: 'fixed',
+              top: 0,
+              right: 0,
+              height: '100vh',
+              zIndex: 10000,
+              transform: `translateX(${showProjectsSidebar ? '0' : '100%'})`,
+              opacity: showProjectsSidebar ? 1 : 0,
+              pointerEvents: showProjectsSidebar ? 'auto' : 'none',
+              transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-in-out',
+              willChange: 'transform, opacity',
+              boxShadow: showProjectsSidebar ? '-10px 0 30px rgba(0,0,0,0.1)' : 'none'
+            }}
           >
-            {showProjectsSidebar && (
-              <>
                 <div className="flex items-center justify-between shrink-0" style={{ padding: '15px 10px 10px' }}>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-lg font-black text-[var(--text)] tracking-tight leading-none">My Projects</span>
@@ -358,8 +369,6 @@ export function ProjectsSidebar({
                     </button>
                   </div>
                 </div>
-              </>
-            )}
           </aside>
     </>
   );
