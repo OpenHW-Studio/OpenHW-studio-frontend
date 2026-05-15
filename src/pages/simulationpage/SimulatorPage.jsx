@@ -15,10 +15,10 @@ import { RightPanel } from './RightPanel';
 import { ProjectsSidebar } from './components/ProjectsSidebar';
 import { multiRoutePath, wireColor } from './wireUtils';
 import { useSimulatorShortcuts } from './hooks/useSimulatorShortcuts';
+import { useCodeExplorerState } from './hooks/useCodeExplorerState';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
-import { ChromeUIProvider } from './ChromeUIContext';
 import QuickAddPortal from './QuickAddPortal';
 import TourGuide from './components/TourGuide';
 import { useTourLogic } from './hooks/useTourLogic';
@@ -45,6 +45,10 @@ import StudentAssignmentModal from '../../components/teacher/class-detail/Studen
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { ComponentContextMenu, ComponentRenamePanel, ComponentValuePanel } from './ComponentContextMenu';
 import { CanvasSceneLayer } from './components/CanvasSceneLayer';
+import { CreateComponentModal } from './components/CreateComponentModal';
+import { GamificationGuidePanel } from './components/GamificationGuidePanel';
+import { SimulatorDialogsGroup } from './components/SimulatorDialogsGroup';
+import { SimulatorChromeOverlays } from './components/SimulatorChromeOverlays';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
@@ -1422,7 +1426,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const gamProject = useMemo(() => gamificationMode && typeof PROJECTS !== 'undefined' ? (PROJECTS.find(p => p.slug === projectName) ?? null) : null, [gamificationMode, projectName])
   const [gamPanelOpen, setGamPanelOpen] = useState(true)
   const [gamTab, setGamTab] = useState('components')
-
   const WOKWI_TO_COMP_ID = useMemo(() => ({
     'wokwi-led': 'led',
     'wokwi-resistor': 'resistor',
@@ -1444,12 +1447,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (!compId) return false
     return isUnlocked ? !isUnlocked(compId) : false
   }, [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID])
-
-  const [lockToast, setLockToast] = useState(null)
-  const showLockToast = useCallback((label, compId) => {
-    setLockToast({ label, compId })
-    setTimeout(() => setLockToast(null), 3500)
-  }, [])
 
   const gamProjectComponents = useMemo(() => {
     if (!gamProject?.components) return []
@@ -1513,6 +1510,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection
   const [previewBanner, setPreviewBanner] = useState(null); // { id, label } — set when opened from admin "Test in Simulator"
+  const [lockToast, setLockToast] = useState(null)
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false)
   const [autoWiringEnabled, setAutoWiringEnabled] = useState(false);
   const [autoBreadboardEnabled, setAutoBreadboardEnabled] = useState(false);
@@ -1558,10 +1556,27 @@ export function SimulatorPage({ gamificationMode = false }) {
       return saved === null ? true : saved === 'true';
     } catch (_) { return true; }
   })
-  const [projectFiles, setProjectFiles] = useState([])
-  const [openCodeTabs, setOpenCodeTabs] = useState([])
-  const [activeCodeFileId, setActiveCodeFileId] = useState('')
-  const [showCodeExplorer, setShowCodeExplorer] = useState(true)
+  const {
+    projectFiles,
+    setProjectFiles,
+    openCodeTabs,
+    setOpenCodeTabs,
+    activeCodeFileId,
+    setActiveCodeFileId,
+    showCodeExplorer,
+    setShowCodeExplorer,
+    openCodeFile,
+    closeCodeTab,
+    saveCodeFile,
+    duplicateCodeFile,
+    renameCodeFile,
+    toggleCodeFileDisabled,
+    deleteCodeFile,
+  } = useCodeExplorerState({
+    fileExt,
+    isFileDisabled,
+    disabledFileSuffix: DISABLED_FILE_SUFFIX,
+  });
   const suppressCodeSyncRef = useRef(false)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [panelWidth, setPanelWidth] = useState(580)
@@ -1569,8 +1584,11 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isExplorerDragging, setIsExplorerDragging] = useState(false)
   const [isComponentDragging, setIsComponentDragging] = useState(false)
-  const [showComponentDesc, setShowComponentDesc] = useState(false) // description panel visible
   const [showCreateComponentModal, setShowCreateComponentModal] = useState(false)
+  const handleCloseCreateComponentModal = useCallback(() => {
+    setShowCreateComponentModal(false);
+  }, []);
+  const [showComponentDesc, setShowComponentDesc] = useState(false) // description panel visible
   const [showInspector, setShowInspector] = useState(false);
   const [hoveredElement, setHoveredElement] = useState(null); // { type: 'wire'|'pin'|'comp', id, data }
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -1973,6 +1991,11 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [viewPanelSection, setViewPanelSection] = useState(null); // null | 'schematic' | 'components'
   const [schematicLoading, setSchematicLoading] = useState(false);
   const [schematicDataUrl, setSchematicDataUrl] = useState(null);
+
+  const showLockToast = useCallback((label, compId) => {
+    setLockToast({ label, compId })
+    setTimeout(() => setLockToast(null), 3500)
+  }, [])
 
   useEffect(() => {
     if (!showFirmwareDownloadDialog) return;
@@ -5426,83 +5449,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     });
   };
 
-  const openCodeFile = useCallback((fileId) => {
-    setOpenCodeTabs(prev => prev.includes(fileId) ? prev : [...prev, fileId]);
-    setActiveCodeFileId(fileId);
-  }, []);
-
-  const closeCodeTab = useCallback((fileId) => {
-    setOpenCodeTabs(prev => {
-      const next = prev.filter(id => id !== fileId);
-      if (activeCodeFileId === fileId) {
-        setActiveCodeFileId(next[next.length - 1] || null);
-      }
-      return next;
-    });
-  }, [activeCodeFileId]);
-
-  const saveCodeFile = useCallback((fileId) => {
-    setProjectFiles(prev => prev.map(f => f.id === fileId ? { ...f, dirty: false } : f));
-  }, []);
-
-  const duplicateCodeFile = useCallback((fileId) => {
-    setProjectFiles(prev => {
-      const source = prev.find(f => f.id === fileId);
-      if (!source) return prev;
-      const ext = fileExt(source.name);
-      const base = ext ? source.name.slice(0, -ext.length) : source.name;
-      let name = `${base}_copy${ext}`;
-      let path = `${source.path.substring(0, source.path.lastIndexOf('/') + 1)}${name}`;
-      let i = 2;
-      while (prev.some(f => f.path === path)) {
-        name = `${base}_copy${i}${ext}`;
-        path = `${source.path.substring(0, source.path.lastIndexOf('/') + 1)}${name}`;
-        i++;
-      }
-      const dup = { ...source, id: path, path, name, dirty: true };
-      return [...prev, dup];
-    });
-  }, []);
-
-  const renameCodeFile = useCallback((fileId, nextName) => {
-    const cleaned = String(nextName || '').trim();
-    if (!cleaned) return;
-    const source = projectFileMap.get(fileId);
-    if (!source) return;
-    const parent = source.path.substring(0, source.path.lastIndexOf('/') + 1);
-    const nextPath = `${parent}${cleaned}`;
-
-    setProjectFiles(prev => {
-      if (prev.some(f => f.id !== fileId && f.path === nextPath)) return prev;
-      return prev.map(f => f.id === fileId ? { ...f, id: nextPath, path: nextPath, name: cleaned, dirty: true } : f);
-    });
-    setOpenCodeTabs(prev => prev.map(id => id === fileId ? nextPath : id));
-    if (activeCodeFileId === fileId) {
-      setActiveCodeFileId(nextPath);
-    }
-  }, [activeCodeFileId, projectFileMap]);
-
-  const toggleCodeFileDisabled = useCallback((fileId) => {
-    const source = projectFileMap.get(fileId);
-    if (!source || source.kind !== 'code') return;
-
-    const currentlyDisabled = isFileDisabled(source.name);
-    const nextName = currentlyDisabled
-      ? source.name.slice(0, -DISABLED_FILE_SUFFIX.length)
-      : `${source.name}${DISABLED_FILE_SUFFIX}`;
-
-    renameCodeFile(fileId, nextName);
-  }, [projectFileMap, renameCodeFile]);
-
-  const deleteCodeFile = useCallback((fileId) => {
-    setProjectFiles(prev => prev.filter(f => f.id !== fileId));
-    setOpenCodeTabs(prev => prev.filter(id => id !== fileId));
-    if (activeCodeFileId === fileId) {
-      const next = openCodeTabs.find(id => id !== fileId) || null;
-      setActiveCodeFileId(next);
-    }
-  }, [activeCodeFileId, openCodeTabs]);
-
   const downloadCodeFile = useCallback((fileId) => {
     const file = projectFileMap.get(fileId);
     if (!file) return;
@@ -8850,16 +8796,9 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <ChromeUIProvider>
-      {SimulatorPageContent()}
-    </ChromeUIProvider>
+    SimulatorPageContent()
   );
 
-
-  /**
-   * Inner component that consumes ChromeUIContext and renders the main simulator UI.
-   * Can gradually migrate props to use useChromeUI() in phases.
-   */
   function SimulatorPageContent() {
     const chrome = {
       setShowCanvasMenu,
@@ -8886,72 +8825,6 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
-
-        {/* ADMIN PREVIEW BANNER — shown when opened via "Test in Simulator" from admin dashboard */}
-        {previewBanner && (
-          <div style={{
-            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
-            background: 'linear-gradient(90deg, #92400e, #b45309)',
-            color: '#fff', padding: '10px 20px',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            fontFamily: 'monospace', fontSize: 13, boxShadow: '0 2px 12px rgba(0,0,0,0.4)'
-          }}>
-            <span>
-              🧪 <strong>Admin Preview Mode</strong> &nbsp;—&nbsp;
-              Component <strong style={{ color: '#fde68a' }}>{previewBanner.label}</strong>
-              &nbsp;(<code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 3 }}>{previewBanner.id}</code>)
-              &nbsp;is injected in <strong>browser memory only</strong>. It is NOT approved or installed on the backend.
-            </span>
-            <button
-              onClick={() => setPreviewBanner(null)}
-              style={{ background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 13 }}
-            >✕ Dismiss</button>
-          </div>
-        )}
-
-        {isExporting && (
-          <div style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 10000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(7, 11, 20, 0.36)',
-            backdropFilter: 'blur(2px)',
-            pointerEvents: 'all'
-          }}>
-            <style>{`
-            @keyframes openhw-png-spin {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-          `}</style>
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 12,
-              padding: '18px 22px',
-              borderRadius: 16,
-              background: 'rgba(10, 15, 28, 0.94)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 18px 60px rgba(0,0,0,0.35)',
-              minWidth: 220
-            }}>
-              <div style={{
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                border: '3px solid rgba(255,255,255,0.18)',
-                borderTopColor: 'var(--accent)',
-                animation: 'openhw-png-spin 0.9s linear infinite'
-              }} />
-              <div style={{ color: 'var(--text)', fontSize: 14, fontWeight: 700 }}>Exporting to PNG</div>
-              <div style={{ color: 'var(--text3)', fontSize: 12 }}>Please wait while the image is rendered.</div>
-            </div>
-          </div>
-        )}
 
         {/* TOP BAR */}
         <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
@@ -9065,167 +8938,56 @@ export function SimulatorPage({ gamificationMode = false }) {
           </div>
         )}
 
-        {showShareDialog && ['teacher', 'user', 'admin'].includes(activeUser?.role) && (
-          <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Share simulation">
-            <div className="teacher-modal__backdrop" onClick={() => setShowShareDialog(false)} />
-            <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
-              <header className="teacher-modal__header">
-                <h3>Share Simulation</h3>
-                <button type="button" onClick={() => setShowShareDialog(false)} aria-label="Close share dialog">x</button>
-              </header>
-              <p className="simulator-share-dialog__copy">
-                Distribute your interactive learning module by generating a secure link. Choose the visibility level to control who can access this curriculum asset.
-              </p>
-              <div className="simulator-share-dialog__label">Generated Access Link</div>
-              <div className="simulator-share-dialog__link-box">
-                <svg className="simulator-share-dialog__link-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.2 4.73" />
-                  <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.63-1.63" />
-                </svg>
-                <span className="simulator-share-dialog__link-text">
-                  {isSharingSimulation ? 'Creating secure link...' : (shareUrl || 'Unable to create link. Try Share again.')}
-                </span>
-                {shareUrl && (
-                  <button type="button" className="simulator-share-dialog__inline-copy" onClick={handleCopyShareUrl} aria-label="Copy share URL">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="9" y="9" width="13" height="13" rx="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-              <div className="simulator-share-dialog__footer">
-                <button type="button" className="simulator-share-dialog__secondary" onClick={() => setShowShareDialog(false)}>Close</button>
-                <button type="button" className="simulator-share-dialog__primary" onClick={handleCopyShareUrl} disabled={!shareUrl}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="18" cy="5" r="3" />
-                    <circle cx="6" cy="12" r="3" />
-                    <circle cx="18" cy="19" r="3" />
-                    <path d="M8.59 13.51l6.83 3.98" />
-                    <path d="M15.41 6.51l-6.82 3.98" />
-                  </svg>
-                  {shareCopied ? 'Copied' : 'Copy URL'}
-                </button>
-              </div>
-            </section>
-          </div>
-        )}
+        <SimulatorDialogsGroup
+          activeUser={activeUser}
+          showShareDialog={showShareDialog}
+          setShowShareDialog={setShowShareDialog}
+          isSharingSimulation={isSharingSimulation}
+          shareUrl={shareUrl}
+          handleCopyShareUrl={handleCopyShareUrl}
+          shareCopied={shareCopied}
+          showSaveDialog={showSaveDialog}
+          setShowSaveDialog={setShowSaveDialog}
+          saveDialogName={saveDialogName}
+          setSaveDialogName={setSaveDialogName}
+          handleConfirmSave={handleConfirmSave}
+          showFirmwareDownloadDialog={showFirmwareDownloadDialog}
+          setShowFirmwareDownloadDialog={setShowFirmwareDownloadDialog}
+          firmwareDownloadTarget={firmwareDownloadTarget}
+          setFirmwareDownloadTarget={setFirmwareDownloadTarget}
+          firmwareBoardOptions={firmwareBoardOptions}
+          handleDownloadFirmware={handleDownloadFirmware}
+          showFirmwareUploadDialog={showFirmwareUploadDialog}
+          setShowFirmwareUploadDialog={setShowFirmwareUploadDialog}
+          boardComponentMap={boardComponentMap}
+          normalizeBoardKind={normalizeBoardKind}
+          toggleBoardFirmwareSource={toggleBoardFirmwareSource}
+          setFirmwareUploadTarget={setFirmwareUploadTarget}
+          firmwareUploadInputRef={firmwareUploadInputRef}
+          firmwareUploadTarget={firmwareUploadTarget}
+          applyUploadedFirmwareToBoard={applyUploadedFirmwareToBoard}
+        />
 
-        {gamificationMode && gamProject && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
-            background: 'rgba(7,8,15,0.97)', borderBottom: `2px solid ${gamProject.color || '#22c55e'}44`,
-            fontFamily: "'Space Grotesk', sans-serif", flexShrink: 0, flexWrap: 'wrap', zIndex: 50,
-          }}>
-            <button
-              onClick={() => navigate('/projects')}
-              style={{ background: 'transparent', border: '1px solid rgba(255,255,255,.12)', color: 'rgba(255,255,255,.55)', borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-            >← Projects</button>
-
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{gamProject.icon}</span>
-            <div style={{ flexShrink: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1 }}>{gamProject.title}</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,.4)', marginTop: 1 }}>
-                Project {String(gamProject.number).padStart(2, '0')} ·{' '}
-                <span style={{ color: gamProject.color || '#22c55e' }}>{gamProject.difficultyLabel}</span>
-                {' '}· ⏱ {gamProject.estimatedTime}
-              </div>
-            </div>
-
-            <div style={{ flex: 1 }} />
-
-            {/* XP bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <div style={{
-                width: 26, height: 26, borderRadius: '50%',
-                background: `${currentLevelData?.color || '#22c55e'}22`,
-                border: `2px solid ${currentLevelData?.color || '#22c55e'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 800, color: currentLevelData?.color || '#22c55e',
-              }}>{currentLevel}</div>
-              <div style={{ width: 90 }}>
-                <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,.1)', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', borderRadius: 999, width: `${xpProgress}%`, background: `${currentLevelData?.color || '#22c55e'}` }} />
-                </div>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,.3)', marginTop: 2 }}>{xpProgress}% to Lvl {nextLevel?.id ?? '—'}</div>
-              </div>
-            </div>
-
-            {/* Coins */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.2)', borderRadius: 7, padding: '4px 9px', flexShrink: 0 }}>
-              <span style={{ fontSize: 13 }}>🪙</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>{coins}</span>
-            </div>
-
-            {/* XP reward */}
-            <div style={{ fontSize: 10, color: '#22c55e', background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.2)', borderRadius: 7, padding: '4px 9px', flexShrink: 0, fontWeight: 700 }}>
-              +{gamProject.xpReward} XP on complete
-            </div>
-
-            {/* Component lock status */}
-            <div style={{
-              fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 7,
-              background: gamAllUnlocked ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)',
-              border: `1px solid ${gamAllUnlocked ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)'}`,
-              color: gamAllUnlocked ? '#22c55e' : '#ef4444', flexShrink: 0,
-            }}>
-              {gamAllUnlocked ? '✅ All unlocked' : `🔒 ${gamLockedCount} locked`}
-            </div>
-
-            {/* Toggle guide panel */}
-            <button
-              onClick={() => setGamPanelOpen(p => !p)}
-              style={{
-                background: gamPanelOpen ? 'rgba(0,180,255,.1)' : 'transparent',
-                border: `1px solid ${gamPanelOpen ? 'rgba(0,180,255,.3)' : 'rgba(255,255,255,.12)'}`,
-                color: gamPanelOpen ? '#00b4ff' : 'rgba(255,255,255,.5)',
-                borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 700,
-                cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-              }}
-            >{gamPanelOpen ? '⟩ Hide Guide' : '⟨ Guide'}</button>
-
-            {/* Submit assessment */}
-            <button
-              onClick={handleGamificationSubmit}
-              style={{
-                background: gamProject.color || '#22c55e', border: 'none', color: '#fff',
-                borderRadius: 7, padding: '5px 13px', fontSize: 12, fontWeight: 700,
-                cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-              }}
-            >Submit →</button>
-          </div>
-        )}
-
-        {/* GAMIFICATION LOCK TOAST */}
-        {lockToast && (
-          <div style={{
-            position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(7, 11, 25, 0.95)', border: '1px solid rgba(239, 68, 68, 0.3)',
-            boxShadow: '0 8px 32px rgba(239, 68, 68, 0.2)', padding: '12px 20px', borderRadius: 12,
-            display: 'flex', alignItems: 'center', gap: 12, zIndex: 9999, animation: 'slideUp 0.3s ease-out'
-          }}>
-            <span style={{ fontSize: 24 }}>🔒</span>
-            <div>
-              <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 14 }}>{lockToast.label} is Locked</div>
-              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>Study the theory and pass the quiz to unlock this component.</div>
-            </div>
-            {lockToast.compId && (
-              <button
-                onClick={() => navigate(`/components/${lockToast.compId}/theory`)}
-                style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontWeight: 600, cursor: 'pointer', fontSize: 12, marginLeft: 8 }}
-              >Study Now</button>
-            )}
-          </div>
-        )}
-
-
-        {/* WIRING MODE HINT */}
-        {wireStart && (
-          <div className="bg-[rgba(255,145,0,.1)] border-b border-[rgba(255,145,0,.25)] text-[var(--orange)] px-5 py-2 text-[13px] flex items-center shrink-0" style={{ background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
-            〰 <strong>Wiring in progress</strong> — Click another pin to connect. Press Esc to cancel.
-            <span style={{ marginLeft: 12 }}>🔵 Started from <strong>{wireStart.compId} [{wireStart.pinLabel}]</strong></span>
-          </div>
-        )}
+        <SimulatorChromeOverlays
+          previewBanner={previewBanner}
+          setPreviewBanner={setPreviewBanner}
+          isExporting={isExporting}
+          gamificationMode={gamificationMode}
+          gamProject={gamProject}
+          navigate={navigate}
+          currentLevelData={currentLevelData}
+          currentLevel={currentLevel}
+          xpProgress={xpProgress}
+          nextLevel={nextLevel}
+          coins={coins}
+          gamAllUnlocked={gamAllUnlocked}
+          gamLockedCount={gamLockedCount}
+          gamPanelOpen={gamPanelOpen}
+          setGamPanelOpen={setGamPanelOpen}
+          handleGamificationSubmit={handleGamificationSubmit}
+          lockToast={lockToast}
+          wireStart={wireStart}
+        />
 
         <div className="flex flex-1 overflow-hidden" onClick={() => setProjContextMenu(null)}>
 
@@ -9254,22 +9016,10 @@ export function SimulatorPage({ gamificationMode = false }) {
             writeEditCopyPayload={writeEditCopyPayload}
           />
 
-          {/* Create Component Modal (placeholder) */}
-          {showCreateComponentModal && (
-            <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowCreateComponentModal(false)}>
-              <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-                <div className="text-base font-bold mb-3.5 text-[var(--text)]">Create Component</div>
-                <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 16 }}>
-                  To create a custom component, build a ZIP package with <code>manifest.json</code>, <code>ui.tsx</code>, <code>logic.ts</code>, and optionally <code>validation.ts</code>, then upload via <strong>Upload ZIP to Test</strong>.
-                </p>
-                <button
-                  onClick={() => setShowCreateComponentModal(false)}
-                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                  Got it
-                </button>
-              </div>
-            </div>
-          )}
+          <CreateComponentModal
+            open={showCreateComponentModal}
+            onClose={handleCloseCreateComponentModal}
+          />
 
           {/* CANVAS + SVG WIRE LAYER */}
           <main
@@ -9999,304 +9749,18 @@ export function SimulatorPage({ gamificationMode = false }) {
             setShowCreateComponentModal={setShowCreateComponentModal}
           />
 
-          {/* GAMIFICATION GUIDE PANEL */}
           {gamificationMode && gamPanelOpen && (
-            <aside style={{
-              width: 280, background: '#0a0d1a', borderLeft: '1px solid rgba(255,255,255,.07)',
-              display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
-              fontFamily: "'Space Grotesk', sans-serif",
-            }}>
-              {/* Tabs */}
-              <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,.07)', flexShrink: 0 }}>
-                {[{ id: 'components', label: '🔧 Parts' }, { id: 'wiring', label: '〰 Wiring' }, { id: 'concepts', label: '📚 Code' }].map(tab => (
-                  <button key={tab.id} onClick={() => setGamTab(tab.id)} style={{
-                    flex: 1, padding: '9px 4px', background: 'none', border: 'none',
-                    borderBottom: `2px solid ${gamTab === tab.id ? '#00b4ff' : 'transparent'}`,
-                    color: gamTab === tab.id ? '#00b4ff' : 'rgba(255,255,255,.4)',
-                    fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                  }}>{tab.label}</button>
-                ))}
-              </div>
-
-              {/* Body */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 80px' }}>
-
-                {gamTab === 'components' && (
-                  <div>
-                    <div style={{
-                      padding: '9px 12px', borderRadius: 9, marginBottom: 14,
-                      background: gamAllUnlocked ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)',
-                      border: `1px solid ${gamAllUnlocked ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)'}`,
-                      fontSize: 12, fontWeight: 600,
-                      color: gamAllUnlocked ? '#22c55e' : '#ef4444',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                    }}>
-                      {gamAllUnlocked ? '✅ All components unlocked' : `⚠️ ${gamLockedCount} need unlocking`}
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      {(gamProjectComponents || []).map((c, i) => (
-                        <div key={i} style={{
-                          display: 'flex', alignItems: 'center', gap: 9,
-                          padding: '9px 11px', borderRadius: 9,
-                          background: c.isLocked ? 'rgba(239,68,68,.05)' : 'rgba(34,197,94,.05)',
-                          border: `1px solid ${c.isLocked ? 'rgba(239,68,68,.2)' : 'rgba(34,197,94,.18)'}`,
-                        }}>
-                          <span style={{ fontSize: 18, flexShrink: 0 }}>{c.isLocked ? '🔒' : (c.compDef?.icon || '✅')}</span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: c.isLocked ? 'rgba(255,255,255,.45)' : '#fff' }}>
-                              {c.qty > 1 ? `${c.qty}× ` : ''}{c.label}
-                            </div>
-                            <div style={{ fontSize: 9, color: c.isLocked ? '#ef4444' : '#22c55e', marginTop: 2 }}>
-                              {c.isLocked ? 'Study theory to unlock' : 'Available in palette'}
-                            </div>
-                          </div>
-                          {c.isLocked && c.compId && (
-                            <button
-                              onClick={() => navigate(`/components/${c.compId}/theory`)}
-                              style={{ background: 'rgba(239,68,68,.15)', border: '1px solid rgba(239,68,68,.35)', color: '#ef4444', borderRadius: 6, padding: '3px 7px', fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-                            >Unlock →</button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <button onClick={() => navigate('/components')} style={{ marginTop: 16, width: '100%', padding: '9px', background: 'rgba(0,180,255,.06)', border: '1px solid rgba(0,180,255,.2)', color: '#00b4ff', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                      🔓 Unlock More Components
-                    </button>
-                  </div>
-                )}
-
-                {gamTab === 'wiring' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {gamProject?.wiring?.length > 0 ? gamProject.wiring.map((w, i) => (
-                      <div key={i} style={{ padding: '9px 11px', borderRadius: 8, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                        <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,180,255,.15)', border: '1px solid rgba(0,180,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#00b4ff', flexShrink: 0 }}>{i + 1}</div>
-                        <div style={{ flex: 1, fontSize: 10, color: 'rgba(255,255,255,.75)', lineHeight: 1.5 }}>
-                          <span style={{ color: '#00b4ff', fontFamily: 'monospace' }}>{w.from}</span>
-                          <span style={{ color: 'rgba(255,255,255,.3)', margin: '0 5px' }}>→</span>
-                          <span style={{ color: '#22c55e', fontFamily: 'monospace' }}>{w.to}</span>
-                        </div>
-                      </div>
-                    )) : (
-                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', textAlign: 'center', padding: '32px 0' }}>No wiring guide yet.</div>
-                    )}
-                  </div>
-                )}
-
-                {gamTab === 'concepts' && gamProject && (
-                  <div>
-                    {gamProject.concepts?.length > 0 && (
-                      <>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Concepts</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
-                          {gamProject.concepts.map((c, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 6, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
-                              <span style={{ color: gamProject.color || '#22c55e', fontSize: 11 }}>▸</span>
-                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,.65)', fontFamily: 'monospace' }}>{c}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {gamProject.starterCode && (
-                      <>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Starter Code</div>
-                        <div style={{ background: 'rgba(0,0,0,.4)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 9, padding: '11px', overflow: 'auto' }}>
-                          <pre style={{ margin: 0, fontSize: 10, color: '#a5f3fc', lineHeight: 1.7, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap' }}>{gamProject.starterCode}</pre>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              {gamProject && (
-                <div style={{ flexShrink: 0, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.07)', background: 'rgba(0,0,0,.3)' }}>
-                  <button
-                    onClick={handleGamificationSubmit}
-                    disabled={!gamAllUnlocked}
-                    style={{ width: '100%', padding: '10px', background: gamAllUnlocked ? (gamProject.color || '#22c55e') : 'rgba(255,255,255,.05)', border: gamAllUnlocked ? 'none' : '1px solid rgba(255,255,255,.1)', color: gamAllUnlocked ? '#fff' : 'rgba(255,255,255,.25)', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: gamAllUnlocked ? 'pointer' : 'not-allowed', marginBottom: 7 }}
-                    title={gamAllUnlocked ? '' : `Unlock ${gamLockedCount} component${gamLockedCount > 1 ? 's' : ''} first`}
-                  >
-                    {gamAllUnlocked ? '▶ Submit Assessment' : `🔒 Unlock ${gamLockedCount} first`}
-                  </button>
-                  <button onClick={() => navigate(`/${gamProject.slug}/guide`)} style={{ width: '100%', padding: '7px', background: 'transparent', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(255,255,255,.35)', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                    📖 Full Guide
-                  </button>
-                </div>
-              )}
-            </aside>
+            <GamificationGuidePanel
+              gamTab={gamTab}
+              setGamTab={setGamTab}
+              gamProject={gamProject}
+              gamAllUnlocked={gamAllUnlocked}
+              gamLockedCount={gamLockedCount}
+              gamProjectComponents={gamProjectComponents}
+              navigate={navigate}
+              handleGamificationSubmit={handleGamificationSubmit}
+            />
           )}
-
-
-
-          {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
-          {showSaveDialog && (
-            <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => chrome.setShowSaveDialog(false)}>
-              <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-                <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
-                <input
-                  autoFocus
-                  className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
-                  placeholder="Project name..."
-                  value={saveDialogName}
-                  onChange={e => setSaveDialogName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') chrome.setShowSaveDialog(false); }}
-                />
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <Btn onClick={() => chrome.setShowSaveDialog(false)}>Cancel</Btn>
-                  <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── FIRMWARE DOWNLOAD DIALOG ─────────────────────────────────────── */}
-          {showFirmwareDownloadDialog && (
-            <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareDownloadDialog(false)}>
-              <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[390px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-                <div className="text-base font-bold mb-2 text-[var(--text)]">Download Firmware</div>
-                <div className="text-xs text-[var(--text3)] mb-4">
-                  Choose a board firmware artifact to download, or download all compiled board firmwares.
-                </div>
-
-                <label className="text-xs font-semibold text-[var(--text2)] block mb-2">Target</label>
-                <select
-                  className="w-full bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-3 py-2 rounded-lg text-sm mb-4"
-                  value={firmwareDownloadTarget}
-                  onChange={(e) => setFirmwareDownloadTarget(e.target.value)}
-                >
-                  <option value="__latest__">Latest compiled firmware</option>
-                  {firmwareBoardOptions.map((option) => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
-                  ))}
-                  <option value="__all__">All boards</option>
-                </select>
-
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <Btn onClick={() => setShowFirmwareDownloadDialog(false)}>Cancel</Btn>
-                  <Btn
-                    color="var(--accent)"
-                    onClick={async () => {
-                      await handleDownloadFirmware(firmwareDownloadTarget || '__latest__');
-                      setShowFirmwareDownloadDialog(false);
-                    }}
-                  >
-                    Download
-                  </Btn>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── BOARD FIRMWARE MANAGER ─────────────────────────────────────── */}
-          {showFirmwareUploadDialog && (
-            <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareUploadDialog(false)}>
-              <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[580px] max-w-[90vw] shadow-[0_12px_50px_rgba(0,0,0,.5)] max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-3">
-                  <div className="text-lg font-bold text-[var(--text)]">Board Firmware Manager</div>
-                  <button
-                    onClick={() => setShowFirmwareUploadDialog(false)}
-                    className="text-[var(--text3)] hover:text-[var(--text)] transition-colors p-1"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                  </button>
-                </div>
-                <div className="text-xs text-[var(--text3)] mb-8 leading-relaxed">
-                  Toggle between using the online code editor or a custom uploaded firmware binary (.hex/.uf2).
-                </div>
-
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                  {firmwareBoardOptions.length === 0 ? (
-                    <div className="text-center py-12 border-2 border-dashed border-[var(--border)] rounded-xl opacity-60">
-                      <div className="text-[var(--text3)] text-sm">No programmable boards found on canvas.</div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-5">
-                      {firmwareBoardOptions.map((option) => {
-                        const boardComp = boardComponentMap.get(option.id);
-                        const attrs = boardComp?.attrs || {};
-                        const useUploaded = !!attrs.useUploadedFirmware;
-                        const firmwareName = attrs.firmwareArtifactName || '';
-                        const hasFirmware = !!(attrs.firmwareHex || attrs.hex);
-                        const kind = normalizeBoardKind(boardComp?.type || '');
-
-                        return (
-                          <div key={option.id} className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-xl flex items-center justify-between gap-6 transition-all hover:border-[var(--accent)]/30 group">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1.5">
-                                <span className="font-bold text-[13px] text-[var(--text)] truncate">{option.id}</span>
-                                <span className="px-1.5 py-0.5 bg-[var(--bg2)] border border-[var(--border)] rounded text-[9px] uppercase text-[var(--text3)] font-bold tracking-wider">
-                                  {kind}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className={`w-1.5 h-1.5 rounded-full ${useUploaded && hasFirmware ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-blue-500 op-40'}`} />
-                                <span className="text-[10px] text-[var(--text2)]">
-                                  Source: <strong className={useUploaded && hasFirmware ? "text-[var(--accent)]" : "text-[var(--text)]"}>{useUploaded && hasFirmware ? 'Uploaded Binary' : 'Code Editor'}</strong>
-                                </span>
-                              </div>
-                              {hasFirmware && (
-                                <div className="mt-2 text-[9px] text-[var(--text3)] flex items-center gap-1.5 bg-[var(--bg)]/40 px-2 py-1 rounded inline-flex">
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                                  <span className="truncate max-w-[180px]">{firmwareName || 'Custom Upload'}</span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-3 shrink-0">
-                              <Btn
-                                onClick={() => toggleBoardFirmwareSource(option.id, !useUploaded)}
-                                disabled={!hasFirmware}
-                                color={useUploaded ? 'var(--accent)' : ''}
-                                title={!hasFirmware ? 'Upload a binary first to use this source override' : (useUploaded ? 'Switch to Code Editor' : 'Use Uploaded Binary')}
-                              >
-                                <span className="text-[11px] font-bold">{useUploaded ? 'Using Upload' : 'Use Upload'}</span>
-                              </Btn>
-
-                              <Btn
-                                onClick={() => {
-                                  setFirmwareUploadTarget(option.id);
-                                  firmwareUploadInputRef.current?.click();
-                                }}
-                                iconOnly
-                                title="Upload New Binary"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path><polyline points="16 16 12 12 8 16"></polyline></svg>
-                              </Btn>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-8 flex justify-end gap-3 pt-5 border-t border-[var(--border)]">
-                  <Btn onClick={() => setShowFirmwareUploadDialog(false)}>
-                    Close
-                  </Btn>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Hidden file input for manager */}
-          <input
-            ref={firmwareUploadInputRef}
-            type="file"
-            accept=".hex,.uf2"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file && firmwareUploadTarget) {
-                applyUploadedFirmwareToBoard(firmwareUploadTarget, file);
-              }
-            }}
-          />
-
           {/* F1 MENU */}
           {showF1Menu && (
             <div
