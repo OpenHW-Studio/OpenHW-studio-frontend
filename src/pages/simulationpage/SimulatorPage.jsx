@@ -15,7 +15,8 @@ import { RightPanel } from './RightPanel';
 import { ProjectsSidebarChrome } from './components/ProjectsSidebar';
 import { multiRoutePath, wireColor } from './wireUtils';
 import { useSimulatorShortcuts } from './hooks/useSimulatorShortcuts';
-import { useCodeExplorerState } from './hooks/useCodeExplorerState';
+import { simplifyOrthogonalPath } from './utils/wireHitDetection';
+import { useEditorStore } from './store/useEditorStore';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
@@ -1547,7 +1548,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [hoveredPin, setHoveredPin] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
-  const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
+  const { code, setCode } = useEditorStore();
   const [solverMode, setSolverMode] = useState('logic')
   const [webGpuSupported, setWebGpuSupported] = useState(false)
   const [blocklyXml, setBlocklyXml] = useState('')
@@ -1588,11 +1589,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     renameCodeFile,
     toggleCodeFileDisabled,
     deleteCodeFile,
-  } = useCodeExplorerState({
-    fileExt,
-    isFileDisabled,
-    disabledFileSuffix: DISABLED_FILE_SUFFIX,
-  });
+  } = useEditorStore();
   const suppressCodeSyncRef = useRef(false)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [panelWidth, setPanelWidth] = useState(580)
@@ -1608,6 +1605,12 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [showInspector, setShowInspector] = useState(false);
   const [hoveredElement, setHoveredElement] = useState(null); // { type: 'wire'|'pin'|'comp', id, data }
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const rightPanelRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const isExplorerDraggingRef = useRef(false);
+
+  useEffect(() => { isDraggingRef.current = isDragging; }, [isDragging]);
+  useEffect(() => { isExplorerDraggingRef.current = isExplorerDragging; }, [isExplorerDragging]);
 
   const {
     showTour,
@@ -1949,7 +1952,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const projectFileMap = useMemo(() => {
     const m = new Map();
-    projectFiles.forEach((f) => m.set(f.id, f));
+    (projectFiles || []).forEach((f) => m.set(f.id, f));
     return m;
   }, [projectFiles]);
 
@@ -1958,7 +1961,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const boardComponents = useMemo(() => components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type)), [components]);
   const boardComponentMap = useMemo(() => {
     const map = new Map();
-    boardComponents.forEach((component) => {
+    (boardComponents || []).forEach((component) => {
       map.set(component.id, component);
     });
     return map;
@@ -2196,6 +2199,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentProjectName, setCurrentProjectName] = useState('Untitled');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [isPaletteHovered, setIsPaletteHovered] = useState(false);
   const [showF1Menu, setShowF1Menu] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1.0);
   const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
@@ -3192,7 +3196,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const signature = `${dragMode}:${Math.round(fps)}:${Math.round(worstFrameMs)}:${solverMode}`;
         const prev = runFpsTelemetryLastLogRef.current.get('browser') || null;
 
-        if (prev !== signature) {
+        if (prev !== signature && !isDragging && !isExplorerDragging) {
           const line = [
             'FPS browser',
             `mode=${dragMode}`,
@@ -3578,18 +3582,25 @@ export function SimulatorPage({ gamificationMode = false }) {
   // ── Handle Panel Resize ──────────────────────────────────────────────────────
   const onMouseDownResize = useCallback((e) => {
     e.preventDefault();
+    const startWidth = panelWidth;
+    if (rightPanelRef.current?.aside) {
+      rightPanelRef.current.aside.style.width = `${startWidth}px`;
+    }
     setIsDragging(true);
     const startX = e.clientX;
-    const startWidth = panelWidth;
+    let finalWidth = startWidth;
 
     const onMouseMove = (moveEvent) => {
       const delta = startX - moveEvent.clientX; // Left drag increases width
-      const newWidth = Math.max(250, Math.min(800, startWidth + delta));
-      setPanelWidth(newWidth);
+      finalWidth = Math.max(250, Math.min(800, startWidth + delta));
+      if (rightPanelRef.current?.aside) {
+        rightPanelRef.current.aside.style.width = `${finalWidth}px`;
+      }
     };
 
     const onMouseUp = () => {
       setIsDragging(false);
+      setPanelWidth(finalWidth);
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -3621,24 +3632,33 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const onMouseDownExplorerResize = useCallback((e) => {
     e.preventDefault();
+    if (rightPanelRef.current?.explorer) {
+      rightPanelRef.current.explorer.style.width = `${explorerWidth}px`;
+    }
     setIsExplorerDragging(true);
-  }, []);
+  }, [explorerWidth]);
 
   useEffect(() => {
     if (!isExplorerDragging) return;
+    let finalExpWidth = explorerWidth;
     const onMouseMove = (e) => {
       const rightPanelStart = window.innerWidth - panelWidth;
-      const newWidth = e.clientX - rightPanelStart;
-      setExplorerWidth(Math.max(120, Math.min(panelWidth - 100, newWidth)));
+      finalExpWidth = Math.max(120, Math.min(panelWidth - 100, e.clientX - rightPanelStart));
+      if (rightPanelRef.current?.explorer) {
+        rightPanelRef.current.explorer.style.width = `${finalExpWidth}px`;
+      }
     };
-    const onMouseUp = () => setIsExplorerDragging(false);
+    const onMouseUp = () => {
+      setIsExplorerDragging(false);
+      setExplorerWidth(finalExpWidth);
+    };
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [isExplorerDragging, panelWidth]);
+  }, [isExplorerDragging, panelWidth, explorerWidth]);
 
   // ── Close palette context menu on outside click ──────────────────────────
   // paletteContextMenu effect moved to PalettePanel
@@ -4592,6 +4612,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     // store it in a ref, then schedule one rAF callback to do all state updates.
     // This caps React renders at 60fps regardless of mouse polling rate.
     const onMove = (e) => {
+      // If we are resizing panels, BAIL OUT of all canvas mouse tracking to save CPU and prevent re-renders
+      if (isDraggingRef.current || isExplorerDraggingRef.current) return;
+
       // ── Synchronously read event data ───
       let compUpdate = null;
       let wireUpdate = null;
@@ -4656,24 +4679,36 @@ export function SimulatorPage({ gamificationMode = false }) {
           }
         }
       } else if (sd && canvasRef.current) {
-        // Fix #2 ─ wire segment drag
+        // Advanced Wire Interaction: Segment or Waypoint drag
         const rect = canvasRef.current.getBoundingClientRect();
         const mx = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
         const my = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
         const ddx = mx - sd.startMouseCanvas.x;
         const ddy = my - sd.startMouseCanvas.y;
+        
         if (Math.abs(ddx) >= 1 || Math.abs(ddy) >= 1) {
           sd.hasMoved = true;
           const newPts = sd.startPts.map(pt => ({ ...pt }));
-          const { segIdx, isHoriz } = sd;
-          if (isHoriz) {
-            newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
-            newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+          const { segIdx, isHoriz, mode } = sd;
+
+          if (mode === 'waypoint') {
+            // Free move waypoint
+            newPts[segIdx].x += ddx;
+            newPts[segIdx].y += ddy;
           } else {
-            newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
-            newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+            // Orthogonal segment drag
+            if (isHoriz) {
+              newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+            } else {
+              newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+            }
           }
-          wireUpdate = { wireId: sd.wireId, cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) };
+          wireUpdate = { 
+            wireId: sd.wireId, 
+            cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) 
+          };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
         // Fix #4 ─ canvas panning via direct DOM transform (zero React renders mid-pan)
@@ -5011,6 +5046,23 @@ export function SimulatorPage({ gamificationMode = false }) {
       isPanningRef.current = false;
       if (segDragRef.current) {
         if (segDragRef.current.hasMoved) {
+          const wireId = segDragRef.current.wireId;
+          // Apply simplification to clean up redundant segments/waypoints
+          setWires(prev => prev.map(w => {
+            if (w.id === wireId && w.waypoints?.length) {
+              const fromParts = w.from.split(':');
+              const toParts = w.to.split(':');
+              const p1 = getPinPosRef.current(fromParts[0], fromParts.slice(1).join(':'));
+              const p2 = getPinPosRef.current(toParts[0], toParts.slice(1).join(':'));
+              if (p1 && p2) {
+                const fullPath = [p1, ...w.waypoints, p2];
+                const simplified = simplifyOrthogonalPath(fullPath);
+                return { ...w, waypoints: simplified.slice(1, -1) };
+              }
+            }
+            return w;
+          }));
+
           // Save undo snapshot using pre-drag wires captured at drag start
           const pre = segDragRef.current.preWires;
           setHistory(h => ({ past: [...h.past.slice(-20), { components: JSON.parse(JSON.stringify(componentsRef.current)), wires: JSON.parse(JSON.stringify(pre)) }], future: [] }));
@@ -5392,8 +5444,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           setTimeout(() => {
               const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
               setActiveCodeFileId(prev => {
-                   const file = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
-                               || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                   const file = (projectFiles || []).find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
+                               || (projectFiles || []).filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
                                || { id: filename };
                    return file.id;
               });
@@ -5482,7 +5534,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     const prefFile = projectFileMap.get(preferred);
     if (prefFile && prefFile.content && !isFileDisabled(prefFile.path)) return prefFile.content;
 
-    const ino = projectFiles.find(
+    const ino = (projectFiles || []).find(
       (f) => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino' && !isFileDisabled(f.path)
     );
     if (ino?.content) return ino.content;
@@ -5492,7 +5544,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const getBoardCompileFiles = useCallback((boardId, preferredMainPath = '') => {
     // Virtualize project files to include current editor changes
-    const virtualProjectFiles = projectFiles.map(f => ({
+    const virtualProjectFiles = (projectFiles || []).map(f => ({
       ...f,
       content: f.id === activeCodeFileId ? code : (f.content || '')
     }));
@@ -7921,7 +7973,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const canvasEl = canvasRef.current;
-      const SCALE = 2.0;
+      const SCALE = 1.5; // High-res (Retina) but uses ~44% less RAM than 2.0
       const PAD = 60; // padding around content in canvas-space pixels
       const pinPosCache = new Map();
       const getCachedPinPos = (compId, pinId) => {
@@ -8029,19 +8081,27 @@ export function SimulatorPage({ gamificationMode = false }) {
       const actualW = Math.min(bboxW, MAX_EXPORT_DIM);
       const actualH = Math.min(bboxH, MAX_EXPORT_DIM);
 
-      // Pre-tag live elements that have shadow roots so we can find them in the clone
-      const shadowHostEls = [];
-      const shadowHostMap = new Map();
+      // 1. Deep Tagging with Identity Mapping
+      const t_tag_start = performance.now();
+      let tagCount = 0;
+      const elementMap = new Map(); // id -> liveElement
+      const zoomWrapper = innerCanvasRef.current;
+      if (!zoomWrapper) throw new Error('Zoom wrapper not found');
+
+      const deepTag = (root) => {
+        const elements = [root, ...Array.from(root.querySelectorAll('*'))];
+        elements.forEach(el => {
+          if (!el.getAttribute) return;
+          const id = `h2c-p-${tagCount++}`;
+          el.setAttribute('data-h2c-id', id);
+          elementMap.set(id, el);
+          if (el.shadowRoot) deepTag(el.shadowRoot);
+        });
+      };
       
-      const elementsToTag = [canvasEl, ...Array.from(canvasEl.querySelectorAll('*'))];
-      elementsToTag.forEach(el => {
-        if (el.shadowRoot) {
-          const id = `h2c-shadow-host-${shadowHostEls.length}`;
-          el.classList.add(id); // Use unique class for reliable identification
-          shadowHostEls.push(el);
-          shadowHostMap.set(id, el);
-        }
-      });
+      deepTag(zoomWrapper);
+      const shadowHostEls = Array.from(elementMap.values()).filter(el => !!el.shadowRoot);
+      console.log(`[PNG Export] Mapped ${tagCount} elements in ${Math.round(performance.now() - t_tag_start)}ms`);
 
       // Dummy canvas used to filter itself out in ignoreElements
       const filterCanvas = document.createElement('canvas');
@@ -8049,104 +8109,193 @@ export function SimulatorPage({ gamificationMode = false }) {
       let circuitCanvas;
       try {
         const h2c = await getHtml2canvas();
-        const t_html2c_start = performance.now();
+        const t_prep_start = performance.now();
+        console.log('[PNG Export] Initializing Isolated Iframe...');
+
+        // 1. Create a hidden iframe to isolate the DOM tree
+        const iframe = document.createElement('iframe');
+        Object.assign(iframe.style, {
+          position: 'fixed', left: '-10000px', top: '-10000px',
+          width: actualW + 'px', height: actualH + 'px'
+        });
+        document.body.appendChild(iframe);
+
+        const idoc = iframe.contentDocument || iframe.contentWindow.document;
+        idoc.open();
+        idoc.write('<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#070b14;"></body></html>');
+        idoc.close();
+
+        // 2. NO Stylesheet Copying (Massive RAM saver)
+        // We will inline only what's absolutely necessary below
+        const styleReset = idoc.createElement('style');
+        styleReset.textContent = `
+          * { box-sizing: border-box; filter: none !important; box-shadow: none !important; }
+          text, span, div { font-family: sans-serif; }
+        `;
+        idoc.head.appendChild(styleReset);
+
+        const filterKiller = idoc.createElement('style');
+        filterKiller.textContent = '* { filter: none !important; box-shadow: none !important; }';
+        idoc.head.appendChild(filterKiller);
+
+        // 3. Clone and Inject
+        const circuitClone = idoc.importNode(zoomWrapper, true);
+        idoc.body.appendChild(circuitClone);
         
-        circuitCanvas = await h2c(canvasEl, {
+        // 4. Filtered Style Teleportation (Live HTML Mode)
+        console.log(`[PNG Export] Teleporting styles for ${tagCount} elements...`);
+        
+        // 4a. Inline Shadow DOM Content as Live HTML
+        let inlinedCount = 0;
+        shadowHostEls.forEach((liveEl) => {
+          const dataId = liveEl.getAttribute('data-h2c-id');
+          const clonedHost = idoc.querySelector(`[data-h2c-id="${dataId}"]`);
+          if (!clonedHost) return;
+
+          inlinedCount++;
+          // Copy adopted styles (the component's internal design)
+          if (liveEl.shadowRoot.adoptedStyleSheets) {
+            liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
+              const styleEl = idoc.createElement('style');
+              styleEl.textContent = getSerializedShadowSheet(sheet);
+              clonedHost.appendChild(styleEl);
+            });
+          }
+          
+          // Inline the actual graphics/nodes
+          for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
+            clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
+          }
+        });
+        console.log(`[PNG Export] Inlined shadow content for ${inlinedCount}/${shadowHostEls.length} components`);
+
+        // 4b. Total Parity Style Teleportation
+        console.log(`[PNG Export] Teleporting styles for ${tagCount} nodes...`);
+        
+        const propsToCopy = [
+          'display', 'position', 'left', 'top', 'width', 'height', 'transform', 'transformOrigin',
+          'color', 'fontSize', 'fontWeight', 'fontFamily', 'textAlign', 
+          'visibility', 'opacity', 'backgroundColor', 'zIndex',
+          'border', 'borderWidth', 'borderStyle', 'borderColor', 'borderRadius',
+          'padding', 'margin', 'lineHeight', 'overflow', 'boxSizing',
+          'clipPath', 'mask', 'filter', 'mixBlendMode', 'outline',
+          'boxShadow', 'textShadow', 'cursor'
+        ];
+
+        const svgProps = [
+          'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 
+          'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-opacity',
+          'fill-opacity', 'fill-rule', 'marker-start', 'marker-mid', 'marker-end'
+        ];
+
+        const clonedNodes = [idoc.body, ...Array.from(idoc.body.querySelectorAll('*'))];
+        let styleCount = 0;
+        let wireCount = 0;
+        
+        clonedNodes.forEach(cloned => {
+          const dataId = cloned.getAttribute('data-h2c-id');
+          if (!dataId) return;
+          
+          const liveEl = elementMap.get(dataId);
+          if (!liveEl) return;
+
+          styleCount++;
+          if (cloned.tagName === 'path' || cloned.tagName === 'line') wireCount++;
+
+          const s = window.getComputedStyle(liveEl);
+          
+          // Copy Layout and Visual Styles with FORCED priority
+          propsToCopy.forEach(p => {
+            // SAFETY: Prevent Giant Text bug
+            if (p === 'fontSize' && (cloned.tagName === 'text' || cloned.tagName === 'tspan')) return;
+            cloned.style.setProperty(p, s.getPropertyValue(p), 'important');
+          });
+
+          // Copy SVG-specific properties with FORCED priority
+          if (['path', 'circle', 'rect', 'line', 'polygon', 'text', 'ellipse', 'g', 'svg'].includes(cloned.tagName)) {
+            svgProps.forEach(attr => {
+              const val = liveEl.getAttribute(attr) || s.getPropertyValue(attr);
+              if (val) {
+                const finalVal = val.includes('color(') ? '#777' : val;
+                cloned.setAttribute(attr, finalVal);
+                // Also set as important style if it's a CSS-mappable property
+                if (['fill', 'stroke', 'stroke-width', 'opacity', 'visibility'].includes(attr)) {
+                  cloned.style.setProperty(attr, finalVal, 'important');
+                }
+              }
+            });
+            
+            // Hardcode width/height attributes to match computed logical size
+            const w = s.getPropertyValue('width');
+            const h = s.getPropertyValue('height');
+            if (w && w !== 'auto' && w !== '100%') {
+              cloned.setAttribute('width', w.replace('px', ''));
+              cloned.style.setProperty('width', w, 'important');
+            }
+            if (h && h !== 'auto' && h !== '100%') {
+              cloned.setAttribute('height', h.replace('px', ''));
+              cloned.style.setProperty('height', h, 'important');
+            }
+          }
+          
+          // Final Safety: Ensure nothing is accidentally hidden
+          cloned.style.setProperty('visibility', 'visible', 'important');
+          cloned.style.setProperty('opacity', s.opacity || '1', 'important');
+          if (liveEl.shadowRoot) {
+            cloned.style.setProperty('overflow', 'visible', 'important');
+          }
+        });
+        
+        console.log(`[PNG Export] Successfully styled ${styleCount} elements, including ${wireCount} wires`);
+        elementMap.clear(); 
+
+
+        // Ensure all components are visible
+        idoc.body.style.overflow = 'visible';
+        circuitClone.style.overflow = 'visible';
+
+        // 5. Adjust clone for capture
+        Object.assign(circuitClone.style, {
+          transform: `translate(${-minX}px, ${-minY}px) scale(1)`,
+          transformOrigin: '0 0',
+          width: actualW + 'px', height: actualH + 'px',
+          display: 'block', margin: '0', padding: '0'
+        });
+
+        console.log(`[PNG Export] Isolation prep finished. Nodes in iframe: ${idoc.querySelectorAll('*').length}`);
+
+        const t_html2c_start = performance.now();
+        circuitCanvas = await h2c(idoc.body, {
           backgroundColor: '#070b14',
           scale: SCALE,
           useCORS: true,
           allowTaint: false,
-          logging: false,
-          imageTimeout: 5000, 
-          skipFonts: true, 
+          logging: true,
+          imageTimeout: 10000, 
+          skipFonts: true,
           width: actualW,
           height: actualH,
-          x: 0,
-          y: 0,
-          ignoreElements: (element) => {
-            if (element.tagName?.toLowerCase() === 'canvas' && element !== filterCanvas) return true;
-            return false;
-          },
           onclone: (_clonedDoc, clonedEl) => {
-            console.log('[PNG Export] onclone: targeting', clonedEl.tagName, 'size:', clonedEl.offsetWidth, 'x', clonedEl.offsetHeight);
-
-            // 1. Center the circuit in the clone and FORCE size
-            clonedEl.style.overflow = 'hidden'; // Changed from visible to hidden to prevent spillover
-            clonedEl.style.width = actualW + 'px';
-            clonedEl.style.height = actualH + 'px';
-            clonedEl.style.minWidth = actualW + 'px';
-            clonedEl.style.maxWidth = actualW + 'px';
-            clonedEl.style.minHeight = actualH + 'px';
-            clonedEl.style.maxHeight = actualH + 'px';
-            clonedEl.style.backgroundImage = 'none';
-            clonedEl.style.margin = '0';
-            clonedEl.style.padding = '0';
-            clonedEl.style.position = 'relative';
-            
-            const zoomWrapper = clonedEl.querySelector(':scope > div');
-            if (zoomWrapper) {
-              zoomWrapper.style.transform = `translate(${-minX}px, ${-minY}px) scale(1)`;
-              zoomWrapper.style.transformOrigin = '0 0';
-              zoomWrapper.style.width = actualW + 'px';
-              zoomWrapper.style.height = actualH + 'px';
-            }
-
-            // 2. Hide overlays
-            clonedEl.querySelectorAll('[data-export-ignore="true"]').forEach(el => { 
-              el.style.display = 'none'; 
-            });
-
-            // 3. Inline Shadow DOM
-            shadowHostEls.forEach((liveEl) => {
-              const classId = Array.from(liveEl.classList).find(c => c.startsWith('h2c-shadow-host-'));
-              if (!classId) return;
-
-              const cloned = _clonedDoc.querySelector(`.${classId}`);
-              if (!cloned) return;
-              
-              const wrapper = _clonedDoc.createElement((liveEl.tagName || 'div').toLowerCase());
-              for (let i = 0; i < cloned.attributes.length; i++) {
-                const attr = cloned.attributes[i];
-                if (!attr.name.startsWith('h2c-shadow-host-')) wrapper.setAttribute(attr.name, attr.value);
-              }
-              if (cloned.style.cssText) wrapper.style.cssText = cloned.style.cssText;
-              
-              try {
-                const comp = window.getComputedStyle(liveEl);
-                wrapper.style.width = comp.width;
-                wrapper.style.height = comp.height;
-                wrapper.style.transform = comp.transform;
-                wrapper.style.transformOrigin = comp.transformOrigin;
-                wrapper.style.display = comp.display;
-                wrapper.style.position = comp.position;
-              } catch (e) {}
-
-              if (liveEl.shadowRoot.adoptedStyleSheets?.length) {
-                liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
-                  const styleEl = _clonedDoc.createElement('style');
-                  styleEl.textContent = getSerializedShadowSheet(sheet);
-                  wrapper.appendChild(styleEl);
-                });
-              }
-              
-              for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
-                wrapper.appendChild(_clonedDoc.importNode(liveEl.shadowRoot.childNodes[i], true));
-              }
-              
-              cloned.replaceWith(wrapper);
-            });
-            
-            // 4. Color Fix
-            clonedEl.querySelectorAll('path, rect, circle, polygon, text').forEach(el => {
+            // Selective color fix: Target graphics but SPARE the text
+            clonedEl.querySelectorAll('path, rect, circle, polygon').forEach(el => {
               const fill = el.getAttribute('fill');
               if (fill && fill.includes('color(')) el.setAttribute('fill', '#777');
               const stroke = el.getAttribute('stroke');
               if (stroke && stroke.includes('color(')) el.setAttribute('stroke', '#777');
             });
-          },
+            // Ensure labels are visible
+            clonedEl.querySelectorAll('text, span, div').forEach(el => {
+              if (el.style.color && el.style.color.includes('color(')) el.style.color = '#ccc';
+            });
+          }
         });
+        
+        // Memory Flush: Clear the iframe content immediately to free RAM
+        idoc.body.innerHTML = '';
+        idoc.head.innerHTML = '';
+        document.body.removeChild(iframe);
         const t_html2c_end = performance.now();
-        console.log('[PNG Export] html2canvas ms:', Math.round(t_html2c_end - t_html2c_start));
+        console.log('[PNG Export] Isolated html2canvas ms:', Math.round(t_html2c_end - t_html2c_start));
       } finally {
         // Remove temporary classes from live elements
         shadowHostEls.forEach(el => {
@@ -8940,6 +9089,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           {/* PALETTE — hover to expand */}
           <PalettePanel
+            isPaletteHovered={isPaletteHovered}
+            setIsPaletteHovered={setIsPaletteHovered}
             theme={theme}
             liveEditingDisabled={liveEditingDisabled}
             addComponentAtCenter={addComponentAtCenter}
@@ -8978,6 +9129,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               touchAction: 'none', // Block browser pinch-to-zoom
               pointerEvents: liveEditingDisabled ? 'none' : 'auto',
               opacity: liveEditingDisabled ? 0.8 : 1,
+              transform: `translateX(${isPaletteHovered ? '302px' : '0'})`,
+              transition: 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
+              willChange: 'transform'
             }}
             ref={canvasRef}
             onTouchStart={onTouchStart}
@@ -9165,6 +9319,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           {/* RIGHT PANEL */}
           <RightPanel
+            ref={rightPanelRef}
             isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
             explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
             selected={selected} setSelected={setSelected} theme={theme}

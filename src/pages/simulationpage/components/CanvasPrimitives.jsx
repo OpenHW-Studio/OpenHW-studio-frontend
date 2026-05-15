@@ -46,24 +46,45 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
       />
       <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
       <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, _, i, arr) => {
-        if (i < 1 || i >= arr.length - 2) return acc;
-        const a = arr[i], b = arr[i + 1];
-        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-        if (segLen < 20) return acc;
-        const isHoriz = Math.abs(b.y - a.y) < 1;
-        const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-        acc.push(
-          <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
-            fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
-            stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
-            opacity={isSelected ? 1 : 0.55}
-            style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-            title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-            onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr)}
-            onClick={ev => ev.stopPropagation()}
-          />
-        );
+      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, pt, i, arr) => {
+        // Waypoint Handles (Corners)
+        if (i > 0 && i < arr.length - 1) {
+          const isCorner = i > 1 && i < arr.length - 2; // Simple heuristic for now
+          acc.push(
+            <circle key={`wp-${i}`} cx={pt.x} cy={pt.y} r={isSelected ? 5 : 3}
+              fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
+              stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
+              opacity={isSelected ? 1 : 0.4}
+              style={{ pointerEvents: 'all', cursor: 'move' }}
+              onMouseDown={ev => {
+                ev.stopPropagation();
+                if (onMouseDownSegment) onMouseDownSegment(ev, wire, i, null, arr, 'waypoint');
+              }}
+              onClick={ev => ev.stopPropagation()}
+            />
+          );
+        }
+
+        // Segment Handles (Middles)
+        if (i < arr.length - 1) {
+          const a = arr[i], b = arr[i + 1];
+          const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+          if (segLen >= 20) {
+            const isHoriz = Math.abs(b.y - a.y) < 1;
+            const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+            acc.push(
+              <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
+                fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
+                stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
+                opacity={isSelected ? 1 : 0.55}
+                style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
+                title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
+                onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr, 'segment')}
+                onClick={ev => ev.stopPropagation()}
+              />
+            );
+          }
+        }
         return acc;
       }, [])}
     </g>
