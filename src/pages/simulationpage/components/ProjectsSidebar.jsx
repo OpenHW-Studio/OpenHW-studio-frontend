@@ -5,11 +5,12 @@ import React from 'react';
 
     return (
       <div
-        className={`group relative rounded-xl p-6 mb-8 cursor-pointer transition-all duration-300 border
+        className={`group relative rounded-xl cursor-pointer transition-all duration-300
         ${isCurrent
-            ? 'bg-[var(--card)] border-[var(--accent)] shadow-[0_15px_50px_rgb(var(--accent-rgb,100,180,255),0.18)]'
+            ? 'bg-[var(--card)] border-[var(--accent)] shadow-[0_12px_40px_rgb(var(--accent-rgb,100,180,255),0.15)]'
             : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--accent)]/50 hover:shadow-2xl hover:-translate-y-1.5'
           }`}
+        style={{ padding: '20px', marginBottom: '10px' }}
         onClick={() => { if (renamingProjectId !== proj.id) handleLoadProject(proj); }}
         onContextMenu={(e) => { e.preventDefault(); onContextMenu(proj, e.clientX, e.clientY); }}
       >
@@ -40,17 +41,6 @@ import React from 'react';
                 </div>
               )}
             </div>
-            {!renamingProjectId && (
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
-                <button
-                  className="bg-[var(--accent)] text-white text-[11px] font-bold px-4 py-2 rounded-xl shadow-lg shadow-[var(--accent)]/30 hover:brightness-110 active:scale-95 transition-all"
-                  onClick={(e) => { e.stopPropagation(); handleLoadProject(proj); setShowProjectsSidebar(false); }}
-                  disabled={isRunning}
-                >
-                  Load
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -101,35 +91,36 @@ export function ProjectsSidebar({
           >
             {showProjectsSidebar && (
               <>
-                <div className="flex items-center justify-between px-6 pt-6 pb-5 shrink-0">
+                <div className="flex items-center justify-between shrink-0" style={{ padding: '15px 10px 10px' }}>
                   <div className="flex flex-col gap-0.5">
                     <span className="text-lg font-black text-[var(--text)] tracking-tight leading-none">My Projects</span>
                     <span className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-[0.1em] opacity-60">Circuit Library</span>
                   </div>
                   <button
                     onClick={() => setShowProjectsSidebar(false)}
-                    className="bg-[var(--card)] hover:bg-[var(--bg)] border border-[var(--border)] text-[var(--text3)] hover:text-[var(--text)] rounded-xl w-9 h-9 flex items-center justify-center transition-all active:scale-90 shadow-sm"
+                    className="bg-[var(--card)] hover:bg-[var(--bg)] border border-[var(--border)] text-[var(--text3)] hover:text-[var(--text)] rounded-xl w-10 h-10 flex items-center justify-center transition-all active:scale-90 shadow-sm"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                   </button>
                 </div>
 
-                <div className="px-6 pb-6 shrink-0">
+                <div className="shrink-0" style={{ padding: '0 10px 10px' }}>
                   <div className="flex p-1.5 bg-[var(--bg)] rounded-2xl border border-[var(--border)] shadow-inner">
                     {[
-                      { id: 'favourites', label: 'Fav', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg> },
-                      { id: 'projects', label: 'Library', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg> },
-                      { id: 'custom', label: 'Parts', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg> },
-                      { id: 'settings', label: 'Gear', icon: <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg> },
+                      { id: 'favourites', label: 'Fav', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg> },
+                      { id: 'projects', label: 'Library', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg> },
+                      { id: 'custom', label: 'Parts', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg> },
+                      { id: 'settings', label: 'Gear', icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg> },
                     ].map((tab) => (
                       <button
                         key={tab.id}
                         onClick={() => setProjectsSidebarTab(tab.id)}
-                        className={`flex-1 flex flex-col items-center justify-center py-4 px-1 rounded-xl transition-all duration-300
+                        className={`flex-1 flex flex-col items-center justify-center px-1 rounded-xl transition-all duration-300
                         ${projectsSidebarTab === tab.id
                             ? 'bg-[var(--card)] text-[var(--accent)] shadow-md scale-[1.05]'
                             : 'text-[var(--text3)] hover:text-[var(--text2)] hover:bg-[var(--card)]/50'
                           }`}
+                        style={{ padding: '16px 0' }}
                       >
                         <span className="mb-0.5">{tab.icon}</span>
                         <span className="text-[9px] font-black uppercase tracking-wider">{tab.label}</span>
@@ -138,7 +129,7 @@ export function ProjectsSidebar({
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 pb-6 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar" style={{ padding: '10px' }}>
                   {projectsSidebarTab === 'favourites' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pt-2">
                       <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-widest px-1 mb-5 opacity-50">Starred Projects</div>
@@ -172,14 +163,15 @@ export function ProjectsSidebar({
 
                   {projectsSidebarTab === 'projects' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pt-2">
-                      <div className="flex justify-between items-center mb-8 px-1">
-                        <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] opacity-60">All Saved Circuits</div>
+                      <div className="flex flex-col mb-10" style={{ padding: '0 5px' }}>
+                        <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] opacity-60 px-1" style={{ marginBottom: '10px' }}>All Saved Circuits</div>
                         <button
                           onClick={() => { setShowProjectsSidebar(false); handleNewProject(); }}
-                          className="group flex items-center gap-2 bg-[var(--accent)] text-white px-4 py-2 rounded-xl text-[11px] font-black shadow-xl shadow-[var(--accent)]/30 hover:brightness-110 active:scale-95 transition-all"
+                          className="group flex items-center justify-center gap-3 bg-[var(--accent)] text-white w-full py-4 rounded-2xl text-[13px] font-black shadow-xl shadow-[var(--accent)]/30 hover:brightness-110 active:scale-95 transition-all"
+                          style={{ marginBottom: '10px' }}
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="group-hover:rotate-90 transition-transform duration-300"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                          NEW
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="group-hover:rotate-90 transition-transform duration-300"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                          CREATE NEW PROJECT
                         </button>
                       </div>
                       {myProjects.length === 0 ? (
@@ -212,14 +204,15 @@ export function ProjectsSidebar({
 
                   {projectsSidebarTab === 'custom' && (
                     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pt-2">
-                      <div className="flex justify-between items-center mb-8 px-1">
-                        <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] opacity-60">Custom Hardware</div>
+                      <div className="flex flex-col mb-10" style={{ padding: '0 5px' }}>
+                        <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] opacity-60 px-1" style={{ marginBottom: '10px' }}>Custom Hardware</div>
                         <button
                           onClick={() => setShowCreateComponentModal(true)}
-                          className="flex items-center gap-2 bg-[var(--accent)] text-white px-4 py-2 rounded-xl text-[11px] font-black shadow-xl shadow-[var(--accent)]/30 hover:brightness-110 active:scale-95 transition-all"
+                          className="group flex items-center justify-center gap-3 bg-[var(--accent)] text-white w-full py-4 rounded-2xl text-[13px] font-black shadow-xl shadow-[var(--accent)]/30 hover:brightness-110 active:scale-95 transition-all"
+                          style={{ marginBottom: '10px' }}
                         >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                          CREATE
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="group-hover:rotate-90 transition-transform duration-300"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                          CREATE NEW COMPONENT
                         </button>
                       </div>
                       <div className="flex flex-col items-center justify-center py-20 px-6 text-center border-2 border-dashed border-[var(--border)] rounded-[2.5rem] bg-[var(--bg)]/20">
@@ -231,9 +224,12 @@ export function ProjectsSidebar({
 
                   {projectsSidebarTab === 'settings' && (
                     <div className="flex flex-col gap-5 py-2 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                      <div>
-                        <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] px-1 mb-3 opacity-60">Preferences</div>
-                        <div className="flex items-center justify-between bg-[var(--card)] border border-[var(--border)] rounded-[1.25rem] px-5 py-4 shadow-sm hover:shadow-md transition-all">
+                      <div style={{ marginBottom: '10px' }}>
+                        <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] px-1 opacity-60" style={{ marginBottom: '10px' }}>Preferences</div>
+                        <div 
+                          className="flex items-center justify-between bg-[var(--card)] border border-[var(--border)] rounded-xl shadow-sm hover:shadow-2xl hover:border-[var(--accent)]/50 hover:-translate-y-1.5 transition-all duration-300"
+                          style={{ padding: '15px 20px' }}
+                        >
                           <div className="flex flex-col gap-0.5">
                             <span className="text-[13px] font-bold text-[var(--text)]">Auto-save</span>
                             <span className="text-[10px] text-[var(--text3)] font-medium opacity-70">Interval: 2.5s</span>
@@ -249,21 +245,33 @@ export function ProjectsSidebar({
 
                       <div className="h-px bg-gradient-to-r from-transparent via-[var(--border)] to-transparent my-1 opacity-50" />
                       
-                      <div>
-                        <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] px-1 mb-3 opacity-60">Data Engine</div>
-                        <div className="flex flex-col gap-2">
-                          <button className="w-full flex items-center gap-3 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-[1.25rem] px-5 py-4 text-sm font-bold shadow-sm hover:shadow-md hover:border-[var(--accent)]/30 transition-all active:scale-[0.98]" onClick={handleBackupWorkflow}>
+                      <div style={{ marginBottom: '10px' }}>
+                        <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] px-1 opacity-60" style={{ marginBottom: '10px' }}>Data Engine</div>
+                        <div className="flex flex-col gap-2.5">
+                          <button 
+                            className="w-full flex items-center gap-3 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-xl font-bold shadow-sm hover:shadow-2xl hover:border-[var(--accent)]/50 hover:-translate-y-1.5 transition-all duration-300 active:scale-[0.98]" 
+                            style={{ padding: '15px 20px' }}
+                            onClick={handleBackupWorkflow}
+                          >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--accent)]"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
                             Export Project
                             <span className="ml-auto text-[10px] font-bold bg-[var(--bg)] px-2 py-0.5 rounded-full text-[var(--text3)]">ZIP</span>
                           </button>
-                          <button className="w-full flex items-center gap-3 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-[1.25rem] px-5 py-4 text-sm font-bold shadow-sm hover:shadow-md hover:border-[var(--accent)]/30 transition-all active:scale-[0.98]" onClick={() => backupRestoreInputRef.current?.click()}>
+                          <button 
+                            className="w-full flex items-center gap-3 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-xl font-bold shadow-sm hover:shadow-2xl hover:border-[var(--accent)]/50 hover:-translate-y-1.5 transition-all duration-300 active:scale-[0.98]" 
+                            style={{ padding: '15px 20px' }}
+                            onClick={() => backupRestoreInputRef.current?.click()}
+                          >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--accent)]"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                             Restore Workspace
                             <span className="ml-auto text-[10px] font-bold bg-[var(--bg)] px-2 py-0.5 rounded-full text-[var(--text3)]">ZIP</span>
                           </button>
                           {isAuthenticated && (
-                            <button className="w-full flex items-center gap-3 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-[1.25rem] px-5 py-4 text-sm font-bold shadow-sm hover:shadow-md hover:border-[var(--accent)]/30 transition-all active:scale-[0.98]" onClick={handleSyncToCloud}>
+                            <button 
+                              className="w-full flex items-center gap-3 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-xl font-bold shadow-sm hover:shadow-2xl hover:border-[var(--accent)]/50 hover:-translate-y-1.5 transition-all duration-300 active:scale-[0.98]" 
+                              style={{ padding: '15px 20px' }}
+                              onClick={handleSyncToCloud}
+                            >
                               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--accent)]"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>
                               Cloud Synchronization
                               <span className="ml-auto text-[10px] font-bold bg-[var(--accent)]/10 text-[var(--accent)] px-2 py-0.5 rounded-full">ACTIVE</span>
@@ -276,8 +284,12 @@ export function ProjectsSidebar({
                         <>
                           <div className="h-px bg-gradient-to-r from-transparent via-[var(--border)] to-transparent my-1 opacity-50" />
                           <div>
-                            <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] px-1 mb-3 opacity-60">Account Control</div>
-                            <button className="w-full flex items-center gap-3 bg-[var(--card)] border border-red-500/20 text-red-500 rounded-[1.25rem] px-5 py-3.5 text-sm font-bold shadow-sm hover:bg-red-500 hover:text-white transition-all active:scale-[0.98]" onClick={() => { logout(); setShowProjectsSidebar(false); }}>
+                            <div className="text-[10px] font-black text-[var(--text3)] uppercase tracking-[0.15em] px-1 opacity-60" style={{ marginBottom: '10px' }}>Account Control</div>
+                            <button 
+                              className="w-full flex items-center gap-3 bg-[var(--card)] border border-red-500/20 text-red-500 rounded-xl px-5 py-4 text-sm font-bold shadow-sm hover:bg-red-500 hover:text-white transition-all active:scale-[0.98]" 
+                              style={{ padding: '15px 20px' }}
+                              onClick={() => { logout(); setShowProjectsSidebar(false); }}
+                            >
                               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                               Sign Out
                             </button>
@@ -288,11 +300,12 @@ export function ProjectsSidebar({
                   )}
                 </div>
 
-                <div className="border-t border-[var(--border)] p-8 bg-[var(--bg2)] flex flex-col gap-6 shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.04)]">
+                <div className="border-t border-[var(--border)] bg-[var(--bg2)] flex flex-col shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.04)]" style={{ padding: '20px 10px 10px' }}>
                   {!isAnyAuthenticated ? (
                     <button
                       onClick={() => { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); }}
-                      className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-[var(--accent)] to-[var(--accent)]/80 text-white py-5 rounded-[1.25rem] text-[14px] font-black shadow-2xl shadow-[var(--accent)]/30 hover:brightness-110 active:scale-[0.97] transition-all"
+                      className="w-full flex items-center justify-center gap-3 bg-gradient-to-r from-[var(--accent)] to-[var(--accent)]/80 text-white rounded-xl text-[14px] font-black shadow-2xl shadow-[var(--accent)]/30 hover:brightness-110 active:scale-[0.97] transition-all"
+                      style={{ padding: '9.5px 0' }}
                     >
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>
                       Sign In to Cloud
@@ -322,22 +335,24 @@ export function ProjectsSidebar({
                     </div>
                   )}
 
-                  <div className="flex p-1.5 bg-[var(--bg)] rounded-2xl border border-[var(--border)] shadow-inner">
+                  <div className="flex p-1.5 bg-[var(--bg)] rounded-2xl border border-[var(--border)] shadow-inner" style={{ marginTop: '10px' }}>
                     <button
-                      className={`flex-1 py-4 text-[11px] font-black uppercase tracking-widest rounded-[1rem] transition-all
+                      className={`flex-1 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all
                       ${!isAuthenticated
                           ? 'bg-[var(--card)] text-[var(--accent)] shadow-md'
                           : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
                       onClick={() => { if (isAnyAuthenticated) { if (activeUser?.email) localStorage.setItem('ohw_last_email', activeUser.email); logout(); } }}
+                      style={{ padding: '9.5px 0' }}
                     >
                       Local
                     </button>
                     <button
-                      className={`flex-1 py-4 text-[11px] font-black uppercase tracking-widest rounded-[1rem] transition-all
+                      className={`flex-1 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all
                       ${isAuthenticated
                           ? 'bg-[var(--accent)] text-white shadow-xl'
                           : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
                       onClick={() => { if (!isAuthenticated) { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); } }}
+                      style={{ padding: '9.5px 0' }}
                     >
                       Cloud
                     </button>
@@ -374,12 +389,12 @@ function ProjectContextMenu({
         left: projContextMenu.x,
         top: Math.min(projContextMenu.y, window.innerHeight - 240),
         zIndex: 10000,
-        background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
+        background: 'var(--card)',
         backdropFilter: 'blur(16px) saturate(1.4)',
         WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-        border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
+        border: '1px solid var(--border)',
         borderRadius: 12,
-        boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
+        boxShadow: theme === 'light' ? '0 10px 40px rgba(0, 0, 0, 0.1)' : '0 10px 40px rgba(0,0,0,0.5)',
         minWidth: 200,
         padding: '5px',
         animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
