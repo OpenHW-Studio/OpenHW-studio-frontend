@@ -8084,92 +8084,68 @@ export function SimulatorPage({ gamificationMode = false }) {
         const circuitClone = idoc.importNode(zoomWrapper, true);
         idoc.body.appendChild(circuitClone);
         
-        // 4. Component Snapshots (Teleport appearance via static SVG images)
-        console.log(`[PNG Export] Snapshotting ${shadowHostEls.length} components...`);
+        // 4. Filtered Style Teleportation (Live HTML Mode)
+        console.log(`[PNG Export] Teleporting styles for ${circuitElements.length} elements...`);
         
-        const snapshotPromises = shadowHostEls.map(async (liveEl) => {
+        // 4a. Inline Shadow DOM Content as Live HTML
+        shadowHostEls.forEach((liveEl) => {
           const dataId = liveEl.getAttribute('data-h2c-id');
           const clonedHost = idoc.querySelector(`[data-h2c-id="${dataId}"]`);
           if (!clonedHost) return;
 
-          try {
-            // 1. Create a standalone SVG for this component
-            const svgEl = liveEl.shadowRoot.querySelector('svg');
-            if (!svgEl) {
-              // Fallback: just copy children if no root SVG
-              for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
-                clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
-              }
-              return;
-            }
-
-            // 2. Clone and prepare the SVG with its styles
-            const svgClone = svgEl.cloneNode(true);
-            const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-            let css = '';
-            if (liveEl.shadowRoot.adoptedStyleSheets) {
-              liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
-                css += getSerializedShadowSheet(sheet) + '\n';
-              });
-            }
-            styleEl.textContent = css;
-            svgClone.insertBefore(styleEl, svgClone.firstChild);
-
-            // 3. Serialize to Data URL
-            const svgData = new XMLSerializer().serializeToString(svgClone);
-            const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-            const url = URL.createObjectURL(svgBlob);
-
-            // 4. Replace with a static image in the iframe
-            const img = idoc.createElement('img');
-            img.src = url;
-            const s = window.getComputedStyle(liveEl);
-            Object.assign(img.style, {
-              width: s.width, height: s.height,
-              display: 'block', position: 'absolute',
-              left: '0', top: '0', border: 'none'
+          // Copy adopted styles (the component's internal design)
+          if (liveEl.shadowRoot.adoptedStyleSheets) {
+            liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
+              const styleEl = idoc.createElement('style');
+              styleEl.textContent = getSerializedShadowSheet(sheet);
+              clonedHost.appendChild(styleEl);
             });
-            
-            // The clonedHost is already positioned, so we just fill it
-            clonedHost.style.overflow = 'visible';
-            clonedHost.innerHTML = '';
-            clonedHost.appendChild(img);
-          } catch (e) {
-            console.error('[PNG Export] Snapshot failed for', liveEl.tagName, e);
+          }
+          
+          // Inline the actual graphics/nodes
+          for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
+            clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
           }
         });
 
-        await Promise.all(snapshotPromises);
-
-        // 4b. Deep Style Copying for non-components (Labels/Wires)
-        // We use a small subset of properties for speed, but include everything layout/visual
+        // 4b. Deep Computed Style Copying (With Safety Filters)
         const propsToCopy = [
-          'display', 'position', 'left', 'top', 'width', 'height', 'transform', 
+          'display', 'position', 'left', 'top', 'transform', 
           'color', 'fontSize', 'fontWeight', 'fontFamily', 'textAlign', 
-          'visibility', 'opacity', 'overflow', 'backgroundColor', 
-          'border', 'borderRadius', 'zIndex', 'margin', 'padding', 'lineHeight'
+          'visibility', 'opacity', 'backgroundColor', 'zIndex'
         ];
 
         idoc.querySelectorAll('[data-h2c-id]').forEach(cloned => {
           const dataId = cloned.getAttribute('data-h2c-id');
-          // We can't use liveEl from a map easily because of performance, 
-          // so we find it once by its attribute.
           const liveEl = zoomWrapper.querySelector(`[data-h2c-id="${dataId}"]`);
           if (!liveEl) return;
 
           const s = window.getComputedStyle(liveEl);
+          
+          // Apply general styles
           propsToCopy.forEach(p => {
+            // SAFETY FILTER: Don't force font-size on SVG text (prevents Giant Text bug)
+            if (p === 'fontSize' && (cloned.tagName === 'text' || cloned.tagName === 'tspan')) return;
             cloned.style[p] = s[p];
           });
           
-          // Special handling for SVG attributes which are often in attributes, not CSS
-          if (liveEl.tagName === 'text' || liveEl.tagName === 'path') {
-            ['fill', 'stroke', 'stroke-width', 'font-size', 'font-family', 'font-weight'].forEach(attr => {
+          // SAFETY FILTER: Only copy width/height for NON-components (prevents Squashing)
+          if (!liveEl.shadowRoot) {
+            cloned.style.width = s.width;
+            cloned.style.height = s.height;
+          } else {
+            cloned.style.overflow = 'visible'; // Ensure motor parts don't get cut
+          }
+          
+          // Copy SVG-specific attributes
+          if (liveEl.tagName === 'path' || liveEl.tagName === 'circle' || liveEl.tagName === 'rect') {
+            ['fill', 'stroke', 'stroke-width'].forEach(attr => {
               const val = liveEl.getAttribute(attr) || s[attr];
               if (val) cloned.setAttribute(attr, val);
             });
           }
         });
+
 
         // Ensure all components are visible
         idoc.body.style.overflow = 'visible';
