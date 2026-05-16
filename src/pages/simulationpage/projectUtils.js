@@ -668,6 +668,14 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (type === 'wokwi-analog-joystick') type = 'openhw-analog-joystick';
       if (type === 'wokwi-membrane-keypad') type = 'openhw-membrane-keypad';
       if (type === 'wokwi-rotary-encoder') type = 'openhw-rotary-encoder';
+      if (type === 'wokwi-rgb-led') type = 'openhw-rgb-led';
+      if (type === 'wokwi-nokia-5110') type = 'openhw-nokia-5110';
+      if (type === 'wokwi-soil-moisture-sensor') type = 'openhw-soil-moisture-sensor';
+      if (type === 'wokwi-logic-analyzer') type = 'openhw-logic-analyzer';
+      if (type === 'wokwi-sd-card') type = 'openhw-sd-card';
+      if (type === 'wokwi-ldr-module') type = 'openhw-ldr-module';
+      if (type === 'wokwi-tm1637-7segment') type = 'openhw-tm1637-7segment';
+      if (type === 'wokwi-cd74hc4067') type = 'openhw-cd74hc4067';
 
       const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
 

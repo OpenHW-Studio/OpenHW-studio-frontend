@@ -1310,6 +1310,22 @@ export default function SimulatorPage() {
     'shift_register': '74HC595 8-bit serial-in, parallel-out shift register. Expands digital outputs.',
     'wokwi-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
     'openhw-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
+    'wokwi-rgb-led': 'RGB LED. Emits red, green, blue, or mixed colors.',
+    'openhw-rgb-led': 'RGB LED. Emits red, green, blue, or mixed colors.',
+    'wokwi-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
+    'openhw-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
+    'wokwi-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
+    'openhw-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
+    'wokwi-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
+    'openhw-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
+    'wokwi-sd-card': 'MicroSD card module for SPI data logging and storage.',
+    'openhw-sd-card': 'MicroSD card module for SPI data logging and storage.',
+    'wokwi-ldr-module': 'Light-dependent resistor module with digital and analog outputs.',
+    'openhw-ldr-module': 'Light-dependent resistor module with digital and analog outputs.',
+    'wokwi-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
+    'openhw-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
+    'wokwi-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
+    'openhw-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
   };
 
   // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
