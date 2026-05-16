@@ -373,7 +373,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
       ref={asideRef}
       className="relative bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden"
       style={{
-        width: isDragging ? undefined : (isPanelOpen ? panelWidth : 21),
+        width: isDragging ? 'var(--panel-width)' : (isPanelOpen ? panelWidth : 21),
         transition: isDragging ? 'none' : 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         willChange: isDragging ? 'width' : 'auto',
         contain: isDragging ? 'size layout paint' : 'none'
@@ -650,7 +650,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                       <div 
                         ref={explorerRef}
                         className="code-explorer-container"
-                        style={{ width: isExplorerDragging ? undefined : explorerWidth, borderRight: theme === 'light' ? '1px solid #cbd5e1' : '1px solid #1e2d47', display: 'flex', flexDirection: 'column', background: theme === 'light' ? '#f1f5f9' : '#090e1a', flexShrink: 0 }}
+                        style={{ width: isExplorerDragging ? 'var(--explorer-width)' : explorerWidth, maxWidth: 200, borderRight: theme === 'light' ? '1px solid #cbd5e1' : '1px solid #1e2d47', display: 'flex', flexDirection: 'column', background: theme === 'light' ? '#f1f5f9' : '#090e1a', flexShrink: 0, willChange: isExplorerDragging ? 'width' : 'auto', contain: isExplorerDragging ? 'size layout paint' : 'none' }}
                       >
                         <div style={{
                           padding: '10px 12px',
@@ -875,145 +875,152 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                     </>
                   )}
 
-                  {/* Small Library Panel Overlay */}
-                  {isLibPanelOpen && (
-                    <div style={{
-                      width: Math.min(320, panelWidth - 40),
-                      borderRight: '1px solid var(--border)',
-                      background: 'var(--bg2)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      overflow: 'hidden',
-                      zIndex: 5,
-                      boxShadow: '4px 0 12px rgba(0,0,0,0.2)',
-                    }}>
-                      <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 0.8 }}>Library Manager</span>
-                        <button
-                          onClick={() => setIsLibPanelOpen(false)}
-                          style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14 }}
-                          className="hover:text-[var(--red)] transition-colors"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', padding: 12 }}>
-                        <form onSubmit={handleSearchLibraries} style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-                          <input
-                            className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs outline-none font-inherit flex-1"
-                            placeholder="Search Arduino library..."
-                            value={libQuery}
-                            onChange={e => setLibQuery(e.target.value)}
-                          />
-                          <Btn color="var(--accent)" disabled={isSearchingLib}>
-                            {isSearchingLib ? '...' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>}
-                          </Btn>
-                        </form>
+                  {/* Small Library Panel Overlay - Absolute positioned to avoid pushing the editor */}
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: 0,
+                    width: Math.min(320, panelWidth - 40),
+                    background: 'var(--bg2)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    overflow: 'hidden',
+                    zIndex: 100,
+                    boxShadow: isLibPanelOpen ? (theme === 'light' ? '8px 0 24px rgba(0,0,0,0.08)' : '10px 0 40px rgba(0,0,0,0.5)') : 'none',
+                    borderRight: '1px solid var(--border)',
+                    transform: isLibPanelOpen ? 'translateX(0)' : 'translateX(-105%)',
+                    transition: 'transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s',
+                    pointerEvents: isLibPanelOpen ? 'all' : 'none',
+                    backdropFilter: isLibPanelOpen ? 'blur(10px)' : 'none',
+                    WebkitBackdropFilter: isLibPanelOpen ? 'blur(10px)' : 'none',
+                  }}>
+                    <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: theme === 'light' ? 'rgba(226, 232, 240, 0.8)' : 'rgba(13, 21, 37, 0.8)' }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: 1 }}>Library Manager</span>
+                      <button
+                        onClick={() => setIsLibPanelOpen(false)}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', fontSize: 14, padding: '4px' }}
+                        className="hover:text-[var(--red)] transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', padding: 12 }}>
+                      <form onSubmit={handleSearchLibraries} style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                        <input
+                          className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-3 py-2 rounded-xl text-xs outline-none font-inherit flex-1 focus:border-[var(--accent)] transition-all shadow-sm"
+                          placeholder="Search Arduino library..."
+                          value={libQuery}
+                          onChange={e => setLibQuery(e.target.value)}
+                        />
+                        <Btn color="var(--accent)" disabled={isSearchingLib} style={{ borderRadius: '10px' }}>
+                          {isSearchingLib ? '...' : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>}
+                        </Btn>
+                      </form>
 
-                        {libMessage && (
-                          <div style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 12, fontSize: 12, background: libMessage.type === 'error' ? 'rgba(255,68,68,0.1)' : 'rgba(0,230,118,0.1)', color: libMessage.type === 'error' ? 'var(--red)' : 'var(--green)', border: `1px solid ${libMessage.type === 'error' ? 'rgba(255,68,68,0.3)' : 'rgba(0,230,118,0.3)'}` }}>
-                            {libMessage.text}
-                          </div>
-                        )}
+                      {libMessage && (
+                        <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 14, fontSize: 12, background: libMessage.type === 'error' ? 'rgba(239,68,68,0.08)' : 'rgba(34,197,94,0.08)', color: libMessage.type === 'error' ? '#ef4444' : '#22c55e', border: `1px solid ${libMessage.type === 'error' ? 'rgba(239,68,68,0.2)' : 'rgba(34,197,94,0.2)'}`, animation: 'slideDown 0.2s ease-out' }}>
+                          {libMessage.text}
+                        </div>
+                      )}
 
-                        <div className="panel-scroll" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {libResults.length > 0 && <div style={{ fontSize: 10, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>Search Results</div>}
-                          {libResults.map((lib, idx) => (
-                            <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)', wordBreak: 'break-word' }}>{lib.name}</div>
-                                  {lib.author && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>{lib.author}</div>}
-                                </div>
-                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                  <a
-                                    href={`https://www.arduino.cc/reference/en/libraries/${(lib.name || '').toLowerCase().replace(/ /g, '-')}/`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                      display: 'flex',
-                                      padding: '4px',
-                                      borderRadius: '4px',
-                                      color: 'var(--text3)',
-                                      background: 'rgba(255,255,255,0.03)',
-                                      border: '1px solid var(--border)',
-                                      cursor: 'pointer',
-                                      transition: 'all 0.15s'
-                                    }}
-                                    className="hover:text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[rgba(0,255,255,0.05)]"
-                                    title="View on Arduino Website"
-                                  >
-                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                                      <polyline points="15 3 21 3 21 9" />
-                                      <line x1="10" y1="14" x2="21" y2="3" />
-                                    </svg>
-                                  </a>
-                                  <Btn
-                                    color="var(--green)"
-                                    disabled={installingLib === lib.name}
-                                    onClick={() => handleInstallLibrary(lib.name)}
-                                    style={{ padding: '2px 8px', fontSize: 10 }}
-                                  >
-                                    {installingLib === lib.name ? '...' : 'Install'}
-                                  </Btn>
-                                </div>
+                      <div className="panel-scroll" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10, paddingRight: 4 }}>
+                        {libResults.length > 0 && <div style={{ fontSize: 10, fontWeight: '800', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 4, opacity: 0.6 }}>Search Results</div>}
+                        {libResults.map((lib, idx) => (
+                          <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, transition: 'transform 0.15s' }} className="hover:scale-[1.01] hover:border-[var(--accent)] transition-all">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--accent)', wordBreak: 'break-word', letterSpacing: -0.2 }}>{lib.name}</div>
+                                {lib.author && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2, fontWeight: 500 }}>{lib.author}</div>}
                               </div>
-                              <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6, lineHeight: 1.3 }}>{lib.sentence}</div>
-                              <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                                <span>v{lib.version}</span>
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <a
+                                  href={`https://www.arduino.cc/reference/en/libraries/${(lib.name || '').toLowerCase().replace(/ /g, '-')}/`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: 'flex',
+                                    padding: '5px',
+                                    borderRadius: '6px',
+                                    color: 'var(--text3)',
+                                    background: 'rgba(255,255,255,0.02)',
+                                    border: '1px solid var(--border)',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s'
+                                  }}
+                                  className="hover:text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[rgba(0,255,255,0.05)]"
+                                  title="View on Arduino Website"
+                                >
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                    <polyline points="15 3 21 3 21 9" />
+                                    <line x1="10" y1="14" x2="21" y2="3" />
+                                  </svg>
+                                </a>
+                                <Btn
+                                  color="var(--green)"
+                                  disabled={installingLib === lib.name}
+                                  onClick={() => handleInstallLibrary(lib.name)}
+                                  style={{ padding: '4px 10px', fontSize: 10, borderRadius: '8px' }}
+                                >
+                                  {installingLib === lib.name ? '...' : 'Install'}
+                                </Btn>
                               </div>
                             </div>
-                          ))}
+                            <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.4, opacity: 0.9 }}>{lib.sentence}</div>
+                            <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>
+                              <span style={{ color: 'var(--accent)', opacity: 0.8 }}>v{lib.version}</span>
+                            </div>
+                          </div>
+                        ))}
 
-                          {libResults.length === 0 && (
-                            <>
-                              <div style={{ fontSize: 10, fontWeight: 'bold', color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 }}>Installed</div>
-                              {libInstalled.length === 0 ? (
-                                <div style={{ fontSize: 12, color: 'var(--text3)' }}>No external libraries.</div>
-                              ) : (
-                                libInstalled.map((lib, idx) => (
-                                  <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, opacity: 0.85 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                                      <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', wordBreak: 'break-word', flex: 1 }}>{lib.library.name}</div>
-                                      <a
-                                        href={`https://www.arduino.cc/reference/en/libraries/${(lib.library.name || '').toLowerCase().replace(/ /g, '-')}/`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        style={{
-                                          display: 'flex',
-                                          padding: '4px',
-                                          borderRadius: '4px',
-                                          color: 'var(--text3)',
-                                          background: 'rgba(255,255,255,0.03)',
-                                          border: '1px solid var(--border)',
-                                          cursor: 'pointer',
-                                          transition: 'all 0.15s',
-                                          marginLeft: 6
-                                        }}
-                                        className="hover:text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[rgba(0,255,255,0.05)]"
-                                        title="View on Arduino Website"
-                                      >
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                                          <polyline points="15 3 21 3 21 9" />
-                                          <line x1="10" y1="14" x2="21" y2="3" />
-                                        </svg>
-                                      </a>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace', marginTop: 4 }}>
-                                      <span>v{lib.library.version}</span>
-                                      <span>Installed</span>
-                                    </div>
+                        {libResults.length === 0 && (
+                          <>
+                            <div style={{ fontSize: 10, fontWeight: '800', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 4, opacity: 0.6 }}>Installed</div>
+                            {libInstalled.length === 0 ? (
+                              <div style={{ fontSize: 12, color: 'var(--text3)', padding: '20px 0', textAlign: 'center', opacity: 0.5 }}>No external libraries.</div>
+                            ) : (
+                              libInstalled.map((lib, idx) => (
+                                <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, opacity: 0.85 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                                    <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)', wordBreak: 'break-word', flex: 1, letterSpacing: -0.2 }}>{lib.library.name}</div>
+                                    <a
+                                      href={`https://www.arduino.cc/reference/en/libraries/${(lib.library.name || '').toLowerCase().replace(/ /g, '-')}/`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{
+                                        display: 'flex',
+                                        padding: '5px',
+                                        borderRadius: '6px',
+                                        color: 'var(--text3)',
+                                        background: 'rgba(255,255,255,0.02)',
+                                        border: '1px solid var(--border)',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s',
+                                        marginLeft: 6
+                                      }}
+                                      className="hover:text-[var(--accent)] hover:border-[var(--accent)] hover:bg-[rgba(0,255,255,0.05)]"
+                                      title="View on Arduino Website"
+                                    >
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                        <polyline points="15 3 21 3 21 9" />
+                                        <line x1="10" y1="14" x2="21" y2="3" />
+                                      </svg>
+                                    </a>
                                   </div>
-                                ))
-                              )}
-                            </>
-                          )}
-                        </div>
+                                  <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace', marginTop: 6, fontWeight: 600 }}>
+                                    <span style={{ color: 'var(--accent)', opacity: 0.8 }}>v{lib.library.version}</span>
+                                    <span style={{ color: 'var(--green)', opacity: 0.8 }}>● Installed</span>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
-                  )}
+                  </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1, pointerEvents: editingDisabled ? 'none' : 'auto' }}>
                     <div className="panel-scroll hide-scrollbar" style={{ display: 'flex', gap: 0, overflowX: 'auto', borderBottom: theme === 'light' ? '1px solid #cbd5e1' : '1px solid #1e2d47', background: theme === 'light' ? '#e6e7eb' : '#0d1525', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
