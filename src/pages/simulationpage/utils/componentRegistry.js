@@ -55,6 +55,38 @@ export function buildComponentRegistry() {
       if (module.manifest.pins) {
         pinDefs[compId] = module.manifest.pins;
       }
+
+      if (compId.startsWith('openhw-')) {
+        const legacyId = compId.replace('openhw-', 'wokwi-');
+        if (!registry[legacyId]) {
+          registry[legacyId] = raw
+            ? {
+              ...module,
+              ...raw,
+              manifest: { ...module.manifest, type: legacyId, hiddenAlias: true },
+              ...(raw.docRaw ? { doc: raw.docRaw } : {}),
+            }
+            : { ...module, manifest: { ...module.manifest, type: legacyId, hiddenAlias: true } };
+          if (module.manifest.pins) {
+            pinDefs[legacyId] = module.manifest.pins;
+          }
+        }
+      } else if (compId.startsWith('wokwi-')) {
+        const modernId = compId.replace('wokwi-', 'openhw-');
+        if (!registry[modernId]) {
+          registry[modernId] = raw
+            ? {
+              ...module,
+              ...raw,
+              manifest: { ...module.manifest, type: modernId, hiddenAlias: true },
+              ...(raw.docRaw ? { doc: raw.docRaw } : {}),
+            }
+            : { ...module, manifest: { ...module.manifest, type: modernId, hiddenAlias: true } };
+          if (module.manifest.pins) {
+            pinDefs[modernId] = module.manifest.pins;
+          }
+        }
+      }
     }
   });
 
