@@ -34,9 +34,9 @@ function titleFromSlug(slug) {
 }
 
 const ROLE_TO_TYPE = {
-  arduino: 'wokwi-arduino-uno', resistor: 'wokwi-resistor',
-  led: 'wokwi-led', 'rgb-led': 'openhw-rgb-led',
-  potentiometer: 'wokwi-potentiometer', 'analog-joystick': 'openhw-analog-joystick',
+  arduino: 'openhw-arduino-uno', resistor: 'openhw-resistor',
+  led: 'openhw-led', 'rgb-led': 'openhw-rgb-led',
+  potentiometer: 'openhw-potentiometer', 'analog-joystick': 'openhw-analog-joystick',
 }
 
 function isTypeMatch(actual, expected) {

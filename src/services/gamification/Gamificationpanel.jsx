@@ -502,7 +502,7 @@ function Toast({ notification: n, onDismiss }) {
                 fontSize: 9, padding: '1px 5px', borderRadius: 4,
                 background: `${n.color}22`, border: `1px solid ${n.color}44`,
                 color: n.color, fontFamily: 'monospace',
-              }}>{c.replace('wokwi-', '')}</span>
+              }}>{c.replace(/^(wokwi|openhw)-/, '')}</span>
             ))}
           </div>
         )}

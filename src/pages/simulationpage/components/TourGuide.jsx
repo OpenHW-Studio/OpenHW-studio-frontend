@@ -127,7 +127,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       // Map phases to specific DOM targets using data-tour attributes
       if (step.id === 'quick-add') targetSelector = 'main';
       if (step.id === 'drag-demo') {
-        if (demoPhase <= 1) targetSelector = '[data-tour-type="wokwi-arduino-uno"]';
+        if (demoPhase <= 1) targetSelector = '[data-tour-type="wokwi-arduino-uno"], [data-tour-type="openhw-arduino-uno"]';
         else targetSelector = '[id*="comp-master-demo-comp-tour"]';
       }
       if (step.id === 'wiring') {

@@ -8,9 +8,10 @@ import { STARTING_COMPONENTS } from '../services/gamification/GamificationConfig
 
 // ── Which project unlocks which component? ────────────────────────────────────
 function findUnlockProject(componentType) {
+  const norm = (t) => String(t || '').replace('openhw-', 'wokwi-');
   for (const project of PROJECTS) {
     for (const reward of (project.rewardComponents || [])) {
-      if (reward.type === componentType || reward.type === '*') {
+      if (reward.type === '*' || norm(reward.type) === norm(componentType)) {
         return project;
       }
     }
