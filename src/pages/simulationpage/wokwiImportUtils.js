@@ -29,10 +29,22 @@ export async function importWokwiProjectZip(file, currentComponents = [], curren
   // 2. Determine the board ID and kind
   const boardComp = normalizedCircuit.components.find(c => hardwareUtils.isProgrammableBoardType(c.type)) || normalizedCircuit.components[0];
   const currentBoard = currentComponents.find(c => hardwareUtils.isProgrammableBoardType(c.type));
-  if (boardComp && currentBoard) {
+  if (boardComp && currentBoard && boardComp.id !== currentBoard.id) {
+    const oldBoardId = boardComp.id;
+    const newBoardId = currentBoard.id;
     // To prevent React/Zustand batched update race conditions in SimulatorPage.jsx where boardComponents 
     // lags behind projectFiles, preserve the existing board ID if replacing a programmable board.
-    boardComp.id = currentBoard.id;
+    boardComp.id = newBoardId;
+
+    // Update all wire connections that referenced the old board ID to point to the preserved board ID
+    normalizedCircuit.wires.forEach(wire => {
+      if (wire.from && wire.from.startsWith(`${oldBoardId}:`)) {
+        wire.from = newBoardId + wire.from.slice(oldBoardId.length);
+      }
+      if (wire.to && wire.to.startsWith(`${oldBoardId}:`)) {
+        wire.to = newBoardId + wire.to.slice(oldBoardId.length);
+      }
+    });
   }
   const boardId = boardComp?.id || 'uno1';
   const boardKind = boardComp ? hardwareUtils.normalizeBoardKind(boardComp.type) : 'arduino_uno';
