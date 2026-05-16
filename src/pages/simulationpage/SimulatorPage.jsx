@@ -235,12 +235,31 @@ export function SimulatorPage({ gamificationMode = false }) {
     'wokwi-potentiometer': 'potentiometer',
     'wokwi-buzzer': 'buzzer',
     'wokwi-rgb-led': 'rgb-led',
+    'openhw-rgb-led': 'rgb-led',
     'wokwi-ntc-temperature-sensor': 'dht11',
     'wokwi-hc-sr04': 'ultrasonic',
     'wokwi-servo': 'servo',
     'wokwi-lcd1602': 'lcd',
     'wokwi-analog-joystick': 'analog-joystick',
+    'openhw-analog-joystick': 'analog-joystick',
     'wokwi-membrane-keypad': 'keypad',
+    'openhw-membrane-keypad': 'keypad',
+    'wokwi-rotary-encoder': 'rotary-encoder',
+    'openhw-rotary-encoder': 'rotary-encoder',
+    'wokwi-nokia-5110': 'nokia-5110',
+    'openhw-nokia-5110': 'nokia-5110',
+    'wokwi-soil-moisture-sensor': 'soil-moisture-sensor',
+    'openhw-soil-moisture-sensor': 'soil-moisture-sensor',
+    'wokwi-logic-analyzer': 'logic-analyzer',
+    'openhw-logic-analyzer': 'logic-analyzer',
+    'wokwi-sd-card': 'sd-card',
+    'openhw-sd-card': 'sd-card',
+    'wokwi-ldr-module': 'ldr-module',
+    'openhw-ldr-module': 'ldr-module',
+    'wokwi-tm1637-7segment': 'tm1637-7segment',
+    'openhw-tm1637-7segment': 'tm1637-7segment',
+    'wokwi-cd74hc4067': 'cd74hc4067',
+    'openhw-cd74hc4067': 'cd74hc4067',
   }), [])
 
   const isPaletteItemLocked = useCallback((itemType) => {
@@ -919,12 +938,17 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Pass interactions to the Web Worker
     attrs.onInteract = (event) => {
-      console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
+      // console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
 
       // Handle physical board reset button presses
       if (isProgrammableBoardType(comp.type) && event === 'RESET') {
         if (isRunning) handleReset();
         return;
+      }
+
+      // Persist input values (e.g. potentiometer position) to project state immediately
+      if (typeof event === 'object' && event?.type === 'input' && event.value !== undefined) {
+        updateComponentAttr(comp.id, 'value', event.value);
       }
 
       if (workerRef.current && isRunning) {
@@ -2374,7 +2398,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     e.preventDefault();
     const startWidth = panelWidth;
     if (rightPanelRef.current?.aside) {
-      rightPanelRef.current.aside.style.width = `${startWidth}px`;
+      rightPanelRef.current.aside.style.setProperty('--panel-width', `${startWidth}px`);
     }
     setIsDragging(true);
     const startX = e.clientX;
@@ -2383,9 +2407,10 @@ export function SimulatorPage({ gamificationMode = false }) {
     const onMouseMove = (moveEvent) => {
       const start = performance.now();
       const delta = startX - moveEvent.clientX; // Left drag increases width
-      finalWidth = Math.max(250, Math.min(800, startWidth + delta));
+      const maxWidth = Math.min(1100, window.innerWidth * 0.7);
+      finalWidth = Math.max(250, Math.min(maxWidth, startWidth + delta));
       if (rightPanelRef.current?.aside) {
-        rightPanelRef.current.aside.style.width = `${finalWidth}px`;
+        rightPanelRef.current.aside.style.setProperty('--panel-width', `${finalWidth}px`);
       }
       const duration = performance.now() - start;
       if (duration > 5) {
@@ -2396,6 +2421,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     const onMouseUp = () => {
       setIsDragging(false);
       setPanelWidth(finalWidth);
+      if (rightPanelRef.current?.aside) {
+        rightPanelRef.current.aside.style.removeProperty('--panel-width');
+      }
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -2428,7 +2456,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const onMouseDownExplorerResize = useCallback((e) => {
     e.preventDefault();
     if (rightPanelRef.current?.explorer) {
-      rightPanelRef.current.explorer.style.width = `${explorerWidth}px`;
+      rightPanelRef.current.explorer.style.setProperty('--explorer-width', `${explorerWidth}px`);
     }
     setIsExplorerDragging(true);
   }, [explorerWidth]);
@@ -2439,9 +2467,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     const onMouseMove = (e) => {
       const start = performance.now();
       const rightPanelStart = window.innerWidth - panelWidth;
-      finalExpWidth = Math.max(120, Math.min(panelWidth - 100, e.clientX - rightPanelStart));
+      finalExpWidth = Math.max(120, Math.min(200, panelWidth - 100, e.clientX - rightPanelStart));
       if (rightPanelRef.current?.explorer) {
-        rightPanelRef.current.explorer.style.width = `${finalExpWidth}px`;
+        rightPanelRef.current.explorer.style.setProperty('--explorer-width', `${finalExpWidth}px`);
       }
       const duration = performance.now() - start;
       if (duration > 5) {
@@ -2451,6 +2479,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     const onMouseUp = () => {
       setIsExplorerDragging(false);
       setExplorerWidth(finalExpWidth);
+      if (rightPanelRef.current?.explorer) {
+        rightPanelRef.current.explorer.style.removeProperty('--explorer-width');
+      }
     };
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
@@ -2512,8 +2543,26 @@ export function SimulatorPage({ gamificationMode = false }) {
     'wokwi-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
     'wokwi-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
     'wokwi-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
+    'openhw-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
     'shift_register': '74HC595 8-bit serial-in, parallel-out shift register. Expands digital outputs.',
     'wokwi-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
+    'openhw-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
+    'wokwi-rgb-led': 'RGB LED. Emits red, green, blue, or mixed colors.',
+    'openhw-rgb-led': 'RGB LED. Emits red, green, blue, or mixed colors.',
+    'wokwi-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
+    'openhw-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
+    'wokwi-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
+    'openhw-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
+    'wokwi-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
+    'openhw-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
+    'wokwi-sd-card': 'MicroSD card module for SPI data logging and storage.',
+    'openhw-sd-card': 'MicroSD card module for SPI data logging and storage.',
+    'wokwi-ldr-module': 'Light-dependent resistor module with digital and analog outputs.',
+    'openhw-ldr-module': 'Light-dependent resistor module with digital and analog outputs.',
+    'wokwi-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
+    'openhw-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
+    'wokwi-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
+    'openhw-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
   };
 
   // ── Error component IDs for highlighting ────────────────────────────────────
@@ -2574,12 +2623,45 @@ export function SimulatorPage({ gamificationMode = false }) {
       let changed = normalized.length !== prev.length;
       let result = [...normalized];
 
-      // Remove board files for boards no longer present
+      // Preserve and migrate board files for boards no longer present
       const validBoardIds = new Set(boardComponents.map(b => b.id));
-      const pruned = result.filter(f => {
+      const pruned = [];
+
+      result.forEach(f => {
         const m = f.path.match(/^project\/([^/]+)\//);
-        if (!m) return true;
-        return validBoardIds.has(m[1]);
+        if (!m) {
+          pruned.push(f);
+          return;
+        }
+        const fileBoardId = m[1];
+        if (validBoardIds.has(fileBoardId)) {
+          pruned.push(f);
+        } else if (boardComponents.length === 0) {
+          // If no boards are currently on canvas, preserve the files so they can be adopted by the next board
+          pruned.push(f);
+        } else if (boardComponents.length > 0) {
+          // Adopt orphan files into the first board that doesn't already have code files
+          const targetBoard = boardComponents.find(b => !result.some(existing => existing.boardId === b.id && existing.kind === 'code'));
+          if (targetBoard) {
+            const targetKind = normalizeBoardKind(targetBoard.type);
+            let newName = f.name;
+            if (f.name.startsWith(fileBoardId)) {
+              newName = f.name.replace(fileBoardId, targetBoard.id);
+            }
+            const newPath = `project/${targetBoard.id}/${newName}`;
+            if (!result.some(existing => existing.boardId === targetBoard.id && existing.path === newPath)) {
+              pruned.push({
+                ...f,
+                id: newPath,
+                path: newPath,
+                name: newName,
+                boardId: targetBoard.id,
+                boardKind: targetKind
+              });
+              changed = true;
+            }
+          }
+        }
       });
 
       if (pruned.length !== result.length) changed = true;
@@ -8095,6 +8177,8 @@ export function SimulatorPage({ gamificationMode = false }) {
               saveHistory={saveHistory}
               setComponents={setComponents}
               setWires={setWires}
+              setProjectFiles={setProjectFiles}
+              setCode={setCode}
               setSelected={setSelected}
               chrome={{
                 setShowInspector: chrome.setShowInspector,

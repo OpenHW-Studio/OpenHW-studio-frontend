@@ -41,6 +41,7 @@ import { DFlipFlopDsrLogic } from '@openhw/emulator/src/components/logic-d-flipf
 import { ClockGeneratorLogic } from '@openhw/emulator/src/components/logic-clock-generator/logic.ts';
 import { WokwiTM1637Logic } from '@openhw/emulator/src/components/wokwi-tm1637-7segment/logic.ts';
 import { RGBLEDLogic } from '@openhw/emulator/src/components/wokwi-rgb-led/logic.ts';
+import { RotaryEncoderLogic } from '@openhw/emulator/src/components/wokwi-rotary-encoder/logic.ts';
 import { Nokia5110Logic } from '@openhw/emulator/src/components/wokwi-nokia-5110/logic.ts';
 import { L293DLogic } from '@openhw/emulator/src/components/wokwi-l293d/logic.ts';
 import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/wokwi-lcd2004-i2c/logic.ts';
@@ -2160,12 +2161,18 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     max30102: GenericI2CDeviceLogic,
     'wokwi-max7219': GenericSPIDeviceLogic,
     'wokwi-ldr-module': BaseComponent,
+    'openhw-ldr-module': BaseComponent,
     'wokwi-7segment': BaseComponent,
     'wokwi-ili9341': ILI9341FallbackLogic,
     'wokwi-sd-card': SDCardLogic,
+    'openhw-sd-card': SDCardLogic,
     'shift_register': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
+    'openhw-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
+    'openhw-analog-joystick': JoystickLogic,
+    'openhw-rotary-encoder': RotaryEncoderLogic,
+    'wokwi-rotary-encoder': RotaryEncoderLogic,
     'logic-ic-74xx': LogicIC74xxLogic,
     'wokwi-lcd1602-i2c': Lcd1602I2CLogic,
     'logic-mux-2to1': Mux2to1Logic,
@@ -2182,18 +2189,24 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'logic-xor-gate': XorGateLogic,
     'logic-xnor-gate': XnorGateLogic,
     'wokwi-tm1637-7segment': WokwiTM1637Logic,
+    'openhw-tm1637-7segment': WokwiTM1637Logic,
     'wokwi-rgb-led': RGBLEDLogic,
+    'openhw-rgb-led': RGBLEDLogic,
     'wokwi-nokia-5110': Nokia5110Logic,
+    'openhw-nokia-5110': Nokia5110Logic,
     'wokwi-l293d': L293DLogic,
     'wokwi-arduino-nano': UnoLogic,
     'wokwi-pca9685': PCA9685Logic,
     'wokwi-soil-moisture-sensor': SoilMoistureSensorLogic,
+    'openhw-soil-moisture-sensor': SoilMoistureSensorLogic,
     'wokwi-photodiode': PhotodiodeLogic,
     'wokwi-diode': DiodeLogic,
     'wokwi-npn-transistor': NPNTransistorLogic,
     'wokwi-a4988': A4988Logic,
     'wokwi-cd74hc4067': CD74HC4067Logic,
+    'openhw-cd74hc4067': CD74HC4067Logic,
     'wokwi-logic-analyzer': LogicAnalyzerLogic,
+    'openhw-logic-analyzer': LogicAnalyzerLogic,
     'wokwi-breadboard': BaseComponent,
     'wokwi-breadboard-half': BaseComponent,
 };
@@ -2220,13 +2233,19 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     max30102: [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }, { id: 'NC' }],
     'wokwi-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
     'wokwi-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'openhw-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
     'wokwi-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
     'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
     'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
+    'openhw-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
     'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
+    'openhw-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'openhw-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
     'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
@@ -2243,19 +2262,25 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'logic-xnor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
     'logic-clock-generator': [{ id: 'OUT' }],
     'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
     'wokwi-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
+    'openhw-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
     'wokwi-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
+    'openhw-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
     'wokwi-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
     'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
     'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
     'wokwi-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'openhw-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
+    'openhw-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
+    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
+    'openhw-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
     'wokwi-photodiode': [{ id: 'A' }, { id: 'C' }],
     'wokwi-diode': [{ id: 'A' }, { id: 'C' }],
     'wokwi-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
     'wokwi-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
-    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
-    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
 };
 
 type RP2040ExecutableRangeInput =
@@ -3493,6 +3518,7 @@ export class AVRRunner {
     private topologyDirty: boolean = true;
     private lastPhysicsSolveAt: number = 0;
     private lastStateEmitCycle: number = 0;
+    private lastStateEmitTime: number = 0;
     private statusIntervalEmitCount: number = 0;
     private lastRunLoopMs: number = 0;
     private lastPhysicsMs: number = 0;
@@ -3714,6 +3740,7 @@ export class AVRRunner {
 
         this.running = true;
         this.lastTime = performance.now();
+        this.lastStateEmitTime = this.lastTime;
         this.runLoop();
     }
 
@@ -4010,31 +4037,34 @@ export class AVRRunner {
 
             const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
             const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
-            if (this.updatePhysics && shouldSolvePhysics && (now - this.lastPhysicsSolveAt) >= 2) {
-                const physicsStart = performance.now();
-                // Classic Logic mode: event-driven propagation handles pins.
-                // We only need occasional inst.update for UI/animations (throttled).
+
+            const instArray = Array.from(this.instances.values());
+            const componentUpdateThreshold = 32000; // Update components every 2ms of simulated time
+
+            while (this.cpu.cycles < targetObj && this.running) {
+                const nextChunkTarget = Math.min(targetObj, this.cpu.cycles + componentUpdateThreshold);
+                
+                while (this.cpu.cycles < nextChunkTarget && this.running) {
+                    avrInstruction(this.cpu);
+                    this.cpu.tick();
+                }
+
+                // Component updates for smooth animation
                 const componentStart = performance.now();
-                const instArray = Array.from(this.instances.values());
-                const physicsDeltaTime = now - this.lastPhysicsSolveAt;
                 instArray.forEach(inst => {
-                    // Lightweight update without netlist traversal
-                    inst.update(physicsDeltaTime, this.currentWires, instArray);
+                    inst.update(this.cpu!.cycles, this.currentWires, instArray);
                 });
                 this.lastComponentUpdateMs = performance.now() - componentStart;
+            }
 
-                physicsMs = performance.now() - physicsStart;
+            physicsMs = performance.now() - loopStart;
+            this.drainPendingCpuWork(16);
+            this.processSoftSerialDecode(this.cpu.cycles);
+            this.lastTime = now;
+            if (shouldSolvePhysics) {
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
             }
-
-            while (this.cpu.cycles < targetObj && this.running) {
-                avrInstruction(this.cpu);
-                this.cpu.tick();
-            }
-            this.drainPendingCpuWork(16); // Batch process pending work once per frame chunk
-            this.processSoftSerialDecode(this.cpu.cycles);
-            this.lastTime = now;
 
             // Host/UART receive pacing: bytes per second = baud / 10 (8N1 frame)
             // bytes per ms = baud / 10000. We accumulate fractional budget over time.
@@ -4054,15 +4084,21 @@ export class AVRRunner {
             this.lastRunLoopMs = performance.now() - loopStart;
 
             // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
-            this.emitStateIfDue();
+            this.emitStateIfDue(now);
         }
 
         setTimeout(this.runLoop, 1);
     }
 
-    private emitStateIfDue() {
+    private emitStateIfDue(nowMs?: number) {
         if (!this.cpu) return;
-        if (this.cpu.cycles - this.lastStateEmitCycle >= 266666) {
+        const now = nowMs || performance.now();
+        const cycleDelta = this.cpu.cycles - this.lastStateEmitCycle;
+        const timeDelta = now - this.lastStateEmitTime;
+
+        // Emit if 16.6ms of simulated time passed (60Hz @ 16MHz)
+        // OR if 16.6ms of real time passed (to keep UI smooth if simulation is slow)
+        if (cycleDelta >= 266666 || timeDelta >= 16) {
             const msg: any = { type: 'state', boardId: this.boardId };
             msg.pins = this.pinStates;
             this.pinsChanged = false;
@@ -4095,6 +4131,7 @@ export class AVRRunner {
             msg.simTimeMs = this.getSimulatedTimeMs();
             
             this.lastStateEmitCycle = this.cpu.cycles;
+            this.lastStateEmitTime = now;
             this.onStateUpdate(msg);
         }
     }
@@ -4160,7 +4197,7 @@ export class AVRRunner {
                 endpoint.inst.pins[endpoint.pinId].isHigh = !!isHigh;
                 endpoint.inst.pins[endpoint.pinId].voltage = voltage;
             }
-            endpoint.inst.onPinStateChange(endpoint.pinId, isHigh);
+            endpoint.inst.onPinStateChange(endpoint.pinId, isHigh, this.cpu!.cycles);
         }
     }
 
@@ -4671,6 +4708,7 @@ export class RP2040Runner implements BoardRunner {
     private topologyDirty: boolean = true;
     private lastPhysicsSolveAt: number = 0;
     private lastStateEmitCycle: number = 0;
+    private lastStateEmitTime: number = 0;
     private statusIntervalEmitCount: number = 0;
     private lastPhysicsMs: number = 0;
     private lastRunLoopMs: number = 0;
@@ -4915,6 +4953,7 @@ export class RP2040Runner implements BoardRunner {
 
         this.running = true;
         this.lastTime = performance.now();
+        this.lastStateEmitTime = this.lastTime;
         this.emitDebugSnapshot('start', this.lastTime, true);
         this.emitWirelessStubStatus('start', true);
         this.runLoop();
@@ -6857,10 +6896,15 @@ export class RP2040Runner implements BoardRunner {
         this.installRp2040SpiAdapters();
     }
 
-    private emitStateIfDue() {
+    private emitStateIfDue(nowMs?: number) {
         if (!this.cpu) return;
+        const now = nowMs || performance.now();
         const currentCycles = Number(this.cpu.core.cycles);
-        if (currentCycles - this.lastStateEmitCycle >= 3125000) {
+        const cycleDelta = currentCycles - this.lastStateEmitCycle;
+        const timeDelta = now - this.lastStateEmitTime;
+
+        // RP2040 runs at 125MHz. 125,000,000 / 60 ~= 2,083,333 cycles per frame.
+        if (cycleDelta >= 2083333 || timeDelta >= 16) {
             const msg: any = { type: 'state', boardId: this.boardId };
             msg.pins = this.pinStates;
             this.pinsChanged = false;
@@ -6890,6 +6934,7 @@ export class RP2040Runner implements BoardRunner {
             msg.simTimeMs = this.getSimulatedTimeMs();
             
             this.lastStateEmitCycle = currentCycles;
+            this.lastStateEmitTime = now;
             this.onStateUpdate(msg);
         }
     }
