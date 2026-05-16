@@ -47,6 +47,7 @@ import {
   buildProjectPayload,
   normalizeImportedCircuitData
 } from './projectUtils';
+import { importWokwiProjectZip } from './wokwiImportUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
@@ -158,6 +159,10 @@ import {
   ensureMicroPythonSerialProbe,
   applyRp2040MicroPythonCompat,
   isProgrammableBoardType,
+  isBreadboardType,
+  isResistorType,
+  isMotorType,
+  isStepperMotorType,
   endpointAliases,
   hasCategoryIntersection,
   getPinCategory
@@ -230,16 +235,30 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [gamTab, setGamTab] = useState('components')
   const WOKWI_TO_COMP_ID = useMemo(() => ({
     'wokwi-led': 'led',
+    'openhw-led': 'led',
     'wokwi-resistor': 'resistor',
+    'openhw-resistor': 'resistor',
     'wokwi-pushbutton': 'button',
+    'openhw-pushbutton': 'button',
     'wokwi-potentiometer': 'potentiometer',
+    'openhw-potentiometer': 'potentiometer',
+    'wokwi-slide-potentiometer': 'potentiometer',
+    'openhw-slide-potentiometer': 'potentiometer',
     'wokwi-buzzer': 'buzzer',
+    'openhw-buzzer': 'buzzer',
     'wokwi-rgb-led': 'rgb-led',
     'openhw-rgb-led': 'rgb-led',
     'wokwi-ntc-temperature-sensor': 'dht11',
+    'openhw-ntc-temperature-sensor': 'dht11',
     'wokwi-hc-sr04': 'ultrasonic',
+    'openhw-hc-sr04': 'ultrasonic',
     'wokwi-servo': 'servo',
+    'openhw-servo': 'servo',
     'wokwi-lcd1602': 'lcd',
+    'wokwi-lcd1602-i2c': 'lcd',
+    'openhw-lcd1602-i2c': 'lcd',
+    'wokwi-lcd2004-i2c': 'lcd',
+    'openhw-lcd2004-i2c': 'lcd',
     'wokwi-analog-joystick': 'analog-joystick',
     'openhw-analog-joystick': 'analog-joystick',
     'wokwi-membrane-keypad': 'keypad',
@@ -260,6 +279,66 @@ export function SimulatorPage({ gamificationMode = false }) {
     'openhw-tm1637-7segment': 'tm1637-7segment',
     'wokwi-cd74hc4067': 'cd74hc4067',
     'openhw-cd74hc4067': 'cd74hc4067',
+    'wokwi-7segment': '7segment',
+    'openhw-7segment': '7segment',
+    'wokwi-a4988': 'a4988',
+    'openhw-a4988': 'a4988',
+    'wokwi-bmp180': 'bmp180',
+    'openhw-bmp180': 'bmp180',
+    'wokwi-bmp180-breakout': 'bmp180',
+    'openhw-bmp180-breakout': 'bmp180',
+    'wokwi-ds1307-rtc': 'rtc',
+    'openhw-ds1307-rtc': 'rtc',
+    'wokwi-ili9341': 'ili9341',
+    'openhw-ili9341': 'ili9341',
+    'wokwi-l293d': 'l293d',
+    'openhw-l293d': 'l293d',
+    'wokwi-max7219': 'max7219',
+    'openhw-max7219': 'max7219',
+    'wokwi-mpu6050': 'mpu6050',
+    'openhw-mpu6050': 'mpu6050',
+    'wokwi-nlsf595': 'nlsf595',
+    'openhw-nlsf595': 'nlsf595',
+    'wokwi-pca9685': 'pca9685',
+    'openhw-pca9685': 'pca9685',
+    'wokwi-pca9865': 'pca9865',
+    'openhw-pca9865': 'pca9865',
+    'wokwi-relay-module': 'relay',
+    'openhw-relay-module': 'relay',
+    'wokwi-ssd1306-oled': 'oled',
+    'openhw-ssd1306-oled': 'oled',
+    'wokwi-stepper-motor': 'stepper',
+    'openhw-stepper-motor': 'stepper',
+    'wokwi-arduino-uno': 'uno',
+    'openhw-arduino-uno': 'uno',
+    'wokwi-arduino-mega': 'mega',
+    'openhw-arduino-mega': 'mega',
+    'wokwi-arduino-nano': 'nano',
+    'openhw-arduino-nano': 'nano',
+    'wokwi-attiny85': 'attiny85',
+    'openhw-attiny85': 'attiny85',
+    'wokwi-raspberry-pi-pico': 'pico',
+    'openhw-pico': 'pico',
+    'wokwi-raspberry-pi-pico-w': 'pico-w',
+    'openhw-pico-w': 'pico-w',
+    'wokwi-power-supply': 'power-supply',
+    'openhw-power-supply': 'power-supply',
+    'wokwi-battery': 'battery',
+    'openhw-battery': 'battery',
+    'wokwi-charger': 'charger',
+    'openhw-charger': 'charger',
+    'wokwi-breadboard': 'breadboard',
+    'openhw-breadboard': 'breadboard',
+    'wokwi-breadboard-half': 'breadboard',
+    'openhw-breadboard-half': 'breadboard',
+    'wokwi-breadboard-mini': 'breadboard',
+    'openhw-breadboard-mini': 'breadboard',
+    'wokwi-neopixel-matrix': 'neopixel',
+    'openhw-neopixel-matrix': 'neopixel',
+    'wokwi-neopixel-ring': 'neopixel',
+    'openhw-neopixel-ring': 'neopixel',
+    'wokwi-arduino-sensor-shield': 'shield',
+    'openhw-arduino-sensor-shield': 'shield',
   }), [])
 
   const isPaletteItemLocked = useCallback((itemType) => {
@@ -919,17 +998,17 @@ export function SimulatorPage({ gamificationMode = false }) {
     // Remote OOP state takes priority
     const remoteState = liveStateOverride || liveOopStatesRef.current[comp.id];
 
-    if (comp.type === 'wokwi-led') {
+    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       delete attrs.value; // Let ui.tsx handle it
-    } else if (comp.type === 'wokwi-servo') {
+    } else if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
-    } else if (comp.type === 'wokwi-stepper-motor') {
+    } else if (comp.type === 'wokwi-stepper-motor' || comp.type === 'openhw-stepper-motor') {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
-    } else if (comp.type === 'wokwi-buzzer') {
+    } else if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
       if (remoteState && remoteState.isBuzzing) {
         // Wokwi buzzer visual indicator (if supported) can be driven here
         attrs.color = "red";
@@ -1068,6 +1147,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   });
   const backupRestoreInputRef = useRef(null);
+  const wokwiImportInputRef = useRef(null);
 
   const handleUploadZip = useCallback(async (event) => {
     const file = event.target.files[0];
@@ -1939,7 +2019,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         currentProjectIdRef.current = id;
         setCurrentProjectId(id);
       }
-      await saveProject({
+      const finalName = await saveProject({
         id,
         name: currentProjectName || 'Untitled',
         board,
@@ -1954,6 +2034,9 @@ export function SimulatorPage({ gamificationMode = false }) {
         activeCodeFileId,
         owner,
       });
+      if (finalName && finalName !== currentProjectName) {
+        setCurrentProjectName(finalName);
+      }
     }, 2500);
 
     return () => clearTimeout(autoSaveTimerRef.current);
@@ -2531,17 +2614,43 @@ export function SimulatorPage({ gamificationMode = false }) {
   // ── Static component descriptions ────────────────────────────────────────────
   const COMPONENT_DESCRIPTIONS = {
     'wokwi-led': 'Light-emitting diode. Emits light when current flows through it. Supports multiple colors.',
+    'openhw-led': 'Light-emitting diode. Emits light when current flows through it. Supports multiple colors.',
     'wokwi-arduino-uno': 'ATmega328P-based microcontroller board. 14 digital I/O pins, 6 analog inputs, USB connectivity.',
+    'openhw-arduino-uno': 'ATmega328P-based microcontroller board. 14 digital I/O pins, 6 analog inputs, USB connectivity.',
+    'wokwi-arduino-mega': 'ATmega2560-based microcontroller board. 54 digital I/O pins, 16 analog inputs, 4 UARTs.',
+    'openhw-arduino-mega': 'ATmega2560-based microcontroller board. 54 digital I/O pins, 16 analog inputs, 4 UARTs.',
+    'wokwi-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
+    'openhw-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
+    'wokwi-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
+    'openhw-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
+    'wokwi-raspberry-pi-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
+    'openhw-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
+    'wokwi-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
+    'openhw-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
+    'wokwi-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
+    'openhw-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
+    'wokwi-breadboard-mini': 'Mini solderless breadboard. 170 tie points for very compact prototypes.',
+    'openhw-breadboard-mini': 'Mini solderless breadboard. 170 tie points for very compact prototypes.',
     'wokwi-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
+    'openhw-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
     'wokwi-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
+    'openhw-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
     'wokwi-power-supply': 'Provides stable DC power to the circuit. Configurable voltage output.',
+    'openhw-power-supply': 'Provides stable DC power to the circuit. Configurable voltage output.',
     'wokwi-neopixel-matrix': 'Addressable RGB LED matrix. Individually controllable pixels via single data line.',
+    'openhw-neopixel-matrix': 'Addressable RGB LED matrix. Individually controllable pixels via single data line.',
     'wokwi-buzzer': 'Piezoelectric buzzer. Generates audio tones when driven by PWM or digital signals.',
+    'openhw-buzzer': 'Piezoelectric buzzer. Generates audio tones when driven by PWM or digital signals.',
     'wokwi-motor': 'DC motor. Converts electrical energy to rotational motion. Controlled via H-bridge.',
+    'openhw-motor': 'DC motor. Converts electrical energy to rotational motion. Controlled via H-bridge.',
     'wokwi-servo': 'Hobby servo motor. Precise angular position control via PWM signal (0–180°).',
+    'openhw-servo': 'Hobby servo motor. Precise angular position control via PWM signal (0–180°).',
     'wokwi-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
+    'openhw-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
     'wokwi-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
+    'openhw-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
     'wokwi-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
+    'openhw-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
     'wokwi-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
     'openhw-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
     'shift_register': '74HC595 8-bit serial-in, parallel-out shift register. Expands digital outputs.',
@@ -2563,6 +2672,42 @@ export function SimulatorPage({ gamificationMode = false }) {
     'openhw-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
     'wokwi-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
     'openhw-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
+    'wokwi-7segment': '7-segment LED display.',
+    'openhw-7segment': '7-segment LED display.',
+    'wokwi-a4988': 'A4988 stepper motor driver.',
+    'openhw-a4988': 'A4988 stepper motor driver.',
+    'wokwi-bmp180': 'BMP180 barometric pressure and temperature sensor.',
+    'openhw-bmp180': 'BMP180 barometric pressure and temperature sensor.',
+    'wokwi-bmp180-breakout': 'BMP180 barometric pressure and temperature sensor breakout.',
+    'openhw-bmp180-breakout': 'BMP180 barometric pressure and temperature sensor breakout.',
+    'wokwi-ds1307-rtc': 'DS1307 Real-Time Clock module.',
+    'openhw-ds1307-rtc': 'DS1307 Real-Time Clock module.',
+    'wokwi-hc-sr04': 'HC-SR04 ultrasonic distance sensor.',
+    'openhw-hc-sr04': 'HC-SR04 ultrasonic distance sensor.',
+    'wokwi-ili9341': 'ILI9341 2.8 inch TFT LCD display.',
+    'openhw-ili9341': 'ILI9341 2.8 inch TFT LCD display.',
+    'wokwi-l293d': 'L293D motor driver IC.',
+    'openhw-l293d': 'L293D motor driver IC.',
+    'wokwi-lcd1602-i2c': '16x2 LCD display with I2C backpack.',
+    'openhw-lcd1602-i2c': '16x2 LCD display with I2C backpack.',
+    'wokwi-lcd2004-i2c': '20x4 LCD display with I2C backpack.',
+    'openhw-lcd2004-i2c': '20x4 LCD display with I2C backpack.',
+    'wokwi-max7219': 'MAX7219 8x8 LED matrix module.',
+    'openhw-max7219': 'MAX7219 8x8 LED matrix module.',
+    'wokwi-mpu6050': 'MPU6050 6-axis accelerometer and gyroscope.',
+    'openhw-mpu6050': 'MPU6050 6-axis accelerometer and gyroscope.',
+    'wokwi-nlsf595': 'NLSF595 tri-state shift register.',
+    'openhw-nlsf595': 'NLSF595 tri-state shift register.',
+    'wokwi-pca9685': 'PCA9685 16-channel 12-bit PWM/servo driver.',
+    'openhw-pca9685': 'PCA9685 16-channel 12-bit PWM/servo driver.',
+    'wokwi-pca9865': 'PCA9865 16-channel PWM module.',
+    'openhw-pca9865': 'PCA9865 16-channel PWM module.',
+    'wokwi-relay-module': 'Relay module for controlling high-power devices.',
+    'openhw-relay-module': 'Relay module for controlling high-power devices.',
+    'wokwi-ssd1306-oled': 'SSD1306 128x64 OLED display.',
+    'openhw-ssd1306-oled': 'SSD1306 128x64 OLED display.',
+    'wokwi-stepper-motor': 'Bipolar stepper motor.',
+    'openhw-stepper-motor': 'Bipolar stepper motor.',
   };
 
   // ── Error component IDs for highlighting ────────────────────────────────────
@@ -2627,6 +2772,12 @@ export function SimulatorPage({ gamificationMode = false }) {
       const validBoardIds = new Set(boardComponents.map(b => b.id));
       const pruned = [];
 
+      // If boardComponents is empty (e.g. during initial mount/project loading before React setComponents commits),
+      // do not prune project files to prevent wiping out loaded code files.
+      if (boardComponents.length === 0) {
+        return prev;
+      }
+
       result.forEach(f => {
         const m = f.path.match(/^project\/([^/]+)\//);
         if (!m) {
@@ -2635,9 +2786,6 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
         const fileBoardId = m[1];
         if (validBoardIds.has(fileBoardId)) {
-          pruned.push(f);
-        } else if (boardComponents.length === 0) {
-          // If no boards are currently on canvas, preserve the files so they can be adopted by the next board
           pruned.push(f);
         } else if (boardComponents.length > 0) {
           // Adopt orphan files into the first board that doesn't already have code files
@@ -2703,6 +2851,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       };
 
+      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
+
       boardComponents.forEach((bc) => {
         const kind = normalizeBoardKind(bc.type);
         const basePath = `project/${bc.id}`;
@@ -2765,9 +2915,20 @@ export function SimulatorPage({ gamificationMode = false }) {
             }
           });
         }
+
+        const libPath = `${basePath}/library.txt`;
+        upsert({
+          id: libPath,
+          path: libPath,
+          name: 'library.txt',
+          kind: 'code',
+          boardId: bc.id,
+          boardKind: kind,
+          content: libraries.join('\n'),
+          dirty: false,
+        });
       });
 
-      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
       const diagramPayload = buildProjectPayload({
         board,
         components,
@@ -2798,8 +2959,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       const generatedRootFiles = [
         { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
-        { id: 'project/library.txt', path: 'project/library.txt', name: 'library.txt', kind: 'root', content: libraries.join('\n'), dirty: false },
       ];
+
+      const oldLibIdx = result.findIndex(f => f.id === 'project/library.txt');
+      if (oldLibIdx !== -1) {
+        result.splice(oldLibIdx, 1);
+        changed = true;
+      }
 
       generatedRootFiles.forEach((rootFile) => {
         const idx = result.findIndex((file) => file.id === rootFile.id);
@@ -2908,6 +3074,15 @@ export function SimulatorPage({ gamificationMode = false }) {
     return m;
   }, [components]);
 
+  const loggedDebugMessages = useRef(new Set());
+  const debugLogOnce = useCallback((msg, data) => {
+    const key = `${msg}_${data.compId}_${data.searchId}`;
+    if (!loggedDebugMessages.current.has(key)) {
+      loggedDebugMessages.current.add(key);
+      console.log(msg, data);
+    }
+  }, []);
+
   const getPinPosForComp = useCallback((comp, pinId) => {
     if (!comp) return null;
     const pins = PIN_DEFS[comp.type] || [];
@@ -2915,12 +3090,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Normalize aliases
     const normalize = (id) => {
-      const s = String(id).toLowerCase();
+      let s = String(id).toLowerCase();
       if (s === 'p1') return '1';
       if (s === 'p2') return '2';
       if (s === 'a') return 'anode';
       if (s === 'k') return 'cathode';
-      return s;
+      if (s === '3.3v' || s === '3v3') return '3v3';
+      return s.replace(/[:.]/g, '_');
     };
 
     const normSearch = normalize(searchId);
@@ -2934,11 +3110,17 @@ export function SimulatorPage({ gamificationMode = false }) {
       // Resilience: Try to find a pin that starts with the ID (e.g. "GND" matches "GND.1" or "gnd_1")
       pin = pins.find(p => {
         const pid = String(p.id).toLowerCase();
-        return pid === searchId || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
+        const normPid = normalize(pid);
+        return pid === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
       });
     }
     if (!pin) {
+      debugLogOnce('[Pin Lookup Debug] Failed to find pin', { compId: comp.id, compType: comp.type, searchId, normSearch, availablePins: pins.map(p => p.id) });
       return { x: comp.x + (comp.w || 40) / 2, y: comp.y + (comp.h || 40) / 2, isFallback: true };
+    } else {
+      if (String(pin.id).toLowerCase() !== searchId) {
+        debugLogOnce('[Pin Lookup Debug] Resolved alias/fallback pin', { compId: comp.id, compType: comp.type, searchId, normSearch, resolvedPinId: pin.id });
+      }
     }
     const rotation = comp.rotation || 0;
     const cw = comp.w || 0;
@@ -2964,7 +3146,33 @@ export function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId);
     if (!comp) return null;
     const pins = PIN_DEFS[comp.type] || [];
-    const pin = pins.find(p => String(p.id) === String(pinId));
+    const searchId = String(pinId).toLowerCase();
+
+    const normalize = (id) => {
+      let s = String(id).toLowerCase();
+      if (s === 'p1') return '1';
+      if (s === 'p2') return '2';
+      if (s === 'a') return 'anode';
+      if (s === 'k') return 'cathode';
+      if (s === '3.3v' || s === '3v3') return '3v3';
+      return s.replace(/[:.]/g, '_');
+    };
+
+    const normSearch = normalize(searchId);
+
+    let pin = pins.find(p => {
+      const pid = String(p.id).toLowerCase();
+      return pid === searchId || normalize(pid) === normSearch;
+    });
+
+    if (!pin) {
+      pin = pins.find(p => {
+        const pid = String(p.id).toLowerCase();
+        const normPid = normalize(pid);
+        return pid === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
+      });
+    }
+
     if (!pin) {
       return { x: comp.x + (comp.w || 40) / 2, y: comp.y + (comp.h || 40) / 2, isFallback: true };
     }
@@ -3187,7 +3395,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     const catalogItem = COMPONENT_REGISTRY[item.type];
     const manifest = catalogItem?.manifest || catalogItem;
 
-    if (catalogItem && !isProgrammableBoardType(item.type) && !item.type.startsWith('wokwi-breadboard') && !item.type.startsWith('wokwi-resistor')) {
+    if (catalogItem && !isProgrammableBoardType(item.type) && !isBreadboardType(item.type) && !isResistorType(item.type)) {
       if (autoWiringEnabled || autoCodingEnabled) {
         const plan = await generateAutonomousSetup(
           components,
@@ -3455,10 +3663,10 @@ export function SimulatorPage({ gamificationMode = false }) {
       originalComps: JSON.parse(JSON.stringify(components))
     };
 
-    dragData.breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+    dragData.breadboards = components.filter(c => isBreadboardType(c.type));
 
     // Performance: If breadboard, pre-calculate children once here
-    if (comp.type.startsWith('wokwi-breadboard')) {
+    if (isBreadboardType(comp.type)) {
       const childComps = components.filter(c => {
         if (c.id === id) return false;
         return wires.some(w =>
@@ -3513,7 +3721,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
         compUpdate = { id, newX: nx, newY: ny, snappingHoles: [] };
 
-        if (type && type.startsWith('wokwi-breadboard')) {
+        if (type && isBreadboardType(type)) {
           // Breadboard movement propagation
           const dx = nx - cx;
           const dy = ny - cy;
@@ -3758,12 +3966,29 @@ export function SimulatorPage({ gamificationMode = false }) {
                 }
                 const pins = LOCAL_PIN_DEFS[c.type] || [];
                 const searchId = String(pid).toLowerCase();
-                let pDef = pins.find(p => String(p.id).toLowerCase() === searchId);
+
+                const normalize = (id) => {
+                  let s = String(id).toLowerCase();
+                  if (s === 'p1') return '1';
+                  if (s === 'p2') return '2';
+                  if (s === 'a') return 'anode';
+                  if (s === 'k') return 'cathode';
+                  if (s === '3.3v' || s === '3v3') return '3v3';
+                  return s.replace(/[:.]/g, '_');
+                };
+
+                const normSearch = normalize(searchId);
+
+                let pDef = pins.find(p => {
+                  const pId = String(p.id).toLowerCase();
+                  return pId === searchId || normalize(pId) === normSearch;
+                });
+
                 if (!pDef) {
-                  // Resilient matching for pins like GND.1 or 5V_OUT
                   pDef = pins.find(p => {
-                    const lowId = String(p.id).toLowerCase();
-                    return lowId.startsWith(searchId + '.') || lowId.startsWith(searchId + '_');
+                    const pId = String(p.id).toLowerCase();
+                    const normPid = normalize(pId);
+                    return pId === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pId.startsWith(searchId + '.') || pId.startsWith(searchId + '_');
                   });
                 }
                 if (!pDef) return null;
@@ -3875,7 +4100,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
 
         // DETACHMENT: Remove old socket wires for this component (ONLY if moving a component, NOT a breadboard)
-        const isBreadboard = componentsRef.current.find(c => c.id === movedId)?.type.startsWith('wokwi-breadboard');
+        const isBreadboard = isBreadboardType(componentsRef.current.find(c => c.id === movedId)?.type);
         if (!isBreadboard) {
           setWires(prev => prev.filter(w => {
             const isFrom = w.from.startsWith(movedId + ':');
@@ -3887,7 +4112,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         // ATTACHMENT: Auto-create socket wires if snapped
         const comp = componentsRef.current.find(c => c.id === movedId);
         const finalComp = comp ? { ...comp, x: finalX, y: finalY } : null;
-        if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
+        if (finalComp && !isBreadboardType(finalComp.type)) {
           const { snappedWires } = robustSnapComponent(finalComp, componentsRef.current, LOCAL_PIN_DEFS);
           if (snappedWires.length > 0) {
             setWires(prev => [...prev, ...snappedWires]);
@@ -3971,7 +4196,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const nextValue = (key === 'env' && normalizeBoardKind(c.type) === 'rp2040')
           ? normalizeRp2040Env(value)
           : value;
-        if (c.type === 'wokwi-neopixel-matrix') {
+        if (c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix') {
           const rows = key === 'rows' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.rows) || 1);
           const cols = key === 'cols' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.cols) || 1);
           newW = Math.max(30, cols * 30);
@@ -4363,7 +4588,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       const newRotation = ((comp.rotation || 0) + 90) % 360;
 
       // If breadboard, rotate children
-      if (comp.type.startsWith('wokwi-breadboard')) {
+      if (isBreadboardType(comp.type)) {
         const childIds = new Set(wiresRef.current
           .filter(w => w.isSocket && (w.from.startsWith(id + ':') || w.to.startsWith(id + ':')))
           .map(w => {
@@ -5078,9 +5303,9 @@ export function SimulatorPage({ gamificationMode = false }) {
       currentProjectIdRef.current = id;
       setCurrentProjectId(id);
     }
-    setCurrentProjectName(name);
     clearTimeout(autoSaveTimerRef.current);
-    await saveProject({ id, name, board, components, connections: wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, projectFiles, openCodeTabs, activeCodeFileId, owner });
+    const finalName = await saveProject({ id, name, board, components, connections: wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, projectFiles, openCodeTabs, activeCodeFileId, owner });
+    setCurrentProjectName(finalName || name);
     setShowSaveDialog(false);
   };
 
@@ -5159,8 +5384,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       return;
     }
     const newName = renameValue.trim() || 'Untitled';
-    await renameProject(id, newName);
-    if (currentProjectIdRef.current === id) setCurrentProjectName(newName);
+    const finalName = await renameProject(id, newName);
+    if (currentProjectIdRef.current === id) setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
     await refreshProjectList();
   };
@@ -5213,10 +5438,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
     zip.file('diagram.json', JSON.stringify(diagramJsonPayload, null, 2));
 
-    // 3. Generate library.txt (root)
-    const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
-    zip.file('library.txt', libraries.join('\n'));
-
     // 4. Organize files into board-specific folders
     (projectFiles || []).forEach(file => {
       // file.id is typically "project/<boardId>/<filename>"
@@ -5228,7 +5449,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       } else if (parts[0] === 'project' && parts.length === 2) {
         // Root files that aren't the special ones we just handled
         const fileName = parts[1];
-        const reservedNames = ['workflow.json', 'diagram.json', 'library.txt'];
+        const reservedNames = ['workflow.json', 'diagram.json'];
         if (!reservedNames.includes(fileName)) {
           zip.file(fileName, file.content || '');
         }
@@ -5273,6 +5494,47 @@ export function SimulatorPage({ gamificationMode = false }) {
       setHistory({ past: [], future: [] });
       lastCompiledRef.current = null;
     } catch (e) { alert('Failed to restore backup: ' + e.message); }
+  };
+
+  const handleImportWokwiZip = async (file) => {
+    if (!file) return;
+    try {
+      const result = await importWokwiProjectZip(file, components, wires);
+      if (!result) return;
+      
+      const newId = generateProjectId();
+      currentProjectIdRef.current = newId;
+      setCurrentProjectId(newId);
+      setCurrentProjectName(result.projectName);
+      setBoard(result.board);
+      setComponents(result.components);
+      setWires(result.wires);
+      setProjectFiles(result.projectFiles);
+      setOpenCodeTabs(result.openCodeTabs);
+      setActiveCodeFileId(result.activeCodeFileId);
+      syncNextIds(result.components, result.wires);
+      setHistory({ past: [], future: [] });
+      lastCompiledRef.current = null;
+
+      const owner = getOwner();
+      const finalName = await saveProject({
+        id: newId,
+        name: result.projectName,
+        board: result.board,
+        components: result.components,
+        connections: result.wires,
+        code: result.code || '',
+        blocklyXml: '',
+        blocklyGeneratedCode: '',
+        useBlocklyCode: false,
+        projectFiles: result.projectFiles,
+        openCodeTabs: result.openCodeTabs,
+        activeCodeFileId: result.activeCodeFileId,
+        owner,
+      });
+      setCurrentProjectName(finalName || result.projectName);
+      await refreshProjectList();
+    } catch (e) { alert(e.message); }
   };
 
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
@@ -6594,7 +6856,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       logSerial('Simulator started in Web Worker.');
 
       const neopixelWiring = components
-        .filter(c => c.type === 'wokwi-neopixel-matrix')
+        .filter(c => c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix')
         .map(c => {
           return null; // Handle Neopixels later
         }).filter(n => n);
@@ -7507,6 +7769,19 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       };
 
+      // Aliases for openhw- rebranded components
+      SYMS['openhw-led'] = SYMS['wokwi-led'];
+      SYMS['openhw-resistor'] = SYMS['wokwi-resistor'];
+      SYMS['openhw-pushbutton'] = SYMS['wokwi-pushbutton'];
+      SYMS['openhw-buzzer'] = SYMS['wokwi-buzzer'];
+      SYMS['openhw-power-supply'] = SYMS['wokwi-power-supply'];
+      SYMS['openhw-potentiometer'] = SYMS['wokwi-potentiometer'];
+      SYMS['openhw-servo'] = SYMS['wokwi-servo'];
+      SYMS['openhw-motor'] = SYMS['wokwi-motor'];
+      SYMS['openhw-neopixel-matrix'] = SYMS['wokwi-neopixel-matrix'];
+      SYMS['openhw-motor-driver'] = SYMS['wokwi-motor-driver'];
+      SYMS['openhw-arduino-uno'] = SYMS['wokwi-arduino-uno'];
+
       // Generic fallback IC ─────────────────────────────────────────────────
       const makeGenericSym = (comp) => {
         const used = new Set();
@@ -7523,7 +7798,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         return {
           w: gw + 30, h: gh, refPrefix: 'IC', pins,
           draw(x, y, _c, ref) {
-            const sType = _c.type.replace('wokwi-', '');
+            const sType = _c.type.replace(/^(wokwi-|openhw-)/, '');
             return [
               bx(x + 15, y + 12, gw, gh - 24), tx(x + 15 + gw / 2, y + 28, sType, 8, 'middle', true), tx(x + 15 + gw / 2, y + 10, ref, 7, 'middle', false, '#555'),
               ...lp.map((id, i) => ln(x, y + 32 + i * 20, x + 15, y + 32 + i * 20) + `<text x="${x + 18}" y="${y + 36 + i * 20}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
@@ -7877,7 +8152,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
 
         {/* TOP BAR */}
-        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
+        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
 
         <SimulatorStatusBanners
           studentAssignmentMode={studentAssignmentMode}
@@ -8255,6 +8530,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             autoSaveEnabled={autoSaveEnabled} setAutoSaveEnabled={setAutoSaveEnabled}
             handleBackupWorkflow={handleBackupWorkflow}
             backupRestoreInputRef={backupRestoreInputRef}
+            wokwiImportInputRef={wokwiImportInputRef}
             handleSyncToCloud={handleSyncToCloud}
             setShowCreateComponentModal={setShowCreateComponentModal}
             projContextMenu={projContextMenu}

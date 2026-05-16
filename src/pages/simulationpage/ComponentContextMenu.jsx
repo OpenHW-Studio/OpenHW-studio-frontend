@@ -89,7 +89,7 @@ export const ComponentContextMenu = ({
       ];
     }
 
-    if (comp.type === 'wokwi-led') {
+    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'red');
       const ledColors = [
         { label: 'Red', value: 'red', hex: '#ef4444' },
@@ -113,7 +113,7 @@ export const ComponentContextMenu = ({
       ];
     }
 
-    if (comp.type === 'wokwi-neopixel-matrix') {
+    if (comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') {
       const cols = resolveComponentAttrString(comp?.attrs, 'cols', '8');
       const rows = resolveComponentAttrString(comp?.attrs, 'rows', '8');
       return [
@@ -150,7 +150,7 @@ export const ComponentContextMenu = ({
       ];
     }
 
-    if (comp.type === 'wokwi-resistor') {
+    if (comp.type === 'wokwi-resistor' || comp.type === 'openhw-resistor') {
       const val = resolveComponentAttrString(comp?.attrs, 'value', '1000');
       return [
         {
@@ -162,7 +162,7 @@ export const ComponentContextMenu = ({
       ];
     }
 
-    if (comp.type === 'wokwi-power-supply') {
+    if (comp.type === 'wokwi-power-supply' || comp.type === 'openhw-power-supply') {
       const val = resolveComponentAttrString(comp?.attrs, 'voltage', '5.0');
       return [
         {

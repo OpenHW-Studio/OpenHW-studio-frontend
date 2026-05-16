@@ -10,8 +10,8 @@ import {
 } from './protocol-routing.js';
 
 function run() {
-  assert.equal(isProgrammableBoardType('wokwi-arduino-uno'), true);
-  assert.equal(isProgrammableBoardType('wokwi-esp32-devkit'), true);
+  assert.equal(isProgrammableBoardType('openhw-arduino-uno'), true);
+  assert.equal(isProgrammableBoardType('openhw-esp32-devkit'), true);
   assert.equal(isProgrammableBoardType('custom-sensor'), false);
 
   const aliases = endpointAliases('board1:D1');

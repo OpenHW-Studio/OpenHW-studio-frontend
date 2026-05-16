@@ -77,14 +77,14 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
       // Grid Snapping for Breadboards (15px)
       let x = ac.x;
       let y = ac.y;
-      if (ac.type.startsWith('wokwi-breadboard')) {
+      if (hardwareUtils.isBreadboardType(ac.type)) {
         x = Math.round(x / 15) * 15;
         y = Math.round(y / 15) * 15;
       }
 
       // Determine dimensions (with registry or manifest fallbacks)
-      const defW = ac.type === 'wokwi-resistor' ? 70 : (ac.type === 'wokwi-led' ? 72 : 40);
-      const defH = ac.type === 'wokwi-resistor' ? 32 : (ac.type === 'wokwi-led' ? 44 : 20);
+      const defW = hardwareUtils.isResistorType(ac.type) ? 70 : (hardwareUtils.isLedType(ac.type) ? 72 : 40);
+      const defH = hardwareUtils.isResistorType(ac.type) ? 32 : (hardwareUtils.isLedType(ac.type) ? 44 : 20);
       
       const addedComp = {
         ...ac,
@@ -205,8 +205,9 @@ export function getRotatedPoint(x, y, rotation, originX, originY) {
 export function findNearestBreadboardHole(worldX, worldY, components, pinDefs, opts = {}) {
   const snapRadius = opts.snapRadius ?? 40;
   const skipPower  = opts.skipPower  ?? false;
-  let best = null, minDist = Infinity;
-  const bbs = components.filter(c => c.type?.startsWith('wokwi-breadboard'));
+  const bbs = components.filter(c => hardwareUtils.isBreadboardType(c.type));
+  let minDist = Infinity;
+  let best = null;
   for (const bb of bbs) {
     const pins = pinDefs[bb.type] || [];
     const cx = bb.x + (bb.w || 0) / 2, cy = bb.y + (bb.h || 0) / 2;
@@ -236,7 +237,7 @@ export function getComponentWorldPins(comp, pins) {
 }
 
 export function robustSnapComponent(comp, components, pinDefs) {
-  if (!comp || comp.type?.startsWith('wokwi-breadboard'))
+  if (!comp || hardwareUtils.isBreadboardType(comp.type))
     return { snappedWires: [], hasPerfectSnap: false, snapMatches: [] };
 
   const pins      = pinDefs[comp.type] || [];
@@ -357,7 +358,7 @@ export function handleAutoSetup(...) { ... }
 
 /*
 export function findOrAddBreadboard(components, canvasCenter, compCount = 0) {
-  const bbTypes = ['wokwi-breadboard', 'wokwi-breadboard-half', 'wokwi-breadboard-mini'];
+  const bbTypes = ['wokwi-breadboard', 'wokwi-breadboard-half', 'wokwi-breadboard-mini', 'openhw-breadboard', 'openhw-breadboard-half', 'openhw-breadboard-mini'];
   const bb = components.find(c => bbTypes.includes(c.type));
   if (bb) return { components, breadboard: bb, added: false };
 
@@ -436,7 +437,7 @@ function findFreeBreadboardRow(bb, components, wires, pinDefs, colsNeeded = 2) {
         return true;
       const rp = pins.find(p => p.id === `${ri}a`);
       if (rp && components.some(c => {
-        if (c.id === bb.id || c.type?.startsWith('wokwi-breadboard')) return false;
+        if (c.id === bb.id || c.type?.startsWith('wokwi-breadboard') || c.type?.startsWith('openhw-breadboard')) return false;
         return Math.abs(bb.x + rp.x - c.x) < 60 && Math.abs(bb.y + rp.y - c.y) < (GAP * HOLE_PITCH + 10);
       })) return true;
     }
@@ -519,9 +520,9 @@ function injectI2cPullups(compId, bb, boardId, updatedComponents, updatedWires, 
   const baseY     = bbComp ? bbComp.y - 50 : 100;
 
   const pos1 = findFreeHelperPosition(baseX, baseY, 70, 32, allComps);
-  updatedComponents.push({ id: pu_sda_id, type: 'wokwi-resistor', label: '4.7k', x: pos1.x, y: pos1.y, w: 70, h: 32, attrs: { value: '4700' } });
+  updatedComponents.push({ id: pu_sda_id, type: 'openhw-resistor', label: '4.7k', x: pos1.x, y: pos1.y, w: 70, h: 32, attrs: { value: '4700' } });
   const pos2 = findFreeHelperPosition(baseX + 90, baseY, 70, 32, [...allComps, { ...pos1, w: 70, h: 32 }]);
-  updatedComponents.push({ id: pu_scl_id, type: 'wokwi-resistor', label: '4.7k', x: pos2.x, y: pos2.y, w: 70, h: 32, attrs: { value: '4700' } });
+  updatedComponents.push({ id: pu_scl_id, type: 'openhw-resistor', label: '4.7k', x: pos2.x, y: pos2.y, w: 70, h: 32, attrs: { value: '4700' } });
 
   updatedWires.push({ id: `w_pu_sda_in_${Date.now()}`,  from: `${compId}:SDA`, to: `${pu_sda_id}:p1`, color: '#38bdf8', isSocket: true, isHidden: true });
   updatedWires.push({ id: `w_pu_sda_out_${Date.now()}`, from: `${pu_sda_id}:p2`, to: vccRailSda, color: 'red' });
@@ -590,7 +591,7 @@ export function buildProjectPayload({
   exportedAt = ''
 } = {}) {
   const componentsArray = Array.isArray(components) ? components : [];
-  const detectedBoardComponent = componentsArray.find((component) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(component?.type || '')));
+  const detectedBoardComponent = componentsArray.find((component) => hardwareUtils.isProgrammableBoardType(component?.type));
   const resolvedBoard = detectedBoardComponent?.type || String(board || 'arduino_uno');
 
   const normalizedFiles = normalizeProjectFiles(projectFiles)
@@ -665,6 +666,38 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (!component || typeof component !== 'object') return null;
       let type = String(component.type || '').trim();
       if (!type) return null;
+      if (type === 'wokwi-raspberry-pi-pico') type = 'openhw-pico';
+      else if (type === 'wokwi-raspberry-pi-pico-w') type = 'openhw-pico-w';
+      else if (type.startsWith('wokwi-')) type = type.replace('wokwi-', 'openhw-');
+      if (type === 'wokwi-arduino-uno') type = 'openhw-arduino-uno';
+      if (type === 'wokwi-arduino-mega') type = 'openhw-arduino-mega';
+      if (type === 'wokwi-arduino-nano') type = 'openhw-arduino-nano';
+      if (type === 'wokwi-attiny85') type = 'openhw-attiny85';
+      if (type === 'wokwi-led') type = 'openhw-led';
+      if (type === 'wokwi-resistor') type = 'openhw-resistor';
+      if (type === 'wokwi-pushbutton') type = 'openhw-pushbutton';
+      if (type === 'wokwi-potentiometer') type = 'openhw-potentiometer';
+      if (type === 'wokwi-slide-potentiometer') type = 'openhw-slide-potentiometer';
+      if (type === 'wokwi-buzzer') type = 'openhw-buzzer';
+      if (type === 'wokwi-motor') type = 'openhw-motor';
+      if (type === 'wokwi-motor-driver') type = 'openhw-motor-driver';
+      if (type === 'wokwi-diode') type = 'openhw-diode';
+      if (type === 'wokwi-npn-transistor') type = 'openhw-npn-transistor';
+      if (type === 'wokwi-photodiode') type = 'openhw-photodiode';
+      if (type === 'wokwi-photoresistor') type = 'openhw-photoresistor';
+      if (type === 'wokwi-ntc-thermistor') type = 'openhw-ntc-thermistor';
+      if (type === 'wokwi-ntc-temperature-sensor') type = 'openhw-ntc-temperature-sensor';
+      if (type === 'wokwi-power-supply') type = 'openhw-power-supply';
+      if (type === 'wokwi-battery') type = 'openhw-battery';
+      if (type === 'wokwi-charger') type = 'openhw-charger';
+      if (type === 'wokwi-breadboard') type = 'openhw-breadboard';
+      if (type === 'wokwi-breadboard-half') type = 'openhw-breadboard-half';
+      if (type === 'wokwi-breadboard-mini') type = 'openhw-breadboard-mini';
+      if (type === 'wokwi-neopixel-matrix') type = 'openhw-neopixel-matrix';
+      if (type === 'wokwi-neopixel-ring') type = 'openhw-neopixel-ring';
+      if (type === 'wokwi-arduino-sensor-shield') type = 'openhw-arduino-sensor-shield';
+      
+      // Phase 1-3 components
       if (type === 'wokwi-analog-joystick') type = 'openhw-analog-joystick';
       if (type === 'wokwi-membrane-keypad') type = 'openhw-membrane-keypad';
       if (type === 'wokwi-rotary-encoder') type = 'openhw-rotary-encoder';
@@ -676,6 +709,25 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (type === 'wokwi-ldr-module') type = 'openhw-ldr-module';
       if (type === 'wokwi-tm1637-7segment') type = 'openhw-tm1637-7segment';
       if (type === 'wokwi-cd74hc4067') type = 'openhw-cd74hc4067';
+      if (type === 'wokwi-7segment') type = 'openhw-7segment';
+      if (type === 'wokwi-a4988') type = 'openhw-a4988';
+      if (type === 'wokwi-bmp180') type = 'openhw-bmp180';
+      if (type === 'wokwi-bmp180-breakout') type = 'openhw-bmp180-breakout';
+      if (type === 'wokwi-ds1307-rtc') type = 'openhw-ds1307-rtc';
+      if (type === 'wokwi-hc-sr04') type = 'openhw-hc-sr04';
+      if (type === 'wokwi-ili9341') type = 'openhw-ili9341';
+      if (type === 'wokwi-l293d') type = 'openhw-l293d';
+      if (type === 'wokwi-lcd1602-i2c') type = 'openhw-lcd1602-i2c';
+      if (type === 'wokwi-lcd2004-i2c') type = 'openhw-lcd2004-i2c';
+      if (type === 'wokwi-max7219') type = 'openhw-max7219';
+      if (type === 'wokwi-mpu6050') type = 'openhw-mpu6050';
+      if (type === 'wokwi-nlsf595') type = 'openhw-nlsf595';
+      if (type === 'wokwi-pca9685') type = 'openhw-pca9685';
+      if (type === 'wokwi-pca9865') type = 'openhw-pca9865';
+      if (type === 'wokwi-relay-module') type = 'openhw-relay-module';
+      if (type === 'wokwi-servo') type = 'openhw-servo';
+      if (type === 'wokwi-ssd1306-oled') type = 'openhw-ssd1306-oled';
+      if (type === 'wokwi-stepper-motor') type = 'openhw-stepper-motor';
 
       const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
 
@@ -735,6 +787,12 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
   };
 
   const normalizeWaypoint = (point) => {
+    if (Array.isArray(point)) {
+      const x = Number(point[0]);
+      const y = Number(point[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return { x, y };
+    }
     if (!point || typeof point !== 'object') return null;
     const x = Number(point.x);
     const y = Number(point.y);
@@ -786,4 +844,69 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
     .filter(Boolean);
 
   return { components: normalizedComponents, wires: normalizedWires };
+}
+
+export function parseWokwiDiagramJson(wokwiJson) {
+  if (!wokwiJson || typeof wokwiJson !== 'object') return { components: [], wires: [] };
+  
+  const parts = Array.isArray(wokwiJson.parts) ? wokwiJson.parts : (Array.isArray(wokwiJson.components) ? wokwiJson.components : []);
+  const connections = Array.isArray(wokwiJson.connections) ? wokwiJson.connections : (Array.isArray(wokwiJson.wires) ? wokwiJson.wires : []);
+
+  const components = parts.map(p => {
+    if (!p || typeof p !== 'object') return null;
+    let type = String(p.type || '').trim();
+    if (type === 'wokwi-raspberry-pi-pico') type = 'openhw-pico';
+    else if (type === 'wokwi-raspberry-pi-pico-w') type = 'openhw-pico-w';
+    else if (type.startsWith('wokwi-')) type = type.replace('wokwi-', 'openhw-');
+    
+    // Map left/top to x/y if x/y are missing, and scale by 1.5x for OpenHW grid matching
+    const rawX = p.x !== undefined ? p.x : (p.left !== undefined ? p.left : 0);
+    const rawY = p.y !== undefined ? p.y : (p.top !== undefined ? p.top : 0);
+    const x = Number(rawX) * 1.5;
+    const y = Number(rawY) * 1.5;
+
+    return { ...p, type, x, y };
+  }).filter(Boolean);
+
+  const wires = connections.map((c, idx) => {
+    if (!c) return null;
+    if (Array.isArray(c)) {
+      const [from = '', to = '', color = 'green', waypoints = []] = c;
+      const scaledWaypoints = Array.isArray(waypoints) ? waypoints.map(wp => {
+        if (Array.isArray(wp)) return { x: Number(wp[0]) * 1.5, y: Number(wp[1]) * 1.5 };
+        if (wp && typeof wp === 'object') return { ...wp, x: Number(wp.x) * 1.5, y: Number(wp.y) * 1.5 };
+        return wp;
+      }) : [];
+      return {
+        id: `w_wokwi_${idx}`,
+        from: String(from).replace('.', ':'),
+        to: String(to).replace('.', ':'),
+        color: String(color),
+        waypoints: scaledWaypoints,
+        isBelow: false,
+        isSocket: false,
+        isHidden: false,
+        isHelp: false,
+        fromLabel: '',
+        toLabel: '',
+      };
+    }
+    if (typeof c === 'object') {
+      const waypoints = Array.isArray(c.waypoints) ? c.waypoints.map(wp => {
+        if (Array.isArray(wp)) return { x: Number(wp[0]) * 1.5, y: Number(wp[1]) * 1.5 };
+        if (wp && typeof wp === 'object') return { ...wp, x: Number(wp.x) * 1.5, y: Number(wp.y) * 1.5 };
+        return wp;
+      }) : [];
+      return {
+        ...c,
+        id: c.id || `w_wokwi_${idx}`,
+        from: String(c.from || '').replace('.', ':'),
+        to: String(c.to || '').replace('.', ':'),
+        waypoints,
+      };
+    }
+    return null;
+  }).filter(Boolean);
+
+  return { components, wires };
 }
