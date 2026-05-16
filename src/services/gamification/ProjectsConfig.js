@@ -822,8 +822,11 @@ export function getUnlockedProjects(completedProjects = []) {
 export function getEarnedComponents(completedProjects = []) {
   const earned = new Set([
     'wokwi-arduino-uno',
+    'openhw-arduino-uno',
     'wokwi-led',
+    'openhw-led',
     'wokwi-resistor',
+    'openhw-resistor',
   ]);
   let allUnlocked = false;
 
@@ -832,6 +835,8 @@ export function getEarnedComponents(completedProjects = []) {
       for (const reward of (project.rewardComponents || [])) {
         if (reward.type === '*') { allUnlocked = true; break; }
         earned.add(reward.type);
+        if (reward.type.startsWith('openhw-')) earned.add(reward.type.replace('openhw-', 'wokwi-'));
+        if (reward.type.startsWith('wokwi-')) earned.add(reward.type.replace('wokwi-', 'openhw-'));
       }
     }
     if (allUnlocked) break;

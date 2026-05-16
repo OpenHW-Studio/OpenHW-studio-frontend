@@ -2,8 +2,11 @@
 // ── Starting components (always available from Day 1) ─────────────────────────
 export const STARTING_COMPONENTS = [
   'wokwi-arduino-uno',
+  'openhw-arduino-uno',
   'wokwi-led',
+  'openhw-led',
   'wokwi-resistor',
+  'openhw-resistor',
 ];
 
 // ── Level config (XP-based titles / badges, separate from component unlocking) ─
@@ -19,17 +22,24 @@ export const LEVELS = [
     icon: '💡',
     unlockedComponents: [
       'wokwi-arduino-uno',
+      'openhw-arduino-uno',
       'wokwi-led',
+      'openhw-led',
       'wokwi-resistor',
+      'openhw-resistor',
       'wokwi-breadboard',
       'wokwi-breadboard-half',
       'wokwi-breadboard-mini',
       'wokwi-a4988',
+      'openhw-a4988',
       'wokwi-stepper-motor',
+      'openhw-stepper-motor',
       'wokwi-nlsf595',
+      'openhw-nlsf595',
       'wokwi-cd74hc4067',
       'openhw-cd74hc4067',
       'wokwi-l293d',
+      'openhw-l293d',
       'wokwi-rgb-led',
       'openhw-rgb-led',
       'wokwi-rotary-encoder',
@@ -50,9 +60,23 @@ export const LEVELS = [
       'wokwi-diode',
       'wokwi-photodiode',
       'wokwi-pca9685',
+      'openhw-pca9685',
       'wokwi-pca9865',
+      'openhw-pca9865',
       'wokwi-arduino-sensor-shield',
       'wokwi-arduino-nano',
+      'wokwi-hc-sr04',
+      'openhw-hc-sr04',
+      'wokwi-bmp180',
+      'openhw-bmp180',
+      'wokwi-bmp180-breakout',
+      'openhw-bmp180-breakout',
+      'wokwi-ds1307-rtc',
+      'openhw-ds1307-rtc',
+      'wokwi-mpu6050',
+      'openhw-mpu6050',
+      'wokwi-relay-module',
+      'openhw-relay-module',
     ],
     badge: {
       id: 'badge_spark_starter',
@@ -147,8 +171,22 @@ export const LEVELS = [
     icon: '⚙️',
     unlockedComponents: [
       'wokwi-lcd1602',
+      'wokwi-lcd1602-i2c',
+      'openhw-lcd1602-i2c',
+      'wokwi-lcd2004-i2c',
+      'openhw-lcd2004-i2c',
+      'wokwi-ssd1306-oled',
+      'openhw-ssd1306-oled',
+      'wokwi-max7219',
+      'openhw-max7219',
+      'wokwi-ili9341',
+      'openhw-ili9341',
       'wokwi-7segment',
+      'openhw-7segment',
       'wokwi-tm1637-7segment',
+      'openhw-tm1637-7segment',
+      'wokwi-servo',
+      'openhw-servo',
     ],
     badge: {
       id: 'badge_motion_master',
@@ -239,10 +277,22 @@ export const RARITY_CONFIG = {
 
 // isComponentUnlocked now receives the unlockedComponentTypes array/set from context state
 export function isComponentUnlocked(componentType, unlockedComponentTypes) {
-  if (!unlockedComponentTypes) return STARTING_COMPONENTS.includes(componentType);
+  if (!unlockedComponentTypes) {
+    return STARTING_COMPONENTS.includes(componentType) ||
+      (componentType.startsWith('openhw-') && STARTING_COMPONENTS.includes(componentType.replace('openhw-', 'wokwi-'))) ||
+      (componentType.startsWith('wokwi-') && STARTING_COMPONENTS.includes(componentType.replace('wokwi-', 'openhw-')));
+  }
   if (unlockedComponentTypes === '*') return true;
-  if (Array.isArray(unlockedComponentTypes)) return unlockedComponentTypes.includes(componentType);
-  if (unlockedComponentTypes instanceof Set) return unlockedComponentTypes.has(componentType);
+  
+  const check = (type) => {
+    if (Array.isArray(unlockedComponentTypes)) return unlockedComponentTypes.includes(type);
+    if (unlockedComponentTypes instanceof Set) return unlockedComponentTypes.has(type);
+    return false;
+  };
+
+  if (check(componentType)) return true;
+  if (componentType.startsWith('openhw-') && check(componentType.replace('openhw-', 'wokwi-'))) return true;
+  if (componentType.startsWith('wokwi-') && check(componentType.replace('wokwi-', 'openhw-'))) return true;
   return false;
 }
 

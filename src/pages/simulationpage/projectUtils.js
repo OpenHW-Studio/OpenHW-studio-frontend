@@ -77,14 +77,14 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
       // Grid Snapping for Breadboards (15px)
       let x = ac.x;
       let y = ac.y;
-      if (ac.type.startsWith('wokwi-breadboard')) {
+      if (ac.type.startsWith('wokwi-breadboard') || ac.type.startsWith('openhw-breadboard')) {
         x = Math.round(x / 15) * 15;
         y = Math.round(y / 15) * 15;
       }
 
       // Determine dimensions (with registry or manifest fallbacks)
-      const defW = ac.type === 'wokwi-resistor' ? 70 : (ac.type === 'wokwi-led' ? 72 : 40);
-      const defH = ac.type === 'wokwi-resistor' ? 32 : (ac.type === 'wokwi-led' ? 44 : 20);
+      const defW = (ac.type === 'wokwi-resistor' || ac.type === 'openhw-resistor') ? 70 : ((ac.type === 'wokwi-led' || ac.type === 'openhw-led') ? 72 : 40);
+      const defH = (ac.type === 'wokwi-resistor' || ac.type === 'openhw-resistor') ? 32 : ((ac.type === 'wokwi-led' || ac.type === 'openhw-led') ? 44 : 20);
       
       const addedComp = {
         ...ac,
@@ -676,6 +676,25 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (type === 'wokwi-ldr-module') type = 'openhw-ldr-module';
       if (type === 'wokwi-tm1637-7segment') type = 'openhw-tm1637-7segment';
       if (type === 'wokwi-cd74hc4067') type = 'openhw-cd74hc4067';
+      if (type === 'wokwi-7segment') type = 'openhw-7segment';
+      if (type === 'wokwi-a4988') type = 'openhw-a4988';
+      if (type === 'wokwi-bmp180') type = 'openhw-bmp180';
+      if (type === 'wokwi-bmp180-breakout') type = 'openhw-bmp180-breakout';
+      if (type === 'wokwi-ds1307-rtc') type = 'openhw-ds1307-rtc';
+      if (type === 'wokwi-hc-sr04') type = 'openhw-hc-sr04';
+      if (type === 'wokwi-ili9341') type = 'openhw-ili9341';
+      if (type === 'wokwi-l293d') type = 'openhw-l293d';
+      if (type === 'wokwi-lcd1602-i2c') type = 'openhw-lcd1602-i2c';
+      if (type === 'wokwi-lcd2004-i2c') type = 'openhw-lcd2004-i2c';
+      if (type === 'wokwi-max7219') type = 'openhw-max7219';
+      if (type === 'wokwi-mpu6050') type = 'openhw-mpu6050';
+      if (type === 'wokwi-nlsf595') type = 'openhw-nlsf595';
+      if (type === 'wokwi-pca9685') type = 'openhw-pca9685';
+      if (type === 'wokwi-pca9865') type = 'openhw-pca9865';
+      if (type === 'wokwi-relay-module') type = 'openhw-relay-module';
+      if (type === 'wokwi-servo') type = 'openhw-servo';
+      if (type === 'wokwi-ssd1306-oled') type = 'openhw-ssd1306-oled';
+      if (type === 'wokwi-stepper-motor') type = 'openhw-stepper-motor';
 
       const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
 

@@ -47,13 +47,13 @@ export function createDefaultMainCode(boardKind, boardId, options = {}) {
   const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
 
   if (boardKind === 'rp2040' && rp2040Mode === 'micropython') {
-    return `# Main logic for ${boardId}\nimport machine\nimport time\n\nwhile True:\n    print("Hello from MicroPython!")\n    time.sleep(1)\n`;
+    return `# Main logic for ${boardId}\n\ndef setup():\n    pass\n\ndef loop():\n    pass\n\nwhile True:\n    loop()\n`;
   }
   if (boardKind === 'rp2040' && rp2040Mode === 'circuitpython') {
-    return `# Main logic for ${boardId}\nimport board\nimport time\n\nwhile True:\n    print("Hello from CircuitPython!")\n    time.sleep(1)\n`;
+    return `# Main logic for ${boardId}\nimport board\nimport time\n\nwhile True:\n    pass\n`;
   }
 
-  return `// Main logic for ${boardId}\nvoid setup() {\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  Serial.println("Hello from ${boardId}!");\n  delay(1000);\n}\n`;
+  return `void setup() {\n  // put your setup code here, to run once:\n\n}\n\nvoid loop() {\n  // put your main code here, to run repeatedly:\n\n}\n`;
 }
 
 export function isRp2040PythonEnv(source) {
