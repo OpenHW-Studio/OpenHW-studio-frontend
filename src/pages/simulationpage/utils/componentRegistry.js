@@ -43,7 +43,7 @@ export function buildComponentRegistry() {
 
     if (module && module.manifest) {
       const compId = module.manifest.type || module.manifest.id || key;
-      const raw = COMPONENT_RAW_SOURCES[compId] || COMPONENT_RAW_SOURCES[key];
+      const raw = COMPONENT_RAW_SOURCES[compId] || COMPONENT_RAW_SOURCES[key] || COMPONENT_RAW_SOURCES[compId.replace('openhw-', 'wokwi-')];
       registry[compId] = raw
         ? {
           ...module,
