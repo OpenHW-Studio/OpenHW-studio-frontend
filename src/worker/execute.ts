@@ -3466,6 +3466,7 @@ export class AVRRunner {
     private topologyDirty: boolean = true;
     private lastPhysicsSolveAt: number = 0;
     private lastStateEmitCycle: number = 0;
+    private lastStateEmitTime: number = 0;
     private statusIntervalEmitCount: number = 0;
     private lastRunLoopMs: number = 0;
     private lastPhysicsMs: number = 0;
@@ -3687,6 +3688,7 @@ export class AVRRunner {
 
         this.running = true;
         this.lastTime = performance.now();
+        this.lastStateEmitTime = this.lastTime;
         this.runLoop();
     }
 
@@ -3983,31 +3985,34 @@ export class AVRRunner {
 
             const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
             const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
-            if (this.updatePhysics && shouldSolvePhysics && (now - this.lastPhysicsSolveAt) >= 2) {
-                const physicsStart = performance.now();
-                // Classic Logic mode: event-driven propagation handles pins.
-                // We only need occasional inst.update for UI/animations (throttled).
+
+            const instArray = Array.from(this.instances.values());
+            const componentUpdateThreshold = 32000; // Update components every 2ms of simulated time
+
+            while (this.cpu.cycles < targetObj && this.running) {
+                const nextChunkTarget = Math.min(targetObj, this.cpu.cycles + componentUpdateThreshold);
+                
+                while (this.cpu.cycles < nextChunkTarget && this.running) {
+                    avrInstruction(this.cpu);
+                    this.cpu.tick();
+                }
+
+                // Component updates for smooth animation
                 const componentStart = performance.now();
-                const instArray = Array.from(this.instances.values());
-                const physicsDeltaTime = now - this.lastPhysicsSolveAt;
                 instArray.forEach(inst => {
-                    // Lightweight update without netlist traversal
-                    inst.update(physicsDeltaTime, this.currentWires, instArray);
+                    inst.update(this.cpu!.cycles, this.currentWires, instArray);
                 });
                 this.lastComponentUpdateMs = performance.now() - componentStart;
+            }
 
-                physicsMs = performance.now() - physicsStart;
+            physicsMs = performance.now() - loopStart;
+            this.drainPendingCpuWork(16);
+            this.processSoftSerialDecode(this.cpu.cycles);
+            this.lastTime = now;
+            if (shouldSolvePhysics) {
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
             }
-
-            while (this.cpu.cycles < targetObj && this.running) {
-                avrInstruction(this.cpu);
-                this.cpu.tick();
-            }
-            this.drainPendingCpuWork(16); // Batch process pending work once per frame chunk
-            this.processSoftSerialDecode(this.cpu.cycles);
-            this.lastTime = now;
 
             // Host/UART receive pacing: bytes per second = baud / 10 (8N1 frame)
             // bytes per ms = baud / 10000. We accumulate fractional budget over time.
@@ -4027,15 +4032,21 @@ export class AVRRunner {
             this.lastRunLoopMs = performance.now() - loopStart;
 
             // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
-            this.emitStateIfDue();
+            this.emitStateIfDue(now);
         }
 
         setTimeout(this.runLoop, 1);
     }
 
-    private emitStateIfDue() {
+    private emitStateIfDue(nowMs?: number) {
         if (!this.cpu) return;
-        if (this.cpu.cycles - this.lastStateEmitCycle >= 266666) {
+        const now = nowMs || performance.now();
+        const cycleDelta = this.cpu.cycles - this.lastStateEmitCycle;
+        const timeDelta = now - this.lastStateEmitTime;
+
+        // Emit if 16.6ms of simulated time passed (60Hz @ 16MHz)
+        // OR if 16.6ms of real time passed (to keep UI smooth if simulation is slow)
+        if (cycleDelta >= 266666 || timeDelta >= 16) {
             const msg: any = { type: 'state', boardId: this.boardId };
             msg.pins = this.pinStates;
             this.pinsChanged = false;
@@ -4068,6 +4079,7 @@ export class AVRRunner {
             msg.simTimeMs = this.getSimulatedTimeMs();
             
             this.lastStateEmitCycle = this.cpu.cycles;
+            this.lastStateEmitTime = now;
             this.onStateUpdate(msg);
         }
     }
@@ -4133,7 +4145,7 @@ export class AVRRunner {
                 endpoint.inst.pins[endpoint.pinId].isHigh = !!isHigh;
                 endpoint.inst.pins[endpoint.pinId].voltage = voltage;
             }
-            endpoint.inst.onPinStateChange(endpoint.pinId, isHigh);
+            endpoint.inst.onPinStateChange(endpoint.pinId, isHigh, this.cpu!.cycles);
         }
     }
 
@@ -4644,6 +4656,7 @@ export class RP2040Runner implements BoardRunner {
     private topologyDirty: boolean = true;
     private lastPhysicsSolveAt: number = 0;
     private lastStateEmitCycle: number = 0;
+    private lastStateEmitTime: number = 0;
     private statusIntervalEmitCount: number = 0;
     private lastPhysicsMs: number = 0;
     private lastRunLoopMs: number = 0;
@@ -4888,6 +4901,7 @@ export class RP2040Runner implements BoardRunner {
 
         this.running = true;
         this.lastTime = performance.now();
+        this.lastStateEmitTime = this.lastTime;
         this.emitDebugSnapshot('start', this.lastTime, true);
         this.emitWirelessStubStatus('start', true);
         this.runLoop();
@@ -6830,10 +6844,15 @@ export class RP2040Runner implements BoardRunner {
         this.installRp2040SpiAdapters();
     }
 
-    private emitStateIfDue() {
+    private emitStateIfDue(nowMs?: number) {
         if (!this.cpu) return;
+        const now = nowMs || performance.now();
         const currentCycles = Number(this.cpu.core.cycles);
-        if (currentCycles - this.lastStateEmitCycle >= 3125000) {
+        const cycleDelta = currentCycles - this.lastStateEmitCycle;
+        const timeDelta = now - this.lastStateEmitTime;
+
+        // RP2040 runs at 125MHz. 125,000,000 / 60 ~= 2,083,333 cycles per frame.
+        if (cycleDelta >= 2083333 || timeDelta >= 16) {
             const msg: any = { type: 'state', boardId: this.boardId };
             msg.pins = this.pinStates;
             this.pinsChanged = false;
@@ -6863,6 +6882,7 @@ export class RP2040Runner implements BoardRunner {
             msg.simTimeMs = this.getSimulatedTimeMs();
             
             this.lastStateEmitCycle = currentCycles;
+            this.lastStateEmitTime = now;
             this.onStateUpdate(msg);
         }
     }

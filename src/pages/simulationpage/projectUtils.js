@@ -532,7 +532,7 @@ function injectI2cPullups(compId, bb, boardId, updatedComponents, updatedWires, 
     updatedWires.push({ id: `w_i2c_vcc_${Date.now()}`, from: `${boardId}:3V3`, to: vccRailSda, color: 'red' });
 }
 */
-export function getDefaultMainFileName(boardKind, boardId, options = {}, hardwareUtils) {
+export function getDefaultMainFileName(boardKind, boardId, options = {}) {
   if (boardKind === 'rp2040') {
     const rp2040Mode = hardwareUtils.normalizeRp2040Env(options?.rp2040Mode || 'native');
     if (hardwareUtils.isRp2040PythonEnv(rp2040Mode)) {
