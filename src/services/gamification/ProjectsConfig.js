@@ -23,7 +23,7 @@ export const PROJECTS = [
     startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor'],
     // What you EARN when you finish this project
     rewardComponents: [
-      { type: 'wokwi-rgb-led', name: 'RGB LED', icon: '🌈', description: 'A special LED that can glow red, green, blue, or any mix of colors!' },
+      { type: 'openhw-rgb-led', name: 'RGB LED', icon: '🌈', description: 'A special LED that can glow red, green, blue, or any mix of colors!' },
     ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
@@ -103,13 +103,13 @@ void loop() {
     icon: '🌈',
     world: 1,
     tags: ['PWM', 'RGB', 'color mixing'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-rgb-led'],
+    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'openhw-rgb-led'],
     rewardComponents: [
       { type: 'wokwi-buzzer', name: 'Buzzer', icon: '🔔', description: 'Makes sounds and tones — you can even play music with it!' },
     ],
     components: [
       { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-rgb-led', label: 'RGB LED', qty: 1 },
+      { type: 'openhw-rgb-led', label: 'RGB LED', qty: 1 },
       { type: 'wokwi-resistor', label: '220Ω Resistor', qty: 3, attrs: { value: '220' } },
     ],
     wiring: [
@@ -182,7 +182,7 @@ void loop() {
     icon: '🎵',
     world: 1,
     tags: ['sound', 'buzzer', 'tone'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-rgb-led', 'wokwi-buzzer'],
+    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'openhw-rgb-led', 'wokwi-buzzer'],
     rewardComponents: [
       { type: 'wokwi-potentiometer', name: 'Potentiometer', icon: '🎛️', description: 'A knob you can turn! It lets you control things by rotating it.' },
     ],
@@ -258,7 +258,7 @@ void loop() {
     icon: '🎛️',
     world: 1,
     tags: ['analog input', 'potentiometer', 'PWM'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-rgb-led', 'wokwi-buzzer', 'wokwi-potentiometer'],
+    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'openhw-rgb-led', 'wokwi-buzzer', 'wokwi-potentiometer'],
     rewardComponents: [
       { type: 'wokwi-photoresistor', name: 'Light Sensor (LDR)', icon: '🌞', description: 'Detects how bright or dark the room is. Like eyes for your Arduino!' },
     ],

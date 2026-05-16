@@ -404,7 +404,7 @@ function CanvasSceneLayerBase({
                   );
                 })()}
 
-                <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
+                <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
                   {COMPONENT_REGISTRY[comp.type] ? (
                     React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
                       state: getLiveOopStateSnapshot(comp.id),

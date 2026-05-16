@@ -38,6 +38,8 @@ function CanvasBottomControlsBase({
   saveHistory,
   setComponents,
   setWires,
+  setProjectFiles,
+  setCode,
   setSelected,
   chrome,
   applyZoomAtCenter,
@@ -107,7 +109,7 @@ function CanvasBottomControlsBase({
               <button className="canvas-menu-item" onClick={() => { chrome.setShowConnectionsPanel(p => !p); setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
               <button className="canvas-menu-item" onClick={() => { const next = !blocklyDisabled; chrome.setBlocklyDisabled(next); setShowCanvasMenu(false); }} title={blocklyDisabled ? 'Re-enable block code editor (uses more CPU)' : 'Disable block code editor to improve canvas performance'}>{blocklyDisabled ? 'Enable Block Coding' : 'Disable Block Coding'}</button>
               <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-              <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
+              <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); if (setProjectFiles) setProjectFiles([]); if (setCode) setCode(''); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
             </div>
           )}
         </div>

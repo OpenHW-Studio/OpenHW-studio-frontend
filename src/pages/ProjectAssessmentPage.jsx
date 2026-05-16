@@ -35,8 +35,8 @@ function titleFromSlug(slug) {
 
 const ROLE_TO_TYPE = {
   arduino: 'wokwi-arduino-uno', resistor: 'wokwi-resistor',
-  led: 'wokwi-led', 'rgb-led': 'wokwi-rgb-led',
-  potentiometer: 'wokwi-potentiometer', 'analog-joystick': 'wokwi-analog-joystick',
+  led: 'wokwi-led', 'rgb-led': 'openhw-rgb-led',
+  potentiometer: 'wokwi-potentiometer', 'analog-joystick': 'openhw-analog-joystick',
 }
 
 function resolveRoleType(r) { return ROLE_TO_TYPE[r] || r }
