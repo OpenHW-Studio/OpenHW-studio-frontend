@@ -77,25 +77,53 @@ export function generateProjectId() {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
+ * Ensures a project name is unique for a given owner by appending (1), (2), etc. if needed.
+ * Ignores the current project ID being saved/renamed.
+ */
+async function ensureUniqueProjectName(baseName, owner, currentId) {
+  const name = (baseName || 'Untitled').trim();
+  const projects = await listProjects(owner);
+  
+  const otherProjects = projects.filter(p => p.id !== currentId);
+  const existingNames = new Set(otherProjects.map(p => (p.name || '').trim()));
+
+  if (!existingNames.has(name)) {
+    return name;
+  }
+
+  let counter = 1;
+  let candidateName = `${name} (${counter})`;
+  while (existingNames.has(candidateName)) {
+    counter++;
+    candidateName = `${name} (${counter})`;
+  }
+
+  return candidateName;
+}
+
+/**
  * Save or update a project.
  *
  * @param {object} project
  * @param {string}  project.id          Unique project ID (from generateProjectId)
  * @param {string}  project.name        Human-readable project name
- * @param {string}  project.board       Board type ('arduino_uno' | 'pico' | 'esp32')
+ * @param {string}  project.board       Board type ('arduino_uno' | 'pico' | 'esp-32')
  * @param {Array}   project.components  Canvas components array
  * @param {Array}   project.connections Wires array
  * @param {string}  project.code        Arduino C++ sketch source
  * @param {string}  project.owner       'guest' or user.email
  * @param {number}  [project.savedAt]   Unix ms timestamp (auto-set if omitted)
- * @returns {Promise<void>}
+ * @returns {Promise<string>}           Returns the unique project name assigned
  */
 export async function saveProject(project) {
+  const uniqueName = await ensureUniqueProjectName(project.name, project.owner, project.id);
   const record = {
     ...project,
+    name: uniqueName,
     savedAt: Date.now(),
   };
-  return idbRequest(STORE, 'readwrite', (store) => store.put(record));
+  await idbRequest(STORE, 'readwrite', (store) => store.put(record));
+  return uniqueName;
 }
 
 /**
@@ -143,27 +171,20 @@ export async function deleteProject(id) {
  *
  * @param {string} id
  * @param {string} newName
- * @returns {Promise<void>}
+ * @returns {Promise<string>}  Returns the unique project name assigned
  */
 export async function renameProject(id, newName) {
   if (!id) {
     console.warn('[ProjectStore] Cannot rename project: missing ID');
-    return Promise.resolve();
+    return Promise.resolve('');
   }
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, 'readwrite');
-    const store = t.objectStore(STORE);
-    const getReq = store.get(id);
-    getReq.onsuccess = (e) => {
-      const existing = e.target.result;
-      if (!existing) { resolve(); return; }
-      const putReq = store.put({ ...existing, name: newName, savedAt: Date.now() });
-      putReq.onsuccess = () => resolve();
-      putReq.onerror = (e2) => reject(e2.target.error);
-    };
-    getReq.onerror = (e) => reject(e.target.error);
-  });
+  const existing = await loadProject(id);
+  if (!existing) return Promise.resolve('');
+
+  const uniqueName = await ensureUniqueProjectName(newName, existing.owner, id);
+  const record = { ...existing, name: uniqueName, savedAt: Date.now() };
+  await idbRequest(STORE, 'readwrite', (store) => store.put(record));
+  return uniqueName;
 }
 
 /**

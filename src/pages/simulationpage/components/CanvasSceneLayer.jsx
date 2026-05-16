@@ -333,7 +333,7 @@ function CanvasSceneLayerBase({
               style={{
                 position: 'absolute',
                 left: comp.x, top: comp.y,
-                zIndex: comp.type.startsWith('wokwi-breadboard')
+                zIndex: (comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard'))
                   ? (isSelected ? 4 : 2)
                   : (isSelected ? 10 : 5),
                 opacity: comp.isGhost ? 0.4 : 1,
@@ -416,7 +416,7 @@ function CanvasSceneLayerBase({
                     <div
                       style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
                       ref={el => {
-                        if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                        if ((comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') && el) {
                           neopixelRefs.current[comp.id] = el;
                         }
                       }}
@@ -448,7 +448,7 @@ function CanvasSceneLayerBase({
                   const isSocket = connectedWire?.isSocket;
 
                   const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
-                  const isBreadboard = comp.type.startsWith('wokwi-breadboard');
+                  const isBreadboard = comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard');
                   const isFloating = !isBreadboard && isCompSeated && !isSocket;
 
                   const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
@@ -513,8 +513,8 @@ function CanvasSceneLayerBase({
           );
         };
 
-        const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
-        const others = components.filter(c => !c.type.startsWith('wokwi-breadboard'));
+        const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard') || c.type.startsWith('openhw-breadboard'));
+        const others = components.filter(c => !c.type.startsWith('wokwi-breadboard') && !c.type.startsWith('openhw-breadboard'));
 
         return (
           <>

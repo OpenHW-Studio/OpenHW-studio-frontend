@@ -185,7 +185,7 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
         const boardComp = (meta.components || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
         
         const boardCompId = boardComp?.id || 'uno1';
-        const boardType = boardComp?.type || meta.board || 'wokwi-arduino-uno';
+        const boardType = boardComp?.type || meta.board || 'openhw-arduino-uno';
         const isRp2040Board = /rp2040|pico/i.test(String(boardType));
         const effectiveUseSimTimeCapture = useSimTimeCapture && !isRp2040Board;
         const compileUnit: any = getBoardCompileFiles(meta, boardCompId);

@@ -79,7 +79,7 @@ export function ProjectsSidebar({
   isRunning, isAnyAuthenticated, isAuthenticated, activeUser,
   navigate, logout,
   autoSaveEnabled, setAutoSaveEnabled,
-  handleBackupWorkflow, backupRestoreInputRef, handleSyncToCloud,
+  handleBackupWorkflow, backupRestoreInputRef, wokwiImportInputRef, handleSyncToCloud,
   setShowCreateComponentModal
 }) {
   return (
@@ -275,6 +275,15 @@ export function ProjectsSidebar({
                           >
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--accent)]"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                             Restore Workspace
+                            <span className="ml-auto text-[10px] font-bold bg-[var(--bg)] px-2 py-0.5 rounded-full text-[var(--text3)]">ZIP</span>
+                          </button>
+                          <button 
+                            className="w-full flex items-center gap-3 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-xl font-bold shadow-sm hover:shadow-2xl hover:border-[var(--accent)]/50 hover:-translate-y-1.5 transition-all duration-300 active:scale-[0.98]" 
+                            style={{ padding: '15px 20px' }}
+                            onClick={() => wokwiImportInputRef?.current?.click()}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-[var(--accent)]"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                            Import Wokwi Project
                             <span className="ml-auto text-[10px] font-bold bg-[var(--bg)] px-2 py-0.5 rounded-full text-[var(--text3)]">ZIP</span>
                           </button>
                           {isAuthenticated && (

@@ -21,7 +21,7 @@ export function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
   const snapRadius = 15;
   let best = null;
   let minDist = Infinity;
-  const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+  const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard') || c.type.startsWith('openhw-breadboard'));
   
   for (const bb of breadboards) {
     const pins = pinDefs[bb.type] || [];
@@ -42,13 +42,17 @@ export function findNearestBreadboardHole(worldX, worldY, components, pinDefs) {
 
 // Helper to find or add a breadboard
 export function findOrAddBreadboard(components, canvasCenter) {
-  const bbTypes = ['wokwi-breadboard', 'wokwi-breadboard-half', 'wokwi-breadboard-mini'];
+  const bbTypes = [
+    'wokwi-breadboard', 'openhw-breadboard',
+    'wokwi-breadboard-half', 'openhw-breadboard-half',
+    'wokwi-breadboard-mini', 'openhw-breadboard-mini'
+  ];
   let bb = components.find(c => bbTypes.includes(c.type));
   if (bb) return { components, breadboard: bb, added: false };
 
   const newBb = {
     id: `bb_${Date.now()}`,
-    type: 'wokwi-breadboard-half',
+    type: 'openhw-breadboard-half',
     label: 'Breadboard',
     x: canvasCenter.x - 240,
     y: canvasCenter.y - 150,
@@ -109,7 +113,7 @@ function findFreeBreadboardRow(bb, components, wires, pinDefs) {
 
     const rowPin = pins.find(p => p.id === `${row}a`);
     const isRangeOccupiedByComp = rowPin && components.some(c => {
-      if (c.id === bb.id || c.type.startsWith('wokwi-breadboard')) return false;
+      if (c.id === bb.id || c.type.startsWith('wokwi-breadboard') || c.type.startsWith('openhw-breadboard')) return false;
       // Buffer check
       return Math.abs(c.y - (bb.y + rowPin.y)) < (ROW_PADDING * 15) && Math.abs(c.x - (bb.x + rowPin.x)) < 50;
     });

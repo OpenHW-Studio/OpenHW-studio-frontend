@@ -1,17 +1,17 @@
-import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.js';
+import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic.js';
 
 const components = [
-    { id: 'wokwi-arduino-uno_4', type: 'wokwi-arduino-uno', attrs: {} },
-    { id: 'wokwi-slide-potentiometer_6', type: 'wokwi-slide-potentiometer', attrs: { value: "50" } }
+    { id: 'openhw-arduino-uno_4', type: 'openhw-arduino-uno', attrs: {} },
+    { id: 'openhw-slide-potentiometer_6', type: 'openhw-slide-potentiometer', attrs: { value: "50" } }
 ];
 
 const wires = [
-    { from: 'wokwi-slide-potentiometer_6:VCC', to: 'wokwi-arduino-uno_4:5V' },
-    { from: 'wokwi-slide-potentiometer_6:GND', to: 'wokwi-arduino-uno_4:gnd_2' },
-    { from: 'wokwi-slide-potentiometer_6:SIG', to: 'wokwi-arduino-uno_4:A0' }
+    { from: 'openhw-slide-potentiometer_6:VCC', to: 'openhw-arduino-uno_4:5V' },
+    { from: 'openhw-slide-potentiometer_6:GND', to: 'openhw-arduino-uno_4:gnd_2' },
+    { from: 'openhw-slide-potentiometer_6:SIG', to: 'openhw-arduino-uno_4:A0' }
 ];
 
-const inst = new SlidePotLogic('wokwi-slide-potentiometer_6', { pins: [{ id: 'VCC' }, { id: 'GND' }, { id: 'SIG' }] });
+const inst = new SlidePotLogic('openhw-slide-potentiometer_6', { pins: [{ id: 'VCC' }, { id: 'GND' }, { id: 'SIG' }] });
 
 inst.onEvent({ type: 'input', value: 71 });
 inst.update(0, wires, [inst]);
@@ -39,7 +39,7 @@ wires.forEach(w => {
         const [compId, compPin] = targetStr.split(':');
 
         // Mock get instance
-        if (compId === 'wokwi-slide-potentiometer_6') {
+        if (compId === 'openhw-slide-potentiometer_6') {
             voltage = inst.getPinVoltage(compPin);
         }
     }
