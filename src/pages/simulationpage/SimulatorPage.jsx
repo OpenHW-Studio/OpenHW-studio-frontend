@@ -158,6 +158,10 @@ import {
   ensureMicroPythonSerialProbe,
   applyRp2040MicroPythonCompat,
   isProgrammableBoardType,
+  isBreadboardType,
+  isResistorType,
+  isMotorType,
+  isStepperMotorType,
   endpointAliases,
   hasCategoryIntersection,
   getPinCategory
@@ -237,6 +241,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     'openhw-pushbutton': 'button',
     'wokwi-potentiometer': 'potentiometer',
     'openhw-potentiometer': 'potentiometer',
+    'wokwi-slide-potentiometer': 'potentiometer',
+    'openhw-slide-potentiometer': 'potentiometer',
     'wokwi-buzzer': 'buzzer',
     'openhw-buzzer': 'buzzer',
     'wokwi-rgb-led': 'rgb-led',
@@ -302,6 +308,36 @@ export function SimulatorPage({ gamificationMode = false }) {
     'openhw-ssd1306-oled': 'oled',
     'wokwi-stepper-motor': 'stepper',
     'openhw-stepper-motor': 'stepper',
+    'wokwi-arduino-uno': 'uno',
+    'openhw-arduino-uno': 'uno',
+    'wokwi-arduino-mega': 'mega',
+    'openhw-arduino-mega': 'mega',
+    'wokwi-arduino-nano': 'nano',
+    'openhw-arduino-nano': 'nano',
+    'wokwi-attiny85': 'attiny85',
+    'openhw-attiny85': 'attiny85',
+    'wokwi-raspberry-pi-pico': 'pico',
+    'openhw-pico': 'pico',
+    'wokwi-raspberry-pi-pico-w': 'pico-w',
+    'openhw-pico-w': 'pico-w',
+    'wokwi-power-supply': 'power-supply',
+    'openhw-power-supply': 'power-supply',
+    'wokwi-battery': 'battery',
+    'openhw-battery': 'battery',
+    'wokwi-charger': 'charger',
+    'openhw-charger': 'charger',
+    'wokwi-breadboard': 'breadboard',
+    'openhw-breadboard': 'breadboard',
+    'wokwi-breadboard-half': 'breadboard',
+    'openhw-breadboard-half': 'breadboard',
+    'wokwi-breadboard-mini': 'breadboard',
+    'openhw-breadboard-mini': 'breadboard',
+    'wokwi-neopixel-matrix': 'neopixel',
+    'openhw-neopixel-matrix': 'neopixel',
+    'wokwi-neopixel-ring': 'neopixel',
+    'openhw-neopixel-ring': 'neopixel',
+    'wokwi-arduino-sensor-shield': 'shield',
+    'openhw-arduino-sensor-shield': 'shield',
   }), [])
 
   const isPaletteItemLocked = useCallback((itemType) => {
@@ -961,17 +997,17 @@ export function SimulatorPage({ gamificationMode = false }) {
     // Remote OOP state takes priority
     const remoteState = liveStateOverride || liveOopStatesRef.current[comp.id];
 
-    if (comp.type === 'wokwi-led') {
+    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       delete attrs.value; // Let ui.tsx handle it
-    } else if (comp.type === 'wokwi-servo') {
+    } else if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
-    } else if (comp.type === 'wokwi-stepper-motor') {
+    } else if (comp.type === 'wokwi-stepper-motor' || comp.type === 'openhw-stepper-motor') {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
-    } else if (comp.type === 'wokwi-buzzer') {
+    } else if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
       if (remoteState && remoteState.isBuzzing) {
         // Wokwi buzzer visual indicator (if supported) can be driven here
         attrs.color = "red";
@@ -2576,6 +2612,20 @@ export function SimulatorPage({ gamificationMode = false }) {
     'openhw-led': 'Light-emitting diode. Emits light when current flows through it. Supports multiple colors.',
     'wokwi-arduino-uno': 'ATmega328P-based microcontroller board. 14 digital I/O pins, 6 analog inputs, USB connectivity.',
     'openhw-arduino-uno': 'ATmega328P-based microcontroller board. 14 digital I/O pins, 6 analog inputs, USB connectivity.',
+    'wokwi-arduino-mega': 'ATmega2560-based microcontroller board. 54 digital I/O pins, 16 analog inputs, 4 UARTs.',
+    'openhw-arduino-mega': 'ATmega2560-based microcontroller board. 54 digital I/O pins, 16 analog inputs, 4 UARTs.',
+    'wokwi-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
+    'openhw-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
+    'wokwi-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
+    'openhw-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
+    'wokwi-raspberry-pi-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
+    'openhw-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
+    'wokwi-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
+    'openhw-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
+    'wokwi-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
+    'openhw-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
+    'wokwi-breadboard-mini': 'Mini solderless breadboard. 170 tie points for very compact prototypes.',
+    'openhw-breadboard-mini': 'Mini solderless breadboard. 170 tie points for very compact prototypes.',
     'wokwi-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
     'openhw-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
     'wokwi-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
@@ -3274,7 +3324,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     const catalogItem = COMPONENT_REGISTRY[item.type];
     const manifest = catalogItem?.manifest || catalogItem;
 
-    if (catalogItem && !isProgrammableBoardType(item.type) && !item.type.startsWith('wokwi-breadboard') && !item.type.startsWith('wokwi-resistor')) {
+    if (catalogItem && !isProgrammableBoardType(item.type) && !isBreadboardType(item.type) && !isResistorType(item.type)) {
       if (autoWiringEnabled || autoCodingEnabled) {
         const plan = await generateAutonomousSetup(
           components,
@@ -3542,10 +3592,10 @@ export function SimulatorPage({ gamificationMode = false }) {
       originalComps: JSON.parse(JSON.stringify(components))
     };
 
-    dragData.breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+    dragData.breadboards = components.filter(c => isBreadboardType(c.type));
 
     // Performance: If breadboard, pre-calculate children once here
-    if (comp.type.startsWith('wokwi-breadboard')) {
+    if (isBreadboardType(comp.type)) {
       const childComps = components.filter(c => {
         if (c.id === id) return false;
         return wires.some(w =>
@@ -3600,7 +3650,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
         compUpdate = { id, newX: nx, newY: ny, snappingHoles: [] };
 
-        if (type && type.startsWith('wokwi-breadboard')) {
+        if (type && isBreadboardType(type)) {
           // Breadboard movement propagation
           const dx = nx - cx;
           const dy = ny - cy;
@@ -3962,7 +4012,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
 
         // DETACHMENT: Remove old socket wires for this component (ONLY if moving a component, NOT a breadboard)
-        const isBreadboard = componentsRef.current.find(c => c.id === movedId)?.type.startsWith('wokwi-breadboard');
+        const isBreadboard = isBreadboardType(componentsRef.current.find(c => c.id === movedId)?.type);
         if (!isBreadboard) {
           setWires(prev => prev.filter(w => {
             const isFrom = w.from.startsWith(movedId + ':');
@@ -3974,7 +4024,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         // ATTACHMENT: Auto-create socket wires if snapped
         const comp = componentsRef.current.find(c => c.id === movedId);
         const finalComp = comp ? { ...comp, x: finalX, y: finalY } : null;
-        if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
+        if (finalComp && !isBreadboardType(finalComp.type)) {
           const { snappedWires } = robustSnapComponent(finalComp, componentsRef.current, LOCAL_PIN_DEFS);
           if (snappedWires.length > 0) {
             setWires(prev => [...prev, ...snappedWires]);
@@ -4058,7 +4108,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const nextValue = (key === 'env' && normalizeBoardKind(c.type) === 'rp2040')
           ? normalizeRp2040Env(value)
           : value;
-        if (c.type === 'wokwi-neopixel-matrix') {
+        if (c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix') {
           const rows = key === 'rows' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.rows) || 1);
           const cols = key === 'cols' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.cols) || 1);
           newW = Math.max(30, cols * 30);
@@ -4450,7 +4500,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       const newRotation = ((comp.rotation || 0) + 90) % 360;
 
       // If breadboard, rotate children
-      if (comp.type.startsWith('wokwi-breadboard')) {
+      if (isBreadboardType(comp.type)) {
         const childIds = new Set(wiresRef.current
           .filter(w => w.isSocket && (w.from.startsWith(id + ':') || w.to.startsWith(id + ':')))
           .map(w => {
@@ -6681,7 +6731,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       logSerial('Simulator started in Web Worker.');
 
       const neopixelWiring = components
-        .filter(c => c.type === 'wokwi-neopixel-matrix')
+        .filter(c => c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix')
         .map(c => {
           return null; // Handle Neopixels later
         }).filter(n => n);
@@ -7594,6 +7644,19 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       };
 
+      // Aliases for openhw- rebranded components
+      SYMS['openhw-led'] = SYMS['wokwi-led'];
+      SYMS['openhw-resistor'] = SYMS['wokwi-resistor'];
+      SYMS['openhw-pushbutton'] = SYMS['wokwi-pushbutton'];
+      SYMS['openhw-buzzer'] = SYMS['wokwi-buzzer'];
+      SYMS['openhw-power-supply'] = SYMS['wokwi-power-supply'];
+      SYMS['openhw-potentiometer'] = SYMS['wokwi-potentiometer'];
+      SYMS['openhw-servo'] = SYMS['wokwi-servo'];
+      SYMS['openhw-motor'] = SYMS['wokwi-motor'];
+      SYMS['openhw-neopixel-matrix'] = SYMS['wokwi-neopixel-matrix'];
+      SYMS['openhw-motor-driver'] = SYMS['wokwi-motor-driver'];
+      SYMS['openhw-arduino-uno'] = SYMS['wokwi-arduino-uno'];
+
       // Generic fallback IC ─────────────────────────────────────────────────
       const makeGenericSym = (comp) => {
         const used = new Set();
@@ -7610,7 +7673,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         return {
           w: gw + 30, h: gh, refPrefix: 'IC', pins,
           draw(x, y, _c, ref) {
-            const sType = _c.type.replace('wokwi-', '');
+            const sType = _c.type.replace(/^(wokwi-|openhw-)/, '');
             return [
               bx(x + 15, y + 12, gw, gh - 24), tx(x + 15 + gw / 2, y + 28, sType, 8, 'middle', true), tx(x + 15 + gw / 2, y + 10, ref, 7, 'middle', false, '#555'),
               ...lp.map((id, i) => ln(x, y + 32 + i * 20, x + 15, y + 32 + i * 20) + `<text x="${x + 18}" y="${y + 36 + i * 20}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),

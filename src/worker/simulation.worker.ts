@@ -892,7 +892,7 @@ self.onmessage = async (e) => {
         if (programmableBoards.length <= 1) {
             mode = 'single';
             const singleBoardComp = programmableBoards[0] || null;
-            const singleBoardType = String(singleBoardComp?.type || 'wokwi-arduino-uno');
+            const singleBoardType = String(singleBoardComp?.type || 'openhw-arduino-uno');
             const singleBoardId = singleBoardComp?.id;
             const pyScript = singleBoardId ? String(boardPythonMap?.[singleBoardId] || '') : '';
             const singleBoardIsRp2040 = /(rp2040|pico)/i.test(singleBoardType);

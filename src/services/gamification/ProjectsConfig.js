@@ -20,15 +20,15 @@ export const PROJECTS = [
     world: 1,
     tags: ['LED', 'digital output', 'blinking'],
     // Components available at start (given for free — no unlock needed)
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
     // What you EARN when you finish this project
     rewardComponents: [
       { type: 'openhw-rgb-led', name: 'RGB LED', icon: '🌈', description: 'A special LED that can glow red, green, blue, or any mix of colors!' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-led', label: 'LED (any color)', qty: 1 },
-      { type: 'wokwi-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-led', label: 'LED (any color)', qty: 1 },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
     ],
     wiring: [
       { from: 'Arduino pin 13', to: 'LED anode (+)' },
@@ -103,14 +103,14 @@ void loop() {
     icon: '🌈',
     world: 1,
     tags: ['PWM', 'RGB', 'color mixing'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'openhw-rgb-led'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-rgb-led'],
     rewardComponents: [
-      { type: 'wokwi-buzzer', name: 'Buzzer', icon: '🔔', description: 'Makes sounds and tones — you can even play music with it!' },
+      { type: 'openhw-buzzer', name: 'Buzzer', icon: '🔔', description: 'Makes sounds and tones — you can even play music with it!' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-rgb-led', label: 'RGB LED', qty: 1 },
-      { type: 'wokwi-resistor', label: '220Ω Resistor', qty: 3, attrs: { value: '220' } },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 3, attrs: { value: '220' } },
     ],
     wiring: [
       { from: 'Arduino pin 9', to: 'RGB LED Red pin' },
@@ -182,13 +182,13 @@ void loop() {
     icon: '🎵',
     world: 1,
     tags: ['sound', 'buzzer', 'tone'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'openhw-rgb-led', 'wokwi-buzzer'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-rgb-led', 'openhw-buzzer'],
     rewardComponents: [
-      { type: 'wokwi-potentiometer', name: 'Potentiometer', icon: '🎛️', description: 'A knob you can turn! It lets you control things by rotating it.' },
+      { type: 'openhw-potentiometer', name: 'Potentiometer', icon: '🎛️', description: 'A knob you can turn! It lets you control things by rotating it.' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-buzzer', label: 'Passive Buzzer', qty: 1 },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-buzzer', label: 'Passive Buzzer', qty: 1 },
     ],
     wiring: [
       { from: 'Arduino pin 8', to: 'Buzzer positive (+)' },
@@ -258,15 +258,15 @@ void loop() {
     icon: '🎛️',
     world: 1,
     tags: ['analog input', 'potentiometer', 'PWM'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'openhw-rgb-led', 'wokwi-buzzer', 'wokwi-potentiometer'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-rgb-led', 'openhw-buzzer', 'openhw-potentiometer'],
     rewardComponents: [
-      { type: 'wokwi-photoresistor', name: 'Light Sensor (LDR)', icon: '🌞', description: 'Detects how bright or dark the room is. Like eyes for your Arduino!' },
+      { type: 'openhw-photoresistor', name: 'Light Sensor (LDR)', icon: '🌞', description: 'Detects how bright or dark the room is. Like eyes for your Arduino!' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-led', label: 'LED', qty: 1 },
-      { type: 'wokwi-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
-      { type: 'wokwi-potentiometer', label: 'Potentiometer', qty: 1 },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-led', label: 'LED', qty: 1 },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+      { type: 'openhw-potentiometer', label: 'Potentiometer', qty: 1 },
     ],
     wiring: [
       { from: 'Potentiometer left pin', to: 'Arduino 5V' },
@@ -331,16 +331,16 @@ void loop() {
     icon: '🌞',
     world: 1,
     tags: ['LDR', 'light sensor', 'analog input'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-photoresistor'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-photoresistor'],
     rewardComponents: [
-      { type: 'wokwi-servo', name: 'Servo Motor', icon: '⚙️', description: 'A motor that can turn to any angle you set — like a robot arm!' },
+      { type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', description: 'A motor that can turn to any angle you set — like a robot arm!' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-photoresistor', label: 'Light Sensor (LDR)', qty: 1 },
-      { type: 'wokwi-led', label: 'LED', qty: 1 },
-      { type: 'wokwi-resistor', label: '10kΩ Resistor', qty: 1, attrs: { value: '10000' } },
-      { type: 'wokwi-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-photoresistor', label: 'Light Sensor (LDR)', qty: 1 },
+      { type: 'openhw-led', label: 'LED', qty: 1 },
+      { type: 'openhw-resistor', label: '10kΩ Resistor', qty: 1, attrs: { value: '10000' } },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
     ],
     wiring: [
       { from: 'Arduino 5V', to: 'LDR one leg' },
@@ -406,14 +406,14 @@ void loop() {
     icon: '⚙️',
     world: 2,
     tags: ['servo', 'motor', 'PWM', 'robotics'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-servo', 'wokwi-potentiometer'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-servo', 'openhw-potentiometer'],
     rewardComponents: [
-      { type: 'wokwi-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '✨', description: 'A strip of colorful LEDs you can control individually — make animations and patterns!' },
+      { type: 'openhw-neopixel-matrix', name: 'NeoPixel LED Strip', icon: '✨', description: 'A strip of colorful LEDs you can control individually — make animations and patterns!' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-servo', label: 'Servo Motor', qty: 1 },
-      { type: 'wokwi-potentiometer', label: 'Potentiometer', qty: 1 },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-servo', label: 'Servo Motor', qty: 1 },
+      { type: 'openhw-potentiometer', label: 'Potentiometer', qty: 1 },
     ],
     wiring: [
       { from: 'Servo brown wire', to: 'Arduino GND' },
@@ -479,13 +479,13 @@ void loop() {
     icon: '✨',
     world: 2,
     tags: ['NeoPixel', 'LED strip', 'FastLED', 'animation'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-neopixel-matrix'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-neopixel-matrix'],
     rewardComponents: [
-      { type: 'wokwi-pushbutton', name: 'Push Button', icon: '🔘', description: 'Press it to trigger things! Used in almost every electronic device.' },
+      { type: 'openhw-pushbutton', name: 'Push Button', icon: '🔘', description: 'Press it to trigger things! Used in almost every electronic device.' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-neopixel-matrix', label: 'NeoPixel Strip (8 LEDs)', qty: 1 },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-neopixel-matrix', label: 'NeoPixel Strip (8 LEDs)', qty: 1 },
     ],
     wiring: [
       { from: 'NeoPixel DIN (data in)', to: 'Arduino pin 6' },
@@ -552,15 +552,15 @@ void loop() {
     icon: '🔘',
     world: 2,
     tags: ['button', 'debounce', 'millis', 'state machine'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor', 'wokwi-pushbutton'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-pushbutton'],
     rewardComponents: [
-      { type: 'wokwi-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '🌡️', description: 'Measures how hot or cold it is! Used in thermostats, weather stations, and more.' },
+      { type: 'openhw-ntc-temperature-sensor', name: 'Temperature Sensor', icon: '🌡️', description: 'Measures how hot or cold it is! Used in thermostats, weather stations, and more.' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-pushbutton', label: 'Push Button', qty: 1 },
-      { type: 'wokwi-led', label: 'LED', qty: 1 },
-      { type: 'wokwi-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-pushbutton', label: 'Push Button', qty: 1 },
+      { type: 'openhw-led', label: 'LED', qty: 1 },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
     ],
     wiring: [
       { from: 'Button one side', to: 'Arduino pin 2' },
@@ -639,17 +639,17 @@ void loop() {
     icon: '🌡️',
     world: 2,
     tags: ['temperature', 'NTC', 'sensor', 'Serial Monitor'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-ntc-temperature-sensor', 'wokwi-resistor', 'wokwi-led', 'wokwi-buzzer'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-ntc-temperature-sensor', 'openhw-resistor', 'openhw-led', 'openhw-buzzer'],
     rewardComponents: [
-      { type: 'wokwi-motor', name: 'DC Motor', icon: '🔩', description: 'Spins at any speed you want! Used in fans, robots, and toy cars.' },
-      { type: 'wokwi-l293d', name: 'Motor Driver (L293D)', icon: '🔌', description: 'Controls the motor — gives it the power it needs to spin fast.' },
+      { type: 'openhw-motor', name: 'DC Motor', icon: '🔩', description: 'Spins at any speed you want! Used in fans, robots, and toy cars.' },
+      { type: 'openhw-l293d', name: 'Motor Driver (L293D)', icon: '🔌', description: 'Controls the motor — gives it the power it needs to spin fast.' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-ntc-temperature-sensor', label: 'NTC Temperature Sensor', qty: 1 },
-      { type: 'wokwi-resistor', label: '10kΩ Resistor', qty: 1, attrs: { value: '10000' } },
-      { type: 'wokwi-led', label: 'Red Alert LED', qty: 1 },
-      { type: 'wokwi-buzzer', label: 'Alarm Buzzer', qty: 1 },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-ntc-temperature-sensor', label: 'NTC Temperature Sensor', qty: 1 },
+      { type: 'openhw-resistor', label: '10kΩ Resistor', qty: 1, attrs: { value: '10000' } },
+      { type: 'openhw-led', label: 'Red Alert LED', qty: 1 },
+      { type: 'openhw-buzzer', label: 'Alarm Buzzer', qty: 1 },
     ],
     wiring: [
       { from: 'NTC sensor one leg', to: 'Arduino 5V' },
@@ -728,16 +728,16 @@ void loop() {
     icon: '🔩',
     world: 3,
     tags: ['motor', 'PWM', 'H-bridge', 'robotics'],
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-motor', 'wokwi-l293d', 'wokwi-potentiometer'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-motor', 'openhw-l293d', 'openhw-potentiometer'],
     rewardComponents: [
       // Completing this unlocks ALL remaining components — you're a Circuit Champion!
       { type: '*', name: 'ALL Components Unlocked!', icon: '🏆', description: 'You completed every project! You now have access to the full component library!' },
     ],
     components: [
-      { type: 'wokwi-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'wokwi-l293d', label: 'L293D Motor Driver', qty: 1 },
-      { type: 'wokwi-motor', label: 'DC Motor', qty: 1 },
-      { type: 'wokwi-potentiometer', label: 'Potentiometer (speed control)', qty: 1 },
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-l293d', label: 'L293D Motor Driver', qty: 1 },
+      { type: 'openhw-motor', label: 'DC Motor', qty: 1 },
+      { type: 'openhw-potentiometer', label: 'Potentiometer (speed control)', qty: 1 },
     ],
     wiring: [
       { from: 'Arduino pin 9 (PWM)', to: 'L293D Enable 1 (pin 1)' },

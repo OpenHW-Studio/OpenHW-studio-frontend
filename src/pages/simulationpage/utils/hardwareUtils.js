@@ -295,7 +295,58 @@ export function applyRp2040MicroPythonCompat(sourceCode) {
 }
 
 export function isProgrammableBoardType(type) {
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
+  const s = String(type || '').toLowerCase();
+  return /(arduino|esp32|stm32|rp2040|pico)/i.test(s);
+}
+
+export function isBreadboardType(type) {
+  const s = String(type || '').toLowerCase();
+  return s.startsWith('wokwi-breadboard') || s.startsWith('openhw-breadboard');
+}
+
+export function isResistorType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-resistor' || s === 'openhw-resistor';
+}
+
+export function isMotorType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-motor' || s === 'openhw-motor';
+}
+
+export function isStepperMotorType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-stepper-motor' || s === 'openhw-stepper-motor';
+}
+
+export function isLedType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-led' || s === 'openhw-led' || s === 'wokwi-rgb-led' || s === 'openhw-rgb-led';
+}
+
+export function isBuzzerType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-buzzer' || s === 'openhw-buzzer';
+}
+
+export function isPotentiometerType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-potentiometer' || s === 'openhw-potentiometer' || s === 'wokwi-slide-potentiometer' || s === 'openhw-slide-potentiometer';
+}
+
+export function isServoType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-servo' || s === 'openhw-servo';
+}
+
+export function isPhotoresistorType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-photoresistor' || s === 'openhw-photoresistor' || s === 'wokwi-photo-resistor' || s === 'openhw-photo-resistor' || s === 'wokwi-ldr' || s === 'openhw-ldr';
+}
+
+export function isNtcType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-ntc-temperature-sensor' || s === 'openhw-ntc-temperature-sensor' || s === 'wokwi-ntc-thermistor' || s === 'openhw-ntc-thermistor';
 }
 
 export function endpointAliases(endpoint) {
@@ -336,7 +387,7 @@ export function getPinCategory(pId, pDesc, compType) {
 
   if (matches(/^sda([._]?\d+)?$/i)) categories.push('I2C_SDA');
   if (matches(/^scl([._]?\d+)?$/i)) categories.push('I2C_SCL');
-  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano')) {
+  if (compType?.includes('arduino-uno') || compType?.includes('arduino-nano')) {
     if (sId === 'a4') categories.push('I2C_SDA');
     if (sId === 'a5') categories.push('I2C_SCL');
   }
@@ -352,8 +403,8 @@ export function getPinCategory(pId, pDesc, compType) {
   }
 
   if (matches(/^(pwm|~)([._]?\d+)?$/i)) categories.push('PWM');
-  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
-  if (compType === 'wokwi-arduino-mega') {
+  if ((compType?.includes('arduino-uno') || compType?.includes('arduino-nano')) && ['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
+  if (compType?.includes('arduino-mega')) {
     const pinNum = parseInt(sId);
     if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
   }
@@ -363,7 +414,7 @@ export function getPinCategory(pId, pDesc, compType) {
     if (!categories.includes('POWER')) categories.push('POWER');
   }
 
-  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((compType === 'wokwi-motor' || compType === 'wokwi-stepper-motor') && /^\d+$/.test(sId))) {
+  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((isMotorType(compType) || isStepperMotorType(compType)) && /^\d+$/.test(sId))) {
     categories.push('MOTOR');
   }
 
@@ -373,7 +424,7 @@ export function getPinCategory(pId, pDesc, compType) {
     }
   }
 
-  if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
+  if (isBreadboardType(compType) && /^\d+[a-j]$/i.test(sId)) {
     const colNum = sId.match(/^\d+/)[0];
     const rowLetter = sId.slice(-1);
     const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
