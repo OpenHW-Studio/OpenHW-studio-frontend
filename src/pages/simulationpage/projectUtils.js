@@ -666,12 +666,13 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (!component || typeof component !== 'object') return null;
       let type = String(component.type || '').trim();
       if (!type) return null;
+      if (type === 'wokwi-raspberry-pi-pico') type = 'openhw-pico';
+      else if (type === 'wokwi-raspberry-pi-pico-w') type = 'openhw-pico-w';
+      else if (type.startsWith('wokwi-')) type = type.replace('wokwi-', 'openhw-');
       if (type === 'wokwi-arduino-uno') type = 'openhw-arduino-uno';
       if (type === 'wokwi-arduino-mega') type = 'openhw-arduino-mega';
       if (type === 'wokwi-arduino-nano') type = 'openhw-arduino-nano';
       if (type === 'wokwi-attiny85') type = 'openhw-attiny85';
-      if (type === 'wokwi-raspberry-pi-pico') type = 'openhw-pico';
-      if (type === 'wokwi-raspberry-pi-pico-w') type = 'openhw-pico-w';
       if (type === 'wokwi-led') type = 'openhw-led';
       if (type === 'wokwi-resistor') type = 'openhw-resistor';
       if (type === 'wokwi-pushbutton') type = 'openhw-pushbutton';
@@ -786,6 +787,12 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
   };
 
   const normalizeWaypoint = (point) => {
+    if (Array.isArray(point)) {
+      const x = Number(point[0]);
+      const y = Number(point[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      return { x, y };
+    }
     if (!point || typeof point !== 'object') return null;
     const x = Number(point.x);
     const y = Number(point.y);
@@ -837,4 +844,69 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
     .filter(Boolean);
 
   return { components: normalizedComponents, wires: normalizedWires };
+}
+
+export function parseWokwiDiagramJson(wokwiJson) {
+  if (!wokwiJson || typeof wokwiJson !== 'object') return { components: [], wires: [] };
+  
+  const parts = Array.isArray(wokwiJson.parts) ? wokwiJson.parts : (Array.isArray(wokwiJson.components) ? wokwiJson.components : []);
+  const connections = Array.isArray(wokwiJson.connections) ? wokwiJson.connections : (Array.isArray(wokwiJson.wires) ? wokwiJson.wires : []);
+
+  const components = parts.map(p => {
+    if (!p || typeof p !== 'object') return null;
+    let type = String(p.type || '').trim();
+    if (type === 'wokwi-raspberry-pi-pico') type = 'openhw-pico';
+    else if (type === 'wokwi-raspberry-pi-pico-w') type = 'openhw-pico-w';
+    else if (type.startsWith('wokwi-')) type = type.replace('wokwi-', 'openhw-');
+    
+    // Map left/top to x/y if x/y are missing, and scale by 1.5x for OpenHW grid matching
+    const rawX = p.x !== undefined ? p.x : (p.left !== undefined ? p.left : 0);
+    const rawY = p.y !== undefined ? p.y : (p.top !== undefined ? p.top : 0);
+    const x = Number(rawX) * 1.5;
+    const y = Number(rawY) * 1.5;
+
+    return { ...p, type, x, y };
+  }).filter(Boolean);
+
+  const wires = connections.map((c, idx) => {
+    if (!c) return null;
+    if (Array.isArray(c)) {
+      const [from = '', to = '', color = 'green', waypoints = []] = c;
+      const scaledWaypoints = Array.isArray(waypoints) ? waypoints.map(wp => {
+        if (Array.isArray(wp)) return { x: Number(wp[0]) * 1.5, y: Number(wp[1]) * 1.5 };
+        if (wp && typeof wp === 'object') return { ...wp, x: Number(wp.x) * 1.5, y: Number(wp.y) * 1.5 };
+        return wp;
+      }) : [];
+      return {
+        id: `w_wokwi_${idx}`,
+        from: String(from).replace('.', ':'),
+        to: String(to).replace('.', ':'),
+        color: String(color),
+        waypoints: scaledWaypoints,
+        isBelow: false,
+        isSocket: false,
+        isHidden: false,
+        isHelp: false,
+        fromLabel: '',
+        toLabel: '',
+      };
+    }
+    if (typeof c === 'object') {
+      const waypoints = Array.isArray(c.waypoints) ? c.waypoints.map(wp => {
+        if (Array.isArray(wp)) return { x: Number(wp[0]) * 1.5, y: Number(wp[1]) * 1.5 };
+        if (wp && typeof wp === 'object') return { ...wp, x: Number(wp.x) * 1.5, y: Number(wp.y) * 1.5 };
+        return wp;
+      }) : [];
+      return {
+        ...c,
+        id: c.id || `w_wokwi_${idx}`,
+        from: String(c.from || '').replace('.', ':'),
+        to: String(c.to || '').replace('.', ':'),
+        waypoints,
+      };
+    }
+    return null;
+  }).filter(Boolean);
+
+  return { components, wires };
 }

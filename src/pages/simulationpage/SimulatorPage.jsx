@@ -47,6 +47,7 @@ import {
   buildProjectPayload,
   normalizeImportedCircuitData
 } from './projectUtils';
+import { importWokwiProjectZip } from './wokwiImportUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
@@ -1146,6 +1147,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   });
   const backupRestoreInputRef = useRef(null);
+  const wokwiImportInputRef = useRef(null);
 
   const handleUploadZip = useCallback(async (event) => {
     const file = event.target.files[0];
@@ -2017,7 +2019,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         currentProjectIdRef.current = id;
         setCurrentProjectId(id);
       }
-      await saveProject({
+      const finalName = await saveProject({
         id,
         name: currentProjectName || 'Untitled',
         board,
@@ -2032,6 +2034,9 @@ export function SimulatorPage({ gamificationMode = false }) {
         activeCodeFileId,
         owner,
       });
+      if (finalName && finalName !== currentProjectName) {
+        setCurrentProjectName(finalName);
+      }
     }, 2500);
 
     return () => clearTimeout(autoSaveTimerRef.current);
@@ -2840,6 +2845,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       };
 
+      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
+
       boardComponents.forEach((bc) => {
         const kind = normalizeBoardKind(bc.type);
         const basePath = `project/${bc.id}`;
@@ -2902,9 +2909,20 @@ export function SimulatorPage({ gamificationMode = false }) {
             }
           });
         }
+
+        const libPath = `${basePath}/library.txt`;
+        upsert({
+          id: libPath,
+          path: libPath,
+          name: 'library.txt',
+          kind: 'code',
+          boardId: bc.id,
+          boardKind: kind,
+          content: libraries.join('\n'),
+          dirty: false,
+        });
       });
 
-      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
       const diagramPayload = buildProjectPayload({
         board,
         components,
@@ -2935,8 +2953,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       const generatedRootFiles = [
         { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
-        { id: 'project/library.txt', path: 'project/library.txt', name: 'library.txt', kind: 'root', content: libraries.join('\n'), dirty: false },
       ];
+
+      const oldLibIdx = result.findIndex(f => f.id === 'project/library.txt');
+      if (oldLibIdx !== -1) {
+        result.splice(oldLibIdx, 1);
+        changed = true;
+      }
 
       generatedRootFiles.forEach((rootFile) => {
         const idx = result.findIndex((file) => file.id === rootFile.id);
@@ -3045,6 +3068,15 @@ export function SimulatorPage({ gamificationMode = false }) {
     return m;
   }, [components]);
 
+  const loggedDebugMessages = useRef(new Set());
+  const debugLogOnce = useCallback((msg, data) => {
+    const key = `${msg}_${data.compId}_${data.searchId}`;
+    if (!loggedDebugMessages.current.has(key)) {
+      loggedDebugMessages.current.add(key);
+      console.log(msg, data);
+    }
+  }, []);
+
   const getPinPosForComp = useCallback((comp, pinId) => {
     if (!comp) return null;
     const pins = PIN_DEFS[comp.type] || [];
@@ -3052,12 +3084,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Normalize aliases
     const normalize = (id) => {
-      const s = String(id).toLowerCase();
+      let s = String(id).toLowerCase();
       if (s === 'p1') return '1';
       if (s === 'p2') return '2';
       if (s === 'a') return 'anode';
       if (s === 'k') return 'cathode';
-      return s;
+      if (s === '3.3v' || s === '3v3') return '3v3';
+      return s.replace(/[:.]/g, '_');
     };
 
     const normSearch = normalize(searchId);
@@ -3071,11 +3104,17 @@ export function SimulatorPage({ gamificationMode = false }) {
       // Resilience: Try to find a pin that starts with the ID (e.g. "GND" matches "GND.1" or "gnd_1")
       pin = pins.find(p => {
         const pid = String(p.id).toLowerCase();
-        return pid === searchId || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
+        const normPid = normalize(pid);
+        return pid === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
       });
     }
     if (!pin) {
+      debugLogOnce('[Pin Lookup Debug] Failed to find pin', { compId: comp.id, compType: comp.type, searchId, normSearch, availablePins: pins.map(p => p.id) });
       return { x: comp.x + (comp.w || 40) / 2, y: comp.y + (comp.h || 40) / 2, isFallback: true };
+    } else {
+      if (String(pin.id).toLowerCase() !== searchId) {
+        debugLogOnce('[Pin Lookup Debug] Resolved alias/fallback pin', { compId: comp.id, compType: comp.type, searchId, normSearch, resolvedPinId: pin.id });
+      }
     }
     const rotation = comp.rotation || 0;
     const cw = comp.w || 0;
@@ -3101,7 +3140,33 @@ export function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId);
     if (!comp) return null;
     const pins = PIN_DEFS[comp.type] || [];
-    const pin = pins.find(p => String(p.id) === String(pinId));
+    const searchId = String(pinId).toLowerCase();
+
+    const normalize = (id) => {
+      let s = String(id).toLowerCase();
+      if (s === 'p1') return '1';
+      if (s === 'p2') return '2';
+      if (s === 'a') return 'anode';
+      if (s === 'k') return 'cathode';
+      if (s === '3.3v' || s === '3v3') return '3v3';
+      return s.replace(/[:.]/g, '_');
+    };
+
+    const normSearch = normalize(searchId);
+
+    let pin = pins.find(p => {
+      const pid = String(p.id).toLowerCase();
+      return pid === searchId || normalize(pid) === normSearch;
+    });
+
+    if (!pin) {
+      pin = pins.find(p => {
+        const pid = String(p.id).toLowerCase();
+        const normPid = normalize(pid);
+        return pid === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
+      });
+    }
+
     if (!pin) {
       return { x: comp.x + (comp.w || 40) / 2, y: comp.y + (comp.h || 40) / 2, isFallback: true };
     }
@@ -3895,12 +3960,29 @@ export function SimulatorPage({ gamificationMode = false }) {
                 }
                 const pins = LOCAL_PIN_DEFS[c.type] || [];
                 const searchId = String(pid).toLowerCase();
-                let pDef = pins.find(p => String(p.id).toLowerCase() === searchId);
+
+                const normalize = (id) => {
+                  let s = String(id).toLowerCase();
+                  if (s === 'p1') return '1';
+                  if (s === 'p2') return '2';
+                  if (s === 'a') return 'anode';
+                  if (s === 'k') return 'cathode';
+                  if (s === '3.3v' || s === '3v3') return '3v3';
+                  return s.replace(/[:.]/g, '_');
+                };
+
+                const normSearch = normalize(searchId);
+
+                let pDef = pins.find(p => {
+                  const pId = String(p.id).toLowerCase();
+                  return pId === searchId || normalize(pId) === normSearch;
+                });
+
                 if (!pDef) {
-                  // Resilient matching for pins like GND.1 or 5V_OUT
                   pDef = pins.find(p => {
-                    const lowId = String(p.id).toLowerCase();
-                    return lowId.startsWith(searchId + '.') || lowId.startsWith(searchId + '_');
+                    const pId = String(p.id).toLowerCase();
+                    const normPid = normalize(pId);
+                    return pId === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pId.startsWith(searchId + '.') || pId.startsWith(searchId + '_');
                   });
                 }
                 if (!pDef) return null;
@@ -5215,9 +5297,9 @@ export function SimulatorPage({ gamificationMode = false }) {
       currentProjectIdRef.current = id;
       setCurrentProjectId(id);
     }
-    setCurrentProjectName(name);
     clearTimeout(autoSaveTimerRef.current);
-    await saveProject({ id, name, board, components, connections: wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, projectFiles, openCodeTabs, activeCodeFileId, owner });
+    const finalName = await saveProject({ id, name, board, components, connections: wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, projectFiles, openCodeTabs, activeCodeFileId, owner });
+    setCurrentProjectName(finalName || name);
     setShowSaveDialog(false);
   };
 
@@ -5296,8 +5378,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       return;
     }
     const newName = renameValue.trim() || 'Untitled';
-    await renameProject(id, newName);
-    if (currentProjectIdRef.current === id) setCurrentProjectName(newName);
+    const finalName = await renameProject(id, newName);
+    if (currentProjectIdRef.current === id) setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
     await refreshProjectList();
   };
@@ -5350,10 +5432,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
     zip.file('diagram.json', JSON.stringify(diagramJsonPayload, null, 2));
 
-    // 3. Generate library.txt (root)
-    const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
-    zip.file('library.txt', libraries.join('\n'));
-
     // 4. Organize files into board-specific folders
     (projectFiles || []).forEach(file => {
       // file.id is typically "project/<boardId>/<filename>"
@@ -5365,7 +5443,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       } else if (parts[0] === 'project' && parts.length === 2) {
         // Root files that aren't the special ones we just handled
         const fileName = parts[1];
-        const reservedNames = ['workflow.json', 'diagram.json', 'library.txt'];
+        const reservedNames = ['workflow.json', 'diagram.json'];
         if (!reservedNames.includes(fileName)) {
           zip.file(fileName, file.content || '');
         }
@@ -5410,6 +5488,47 @@ export function SimulatorPage({ gamificationMode = false }) {
       setHistory({ past: [], future: [] });
       lastCompiledRef.current = null;
     } catch (e) { alert('Failed to restore backup: ' + e.message); }
+  };
+
+  const handleImportWokwiZip = async (file) => {
+    if (!file) return;
+    try {
+      const result = await importWokwiProjectZip(file, components, wires);
+      if (!result) return;
+      
+      const newId = generateProjectId();
+      currentProjectIdRef.current = newId;
+      setCurrentProjectId(newId);
+      setCurrentProjectName(result.projectName);
+      setBoard(result.board);
+      setComponents(result.components);
+      setWires(result.wires);
+      setProjectFiles(result.projectFiles);
+      setOpenCodeTabs(result.openCodeTabs);
+      setActiveCodeFileId(result.activeCodeFileId);
+      syncNextIds(result.components, result.wires);
+      setHistory({ past: [], future: [] });
+      lastCompiledRef.current = null;
+
+      const owner = getOwner();
+      const finalName = await saveProject({
+        id: newId,
+        name: result.projectName,
+        board: result.board,
+        components: result.components,
+        connections: result.wires,
+        code: result.code || '',
+        blocklyXml: '',
+        blocklyGeneratedCode: '',
+        useBlocklyCode: false,
+        projectFiles: result.projectFiles,
+        openCodeTabs: result.openCodeTabs,
+        activeCodeFileId: result.activeCodeFileId,
+        owner,
+      });
+      setCurrentProjectName(finalName || result.projectName);
+      await refreshProjectList();
+    } catch (e) { alert(e.message); }
   };
 
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
@@ -8027,7 +8146,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
 
         {/* TOP BAR */}
-        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
+        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
 
         <SimulatorStatusBanners
           studentAssignmentMode={studentAssignmentMode}
@@ -8405,6 +8524,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             autoSaveEnabled={autoSaveEnabled} setAutoSaveEnabled={setAutoSaveEnabled}
             handleBackupWorkflow={handleBackupWorkflow}
             backupRestoreInputRef={backupRestoreInputRef}
+            wokwiImportInputRef={wokwiImportInputRef}
             handleSyncToCloud={handleSyncToCloud}
             setShowCreateComponentModal={setShowCreateComponentModal}
             projContextMenu={projContextMenu}
