@@ -663,8 +663,11 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
   const normalizedComponents = componentsInput
     .map((component) => {
       if (!component || typeof component !== 'object') return null;
-      const type = String(component.type || '').trim();
+      let type = String(component.type || '').trim();
       if (!type) return null;
+      if (type === 'wokwi-analog-joystick') type = 'openhw-analog-joystick';
+      if (type === 'wokwi-membrane-keypad') type = 'openhw-membrane-keypad';
+      if (type === 'wokwi-rotary-encoder') type = 'openhw-rotary-encoder';
 
       const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
 

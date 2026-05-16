@@ -31,6 +31,7 @@ export const LEVELS = [
       'wokwi-l293d',
       'wokwi-rgb-led',
       'wokwi-rotary-encoder',
+      'openhw-rotary-encoder',
       'wokwi-logic-analyzer',
       'wokwi-nokia-5110',
       'wokwi-soil-moisture-sensor',
