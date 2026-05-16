@@ -2772,6 +2772,12 @@ export function SimulatorPage({ gamificationMode = false }) {
       const validBoardIds = new Set(boardComponents.map(b => b.id));
       const pruned = [];
 
+      // If boardComponents is empty (e.g. during initial mount/project loading before React setComponents commits),
+      // do not prune project files to prevent wiping out loaded code files.
+      if (boardComponents.length === 0) {
+        return prev;
+      }
+
       result.forEach(f => {
         const m = f.path.match(/^project\/([^/]+)\//);
         if (!m) {
