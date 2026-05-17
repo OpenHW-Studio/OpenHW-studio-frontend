@@ -726,10 +726,16 @@ function resolveComponentIdFormat(type) {
     return { prefix: 'pico', separator: '' };
   }
 
-  const fallback = String(type || 'component')
+  let cleanType = rawType;
+  if (cleanType.startsWith('openhw-')) {
+    cleanType = cleanType.slice(7);
+  } else if (cleanType.startsWith('wokwi-')) {
+    cleanType = cleanType.slice(6);
+  }
+
+  const fallback = cleanType
     .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase() || 'component';
+    .replace(/^_+|_+$/g, '') || 'component';
 
   return { prefix: fallback, separator: '_' };
 }

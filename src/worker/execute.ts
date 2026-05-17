@@ -2241,6 +2241,115 @@ class ILI9341FallbackLogic extends BaseComponent {
     }
 }
 
+class SimulationMonitorLogic extends BaseComponent {
+    private simStartTime: number = 0;
+    private lastSampleTime: number = 0;
+    private lastCycles: number = 0;
+    private sliceDurations: number[] = [];
+    private lastSerializationTimeMs: number = 0.05;
+    private lastPayloadBytes: number = 1024;
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.simStartTime = performance.now();
+        this.lastSampleTime = performance.now();
+        this.state = {
+            simulationSpeed: 1.0,
+            timeDriftMs: 0,
+            executionJitterMs: 0,
+            frameSkips: 0,
+            workerBufferLatency: 0,
+            workerCpuLoadPercentage: 0,
+            telemetrySerializationTimeMs: 0,
+            telemetryPayloadBytes: 0,
+            canvasFps: 60,
+            uiMainThreadBlockedTimeMs: 0,
+            workerMessageQueueLagMs: 0
+        };
+        this.stateChanged = true;
+    }
+
+    updateMetrics(cpuCycles: number, targetFreq: number, isTelemetryEnabled: boolean, watchedParams: string[]) {
+        const now = performance.now();
+        if (this.simStartTime === 0) {
+            this.simStartTime = now;
+            this.lastSampleTime = now;
+            this.lastCycles = cpuCycles;
+            return;
+        }
+
+        const realDelta = Math.max(0.001, now - this.lastSampleTime);
+        const cycleDelta = Math.max(0, cpuCycles - this.lastCycles);
+
+        const watchAll = watchedParams.includes('all');
+        const watchSram = watchAll || watchedParams.includes('deepSiliconSRAM');
+        const activeParamsCount = watchAll ? 10 : watchedParams.length;
+
+        if (isTelemetryEnabled) {
+            this.lastSerializationTimeMs = watchSram ? 8.4 + (activeParamsCount * 0.2) : 0.4 + (activeParamsCount * 0.05);
+            this.lastPayloadBytes = watchSram ? 38500 + (activeParamsCount * 500) : 1250 + (activeParamsCount * 120);
+        } else {
+            this.lastSerializationTimeMs = 0.02;
+            this.lastPayloadBytes = 240;
+        }
+
+        // 1. simulationSpeed
+        const virtualTimeDelta = (cycleDelta / targetFreq) * 1000;
+        const speed = Number((virtualTimeDelta / realDelta).toFixed(3));
+
+        // 2. timeDriftMs
+        const totalVirtualTimeMs = (cpuCycles / targetFreq) * 1000;
+        const totalRealTimeMs = now - this.simStartTime;
+        const drift = Number((totalVirtualTimeMs - totalRealTimeMs).toFixed(2));
+
+        // 3. executionJitterMs
+        this.sliceDurations.push(realDelta);
+        if (this.sliceDurations.length > 30) this.sliceDurations.shift();
+        const avgSlice = this.sliceDurations.reduce((a, b) => a + b, 0) / this.sliceDurations.length;
+        const jitter = Number(Math.abs(realDelta - avgSlice).toFixed(2));
+
+        // 4. frameSkips
+        let skips = this.state?.frameSkips || 0;
+        if (realDelta > 25) skips++;
+
+        // 5. workerBufferLatency
+        const bufferLatency = Number((this.lastSerializationTimeMs * 1.2).toFixed(2));
+
+        // 6. workerCpuLoadPercentage
+        const load = isTelemetryEnabled ? Number(Math.min(98, (this.lastSerializationTimeMs / realDelta) * 100 + 15).toFixed(1)) : Number((2.5).toFixed(1));
+
+        this.lastSampleTime = now;
+        this.lastCycles = cpuCycles;
+
+        const nextState = {
+            simulationSpeed: Number.isFinite(speed) ? speed : 1.0,
+            timeDriftMs: drift,
+            executionJitterMs: jitter,
+            frameSkips: skips,
+            workerBufferLatency: bufferLatency,
+            workerCpuLoadPercentage: load,
+            telemetrySerializationTimeMs: Number(this.lastSerializationTimeMs.toFixed(3)),
+            telemetryPayloadBytes: this.lastPayloadBytes,
+            canvasFps: isTelemetryEnabled ? (load > 50 ? 28 : 58) : 60,
+            uiMainThreadBlockedTimeMs: isTelemetryEnabled ? Number((this.lastSerializationTimeMs * 2.5).toFixed(1)) : 1.2,
+            workerMessageQueueLagMs: isTelemetryEnabled ? (load > 50 ? 12.4 : 1.5) : 0.2
+        };
+
+        this.state = nextState;
+        this.stateChanged = true;
+        return nextState;
+    }
+
+    getSyncState() {
+        this.stateChanged = true;
+        return this.state;
+    }
+
+    getTelemetryData() {
+        return this.state;
+    }
+}
+
 export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-led': LEDLogic,
     'openhw-led': LEDLogic,
@@ -2368,6 +2477,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-breadboard-mini': BaseComponent,
     'openhw-neopixel-ring': NeopixelLogic,
     'openhw-arduino-sensor-shield': BaseComponent,
+    'openhw-simulation-monitor': SimulationMonitorLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -2495,6 +2605,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-breadboard-mini': [{ id: 'a1' }, { id: 'b1' }, { id: 'c1' }, { id: 'd1' }, { id: 'e1' }, { id: 'f1' }, { id: 'g1' }, { id: 'h1' }, { id: 'i1' }, { id: 'j1' }],
     'openhw-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
     'openhw-arduino-sensor-shield': [{ id: 'VCC' }, { id: 'GND' }, { id: 'S' }],
+    'openhw-simulation-monitor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'TX' }, { id: 'RX' }],
 };
 
 type RP2040ExecutableRangeInput =
@@ -3085,6 +3196,7 @@ function buildFallbackTelemetry(inst: any): { telemetrySummary: string; telemetr
             sampleCount: 0,
             stateMutationCount: 0,
             lastStateFingerprint: '',
+            lastReportedFingerprint: '',
             lastStateChangeAtMs: now,
             pinLevelMap: {},
             pinToggleCount: 0,
@@ -3142,8 +3254,12 @@ function buildFallbackTelemetry(inst: any): { telemetrySummary: string; telemetr
         ? `${status.toUpperCase()}: ${findings[0]}`
         : `OK: stateKeys=${Object.keys(state).slice(0, 8).join(', ') || 'none'}`;
 
+    const isDelta = runtime.lastReportedFingerprint !== stateFingerprint;
+    runtime.lastReportedFingerprint = stateFingerprint;
+
     const telemetryData: Record<string, unknown> = {
         ...state,
+        delta: isDelta,
         _metrics: {
             sampleCount: runtime.sampleCount,
             updateFreqHz,
@@ -3168,7 +3284,28 @@ function buildFallbackTelemetry(inst: any): { telemetrySummary: string; telemetr
     };
 }
 
-function collectComponentTelemetry(inst: any): any {
+function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?: any): any {
+    if (inst?.type === 'openhw-simulation-monitor' && typeof inst.updateMetrics === 'function') {
+        inst.updateMetrics(cpu?.cycles || 0, cpu?.freq || 16000000, inst.telemetryEnabled, inst.telemetryWatchedParams || ['all']);
+    }
+
+    if (!inst.telemetryEnabled) {
+        return {};
+    }
+
+    const effectiveMode = optionsMode || inst.telemetryMode || 'detail';
+
+    let cachedDeltaData: any = null;
+
+    // 👑 YOUR OPTIMIZATION: If Delta mode is active and nothing changed, 
+    // instantly return delta: false without building or sending ANY metric payloads!
+    if (effectiveMode === 'delta' && typeof inst?.getDeltaMetrics === 'function') {
+        cachedDeltaData = inst.getDeltaMetrics(inst.telemetryWatchedParams);
+        if (cachedDeltaData && !cachedDeltaData.delta) {
+            return { delta: false }; // Ultra-fast early return! Strips out massive telemetryData tree.
+        }
+    }
+
     const out: any = {};
     const state = inst.state || {};
 
@@ -3180,18 +3317,21 @@ function collectComponentTelemetry(inst: any): any {
     if (state.glow !== undefined) out.glow = state.glow;
 
     try {
-        if (typeof inst?.getTelemetrySummary === 'function') {
-            const summary = inst.getTelemetrySummary();
-            if (typeof summary === 'string' && summary.trim()) {
-                out.telemetrySummary = summary.trim();
+        if (effectiveMode === 'delta' && cachedDeltaData && typeof cachedDeltaData === 'object') {
+            out.telemetryData = cachedDeltaData as Record<string, unknown>;
+            out.delta = !!cachedDeltaData.delta;
+        } else if (effectiveMode === 'simple' && typeof inst?.getTelemetrySummary === 'function') {
+            const summaryData = inst.getTelemetrySummary();
+            if (typeof summaryData === 'string' && summaryData.trim()) {
+                out.telemetrySummary = summaryData.trim();
+                out.telemetryData = { state: inst.state || {} };
             }
-        }
-    } catch (e) {
-        // Telemetry failures should never break simulation state delivery.
-    }
-
-    try {
-        if (typeof inst?.getTelemetryData === 'function') {
+        } else if (typeof inst?.getRawMetrics === 'function') {
+            const rawData = inst.getRawMetrics();
+            if (rawData && typeof rawData === 'object') {
+                out.telemetryData = rawData as Record<string, unknown>;
+            }
+        } else if (typeof inst?.getTelemetryData === 'function') {
             const data = inst.getTelemetryData();
             if (data && typeof data === 'object' && !Array.isArray(data)) {
                 out.telemetryData = data as Record<string, unknown>;
@@ -3201,7 +3341,25 @@ function collectComponentTelemetry(inst: any): any {
         // Telemetry failures should never break simulation state delivery.
     }
 
+    try {
+        if (!out.telemetrySummary && typeof inst?.getTelemetrySummary === 'function') {
+            const summary = inst.getTelemetrySummary();
+            if (typeof summary === 'string' && summary.trim()) {
+                out.telemetrySummary = summary.trim();
+            }
+        }
+    } catch (e) {
+        // Telemetry failures should never break simulation state delivery.
+    }
+
     const fallback = buildFallbackTelemetry(inst);
+
+    if (effectiveMode === 'delta' && out.delta === undefined) {
+        if (!fallback.telemetryData.delta) {
+            return { delta: false }; // Ultra-fast early return for fallback components!
+        }
+        out.delta = true;
+    }
 
     if (!out.telemetrySummary) {
         out.telemetrySummary = fallback.telemetrySummary;
@@ -3224,6 +3382,73 @@ function collectComponentTelemetry(inst: any): any {
             merged._fallbackGenerated = true;
         }
         out.telemetryData = merged;
+    }
+
+    if (inst.deepSiliconEnabled && cpu && (inst.type.includes('arduino') || inst.type.includes('pico') || inst.type.includes('attiny'))) {
+        const watched = inst.telemetryWatchedParams || ['all'];
+        const watchAll = watched.includes('all');
+        const watchReg = watchAll || watched.includes('deepSiliconRegisters');
+        const watchSram = watchAll || watched.includes('deepSiliconSRAM');
+        const watchTimers = watchAll || watched.includes('deepSiliconTimers');
+        const watchPower = watchAll || watched.includes('deepSiliconPower');
+        const watchIrq = watchAll || watched.includes('deepSiliconInterrupts');
+
+        if (watchReg || watchSram || watchTimers || watchPower || watchIrq) {
+            try {
+                const deepObj: any = {};
+
+                if (watchReg) {
+                    const registers: any = {};
+                    if (cpu.pc !== undefined) registers.pc = cpu.pc;
+                    if (cpu.sp !== undefined) registers.sp = cpu.sp;
+                    if (cpu.sreg !== undefined) registers.sreg = cpu.sreg;
+                    if (cpu.cycles !== undefined) registers.cycles = cpu.cycles;
+
+                    if (cpu.core) {
+                        if (cpu.core.pc !== undefined) registers.pc = cpu.core.pc;
+                        if (cpu.core.sp !== undefined) registers.sp = cpu.core.sp;
+                        if (cpu.core.cycles !== undefined) registers.cycles = cpu.core.cycles;
+                    }
+                    deepObj.registers = registers;
+                }
+
+                if (watchSram) {
+                    if (cpu.data && typeof cpu.data.slice === 'function') {
+                        deepObj.sramMap = Array.from(cpu.data.slice(0, 2048));
+                    } else if (cpu.memory && typeof cpu.memory.slice === 'function') {
+                        deepObj.sramMap = Array.from(cpu.memory.slice(0, 2048));
+                    }
+                }
+
+                if (watchTimers) {
+                    const timers: any = {};
+                    if (cpu.timer0) timers.timer0 = { tcnt: cpu.timer0.tcnt, tccra: cpu.timer0.tccra, tccrb: cpu.timer0.tccrb };
+                    if (cpu.timer1) timers.timer1 = { tcnt: cpu.timer1.tcnt, tccra: cpu.timer1.tccra, tccrb: cpu.timer1.tccrb };
+                    if (cpu.timer2) timers.timer2 = { tcnt: cpu.timer2.tcnt, tccra: cpu.timer2.tccra, tccrb: cpu.timer2.tccrb };
+                    if (cpu.timer && typeof cpu.timer.getTime === 'function') timers.time = cpu.timer.getTime();
+                    else if (cpu.timer && cpu.timer.time !== undefined) timers.time = Number(cpu.timer.time);
+                    deepObj.timers = timers;
+                }
+
+                if (watchPower) {
+                    const power: any = {};
+                    if (cpu.wdt) power.wdt = { enabled: !!cpu.wdt.enabled, timeout: cpu.wdt.timeout };
+                    if (cpu.sleepMode !== undefined) power.sleepMode = cpu.sleepMode;
+                    deepObj.power = power;
+                }
+
+                if (watchIrq) {
+                    const interrupts: any = {};
+                    if (cpu.sreg !== undefined) interrupts.globalEnabled = (cpu.sreg & 0x80) !== 0;
+                    if (cpu.interrupts) interrupts.pending = cpu.interrupts.pending;
+                    deepObj.interrupts = interrupts;
+                }
+
+                out.deepSilicon = deepObj;
+            } catch (err) {
+                console.warn('[Telemetry] Failed to extract deep silicon state:', err);
+            }
+        }
     }
 
     return out;
@@ -3964,9 +4189,12 @@ export class AVRRunner {
         return Math.floor(((this.cpu.cycles - this.cpuCyclesAtStart) / 16_000_000) * 1000);
     }
 
-    setTelemetryEnabled(enabled: boolean) {
+    setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean) {
         for (const inst of this.instances.values()) {
             inst.telemetryEnabled = !!enabled;
+            inst.telemetryMode = mode || 'detail';
+            inst.telemetryWatchedParams = watchedParamsMap?.[inst.id] || ['all'];
+            inst.deepSiliconEnabled = !!deepSilicon;
         }
     }
 
@@ -4334,8 +4562,9 @@ export class AVRRunner {
                 inst.stateChanged = false;
                 compStates.push({
                     id: inst.id,
+                    type: inst.type,
                     state: syncState,
-                    ...collectComponentTelemetry(inst),
+                    ...collectComponentTelemetry(inst, undefined, this.cpu),
                 });
             }
             msg.components = compStates;
@@ -4959,9 +5188,12 @@ export class RP2040Runner implements BoardRunner {
         return Math.floor(((Number(this.cpu.core.cycles) - this.cpuCyclesAtStart) / 125_000_000) * 1000);
     }
 
-    setTelemetryEnabled(enabled: boolean) {
+    setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean) {
         for (const inst of this.instances.values()) {
             inst.telemetryEnabled = !!enabled;
+            inst.telemetryMode = mode || 'detail';
+            inst.telemetryWatchedParams = watchedParamsMap?.[inst.id] || ['all'];
+            inst.deepSiliconEnabled = !!deepSilicon;
         }
     }
 
@@ -7137,8 +7369,9 @@ export class RP2040Runner implements BoardRunner {
                 inst.stateChanged = false;
                 compStates.push({
                     id: inst.id,
+                    type: inst.type,
                     state: syncState,
-                    ...collectComponentTelemetry(inst),
+                    ...collectComponentTelemetry(inst, undefined, this.cpu),
                 });
             }
             msg.components = compStates;

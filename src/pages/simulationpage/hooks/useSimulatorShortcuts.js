@@ -208,6 +208,8 @@ export function useSimulatorShortcuts({
             saveHistory();
             setComponents([]);
             setWires([]);
+            if (setProjectFiles) setProjectFiles(prev => prev.filter(f => f.id === 'project/diagram.json'));
+            if (setCode) setCode('');
             setSelected(null);
           }
         }
@@ -222,6 +224,7 @@ export function useSimulatorShortcuts({
     setProjectsSidebarTab, wireStart, setWireStart, setSelected, setWireClickPos, setWires, setComponents,
     applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked,
     isPanelOpen, setIsPanelOpen, codeTab, setCodeTab, fitToView, setWiresAlwaysOnTop, setShowCodeExplorer,
-    setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef
+    setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef,
+    setProjectFiles, activeCodeFileId, code, setCode
   ]);
 }

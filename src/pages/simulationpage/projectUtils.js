@@ -815,8 +815,90 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
   const normalizedWires = wiresInput
     .map((wire) => {
       if (!wire || typeof wire !== 'object') return null;
-      const from = String(wire.from || '').trim();
-      const to = String(wire.to || '').trim();
+      const mapWokwiPin = (endpoint) => {
+        if (!endpoint) return endpoint;
+        const idx = endpoint.indexOf(':');
+        if (idx === -1) return endpoint;
+        const compId = endpoint.slice(0, idx);
+        let pinId = endpoint.slice(idx + 1);
+        
+        const comp = normalizedComponents.find(c => c.id === compId);
+        if (comp) {
+          const type = comp.type;
+          
+          if (type === 'openhw-arduino-uno') {
+            if (pinId === 'GND.1') pinId = 'gnd_1';
+            else if (pinId === 'GND.2') pinId = 'gnd_2';
+            else if (pinId === 'GND.3') pinId = 'gnd_3';
+            else if (pinId === '3.3V') pinId = '3v3';
+            else if (pinId.toUpperCase() === 'VIN') pinId = 'vin';
+            else if (pinId.toUpperCase() === 'RESET') pinId = 'rst';
+          } else if (type === 'openhw-pico' || type === 'openhw-pico-w') {
+            if (pinId === 'GND.1') pinId = 'GND';
+            else if (pinId === 'GND.2') pinId = 'GND_1';
+            else if (pinId === 'GND.3') pinId = 'GND_2';
+            else if (pinId === 'GND.4') pinId = 'GND_3';
+            else if (pinId === 'GND.5') pinId = 'GND_4';
+            else if (pinId === 'GND.6') pinId = 'GND_5';
+            else if (pinId === 'GND.7') pinId = 'GND_6';
+            else if (pinId === 'GND.8') pinId = 'GND_6';
+          } else if (type === 'openhw-resistor' || type === 'openhw-photoresistor') {
+            if (pinId === '1') pinId = 'p1';
+            else if (pinId === '2') pinId = 'p2';
+          } else if (type === 'openhw-potentiometer') {
+            if (pinId === 'GND' || pinId === '1') pinId = '1';
+            else if (pinId === 'VCC' || pinId === '3') pinId = '2';
+          } else if (type === 'openhw-led') {
+            if (pinId.toUpperCase() === 'C') pinId = 'K';
+          } else if (type === 'openhw-rgb-led') {
+            if (pinId.toUpperCase() === 'C') pinId = 'COM';
+          } else if (type === 'openhw-buzzer') {
+            if (pinId === '1') pinId = '2';
+            else if (pinId === '2') pinId = '1';
+          } else if (type === 'openhw-analog-joystick') {
+            if (pinId === 'VCC') pinId = '5V';
+            else if (pinId === 'VERT') pinId = 'VRX';
+            else if (pinId === 'HORZ') pinId = 'VRY';
+            else if (pinId === 'SEL') pinId = 'SW';
+          } else if (type === 'openhw-mpu6050') {
+            if (pinId === 'AD0') pinId = 'ADO';
+          } else if (type === 'openhw-a4988') {
+            if (pinId === 'GND.1') pinId = 'GND_MOT';
+            else if (pinId === 'GND.2') pinId = 'GND_LOGIC';
+          } else if (type === 'openhw-l293d') {
+            if (pinId === '1,2EN') pinId = 'EN1,2';
+            else if (pinId === '3,4EN') pinId = 'EN3,4';
+            else if (pinId === '1A') pinId = 'IN1';
+            else if (pinId === '2A') pinId = 'IN2';
+            else if (pinId === '3A') pinId = 'IN3';
+            else if (pinId === '4A') pinId = 'IN4';
+            else if (pinId === '1Y') pinId = 'OUT1';
+            else if (pinId === '2Y') pinId = 'OUT2';
+            else if (pinId === '3Y') pinId = 'OUT3';
+            else if (pinId === '4Y') pinId = 'OUT4';
+            else if (pinId === 'GND.1') pinId = 'GND1';
+            else if (pinId === 'GND.2') pinId = 'GND2';
+            else if (pinId === 'GND.3') pinId = 'GND3';
+            else if (pinId === 'GND.4') pinId = 'GND4';
+          } else if (type === 'openhw-lcd1602') {
+            if (pinId === 'LED+') pinId = 'A';
+            else if (pinId === 'LED-') pinId = 'K';
+          } else if (type === 'openhw-neopixel-ring') {
+            if (pinId === 'VCC') pinId = 'VDD';
+            else if (pinId === 'GND') pinId = 'VSS';
+            else if (pinId === 'IN') pinId = 'DIN';
+            else if (pinId === 'OUT') pinId = 'DOUT';
+          } else if (type === 'openhw-neopixel-matrix') {
+            if (pinId === 'DI') pinId = 'DIN';
+            else if (pinId === 'DO') pinId = 'DOUT';
+          }
+        }
+        
+        return `${compId}:${pinId}`;
+      };
+
+      const from = mapWokwiPin(String(wire.from || '').trim());
+      const to = mapWokwiPin(String(wire.to || '').trim());
       if (!from || !to) return null;
 
       const rawWireId = String(wire.id || '').trim();
@@ -879,8 +961,8 @@ export function parseWokwiDiagramJson(wokwiJson) {
       }) : [];
       return {
         id: `w_wokwi_${idx}`,
-        from: String(from).replace('.', ':'),
-        to: String(to).replace('.', ':'),
+        from: String(from).replace(/:(\d)\.([lr])$/i, ':$1$2'),
+        to: String(to).replace(/:(\d)\.([lr])$/i, ':$1$2'),
         color: String(color),
         waypoints: scaledWaypoints,
         isBelow: false,
@@ -900,8 +982,8 @@ export function parseWokwiDiagramJson(wokwiJson) {
       return {
         ...c,
         id: c.id || `w_wokwi_${idx}`,
-        from: String(c.from || '').replace('.', ':'),
-        to: String(c.to || '').replace('.', ':'),
+        from: String(c.from || '').replace(/:(\d)\.([lr])$/i, ':$1$2'),
+        to: String(c.to || '').replace(/:(\d)\.([lr])$/i, ':$1$2'),
         waypoints,
       };
     }
