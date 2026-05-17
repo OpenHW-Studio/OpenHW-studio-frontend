@@ -62,31 +62,30 @@ export const ComponentContextMenu = ({
   const submenus = useMemo(() => {
     if (!comp) return [];
     const kind = normalizeBoardKind(comp.type);
+    let menus = [];
 
     if (kind === 'rp2040') {
       const currentEnv = resolveComponentAttrString(comp?.attrs, 'env', 'native');
       const currentBuilder = resolveComponentAttrString(comp?.attrs, 'builder', 'arduino-pico');
 
-      return [
-        {
-          label: 'Env',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>,
-          options: [
-            {
-              label: 'None',
-              active: currentEnv === 'native' || currentEnv === 'ino',
-              onClick: () => updateComponentAttr?.(comp.id, 'env', 'native'),
-              submenuHeader: 'BUILDER',
-              submenu: [
-                { label: 'Arduino (Earle Philhower)', active: currentBuilder === 'arduino-pico', onClick: () => updateComponentAttr?.(comp.id, 'builder', 'arduino-pico') },
-                { label: 'Pico SDK', active: currentBuilder === 'pico-sdk', onClick: () => updateComponentAttr?.(comp.id, 'builder', 'pico-sdk') },
-              ]
-            },
-            { label: 'MicroPython', active: currentEnv === 'micropython', onClick: () => updateComponentAttr?.(comp.id, 'env', 'micropython') },
-            { label: 'CircuitPython', active: currentEnv === 'circuitpython', onClick: () => updateComponentAttr?.(comp.id, 'env', 'circuitpython') },
-          ]
-        }
-      ];
+      menus.push({
+        label: 'Env',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>,
+        options: [
+          {
+            label: 'None',
+            active: currentEnv === 'native' || currentEnv === 'ino',
+            onClick: () => updateComponentAttr?.(comp.id, 'env', 'native'),
+            submenuHeader: 'BUILDER',
+            submenu: [
+              { label: 'Arduino (Earle Philhower)', active: currentBuilder === 'arduino-pico', onClick: () => updateComponentAttr?.(comp.id, 'builder', 'arduino-pico') },
+              { label: 'Pico SDK', active: currentBuilder === 'pico-sdk', onClick: () => updateComponentAttr?.(comp.id, 'builder', 'pico-sdk') },
+            ]
+          },
+          { label: 'MicroPython', active: currentEnv === 'micropython', onClick: () => updateComponentAttr?.(comp.id, 'env', 'micropython') },
+          { label: 'CircuitPython', active: currentEnv === 'circuitpython', onClick: () => updateComponentAttr?.(comp.id, 'env', 'circuitpython') },
+        ]
+      });
     }
 
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
@@ -99,82 +98,306 @@ export const ComponentContextMenu = ({
         { label: 'Orange', value: 'orange', hex: '#f97316' },
         { label: 'White', value: 'white', hex: '#f1f5f9' },
       ];
-      return [
-        {
-          label: 'Color',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg>,
-          options: ledColors.map(c => ({
-            label: c.label,
-            active: currentColor === c.value,
-            hoverBg: c.hex,
-            onClick: () => updateComponentAttr?.(comp.id, 'color', c.value)
-          }))
-        }
-      ];
+      menus.push({
+        label: 'Color',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg>,
+        options: ledColors.map(c => ({
+          label: c.label,
+          active: currentColor === c.value,
+          hoverBg: c.hex,
+          onClick: () => updateComponentAttr?.(comp.id, 'color', c.value)
+        }))
+      });
     }
 
     if (comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') {
       const cols = resolveComponentAttrString(comp?.attrs, 'cols', '8');
       const rows = resolveComponentAttrString(comp?.attrs, 'rows', '8');
-      return [
-        {
-          label: 'Config',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="2" y1="14" x2="6" y2="14" /><line x1="10" y1="8" x2="14" y2="8" /><line x1="18" y1="16" x2="22" y2="16" /></svg>,
-          options: [
-            {
-              label: 'Rows',
-              valueDisplay: rows,
-              submenu: true, // Marker for showing custom content
-              customContent: (
-                <ComponentCyclePicker
-                  value={rows}
-                  onChange={(v) => updateComponentAttr?.(comp.id, 'rows', v)}
-                  theme={theme}
-                />
-              )
-            },
-            {
-              label: 'Cols',
-              valueDisplay: cols,
-              submenu: true,
-              customContent: (
-                <ComponentCyclePicker
-                  value={cols}
-                  onChange={(v) => updateComponentAttr?.(comp.id, 'cols', v)}
-                  theme={theme}
-                />
-              )
-            },
-          ]
-        }
-      ];
+      menus.push({
+        label: 'Config',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="2" y1="14" x2="6" y2="14" /><line x1="10" y1="8" x2="14" y2="8" /><line x1="18" y1="16" x2="22" y2="16" /></svg>,
+        options: [
+          {
+            label: 'Rows',
+            valueDisplay: rows,
+            submenu: true, // Marker for showing custom content
+            customContent: (
+              <ComponentCyclePicker
+                value={rows}
+                onChange={(v) => updateComponentAttr?.(comp.id, 'rows', v)}
+                theme={theme}
+              />
+            )
+          },
+          {
+            label: 'Cols',
+            valueDisplay: cols,
+            submenu: true,
+            customContent: (
+              <ComponentCyclePicker
+                value={cols}
+                onChange={(v) => updateComponentAttr?.(comp.id, 'cols', v)}
+                theme={theme}
+              />
+            )
+          },
+        ]
+      });
     }
 
     if (comp.type === 'wokwi-resistor' || comp.type === 'openhw-resistor') {
       const val = resolveComponentAttrString(comp?.attrs, 'value', '1000');
-      return [
-        {
-          label: 'Value',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7h-9m3 10H5" /><path d="M16 13l-4-4-4 4 4 4 4-4z" /></svg>,
-          valueDisplay: formatResistance(val) + ' Ω',
-          onClick: () => { onValueEdit?.(comp.id, 'value'); onClose(); }
-        }
-      ];
+      menus.push({
+        label: 'Value',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7h-9m3 10H5" /><path d="M16 13l-4-4-4 4 4 4 4-4z" /></svg>,
+        valueDisplay: formatResistance(val) + ' Ω',
+        onClick: () => { onValueEdit?.(comp.id, 'value'); onClose(); }
+      });
     }
 
     if (comp.type === 'wokwi-power-supply' || comp.type === 'openhw-power-supply') {
       const val = resolveComponentAttrString(comp?.attrs, 'voltage', '5.0');
-      return [
-        {
-          label: 'Voltage',
-          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
-          valueDisplay: val + ' V',
-          onClick: () => { onValueEdit?.(comp.id, 'voltage'); onClose(); }
-        }
-      ];
+      menus.push({
+        label: 'Voltage',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>,
+        valueDisplay: val + ' V',
+        onClick: () => { onValueEdit?.(comp.id, 'voltage'); onClose(); }
+      });
     }
 
-    return [];
+    if (comp.type.includes('breadboard')) {
+      const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'white');
+      const breadboardColors = [
+        { label: 'White', value: 'white', hex: '#fbfbf6' },
+        { label: 'Black', value: 'black', hex: '#1e293b' },
+        { label: 'Blue', value: 'blue', hex: '#3b82f6' },
+        { label: 'Red', value: 'red', hex: '#ef4444' },
+        { label: 'Green', value: 'green', hex: '#22c55e' },
+        { label: 'Yellow', value: 'yellow', hex: '#eab308' },
+        { label: 'Transparent', value: 'transparent', hex: '#cbd5e1' },
+      ];
+      menus.push({
+        label: 'Color',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg>,
+        options: breadboardColors.map(c => ({
+          label: c.label,
+          active: currentColor === c.value,
+          hoverBg: c.hex,
+          onClick: () => updateComponentAttr?.(comp.id, 'color', c.value)
+        }))
+      });
+    }
+
+    if (comp.type === 'wokwi-pushbutton' || comp.type === 'openhw-pushbutton' || comp.type === 'button') {
+      const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'green');
+      const btnColors = [
+        { label: 'Green', value: 'green', hex: '#22c55e' },
+        { label: 'Red', value: 'red', hex: '#ef4444' },
+        { label: 'Blue', value: 'blue', hex: '#3b82f6' },
+        { label: 'Yellow', value: 'yellow', hex: '#eab308' },
+        { label: 'White', value: 'white', hex: '#f1f5f9' },
+        { label: 'Black', value: 'black', hex: '#1e293b' },
+      ];
+      menus.push({
+        label: 'Color',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg>,
+        options: btnColors.map(c => ({
+          label: c.label,
+          active: currentColor === c.value,
+          hoverBg: c.hex,
+          onClick: () => updateComponentAttr?.(comp.id, 'color', c.value)
+        }))
+      });
+    }
+
+    if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
+      const currentColor = resolveComponentAttrString(comp?.attrs, 'hornColor', resolveComponentAttrString(comp?.attrs, 'horn-color', resolveComponentAttrString(comp?.attrs, 'color', 'white')));
+      const hornColors = [
+        { label: 'White', value: 'white', hex: '#f1f5f9' },
+        { label: 'Red', value: 'red', hex: '#ef4444' },
+        { label: 'Blue', value: 'blue', hex: '#3b82f6' },
+        { label: 'Yellow', value: 'yellow', hex: '#eab308' },
+        { label: 'Green', value: 'green', hex: '#22c55e' },
+        { label: 'Black', value: 'black', hex: '#1e293b' },
+      ];
+      menus.push({
+        label: 'Flap Color',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg>,
+        options: hornColors.map(c => ({
+          label: c.label,
+          active: currentColor === c.value,
+          hoverBg: c.hex,
+          onClick: () => {
+            updateComponentAttr?.(comp.id, 'hornColor', c.value);
+            updateComponentAttr?.(comp.id, 'horn-color', c.value);
+            updateComponentAttr?.(comp.id, 'color', c.value);
+          }
+        }))
+      });
+    }
+
+    if (comp.type.includes('lcd1602') || comp.type.includes('lcd2004')) {
+      const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'blue');
+      const lcdColors = [
+        { label: 'Blue', value: 'blue', hex: '#3b82f6' },
+        { label: 'Green', value: 'green', hex: '#22c55e' },
+        { label: 'Yellow', value: 'yellow', hex: '#eab308' },
+        { label: 'Orange', value: 'orange', hex: '#f97316' },
+        { label: 'White', value: 'white', hex: '#f1f5f9' },
+      ];
+      menus.push({
+        label: 'Color',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg>,
+        options: lcdColors.map(c => ({
+          label: c.label,
+          active: currentColor === c.value,
+          hoverBg: c.hex,
+          onClick: () => updateComponentAttr?.(comp.id, 'color', c.value)
+        }))
+      });
+    }
+
+    if (comp.type.includes('tm1637') || comp.type.includes('max7219') || comp.type === 'openhw-7segment' || comp.type === 'wokwi-7segment') {
+      const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'red');
+      const dispColors = [
+        { label: 'Red', value: 'red', hex: '#ef4444' },
+        { label: 'Green', value: 'green', hex: '#22c55e' },
+        { label: 'Blue', value: 'blue', hex: '#3b82f6' },
+        { label: 'Yellow', value: 'yellow', hex: '#eab308' },
+        { label: 'White', value: 'white', hex: '#f1f5f9' },
+      ];
+      menus.push({
+        label: 'Color',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg>,
+        options: dispColors.map(c => ({
+          label: c.label,
+          active: currentColor === c.value,
+          hoverBg: c.hex,
+          onClick: () => updateComponentAttr?.(comp.id, 'color', c.value)
+        }))
+      });
+    }
+
+    if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
+      const currentVol = resolveComponentAttrString(comp?.attrs, 'volume', '50');
+      const currentFreq = resolveComponentAttrString(comp?.attrs, 'frequency', '440');
+
+      const volOptions = [
+        { label: '100% (Max)', value: '100' },
+        { label: '70% (High)', value: '70' },
+        { label: '50% (Med)', value: '50' },
+        { label: '30% (Low)', value: '30' },
+        { label: '10% (Quiet)', value: '10' },
+        { label: 'Mute (0%)', value: '0' },
+      ];
+
+      const freqOptions = [
+        { label: '880 Hz (High A5)', value: '880' },
+        { label: '523 Hz (C5)', value: '523' },
+        { label: '440 Hz (Std A4)', value: '440' },
+        { label: '330 Hz (E4)', value: '330' },
+        { label: '262 Hz (Low C4)', value: '262' },
+      ];
+
+      menus.push({
+        label: 'Volume',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>,
+        options: volOptions.map(v => ({
+          label: v.label,
+          active: currentVol === v.value,
+          onClick: () => updateComponentAttr?.(comp.id, 'volume', v.value)
+        }))
+      });
+
+      menus.push({
+        label: 'Frequency',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>,
+        options: freqOptions.map(f => ({
+          label: f.label,
+          active: currentFreq === f.value,
+          onClick: () => updateComponentAttr?.(comp.id, 'frequency', f.value)
+        }))
+      });
+    }
+
+    const isI2CDevice = [
+      'openhw-ssd1306-oled',
+      'openhw-lcd1602-i2c',
+      'openhw-lcd2004-i2c',
+      'openhw-pca9685',
+      'openhw-pca9865',
+      'openhw-mpu6050',
+      'openhw-bmp180-breakout',
+      'max30102',
+      'openhw-ds1307-rtc'
+    ].includes(comp.type);
+
+    if (isI2CDevice) {
+      let currentAddr = comp.attrs?.i2cAddress || comp.attrs?.i2c_address;
+      let options = [];
+      if (comp.type === 'openhw-ssd1306-oled') {
+        if (!currentAddr) currentAddr = '0x3C';
+        options = [
+          { label: '0x3C (60)', value: '0x3C', active: currentAddr === '0x3C' || currentAddr === 60 || currentAddr === '60' },
+          { label: '0x3D (61)', value: '0x3D', active: currentAddr === '0x3D' || currentAddr === 61 || currentAddr === '61' },
+        ];
+      } else if (comp.type === 'openhw-lcd1602-i2c' || comp.type === 'openhw-lcd2004-i2c') {
+        if (!currentAddr) currentAddr = '0x27';
+        options = [
+          { label: '0x27 (39)', value: '0x27', active: currentAddr === '0x27' || currentAddr === 39 || currentAddr === '39' },
+          { label: '0x3F (63)', value: '0x3F', active: currentAddr === '0x3F' || currentAddr === 63 || currentAddr === '63' },
+          { label: '0x20 (32)', value: '0x20', active: currentAddr === '0x20' || currentAddr === 32 || currentAddr === '32' },
+        ];
+      } else if (comp.type === 'openhw-pca9685' || comp.type === 'openhw-pca9865') {
+        if (!currentAddr) currentAddr = '0x40';
+        options = [
+          { label: '0x40 (64)', value: '0x40', active: currentAddr === '0x40' || currentAddr === 64 || currentAddr === '64' },
+          { label: '0x41 (65)', value: '0x41', active: currentAddr === '0x41' || currentAddr === 65 || currentAddr === '65' },
+          { label: '0x42 (66)', value: '0x42', active: currentAddr === '0x42' || currentAddr === 66 || currentAddr === '66' },
+          { label: '0x43 (67)', value: '0x43', active: currentAddr === '0x43' || currentAddr === 67 || currentAddr === '67' },
+        ];
+      } else if (comp.type === 'openhw-mpu6050') {
+        if (!currentAddr) currentAddr = '0x68';
+        options = [
+          { label: '0x68 (104)', value: '0x68', active: currentAddr === '0x68' || currentAddr === 104 || currentAddr === '104' },
+          { label: '0x69 (105)', value: '0x69', active: currentAddr === '0x69' || currentAddr === 105 || currentAddr === '105' },
+        ];
+      } else if (comp.type === 'openhw-bmp180-breakout') {
+        if (!currentAddr) currentAddr = '0x77';
+        options = [
+          { label: '0x77 (119)', value: '0x77', active: currentAddr === '0x77' || currentAddr === 119 || currentAddr === '119' },
+        ];
+      } else if (comp.type === 'max30102') {
+        if (!currentAddr) currentAddr = '0x57';
+        options = [
+          { label: '0x57 (87)', value: '0x57', active: currentAddr === '0x57' || currentAddr === 87 || currentAddr === '87' },
+        ];
+      } else if (comp.type === 'openhw-ds1307-rtc') {
+        if (!currentAddr) currentAddr = '0x68';
+        options = [
+          { label: '0x68 (104)', value: '0x68', active: currentAddr === '0x68' || currentAddr === 104 || currentAddr === '104' },
+        ];
+      }
+
+      if (options.length > 0) {
+        const handleAddrChange = (val) => {
+          updateComponentAttr?.(comp.id, 'i2cAddress', val);
+          updateComponentAttr?.(comp.id, 'i2c_address', val);
+        };
+
+        menus.push({
+          label: 'I2C Addr',
+          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z" /></svg>,
+          options: options.map(opt => ({
+            label: opt.label,
+            active: opt.active,
+            onClick: () => handleAddrChange(opt.value)
+          }))
+        });
+      }
+    }
+
+    return menus;
   }, [comp, updateComponentAttr, onValueEdit, onClose]);
 
   // Reset state when menu becomes invisible

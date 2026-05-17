@@ -829,6 +829,11 @@ function routeUartByte(sourceBoardId: string, value: number, sourceLabel = 'uart
     }
 }
 
+let activeTelemetryEnabled = false;
+let activeTelemetryMode = 'detail';
+let activeTelemetryWatchedParamsMap: Record<string, string[]> = {};
+let activeDeepSiliconEnabled = false;
+
 self.onmessage = async (e) => {
     const data = e.data;
 
@@ -848,9 +853,15 @@ self.onmessage = async (e) => {
             debugRp2040,
             debugSyncHeartbeat,
             speed,
+            telemetryEnabled,
+            telemetryMode,
         } = data;
         const initialSpeed = Number(speed ?? 1.0);
         const rp2040DebugEnabled = !!debugRp2040;
+        activeTelemetryEnabled = !!telemetryEnabled;
+        activeTelemetryMode = telemetryMode || 'detail';
+        activeTelemetryWatchedParamsMap = data.watchedParamsMap || {};
+        activeDeepSiliconEnabled = !!data.deepSilicon;
 
         stopAllRunners();
         syncValidationEnabled = !!debugSyncHeartbeat;
@@ -940,6 +951,10 @@ self.onmessage = async (e) => {
                     rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
                 }
             );
+
+            if (typeof (runner as any).setTelemetryEnabled === 'function') {
+                (runner as any).setTelemetryEnabled(activeTelemetryEnabled, activeTelemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
+            }
 
             if (singleBoardId) {
                 boardTypes.set(singleBoardId, singleBoardType);
@@ -1058,6 +1073,12 @@ self.onmessage = async (e) => {
             scheduleCircuitPythonInject(target, boardId, runtimeFiles);
         }
 
+        boardRunners.forEach((br) => {
+            if (typeof (br as any).setTelemetryEnabled === 'function') {
+                (br as any).setTelemetryEnabled(activeTelemetryEnabled, activeTelemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
+            }
+        });
+
     } else if (data.type === 'STOP') {
         stopAllRunners();
     } else if (data.type === 'INTERACT') {
@@ -1133,6 +1154,28 @@ self.onmessage = async (e) => {
             } else {
                 boardRunners.forEach((br) => br.setSpeed(nextSpeed));
             }
+        }
+    } else if (data.type === 'SET_COMPONENT_TELEMETRY') {
+        const enabled = !!data.enabled;
+        const telemetryMode = data.mode || 'detail';
+        activeTelemetryEnabled = enabled;
+        activeTelemetryMode = telemetryMode;
+        if (data.watchedParamsMap) {
+            activeTelemetryWatchedParamsMap = data.watchedParamsMap;
+        }
+        if (data.deepSilicon !== undefined) {
+            activeDeepSiliconEnabled = !!data.deepSilicon;
+        }
+        if (mode === 'single' && runner) {
+            if (typeof (runner as any).setTelemetryEnabled === 'function') {
+                (runner as any).setTelemetryEnabled(enabled, telemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
+            }
+        } else {
+            boardRunners.forEach((br) => {
+                if (typeof (br as any).setTelemetryEnabled === 'function') {
+                    (br as any).setTelemetryEnabled(enabled, telemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
+                }
+            });
         }
     } else if (data.type === 'SERIAL_SET_BAUD') {
         const parsedBaud = Number(data.baudRate);
