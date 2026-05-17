@@ -9,6 +9,7 @@ export const useTourLogic = ({
   setWires,
   setCodeTab,
   setIsPanelOpen,
+  setSerialViewMode, // needed to switch between monitor/plotter view inside the serial tab
   windowSize // Pass window size if needed for coordinate calcs
 }) => {
   const [showTour, setShowTour] = useState(false);
@@ -93,19 +94,24 @@ export const useTourLogic = ({
         demoWireIdRef.current = null;
       }
     } else if (action === 'switch-blockly') {
-      setCodeTab('blockly');
+      // Tab ID is 'block', not 'blockly'
+      setCodeTab('block');
       setIsPanelOpen(true);
     } else if (action === 'switch-library') {
-      setCodeTab('library');
+      // Libraries live inside the Code tab (no separate 'library' tab)
+      setCodeTab('code');
       setIsPanelOpen(true);
     } else if (action === 'switch-serial') {
       setCodeTab('serial');
+      setSerialViewMode?.('monitor');
       setIsPanelOpen(true);
     } else if (action === 'switch-plotter') {
-      setCodeTab('plotter');
+      // Plotter is a view mode inside the Serial tab, not its own tab
+      setCodeTab('serial');
+      setSerialViewMode?.('plotter');
       setIsPanelOpen(true);
     }
-  }, [setComponents, setWires, setCodeTab, setIsPanelOpen]);
+  }, [setComponents, setWires, setCodeTab, setIsPanelOpen, setSerialViewMode]);
 
   return {
     showTour,
