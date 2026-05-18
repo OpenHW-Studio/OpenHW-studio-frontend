@@ -28,6 +28,11 @@ function shouldSkipEntry(message) {
   if (text.includes('serialhistory')) return true;
   if (text.includes('serial_input')) return true;
   if (text.includes('pushserialrxchunk')) return true;
+  if (text.includes('[latency trace]')) return true;
+  if (text.includes('[worker] received interact')) return true;
+  if (text.includes('emit_trace')) return true;
+  if (text.includes('fps browser')) return true;
+  if (text.includes('lag ')) return true;
 
   return false;
 }

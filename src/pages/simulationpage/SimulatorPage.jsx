@@ -946,6 +946,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const liveNeopixelDataRef = useRef({})
   const liveOopStatesRef = useRef({})
   const liveOopStateListenersRef = useRef(new Map())
+  const buttonInteractStartTimeRef = useRef(null)
 
   const serialPlotBufferRef = useRef('');
   const serialPlotLabelsRef = useRef([]);
@@ -1022,6 +1023,15 @@ export function SimulatorPage({ gamificationMode = false }) {
     // Pass interactions to the Web Worker
     attrs.onInteract = (event) => {
       // console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
+
+      // Track keydown/press start time for latency monitoring
+      if (event === 'press') {
+        buttonInteractStartTimeRef.current = {
+          compId: comp.id,
+          time: performance.now()
+        };
+        console.log(`[Latency Trace] [START] Interaction 'press' initiated on component ${comp.id}`);
+      }
 
       // Handle physical board reset button presses
       if (isProgrammableBoardType(comp.type) && event === 'RESET') {
@@ -5879,9 +5889,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Re-run validation to verify the fix worked
     try {
-      const validator = new FullCircuitValidator({ components: result.components }, result.connections);
+      const validator = new FullCircuitValidator({ components: result.components, connections: result.connections });
       const verifyResult = await validator.runValidation(
-        { components: result.components, connections: result.connections },
         { profile: 'balanced', incrementalScope: 'webui' }
       );
 
@@ -6857,6 +6866,22 @@ export function SimulatorPage({ gamificationMode = false }) {
             if (!compId) return;
             runComponentUpdateCountsRef.current[compId] = (runComponentUpdateCountsRef.current[compId] || 0) + 1;
             boardComponentState[compId] = c.state;
+
+            // Trace latency when buzzer starts buzzing
+            if (c.id === 'buzzer' && c.state?.isBuzzing && buttonInteractStartTimeRef.current) {
+              const latency = performance.now() - buttonInteractStartTimeRef.current.time;
+              const sourceBtnId = buttonInteractStartTimeRef.current.compId;
+              console.log(
+                `%c[Latency Trace] [SUCCESS] Keypress round-trip took: ${latency.toFixed(1)}ms (Button: ${sourceBtnId} -> Buzzer Sound)`,
+                'color: #22c55e; font-weight: bold; font-size: 11px;'
+              );
+              if (latency > 80) {
+                console.warn(
+                  `[Latency Trace] High round-trip latency detected (${latency.toFixed(1)}ms)! Thread contention or frame drops may be causing audible lag.`
+                );
+              }
+              buttonInteractStartTimeRef.current = null; // Reset tracking
+            }
           });
 
           renderComponentsByBoardRef.current[boardIdKey] = boardComponentState;
@@ -6934,11 +6959,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Handle Protocol Events
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
       };
 
@@ -7728,7 +7753,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             `<path d="M${x + 21},${y + 16} Q${x + 26},${y + 11} ${x + 31},${y + 16}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             `<path d="M${x + 17},${y + 13} Q${x + 26},${y + 5} ${x + 35},${y + 13}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             ln(x + 26, y + 24, x + 26, y + 30, 1.5), ln(x + 42, y + 24, x + 52, y + 24),
-            tx(x + 6, y + 22, '+', 7, 'middle', false, '#777'),
+            tx(x + 46, y + 22, '+', 7, 'middle', false, '#777'),
             tx(x + 26, y + 60, ref, 9, 'middle', true),
           ].join('');
         }

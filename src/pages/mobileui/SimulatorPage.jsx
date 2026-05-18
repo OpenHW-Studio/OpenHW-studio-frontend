@@ -6258,9 +6258,8 @@ useEffect(() => {
 
     // Re-run validation to verify the fix worked
     try {
-      const validator = new FullCircuitValidator({ components: result.components }, result.connections);
+      const validator = new FullCircuitValidator({ components: result.components, connections: result.connections });
       const verifyResult = await validator.runValidation(
-        { components: result.components, connections: result.connections },
         { profile: 'balanced', incrementalScope: 'webui' }
       );
 
@@ -7241,11 +7240,11 @@ useEffect(() => {
         // Handle Protocol Events
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
       };
 
@@ -7876,7 +7875,7 @@ useEffect(() => {
             `<path d="M${x + 21},${y + 16} Q${x + 26},${y + 11} ${x + 31},${y + 16}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             `<path d="M${x + 17},${y + 13} Q${x + 26},${y + 5} ${x + 35},${y + 13}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             ln(x + 26, y + 24, x + 26, y + 30, 1.5), ln(x + 42, y + 24, x + 52, y + 24),
-            tx(x + 6, y + 22, '+', 7, 'middle', false, '#777'),
+            tx(x + 46, y + 22, '+', 7, 'middle', false, '#777'),
             tx(x + 26, y + 60, ref, 9, 'middle', true),
           ].join('');
         }
@@ -10292,35 +10291,6 @@ updateWireColor(connectedWire.id, newColor);
               )}
             </div>
           </div>
-
-          {validationToast && (
-            <div
-              className="validation-toast-canvas"
-              role="alert"
-              data-export-ignore="true"
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-            >
-              <div className="validation-toast-canvas__header">
-                <span>{validationToast.title}</span>
-                <button
-                  type="button"
-                  className="validation-toast-canvas__close"
-                  onClick={() => setValidationToast(null)}
-                  aria-label="Close validation notification"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-                  </svg>
-                </button>
-              </div>
-              <ul className="validation-toast-canvas__list">
-                {validationToast.reasons.map((reason, idx) => (
-                  <li key={idx}>{reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           <SimulationConsolePanel
             isOpen={isConsoleOpen}
