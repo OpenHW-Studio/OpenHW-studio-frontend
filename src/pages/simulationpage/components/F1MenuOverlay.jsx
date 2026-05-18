@@ -9,6 +9,13 @@ function F1MenuOverlayBase({
   openFirmwareUploadDialog,
   rp2040DebugTelemetryEnabled,
   setRp2040DebugTelemetryEnabled,
+  componentTelemetryEnabled,
+  setComponentTelemetryEnabled,
+  deepSiliconDebuggingEnabled,
+  setDeepSiliconDebuggingEnabled,
+  telemetryMode = 'detail',
+  setTelemetryMode,
+  onOpenTelemetryModal,
   setShowSpeedDialog,
   simulationSpeed,
   setSimulationSpeed,
@@ -21,16 +28,49 @@ function F1MenuOverlayBase({
   const closeMenu = () => setShowF1Menu(false);
   const resetSpeed = 1.0;
 
+  const cycleTelemetryMode = () => {
+    const modes = ['simple', 'detail', 'delta'];
+    const nextIdx = (modes.indexOf(telemetryMode) + 1) % modes.length;
+    const nextMode = modes[nextIdx];
+    setTelemetryMode?.(nextMode);
+    if (isRunning && workerRef?.current) {
+      workerRef.current.postMessage({
+        type: 'SET_COMPONENT_TELEMETRY',
+        enabled: !!componentTelemetryEnabled,
+        mode: nextMode,
+        deepSilicon: deepSiliconDebuggingEnabled,
+      });
+    }
+  };
+
+  const toggleComponentTelemetry = () => {
+    setComponentTelemetryEnabled?.((prev) => {
+      const next = !prev;
+      if (isRunning && workerRef?.current) {
+        workerRef.current.postMessage({
+          type: 'SET_COMPONENT_TELEMETRY',
+          enabled: next,
+          mode: telemetryMode,
+          deepSilicon: deepSiliconDebuggingEnabled,
+        });
+      }
+      return next;
+    });
+  };
+
   return (
     <div
-      className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]"
+      className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999] backdrop-blur-sm"
       onClick={closeMenu}
     >
       <div
-        className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
+        className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_16px_64px_rgba(0,0,0,.5)] flex flex-col max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="text-base font-bold mb-5 text-[var(--text)] tracking-tight">Quick Actions (F1)</div>
+        <div className="text-base font-bold mb-5 text-[var(--text)] tracking-tight flex items-center justify-between pb-3 border-b border-[var(--border)]">
+          <span>Quick Actions (F1)</span>
+          <span className="text-xs bg-[var(--card)] px-2.5 py-1 rounded-full text-[var(--text2)] font-mono">v3.9</span>
+        </div>
         <div className="flex flex-col gap-3">
           <Btn
             onClick={() => {
@@ -59,6 +99,74 @@ function F1MenuOverlayBase({
           >
             Board Firmware Manager
           </Btn>
+
+          <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-wider mt-2 mb-1 px-1">
+            Component Telemetry & Diagnostics
+          </div>
+
+          <Btn
+            onClick={toggleComponentTelemetry}
+            style={{ width: '100%', justifyContent: 'space-between', padding: '12px 16px', background: componentTelemetryEnabled ? 'var(--card)' : 'var(--bg)' }}
+            className={componentTelemetryEnabled ? 'border-[var(--accent)] text-[var(--accent)]' : ''}
+          >
+            <span>{componentTelemetryEnabled ? 'Disable Component Telemetry' : 'Enable Component Telemetry'}</span>
+            <span className="text-xs font-bold font-mono">{componentTelemetryEnabled ? 'ON' : 'OFF'}</span>
+          </Btn>
+
+          <Btn
+            onClick={() => {
+              if (!componentTelemetryEnabled) return;
+              setDeepSiliconDebuggingEnabled?.((prev) => {
+                const next = !prev;
+                if (isRunning && workerRef?.current) {
+                  workerRef.current.postMessage({
+                    type: 'SET_COMPONENT_TELEMETRY',
+                    enabled: componentTelemetryEnabled,
+                    mode: telemetryMode,
+                    deepSilicon: next,
+                  });
+                }
+                return next;
+              });
+            }}
+            style={{ 
+              width: '100%', 
+              justifyContent: 'space-between', 
+              padding: '12px 16px', 
+              background: deepSiliconDebuggingEnabled ? 'var(--card)' : 'var(--bg)',
+              opacity: componentTelemetryEnabled ? 1 : 0.5,
+              cursor: componentTelemetryEnabled ? 'pointer' : 'not-allowed'
+            }}
+            className={deepSiliconDebuggingEnabled ? 'border-[var(--accent)] text-[var(--accent)]' : ''}
+            disabled={!componentTelemetryEnabled}
+          >
+            <span>{deepSiliconDebuggingEnabled ? 'Disable Deep Silicon Debugging' : 'Enable Deep Silicon Debugging'}</span>
+            <span className="text-xs font-bold font-mono">{deepSiliconDebuggingEnabled ? 'ON' : 'OFF'}</span>
+          </Btn>
+
+          <Btn
+            onClick={() => {
+              if (!componentTelemetryEnabled) return;
+              onOpenTelemetryModal?.();
+              setShowF1Menu?.(false);
+            }}
+            style={{ 
+              width: '100%', 
+              justifyContent: 'flex-start', 
+              padding: '12px 16px', 
+              background: 'var(--bg)',
+              opacity: componentTelemetryEnabled ? 1 : 0.5,
+              cursor: componentTelemetryEnabled ? 'pointer' : 'not-allowed'
+            }}
+            disabled={!componentTelemetryEnabled}
+          >
+            Select Telemetry Components
+          </Btn>
+
+          <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-wider mt-2 mb-1 px-1">
+            System & Emulation Controls
+          </div>
+
           <Btn
             onClick={() => {
               setRp2040DebugTelemetryEnabled?.((prev) => !prev);
@@ -100,7 +208,7 @@ function F1MenuOverlayBase({
           </Btn>
         </div>
         <button
-          className="mt-6 w-full px-3 py-2 text-xs font-bold text-[var(--text3)] hover:text-[var(--text)] transition-colors uppercase tracking-widest"
+          className="mt-6 w-full px-3 py-2 text-xs font-bold text-[var(--text3)] hover:text-[var(--text)] transition-colors uppercase tracking-widest cursor-pointer"
           onClick={closeMenu}
         >
           Close (Esc)

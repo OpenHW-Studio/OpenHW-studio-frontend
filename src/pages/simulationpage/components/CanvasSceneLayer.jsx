@@ -1,5 +1,45 @@
-import React from 'react';
+import React, { useSyncExternalStore, useCallback } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
+
+const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
+  const liveState = useSyncExternalStore(
+    useCallback((onStoreChange) => subscribeLiveOopState(comp.id, onStoreChange), [comp.id, subscribeLiveOopState]),
+    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot]),
+    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot])
+  );
+
+  return React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
+    state: liveState,
+    attrs: getComponentStateAttrs(comp, liveState),
+    isRunning: isRunning,
+    comp: comp
+  });
+});
+
+ReactiveComponentUI.displayName = 'ReactiveComponentUI';
+
+const ReactiveFallbackComponentUI = React.memo(({ comp, getComponentStateAttrs, getLiveOopStateSnapshot, subscribeLiveOopState, neopixelRefs }) => {
+  const liveState = useSyncExternalStore(
+    useCallback((onStoreChange) => subscribeLiveOopState(comp.id, onStoreChange), [comp.id, subscribeLiveOopState]),
+    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot]),
+    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot])
+  );
+
+  return (
+    <div
+      style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
+      ref={el => {
+        if ((comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') && el) {
+          neopixelRefs.current[comp.id] = el;
+        }
+      }}
+    >
+      {React.createElement(comp.type, getComponentStateAttrs(comp, liveState))}
+    </div>
+  );
+});
+
+ReactiveFallbackComponentUI.displayName = 'ReactiveFallbackComponentUI';
 
 function CanvasSceneLayerBase({
   innerCanvasRef,
@@ -105,7 +145,7 @@ function CanvasSceneLayerBase({
             />
           );
         })}
-        {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
+        {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map((w, index) => {
           const fromParts = (w.from || '').split(':');
           const toParts = (w.to || '').split(':');
           let p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
@@ -118,7 +158,7 @@ function CanvasSceneLayerBase({
           const e2 = p2;
           return (
             <CanvasWire
-              key={`ghost-${w.id}`}
+              key={`ghost-${w.id || `${w.from}-${w.to}-${index}`}`}
               wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
               p1={p1} p2={p2} e1={e1} e2={e2}
               isGhost={true}
@@ -126,7 +166,7 @@ function CanvasSceneLayerBase({
             />
           );
         })}
-        {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
+        {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map((w, index) => {
           const fromParts = (w.from || '').split(':');
           const toParts = (w.to || '').split(':');
           let p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
@@ -139,7 +179,7 @@ function CanvasSceneLayerBase({
           const e2 = p2;
           return (
             <CanvasWire
-              key={`ghost-${w.id}`}
+              key={`ghost-${w.id || `${w.from}-${w.to}-${index}`}`}
               wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
               p1={p1} p2={p2} e1={e1} e2={e2}
               isGhost={true}
@@ -310,7 +350,14 @@ function CanvasSceneLayerBase({
       {/* Empty state */}
       {components.length === 0 && (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text3)] text-center pointer-events-none">
-          <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
+          <div style={{ color: 'var(--text3)', opacity: 0.6, marginBottom: 16 }}>
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="2" width="20" height="8" rx="2" />
+              <path d="M6 10v4a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-4" />
+              <line x1="12" y1="16" x2="12" y2="22" />
+              <line x1="10" y1="22" x2="14" y2="22" />
+            </svg>
+          </div>
           <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
           <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
             Arduino Uno · LED · Resistor · Button · Servo · LCD
@@ -406,23 +453,22 @@ function CanvasSceneLayerBase({
 
                 <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
                   {COMPONENT_REGISTRY[comp.type] ? (
-                    React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                      state: getLiveOopStateSnapshot(comp.id),
-                      attrs: getComponentStateAttrs(comp, getLiveOopStateSnapshot(comp.id)),
-                      isRunning: isRunning,
-                      comp: comp
-                    })
+                    <ReactiveComponentUI
+                      comp={comp}
+                      COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+                      getComponentStateAttrs={getComponentStateAttrs}
+                      isRunning={isRunning}
+                      getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+                      subscribeLiveOopState={subscribeLiveOopState}
+                    />
                   ) : (
-                    <div
-                      style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                      ref={el => {
-                        if ((comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') && el) {
-                          neopixelRefs.current[comp.id] = el;
-                        }
-                      }}
-                    >
-                      {React.createElement(comp.type, getComponentStateAttrs(comp))}
-                    </div>
+                    <ReactiveFallbackComponentUI
+                      comp={comp}
+                      getComponentStateAttrs={getComponentStateAttrs}
+                      getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+                      subscribeLiveOopState={subscribeLiveOopState}
+                      neopixelRefs={neopixelRefs}
+                    />
                   )}
                 </div>
 
