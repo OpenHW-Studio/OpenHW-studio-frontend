@@ -128,6 +128,7 @@ self.onmessage = async (e) => {
               path.push({ x: engine.getAddedWirePathPointX(i, j, k), y: engine.getAddedWirePathPointY(i, j, k) });
             }
             addedWires.push({
+              id: `w_autofix_${j}_${limit}`,
               from: engine.getAddedWireFrom(i, j).replace('.', ':'),
               to: engine.getAddedWireTo(i, j).replace('.', ':'),
               color: '#38bdf8', isNew: true,

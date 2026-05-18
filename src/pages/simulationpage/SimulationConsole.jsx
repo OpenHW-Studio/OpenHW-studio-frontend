@@ -49,6 +49,11 @@ function shouldSkipEntry(message) {
   if (text.includes('serialhistory')) return true;
   if (text.includes('serial_input')) return true;
   if (text.includes('pushserialrxchunk')) return true;
+  if (text.includes('[latency trace]')) return true;
+  if (text.includes('[worker] received interact')) return true;
+  if (text.includes('emit_trace')) return true;
+  if (text.includes('fps browser')) return true;
+  if (text.includes('lag ')) return true;
 
   return false;
 }
@@ -749,7 +754,7 @@ export function SimulationConsolePanel({
                   {telemetryEntries.slice(-200).map((entry) => {
                     const isExpanded = !!expandedDetails[entry.id];
                     const io = entry.details?.metrics?.ioThroughput;
-                    const hasIo = io && (io.i2cTransactions > 0 || io.spiTransactions > 0);
+                    const hasIo = showBusTraffic && io && (io.i2cTransactions > 0 || io.spiTransactions > 0);
                     const compDisplayName = entry.compId || 'COMP';
                     return (
                       <React.Fragment key={entry.id}>
@@ -821,9 +826,9 @@ export function SimulationConsolePanel({
                             ></td>
                             <td style={{ padding: '0 12px 8px 12px', width: '100%' }}>
                               {hasIo && (
-                                <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <div style={{ background: 'rgba(250, 204, 21, 0.08)', border: '1px solid rgba(250, 204, 21, 0.25)', borderRadius: 8, padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
-                                    <span style={{ color: '#60a5fa' }}>🏷️ I/O Throughput</span>
+                                    <span style={{ color: '#ca8a04' }}>🏷️ I/O Throughput</span>
                                     {io.i2cTransactions > 0 && (
                                       <span>I2C: {io.i2cTransactions} tx ({io.i2cBytes || 0} bytes)</span>
                                     )}
@@ -832,8 +837,8 @@ export function SimulationConsolePanel({
                                     )}
                                   </div>
                                   {(io.recentI2c?.length > 0 || io.recentSpi?.length > 0) && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text2)', background: 'var(--bg)', padding: '4px 8px', borderRadius: 4, overflowX: 'auto' }}>
-                                      <span style={{ color: 'var(--text3)' }}>Recent Buffers:</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text2)', background: 'rgba(250, 204, 21, 0.12)', padding: '4px 8px', borderRadius: 4, overflowX: 'auto', border: '1px solid rgba(250, 204, 21, 0.15)' }}>
+                                      <span style={{ color: '#ca8a04', fontWeight: 700 }}>Recent Buffers:</span>
                                       {io.recentI2c?.length > 0 && (
                                         <span>I2C [{io.recentI2c.map(b => `0x${b.toString(16).padStart(2, '0').toUpperCase()}`).join(' ')}]</span>
                                       )}

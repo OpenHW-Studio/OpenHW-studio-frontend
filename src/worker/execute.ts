@@ -2492,8 +2492,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
-    'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],
-    'openhw-pushbutton': [{ id: '1' }, { id: '2' }],
+    'wokwi-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
+    'openhw-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
     'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
     'openhw-buzzer': [{ id: '1' }, { id: '2' }],
     'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
@@ -2787,9 +2787,9 @@ function normalizeRp2040FlashPartitions(value: unknown): RP2040FlashPartition[] 
 
 function getInternalBridgesForComponent(compId: string, type: string): string[][] {
     const bridges: string[][] = [];
-    if (type === 'openhw-resistor' || type === 'openhw-resistor') {
+    if (type === 'openhw-resistor' || type === 'wokwi-resistor' || type === 'via' || type === 'openhw-via' || type === 'wokwi-via' || type === 'openhw-wire' || type === 'wokwi-wire') {
         bridges.push([`${compId}:p1`, `${compId}:p2`]);
-    } else if (type === 'openhw-breadboard' || type === 'openhw-breadboard-half' || type === 'openhw-breadboard-mini' || type === 'openhw-breadboard' || type === 'openhw-breadboard-half' || type === 'openhw-breadboard-mini') {
+    } else if (type === 'openhw-breadboard' || type === 'openhw-breadboard-half' || type === 'openhw-breadboard-mini' || type === 'wokwi-breadboard' || type === 'wokwi-breadboard-half' || type === 'wokwi-breadboard-mini') {
         const isHalf = type.includes('half');
         const isMini = type.includes('mini');
         const maxRow = isMini ? 17 : (isHalf ? 30 : 63);
@@ -2849,6 +2849,8 @@ export type BoardRunner = {
     setTelemetryEnabled: (enabled: boolean) => void;
     getRichTelemetrySnapshot: (options?: { mode?: 'standard' | 'deep' | 'delta' }) => any;
     getSimulatedTimeMs: () => number;
+    forceEmitState?: () => void;
+    running?: boolean;
 };
 
 const RP2040_FLASH_BASE = 0x10000000;
@@ -3281,6 +3283,15 @@ function buildFallbackTelemetry(inst: any): { telemetrySummary: string; telemetr
     return {
         telemetrySummary: summary,
         telemetryData,
+    };
+}
+
+function getUnifiedComponentSyncState(inst: BaseComponent): any {
+    const subclassSyncState = inst.getSyncState() || {};
+    const baseSyncState = BaseComponent.prototype.getSyncState.call(inst) || {};
+    return {
+        ...baseSyncState,
+        ...subclassSyncState
     };
 }
 
@@ -3922,6 +3933,7 @@ export class AVRRunner {
     portC: AVRIOPort | null = null;
     portD: AVRIOPort | null = null;
     updatePhysics: (() => void) | null = null;
+    repropagateAllVoltages: (() => void) | null = null;
     timers: AVRTimer[] = [];
     running: boolean = false;
     pinStates: Record<string, boolean> = {};
@@ -4047,6 +4059,10 @@ export class AVRRunner {
         this.portD = new AVRIOPort(this.cpu, portDConfig);
 
 
+        const runnerOnStateUpdate = this.onStateUpdate.bind(this);
+        const runnerBoardId = this.boardId;
+        const runnerGetSimulatedTimeMs = this.getSimulatedTimeMs.bind(this);
+
         // Setup I2C Hooks bridging AVRTWI events to BaseComponents
         class TWIAdapter {
             // Track the addressed slave across the read transaction
@@ -4070,6 +4086,21 @@ export class AVRRunner {
                         inst.recordI2cTransaction([...this.currentBuffer]);
                     }
                 }
+
+                if (this.currentBuffer.length > 0) {
+                    const address = (this.currentBuffer[0] >> 1) & 0x7f;
+                    const isWrite = (this.currentBuffer[0] & 1) === 0;
+                    const data = this.currentBuffer.slice(1);
+                    runnerOnStateUpdate({
+                        type: 'protocol:i2c',
+                        boardId: runnerBoardId,
+                        address,
+                        data,
+                        isWrite,
+                        timestamp: runnerGetSimulatedTimeMs()
+                    });
+                }
+
                 this.activeSlave = null;
                 this.currentBuffer = [];
                 this.twi.completeStop();
@@ -4122,8 +4153,24 @@ export class AVRRunner {
 
         this.twi.eventHandler = new TWIAdapter(this.twi, this.instances);
 
+        let spiTransactionBytes: number[] = [];
+        let lastSpiTime = 0;
+
         // Setup SPI Hooks bridging AVRSPI to BaseComponents
         this.spi.onByte = (value: number) => {
+            const nowMs = this.getSimulatedTimeMs();
+            if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
+                this.onStateUpdate({
+                    type: 'protocol:spi',
+                    boardId: this.boardId,
+                    data: [...spiTransactionBytes],
+                    timestamp: lastSpiTime
+                });
+                spiTransactionBytes = [];
+            }
+            lastSpiTime = nowMs;
+            spiTransactionBytes.push(value & 0xff);
+
             const instArray = Array.from(this.instances.values());
             let returnByte = 0xFF; // Default MISO if nothing responds
 
@@ -4204,7 +4251,7 @@ export class AVRRunner {
 
         for (const inst of this.instances.values()) {
             if (mode === 'standard') {
-                const data = (inst as any).getTelemetryData?.() || inst.getSyncState();
+                const data = (inst as any).getTelemetryData?.() || getUnifiedComponentSyncState(inst);
                 components.push({
                     id: inst.id,
                     ...data
@@ -4356,7 +4403,7 @@ export class AVRRunner {
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string, nextVoltage: number) => void) {
-        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
             const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
             if (!otherPin) return;
             const resistance = Number.parseFloat(String((inst as any).state?.value || (inst as any).state?.resistance || 1000));
@@ -4372,12 +4419,53 @@ export class AVRRunner {
                 inst.setPinVoltage('K', nextV);
                 visit(`${compId}:K`, nextV);
             }
-        } else if ((inst.type === 'openhw-pushbutton' || inst.type === 'openhw-pushbutton') && inst.state?.pressed) {
-            const otherPin = pinId === '1' ? '2' : pinId === '2' ? '1' : null;
-            if (!otherPin) return;
-            inst.setPinVoltage(otherPin, voltage);
-            visit(`${compId}:${otherPin}`, voltage);
-        } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half') {
+        } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
+            // Internal short-circuit connections
+            if (pinId === '1l' || pinId === '1') {
+                inst.setPinVoltage('1r', voltage);
+                visit(`${compId}:1r`, voltage);
+                inst.setPinVoltage('1', voltage);
+                visit(`${compId}:1`, voltage);
+                inst.setPinVoltage('1l', voltage);
+                visit(`${compId}:1l`, voltage);
+            } else if (pinId === '1r') {
+                inst.setPinVoltage('1l', voltage);
+                visit(`${compId}:1l`, voltage);
+                inst.setPinVoltage('1', voltage);
+                visit(`${compId}:1`, voltage);
+            } else if (pinId === '2l' || pinId === '2') {
+                inst.setPinVoltage('2r', voltage);
+                visit(`${compId}:2r`, voltage);
+                inst.setPinVoltage('2', voltage);
+                visit(`${compId}:2`, voltage);
+                inst.setPinVoltage('2l', voltage);
+                visit(`${compId}:2l`, voltage);
+            } else if (pinId === '2r') {
+                inst.setPinVoltage('2l', voltage);
+                visit(`${compId}:2l`, voltage);
+                inst.setPinVoltage('2', voltage);
+                visit(`${compId}:2`, voltage);
+            }
+
+            // Tactile switch crossing
+            if (inst.state?.pressed) {
+                if (pinId.startsWith('1')) {
+                    inst.setPinVoltage('2l', voltage);
+                    visit(`${compId}:2l`, voltage);
+                    inst.setPinVoltage('2r', voltage);
+                    visit(`${compId}:2r`, voltage);
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`, voltage);
+                } else if (pinId.startsWith('2')) {
+                    inst.setPinVoltage('1l', voltage);
+                    visit(`${compId}:1l`, voltage);
+                    inst.setPinVoltage('1r', voltage);
+                    visit(`${compId}:1r`, voltage);
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`, voltage);
+                }
+            }
+        } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire') {
             const bridges = getInternalBridgesForComponent(compId, inst.type);
             for (const bridge of bridges) {
                 if (bridge[0] === `${compId}:${pinId}`) visit(bridge[1], voltage);
@@ -4389,24 +4477,147 @@ export class AVRRunner {
     private setupHooks() {
         if (!this.cpu) return;
 
-        const updateOopPin = (arduinoPinStr: string, isHigh: boolean) => {
-            const voltage = isHigh ? 5.0 : 0.0;
+        let lowImpRails = new Map<string, number>();
+
+        const getLowImpedanceRails = (): Map<string, number> => {
+            const rails = new Map<string, number>();
+            const visited = new Set<string>();
+
+            const normalizePin = (pinStr: string): string => {
+                const parts = pinStr.split(':');
+                if (parts.length >= 2) {
+                    const compId = parts[0];
+                    const pinId = parts.slice(1).join(':');
+                    const upper = pinId.toUpperCase();
+                    if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper)) {
+                        return `${compId}:GND`;
+                    }
+                    if (upper === '5V' || upper === 'VCC') {
+                        return `${compId}:5V`;
+                    }
+                    if (upper === '3V3' || upper === '3V3_EN') {
+                        return `${compId}:3V3`;
+                    }
+                }
+                return pinStr;
+            };
+
+            const visit = (rawNode: string, v: number) => {
+                const node = normalizePin(rawNode);
+                if (visited.has(node)) return;
+                visited.add(node);
+                rails.set(node, v);
+
+                // Traverse wires
+                for (const wire of this.currentWires) {
+                    const normFrom = normalizePin(wire.from);
+                    const normTo = normalizePin(wire.to);
+                    if (normFrom === node) {
+                        visit(wire.to, v);
+                    } else if (normTo === node) {
+                        visit(wire.from, v);
+                    }
+                }
+
+                // Traverse breadboard/vias bridges
+                const [compId, compPin] = node.split(':');
+                const inst = this.instances.get(compId);
+                if (inst && (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire')) {
+                    const bridges = getInternalBridgesForComponent(compId, inst.type);
+                    for (const bridge of bridges) {
+                        if (bridge[0] === `${compId}:${compPin}`) {
+                            visit(bridge[1], v);
+                        } else if (bridge[1] === `${compId}:${compPin}`) {
+                            visit(bridge[0], v);
+                        }
+                    }
+                }
+            };
+
+            // Start BFS from GND
+            ['gnd_1', 'gnd_2', 'gnd_3', 'GND'].forEach(pin => {
+                visit(`${this.boardId}:${pin}`, 0.0);
+            });
+            // Start BFS from 5V/VIN
+            ['5V', 'vin', 'VIN'].forEach(pin => {
+                visit(`${this.boardId}:${pin}`, 5.0);
+            });
+            // Start BFS from 3V3
+            ['3v3', '3V3'].forEach(pin => {
+                visit(`${this.boardId}:${pin}`, 3.3);
+            });
+
+            return rails;
+        };
+
+        const updateOopPin = (arduinoPinStr: string, isHighOrVoltage: boolean | number) => {
+            const voltage = typeof isHighOrVoltage === 'number' ? isHighOrVoltage : (isHighOrVoltage ? 5.0 : 0.0);
+            if (arduinoPinStr === '5') {
+                console.log(`[Worker updateOopPin] Pin 5, isHighOrVoltage: ${isHighOrVoltage}, voltage: ${voltage}V`);
+            }
             const visitedEdges = new Set<string>();
             const visitedNodes = new Set<string>();
 
-            const visitNode = (node: string, v: number) => {
+            const normalizePin = (pinStr: string): string => {
+                const parts = pinStr.split(':');
+                if (parts.length >= 2) {
+                    const compId = parts[0];
+                    const pinId = parts.slice(1).join(':');
+                    const upper = pinId.toUpperCase();
+                    if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper)) {
+                        return `${compId}:GND`;
+                    }
+                    if (upper === '5V' || upper === 'VCC') {
+                        return `${compId}:5V`;
+                    }
+                    if (upper === '3V3' || upper === '3V3_EN') {
+                        return `${compId}:3V3`;
+                    }
+                }
+                return pinStr;
+            };
+
+            const visitNode = (rawNode: string, v: number) => {
+                const node = normalizePin(rawNode);
+                if (arduinoPinStr === '5' || rawNode.includes('btn7') || rawNode.includes('uno1:5')) {
+                    console.log(`[Worker visitNode] Pin 5 path, rawNode: ${rawNode}, node: ${node}, voltage: ${v}V`);
+                }
                 if (visitedNodes.has(node)) return;
-                visitedNodes.add(node);
 
                 const [compId, compPin] = node.split(':');
 
+                // Do not allow passive back-propagation to overwrite constant board power reference pins (GND, 5V, 3V3, VIN)
+                if (compId === this.boardId && rawNode !== `${this.boardId}:${arduinoPinStr}`) {
+                    const upper = compPin.toUpperCase();
+                    if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper) || upper === '5V' || upper === '3V3' || upper === 'VIN') {
+                        return;
+                    }
+                }
+
+                // If this is a passive propagation from a CPU pin, and we encounter a node that has a low-impedance
+                // connection to a board supply rail, do not allow passive propagation to overwrite its fixed reference voltage!
+                const isCpuPinProp = !['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
+                if (isCpuPinProp && lowImpRails.has(node)) {
+                    const railVoltage = lowImpRails.get(node)!;
+                    const inst = this.instances.get(compId);
+                    if (inst) {
+                        if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                        inst.setPinVoltage(compPin, railVoltage);
+                    }
+                    return;
+                }
+
+                visitedNodes.add(node);
+
                 // Junction support: visit all wires on this same pin
                 for (const wire of this.currentWires) {
-                    const edgeKey = `${wire.from}|${wire.to}`;
+                    const normFrom = normalizePin(wire.from);
+                    const normTo = normalizePin(wire.to);
+                    const edgeKey = `${normFrom}|${normTo}`;
                     if (visitedEdges.has(edgeKey)) continue;
-                    if (wire.from === node || wire.to === node) {
+                    if (normFrom === node || normTo === node) {
                         visitedEdges.add(edgeKey);
-                        visitNode(wire.from === node ? wire.to : wire.from, v);
+                        visitNode(normFrom === node ? wire.to : wire.from, v);
                     }
                 }
 
@@ -4420,6 +4631,25 @@ export class AVRRunner {
                     }
                     this.tickI2S(inst, compId, compPin, v > 1.8);
 
+                    // Propagate external voltage back to simulated AVR CPU ports
+                    if (compId === this.boardId) {
+                        const isHigh = v > 1.8;
+                        this.pinStates[compPin] = isHigh;
+                        if (compPin.startsWith('A')) {
+                            const bit = parseInt(compPin.slice(1), 10);
+                            if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
+                        } else {
+                            const num = parseInt(compPin, 10);
+                            if (!isNaN(num)) {
+                                if (num >= 8 && num <= 13) {
+                                    this.portB?.setPin(num - 8, isHigh);
+                                } else if (num >= 0 && num <= 7) {
+                                    this.portD?.setPin(num, isHigh);
+                                }
+                            }
+                        }
+                    }
+
                     this.traversePassive(inst, compId, compPin, v, (forwardNode, nextV) => {
                         visitNode(forwardNode, nextV);
                     });
@@ -4431,9 +4661,73 @@ export class AVRRunner {
 
         this.updatePhysics = () => {};
 
+        this.repropagateAllVoltages = () => {
+            lowImpRails = getLowImpedanceRails();
+            const getAvrPinModeState = (pinStr: string) => {
+                let port: AVRIOPort | null = null;
+                let bit = 0;
+                if (pinStr.startsWith('A')) {
+                    port = this.portC;
+                    const parsed = parseInt(pinStr.slice(1), 10);
+                    if (!isNaN(parsed)) bit = parsed;
+                } else {
+                    const num = parseInt(pinStr, 10);
+                    if (!isNaN(num)) {
+                        if (num >= 8 && num <= 13) {
+                            port = this.portB;
+                            bit = num - 8;
+                        } else if (num >= 0 && num <= 7) {
+                            port = this.portD;
+                            bit = num;
+                        }
+                    }
+                }
+                if (!port) return { isDriven: true, isHigh: !!this.pinStates[pinStr] };
+                const state = port.pinState(bit);
+                if (pinStr === '5') {
+                    console.log(`[Worker getAvrPinModeState] Pin 5, port: ${port ? 'portD' : 'null'}, bit: ${bit}, avrState: ${state}, PinState.InputPullUp: ${PinState.InputPullUp}`);
+                }
+                if (state === PinState.High || state === PinState.InputPullUp) {
+                    return { isDriven: true, isHigh: true };
+                }
+                if (state === PinState.Low) {
+                    return { isDriven: true, isHigh: false };
+                }
+                // Input mode (floating/high impedance)
+                // Wokwi pulls floating input pins to HIGH by default. Emulate this behavior:
+                return { isDriven: true, isHigh: true };
+            };
+
+            // First, re-propagate all digital / analog board pins driven by the CPU or pullups
+            [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
+                const { isDriven, isHigh } = getAvrPinModeState(pin);
+                if (isDriven) {
+                    this.pinStates[pin] = isHigh;
+                    updateOopPin(pin, isHigh);
+                }
+            });
+            // Then, re-propagate GND and power rails LAST so they dominate and pull pins down/up
+            ['gnd_1', 'gnd_2', 'gnd_3', 'GND'].forEach(pin => {
+                updateOopPin(pin, 0.0);
+            });
+            ['5V', 'vin', 'VIN'].forEach(pin => {
+                updateOopPin(pin, 5.0);
+            });
+            ['3v3', '3V3'].forEach(pin => {
+                updateOopPin(pin, 3.3);
+            });
+        };
+
         const attachPort = (port: AVRIOPort, pinNames: string[]) => {
             port.addListener((value) => {
                 pinNames.forEach((pin, i) => {
+                    // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
+                    const state = port.pinState(i);
+                    const isOutput = state === PinState.Low || state === PinState.High;
+                    if (!isOutput) {
+                        return;
+                    }
+
                     const isHigh = (value & (1 << i)) !== 0;
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
@@ -4462,6 +4756,17 @@ export class AVRRunner {
             this.pinStates[pin] = false;
             this.circuitDirty = true;
             updateOopPin(pin, false);
+        });
+
+        // Initialize power and ground rail pins on startup to propagate reference levels to passives
+        ['gnd_1', 'gnd_2', 'gnd_3', 'GND'].forEach(pin => {
+            updateOopPin(pin, 0.0);
+        });
+        ['5V', 'vin', 'VIN'].forEach(pin => {
+            updateOopPin(pin, 5.0);
+        });
+        ['3v3', '3V3'].forEach(pin => {
+            updateOopPin(pin, 3.3);
         });
     }
 
@@ -4494,9 +4799,18 @@ export class AVRRunner {
 
                 // Component updates for smooth animation
                 const componentStart = performance.now();
+                let anyStateChanged = false;
                 instArray.forEach(inst => {
                     inst.update(this.cpu!.cycles, this.currentWires, instArray);
+                    if (inst.stateChanged) {
+                        anyStateChanged = true;
+                        (inst as any).pendingVisualStateEmit = true;
+                        inst.stateChanged = false;
+                    }
                 });
+                if (anyStateChanged && typeof this.repropagateAllVoltages === 'function') {
+                    this.repropagateAllVoltages();
+                }
                 this.lastComponentUpdateMs = performance.now() - componentStart;
             }
 
@@ -4505,6 +4819,9 @@ export class AVRRunner {
             this.processSoftSerialDecode(this.cpu.cycles);
             this.lastTime = now;
             if (shouldSolvePhysics) {
+                if (typeof this.repropagateAllVoltages === 'function') {
+                    this.repropagateAllVoltages();
+                }
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
             }
@@ -4553,13 +4870,15 @@ export class AVRRunner {
             const now = performance.now();
             const compStates: Array<{ id: string; state: any }> = [];
             for (const inst of this.instances.values()) {
-                if (!inst.stateChanged) continue;
-                const syncState = inst.getSyncState();
+                const pendingEmit = (inst as any).pendingVisualStateEmit;
+                if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
+                const syncState = getUnifiedComponentSyncState(inst);
                 
                 // Respect the component's sync policy to avoid overloading the UI
                 if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
                 
                 inst.stateChanged = false;
+                (inst as any).pendingVisualStateEmit = false;
                 compStates.push({
                     id: inst.id,
                     type: inst.type,
@@ -4578,6 +4897,41 @@ export class AVRRunner {
             this.lastStateEmitTime = now;
             this.onStateUpdate(msg);
         }
+    }
+
+    forceEmitState() {
+        if (!this.cpu) return;
+        const now = performance.now();
+        const msg: any = { type: 'state', boardId: this.boardId };
+        msg.pins = this.pinStates;
+        this.pinsChanged = false;
+        
+        if (this.adc) {
+            msg.analog = Array.from(this.adc.channelValues);
+        }
+
+        const compStates: Array<{ id: string; state: any }> = [];
+        for (const inst of this.instances.values()) {
+            const syncState = getUnifiedComponentSyncState(inst);
+            inst.stateChanged = false;
+            (inst as any).pendingVisualStateEmit = false;
+            compStates.push({
+                id: inst.id,
+                type: inst.type,
+                state: syncState,
+                ...collectComponentTelemetry(inst, undefined, this.cpu),
+            });
+        }
+        msg.components = compStates;
+
+        this.statusIntervalEmitCount++;
+        msg._emitSeq = this.statusIntervalEmitCount;
+        msg._emitTime = now;
+        msg.simTimeMs = this.getSimulatedTimeMs();
+        
+        this.lastStateEmitCycle = this.cpu.cycles;
+        this.lastStateEmitTime = now;
+        this.onStateUpdate(msg);
     }
 
     private serialBuffer: number[] = [];
@@ -4634,6 +4988,11 @@ export class AVRRunner {
     private propagateBoardPin(pinId: string, isHigh: boolean) {
         const voltage = isHigh ? 5.0 : 0.0;
         const endpoints = this.getProtocolEndpointsForArduinoPin(pinId);
+
+        const boardInst = this.instances.get(this.boardId);
+        if (boardInst) {
+            boardInst.onPinStateChange(pinId, isHigh, this.cpu!.cycles);
+        }
 
         for (const endpoint of endpoints) {
             endpoint.inst.setPinVoltage(endpoint.pinId, voltage);
@@ -5203,7 +5562,7 @@ export class RP2040Runner implements BoardRunner {
 
         for (const inst of this.instances.values()) {
             if (mode === 'standard') {
-                const data = (inst as any).getTelemetryData?.() || inst.getSyncState();
+                const data = (inst as any).getTelemetryData?.() || getUnifiedComponentSyncState(inst);
                 components.push({
                     id: inst.id,
                     ...data
@@ -6195,6 +6554,7 @@ export class RP2040Runner implements BoardRunner {
             let activeSlave: BaseComponent | null = null;
             let transactionBytes: number[] = [];
             let currentAddress: number = 0;
+            let isWriteMode = true;
 
             i2c.onStart = (repeatedStart: boolean) => {
                 void repeatedStart;
@@ -6207,6 +6567,7 @@ export class RP2040Runner implements BoardRunner {
                 currentAddress = address & 0x7f;
                 this.i2cHardwareSeen.set(bus, true);
                 const isRead = Number(mode) === 1;
+                isWriteMode = !isRead;
                 const devices = this.getRp2040ConnectedI2CDevices(bus);
                 let ack = false;
                 activeSlave = null;
@@ -6269,12 +6630,13 @@ export class RP2040Runner implements BoardRunner {
 
             i2c.onStop = () => {
                 if (transactionBytes.length > 0) {
-                    const signature = transactionBytes.map(b => b.toString(16).padStart(2, '0')).join('');
                     this.onStateUpdate({
-                        type: 'telemetry-i2c',
+                        type: 'protocol:i2c',
+                        boardId: this.boardId,
                         address: currentAddress,
-                        signature,
-                        time_ms: this.getSimulatedTimeMs()
+                        data: [...transactionBytes],
+                        isWrite: isWriteMode,
+                        timestamp: this.getSimulatedTimeMs()
                     });
                 }
                 const devices = activeSlave ? [activeSlave] : this.getRp2040ConnectedI2CDevices(bus);
@@ -6330,8 +6692,12 @@ export class RP2040Runner implements BoardRunner {
             spi.onTransmit = (value: number) => {
                 const nowMs = this.getSimulatedTimeMs();
                 if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
-                     const signature = spiTransactionBytes.map(b => b.toString(16).padStart(2, '0')).join('');
-                     this.onStateUpdate({ type: 'telemetry-spi', signature, time_ms: lastSpiTime });
+                     this.onStateUpdate({
+                         type: 'protocol:spi',
+                         boardId: this.boardId,
+                         data: [...spiTransactionBytes],
+                         timestamp: lastSpiTime
+                     });
                      spiTransactionBytes = [];
                 }
                 lastSpiTime = nowMs;
@@ -6832,11 +7198,52 @@ export class RP2040Runner implements BoardRunner {
             if (!otherPin) return;
             inst.setPinVoltage(otherPin, voltage);
             visit(`${compId}:${otherPin}`);
-        } else if ((inst.type === 'openhw-pushbutton' || inst.type === 'openhw-pushbutton') && inst.state?.pressed) {
-            const otherPin = pinId === '1' ? '2' : pinId === '2' ? '1' : null;
-            if (!otherPin) return;
-            inst.setPinVoltage(otherPin, voltage);
-            visit(`${compId}:${otherPin}`);
+        } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
+            // Internal short-circuit connections
+            if (pinId === '1l' || pinId === '1') {
+                inst.setPinVoltage('1r', voltage);
+                visit(`${compId}:1r`);
+                inst.setPinVoltage('1', voltage);
+                visit(`${compId}:1`);
+                inst.setPinVoltage('1l', voltage);
+                visit(`${compId}:1l`);
+            } else if (pinId === '1r') {
+                inst.setPinVoltage('1l', voltage);
+                visit(`${compId}:1l`);
+                inst.setPinVoltage('1', voltage);
+                visit(`${compId}:1`);
+            } else if (pinId === '2l' || pinId === '2') {
+                inst.setPinVoltage('2r', voltage);
+                visit(`${compId}:2r`);
+                inst.setPinVoltage('2', voltage);
+                visit(`${compId}:2`);
+                inst.setPinVoltage('2l', voltage);
+                visit(`${compId}:2l`);
+            } else if (pinId === '2r') {
+                inst.setPinVoltage('2l', voltage);
+                visit(`${compId}:2l`);
+                inst.setPinVoltage('2', voltage);
+                visit(`${compId}:2`);
+            }
+
+            // Tactile switch crossing
+            if (inst.state?.pressed) {
+                if (pinId.startsWith('1')) {
+                    inst.setPinVoltage('2l', voltage);
+                    visit(`${compId}:2l`);
+                    inst.setPinVoltage('2r', voltage);
+                    visit(`${compId}:2r`);
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`);
+                } else if (pinId.startsWith('2')) {
+                    inst.setPinVoltage('1l', voltage);
+                    visit(`${compId}:1l`);
+                    inst.setPinVoltage('1r', voltage);
+                    visit(`${compId}:1r`);
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`);
+                }
+            }
         }
     }
 
@@ -6844,6 +7251,12 @@ export class RP2040Runner implements BoardRunner {
 
     private propagateBoardPin(gpPin: string, isHigh: boolean) {
         const voltage = isHigh ? 3.3 : 0.0;
+
+        const boardInst = this.instances.get(this.boardId);
+        if (boardInst && this.cpu) {
+            boardInst.onPinStateChange(gpPin, isHigh, this.cpu.cycles);
+        }
+
         const visitedEdges = new Set<string>();
         const visitedNodes = new Set<string>();
 
@@ -6867,6 +7280,9 @@ export class RP2040Runner implements BoardRunner {
             if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
             inst.setPinVoltage(compPin, voltage);
             this.circuitDirty = true;
+            if (this.cpu) {
+                inst.onPinStateChange(compPin, voltage > 1.8, this.cpu.cycles);
+            }
 
             this.traversePassive(inst, compId, compPin, voltage, (forwardNode) => {
                 visitNode(forwardNode);
@@ -7361,8 +7777,8 @@ export class RP2040Runner implements BoardRunner {
 
             const compStates: Array<{ id: string; state: any }> = [];
             for (const inst of this.instances.values()) {
-                if (!inst.stateChanged) continue;
-                const syncState = inst.getSyncState();
+                if (!inst.stateChanged && !inst.telemetryEnabled) continue;
+                const syncState = getUnifiedComponentSyncState(inst);
                 
                 if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
 
@@ -7385,6 +7801,37 @@ export class RP2040Runner implements BoardRunner {
             this.lastStateEmitTime = now;
             this.onStateUpdate(msg);
         }
+    }
+
+    forceEmitState() {
+        if (!this.cpu) return;
+        const now = performance.now();
+        const currentCycles = Number(this.cpu.core.cycles);
+        const msg: any = { type: 'state', boardId: this.boardId };
+        msg.pins = this.pinStates;
+        this.pinsChanged = false;
+        
+        const compStates: Array<{ id: string; state: any }> = [];
+        for (const inst of this.instances.values()) {
+            const syncState = getUnifiedComponentSyncState(inst);
+            inst.stateChanged = false;
+            compStates.push({
+                id: inst.id,
+                type: inst.type,
+                state: syncState,
+                ...collectComponentTelemetry(inst, undefined, this.cpu),
+            });
+        }
+        msg.components = compStates;
+
+        this.statusIntervalEmitCount++;
+        msg._emitSeq = this.statusIntervalEmitCount;
+        msg._emitTime = now;
+        msg.simTimeMs = this.getSimulatedTimeMs();
+        
+        this.lastStateEmitCycle = currentCycles;
+        this.lastStateEmitTime = now;
+        this.onStateUpdate(msg);
     }
 
     private initPhysicsWorker() {}

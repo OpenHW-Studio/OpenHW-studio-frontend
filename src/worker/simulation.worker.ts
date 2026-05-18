@@ -14,6 +14,7 @@ if (typeof window === 'undefined') {
 (self as any).$RefreshSig$ = () => () => (type: any) => type;
 
 import { BoardRunner, createRunnerForBoard, LOGIC_REGISTRY, COMPONENT_PINS, buildFatFsImage, buildLittleFsImage } from './execute';
+import { avrInstruction } from 'avr8js';
 import { BaseComponent } from '@openhw/emulator';
 import {
     isProgrammableBoardType,
@@ -1084,10 +1085,50 @@ self.onmessage = async (e) => {
     } else if (data.type === 'INTERACT') {
         console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
 
+        const runQuickBurst = (r: BoardRunner) => {
+            if (r.running && r.cpu) {
+                if (typeof (r as any).repropagateAllVoltages === 'function') {
+                    (r as any).repropagateAllVoltages();
+                }
+                if (typeof (r as any).updateGPIOInputsFromCircuit === 'function') {
+                    (r as any).updateGPIOInputsFromCircuit();
+                }
+
+                if (r.cpu.pc !== undefined) {
+                    const quickCycles = 16000;
+                    const targetObj = r.cpu.cycles + quickCycles;
+                    while (r.cpu.cycles < targetObj && r.running) {
+                        avrInstruction(r.cpu);
+                        r.cpu.tick();
+                    }
+                    const instArray = Array.from(r.instances.values());
+                    instArray.forEach(c => c.update(r.cpu.cycles, (r as any).currentWires, instArray));
+                    if (typeof r.forceEmitState === 'function') {
+                        r.forceEmitState();
+                    }
+                } else if (r.cpu.core && typeof r.cpu.core.executeInstruction === 'function') {
+                    let cyclesDone = 0;
+                    while (cyclesDone < 16000 && r.running) {
+                        const before = r.cpu.core.cycles >>> 0;
+                        r.cpu.core.executeInstruction();
+                        const after = r.cpu.core.cycles >>> 0;
+                        const delta = (after - before) >>> 0;
+                        cyclesDone += delta > 0 ? delta : 1;
+                    }
+                    const instArray = Array.from(r.instances.values());
+                    instArray.forEach(c => c.update(r.cpu.core.cycles, (r as any).currentWires, instArray));
+                    if (typeof r.forceEmitState === 'function') {
+                        r.forceEmitState();
+                    }
+                }
+            }
+        };
+
         if (mode === 'single' && runner) {
             const inst = runner.instances.get(data.compId);
             if (inst) {
                 inst.onEvent(data.event);
+                runQuickBurst(runner);
             } else {
                 console.warn(`[Worker] INTERACT target not found in single runner: ${data.compId}`);
             }
@@ -1098,6 +1139,7 @@ self.onmessage = async (e) => {
                 if (inst) {
                     inst.onEvent(data.event);
                     delivered = true;
+                    runQuickBurst(boardRunner);
                 }
             }
             if (!delivered) {
