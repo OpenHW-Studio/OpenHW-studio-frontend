@@ -666,8 +666,20 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (!component || typeof component !== 'object') return null;
       let type = String(component.type || '').trim();
       if (!type) return null;
-      if (type === 'wokwi-raspberry-pi-pico') type = 'openhw-pico';
+      let icModel = null;
+      if (type.startsWith('wokwi-74hc')) {
+        icModel = '74' + type.replace('wokwi-74hc', '');
+        type = 'logic-ic-74xx';
+      } else if (type.startsWith('wokwi-74lvc')) {
+        icModel = '74' + type.replace('wokwi-74lvc', '');
+        type = 'logic-ic-74xx';
+      } else if (type === 'wokwi-raspberry-pi-pico') type = 'openhw-pico';
       else if (type === 'wokwi-raspberry-pi-pico-w') type = 'openhw-pico-w';
+      else if (type === 'wokwi-pushbutton-6mm') type = 'openhw-pushbutton';
+      else if (type === 'wokwi-ky-040') type = 'openhw-rotary-encoder';
+      else if (type === 'wokwi-bmp180' || type === 'wokwi-bmp280') type = 'openhw-bmp180-breakout';
+      else if (type === 'wokwi-ds1307' || type === 'wokwi-ds3231' || type === 'wokwi-ds1307-rtc') type = 'openhw-ds1307-rtc';
+      else if (type === 'wokwi-microsd-card' || type === 'wokwi-sd-card') type = 'openhw-sd-card';
       else if (type.startsWith('wokwi-')) type = type.replace('wokwi-', 'openhw-');
       if (type === 'wokwi-arduino-uno') type = 'openhw-arduino-uno';
       if (type === 'wokwi-arduino-mega') type = 'openhw-arduino-mega';
@@ -756,6 +768,9 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       const attrs = component.attrs && typeof component.attrs === 'object'
         ? { ...component.attrs }
         : {};
+      if (icModel) {
+        attrs.icType = icModel;
+      }
       if (hardwareUtils.normalizeBoardKind(type) === 'rp2040') {
         attrs.env = hardwareUtils.normalizeRp2040Env(hardwareUtils.resolveComponentAttrString(attrs, 'env', 'native'));
       }
@@ -815,8 +830,153 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
   const normalizedWires = wiresInput
     .map((wire) => {
       if (!wire || typeof wire !== 'object') return null;
-      const from = String(wire.from || '').trim();
-      const to = String(wire.to || '').trim();
+      const mapWokwiPin = (endpoint) => {
+        if (!endpoint) return endpoint;
+        const idx = endpoint.indexOf(':');
+        if (idx === -1) return endpoint;
+        const compId = endpoint.slice(0, idx);
+        let pinId = endpoint.slice(idx + 1);
+        
+        const comp = normalizedComponents.find(c => c.id === compId);
+        if (comp) {
+          const type = comp.type;
+          
+          if (type === 'openhw-arduino-uno') {
+            if (pinId === 'GND.1') pinId = 'gnd_1';
+            else if (pinId === 'GND.2') pinId = 'gnd_2';
+            else if (pinId === 'GND.3') pinId = 'gnd_3';
+            else if (pinId === '3.3V') pinId = '3v3';
+            else if (pinId.toUpperCase() === 'VIN') pinId = 'vin';
+            else if (pinId.toUpperCase() === 'RESET') pinId = 'rst';
+          } else if (type === 'openhw-pico' || type === 'openhw-pico-w') {
+            if (pinId === 'GND.1') pinId = 'GND';
+            else if (pinId === 'GND.2') pinId = 'GND_1';
+            else if (pinId === 'GND.3') pinId = 'GND_2';
+            else if (pinId === 'GND.4') pinId = 'GND_3';
+            else if (pinId === 'GND.5') pinId = 'GND_4';
+            else if (pinId === 'GND.6') pinId = 'GND_5';
+            else if (pinId === 'GND.7') pinId = 'GND_6';
+            else if (pinId === 'GND.8') pinId = 'GND_6';
+          } else if (type === 'openhw-resistor' || type === 'openhw-photoresistor') {
+            if (pinId === '1') pinId = 'p1';
+            else if (pinId === '2') pinId = 'p2';
+          } else if (type === 'openhw-potentiometer') {
+            if (pinId === 'GND' || pinId === '1') pinId = '1';
+            else if (pinId === 'VCC' || pinId === '3') pinId = '2';
+            else if (pinId === 'SIG' || pinId === '2') pinId = 'SIG';
+          } else if (type === 'openhw-slide-potentiometer') {
+            if (pinId === 'OUT') pinId = 'SIG';
+          } else if (type === 'openhw-pushbutton') {
+            if (pinId === '1.l') pinId = '1l';
+            else if (pinId === '2.l') pinId = '2l';
+            else if (pinId === '1.r') pinId = '1r';
+            else if (pinId === '2.r') pinId = '2r';
+          } else if (type === 'openhw-ldr-module') {
+            if (pinId === 'A0') pinId = 'AO';
+            else if (pinId === 'D0') pinId = 'DO';
+          } else if (type === 'openhw-servo') {
+            if (pinId === 'SIG' || pinId === '1') pinId = 'PWM';
+          } else if (type === 'openhw-soil-moisture-sensor') {
+            if (pinId === 'AO' || pinId === 'A0') pinId = 'SIG';
+          } else if (type === 'openhw-bmp180-breakout') {
+            if (pinId === 'VCC') pinId = 'VIN';
+          } else if (type === 'openhw-buzzer') {
+            if (pinId === '1') pinId = '2';
+            else if (pinId === '2') pinId = '1';
+          } else if (type === 'openhw-led') {
+            if (pinId.toUpperCase() === 'C') pinId = 'K';
+          } else if (type === 'openhw-rgb-led') {
+            if (pinId.toUpperCase() === 'C') pinId = 'COM';
+          } else if (type === 'openhw-analog-joystick') {
+            if (pinId === 'VCC') pinId = '5V';
+            else if (pinId === 'VERT') pinId = 'VRX';
+            else if (pinId === 'HORZ') pinId = 'VRY';
+            else if (pinId === 'SEL') pinId = 'SW';
+          } else if (type === 'openhw-mpu6050') {
+            if (pinId === 'AD0') pinId = 'ADO';
+          } else if (type === 'openhw-a4988') {
+            if (pinId === 'GND.1') pinId = 'GND_MOT';
+            else if (pinId === 'GND.2') pinId = 'GND_LOGIC';
+          } else if (type === 'openhw-l293d') {
+            if (pinId === '1,2EN') pinId = 'EN1,2';
+            else if (pinId === '3,4EN') pinId = 'EN3,4';
+            else if (pinId === '1A') pinId = 'IN1';
+            else if (pinId === '2A') pinId = 'IN2';
+            else if (pinId === '3A') pinId = 'IN3';
+            else if (pinId === '4A') pinId = 'IN4';
+            else if (pinId === '1Y') pinId = 'OUT1';
+            else if (pinId === '2Y') pinId = 'OUT2';
+            else if (pinId === '3Y') pinId = 'OUT3';
+            else if (pinId === '4Y') pinId = 'OUT4';
+            else if (pinId === 'GND.1') pinId = 'GND1';
+            else if (pinId === 'GND.2') pinId = 'GND2';
+            else if (pinId === 'GND.3') pinId = 'GND3';
+            else if (pinId === 'GND.4') pinId = 'GND4';
+          } else if (type === 'openhw-lcd1602') {
+            if (pinId === 'LED+') pinId = 'A';
+            else if (pinId === 'LED-') pinId = 'K';
+          } else if (type === 'openhw-neopixel-ring') {
+            if (pinId === 'VCC') pinId = 'VDD';
+            else if (pinId === 'GND') pinId = 'VSS';
+            else if (pinId === 'IN') pinId = 'DIN';
+            else if (pinId === 'OUT') pinId = 'DOUT';
+          } else if (type === 'openhw-neopixel-matrix') {
+            if (pinId === 'DI') pinId = 'DIN';
+            else if (pinId === 'DO') pinId = 'DOUT';
+          } else if (type === 'openhw-attiny85') {
+            if (pinId === 'PB5') pinId = 'P5';
+            else if (pinId === 'PB4') pinId = 'P4';
+            else if (pinId === 'PB3') pinId = 'P3';
+            else if (pinId === 'PB2') pinId = 'P2';
+            else if (pinId === 'PB1') pinId = 'P1';
+            else if (pinId === 'PB0') pinId = 'P0';
+            else if (pinId === 'VCC') pinId = '5V';
+          } else if (type === 'openhw-nokia-5110') {
+            if (pinId === 'D/C') pinId = 'DC';
+            else if (pinId === 'SDIN') pinId = 'DN';
+          } else if (type === 'openhw-cd74hc4067') {
+            if (pinId.startsWith('I')) {
+              const num = parseInt(pinId.slice(1), 10);
+              if (num >= 0 && num <= 15) {
+                pinId = `C${num}`;
+              }
+            }
+          } else if (type === 'openhw-7segment') {
+            pinId = pinId.toUpperCase();
+            if (pinId === 'COM.1' || pinId === 'COM.2') {
+              pinId = 'DIG1';
+            }
+          } else if (type === 'openhw-max7219') {
+            if (pinId === 'LOAD') pinId = 'CS';
+          } else if (type === 'openhw-pca9685' || type === 'openhw-pca9865') {
+            if (pinId === 'VCC') pinId = '3.3V';
+            else if (pinId === 'V+') pinId = 'VCC_IN';
+            else if (pinId.startsWith('PWM')) {
+              const num = parseInt(pinId.slice(3), 10);
+              if (num >= 0 && num <= 15) pinId = `S${num}`;
+            } else if (pinId.startsWith('VCC') && pinId !== 'VCC_IN') {
+              const num = parseInt(pinId.slice(3), 10);
+              if (num >= 0 && num <= 15) pinId = `V+${num}`;
+            } else if (pinId.startsWith('GND') && pinId !== 'GND_IN' && pinId !== 'GND') {
+              const num = parseInt(pinId.slice(3), 10);
+              if (num >= 0 && num <= 15) pinId = `G${num}`;
+            }
+          } else if (type === 'openhw-ntc-temperature-sensor') {
+            if (pinId === '1') pinId = 'p1';
+            else if (pinId === '2') pinId = 'p2';
+          } else if (type === 'logic-ic-74xx') {
+            const num = parseInt(pinId, 10);
+            if (num >= 1 && num <= 14) {
+              pinId = `p${num}`;
+            }
+          }
+        }
+        
+        return `${compId}:${pinId}`;
+      };
+
+      const from = mapWokwiPin(String(wire.from || '').trim());
+      const to = mapWokwiPin(String(wire.to || '').trim());
       if (!from || !to) return null;
 
       const rawWireId = String(wire.id || '').trim();
@@ -879,8 +1039,8 @@ export function parseWokwiDiagramJson(wokwiJson) {
       }) : [];
       return {
         id: `w_wokwi_${idx}`,
-        from: String(from).replace('.', ':'),
-        to: String(to).replace('.', ':'),
+        from: String(from).replace(/:(\d)\.([lr])$/i, ':$1$2'),
+        to: String(to).replace(/:(\d)\.([lr])$/i, ':$1$2'),
         color: String(color),
         waypoints: scaledWaypoints,
         isBelow: false,
@@ -900,8 +1060,8 @@ export function parseWokwiDiagramJson(wokwiJson) {
       return {
         ...c,
         id: c.id || `w_wokwi_${idx}`,
-        from: String(c.from || '').replace('.', ':'),
-        to: String(c.to || '').replace('.', ':'),
+        from: String(c.from || '').replace(/:(\d)\.([lr])$/i, ':$1$2'),
+        to: String(c.to || '').replace(/:(\d)\.([lr])$/i, ':$1$2'),
         waypoints,
       };
     }

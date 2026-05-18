@@ -63,6 +63,9 @@ import QuickAddPortal from './QuickAddPortal';
 import TourGuide from './components/TourGuide';
 import { useTourLogic } from './hooks/useTourLogic';
 import PalettePanel from './PalettePanel';
+import { useTelemetryManager } from './services/TelemetryManager';
+import { ComponentTelemetrySelectModal } from './components/ComponentTelemetrySelectModal';
+
 
 import { ComponentContextMenu, ComponentRenamePanel, ComponentValuePanel } from './ComponentContextMenu';
 import { CanvasSceneLayer } from './components/CanvasSceneLayer';
@@ -180,6 +183,7 @@ import 'prismjs/themes/prism-tomorrow.css';
 
 const EDIT_COPY_KEY = 'openhw_edit_copy';
 const EDIT_COPY_PAYLOAD_PREFIX = 'openhw_edit_copy_payload_';
+const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
 const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code, label) {
@@ -942,6 +946,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const liveNeopixelDataRef = useRef({})
   const liveOopStatesRef = useRef({})
   const liveOopStateListenersRef = useRef(new Map())
+  const buttonInteractStartTimeRef = useRef(null)
 
   const serialPlotBufferRef = useRef('');
   const serialPlotLabelsRef = useRef([]);
@@ -1019,6 +1024,15 @@ export function SimulatorPage({ gamificationMode = false }) {
     attrs.onInteract = (event) => {
       // console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
 
+      // Track keydown/press start time for latency monitoring
+      if (event === 'press') {
+        buttonInteractStartTimeRef.current = {
+          compId: comp.id,
+          time: performance.now()
+        };
+        console.log(`[Latency Trace] [START] Interaction 'press' initiated on component ${comp.id}`);
+      }
+
       // Handle physical board reset button presses
       if (isProgrammableBoardType(comp.type) && event === 'RESET') {
         if (isRunning) handleReset();
@@ -1092,6 +1106,38 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [simulationSpeed, setSimulationSpeed] = useState(1.0);
   const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
   const [showSpeedDialog, setShowSpeedDialog] = useState(false);
+
+  const [componentTelemetryEnabled, setComponentTelemetryEnabled] = useState(false);
+  const [deepSiliconDebuggingEnabled, setDeepSiliconDebuggingEnabled] = useState(() => {
+    return localStorage.getItem('openhw.deepSiliconDebugging') === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('openhw.deepSiliconDebugging', deepSiliconDebuggingEnabled ? 'true' : 'false');
+  }, [deepSiliconDebuggingEnabled]);
+
+  const [telemetryMode, setTelemetryMode] = useState('detail');
+  const [telemetrySampleInterval, setTelemetrySampleInterval] = useState(250);
+  const [selectedTelemetryComponentIds, setSelectedTelemetryComponentIds] = useState([]);
+  const [showTelemetrySelectModal, setShowTelemetrySelectModal] = useState(false);
+
+  const { handleTelemetryStateMessage, telemetryWatchedParamsMap, setTelemetryWatchedParamsMap } = useTelemetryManager({
+    workerRef,
+    appendConsoleEntry,
+    simulationSpeed,
+    componentTelemetryEnabled,
+    setComponentTelemetryEnabled,
+    telemetryMode,
+    setTelemetryMode,
+    telemetrySampleInterval,
+    selectedTelemetryComponentIds,
+    setSelectedTelemetryComponentIds,
+  });
+
+  const handleTelemetryStateMessageRef = useRef(handleTelemetryStateMessage);
+  useEffect(() => {
+    handleTelemetryStateMessageRef.current = handleTelemetryStateMessage;
+  }, [handleTelemetryStateMessage]);
+
   const [saveDialogName, setSaveDialogName] = useState('');
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -2520,14 +2566,26 @@ export function SimulatorPage({ gamificationMode = false }) {
     e.stopPropagation();
     const startY = e.clientY;
     const startHeight = consoleHeight;
+    const consoleEl = document.querySelector('[data-simulation-console="true"]');
+    if (consoleEl) {
+      consoleEl.style.setProperty('--console-height', `${startHeight}px`);
+    }
+    let finalHeight = startHeight;
 
     const onMouseMove = (moveEvent) => {
       const delta = startY - moveEvent.clientY;
       const newHeight = Math.max(140, Math.min(540, startHeight + delta));
-      setConsoleHeight(newHeight);
+      finalHeight = newHeight;
+      if (consoleEl) {
+        consoleEl.style.setProperty('--console-height', `${finalHeight}px`);
+      }
     };
 
     const onMouseUp = () => {
+      setConsoleHeight(finalHeight);
+      if (consoleEl) {
+        consoleEl.style.removeProperty('--console-height');
+      }
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -2772,10 +2830,69 @@ export function SimulatorPage({ gamificationMode = false }) {
       const validBoardIds = new Set(boardComponents.map(b => b.id));
       const pruned = [];
 
-      // If boardComponents is empty (e.g. during initial mount/project loading before React setComponents commits),
-      // do not prune project files to prevent wiping out loaded code files.
+      // If boardComponents is empty (e.g. during initial mount/project loading before React setComponents commits,
+      // or when canvas is cleared/only contains non-board components), do not prune project files or generate board code
+      // to prevent wiping out loaded code files. However, we MUST still generate/update project/diagram.json.
       if (boardComponents.length === 0) {
-        return prev;
+        const diagramPayload = buildProjectPayload({
+          board,
+          components,
+          wires,
+          code,
+          includeCode: false,
+          blocklyXml,
+          blocklyGeneratedCode,
+          useBlocklyCode,
+          projectFiles: result,
+          openCodeTabs,
+          activeCodeFileId,
+        });
+        const diagramJsonPayload = { ...diagramPayload };
+        delete diagramJsonPayload.schemaVersion;
+        if (diagramJsonPayload.board === 'arduino_uno') delete diagramJsonPayload.board;
+        if (!diagramJsonPayload.components || diagramJsonPayload.components.length === 0) delete diagramJsonPayload.components;
+        if (!diagramJsonPayload.connections || diagramJsonPayload.connections.length === 0) delete diagramJsonPayload.connections;
+        if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
+        if (!diagramJsonPayload.blocklyGeneratedCode) delete diagramJsonPayload.blocklyGeneratedCode;
+        if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
+        delete diagramJsonPayload.projectFiles;
+        delete diagramJsonPayload.openCodeTabs;
+        delete diagramJsonPayload.activeCodeFileId;
+        const diagramJson = JSON.stringify(diagramJsonPayload, null, 2);
+
+        const generatedRootFiles = [
+          { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
+        ];
+
+        generatedRootFiles.forEach((rootFile) => {
+          const idx = result.findIndex((file) => file.id === rootFile.id);
+          if (idx === -1) {
+            result.push(rootFile);
+            changed = true;
+            return;
+          }
+
+          const current = result[idx];
+          if (
+            current.path !== rootFile.path
+            || current.name !== rootFile.name
+            || current.kind !== rootFile.kind
+            || current.content !== rootFile.content
+            || current.dirty !== false
+          ) {
+            result[idx] = {
+              ...current,
+              path: rootFile.path,
+              name: rootFile.name,
+              kind: rootFile.kind,
+              content: rootFile.content,
+              dirty: false,
+            };
+            changed = true;
+          }
+        });
+
+        return changed ? normalizeProjectFiles(result) : prev;
       }
 
       result.forEach(f => {
@@ -3024,15 +3141,22 @@ export function SimulatorPage({ gamificationMode = false }) {
     setOpenCodeTabs(prev => prev.includes(firstCodeFile.id) ? prev : [...prev, firstCodeFile.id]);
   }, [projectFiles, activeCodeFileId, projectFileMap]);
 
+  const currentCodeRef = useRef(code);
+  useEffect(() => {
+    currentCodeRef.current = code;
+  }, [code]);
+
   useEffect(() => {
     if (!activeCodeFile) {
       suppressCodeSyncRef.current = true;
       setCode('');
       return;
     }
+    if (activeCodeFile.content === currentCodeRef.current) return;
+
     suppressCodeSyncRef.current = true;
     setCode(activeCodeFile.content || '');
-  }, [activeCodeFile?.id]);
+  }, [activeCodeFile?.id, activeCodeFile?.content]);
 
   useEffect(() => {
     if (!activeCodeFileId) return;
@@ -3074,15 +3198,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     return m;
   }, [components]);
 
-  const loggedDebugMessages = useRef(new Set());
-  const debugLogOnce = useCallback((msg, data) => {
-    const key = `${msg}_${data.compId}_${data.searchId}`;
-    if (!loggedDebugMessages.current.has(key)) {
-      loggedDebugMessages.current.add(key);
-      console.log(msg, data);
-    }
-  }, []);
-
   const getPinPosForComp = useCallback((comp, pinId) => {
     if (!comp) return null;
     const pins = PIN_DEFS[comp.type] || [];
@@ -3115,12 +3230,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       });
     }
     if (!pin) {
-      debugLogOnce('[Pin Lookup Debug] Failed to find pin', { compId: comp.id, compType: comp.type, searchId, normSearch, availablePins: pins.map(p => p.id) });
       return { x: comp.x + (comp.w || 40) / 2, y: comp.y + (comp.h || 40) / 2, isFallback: true };
-    } else {
-      if (String(pin.id).toLowerCase() !== searchId) {
-        debugLogOnce('[Pin Lookup Debug] Resolved alias/fallback pin', { compId: comp.id, compType: comp.type, searchId, normSearch, resolvedPinId: pin.id });
-      }
     }
     const rotation = comp.rotation || 0;
     const cw = comp.w || 0;
@@ -5779,9 +5889,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Re-run validation to verify the fix worked
     try {
-      const validator = new FullCircuitValidator({ components: result.components }, result.connections);
+      const validator = new FullCircuitValidator({ components: result.components, connections: result.connections });
       const verifyResult = await validator.runValidation(
-        { components: result.components, connections: result.connections },
         { profile: 'balanced', incrementalScope: 'webui' }
       );
 
@@ -6757,11 +6866,28 @@ export function SimulatorPage({ gamificationMode = false }) {
             if (!compId) return;
             runComponentUpdateCountsRef.current[compId] = (runComponentUpdateCountsRef.current[compId] || 0) + 1;
             boardComponentState[compId] = c.state;
+
+            // Trace latency when buzzer starts buzzing
+            if (c.id === 'buzzer' && c.state?.isBuzzing && buttonInteractStartTimeRef.current) {
+              const latency = performance.now() - buttonInteractStartTimeRef.current.time;
+              const sourceBtnId = buttonInteractStartTimeRef.current.compId;
+              console.log(
+                `%c[Latency Trace] [SUCCESS] Keypress round-trip took: ${latency.toFixed(1)}ms (Button: ${sourceBtnId} -> Buzzer Sound)`,
+                'color: #22c55e; font-weight: bold; font-size: 11px;'
+              );
+              if (latency > 80) {
+                console.warn(
+                  `[Latency Trace] High round-trip latency detected (${latency.toFixed(1)}ms)! Thread contention or frame drops may be causing audible lag.`
+                );
+              }
+              buttonInteractStartTimeRef.current = null; // Reset tracking
+            }
           });
 
           renderComponentsByBoardRef.current[boardIdKey] = boardComponentState;
 
           updateLiveOopStates(msg.components);
+          handleTelemetryStateMessageRef.current(msg);
         }
         if (msg.type === 'state') {
           const boardIdKey = String(msg.boardId || 'default');
@@ -6833,11 +6959,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Handle Protocol Events
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
       };
 
@@ -6888,6 +7014,10 @@ export function SimulatorPage({ gamificationMode = false }) {
         debugRp2040: rp2040DebugTelemetryEnabled,
         debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
         speed: simulationSpeed,
+        telemetryEnabled: componentTelemetryEnabled,
+        telemetryMode: telemetryMode,
+        watchedParamsMap: telemetryWatchedParamsMap,
+        deepSilicon: deepSiliconDebuggingEnabled,
       });
 
       runStartGuardRef.current = false;
@@ -7623,7 +7753,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             `<path d="M${x + 21},${y + 16} Q${x + 26},${y + 11} ${x + 31},${y + 16}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             `<path d="M${x + 17},${y + 13} Q${x + 26},${y + 5} ${x + 35},${y + 13}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             ln(x + 26, y + 24, x + 26, y + 30, 1.5), ln(x + 42, y + 24, x + 52, y + 24),
-            tx(x + 6, y + 22, '+', 7, 'middle', false, '#777'),
+            tx(x + 46, y + 22, '+', 7, 'middle', false, '#777'),
             tx(x + 26, y + 60, ref, 9, 'middle', true),
           ].join('');
         }
@@ -8234,6 +8364,13 @@ export function SimulatorPage({ gamificationMode = false }) {
           openFirmwareUploadDialog={openFirmwareUploadDialog}
           rp2040DebugTelemetryEnabled={rp2040DebugTelemetryEnabled}
           setRp2040DebugTelemetryEnabled={setRp2040DebugTelemetryEnabled}
+          componentTelemetryEnabled={componentTelemetryEnabled}
+          setComponentTelemetryEnabled={setComponentTelemetryEnabled}
+          deepSiliconDebuggingEnabled={deepSiliconDebuggingEnabled}
+          setDeepSiliconDebuggingEnabled={setDeepSiliconDebuggingEnabled}
+          telemetryMode={telemetryMode}
+          setTelemetryMode={setTelemetryMode}
+          onOpenTelemetryModal={() => setShowTelemetrySelectModal(true)}
           setShowSpeedDialog={setShowSpeedDialog}
           simulationSpeed={simulationSpeed}
           setSimulationSpeed={setSimulationSpeed}
@@ -8286,6 +8423,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               touchAction: 'none', // Block browser pinch-to-zoom
               pointerEvents: liveEditingDisabled ? 'none' : 'auto',
               opacity: liveEditingDisabled ? 0.8 : 1,
+              marginLeft: '38px',
               transform: `translateX(${isPaletteHovered ? '302px' : '0'})`,
               transition: 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
               willChange: 'transform'
@@ -8426,6 +8564,16 @@ export function SimulatorPage({ gamificationMode = false }) {
               setActiveConsoleTab={setActiveConsoleTab}
               protocolLogs={protocolLogs}
               setProtocolLogs={setProtocolLogs}
+              components={components}
+              componentTelemetryEnabled={componentTelemetryEnabled}
+              setComponentTelemetryEnabled={setComponentTelemetryEnabled}
+              telemetryMode={telemetryMode}
+              setTelemetryMode={setTelemetryMode}
+              telemetrySampleInterval={telemetrySampleInterval}
+              setTelemetrySampleInterval={setTelemetrySampleInterval}
+              selectedTelemetryComponentIds={selectedTelemetryComponentIds}
+              setSelectedTelemetryComponentIds={setSelectedTelemetryComponentIds}
+              onOpenTelemetryModal={() => setShowTelemetrySelectModal(true)}
               onMouseDownConsoleResize={onMouseDownConsoleResize}
               clearConsoleEntries={clearConsoleEntries}
               downloadConsoleLog={downloadConsoleLog}
@@ -8467,6 +8615,16 @@ export function SimulatorPage({ gamificationMode = false }) {
               canvasZoomRef={canvasZoomRef}
               canvasZoom={canvasZoom}
               handleZoomTextClick={handleZoomTextClick}
+            />
+
+            <ComponentTelemetrySelectModal
+              isOpen={showTelemetrySelectModal}
+              onClose={() => setShowTelemetrySelectModal(false)}
+              components={components}
+              selectedIds={selectedTelemetryComponentIds}
+              onChangeSelectedIds={setSelectedTelemetryComponentIds}
+              watchedParamsMap={telemetryWatchedParamsMap}
+              onChangeWatchedParamsMap={setTelemetryWatchedParamsMap}
             />
 
             {/* ── Quick-Add Portal — rendered to document.body, isolated from canvas re-renders ── */}

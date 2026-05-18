@@ -12,6 +12,16 @@ function CanvasBottomControlsBase({
   setActiveConsoleTab,
   protocolLogs,
   setProtocolLogs,
+  components,
+  componentTelemetryEnabled,
+  setComponentTelemetryEnabled,
+  telemetryMode,
+  setTelemetryMode,
+  telemetrySampleInterval,
+  setTelemetrySampleInterval,
+  selectedTelemetryComponentIds,
+  setSelectedTelemetryComponentIds,
+  onOpenTelemetryModal,
   onMouseDownConsoleResize,
   clearConsoleEntries,
   downloadConsoleLog,
@@ -49,24 +59,6 @@ function CanvasBottomControlsBase({
 }) {
   return (
     <>
-      {validationToast && (
-        <div className="validation-toast-canvas" role="alert" data-export-ignore="true" onClick={e => e.stopPropagation()} onMouseDown={e => e.stopPropagation()}>
-          <div className="validation-toast-canvas__header">
-            <span>{validationToast.title}</span>
-            <button type="button" className="validation-toast-canvas__close" onClick={() => setValidationToast(null)} aria-label="Close validation notification">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-          <ul className="validation-toast-canvas__list">
-            {validationToast.reasons.map((reason, idx) => (
-              <li key={idx}>{reason}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       <div
         data-export-ignore="true"
         style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '4px 6px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}
@@ -109,7 +101,7 @@ function CanvasBottomControlsBase({
               <button className="canvas-menu-item" onClick={() => { chrome.setShowConnectionsPanel(p => !p); setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
               <button className="canvas-menu-item" onClick={() => { const next = !blocklyDisabled; chrome.setBlocklyDisabled(next); setShowCanvasMenu(false); }} title={blocklyDisabled ? 'Re-enable block code editor (uses more CPU)' : 'Disable block code editor to improve canvas performance'}>{blocklyDisabled ? 'Enable Block Coding' : 'Disable Block Coding'}</button>
               <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-              <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); if (setProjectFiles) setProjectFiles([]); if (setCode) setCode(''); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
+              <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); if (setProjectFiles) setProjectFiles(prev => prev.filter(f => f.id === 'project/diagram.json')); if (setCode) setCode(''); setSelected(null); } setShowCanvasMenu(false); }}>Clear Canvas</button>
             </div>
           )}
         </div>
@@ -122,13 +114,26 @@ function CanvasBottomControlsBase({
         activeTab={activeConsoleTab}
         onTabChange={setActiveConsoleTab}
         protocolLogs={protocolLogs}
+        componentTelemetryEnabled={componentTelemetryEnabled}
+        setComponentTelemetryEnabled={setComponentTelemetryEnabled}
+        telemetryMode={telemetryMode}
+        setTelemetryMode={setTelemetryMode}
+        telemetrySampleInterval={telemetrySampleInterval}
+        setTelemetrySampleInterval={setTelemetrySampleInterval}
+        selectedTelemetryComponentIds={selectedTelemetryComponentIds}
+        onOpenTelemetryModal={onOpenTelemetryModal}
         onResizeStart={onMouseDownConsoleResize}
         onClose={() => setIsConsoleOpen(false)}
         onClear={() => {
-          if (activeConsoleTab === 'protocol') setProtocolLogs([]);
-          else clearConsoleEntries();
+          if (activeConsoleTab === 'telemetry') {
+            setProtocolLogs([]);
+            clearConsoleEntries('telemetry');
+          } else {
+            clearConsoleEntries('console');
+          }
         }}
-        onDownload={downloadConsoleLog}
+        onDownload={() => downloadConsoleLog(activeConsoleTab, protocolLogs, telemetryMode, 'json')}
+        onDownloadLog={() => downloadConsoleLog(activeConsoleTab, protocolLogs, telemetryMode, 'log')}
       />
     </>
   );
