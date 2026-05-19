@@ -48,11 +48,13 @@ import {
   normalizeImportedCircuitData
 } from './projectUtils';
 import { importWokwiProjectZip } from './wokwiImportUtils';
+import { snapToGrid, resolveAllWiresWaypoints } from './utils/snappingUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
 import { ProjectsSidebarChrome } from './components/ProjectsSidebar';
 import { multiRoutePath, wireColor } from './wireUtils';
+import { getResolvedPinExitSide } from '../../utils/pinExit.js';
 import { useSimulatorShortcuts } from './hooks/useSimulatorShortcuts';
 import { simplifyOrthogonalPath } from './utils/wireHitDetection';
 import { useEditorStore } from './store/useEditorStore';
@@ -498,6 +500,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   useEffect(() => { isDraggingRef.current = isDragging; }, [isDragging]);
   useEffect(() => { isExplorerDraggingRef.current = isExplorerDragging; }, [isExplorerDragging]);
+
+  useEffect(() => {
+    if (!components || components.length === 0 || !wires || wires.length === 0) return;
+    const hasUnresolved = wires.some(w => Array.isArray(w.routingInstructions) && w.routingInstructions.length > 0);
+    if (!hasUnresolved) return;
+    setWires(prev => resolveAllWiresWaypoints(prev, components, LOCAL_PIN_DEFS));
+  }, [components, wires]);
 
   const {
     showTour,
@@ -3251,6 +3260,14 @@ export function SimulatorPage({ gamificationMode = false }) {
     return getPinPosForComp(componentsMap.get(compId), pinId);
   }, [componentsMap, getPinPosForComp]);
 
+  const getComponentBounds = useCallback((comp) => {
+    if (!comp) return { x: 0, y: 0, w: 0, h: 0 };
+    const reg = COMPONENT_REGISTRY[comp.type];
+    if (!reg) return { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
+    if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+    return reg.BOUNDS || { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
+  }, [COMPONENT_REGISTRY, getComponentStateAttrs]);
+
   // -- Get the point a wire should exit/enter at 90 deg from a pin --
   const getPinExitPoint = useCallback((compId, pinId, offset = 0, targetPos = null) => {
     const comp = componentsMap.get(compId);
@@ -3289,51 +3306,89 @@ export function SimulatorPage({ gamificationMode = false }) {
     const pPos = getPinPosForComp(comp, pinId);
     if (!pPos) return null;
 
+    const bounds = getComponentBounds(comp);
+    const localX = (Number(pin.x) || 0) - (Number(bounds.x) || 0);
+    const localY = (Number(pin.y) || 0) - (Number(bounds.y) || 0);
+    const distLeft = localX;
+    const distRight = (Number(bounds.w) || comp.w || 0) - localX;
+    const distTop = localY;
+    const distBottom = (Number(bounds.h) || comp.h || 0) - localY;
+    const bodyEdgeGap = 3;
     const rotation = comp.rotation || 0;
-    // Monotonic stagger: laneIndex 0..6 → exitLen 9, 14, 19, 24, 29, 34, 39
-    // offset here is already the laneIndex (0-based)
-    const exitLen = 9 + offset * 5;
+    // Spread grouped wires along the exit edge, then step outward.
+    const laneOffset = Number(offset) || 0; // preserved for logging, not used in the initial stub
     let dx = 0, dy = 0;
 
-    // Always exit from the nearest physical edge, ignoring manifest-defined 'dir'. 
-    // We use a 15px "Snap Zone" to ensure pins near a border always exit from it.
-    const cw = comp.w || 40;
-    const ch = comp.h || 40;
-    const px = pin.x;
-    const py = pin.y;
-
-    const dTop = py;
-    const dBottom = ch - py;
-    const dLeft = px;
-    const dRight = cw - px;
-
-    // Priority 1: Snap to any edge within 15px
-    let dir = '';
-    if (dTop <= 15) dir = 'top';
-    else if (dBottom <= 15) dir = 'bottom';
-    else if (dLeft <= 15) dir = 'left';
-    else if (dRight <= 15) dir = 'right';
-    else {
-      // Priority 2: Mathematical nearest
-      const minDist = Math.min(dTop, dBottom, dLeft, dRight);
-      dir = minDist === dTop ? 'top' : (minDist === dBottom ? 'bottom' : (minDist === dRight ? 'right' : 'left'));
+    const dir = getResolvedPinExitSide(comp, pin, pins, bounds);
+    if (!dir) return { x: pPos.x, y: pPos.y, dir: 'bottom' };
+    // Compute an exit stub that first moves strictly perpendicular to the component
+    // by at least `MIN_EXIT_STUB` pixels before any lateral offsets are applied.
+    // The lateral bundle offset is applied later by the router; we avoid adding
+    // it to the initial stub so the first segment stays axis-aligned.
+    const MIN_EXIT_STUB = 30; // pixels: minimum stub length outward from component
+    if (dir === 'left') {
+      dx = -(Math.max(distLeft + bodyEdgeGap, MIN_EXIT_STUB));
+      dy = 0;
+    } else if (dir === 'right') {
+      dx = Math.max(distRight + bodyEdgeGap, MIN_EXIT_STUB);
+      dy = 0;
+    } else if (dir === 'top') {
+      dx = 0;
+      dy = -(Math.max(distTop + bodyEdgeGap, MIN_EXIT_STUB));
+    } else if (dir === 'bottom') {
+      dx = 0;
+      dy = Math.max(distBottom + bodyEdgeGap, MIN_EXIT_STUB);
     }
-
-    if (dir === 'left') dx = -exitLen;
-    else if (dir === 'right') dx = exitLen;
-    else if (dir === 'top') dy = -exitLen;
-    else if (dir === 'bottom') dy = exitLen;
 
     const rad = (rotation * Math.PI) / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
 
+    const rawExitX = pPos.x + (dx * cos - dy * sin);
+    const rawExitY = pPos.y + (dx * sin + dy * cos);
+
+    let exitX = rawExitX;
+    let exitY = rawExitY;
+    if (Math.abs(rawExitX - pPos.x) < 0.1) {
+      exitX = pPos.x;
+      exitY = Math.round(rawExitY / 15) * 15;
+    } else {
+      exitX = Math.round(rawExitX / 15) * 15;
+      exitY = pPos.y;
+    }
+
+    try {
+      console.debug('[getPinExitPoint]', { compId: comp.id, pinId: pin.id, bounds, localX, localY, dir, laneOffset, exitX, exitY });
+    } catch (e) {}
     return {
-      x: pPos.x + (dx * cos - dy * sin),
-      y: pPos.y + (dx * sin + dy * cos),
+      x: exitX,
+      y: exitY,
       dir
     };
   }, [componentsMap, PIN_DEFS, getPinPosForComp]);
+
+  // Developer helper: call `window.debugPinExits()` in browser console to list exit edges
+  try {
+    // eslint-disable-next-line no-undef
+    window.debugPinExits = () => {
+      const interestingTypes = new Set(['openhw-arduino-uno', 'openhw-a4988', 'openhw-stepper-motor', 'wokwi-arduino-uno', 'wokwi-stepper-motor']);
+      (components || []).forEach(comp => {
+        if (!interestingTypes.has(comp.type)) return;
+        const pins = PIN_DEFS[comp.type] || [];
+        const bounds = getComponentBounds(comp);
+        console.groupCollapsed(`pin exits for ${comp.id} (${comp.type}) at ${comp.x},${comp.y}`);
+        console.log('bounds', bounds);
+        pins.forEach(pin => {
+          const exitSide = getResolvedPinExitSide(comp, pin, pins, getComponentBounds(comp));
+          const exitPt = getPinExitPoint(comp.id, pin.id, 0, null);
+          const localX = (Number(pin.x) || 0) - (Number(bounds.x) || 0);
+          const localY = (Number(pin.y) || 0) - (Number(bounds.y) || 0);
+          console.log(pin.id, '->', exitSide, exitPt, { localX, localY });
+        });
+        console.groupEnd();
+      });
+    };
+  } catch (e) {}
 
   const getPinPosWithGhosts = useCallback((compId, pinId) => {
     let comp = componentsMap.get(compId);
@@ -3494,10 +3549,29 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     const usedIds = new Set(components.map(c => String(c.id || '')));
     const id = allocateComponentId(item.type, usedIds);
+    const pins = LOCAL_PIN_DEFS[item.type] || [];
+    const anchorPin = pins[0];
+    let initialX = Math.max(8, x);
+    let initialY = Math.max(8, y);
+    if (anchorPin) {
+      const w = item.w || 60;
+      const h = item.h || 60;
+      const cx = initialX + w / 2;
+      const cy = initialY + h / 2;
+      const anchorWorld = getRotatedPoint(initialX + anchorPin.x, initialY + anchorPin.y, 0, cx, cy);
+      const snappedAnchorX = snapToGrid(anchorWorld.x);
+      const snappedAnchorY = snapToGrid(anchorWorld.y);
+      initialX += (snappedAnchorX - anchorWorld.x);
+      initialY += (snappedAnchorY - anchorWorld.y);
+    } else {
+      initialX = snapToGrid(initialX);
+      initialY = snapToGrid(initialY);
+    }
+
     const newCompBase = {
       id,
       type: item.type, label: item.label,
-      x: Math.max(8, x), y: Math.max(8, y),
+      x: initialX, y: initialY,
       w: item.w || 60, h: item.h || 60,
       attrs: item.attrs || {},
     };
@@ -3893,16 +3967,18 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           if (mode === 'waypoint') {
             // Free move waypoint
-            newPts[segIdx].x += ddx;
-            newPts[segIdx].y += ddy;
+            newPts[segIdx].x = sd.startPts[segIdx].x + ddx;
+            newPts[segIdx].y = sd.startPts[segIdx].y + ddy;
           } else {
             // Orthogonal segment drag
             if (isHoriz) {
-              newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
-              newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+              const newY = sd.startPts[segIdx].y + ddy;
+              newPts[segIdx] = { ...newPts[segIdx], y: newY };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newY };
             } else {
-              newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
-              newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+              const newX = sd.startPts[segIdx].x + ddx;
+              newPts[segIdx] = { ...newPts[segIdx], x: newX };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newX };
             }
           }
           wireUpdate = { 
@@ -3929,8 +4005,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       } else if (wireStart && canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect();
-        const rawX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-        const rawY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+        const rawX = snapToGrid((e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current);
+        const rawY = snapToGrid((e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current);
         mousePosUpdate = { x: rawX, y: rawY };
       } else {
         // Fix #5 ─ mouse position and inspector hover tracking (throttled)
@@ -4186,19 +4262,61 @@ export function SimulatorPage({ gamificationMode = false }) {
         const movedId = movingComp.current.id;
         const childIds = movingComp.current.childIds;
 
-        // 1. Sync final positions from DOM to React State
+        // 1. Sync final positions from DOM to React State with grid snapping on release
         const masterElem = document.getElementById(`comp-master-${movedId}`);
         const finalX = masterElem ? parseFloat(masterElem.style.left) : 0;
         const finalY = masterElem ? parseFloat(masterElem.style.top) : 0;
 
+        let snappedX = finalX;
+        let snappedY = finalY;
+        if (!window._prevSnaps || window._prevSnaps.length === 0) {
+          const comp = componentsRef.current.find(c => c.id === movedId);
+          const pins = (comp && LOCAL_PIN_DEFS[comp.type]) || [];
+          const anchorPin = pins[0];
+          if (comp && anchorPin) {
+            const cx = finalX + (comp.w || 0) / 2;
+            const cy = finalY + (comp.h || 0) / 2;
+            const anchorWorld = getRotatedPoint(finalX + anchorPin.x, finalY + anchorPin.y, comp.rotation || 0, cx, cy);
+            const snappedAnchorX = snapToGrid(anchorWorld.x);
+            const snappedAnchorY = snapToGrid(anchorWorld.y);
+            snappedX = finalX + (snappedAnchorX - anchorWorld.x);
+            snappedY = finalY + (snappedAnchorY - anchorWorld.y);
+          } else {
+            snappedX = snapToGrid(finalX);
+            snappedY = snapToGrid(finalY);
+          }
+        }
+        const snapDiffX = snappedX - finalX;
+        const snapDiffY = snappedY - finalY;
+
+        if (masterElem) {
+          masterElem.style.left = `${snappedX}px`;
+          masterElem.style.top = `${snappedY}px`;
+        }
+        if (childIds) {
+          childIds.forEach(childId => {
+            const childMaster = document.getElementById(`comp-master-${childId}`);
+            if (childMaster) {
+              const cx = parseFloat(childMaster.style.left) + snapDiffX;
+              const cy = parseFloat(childMaster.style.top) + snapDiffY;
+              childMaster.style.left = `${cx}px`;
+              childMaster.style.top = `${cy}px`;
+            }
+          });
+        }
+
         setComponents(prev => {
-          let next = prev.map(c => c.id === movedId ? { ...c, x: finalX, y: finalY } : c);
+          let next = prev.map(c => c.id === movedId ? { ...c, x: snappedX, y: snappedY } : c);
           if (childIds) {
             next = next.map(c => {
               if (childIds.includes(c.id)) {
                 const childMaster = document.getElementById(`comp-master-${c.id}`);
                 if (childMaster) {
-                  return { ...c, x: parseFloat(childMaster.style.left), y: parseFloat(childMaster.style.top) };
+                  return {
+                    ...c,
+                    x: parseFloat(childMaster.style.left) + snapDiffX,
+                    y: parseFloat(childMaster.style.top) + snapDiffY
+                  };
                 }
               }
               return c;
@@ -4266,16 +4384,27 @@ export function SimulatorPage({ gamificationMode = false }) {
           const wireId = segDragRef.current.wireId;
           // Apply simplification to clean up redundant segments/waypoints
           setWires(prev => prev.map(w => {
-            if (w.id === wireId && w.waypoints?.length) {
-              const fromParts = w.from.split(':');
-              const toParts = w.to.split(':');
-              const p1 = getPinPosRef.current(fromParts[0], fromParts.slice(1).join(':'));
-              const p2 = getPinPosRef.current(toParts[0], toParts.slice(1).join(':'));
-              if (p1 && p2) {
-                const fullPath = [p1, ...w.waypoints, p2];
-                const simplified = simplifyOrthogonalPath(fullPath);
-                return { ...w, waypoints: simplified.slice(1, -1) };
+            if (w.id === wireId) {
+              let updatedWaypoints = w.waypoints;
+              if (w.waypoints?.length) {
+                const snappedWaypoints = w.waypoints.map(pt => ({
+                  ...pt,
+                  x: snapToGrid(pt.x),
+                  y: snapToGrid(pt.y)
+                }));
+                const fromParts = w.from.split(':');
+                const toParts = w.to.split(':');
+                const p1 = getPinPosRef.current(fromParts[0], fromParts.slice(1).join(':'));
+                const p2 = getPinPosRef.current(toParts[0], toParts.slice(1).join(':'));
+                if (p1 && p2) {
+                  const fullPath = [p1, ...snappedWaypoints, p2];
+                  const simplified = simplifyOrthogonalPath(fullPath);
+                  updatedWaypoints = simplified.slice(1, -1);
+                } else {
+                  updatedWaypoints = snappedWaypoints;
+                }
               }
+              return { ...w, waypoints: updatedWaypoints, routingInstructions: undefined };
             }
             return w;
           }));
@@ -8415,11 +8544,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           {/* CANVAS + SVG WIRE LAYER */}
           <main
-            className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)] bg-[length:24px_24px]" style={{
+            className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)]" style={{
               cursor: showInspector ? 'url("data:image/svg+xml,%3Csvg width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'4\' fill=\'%2338bdf8\'/%3E%3Cpath d=\'M12 2v6M12 16v6M2 12h6M16 12h6\' stroke=\'%2338bdf8\' stroke-width=\'2\'/%3E%3C/svg%3E") 12 12, crosshair' : (segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab'),
-              backgroundImage: showGrid
-                ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
-                : 'none',
               touchAction: 'none', // Block browser pinch-to-zoom
               pointerEvents: liveEditingDisabled ? 'none' : 'auto',
               opacity: liveEditingDisabled ? 0.8 : 1,
@@ -8447,7 +8573,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               if (didPanRef.current) return;
               if (wireStart) {
                 const r = canvasRef.current.getBoundingClientRect();
-                const newPt = { x: (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom, y: (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom };
+                const newPt = { x: snapToGrid((e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom), y: snapToGrid((e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom) };
                 setWireStart(prev => ({ ...prev, waypoints: [...(prev.waypoints || []), newPt] }));
               } else {
                 setSelected(null)
@@ -8475,6 +8601,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               innerCanvasRef={innerCanvasRef}
               canvasOffset={canvasOffset}
               canvasZoom={canvasZoom}
+              showGrid={showGrid}
               wires={wires}
               wiresAlwaysOnTop={wiresAlwaysOnTop}
               selected={selected}
@@ -8497,6 +8624,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               multiRoutePath={multiRoutePath}
               svgRef={svgRef}
               isRunning={isRunning}
+              isComponentDragging={isComponentDragging}
               COMPONENT_REGISTRY={COMPONENT_REGISTRY}
               getComponentStateAttrs={getComponentStateAttrs}
               updateComponentAttr={updateComponentAttr}
