@@ -1,5 +1,6 @@
-import React, { useSyncExternalStore, useCallback } from 'react';
+import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
+import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
   const liveState = useSyncExternalStore(
@@ -45,6 +46,7 @@ function CanvasSceneLayerBase({
   innerCanvasRef,
   canvasOffset,
   canvasZoom,
+  showGrid,
   wires,
   wiresAlwaysOnTop,
   selected,
@@ -67,6 +69,7 @@ function CanvasSceneLayerBase({
   multiRoutePath,
   svgRef,
   isRunning,
+  isComponentDragging,
   COMPONENT_REGISTRY,
   getComponentStateAttrs,
   updateComponentAttr,
@@ -92,12 +95,80 @@ function CanvasSceneLayerBase({
   onPinClick,
   setWireStart,
 }) {
+  const [showExitOverlay, setShowExitOverlay] = useState(() => {
+    try { return localStorage.getItem('showExitOverlay') !== '0'; } catch (e) { return true; }
+  });
+  useEffect(() => { try { localStorage.setItem('showExitOverlay', showExitOverlay ? '1' : '0'); } catch (e) {} }, [showExitOverlay]);
+  const wireOffsetMap = useMemo(() => calculateWireBundleOffsets(wires, (wire) => {
+    const fromParts = wire.from.split(':');
+    const toParts = wire.to.split(':');
+    const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
+    const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
+    if (!p1 || !p2) return null;
+    const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), 0, p2) || p1;
+    const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), 0, p1) || p2;
+    return { p1, p2, e1, e2, waypoints: wire.waypoints || [] };
+  }), [wires, getPinPos, getPinExitPoint]);
+
+  const backgroundGridRef = useRef(null);
+
+  useEffect(() => {
+    const target = innerCanvasRef.current;
+    if (!target) return;
+
+    const syncGrid = () => {
+      if (!backgroundGridRef.current) return;
+      const transform = target.style.transform || '';
+      const translateMatch = transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
+      const scaleMatch = transform.match(/scale\(([-\d.]+)\)/);
+
+      const x = translateMatch ? parseFloat(translateMatch[1]) : canvasOffset.x;
+      const y = translateMatch ? parseFloat(translateMatch[2]) : canvasOffset.y;
+      const scale = scaleMatch ? parseFloat(scaleMatch[1]) : canvasZoom;
+
+      backgroundGridRef.current.style.backgroundPosition = `${x}px ${y}px`;
+      backgroundGridRef.current.style.backgroundSize = `${15 * scale}px ${15 * scale}px`;
+    };
+
+    syncGrid();
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.attributeName === 'style') {
+          syncGrid();
+          break;
+        }
+      }
+    });
+
+    observer.observe(target, { attributes: true, attributeFilter: ['style'] });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [innerCanvasRef, canvasOffset, canvasZoom, showGrid]);
+
   return (
-    <div ref={innerCanvasRef} style={{
-      position: 'absolute', top: 0, left: 0,
-      width: '10000px', height: '8000px',
-      transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
-    }}>
+    <>
+      {showGrid && (
+        <div
+          ref={backgroundGridRef}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            zIndex: 0,
+            backgroundImage: 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
+            backgroundSize: `${15 * canvasZoom}px ${15 * canvasZoom}px`,
+            backgroundPosition: `${canvasOffset.x}px ${canvasOffset.y}px`,
+          }}
+        />
+      )}
+      <div ref={innerCanvasRef} style={{
+        position: 'absolute', top: 0, left: 0,
+        width: '10000px', height: '8000px',
+        transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
+      }}>
       {/* BOTTOM SVG layer for wires (Below Components) */}
       <svg
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
@@ -112,8 +183,7 @@ function CanvasSceneLayerBase({
             if (!p1) p1 = { x: 0, y: 0, isFallback: true };
             if (!p2) p2 = { x: 0, y: 0, isFallback: true };
           }
-          const globalIndex = wires.findIndex(ww => ww.id === w.id);
-          const offset = (globalIndex !== -1 ? globalIndex : index) % 7;
+          const offset = wireOffsetMap.get(w.id) || 0;
           const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
           const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
 
@@ -127,6 +197,7 @@ function CanvasSceneLayerBase({
               wirepointsEnabled={wirepointsEnabled}
               theme={theme}
               wiresAlwaysOnTop={wiresAlwaysOnTop}
+              isDragging={isComponentDragging}
               onSelect={(e) => {
                 e.stopPropagation();
                 setSelected(w.id);
@@ -189,6 +260,21 @@ function CanvasSceneLayerBase({
         })}
       </svg>
 
+      {/* Overlay toggle button */}
+      <div style={{ position: 'absolute', left: 8, top: 8, zIndex: 220, pointerEvents: 'all' }}>
+        <button
+          onClick={() => setShowExitOverlay(s => !s)}
+          title={showExitOverlay ? 'Hide exit overlay' : 'Show exit overlay'}
+          style={{
+            background: showExitOverlay ? 'rgba(255,204,0,0.95)' : 'rgba(0,0,0,0.6)',
+            color: showExitOverlay ? '#000' : '#fff',
+            border: 'none', padding: '6px 8px', borderRadius: 8, cursor: 'pointer', fontSize: 12
+          }}
+        >
+          {showExitOverlay ? 'Exit overlay: ON' : 'Exit overlay: OFF'}
+        </button>
+      </div>
+
       {/* TOP SVG layer for wires (Above Components) & Context Menu */}
       <svg
         ref={svgRef}
@@ -204,8 +290,7 @@ function CanvasSceneLayerBase({
             if (!p1) p1 = { x: 0, y: 0, isFallback: true };
             if (!p2) p2 = { x: 0, y: 0, isFallback: true };
           }
-          const globalIndexTop = wires.findIndex(ww => ww.id === w.id);
-          const offset = (globalIndexTop !== -1 ? globalIndexTop : index) % 7;
+          const offset = wireOffsetMap.get(w.id) || 0;
           const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
           const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
 
@@ -219,6 +304,7 @@ function CanvasSceneLayerBase({
               wirepointsEnabled={wirepointsEnabled}
               theme={theme}
               wiresAlwaysOnTop={wiresAlwaysOnTop}
+              isDragging={isComponentDragging}
               onSelect={(e) => {
                 e.stopPropagation();
                 setSelected(w.id);
@@ -250,6 +336,76 @@ function CanvasSceneLayerBase({
             opacity={0.8}
           />
         )}
+
+        {/* Exit-point overlay for debugging/resolution (UNO, A4988, Stepper) */}
+        {(() => {
+          if (!showExitOverlay) return null;
+          const interesting = new Set(['openhw-arduino-uno', 'wokwi-arduino-uno', 'openhw-a4988', 'openhw-stepper-motor', 'wokwi-stepper-motor']);
+          const markers = [];
+          for (const comp of components) {
+            if (!interesting.has(comp.type)) continue;
+            const pins = PIN_DEFS[comp.type] || [];
+            for (const pin of pins) {
+              const p = getPinPos(comp.id, pin.id);
+              const e = getPinExitPoint(comp.id, pin.id, 0, null) || p;
+              if (!p || !e) continue;
+              markers.push({ compId: comp.id, pinId: pin.id, p, e, dir: e.dir || null });
+            }
+          }
+
+          // Group markers by component + side to avoid label overlap
+          const groups = new Map();
+          for (const m of markers) {
+            const key = `${m.compId}::${m.dir || 'none'}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(m);
+          }
+
+          const out = [];
+          for (const [key, arr] of groups.entries()) {
+            // sort depending on side to keep label order stable
+            const side = key.split('::')[1];
+            if (side === 'top' || side === 'bottom') {
+              arr.sort((a, b) => a.e.x - b.e.x);
+            } else {
+              arr.sort((a, b) => a.e.y - b.e.y);
+            }
+
+            for (let i = 0; i < arr.length; i++) {
+              const m = arr[i];
+              // compute label position with stacking offsets to prevent overlap
+              let lx = m.e.x + 6, ly = m.e.y - 6;
+              const label = `${m.pinId} (${m.dir || ''})`;
+              if (m.dir === 'top') {
+                ly = m.e.y - 8 - (i * 14);
+                lx = m.e.x;
+              } else if (m.dir === 'bottom') {
+                ly = m.e.y + 12 + (i * 14);
+                lx = m.e.x;
+              } else if (m.dir === 'left') {
+                lx = m.e.x - 10 - (i * 60);
+                ly = m.e.y + 4;
+              } else if (m.dir === 'right') {
+                lx = m.e.x + 10 + (i * 60);
+                ly = m.e.y + 4;
+              } else {
+                lx = m.e.x + 6; ly = m.e.y - 6;
+              }
+
+              const approxWidth = Math.max(28, label.length * 6);
+              out.push(
+                <g key={`exit-${m.compId}-${m.pinId}`} pointerEvents="none" opacity={0.95}>
+                  <line x1={m.p.x} y1={m.p.y} x2={m.e.x} y2={m.e.y} stroke="#ffcc00" strokeWidth={1} strokeDasharray="2 2" />
+                  <circle cx={m.e.x} cy={m.e.y} r={3} fill="#ffcc00" stroke="#333" strokeWidth={0.8} />
+                  <line x1={m.e.x} y1={m.e.y} x2={lx} y2={ly} stroke="#ffcc00" strokeWidth={0.8} />
+                  <rect x={lx - approxWidth / 2} y={ly - 10} rx={4} ry={4} width={approxWidth} height={14} fill="#111" opacity={0.7} />
+                  <text x={lx - approxWidth / 2 + 6} y={ly + 2} fontSize={10} fill="#ffcc00" style={{ fontFamily: 'JetBrains Mono, monospace' }}>{label}</text>
+                </g>
+              );
+            }
+          }
+          return out;
+        })()}
       </svg>
 
       {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
@@ -571,6 +727,7 @@ function CanvasSceneLayerBase({
         );
       })()}
     </div>
+    </>
   );
 }
 

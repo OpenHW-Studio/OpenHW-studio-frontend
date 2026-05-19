@@ -9,6 +9,7 @@ import { PicoLogic } from './pico-logic.ts';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic.ts';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic.ts';
 import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-supply/logic.ts';
+import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic.ts';
 import { NeopixelLogic } from '../components/openhw-neopixel-matrix/logic.ts';
 import { BuzzerLogic } from '@openhw/emulator/src/components/openhw-buzzer/logic.ts';
 import { MotorLogic } from '@openhw/emulator/src/components/openhw-motor/logic.ts';
@@ -51,6 +52,9 @@ import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/log
 import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic.ts';
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic.ts';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic.ts';
+import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic.ts';
+import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic.ts';
+import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic.ts';
 
 function gateVoltage(isHigh: boolean): number {
     return isHigh ? 5.0 : 0.0;
@@ -2365,6 +2369,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-pushbutton': PushbuttonLogic,
     'wokwi-power-supply': PowerSupplyLogic,
     'openhw-power-supply': PowerSupplyLogic,
+    'wokwi-battery': BatteryLogic,
+    'openhw-battery': BatteryLogic,
     'wokwi-neopixel-matrix': NeopixelLogic,
     'openhw-neopixel-matrix': NeopixelLogic,
     'wokwi-ws2812b': NeopixelLogic,
@@ -2472,12 +2478,17 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-photoresistor': BaseComponent,
     'openhw-ntc-thermistor': BaseComponent,
     'openhw-ntc-temperature-sensor': BaseComponent,
-    'openhw-battery': BaseComponent,
     'openhw-charger': BaseComponent,
     'openhw-breadboard-mini': BaseComponent,
     'openhw-neopixel-ring': NeopixelLogic,
     'openhw-arduino-sensor-shield': BaseComponent,
     'openhw-simulation-monitor': SimulationMonitorLogic,
+    'wokwi-ds18b20': DS18B20Logic,
+    'openhw-ds18b20': DS18B20Logic,
+    'wokwi-ir-receiver': IRReceiverLogic,
+    'openhw-ir-receiver': IRReceiverLogic,
+    'wokwi-mfrc522': MFRC522Logic,
+    'openhw-mfrc522': MFRC522Logic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -2531,8 +2542,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
     'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
     'openhw-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
-    'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
-    'openhw-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
+    'wokwi-power-supply': [{ id: 'GND' }, { id: '5V' }, { id: 'VCC' }],
+    'openhw-power-supply': [{ id: 'GND' }, { id: '5V' }, { id: 'VCC' }],
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'openhw-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
@@ -2600,12 +2611,19 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-photoresistor': [{ id: '1' }, { id: '2' }],
     'openhw-ntc-thermistor': [{ id: '1' }, { id: '2' }],
     'openhw-ntc-temperature-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
+    'wokwi-battery': [{ id: 'VCC' }, { id: 'GND' }],
     'openhw-battery': [{ id: 'VCC' }, { id: 'GND' }],
     'openhw-charger': [{ id: 'VIN+' }, { id: 'VIN-' }, { id: 'BAT+' }, { id: 'BAT-' }],
     'openhw-breadboard-mini': [{ id: 'a1' }, { id: 'b1' }, { id: 'c1' }, { id: 'd1' }, { id: 'e1' }, { id: 'f1' }, { id: 'g1' }, { id: 'h1' }, { id: 'i1' }, { id: 'j1' }],
     'openhw-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
     'openhw-arduino-sensor-shield': [{ id: 'VCC' }, { id: 'GND' }, { id: 'S' }],
     'openhw-simulation-monitor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'TX' }, { id: 'RX' }],
+    'wokwi-ds18b20': [{ id: 'GND' }, { id: 'DQ' }, { id: 'VDD' }],
+    'openhw-ds18b20': [{ id: 'GND' }, { id: 'DQ' }, { id: 'VDD' }],
+    'wokwi-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
+    'openhw-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
+    'wokwi-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
+    'openhw-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
 };
 
 type RP2040ExecutableRangeInput =
@@ -4547,10 +4565,21 @@ export class AVRRunner {
                 visit(`${this.boardId}:${pin}`, 3.3);
             });
 
-            return rails;
-        };
+            // Start BFS from non-board power supplies and batteries
+            this.instances.forEach((inst, compId) => {
+                if (compId === this.boardId) return;
+                const isPowerSupply = inst.type.includes('power-supply');
+                const isBattery = inst.type.includes('battery');
+                if (isPowerSupply || isBattery) {
+                    Object.keys(inst.pins).forEach(pin => {
+                        const v = inst.pins[pin]?.voltage ?? 0.0;
+                        visit(`${compId}:${pin}`, v);
+                    });
+                }
+            });
 
-        const updateOopPin = (arduinoPinStr: string, isHighOrVoltage: boolean | number) => {
+            return rails;
+        };        const updateOopPin = (arduinoPinStr: string, isHighOrVoltage: boolean | number, customCompId?: string) => {
             const voltage = typeof isHighOrVoltage === 'number' ? isHighOrVoltage : (isHighOrVoltage ? 5.0 : 0.0);
             if (arduinoPinStr === '5') {
                 console.log(`[Worker updateOopPin] Pin 5, isHighOrVoltage: ${isHighOrVoltage}, voltage: ${voltage}V`);
@@ -4656,7 +4685,8 @@ export class AVRRunner {
                 }
             };
 
-            visitNode(`${this.boardId}:${arduinoPinStr}`, voltage);
+            const startCompId = customCompId || this.boardId;
+            visitNode(`${startCompId}:${arduinoPinStr}`, voltage);
         };
 
         this.updatePhysics = () => {};
@@ -4706,6 +4736,45 @@ export class AVRRunner {
                     updateOopPin(pin, isHigh);
                 }
             });
+
+            // Re-propagate active driver outputs from non-board helper components (e.g. A4988 motor drivers, logic gates)
+            this.instances.forEach((inst, compId) => {
+                if (compId === this.boardId) return;
+                if (inst.type.includes('a4988')) {
+                    ['1A', '1B', '2A', '2B'].forEach(pin => {
+                        if (inst.pins[pin]) {
+                            updateOopPin(pin, inst.pins[pin].voltage, compId);
+                        }
+                    });
+                } else if (inst.type.includes('motor-driver')) {
+                    ['OUT1', 'OUT2', 'OUT3', 'OUT4'].forEach(pin => {
+                        if (inst.pins[pin]) {
+                            updateOopPin(pin, inst.pins[pin].voltage, compId);
+                        }
+                    });
+                } else if (inst.type.includes('logic-gate') || inst.type.includes('timer') || inst.type.includes('opamp')) {
+                    Object.keys(inst.pins).forEach(pin => {
+                        if (pin.startsWith('OUT') || pin.startsWith('out') || pin === 'Q' || pin === 'Q#') {
+                            updateOopPin(pin, inst.pins[pin].voltage, compId);
+                        }
+                    });
+                }
+            });
+
+            // Re-propagate non-board power supplies and batteries
+            this.instances.forEach((inst, compId) => {
+                if (compId === this.boardId) return;
+                const isPowerSupply = inst.type.includes('power-supply');
+                const isBattery = inst.type.includes('battery');
+                if (isPowerSupply || isBattery) {
+                    Object.keys(inst.pins).forEach(pin => {
+                        if (inst.pins[pin]) {
+                            updateOopPin(pin, inst.pins[pin].voltage, compId);
+                        }
+                    });
+                }
+            });
+
             // Then, re-propagate GND and power rails LAST so they dominate and pull pins down/up
             ['gnd_1', 'gnd_2', 'gnd_3', 'GND'].forEach(pin => {
                 updateOopPin(pin, 0.0);
@@ -4715,6 +4784,17 @@ export class AVRRunner {
             });
             ['3v3', '3V3'].forEach(pin => {
                 updateOopPin(pin, 3.3);
+            });
+
+            // Re-propagate standalone power supply rails LAST so they dominate external power nets
+            this.instances.forEach((inst, compId) => {
+                if (compId === this.boardId) return;
+                if (inst.type.includes('power-supply') || inst.type.includes('battery')) {
+                    if (inst.pins['GND']) updateOopPin('GND', 0.0, compId);
+                    if (inst.pins['5V']) updateOopPin('5V', inst.pins['5V'].voltage, compId);
+                    if (inst.pins['VCC']) updateOopPin('VCC', inst.pins['VCC'].voltage, compId);
+                    if (inst.pins['3V3']) updateOopPin('3V3', inst.pins['3V3'].voltage, compId);
+                }
             });
         };
 
