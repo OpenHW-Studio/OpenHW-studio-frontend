@@ -5,8 +5,6 @@ import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
 import { getProjectContentBySlug } from '../services/classAdventureAdapter'
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples'
-
 // ─── Per-project guided steps (shown as flashcards) ───────────────────────
 const PROJECT_STEPS = {
   'led-blink': [
@@ -85,9 +83,7 @@ function evaluateAssessment(config, components, wires, code) {
       const fIE = !fT ? conn.from.component : null, tIE = !tT ? conn.to.component : null
       const fTo = fC && fT ? fC.type === fT : false, tTo = tC && tT ? tC.type === tT : false
       const fIo = fC && fIE ? fC.id === fIE : false, tIo = tC && tIE ? tC.id === tIE : false
-      const d = (fTo||fIo) && (tTo||tIo) && endpointMatches(fC, fPin, wire.fromLabel, conn.from) && endpointMatches(tC, tPin, wire.toLabel, conn.to)
-      const r = fC && tC && ((tT && fC.type===tT)||(tIE && fC.id===tIE)) && ((fT && tC.type===fT)||(fIE && tC.id===fIE)) && endpointMatches(fC, fPin, wire.fromLabel, conn.to) && endpointMatches(tC, tPin, wire.toLabel, conn.from)
-      return d || r
+      return (fTo||fIo) && (tTo||tIo) && endpointMatches(fC, fPin, wire.fromLabel, conn.from) && endpointMatches(tC, tPin, wire.toLabel, conn.to)
     }
     requiredConnections.forEach(conn => {
       if (wires.some(w => wm(w, conn))) ok++
@@ -285,39 +281,57 @@ export default function ProjectAssessmentPage() {
   }, [classId, projectName])
 
   const projectColor  = location.state?.projectColor || '#22c55e'
-  const steps         = PROJECT_STEPS[projectName] || []
+const steps         = PROJECT_STEPS[projectName] || []
 
-  const [theme,            setTheme]           = useState('dark')
+   const [theme,            setTheme]           = useState('dark')
   const [activeStep,       setActiveStep]       = useState(0)
-  const [evalConfig,       setEvalConfig]       = useState(null)
-  const [loadError,        setLoadError]        = useState(null)
   const [submission,       setSubmission]       = useState(null)
   const [evalResult,       setEvalResult]       = useState(null)
   const [evaluating,       setEvaluating]       = useState(false)
 
-  // Load evaluation config
+  // Assessment config: class (MongoDB) assessment object | built-in PROJECTS.fallback
+  const assessmentConfig = useMemo(() => {
+    if (classProjectContent) {
+      const assessment = classProjectContent.assessment || {}
+      return {
+        passingThreshold: assessment.passingThreshold ?? 0,
+        evaluationCriteria: assessment.evaluationCriteria || {},
+        scoring:              assessment.scoring || {},
+      }
+    }
+    // Non-class fallback: built-in PROJECTS data
+    const project = PROJECTS.find(p => p.slug === projectName)
+    const evaluation = project?.evaluation || {}
+    return {
+      passingThreshold: evaluation.passingThreshold ?? 0,
+      evaluationCriteria: evaluation.evaluationCriteria || {},
+      scoring:              evaluation.scoring || {},
+    }
+  }, [classProjectContent, projectName])
+
+  // ─── Submission state key ──────────────────────────────────────────────────
+  const SUB_KEY = `openhw_assessment_submission:${projectName}`
   useEffect(() => {
     let cancelled = false
-    setEvalConfig(null); setLoadError(null)
-    fetch(`${EXAMPLES_BASE_URL}/${projectName}/evaluation.json`)
-      .then(r => { if (!r.ok) throw new Error(); return r.json() })
-      .then(d => { if (!cancelled) setEvalConfig(d) })
-      .catch(() => { if (!cancelled) setLoadError('Could not load evaluation criteria.') })
-    return () => { cancelled = true }
-  }, [projectName])
-
-  // Load any existing submission
-  useEffect(() => {
-    const raw = sessionStorage.getItem(`openhw_assessment_submission:${projectName}`)
-    if (!raw) { setSubmission(null); setEvalResult(null); return }
-    try { setSubmission(JSON.parse(raw)) } catch (e) { setSubmission(null) }
+    const refresh = () => {
+      if (cancelled) return
+      const raw = sessionStorage.getItem(SUB_KEY)
+      if (!raw) { setSubmission(null); setEvalResult(null); return }
+      try { setSubmission(JSON.parse(raw)) } catch { setSubmission(null) }
+    }
+    refresh()
+    const handler = () => { refresh() }
+    window.addEventListener('focus', handler)
+    window.addEventListener('storage', handler)
+    return () => { window.removeEventListener('focus', handler); window.removeEventListener('storage', handler) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectName])
 
   // Auto-evaluate when both are ready
   useEffect(() => {
-    if (!evalConfig || !submission) return
+    if (!assessmentConfig || !submission) return
     setEvaluating(true)
-    const result = evaluateAssessment(evalConfig, submission.components || [], submission.wires || [], submission.code || '')
+    const result = evaluateAssessment(assessmentConfig, submission.components || [], submission.wires || [], submission.code || '')
     const payload = { projectName, submittedAt: submission.submittedAt, result }
     setEvalResult(payload)
     sessionStorage.setItem(`openhw_assessment_result:${projectName}`, JSON.stringify(payload))
@@ -337,7 +351,7 @@ export default function ProjectAssessmentPage() {
         }).catch(() => {})
       }
     }
-  }, [evalConfig, submission, classId, completedProjects, completeProject, awardXP, projectName, classProjectContent])
+  }, [assessmentConfig, submission, classId, completedProjects, completeProject, awardXP, projectName, classProjectContent])
 
   const clearResult = () => {
     sessionStorage.removeItem(`openhw_assessment_result:${projectName}`)

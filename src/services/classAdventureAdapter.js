@@ -35,12 +35,8 @@ export const buildFallbackClassAdventureContent = () => {
         correctAnswer: Number.isFinite(card.quiz?.correctAnswer) ? card.quiz.correctAnswer : 0,
         explanation: card.detail || "",
       })),
-      nodes: [
-        { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
-        { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
-        { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
-        { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
-      ],
+      // ── Assessment placed alongside theory/quizQuestions (no nodes array) ──
+      assessment: project.evaluation || {},
     };
   });
   return {
