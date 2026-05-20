@@ -32,7 +32,9 @@ export default function GuidedSimulatorPage() {
     document.documentElement.setAttribute('data-theme', next)
   }
 
-  const simUrl = `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}`
+  const simUrl = classId
+    ? `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}&classId=${encodeURIComponent(classId)}`
+    : `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}`
   const projectTitle = projectName.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
 
   return (

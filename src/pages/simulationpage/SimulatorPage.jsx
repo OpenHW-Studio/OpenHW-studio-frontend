@@ -1555,9 +1555,10 @@ export function SimulatorPage({ gamificationMode = false }) {
   const isAnyAuthenticated = isAuthenticated || isAdminAuthenticated;
   const navigate = useNavigate()
   const { generateAutonomousSetup } = useAutowiring();
-  const { projectName = '', shareId = '', classId = '', assignmentId = '', liveCode = '' } = useParams()
+  const { projectName = '', shareId = '', classId: routeClassId = '', assignmentId = '', liveCode = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const classId = routeClassId || assessmentParams.get('classId') || ''
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
   const assignmentMode = Boolean(classId && assignmentId)
@@ -1616,32 +1617,37 @@ export function SimulatorPage({ gamificationMode = false }) {
   const gamLockedCount = gamProjectComponents.filter(c => c.isLocked && c.compId).length
   const gamAllUnlocked = gamProject ? gamLockedCount === 0 : true
 
-   const handleAssessmentSubmit = async () => {
-     if (!assessmentMode && !gamificationMode) return;
-     const assessmentName = assessmentMode ? assessmentProjectName : projectName;
-     if (!assessmentName) {
-       alert('Assessment project is missing. Please open assessment from the project page.');
-       return;
-     }
-     setIsSubmittingAssessment(true);
-     try {
-       const payload = {
-         projectName: assessmentName,
-         submittedAt: new Date().toISOString(),
-         components,
-         wires,
-         code,
-       };
-       sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
-       // Preserve classId when navigating to assessment page to maintain class context
-       const targetPath = classId
-         ? `/${assessmentName}/assessment?classId=${encodeURIComponent(classId)}`
-         : `/${assessmentName}/assessment`;
-       navigate(targetPath);
-     } finally {
-       setIsSubmittingAssessment(false);
-     }
-   };
+  const handleAssessmentSubmit = async () => {
+    if (!assessmentMode && !gamificationMode) return;
+    const assessmentName = assessmentMode ? assessmentProjectName : projectName;
+    if (!assessmentName) {
+      alert('Assessment project is missing. Please open assessment from the project page.');
+      return;
+    }
+    setIsSubmittingAssessment(true);
+    try {
+      const payload = {
+        projectName: assessmentName,
+        submittedAt: new Date().toISOString(),
+        components,
+        wires,
+        code,
+      };
+      sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
+      // Preserve classId when navigating to assessment page to maintain class context
+      const targetPath = classId
+        ? `/${assessmentName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
+    } finally {
+      setIsSubmittingAssessment(false);
+    }
+  };
 
   const handleGamificationSubmit = useCallback(() => {
     if (!gamAllUnlocked) {

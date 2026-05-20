@@ -431,6 +431,7 @@ export default function SimulatorPage() {
   const { projectName = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const classId = assessmentParams.get('classId') || ''
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
 
@@ -2330,7 +2331,15 @@ export default function SimulatorPage() {
         code,
       };
       sessionStorage.setItem(`openhw_assessment_submission:${assessmentProjectName}`, JSON.stringify(payload));
-      navigate(`/${assessmentProjectName}/assessment`);
+      const targetPath = classId
+        ? `/${assessmentProjectName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentProjectName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
     } finally {
       setIsSubmittingAssessment(false);
     }
