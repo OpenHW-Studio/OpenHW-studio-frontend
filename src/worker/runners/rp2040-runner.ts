@@ -15,8 +15,8 @@ import {
     getInternalBridgesForComponent,
     LOGIC_REGISTRY,
     COMPONENT_PINS,
-} from '../execute.ts';
-import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions } from '../execute.ts';
+} from '../registries/component-registry.ts';
+import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions } from '../registries/component-registry.ts';
 
 const RP2040_FLASH_BASE = 0x10000000;
 const RP2040_XIP_NOCACHE_BASE = 0x11000000;

@@ -1,8 +1,8 @@
-import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, PinState } from 'avr8js';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portBConfig, portCConfig, portDConfig, PinState } from 'avr8js';
 import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
+import { parse } from '../fs/fs-builders.ts';
 import { 
-    parse, 
     BoardRunner, 
     AVRRunnerOptions, 
     ConnectedComponentPin, 
@@ -20,7 +20,7 @@ import {
     collectComponentTelemetry,
     collectNeopixelShutdownStates,
     invokeOptional
-} from '../execute.ts';
+} from '../registries/component-registry.ts';
 
 export class AVRRunner {
     cpu: CPU | null = null;
