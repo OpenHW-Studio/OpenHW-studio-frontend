@@ -3,7 +3,6 @@ import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
 import { 
     parse, 
-    CircuitSolver, 
     BoardRunner, 
     AVRRunnerOptions, 
     ConnectedComponentPin, 
@@ -75,7 +74,6 @@ export class AVRRunner {
     private lastRunLoopMs: number = 0;
     private lastPhysicsMs: number = 0;
     private lastComponentUpdateMs: number = 0;
-    private solver = new CircuitSolver();
     private netToNode = new Map<number, number>();
     private pinToNet: Map<string, number> = new Map();
     private physicsWorker: Worker | null = null;
@@ -932,6 +930,7 @@ export class AVRRunner {
         });
     }
 
+    private _dbgFrameCount = 0;
     private runLoop = () => {
         if (!this.running || !this.cpu) return;
 
@@ -1007,6 +1006,16 @@ export class AVRRunner {
 
             // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
             this.emitStateIfDue(now);
+        }
+
+        this._dbgFrameCount++;
+        if (this._dbgFrameCount % 300 === 0) {
+            const instArr = Array.from(this.instances.values());
+            console.log(`[AVRRunner DBG] frame=${this._dbgFrameCount} instances=${instArr.length} running=${this.running} cycles=${this.cpu?.cycles}`);
+            instArr.forEach(inst => {
+                console.log(`  inst id=${inst.id} type=${inst.type} stateChanged=${inst.stateChanged} pendingEmit=${(inst as any).pendingVisualStateEmit} telemetryEnabled=${inst.telemetryEnabled} state=`, JSON.stringify(inst.state));
+            });
+            console.log(`  pinStates=`, JSON.stringify(this.pinStates));
         }
 
         setTimeout(this.runLoop, 1);
