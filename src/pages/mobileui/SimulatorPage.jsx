@@ -6949,6 +6949,12 @@ useEffect(() => {
 
       worker.onmessage = async (event) => {
         const msg = event.data;
+        if (msg.type === 'error') {
+          appendConsoleEntry('error', `[SIM] ${msg.message || 'Runner error'}`, 'simulator');
+          logSerial(`Runner error: ${msg.message || 'Unknown error'}`, 'var(--red)');
+          handleStop();
+          return;
+        }
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
