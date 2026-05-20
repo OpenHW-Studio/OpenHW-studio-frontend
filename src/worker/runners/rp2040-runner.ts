@@ -1,7 +1,22 @@
 import { RP2040, GPIOPinState, ConsoleLogger, LogLevel, USBCDC, GDBServer, GDBConnection } from 'rp2040js';
 import { BaseComponent } from '@openhw/emulator';
-import { getComponentStateSyncPolicy, collectComponentTelemetry, flushCustomTelemetry, LOGIC_REGISTRY } from '../execute';
-import type { BoardRunner, SystemConfig, RP2040FirmwareLoadOptions } from '../execute';
+import {
+    getComponentStateSyncPolicy,
+    collectComponentTelemetry,
+    getUnifiedComponentSyncState,
+    collectNeopixelShutdownStates,
+    invokeOptional,
+    isLikelyActiveSignal,
+    readPinLevelMap,
+    safeJsonStringify,
+    fallbackTelemetryByInstance,
+    readComponentStateForTelemetry,
+    collectConnectedComponentPins,
+    getInternalBridgesForComponent,
+    LOGIC_REGISTRY,
+    COMPONENT_PINS,
+} from '../execute.ts';
+import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions } from '../execute.ts';
 
 const RP2040_FLASH_BASE = 0x10000000;
 const RP2040_XIP_NOCACHE_BASE = 0x11000000;
@@ -641,7 +656,6 @@ export class RP2040Runner implements BoardRunner {
     private lastPhysicsMs: number = 0;
     private lastRunLoopMs: number = 0;
     private lastComponentUpdateMs: number = 0;
-    private solver = new CircuitSolver();
     private netToNode = new Map<number, number>();
     private pinToNet = new Map<string, number>();
     private physicsWorker: Worker | null = null;

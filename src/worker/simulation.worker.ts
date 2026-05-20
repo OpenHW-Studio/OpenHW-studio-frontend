@@ -929,6 +929,8 @@ self.onmessage = async (e) => {
                 && (!singleBoardFlashPartitions || singleBoardFlashPartitions.length === 0)
                 && !!pyScript.trim();
 
+            console.log(`[Worker] Creating runner for board: ${singleBoardType}, boardId: ${singleBoardId}`);
+            try {
             runner = createRunnerForBoard(
                 singleBoardType,
                 hex,
@@ -952,6 +954,12 @@ self.onmessage = async (e) => {
                     rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
                 }
             );
+            console.log(`[Worker] Runner created OK. running=${(runner as any)?.running}`);
+            } catch (runnerErr: any) {
+                console.error('[Worker] FATAL: createRunnerForBoard threw:', runnerErr);
+                postMessage({ type: 'error', message: `Runner init failed: ${runnerErr?.message || runnerErr}` });
+                return;
+            }
 
             if (typeof (runner as any).setTelemetryEnabled === 'function') {
                 (runner as any).setTelemetryEnabled(activeTelemetryEnabled, activeTelemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
