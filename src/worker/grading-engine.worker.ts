@@ -59,8 +59,8 @@ async function initEngine() {
             console.log("[HEARTBEAT] Worker: Emulator logic loaded. Keys:", Object.keys(emulatorExports || {}));
 
             // Basic validation of emulator exports
-            if (!emulatorExports || !emulatorExports.FullCircuitValidator || !emulatorExports.analyzeCodeHardwareSync) {
-                throw new Error('Emulator exports missing required symbols (FullCircuitValidator, analyzeCodeHardwareSync)');
+            if (!emulatorExports || !emulatorExports.FullCircuitValidator || !emulatorExports.analyzeCodeHardwareSync || !emulatorExports.runUnifiedValidation) {
+                throw new Error('Emulator exports missing required symbols (FullCircuitValidator, analyzeCodeHardwareSync, runUnifiedValidation)');
             }
 
             isInitialized = true;
@@ -116,8 +116,12 @@ function mapBoardToFqbn(board: string): string {
     return 'arduino:avr:uno';
 }
 
+let engineConfig = {
+    compilerUrl: 'http://localhost:5001/api/compile'
+};
+
 async function compileSourceCode(payload: any, board: string): Promise<string> {
-    const COMPILER_URL = 'http://localhost:5001/api/compile';
+    const COMPILER_URL = engineConfig.compilerUrl;
     const fqbn = mapBoardToFqbn(board);
     
     console.log(`[v2.8] Requesting compilation for ${fqbn} (Sketch: ${payload.sketchName})...`);
@@ -181,7 +185,7 @@ async function captureBehavior(meta: any, durationMs: number, label: string, sim
         const boardComp = (meta.components || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
         
         const boardCompId = boardComp?.id || 'uno1';
-        const boardType = boardComp?.type || meta.board || 'wokwi-arduino-uno';
+        const boardType = boardComp?.type || meta.board || 'openhw-arduino-uno';
         const isRp2040Board = /rp2040|pico/i.test(String(boardType));
         const effectiveUseSimTimeCapture = useSimTimeCapture && !isRp2040Board;
         const compileUnit: any = getBoardCompileFiles(meta, boardCompId);
@@ -560,8 +564,13 @@ function detectSourceCode(code: string): boolean {
     return (hasArduinoMarkers || hasIncludes || hasMain) && !looksLikeHex;
 }
 
-onmessage = async (e: MessageEvent<GradingMessage>) => {
-    const { type, teacher, student, options, simulationSpeed } = e.data;
+onmessage = async (e: MessageEvent<any>) => {
+    const { type, teacher, student, options, simulationSpeed, config } = e.data;
+    
+    if (config) {
+        engineConfig = { ...engineConfig, ...config };
+    }
+
     const runSpeed = Number.isFinite(simulationSpeed) && (simulationSpeed as number) > 0 ? Number(simulationSpeed) : 1;
     console.log(`[HEARTBEAT] Worker: Message Received -> ${type}`);
     try {
@@ -584,12 +593,12 @@ onmessage = async (e: MessageEvent<GradingMessage>) => {
                 teacherMeta = JSON.parse(projectJson);
             }
 
-            // Teacher Validation Gate
+            // Teacher Validation Gate (Locally in Worker)
             postMessage({ type: 'LOG', msg: "Auditing Teacher Reference Circuit..." });
-            const validator = new emulatorExports.FullCircuitValidator(teacherMeta);
-            validator.runValidation();
-            const syncResult = emulatorExports.analyzeCodeHardwareSync(teacherMeta);
-            const teacherHealth = validator.calculateHealthScore(syncResult.issues);
+            const { errors, healthScore: teacherHealth } = emulatorExports.runUnifiedValidation(teacherMeta, { 
+                profile: 'balanced',
+                registry: emulatorExports
+            });
 
             if (teacherHealth < 100) {
                 postMessage({ type: 'LOG', msg: `[Warning] Teacher's reference circuit has spatial/electrical errors! Health: ${teacherHealth}%`, logType: 'warning' });
@@ -612,32 +621,32 @@ onmessage = async (e: MessageEvent<GradingMessage>) => {
             // 1. Student Metadata
             const studentMeta = extractProjectMetaFromPng(new Uint8Array(student));
 
-            // 2. RUN VALIDATION ENGINE (Electrical Safety & Sync)
-            postMessage({ type: 'LOG', msg: "Running Electrical Safety & Sync Validation..." });
-            const validator = new emulatorExports.FullCircuitValidator(studentMeta);
-            validator.runValidation();
-            const syncResult = emulatorExports.analyzeCodeHardwareSync(studentMeta);
+            // 2. RUN UNIFIED VALIDATION ENGINE (Locally in Worker)
+            postMessage({ type: 'LOG', msg: "Running Unified Electrical Safety & Sync Validation..." });
+            const validationResult = emulatorExports.runUnifiedValidation(studentMeta, { 
+                profile: 'balanced',
+                registry: emulatorExports
+            });
             
             // 3. Behavioral Analysis (Teacher - IF PNG)
             let teacherBinaryKey: Uint8Array;
             if (teacher instanceof ArrayBuffer) {
                 postMessage({ type: 'LOG', msg: "Teacher reference is a PNG. Generating behavioral baseline first..." });
                 const teacherMeta = extractProjectMetaFromPng(new Uint8Array(teacher));
-                const teacherMetaJson = JSON.stringify(teacherMeta);
                 
                 // Teacher Validation (Audit)
-                const tValidator = new emulatorExports.FullCircuitValidator(teacherMeta);
-                tValidator.runValidation();
-                const tSync = emulatorExports.analyzeCodeHardwareSync(teacherMeta);
-                const tHealth = tValidator.calculateHealthScore(tSync.issues);
+                const tResult = emulatorExports.runUnifiedValidation(teacherMeta, { 
+                    profile: 'balanced',
+                    registry: emulatorExports
+                });
                 
                 postMessage({ type: 'LOG', msg: `[TRACE] Teacher capture speed: ${runSpeed}x` });
                 const teacherTelemetry = await captureBehavior(teacherMeta, 8000, "Teacher Reference", runSpeed, true);
                 teacherBinaryKey = wasmExports.generate_binary_key(
-                    teacherMetaJson, 
+                    JSON.stringify(teacherMeta), 
                     JSON.stringify(teacherTelemetry),
-                    tHealth,
-                    JSON.stringify(tValidator.errors.map((e: any) => e.message))
+                    tResult.healthScore,
+                    JSON.stringify(tResult.errors.map((e: any) => e.message))
                 );
             } else {
                 teacherBinaryKey = new Uint8Array(teacher as any);
@@ -654,7 +663,7 @@ onmessage = async (e: MessageEvent<GradingMessage>) => {
                     .map((e: any) => e.ComponentState.id)
             );
 
-            const correctedErrors = validator.errors.filter((err: any) => {
+            const correctedErrors = validationResult.errors.filter((err: any) => {
                 // If safety engine says "unconnected" but simulation says "it's glowing", ignore the error
                 if (err.message.includes("unconnected")) {
                     const match = err.message.match(/\[.* (.*)\]/);
@@ -667,13 +676,15 @@ onmessage = async (e: MessageEvent<GradingMessage>) => {
                 return true;
             });
 
+            // Re-calculate Health Score with corrected errors
+            const validator = new emulatorExports.FullCircuitValidator(studentMeta);
             validator.errors = correctedErrors;
-            const healthScore = validator.calculateHealthScore(syncResult.issues);
+            const healthScore = validator.calculateHealthScore(validationResult.syncIssues);
             postMessage({ type: 'LOG', msg: `[Validation] Final Health Score: ${healthScore}%` });
 
             const validationErrors = [
                 ...correctedErrors.map((e: any) => `Safety: ${e.message}`),
-                ...syncResult.issues.map((e: any) => `Sync: ${e.message}`)
+                ...validationResult.syncIssues.map((e: any) => `Sync: ${e.message}`)
             ];
 
             postMessage({ type: 'LOG', msg: "[v2.2] Running Final Comparison (Rust/WASM)..." });

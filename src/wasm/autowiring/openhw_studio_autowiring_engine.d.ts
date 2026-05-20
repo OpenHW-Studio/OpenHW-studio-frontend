@@ -5,6 +5,8 @@ export function findNearestBoard(x: number, y: number): string | undefined;
 
 export function generateAutonomousSetup(new_comp_json: any, manifest_json: any, board_id: string, wires_json: any, allow_breadboard: boolean, is_rewire: boolean): any;
 
+export function generateCodeForComponent(comp_id: string, wires_json: any, manifest_json: any, components_json: any): any;
+
 export function ingestComponent(id: string, kind: string, x: number, y: number, w: number, h: number, pins_json: any): void;
 
 export function reset(): void;
@@ -15,6 +17,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly findNearestBoard: (a: number, b: number) => [number, number];
     readonly generateAutonomousSetup: (a: any, b: any, c: number, d: number, e: any, f: number, g: number) => any;
+    readonly generateCodeForComponent: (a: number, b: number, c: any, d: any, e: any) => any;
     readonly ingestComponent: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: any) => void;
     readonly reset: () => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;

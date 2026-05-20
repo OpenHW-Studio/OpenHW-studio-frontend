@@ -1108,7 +1108,58 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, varId
   && prev.blocklyReady === next.blocklyReady
 ))
 
-// ─── Main component ────────────────────────────────────────────────────────────
+// ─── Global script loader for Blockly ─────────────────────────────────────────
+// This cache ensures that multiple instances of BlocklyEditor don't try to 
+// load and execute the same scripts concurrently, which avoids 
+// "already registered" errors in Blockly's extension system.
+const scriptCache = {}
+
+async function loadBlocklyScript(src) {
+  if (scriptCache[src]) return scriptCache[src]
+
+  scriptCache[src] = (async () => {
+    // Check if script is already in DOM from a previous manual injection
+    if (document.querySelector(`script[data-src="${src}"]`)) return
+
+    try {
+      const response = await fetch(src)
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
+      const scriptText = await response.text()
+
+      // Wrap script to mask 'define' from UMD detection.
+      // This ensures Blockly scripts don't attempt to use Monaco's AMD loader (loader.js),
+      // but fall back to global assignment (window.Blockly).
+      const wrappedScript = `(function(define){${scriptText}\n})(undefined);`
+      const blob = new Blob([wrappedScript], { type: 'application/javascript' })
+      const blobUrl = URL.createObjectURL(blob)
+
+      return new Promise((res, rej) => {
+        const s = document.createElement('script')
+        s.src = blobUrl
+        s.async = false
+        s.dataset.src = src // track original src
+        s.onload = () => {
+          URL.revokeObjectURL(blobUrl)
+          res()
+        }
+        s.onerror = (e) => {
+          URL.revokeObjectURL(blobUrl)
+          delete scriptCache[src] // Allow retry on failure
+          rej(new Error(`Execution failed: ${src}`))
+        }
+        document.head.appendChild(s)
+      })
+    } catch (err) {
+      delete scriptCache[src] // Allow retry on failure
+      throw new Error(`Fetch failed: ${src} - ${err.message}`)
+    }
+  })()
+
+  return scriptCache[src]
+}
+
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange, visible, useBlocklyCode, onToggleUseBlocklyCode, boardKind, isMobile = false }) {
   const [showSidebar, setShowSidebar] = useState(true);
   const sidebarWidth = 220;
@@ -1160,18 +1211,19 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
 
   // ── Load Blockly scripts ───────────────────────────────────────────────────
   useEffect(() => {
-    const loadScript = src => new Promise((res, rej) => {
-      if (document.querySelector(`script[src="${src}"]`)) { res(); return }
-      const s = document.createElement('script')
-      s.src = src; s.async = false
-      s.onload = res; s.onerror = () => rej(new Error(`Load failed: ${src}`))
-      document.head.appendChild(s)
-    })
     const boot = () => {
       if (window.Blockly) { init(); return }
-      ; (async () => { for (const s of CDN_SCRIPTS) await loadScript(s) })()
+      ; (async () => { 
+        for (const s of CDN_SCRIPTS) {
+          await loadBlocklyScript(s);
+        }
+      })()
         .then(init)
-        .catch(e => { setErrMsg(e.message); setLoadStatus('error') })
+        .catch(e => { 
+          console.error('Blockly Boot Error:', e);
+          setErrMsg(e.message); 
+          setLoadStatus('error'); 
+        })
     }
     boot()
     return () => {

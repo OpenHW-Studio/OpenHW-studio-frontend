@@ -34,9 +34,16 @@ function titleFromSlug(slug) {
 }
 
 const ROLE_TO_TYPE = {
-  arduino: 'wokwi-arduino-uno', resistor: 'wokwi-resistor',
-  led: 'wokwi-led', 'rgb-led': 'wokwi-rgb-led',
-  potentiometer: 'wokwi-potentiometer', 'analog-joystick': 'wokwi-analog-joystick',
+  arduino: 'openhw-arduino-uno', resistor: 'openhw-resistor',
+  led: 'openhw-led', 'rgb-led': 'openhw-rgb-led',
+  potentiometer: 'openhw-potentiometer', 'analog-joystick': 'openhw-analog-joystick',
+}
+
+function isTypeMatch(actual, expected) {
+  if (!actual || !expected) return false;
+  if (actual === expected) return true;
+  if (actual.replace('openhw-', 'wokwi-') === expected.replace('openhw-', 'wokwi-')) return true;
+  return false;
 }
 
 function resolveRoleType(r) { return ROLE_TO_TYPE[r] || r }
@@ -64,7 +71,7 @@ function evaluateAssessment(config, components, wires, code) {
     let ok = 0
     required.forEach(req => {
       const t = resolveRoleType(req.type)
-      const n = components.filter(c => c.type === t).length
+      const n = components.filter(c => isTypeMatch(c.type, t)).length
       if (n === req.count) ok++; else issues.push(`Expected ${req.count} ${req.type}, found ${n}.`)
     })
     const score = required.length ? Math.round((ok / required.length) * 100) : 0
@@ -81,7 +88,7 @@ function evaluateAssessment(config, components, wires, code) {
       const fC = components.find(c => c.id === fId), tC = components.find(c => c.id === tId)
       const fT = ROLE_TO_TYPE[conn.from.component], tT = ROLE_TO_TYPE[conn.to.component]
       const fIE = !fT ? conn.from.component : null, tIE = !tT ? conn.to.component : null
-      const fTo = fC && fT ? fC.type === fT : false, tTo = tC && tT ? tC.type === tT : false
+      const fTo = fC && fT ? isTypeMatch(fC.type, fT) : false, tTo = tC && tT ? isTypeMatch(tC.type, tT) : false
       const fIo = fC && fIE ? fC.id === fIE : false, tIo = tC && tIE ? tC.id === tIE : false
       return (fTo||fIo) && (tTo||tIo) && endpointMatches(fC, fPin, wire.fromLabel, conn.from) && endpointMatches(tC, tPin, wire.toLabel, conn.to)
     }

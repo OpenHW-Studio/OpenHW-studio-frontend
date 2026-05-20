@@ -1,16 +1,6 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo, Suspense } from 'react'
+const MonacoEditor = React.lazy(() => import('@monaco-editor/react'));
 import { useNavigate } from 'react-router-dom'
-import EditorComponent from 'react-simple-code-editor'
-const Editor = EditorComponent.default || EditorComponent
-import Prism from 'prismjs/components/prism-core'
-import 'prismjs/components/prism-clike'
-import 'prismjs/components/prism-javascript'
-import 'prismjs/components/prism-markup'
-import 'prismjs/components/prism-json'
-import 'prismjs/components/prism-typescript'
-import 'prismjs/components/prism-jsx'
-import 'prismjs/components/prism-tsx'
-import 'prismjs/themes/prism-tomorrow.css'
 import JSZip from 'jszip'
 import * as Babel from '@babel/standalone'
 import * as ReactJsxRuntime from 'react/jsx-runtime'
@@ -1521,6 +1511,29 @@ export default function ComponentEditorPage() {
   const [s2EditorFont, setS2EditorFont] = useState(13)
   const [s6EditorHeight, setS6EditorHeight] = useState(480)
   const [s7EditorHeight, setS7EditorHeight] = useState(500)
+  const [globalTheme, setGlobalTheme] = useState(document.documentElement.getAttribute('data-theme') || 'dark');
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setGlobalTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
+  const commonMonacoOptions = useMemo(() => ({
+    fontSize: 13,
+    fontFamily: "'JetBrains Mono', monospace",
+    minimap: { enabled: false },
+    automaticLayout: true,
+    scrollBeyondLastLine: false,
+    tabSize: 2,
+    bracketPairColorization: { enabled: true },
+    guides: { indentation: true },
+    wordWrap: 'on',
+    folding: true,
+    lineDecorationsWidth: 10,
+  }), []);
 
   // ── Preview zoom per step ─────────────────────────────────────────────────
   const [s2Zoom, setS2Zoom] = useState(null)  // null = auto-fit
@@ -2196,28 +2209,29 @@ export default function ComponentEditorPage() {
                   </div>
                 </div>
                 <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
-                  <Editor 
-                    value={svgMode === 'react' ? reactCode : svgCode} 
-                    onValueChange={(nextValue) => {
-                      if (svgMode === 'react') {
-                        setReactCode(nextValue)
-                        if (s2AutoSync) syncSvgFromReact(nextValue)
-                        return
-                      }
-                      setSvgCode(nextValue)
-                      if (s2AutoSync) syncReactFromSvg(nextValue)
-                    }}
-                    highlight={c=>Prism.highlight(
-                      c || '',
-                      svgMode === 'react'
-                        ? (Prism.languages.tsx || Prism.languages.typescript || Prism.languages.javascript)
-                        : (Prism.languages.markup || Prism.languages.xml),
-                      svgMode === 'react' ? 'tsx' : 'markup'
-                    )}
-                    padding={16} 
-                    style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:s2EditorFont, lineHeight:1.6, minHeight:'100%', color:'var(--text)', background:'transparent', whiteSpace:'pre', overflowX:'auto', overflowY:'auto' }}
-                    placeholder={svgMode === 'react' ? 'export const MyUI = () => ...' : '<svg ...>'}
-                  />
+                  <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
+                    <MonacoEditor
+                      height="100%"
+                      language={svgMode === 'react' ? 'typescript' : 'xml'}
+                      theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
+                      value={svgMode === 'react' ? reactCode : svgCode}
+                      onChange={(nextValue) => {
+                        const val = nextValue || ''
+                        if (svgMode === 'react') {
+                          setReactCode(val)
+                          if (s2AutoSync) syncSvgFromReact(val)
+                          return
+                        }
+                        setSvgCode(val)
+                        if (s2AutoSync) syncReactFromSvg(val)
+                      }}
+                      options={{
+                        ...commonMonacoOptions,
+                        fontSize: s2EditorFont,
+                        padding: { top: 16, bottom: 16 },
+                      }}
+                    />
+                  </Suspense>
                 </div>
               </div>
             )}
@@ -2720,14 +2734,19 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
               </div>
             </div>
             <div style={{ flex:1, overflow:'auto' }}>
-              <Editor
-                value={ctxMenuCode}
-                onValueChange={setCtxMenuCode}
-                highlight={c => Prism.highlight(c || '', Prism.languages.tsx || Prism.languages.typescript || Prism.languages.javascript, 'tsx')}
-                padding={18}
-                style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.65, minHeight:'100%', color:'var(--text)', background:'transparent' }}
-                placeholder="export const ContextMenu = ({ attrs, onUpdate }) => (...)"
-              />
+              <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
+                <MonacoEditor
+                  height="100%"
+                  language="typescript"
+                  theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
+                  value={ctxMenuCode}
+                  onChange={v => setCtxMenuCode(v || '')}
+                  options={{
+                    ...commonMonacoOptions,
+                    padding: { top: 18, bottom: 18 },
+                  }}
+                />
+              </Suspense>
             </div>
           </div>
         </div>
@@ -2883,13 +2902,19 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
              <span style={{ fontSize: 10, color: 'var(--text3)' }}>{cur.id === 'manifest' ? 'JSON' : 'TypeScript'}</span>
            </div>
            <div style={{ height: s6EditorHeight, minHeight: 320, maxHeight: '75vh', overflow: 'auto' }}>
-              <Editor
-                value={cur.code}
-                onValueChange={cur.set}
-                highlight={c=>Prism.highlight(c || '', codeGrammar, codeLangId)}
-                padding={20}
-                style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight: '100%', color:'var(--text)', background: 'transparent' }}
-              />
+              <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
+                <MonacoEditor
+                  height="100%"
+                  language={codeLangId === 'tsx' ? 'typescript' : codeLangId}
+                  theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
+                  value={cur.code}
+                  onChange={v => cur.set(v || '')}
+                  options={{
+                    ...commonMonacoOptions,
+                    padding: { top: 20, bottom: 20 },
+                  }}
+                />
+              </Suspense>
            </div>
         </div>
       </div>
@@ -2933,13 +2958,19 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
           </div>
 
           <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden', minHeight: 340 }}>
-            <Editor
-              value={cur.code}
-              onValueChange={cur.set}
-              highlight={c=>Prism.highlight(c || '', Prism.languages.typescript || Prism.languages.javascript, 'typescript')}
-              padding={16}
-              style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight:s7EditorHeight, color:'var(--text)', maxHeight:'75vh', overflowY:'auto' }}
-            />
+            <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
+              <MonacoEditor
+                height={s7EditorHeight}
+                language="typescript"
+                theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
+                value={cur.code}
+                onChange={v => cur.set(v || '')}
+                options={{
+                  ...commonMonacoOptions,
+                  padding: { top: 16, bottom: 16 },
+                }}
+              />
+            </Suspense>
           </div>
 
           {logicCheck && (
@@ -3007,12 +3038,19 @@ export const ContextMenu = ({ attrs, onUpdate }) => (
           >Generate doc/index.html</Btn>
         </div>
         <div style={{ flex:1, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-          <Editor
-            value={docsCode} onValueChange={setDocsCode}
-            highlight={c=>Prism.highlight(c || '', Prism.languages.markup || Prism.languages.html, 'markup')}
-            padding={16}
-            style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:13, lineHeight:1.6, minHeight:'100%', color:'var(--text)' }}
-          />
+          <Suspense fallback={<div className="p-4 text-[var(--text3)]">Loading Editor...</div>}>
+            <MonacoEditor
+              height="100%"
+              language="html"
+              theme={globalTheme === 'light' ? 'openhw-light' : 'openhw-dark'}
+              value={docsCode}
+              onChange={v => setDocsCode(v || '')}
+              options={{
+                ...commonMonacoOptions,
+                padding: { top: 16, bottom: 16 },
+              }}
+            />
+          </Suspense>
         </div>
       </div>
 

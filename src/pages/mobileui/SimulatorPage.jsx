@@ -69,6 +69,7 @@ import * as EmulatorComponents from "@openhw/emulator";
 const { 
   FullCircuitValidator, 
   analyzeCodeHardwareSync, 
+  runUnifiedValidation,
   applyCircuitFix: sharedApplyCircuitFix,
   initializeCircuitFixEngine,
   getFixHistory,
@@ -98,6 +99,26 @@ function assertSafeDynamicModule(code, label) {
   if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
     throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
   }
+}
+
+function isBreadboardType(type) {
+  const s = String(type || '').toLowerCase();
+  return s.startsWith('wokwi-breadboard') || s.startsWith('openhw-breadboard');
+}
+
+function isResistorType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-resistor' || s === 'openhw-resistor';
+}
+
+function isMotorType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-motor' || s === 'openhw-motor';
+}
+
+function isStepperMotorType(type) {
+  const s = String(type || '').toLowerCase();
+  return s === 'wokwi-stepper-motor' || s === 'openhw-stepper-motor';
 }
 
 function collectRawComponentSources() {
@@ -705,10 +726,16 @@ function resolveComponentIdFormat(type) {
     return { prefix: 'pico', separator: '' };
   }
 
-  const fallback = String(type || 'component')
+  let cleanType = rawType;
+  if (cleanType.startsWith('openhw-')) {
+    cleanType = cleanType.slice(7);
+  } else if (cleanType.startsWith('wokwi-')) {
+    cleanType = cleanType.slice(6);
+  }
+
+  const fallback = cleanType
     .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase() || 'component';
+    .replace(/^_+|_+$/g, '') || 'component';
 
   return { prefix: fallback, separator: '_' };
 }
@@ -1387,7 +1414,7 @@ function getPinCategory(pId, pDesc, compType) {
   // 3. I2C
   if (matches(/^sda([._]?\d+)?$/i)) categories.push('I2C_SDA');
   if (matches(/^scl([._]?\d+)?$/i)) categories.push('I2C_SCL');
-  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano')) {
+  if (compType?.includes('arduino-uno') || compType?.includes('arduino-nano')) {
     if (sId === 'a4') categories.push('I2C_SDA');
     if (sId === 'a5') categories.push('I2C_SCL');
   }
@@ -1406,8 +1433,10 @@ function getPinCategory(pId, pDesc, compType) {
 
   // 6. PWM
   if (matches(/^(pwm|~)([._]?\d+)?$/i)) categories.push('PWM');
-  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
-  if (compType === 'wokwi-arduino-mega') {
+  if (compType?.includes('arduino-uno') || compType?.includes('arduino-nano')) {
+    if (['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
+  }
+  if (compType?.includes('arduino-mega')) {
     const pinNum = parseInt(sId);
     if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
   }
@@ -1419,7 +1448,7 @@ function getPinCategory(pId, pDesc, compType) {
   }
 
   // 8. MOTOR OUTPUT
-  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((compType === 'wokwi-motor' || compType === 'wokwi-stepper-motor') && /^\d+$/.test(sId))) {
+  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((isMotorType(compType) || isStepperMotorType(compType)) && /^\d+$/.test(sId))) {
     categories.push('MOTOR');
   }
 
@@ -1431,7 +1460,7 @@ function getPinCategory(pId, pDesc, compType) {
   }
 
   // 10. Breadboard
-  if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
+  if (isBreadboardType(compType) && /^\d+[a-j]$/i.test(sId)) {
     const colNum = sId.match(/^\d+/)[0];
     const rowLetter = sId.slice(-1);
     const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
@@ -1597,17 +1626,108 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   const WOKWI_TO_COMP_ID = useMemo(() => ({
     'wokwi-led':                    'led',
+    'openhw-led':                   'led',
     'wokwi-resistor':               'resistor',
+    'openhw-resistor':              'resistor',
     'wokwi-pushbutton':             'button',
+    'openhw-pushbutton':            'button',
     'wokwi-potentiometer':          'potentiometer',
+    'openhw-potentiometer':         'potentiometer',
     'wokwi-buzzer':                 'buzzer',
+    'openhw-buzzer':                'buzzer',
     'wokwi-rgb-led':                'rgb-led',
+    'openhw-rgb-led':               'rgb-led',
     'wokwi-ntc-temperature-sensor': 'dht11',
+    'openhw-ntc-temperature-sensor': 'dht11',
     'wokwi-hc-sr04':                'ultrasonic',
+    'openhw-hc-sr04':               'ultrasonic',
     'wokwi-servo':                  'servo',
+    'openhw-servo':                 'servo',
     'wokwi-lcd1602':                'lcd',
+    'wokwi-lcd1602-i2c':            'lcd',
+    'openhw-lcd1602-i2c':           'lcd',
+    'wokwi-lcd2004-i2c':            'lcd',
+    'openhw-lcd2004-i2c':           'lcd',
     'wokwi-analog-joystick':        'analog-joystick',
+    'openhw-analog-joystick':       'analog-joystick',
     'wokwi-membrane-keypad':        'keypad',
+    'openhw-membrane-keypad':       'keypad',
+    'wokwi-rotary-encoder':         'rotary-encoder',
+    'openhw-rotary-encoder':        'rotary-encoder',
+    'wokwi-nokia-5110':             'nokia-5110',
+    'openhw-nokia-5110':            'nokia-5110',
+    'wokwi-soil-moisture-sensor':   'soil-moisture-sensor',
+    'openhw-soil-moisture-sensor':  'soil-moisture-sensor',
+    'wokwi-logic-analyzer':         'logic-analyzer',
+    'openhw-logic-analyzer':        'logic-analyzer',
+    'wokwi-sd-card':                'sd-card',
+    'openhw-sd-card':               'sd-card',
+    'wokwi-ldr-module':             'ldr-module',
+    'openhw-ldr-module':            'ldr-module',
+    'wokwi-tm1637-7segment':        'tm1637-7segment',
+    'openhw-tm1637-7segment':       'tm1637-7segment',
+    'wokwi-cd74hc4067':             'cd74hc4067',
+    'openhw-cd74hc4067':            'cd74hc4067',
+    'wokwi-7segment':               '7segment',
+    'openhw-7segment':              '7segment',
+    'wokwi-a4988':                  'a4988',
+    'openhw-a4988':                 'a4988',
+    'wokwi-bmp180':                 'bmp180',
+    'openhw-bmp180':                'bmp180',
+    'wokwi-bmp180-breakout':        'bmp180',
+    'openhw-bmp180-breakout':       'bmp180',
+    'wokwi-ds1307-rtc':             'rtc',
+    'openhw-ds1307-rtc':            'rtc',
+    'wokwi-ili9341':                'ili9341',
+    'openhw-ili9341':               'ili9341',
+    'wokwi-l293d':                  'l293d',
+    'openhw-l293d':                 'l293d',
+    'wokwi-max7219':                'max7219',
+    'openhw-max7219':               'max7219',
+    'wokwi-mpu6050':                'mpu6050',
+    'openhw-mpu6050':               'mpu6050',
+    'wokwi-nlsf595':                'nlsf595',
+    'openhw-nlsf595':               'nlsf595',
+    'wokwi-pca9685':                'pca9685',
+    'openhw-pca9685':               'pca9685',
+    'wokwi-pca9865':                'pca9865',
+    'openhw-pca9865':               'pca9865',
+    'wokwi-relay-module':           'relay',
+    'openhw-relay-module':          'relay',
+    'wokwi-ssd1306-oled':          'oled',
+    'openhw-ssd1306-oled':         'oled',
+    'wokwi-stepper-motor':         'stepper',
+    'openhw-stepper-motor':        'stepper',
+    'wokwi-arduino-uno':           'uno',
+    'openhw-arduino-uno':          'uno',
+    'wokwi-arduino-mega':          'mega',
+    'openhw-arduino-mega':         'mega',
+    'wokwi-arduino-nano':          'nano',
+    'openhw-arduino-nano':         'nano',
+    'wokwi-attiny85':              'attiny85',
+    'openhw-attiny85':             'attiny85',
+    'wokwi-raspberry-pi-pico':     'pico',
+    'openhw-pico':                 'pico',
+    'wokwi-raspberry-pi-pico-w':   'pico-w',
+    'openhw-pico-w':               'pico-w',
+    'wokwi-power-supply':          'power-supply',
+    'openhw-power-supply':         'power-supply',
+    'wokwi-battery':               'battery',
+    'openhw-battery':              'battery',
+    'wokwi-charger':               'charger',
+    'openhw-charger':              'charger',
+    'wokwi-breadboard':            'breadboard',
+    'openhw-breadboard':           'breadboard',
+    'wokwi-breadboard-half':       'breadboard',
+    'openhw-breadboard-half':      'breadboard',
+    'wokwi-breadboard-mini':       'breadboard',
+    'openhw-breadboard-mini':      'breadboard',
+    'wokwi-neopixel-matrix':       'neopixel',
+    'openhw-neopixel-matrix':      'neopixel',
+    'wokwi-neopixel-ring':         'neopixel',
+    'openhw-neopixel-ring':        'neopixel',
+    'wokwi-arduino-sensor-shield': 'shield',
+    'openhw-arduino-sensor-shield': 'shield',
   }), [])
 
   const isPaletteItemLocked = useCallback((itemType) => {
@@ -3433,20 +3553,100 @@ useEffect(() => {
   // ── Static component descriptions ────────────────────────────────────────────
   const COMPONENT_DESCRIPTIONS = {
     'wokwi-led': 'Light-emitting diode. Emits light when current flows through it. Supports multiple colors.',
+    'openhw-led': 'Light-emitting diode. Emits light when current flows through it. Supports multiple colors.',
     'wokwi-arduino-uno': 'ATmega328P-based microcontroller board. 14 digital I/O pins, 6 analog inputs, USB connectivity.',
+    'openhw-arduino-uno': 'ATmega328P-based microcontroller board. 14 digital I/O pins, 6 analog inputs, USB connectivity.',
+    'wokwi-arduino-mega': 'ATmega2560-based microcontroller board. 54 digital I/O pins, 16 analog inputs, 4 UARTs.',
+    'openhw-arduino-mega': 'ATmega2560-based microcontroller board. 54 digital I/O pins, 16 analog inputs, 4 UARTs.',
+    'wokwi-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
+    'openhw-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
+    'wokwi-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
+    'openhw-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
+    'wokwi-raspberry-pi-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
+    'openhw-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
+    'wokwi-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
+    'openhw-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
+    'wokwi-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
+    'openhw-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
+    'wokwi-breadboard-mini': 'Mini solderless breadboard. 170 tie points for very compact prototypes.',
+    'openhw-breadboard-mini': 'Mini solderless breadboard. 170 tie points for very compact prototypes.',
     'wokwi-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
+    'openhw-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
     'wokwi-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
+    'openhw-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
     'wokwi-power-supply': 'Provides stable DC power to the circuit. Configurable voltage output.',
+    'openhw-power-supply': 'Provides stable DC power to the circuit. Configurable voltage output.',
     'wokwi-neopixel-matrix': 'Addressable RGB LED matrix. Individually controllable pixels via single data line.',
+    'openhw-neopixel-matrix': 'Addressable RGB LED matrix. Individually controllable pixels via single data line.',
     'wokwi-buzzer': 'Piezoelectric buzzer. Generates audio tones when driven by PWM or digital signals.',
+    'openhw-buzzer': 'Piezoelectric buzzer. Generates audio tones when driven by PWM or digital signals.',
     'wokwi-motor': 'DC motor. Converts electrical energy to rotational motion. Controlled via H-bridge.',
+    'openhw-motor': 'DC motor. Converts electrical energy to rotational motion. Controlled via H-bridge.',
     'wokwi-servo': 'Hobby servo motor. Precise angular position control via PWM signal (0–180°).',
+    'openhw-servo': 'Hobby servo motor. Precise angular position control via PWM signal (0–180°).',
     'wokwi-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
+    'openhw-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
     'wokwi-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
+    'openhw-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
     'wokwi-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
+    'openhw-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
     'wokwi-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
+    'openhw-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
     'shift_register': '74HC595 8-bit serial-in, parallel-out shift register. Expands digital outputs.',
     'wokwi-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
+    'openhw-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
+    'wokwi-rgb-led': 'RGB LED. Emits red, green, blue, or mixed colors.',
+    'openhw-rgb-led': 'RGB LED. Emits red, green, blue, or mixed colors.',
+    'wokwi-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
+    'openhw-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
+    'wokwi-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
+    'openhw-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
+    'wokwi-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
+    'openhw-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
+    'wokwi-sd-card': 'MicroSD card module for SPI data logging and storage.',
+    'openhw-sd-card': 'MicroSD card module for SPI data logging and storage.',
+    'wokwi-ldr-module': 'Light-dependent resistor module with digital and analog outputs.',
+    'openhw-ldr-module': 'Light-dependent resistor module with digital and analog outputs.',
+    'wokwi-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
+    'openhw-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
+    'wokwi-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
+    'openhw-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
+    'wokwi-7segment': '7-segment LED display.',
+    'openhw-7segment': '7-segment LED display.',
+    'wokwi-a4988': 'A4988 stepper motor driver.',
+    'openhw-a4988': 'A4988 stepper motor driver.',
+    'wokwi-bmp180': 'BMP180 barometric pressure and temperature sensor.',
+    'openhw-bmp180': 'BMP180 barometric pressure and temperature sensor.',
+    'wokwi-bmp180-breakout': 'BMP180 barometric pressure and temperature sensor breakout.',
+    'openhw-bmp180-breakout': 'BMP180 barometric pressure and temperature sensor breakout.',
+    'wokwi-ds1307-rtc': 'DS1307 Real-Time Clock module.',
+    'openhw-ds1307-rtc': 'DS1307 Real-Time Clock module.',
+    'wokwi-hc-sr04': 'HC-SR04 ultrasonic distance sensor.',
+    'openhw-hc-sr04': 'HC-SR04 ultrasonic distance sensor.',
+    'wokwi-ili9341': 'ILI9341 2.8 inch TFT LCD display.',
+    'openhw-ili9341': 'ILI9341 2.8 inch TFT LCD display.',
+    'wokwi-l293d': 'L293D motor driver IC.',
+    'openhw-l293d': 'L293D motor driver IC.',
+    'wokwi-lcd1602-i2c': '16x2 LCD display with I2C backpack.',
+    'openhw-lcd1602-i2c': '16x2 LCD display with I2C backpack.',
+    'wokwi-lcd2004-i2c': '20x4 LCD display with I2C backpack.',
+    'openhw-lcd2004-i2c': '20x4 LCD display with I2C backpack.',
+    'wokwi-max7219': 'MAX7219 8x8 LED matrix module.',
+    'openhw-max7219': 'MAX7219 8x8 LED matrix module.',
+    'wokwi-mpu6050': 'MPU6050 6-axis accelerometer and gyroscope.',
+    'openhw-mpu6050': 'MPU6050 6-axis accelerometer and gyroscope.',
+    'wokwi-nlsf595': 'NLSF595 tri-state shift register.',
+    'openhw-nlsf595': 'NLSF595 tri-state shift register.',
+    'wokwi-pca9685': 'PCA9685 16-channel 12-bit PWM/servo driver.',
+    'openhw-pca9685': 'PCA9685 16-channel 12-bit PWM/servo driver.',
+    'wokwi-pca9865': 'PCA9865 16-channel PWM module.',
+    'openhw-pca9865': 'PCA9865 16-channel PWM module.',
+    'wokwi-relay-module': 'Relay module for controlling high-power devices.',
+    'openhw-relay-module': 'Relay module for controlling high-power devices.',
+    'wokwi-ssd1306-oled': 'SSD1306 128x64 OLED display.',
+    'openhw-ssd1306-oled': 'SSD1306 128x64 OLED display.',
+    'wokwi-stepper-motor': 'Bipolar stepper motor.',
+    'openhw-stepper-motor': 'Bipolar stepper motor.',
   };
 
   // ── Apply NeoPixel pixel data to DOM elements ──────────────────────────────
@@ -4323,7 +4523,7 @@ useEffect(() => {
         // Snapping Logic
         const comp = componentsRef.current.find(c => c.id === id);
         if (comp) {
-          if (comp.type.startsWith('wokwi-breadboard')) {
+          if (isBreadboardType(comp.type)) {
             // Breadboard movement propagation
             const dx = nx - cx;
             const dy = ny - cy;
@@ -4582,7 +4782,7 @@ useEffect(() => {
         setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
 
         // DETACHMENT: Remove old socket wires for this component (ONLY if moving a component, NOT a breadboard)
-        const isBreadboard = componentsRef.current.find(c => c.id === movedId)?.type.startsWith('wokwi-breadboard');
+        const isBreadboard = isBreadboardType(componentsRef.current.find(c => c.id === movedId)?.type);
         if (!isBreadboard) {
           setWires(prev => prev.filter(w => {
             const isFrom = w.from.startsWith(movedId + ':');
@@ -4594,7 +4794,7 @@ useEffect(() => {
         // 1.5 ATTACHMENT: Auto-create socket wires if snapped
         const comp = componentsRef.current.find(c => c.id === movedId);
         const finalComp = comp ? { ...comp, x: finalX, y: finalY } : null;
-        if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
+        if (finalComp && !isBreadboardType(finalComp.type)) {
           const pins = LOCAL_PIN_DEFS[finalComp.type] || [];
           const worldPins = getComponentWorldPins(finalComp, pins);
           
@@ -4764,7 +4964,7 @@ useEffect(() => {
         const nextValue = (key === 'env' && normalizeBoardKind(c.type) === 'rp2040')
           ? normalizeRp2040Env(value)
           : value;
-        if (c.type === 'wokwi-neopixel-matrix') {
+        if (c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix') {
           const rows = key === 'rows' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.rows) || 1);
           const cols = key === 'cols' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.cols) || 1);
           newW = Math.max(30, cols * 30);
@@ -5863,7 +6063,7 @@ useEffect(() => {
       return;
     }
 
-    if (!isAuthenticated) {
+    if (!isAnyAuthenticated) {
       alert('Please sign in to share this simulation.');
       navigate('/login');
       return;
@@ -5962,14 +6162,7 @@ useEffect(() => {
 
   const runCircuitValidation = useCallback(() => {
     try {
-      if (isRunning) {
-        return true;
-      }
-
-      if (typeof FullCircuitValidator !== 'function') {
-        console.warn('[Validation] FullCircuitValidator not available in this build.');
-        return true;
-      }
+      if (isRunning) return true;
 
       const validationSignature = buildValidationSignature();
       const cachedValidation = validationRunCacheRef.current;
@@ -5984,93 +6177,46 @@ useEffect(() => {
         return cachedValidation.allowRun !== false;
       }
 
-      // Adapter: convert frontend format (comp:pin) → engine format (comp.pin)
-      const engineConnections = (wires || []).map(w => ({
-        from: String(w.from || '').replace(':', '.'),
-        to:   String(w.to   || '').replace(':', '.'),
-      }));
-
       const projectData = {
-        components: components,      // engine reads .id, .type, .pins[], .attrs{}
-        connections: engineConnections,
-      };
-
-      const validator = new FullCircuitValidator(projectData);
-      const isSafe = validator.runValidation({
-        profile: 'balanced',
-        useCache: true,
-        cacheKey: validationSignature,
-        incremental: true,
-        incrementalScope: 'webui',
-      });
-
-      // ── Software-Hardware Sync Analysis ──────────────────────────────────
-      const projectForSync = {
-        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
         components: components,
         connections: wires,
-        activeCodeFileId: activeCodeFileId
+        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
+        activeCodeFileId
       };
-      const syncResult = typeof analyzeCodeHardwareSync === 'function' 
-        ? analyzeCodeHardwareSync(projectForSync) 
-        : { passed: true, issues: [] };
 
-      let allowRun = true;
+      // USE UNIFIED ENGINE (Locally)
+      const { safe, physicsSafe, errors, healthScore } = runUnifiedValidation(projectData, {
+        profile: 'balanced',
+        incremental: true,
+        incrementalScope: 'webui',
+        registry: EmulatorComponents
+      });
+
+      setHealthScore(healthScore);
+      setValidationErrors(errors);
+
+      const hasFatalPhysics = errors.some(e => e.severity === 'error' || e.type === 'error');
+      const allowRun = physicsSafe && !hasFatalPhysics;
+
       let nextToast = null;
-
-      if (!isSafe || !syncResult.passed) {
-        const physicsErrors = validator.errors || [];
-
-        const syncErrors = (syncResult.issues || []).map(issue => ({
-          severity: 'warn',
-          type: 'warn',
-          message: issue.message,
-          compIds: []
-        }));
-
-        const formattedErrors = [...physicsErrors, ...syncErrors];
-        
-        // Use emulator's Health Score engine
-        const score = validator.calculateHealthScore(syncErrors);
-        setHealthScore(score);
-
-        const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
-
-        setValidationErrors(formattedErrors);
+      if (!safe) {
         setShowValidation(true);
         if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
-        
-        setValidationToast({
-          title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-          reasons: formattedErrors.slice(0, 3).map(e => e.message),
-        });
 
         nextToast = {
           title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-          reasons: formattedErrors.slice(0, 3).map(e => e.message),
+          reasons: errors.slice(0, 3).map(e => e.message),
         };
-
-        // Only block the run if there is a fatal physics error
-        if (hasFatalPhysics) {
-          allowRun = false;
-        }
-      }
-
-      if (isSafe && syncResult.passed) {
-        setValidationErrors([]);
+        setValidationToast(nextToast);
+      } else {
         setValidationToast(null);
-        setHealthScore(100);
       }
 
       validationRunCacheRef.current = {
-        signature: validationSignature,
+        signature: buildValidationSignature(),
         allowRun,
-        errors: (isSafe && syncResult.passed) ? [] : (validator.errors || []).concat(
-          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
-        ),
-        healthScore: isSafe && syncResult.passed ? 100 : validator.calculateHealthScore(
-          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
-        ),
+        errors,
+        healthScore,
         toast: nextToast,
       };
 
@@ -6112,9 +6258,8 @@ useEffect(() => {
 
     // Re-run validation to verify the fix worked
     try {
-      const validator = new FullCircuitValidator({ components: result.components }, result.connections);
+      const validator = new FullCircuitValidator({ components: result.components, connections: result.connections });
       const verifyResult = await validator.runValidation(
-        { components: result.components, connections: result.connections },
         { profile: 'balanced', incrementalScope: 'webui' }
       );
 
@@ -6402,6 +6547,14 @@ useEffect(() => {
   }, [hardwareConnected, resolvedHardwarePort, hardwareBoardId]);
 
   const handleUploadToHardware = useCallback(async () => {
+    // RUN VALIDATION BEFORE FLASHING
+    appendConsoleEntry('info', '🔍 Validating circuit health before hardware flash...', 'hardware');
+    if (!runCircuitValidation()) {
+      appendConsoleEntry('error', '❌ Flash blocked: The circuit has electrical/safety violations. Fix them first.', 'hardware');
+      setHardwareStatus('Flash blocked: validation failed');
+      return;
+    }
+
     // Disconnect browser Web Serial first to release COM port lock for arduino-cli upload.
     if (hardwareConnected) {
       setHardwareStatus('Disconnecting Web Serial before flash...');
@@ -6410,7 +6563,7 @@ useEffect(() => {
     }
 
     await uploadToHardware();
-  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry]);
+  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry, runCircuitValidation]);
 
   const handleRun = async () => {
     try {
@@ -6420,6 +6573,16 @@ useEffect(() => {
       }
 
       runStartGuardRef.current = true;
+      
+      // 1. Unified Validation Gate (BLOCKING)
+      appendConsoleEntry('info', '🔍 Validating circuit health...', 'simulator');
+      if (!runCircuitValidation()) {
+        appendConsoleEntry('error', '❌ Run blocked: The circuit has electrical or safety violations.', 'simulator');
+        runStartGuardRef.current = false;
+        return;
+      }
+      appendConsoleEntry('info', '✅ Circuit validated. Initializing simulation...', 'simulator');
+
       appendConsoleEntry('info', 'Run requested.', 'simulator');
       rp2040GdbLastLogRef.current.clear();
       rp2040WirelessLastLogRef.current.clear();
@@ -6430,12 +6593,6 @@ useEffect(() => {
       runComponentUpdateCountsRef.current = {};
       runPinTransitionCountsRef.current = {};
       runLastBoardPinsRef.current = new Map();
-
-      if (!runCircuitValidation()) {
-        appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
-        runStartGuardRef.current = false;
-        return;
-      }
 
       setIsRunning(true);
       setIsCompiling(true);
@@ -7083,11 +7240,11 @@ useEffect(() => {
         // Handle Protocol Events
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
       };
 
@@ -7101,7 +7258,7 @@ useEffect(() => {
       logSerial('Simulator started in Web Worker.');
 
       const neopixelWiring = components
-        .filter(c => c.type === 'wokwi-neopixel-matrix')
+        .filter(c => c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix')
         .map(c => {
           return null; // Handle Neopixels later
         }).filter(n => n);
@@ -7718,7 +7875,7 @@ useEffect(() => {
             `<path d="M${x + 21},${y + 16} Q${x + 26},${y + 11} ${x + 31},${y + 16}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             `<path d="M${x + 17},${y + 13} Q${x + 26},${y + 5} ${x + 35},${y + 13}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             ln(x + 26, y + 24, x + 26, y + 30, 1.5), ln(x + 42, y + 24, x + 52, y + 24),
-            tx(x + 6, y + 22, '+', 7, 'middle', false, '#777'),
+            tx(x + 46, y + 22, '+', 7, 'middle', false, '#777'),
             tx(x + 26, y + 60, ref, 9, 'middle', true),
           ].join('');
         }
@@ -7880,7 +8037,7 @@ useEffect(() => {
         return {
           w: gw + 30, h: gh, refPrefix: 'IC', pins,
           draw(x, y, _c, ref) {
-            const sType = _c.type.replace('wokwi-', '');
+            const sType = _c.type.replace(/^(wokwi|openhw)-/, '');
             return [
               bx(x + 15, y + 12, gw, gh - 24), tx(x + 15 + gw / 2, y + 28, sType, 8, 'middle', true), tx(x + 15 + gw / 2, y + 10, ref, 7, 'middle', false, '#555'),
               ...lp.map((id, i) => ln(x, y + 32 + i * 20, x + 15, y + 32 + i * 20) + `<text x="${x + 18}" y="${y + 36 + i * 20}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
@@ -7889,6 +8046,14 @@ useEffect(() => {
           }
         };
       };
+      
+      // Create openhw aliases for all wokwi symbols
+      Object.keys(SYMS).forEach(k => {
+        if (k.startsWith('wokwi-')) {
+          const newKey = k.replace('wokwi-', 'openhw-');
+          if (!SYMS[newKey]) SYMS[newKey] = SYMS[k];
+        }
+      });
 
       // ── Layout ────────────────────────────────────────────────────────────
       if (components.length === 0) {
@@ -8237,17 +8402,17 @@ useEffect(() => {
     // Remote OOP state takes priority
     const remoteState = oopStates[comp.id];
 
-    if (comp.type === 'wokwi-led') {
+    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       delete attrs.value; // Let ui.tsx handle it
-    } else if (comp.type === 'wokwi-servo') {
+    } else if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
-    } else if (comp.type === 'wokwi-stepper-motor') {
+    } else if (comp.type === 'wokwi-stepper-motor' || comp.type === 'openhw-stepper-motor') {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
-    } else if (comp.type === 'wokwi-buzzer') {
+    } else if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
       if (remoteState && remoteState.isBuzzing) {
         // Wokwi buzzer visual indicator (if supported) can be driven here
         attrs.color = "red";
@@ -9427,7 +9592,7 @@ useEffect(() => {
                     style={{
                       position: 'absolute',
                       left: comp.x, top: comp.y,
-                      zIndex: comp.type.startsWith('wokwi-breadboard') 
+                      zIndex: isBreadboardType(comp.type) 
                         ? (isSelected ? 4 : 2) 
                         : (isSelected ? 10 : 5),
                     }}
@@ -9510,7 +9675,7 @@ useEffect(() => {
                           <div
                             style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
                             ref={el => {
-                              if (comp.type === 'wokwi-neopixel-matrix' && el) {
+                              if ((comp.type === 'wokwi-neopixel-matrix' || comp.type === 'openhw-neopixel-matrix') && el) {
                                 neopixelRefs.current[comp.id] = el;
                               }
                             }}
@@ -9549,7 +9714,7 @@ useEffect(() => {
                         
                         // Check if the component is "seated" (has at least one socket wire)
                         const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
-                        const isBreadboard = comp.type.startsWith('wokwi-breadboard');
+                        const isBreadboard = isBreadboardType(comp.type);
                         const isFloating = !isBreadboard && isCompSeated && !isSocket;
 
                         const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
@@ -9616,8 +9781,8 @@ useEffect(() => {
                 );
               };
 
-              const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
-              const others = components.filter(c => !c.type.startsWith('wokwi-breadboard'));
+              const breadboards = components.filter(c => isBreadboardType(c.type));
+              const others = components.filter(c => !isBreadboardType(c.type));
 
               return (
                 <>
@@ -10126,35 +10291,6 @@ updateWireColor(connectedWire.id, newColor);
               )}
             </div>
           </div>
-
-          {validationToast && (
-            <div
-              className="validation-toast-canvas"
-              role="alert"
-              data-export-ignore="true"
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-            >
-              <div className="validation-toast-canvas__header">
-                <span>{validationToast.title}</span>
-                <button
-                  type="button"
-                  className="validation-toast-canvas__close"
-                  onClick={() => setValidationToast(null)}
-                  aria-label="Close validation notification"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
-                  </svg>
-                </button>
-              </div>
-              <ul className="validation-toast-canvas__list">
-                {validationToast.reasons.map((reason, idx) => (
-                  <li key={idx}>{reason}</li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           <SimulationConsolePanel
             isOpen={isConsoleOpen}

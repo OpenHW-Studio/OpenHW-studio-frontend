@@ -605,7 +605,10 @@ const GradingPage = () => {
                 type: 'GENERATE_KEY',
                 teacher: { project: "", projectBuf: buf },
                 options,
-                simulationSpeed: Number(simulationSpeed) || 1
+                simulationSpeed: Number(simulationSpeed) || 1,
+                config: {
+                    compilerUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api'}/compile`
+                }
             });
         } catch (err) {
             addLog(`Error: ${err.message}`, 'error');
@@ -653,7 +656,10 @@ const GradingPage = () => {
                 teacher: teacherData,
                 student: studentBuf,
                 options,
-                simulationSpeed: Number(simulationSpeed) || 1
+                simulationSpeed: Number(simulationSpeed) || 1,
+                config: {
+                    compilerUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api'}/compile`
+                }
             }, transferables);
         } catch (err) {
             addLog(`Error preparing files: ${err.message}`, 'error');

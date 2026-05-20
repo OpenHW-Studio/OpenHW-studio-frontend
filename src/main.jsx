@@ -3,6 +3,9 @@ import ReactDOM from 'react-dom/client'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import App from './App.jsx'
 import './index.css'
+import { configureMonaco } from './utils/monacoConfig'
+
+configureMonaco();
 
 const googleClientId =
   import.meta.env.VITE_GOOGLE_CLIENT_ID ||
