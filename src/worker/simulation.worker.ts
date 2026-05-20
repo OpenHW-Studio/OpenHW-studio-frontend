@@ -14,6 +14,7 @@ if (typeof window === 'undefined') {
 (self as any).$RefreshSig$ = () => () => (type: any) => type;
 
 import { BoardRunner, createRunnerForBoard, LOGIC_REGISTRY, COMPONENT_PINS, buildFatFsImage, buildLittleFsImage } from './execute';
+import { avrInstruction } from 'avr8js';
 import { BaseComponent } from '@openhw/emulator';
 import {
     isProgrammableBoardType,
@@ -829,6 +830,11 @@ function routeUartByte(sourceBoardId: string, value: number, sourceLabel = 'uart
     }
 }
 
+let activeTelemetryEnabled = false;
+let activeTelemetryMode = 'detail';
+let activeTelemetryWatchedParamsMap: Record<string, string[]> = {};
+let activeDeepSiliconEnabled = false;
+
 self.onmessage = async (e) => {
     const data = e.data;
 
@@ -848,9 +854,15 @@ self.onmessage = async (e) => {
             debugRp2040,
             debugSyncHeartbeat,
             speed,
+            telemetryEnabled,
+            telemetryMode,
         } = data;
         const initialSpeed = Number(speed ?? 1.0);
         const rp2040DebugEnabled = !!debugRp2040;
+        activeTelemetryEnabled = !!telemetryEnabled;
+        activeTelemetryMode = telemetryMode || 'detail';
+        activeTelemetryWatchedParamsMap = data.watchedParamsMap || {};
+        activeDeepSiliconEnabled = !!data.deepSilicon;
 
         stopAllRunners();
         syncValidationEnabled = !!debugSyncHeartbeat;
@@ -892,7 +904,7 @@ self.onmessage = async (e) => {
         if (programmableBoards.length <= 1) {
             mode = 'single';
             const singleBoardComp = programmableBoards[0] || null;
-            const singleBoardType = String(singleBoardComp?.type || 'wokwi-arduino-uno');
+            const singleBoardType = String(singleBoardComp?.type || 'openhw-arduino-uno');
             const singleBoardId = singleBoardComp?.id;
             const pyScript = singleBoardId ? String(boardPythonMap?.[singleBoardId] || '') : '';
             const singleBoardIsRp2040 = /(rp2040|pico)/i.test(singleBoardType);
@@ -940,6 +952,10 @@ self.onmessage = async (e) => {
                     rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
                 }
             );
+
+            if (typeof (runner as any).setTelemetryEnabled === 'function') {
+                (runner as any).setTelemetryEnabled(activeTelemetryEnabled, activeTelemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
+            }
 
             if (singleBoardId) {
                 boardTypes.set(singleBoardId, singleBoardType);
@@ -1058,15 +1074,61 @@ self.onmessage = async (e) => {
             scheduleCircuitPythonInject(target, boardId, runtimeFiles);
         }
 
+        boardRunners.forEach((br) => {
+            if (typeof (br as any).setTelemetryEnabled === 'function') {
+                (br as any).setTelemetryEnabled(activeTelemetryEnabled, activeTelemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
+            }
+        });
+
     } else if (data.type === 'STOP') {
         stopAllRunners();
     } else if (data.type === 'INTERACT') {
         console.log(`[Worker] Received INTERACT for ${data.compId}: ${data.event}`);
 
+        const runQuickBurst = (r: BoardRunner) => {
+            if (r.running && r.cpu) {
+                if (typeof (r as any).repropagateAllVoltages === 'function') {
+                    (r as any).repropagateAllVoltages();
+                }
+                if (typeof (r as any).updateGPIOInputsFromCircuit === 'function') {
+                    (r as any).updateGPIOInputsFromCircuit();
+                }
+
+                if (r.cpu.pc !== undefined) {
+                    const quickCycles = 16000;
+                    const targetObj = r.cpu.cycles + quickCycles;
+                    while (r.cpu.cycles < targetObj && r.running) {
+                        avrInstruction(r.cpu);
+                        r.cpu.tick();
+                    }
+                    const instArray = Array.from(r.instances.values());
+                    instArray.forEach(c => c.update(r.cpu.cycles, (r as any).currentWires, instArray));
+                    if (typeof r.forceEmitState === 'function') {
+                        r.forceEmitState();
+                    }
+                } else if (r.cpu.core && typeof r.cpu.core.executeInstruction === 'function') {
+                    let cyclesDone = 0;
+                    while (cyclesDone < 16000 && r.running) {
+                        const before = r.cpu.core.cycles >>> 0;
+                        r.cpu.core.executeInstruction();
+                        const after = r.cpu.core.cycles >>> 0;
+                        const delta = (after - before) >>> 0;
+                        cyclesDone += delta > 0 ? delta : 1;
+                    }
+                    const instArray = Array.from(r.instances.values());
+                    instArray.forEach(c => c.update(r.cpu.core.cycles, (r as any).currentWires, instArray));
+                    if (typeof r.forceEmitState === 'function') {
+                        r.forceEmitState();
+                    }
+                }
+            }
+        };
+
         if (mode === 'single' && runner) {
             const inst = runner.instances.get(data.compId);
             if (inst) {
                 inst.onEvent(data.event);
+                runQuickBurst(runner);
             } else {
                 console.warn(`[Worker] INTERACT target not found in single runner: ${data.compId}`);
             }
@@ -1077,6 +1139,7 @@ self.onmessage = async (e) => {
                 if (inst) {
                     inst.onEvent(data.event);
                     delivered = true;
+                    runQuickBurst(boardRunner);
                 }
             }
             if (!delivered) {
@@ -1133,6 +1196,28 @@ self.onmessage = async (e) => {
             } else {
                 boardRunners.forEach((br) => br.setSpeed(nextSpeed));
             }
+        }
+    } else if (data.type === 'SET_COMPONENT_TELEMETRY') {
+        const enabled = !!data.enabled;
+        const telemetryMode = data.mode || 'detail';
+        activeTelemetryEnabled = enabled;
+        activeTelemetryMode = telemetryMode;
+        if (data.watchedParamsMap) {
+            activeTelemetryWatchedParamsMap = data.watchedParamsMap;
+        }
+        if (data.deepSilicon !== undefined) {
+            activeDeepSiliconEnabled = !!data.deepSilicon;
+        }
+        if (mode === 'single' && runner) {
+            if (typeof (runner as any).setTelemetryEnabled === 'function') {
+                (runner as any).setTelemetryEnabled(enabled, telemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
+            }
+        } else {
+            boardRunners.forEach((br) => {
+                if (typeof (br as any).setTelemetryEnabled === 'function') {
+                    (br as any).setTelemetryEnabled(enabled, telemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);
+                }
+            });
         }
     } else if (data.type === 'SERIAL_SET_BAUD') {
         const parsedBaud = Number(data.baudRate);

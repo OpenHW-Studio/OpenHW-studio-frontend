@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { getAdminToken, getToken } from './authService.js';
 
-const COMPILER_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5001/api';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : 'http://localhost:5001/api';
+const COMPILER_URL = API_BASE_URL;
 const API_ORIGIN = COMPILER_URL.replace(/\/api$/, '');
 
 const getUserAuthConfig = () => {
@@ -10,7 +11,10 @@ const getUserAuthConfig = () => {
 };
 
 const getAdminAuthConfig = () => {
-    const token = getAdminToken() || getToken();
+    const adminToken = getAdminToken();
+    const userToken = getToken();
+    console.log("[SimulatorService] Auth Tokens - Admin:", !!adminToken, "User:", !!userToken);
+    const token = adminToken || userToken;
     return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
 };
 
@@ -139,22 +143,24 @@ export async function fetchInstalledComponentsWithFiles() {
  * Sharing & Live Sessions
  */
 export async function createSharedSimulation(payload) {
-    const response = await axios.post(`${COMPILER_URL}/simulations/share`, payload, getUserAuthConfig());
+    const config = getAdminAuthConfig();
+    console.log("[SimulatorService] createSharedSimulation auth config:", config);
+    const response = await axios.post(`${COMPILER_URL}/simulations/share`, payload, config);
     return response.data;
 }
 
 export async function fetchSharedSimulation(shareId) {
-    const response = await axios.get(`${COMPILER_URL}/simulations/share/${shareId}`, getUserAuthConfig());
+    const response = await axios.get(`${COMPILER_URL}/simulations/share/${shareId}`, getAdminAuthConfig());
     return response.data?.project || null;
 }
 
 export async function createLiveSimulationSession(payload) {
-    const response = await axios.post(`${COMPILER_URL}/live-simulations`, payload, getUserAuthConfig());
+    const response = await axios.post(`${COMPILER_URL}/live-simulations`, payload, getAdminAuthConfig());
     return response.data?.session || null;
 }
 
 export async function fetchLiveSimulationSession(sessionCode) {
-    const response = await axios.get(`${COMPILER_URL}/live-simulations/${encodeURIComponent(sessionCode)}`, getUserAuthConfig());
+    const response = await axios.get(`${COMPILER_URL}/live-simulations/${encodeURIComponent(sessionCode)}`, getAdminAuthConfig());
     return response.data?.session || null;
 }
 

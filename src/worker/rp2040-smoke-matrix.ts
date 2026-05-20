@@ -75,7 +75,7 @@ type CircuitFixture = {
 function makeBoardComponent(env: string) {
   return {
     id: 'pico1',
-    type: 'wokwi-raspberry-pi-pico',
+    type: 'openhw-raspberry-pi-pico',
     attrs: { env, builder: 'arduino-pico' },
   };
 }
@@ -85,7 +85,7 @@ function makeLedCircuit(env: string): CircuitFixture {
     makeBoardComponent(env),
     {
       id: 'led1',
-      type: 'wokwi-led',
+      type: 'openhw-led',
       attrs: { color: 'red' },
     },
   ];
@@ -103,7 +103,7 @@ function makeOledI2CCircuit(env: string): CircuitFixture {
     makeBoardComponent(env),
     {
       id: 'oled1',
-      type: 'wokwi-ssd1306-oled',
+      type: 'openhw-ssd1306-oled',
       attrs: {},
     },
   ];
@@ -123,7 +123,7 @@ function makeLcd2004I2CCircuit(env: string): CircuitFixture {
     makeBoardComponent(env),
     {
       id: 'lcd1',
-      type: 'wokwi-lcd2004-i2c',
+      type: 'openhw-lcd2004-i2c',
       attrs: {},
     },
   ];
@@ -143,7 +143,7 @@ function makeIli9341SpiCircuit(env: string): CircuitFixture {
     makeBoardComponent(env),
     {
       id: 'tft1',
-      type: 'wokwi-ili9341',
+      type: 'openhw-ili9341',
       attrs: {},
     },
   ];
@@ -477,7 +477,7 @@ async function runRunnerCase(
   let faultCount = 0;
 
   const runner = createRunnerForBoard(
-    'wokwi-raspberry-pi-pico',
+    'openhw-raspberry-pi-pico',
     firmwarePayload,
     components,
     wires,

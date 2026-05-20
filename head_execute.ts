@@ -1,4 +1,4 @@
-﻿import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portBConfig, portCConfig, portDConfig, PinState } from 'avr8js';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portBConfig, portCConfig, portDConfig, PinState } from 'avr8js';
 import { RP2040, GPIOPinState, ConsoleLogger, LogLevel, USBCDC, GDBServer, GDBConnection } from 'rp2040js';
 import { bootromB1 } from './rp2040-bootrom.ts';
 
@@ -1888,37 +1888,61 @@ class ILI9341FallbackLogic extends BaseComponent {
             dcHigh: this.dcHigh,
             t: Date.now(),
         };
-    }
-}
-
 export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-led': LEDLogic,
+    'openhw-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
+    'openhw-arduino-uno': UnoLogic,
     'wokwi-raspberry-pi-pico': PicoLogic,
+    'openhw-raspberry-pi-pico': PicoLogic,
     'wokwi-raspberry-pi-pico-w': PicoLogic,
+    'openhw-raspberry-pi-pico-w': PicoLogic,
     'wokwi-resistor': ResistorLogic,
+    'openhw-resistor': ResistorLogic,
     'wokwi-pushbutton': PushbuttonLogic,
+    'openhw-pushbutton': PushbuttonLogic,
     'wokwi-power-supply': PowerSupplyLogic,
+    'openhw-power-supply': PowerSupplyLogic,
     'wokwi-neopixel-matrix': NeopixelLogic,
+    'openhw-neopixel-matrix': NeopixelLogic,
     'wokwi-ws2812b': NeopixelLogic,
     'wokwi-ws2821b': NeopixelLogic,
     'wokwi-buzzer': BuzzerLogic,
+    'openhw-buzzer': BuzzerLogic,
     'wokwi-motor': MotorLogic,
+    'openhw-motor': MotorLogic,
     'wokwi-servo': ServoLogic,
+    'openhw-servo': ServoLogic,
     'wokwi-motor-driver': MotorDriverLogic,
+    'openhw-motor-driver': MotorDriverLogic,
     'wokwi-slide-potentiometer': SlidePotLogic,
+    'openhw-slide-potentiometer': SlidePotLogic,
     'wokwi-potentiometer': PotentiometerLogic,
+    'openhw-potentiometer': PotentiometerLogic,
     'wokwi-lcd2004-i2c': Lcd2004I2CFallbackLogic,
+    'openhw-lcd2004-i2c': Lcd2004I2CFallbackLogic,
+    'wokwi-lcd1602-i2c': Lcd2004I2CFallbackLogic,
+    'openhw-lcd1602-i2c': Lcd2004I2CFallbackLogic,
     'wokwi-ssd1306-oled': SSD1306FallbackLogic,
+    'openhw-ssd1306-oled': SSD1306FallbackLogic,
     max30102: GenericI2CDeviceLogic,
     'wokwi-max7219': GenericSPIDeviceLogic,
+    'openhw-max7219': GenericSPIDeviceLogic,
     'wokwi-ldr-module': BaseComponent,
+    'openhw-ldr-module': BaseComponent,
     'wokwi-7segment': BaseComponent,
+    'openhw-7segment': BaseComponent,
     'wokwi-ili9341': ILI9341FallbackLogic,
+    'openhw-ili9341': ILI9341FallbackLogic,
     'wokwi-sd-card': SDCardLogic,
+    'openhw-sd-card': SDCardLogic,
     'shift_register': ShiftRegisterLogic,
     'wokwi-membrane-keypad': KeypadLogic,
+    'openhw-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
+    'openhw-analog-joystick': JoystickLogic,
+    'openhw-rotary-encoder': RotaryEncoderLogic,
+    'wokwi-rotary-encoder': RotaryEncoderLogic,
     'logic-ic-74xx': LogicIC74xxLogic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
@@ -1926,49 +1950,121 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'logic-d-flipflop-dsr': DFlipFlopDsrLogic,
     'logic-clock-generator': ClockGeneratorLogic,
     'wokwi-tm1637-7segment': WokwiTM1637Logic,
+    'openhw-tm1637-7segment': WokwiTM1637Logic,
     'wokwi-rgb-led': RGBLEDLogic,
+    'openhw-rgb-led': RGBLEDLogic,
     'wokwi-nokia-5110': Nokia5110Logic,
+    'openhw-nokia-5110': Nokia5110Logic,
     'wokwi-l293d': L293DLogic,
+    'openhw-l293d': L293DLogic,
     'wokwi-arduino-nano': UnoLogic,
+    'openhw-arduino-nano': UnoLogic,
     'wokwi-pca9685': PCA9685Logic,
+    'openhw-pca9685': PCA9685Logic,
+    'wokwi-pca9865': PCA9685Logic,
+    'openhw-pca9865': PCA9685Logic,
     'wokwi-soil-moisture-sensor': SoilMoistureSensorLogic,
+    'openhw-soil-moisture-sensor': SoilMoistureSensorLogic,
     'wokwi-photodiode': PhotodiodeLogic,
     'wokwi-diode': DiodeLogic,
     'wokwi-npn-transistor': NPNTransistorLogic,
     'wokwi-a4988': A4988Logic,
+    'openhw-a4988': A4988Logic,
     'wokwi-cd74hc4067': CD74HC4067Logic,
+    'openhw-cd74hc4067': CD74HC4067Logic,
     'wokwi-logic-analyzer': LogicAnalyzerLogic,
+    'openhw-logic-analyzer': LogicAnalyzerLogic,
+    'wokwi-breadboard': BaseComponent,
+    'wokwi-breadboard-half': BaseComponent,
+    'wokwi-bmp180': BaseComponent,
+    'openhw-bmp180': BaseComponent,
+    'wokwi-bmp180-breakout': BaseComponent,
+    'openhw-bmp180-breakout': BaseComponent,
+    'wokwi-ds1307-rtc': BaseComponent,
+    'openhw-ds1307-rtc': BaseComponent,
+    'wokwi-hc-sr04': BaseComponent,
+    'openhw-hc-sr04': BaseComponent,
+    'wokwi-mpu6050': BaseComponent,
+    'openhw-mpu6050': BaseComponent,
+    'wokwi-nlsf595': BaseComponent,
+    'openhw-nlsf595': BaseComponent,
+    'wokwi-relay-module': BaseComponent,
+    'openhw-relay-module': BaseComponent,
+    'wokwi-stepper-motor': BaseComponent,
+    'openhw-stepper-motor': BaseComponent,
+    'openhw-arduino-mega': MegaLogic,
+    'openhw-attiny85': BaseComponent,
+    'openhw-pico': PicoLogic,
+    'openhw-pico-w': PicoLogic,
+    'openhw-diode': DiodeLogic,
+    'openhw-npn-transistor': NPNTransistorLogic,
+    'openhw-photodiode': PhotodiodeLogic,
+    'openhw-photoresistor': BaseComponent,
+    'openhw-ntc-thermistor': BaseComponent,
+    'openhw-ntc-temperature-sensor': BaseComponent,
+    'openhw-battery': BaseComponent,
+    'openhw-charger': BaseComponent,
+    'openhw-breadboard-mini': BaseComponent,
+    'openhw-neopixel-ring': NeopixelLogic,
+    'openhw-arduino-sensor-shield': BaseComponent,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
 export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-led': [{ id: 'A' }, { id: 'K' }],
+    'openhw-led': [{ id: 'A' }, { id: 'K' }],
     'wokwi-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
+    'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],
+    'openhw-pushbutton': [{ id: '1' }, { id: '2' }],
     'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
+    'openhw-buzzer': [{ id: '1' }, { id: '2' }],
     'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-ws2821b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
+    'openhw-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
     'wokwi-motor': [{ id: '1' }, { id: '2' }],
+    'openhw-motor': [{ id: '1' }, { id: '2' }],
     'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
+    'openhw-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
     'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
+    'openhw-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
     'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+    'openhw-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
     'wokwi-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
     max30102: [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }, { id: 'NC' }],
     'wokwi-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
+    'openhw-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
     'wokwi-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'openhw-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
     'wokwi-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
+    'openhw-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
     'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
+    'openhw-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
     'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
+    'openhw-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
     'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
+    'openhw-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
+    'openhw-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'openhw-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
     'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
     'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
@@ -1976,19 +2072,62 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'logic-d-flipflop-dsr': [{ id: 'D' }, { id: 'CLK' }, { id: 'S' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-clock-generator': [{ id: 'OUT' }],
     'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
     'wokwi-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
+    'openhw-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
     'wokwi-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
+    'openhw-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
     'wokwi-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
+    'openhw-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
     'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
+    'openhw-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
     'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'openhw-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'wokwi-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'openhw-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
     'wokwi-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'openhw-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
+    'openhw-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
+    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
+    'openhw-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
     'wokwi-photodiode': [{ id: 'A' }, { id: 'C' }],
     'wokwi-diode': [{ id: 'A' }, { id: 'C' }],
     'wokwi-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
     'wokwi-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
-    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
-    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
+    'openhw-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
+    'wokwi-bmp180': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-bmp180': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'wokwi-bmp180-breakout': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-bmp180-breakout': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'wokwi-ds1307-rtc': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-ds1307-rtc': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'wokwi-hc-sr04': [{ id: 'VCC' }, { id: 'TRIG' }, { id: 'ECHO' }, { id: 'GND' }],
+    'openhw-hc-sr04': [{ id: 'VCC' }, { id: 'TRIG' }, { id: 'ECHO' }, { id: 'GND' }],
+    'wokwi-mpu6050': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'XDA' }, { id: 'XCL' }, { id: 'ADO' }, { id: 'INT' }],
+    'openhw-mpu6050': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'XDA' }, { id: 'XCL' }, { id: 'ADO' }, { id: 'INT' }],
+    'wokwi-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'SRCLK' }, { id: 'RCLK' }, { id: 'OE' }, { id: 'SRCLR' }, { id: 'Q0' }, { id: 'Q1' }, { id: 'Q2' }, { id: 'Q3' }, { id: 'Q4' }, { id: 'Q5' }, { id: 'Q6' }, { id: 'Q7' }, { id: 'Q7S' }],
+    'openhw-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'SRCLK' }, { id: 'RCLK' }, { id: 'OE' }, { id: 'SRCLR' }, { id: 'Q0' }, { id: 'Q1' }, { id: 'Q2' }, { id: 'Q3' }, { id: 'Q4' }, { id: 'Q5' }, { id: 'Q6' }, { id: 'Q7' }, { id: 'Q7S' }],
+    'wokwi-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }],
+    'openhw-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }],
+    'wokwi-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
+    'openhw-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
+    'openhw-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }],
+    'openhw-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-diode': [{ id: 'A' }, { id: 'C' }],
+    'openhw-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
+    'openhw-photodiode': [{ id: 'A' }, { id: 'C' }],
+    'openhw-photoresistor': [{ id: '1' }, { id: '2' }],
+    'openhw-ntc-thermistor': [{ id: '1' }, { id: '2' }],
+    'openhw-ntc-temperature-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
+    'openhw-battery': [{ id: 'VCC' }, { id: 'GND' }],
+    'openhw-charger': [{ id: 'VIN+' }, { id: 'VIN-' }, { id: 'BAT+' }, { id: 'BAT-' }],
+    'openhw-breadboard-mini': [{ id: 'a1' }, { id: 'b1' }, { id: 'c1' }, { id: 'd1' }, { id: 'e1' }, { id: 'f1' }, { id: 'g1' }, { id: 'h1' }, { id: 'i1' }, { id: 'j1' }],
+    'openhw-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
+    'openhw-arduino-sensor-shield': [{ id: 'VCC' }, { id: 'GND' }, { id: 'S' }],
 };
 
 type RP2040ExecutableRangeInput =
@@ -2358,7 +2497,7 @@ function collectConnectedComponentPins(
     }
 
     for (const [id, inst] of instances.entries()) {
-        if (inst.type === 'wokwi-resistor') {
+        if (inst.type === 'wokwi-resistor' || inst.type === 'openhw-resistor') {
             connect(`${id}:p1`, `${id}:p2`);
         }
     }
@@ -2393,7 +2532,7 @@ function collectConnectedComponentPins(
         if (!compId || compId === boardId) continue;
         const inst = instances.get(compId);
         if (!inst) continue;
-        if (inst.type === 'wokwi-resistor') continue;
+        if (inst.type === 'wokwi-resistor' || inst.type === 'openhw-resistor') continue;
         out.set(`${compId}:${pinId}`, { inst, pinId });
     }
 
@@ -3566,7 +3705,7 @@ export class AVRRunner {
                     this.tickI2S(inst, compId, compPin, isHigh);
 
                     // Traverse THROUGH passive components like resistors
-                    if (inst.type === 'wokwi-resistor') {
+                    if (inst.type === 'wokwi-resistor' || inst.type === 'openhw-resistor') {
                         const otherPin = compPin === 'p1' ? 'p2' : 'p1';
                         inst.setPinVoltage(otherPin, v);
                         const forwardStr = `${compId}:${otherPin}`;
@@ -3650,7 +3789,7 @@ export class AVRRunner {
                             if (inst.getPinVoltage(compPin) === 0 && isGndNode) {
                                 forcedLow = true;
                             }
-                            if (inst.type === 'wokwi-pushbutton' && inst.state.pressed && !forcedLow) {
+                            if ((inst.type === 'wokwi-pushbutton' || inst.type === 'openhw-pushbutton') && inst.state.pressed && !forcedLow) {
                                 const otherPin = compPin === '1' ? '2' : '1';
                                 const forwardStr = `${compId}:${otherPin}`;
                                 this.currentWires.forEach(w => {
@@ -3660,7 +3799,7 @@ export class AVRRunner {
                                     }
                                 });
                             }
-                            if (inst.type === 'wokwi-resistor' && !forcedLow) {
+                            if ((inst.type === 'wokwi-resistor' || inst.type === 'openhw-resistor') && !forcedLow) {
                                 const otherPin = compPin === 'p1' ? 'p2' : 'p1';
                                 const forwardStr = `${compId}:${otherPin}`;
                                 this.currentWires.forEach(w => {
@@ -4155,7 +4294,7 @@ export class AVRRunner {
 
         // Add resistor bridges to adjacency list
         for (const [id, inst] of this.instances) {
-            if (inst.type === 'wokwi-resistor') {
+            if (inst.type === 'wokwi-resistor' || inst.type === 'openhw-resistor') {
                 const p1 = `${id}:p1`;
                 const p2 = `${id}:p2`;
                 if (!adj.has(p1)) adj.set(p1, []);
@@ -4775,7 +4914,7 @@ export class RP2040Runner implements BoardRunner {
         else this.debugPcStallTicks = 0;
         this.debugLastPc = pc;
 
-        const firstLed = Array.from(this.instances.values()).find((inst) => inst.type === 'wokwi-led');
+        const firstLed = Array.from(this.instances.values()).find((inst) => inst.type === 'wokwi-led' || inst.type === 'openhw-led');
         const ledAnodeV = firstLed ? Number(firstLed.getPinVoltage('A') || 0) : null;
         const ledCathodeV = firstLed ? Number(firstLed.getPinVoltage('K') || 0) : null;
         const ledDeltaV = (ledAnodeV !== null && ledCathodeV !== null)
@@ -5923,12 +6062,12 @@ export class RP2040Runner implements BoardRunner {
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string) => void) {
-        if (inst.type === 'wokwi-resistor') {
+        if (inst.type === 'wokwi-resistor' || inst.type === 'openhw-resistor') {
             const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
             if (!otherPin) return;
             inst.setPinVoltage(otherPin, voltage);
             visit(`${compId}:${otherPin}`);
-        } else if (inst.type === 'wokwi-pushbutton' && inst.state?.pressed) {
+        } else if ((inst.type === 'wokwi-pushbutton' || inst.type === 'openhw-pushbutton') && inst.state?.pressed) {
             const otherPin = pinId === '1' ? '2' : pinId === '2' ? '1' : null;
             if (!otherPin) return;
             inst.setPinVoltage(otherPin, voltage);

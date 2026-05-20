@@ -1,3 +1,36 @@
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
+import { useAuth } from '../../context/AuthContext.jsx'
+import { useGamification } from '../../context/GamificationContext.jsx'
+import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
+import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
+import {
+  compileCode,
+  flashFirmware,
+  fetchInstalledLibraries,
+  searchLibraries,
+  installLibrary,
+  submitCustomComponent,
+  fetchInstalledComponentsWithFiles,
+  createSharedSimulation,
+  fetchSharedSimulation,
+  fetchLiveSimulationSession,
+  buildLiveSimulationWsUrl,
+  fetchPublicInstalledComponents,
+  fetchComponentsVersion,
+  API_BASE_URL
+} from '../../services/simulatorService.js'
+import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
+import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
+import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
+import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
+import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
+import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
+import html2canvas from 'html2canvas'
+import JSZip from 'jszip';
+import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared, extractProjectMetaFromPng } from '../../utils/projectCompilerUtils';
+
+// Modular Imports
 import { TopToolbox } from './TopToolbox';
 import {
   calculateProjectPlanApplication,
@@ -6,81 +39,137 @@ import {
   findNearestBreadboardHole,
   robustSnapComponent,
   mergeCodeSnippet,
-  getBoardColors
+  removeCodeSnippet,
+  getBoardColors,
+  getDefaultMainFileName,
+  toBoardRelativePath,
+  normalizeOpenCodeTabs,
+  buildProjectPayload,
+  normalizeImportedCircuitData
 } from './projectUtils';
+import { importWokwiProjectZip } from './wokwiImportUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
-import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
+import { ProjectsSidebarChrome } from './components/ProjectsSidebar';
+import { multiRoutePath, wireColor } from './wireUtils';
+import { useSimulatorShortcuts } from './hooks/useSimulatorShortcuts';
+import { simplifyOrthogonalPath } from './utils/wireHitDetection';
+import { useEditorStore } from './store/useEditorStore';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
-import { ChromeUIProvider } from './ChromeUIContext';
 import QuickAddPortal from './QuickAddPortal';
+import TourGuide from './components/TourGuide';
+import { useTourLogic } from './hooks/useTourLogic';
 import PalettePanel from './PalettePanel';
+import { useTelemetryManager } from './services/TelemetryManager';
+import { ComponentTelemetrySelectModal } from './components/ComponentTelemetrySelectModal';
 
 
-
-
-
-
-
-import React, { useState, useRef, useEffect, useCallback, useMemo, useSyncExternalStore } from 'react'
-import { useNavigate, useParams, useLocation } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext.jsx'
-import { useGamification } from '../../context/GamificationContext.jsx'
-import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
-import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion } from '../../services/simulatorService.js'
-import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
-import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
-import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
-import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
-import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { ComponentContextMenu, ComponentRenamePanel, ComponentValuePanel } from './ComponentContextMenu';
+import { CanvasSceneLayer } from './components/CanvasSceneLayer';
+import { CreateComponentModal } from './components/CreateComponentModal';
+import { ComponentInspectorPanel } from './components/ComponentInspectorPanel';
+import { GamificationGuidePanel } from './components/GamificationGuidePanel';
+import { SimulatorDialogsGroup } from './components/SimulatorDialogsGroup';
+import { SimulatorChromeOverlays } from './components/SimulatorChromeOverlays';
+import { SimulatorStatusBanners } from './components/SimulatorStatusBanners';
+import { SimulatorRuntimePanel } from './components/SimulatorRuntimePanel';
+import { CanvasBottomControls } from './components/CanvasBottomControls';
+import { F1MenuOverlay } from './components/F1MenuOverlay';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
-import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
-import html2canvas from 'html2canvas'
-import JSZip from 'jszip';
-import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared, extractProjectMetaFromPng } from '../../utils/projectCompilerUtils';
-
-// ── Lazy loaders — heavy libs loaded on first use, NOT on page paint ──────────
-// @babel/standalone is ~800KB — loading it eagerly was causing the 3.73s LCP.
-// html2canvas is ~120KB — only needed for PNG export.
-let _babelMod = null;
-const getBabel = async () => {
-  if (!_babelMod) _babelMod = await import('@babel/standalone');
-  return _babelMod;
-};
-let _h2cMod = null;
-const getHtml2canvas = async () => {
-  if (!_h2cMod) _h2cMod = (await import('html2canvas')).default;
-  return _h2cMod;
-};
-let _exportLogoPromise = null;
-const _exportShadowSheetCache = new WeakMap();
-// In-memory cache for export results during a session. Keyed by render signature.
-const _exportPngResultCache = new Map();
-
-function getSerializedShadowSheet(sheet) {
-  if (!sheet) return '';
-  if (_exportShadowSheetCache.has(sheet)) return _exportShadowSheetCache.get(sheet);
-  let cssText = '';
-  try {
-    cssText = Array.from(sheet.cssRules || []).map(rule => rule.cssText).join('\n');
-  } catch (error) {
-    cssText = '';
-  }
-  _exportShadowSheetCache.set(sheet, cssText);
-  return cssText;
-}
 
 import * as EmulatorComponents from "@openhw/emulator";
 const {
   FullCircuitValidator,
   analyzeCodeHardwareSync,
+  runUnifiedValidation,
   ProtocolAnalyzer: SharedProtocolAnalyzer
 } = EmulatorComponents;
+
+import {
+  BOARD_BAUD_PRESETS,
+  BOARD_DEFAULT_BAUD,
+  SERIAL_LINE_ENDINGS,
+  BOARD_FQBN,
+  BOARD_DISPLAY_NAME,
+  UF2_PAYLOAD_PREFIX,
+  DEFAULT_PICO_MICROPYTHON_UF2_URL,
+  DEFAULT_PICO_CIRCUITPYTHON_UF2_URL,
+  DEFAULT_PICO_CIRCUITPYTHON_VERSION,
+  DISABLED_FILE_SUFFIX,
+  ARDUINO_CODE_EXTENSIONS,
+  ROOT_UPLOADABLE_EXTENSIONS,
+  RP2040_NATIVE_ALLOWED_EXTENSIONS,
+  RP2040_MICROPYTHON_ALLOWED_EXTENSIONS,
+  GROUP_MAPPING
+} from './constants/simulatorConstants';
+
+import { GROUP_ICON_SVG, GROUP_COLORS } from './constants/groupVisuals';
+
+import {
+  COMPONENT_REGISTRY,
+  LOCAL_PIN_DEFS,
+  BUILTIN_COMPONENT_TYPES,
+  LOCAL_CATALOG,
+  injectComponentsIntoRegistry,
+  buildCatalog,
+  buildUiSourceFromRegistry,
+  buildLogicSourceFromRegistry,
+  buildValidationSourceFromRegistry,
+  buildIndexSourceFromRegistry
+} from './utils/componentRegistry';
+
+import {
+  fnv1aHash,
+  computeRenderSyncHash,
+  normalizeHashValue,
+  extractCompileSummaryLines,
+  formatRunDuration,
+  toPascalCase,
+  extractFunctionSource,
+  allocateComponentId,
+  resolveComponentIdFormat,
+  arrayBufferToBase64
+} from './utils/simulatorUtils';
+
+import {
+  getBabel,
+  getHtml2canvas,
+  ensureExportLogo,
+  getSerializedShadowSheet,
+  cleanupEditCopyPayloadStorage,
+  writeEditCopyPayload
+} from './utils/exportUtils';
+
+import {
+  normalizeBoardKind,
+  boardKindToDisplayName,
+  boardCompToDisplayName,
+  resolveBoardFqbnForComponent,
+  normalizeRp2040Env,
+  createDefaultMainCode,
+  isRp2040PythonEnv,
+  getRp2040PythonEntryFileName,
+  mapRp2040EnvForLegacyContextMenu,
+  looksLikeMicroPythonSource,
+  arduinoBlinkToMicroPython,
+  arduinoSerialToMicroPython,
+  prepareRp2040SketchForSimulation,
+  resolveRp2040SourceMode,
+  resolveComponentAttrString,
+  ensureMicroPythonSerialProbe,
+  applyRp2040MicroPythonCompat,
+  isProgrammableBoardType,
+  isBreadboardType,
+  isResistorType,
+  isMotorType,
+  isStepperMotorType,
+  endpointAliases,
+  hasCategoryIntersection,
+  getPinCategory
+} from './utils/hardwareUtils';
 
 // Web Editor features
 import EditorComponent from 'react-simple-code-editor';
@@ -90,11 +179,11 @@ import Prism from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
-// Import a Prism theme (or we can inject our own CSS wrapper)
 import 'prismjs/themes/prism-tomorrow.css';
 
 const EDIT_COPY_KEY = 'openhw_edit_copy';
 const EDIT_COPY_PAYLOAD_PREFIX = 'openhw_edit_copy_payload_';
+const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
 const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code, label) {
@@ -103,1451 +192,25 @@ function assertSafeDynamicModule(code, label) {
   }
 }
 
-function collectRawComponentSources() {
-  const rawFiles = {
-    ...import.meta.glob('../../../emulator/src/components/*/ui.tsx?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../emulator/src/components/*/logic.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../emulator/src/components/*/validation.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../emulator/src/components/*/index.ts?raw', { eager: true, import: 'default' }),
-    ...import.meta.glob('../../../emulator/src/components/*/doc/index.html?raw', { eager: true, import: 'default' }),
-  };
-
-  const out = {};
-  Object.entries(rawFiles).forEach(([filePath, raw]) => {
-    const normalized = String(filePath || '').replace(/\\/g, '/').replace(/\?raw$/, '');
-    const match = normalized.match(/\/components\/([^/]+)\/(.+)$/);
-    if (!match) return;
-
-    const [, componentType, leaf] = match;
-    if (!out[componentType]) out[componentType] = {};
-    const text = String(raw || '');
-
-    if (leaf === 'ui.tsx') out[componentType].uiRaw = text;
-    if (leaf === 'logic.ts') out[componentType].logicRaw = text;
-    if (leaf === 'validation.ts') out[componentType].validationRaw = text;
-    if (leaf === 'index.ts') out[componentType].indexRaw = text;
-    if (leaf === 'doc/index.html') out[componentType].docRaw = text;
-  });
-
-  return out;
-}
-
-const COMPONENT_RAW_SOURCES = collectRawComponentSources();
-
-const LOCAL_CATALOG = [];
-const LOCAL_PIN_DEFS = {};
-
-// Build Catalog & UI Registry dynamically from local backend imports
-const COMPONENT_REGISTRY = {};
-
-Object.entries(EmulatorComponents).forEach(([key, module]) => {
-  if (key === 'BaseComponent') return;
-
-  if (module && module.manifest) {
-    const compId = module.manifest.type || module.manifest.id || key;
-    const raw = COMPONENT_RAW_SOURCES[compId] || COMPONENT_RAW_SOURCES[key];
-    COMPONENT_REGISTRY[compId] = raw
-      ? {
-        ...module,
-        ...raw,
-        ...(raw.docRaw ? { doc: raw.docRaw } : {}),
-      }
-      : module;
-
-    // ── REGISTER BUILTIN PINS ──
-    if (module.manifest.pins) {
-      LOCAL_PIN_DEFS[compId] = module.manifest.pins;
-    }
-  }
-});
-
-// Types that are natively compiled into the frontend and should not be overwritten by dynamic sync
-const BUILTIN_COMPONENT_TYPES = new Set(
-  Object.values(EmulatorComponents)
-    .filter(m => m && m.manifest)
-    .map(m => m.manifest.type || m.manifest.id)
-    .filter(Boolean)
-);
-
-// Compatibility aliases: accept WS2812 naming variants used in imported diagrams.
-const neopixelBaseModule = COMPONENT_REGISTRY['wokwi-neopixel-matrix'];
-if (neopixelBaseModule?.manifest) {
-  ['wokwi-ws2812b', 'wokwi-ws2821b'].forEach((aliasType) => {
-    if (COMPONENT_REGISTRY[aliasType]) return;
-    COMPONENT_REGISTRY[aliasType] = {
-      ...neopixelBaseModule,
-      manifest: {
-        ...neopixelBaseModule.manifest,
-        type: aliasType,
-        hiddenAlias: true,
-      },
-    };
-  });
-}
-
-const GROUP_MAPPING = {
-  'Basic': 'basic',
-  'Passives': 'basic',
-  'Power': 'basic',
-  'Outputs': 'output',
-  'Inputs': 'input',
-  'Sensors': 'sensor',
-  'Displays': 'display',
-  'Memory': 'misc',
-  'Logic': 'logic'
-};
-
-function normalizeGroupName(name) {
-  return GROUP_MAPPING[name] || name;
-}
-
-function sortCatalog(catalog) {
-  const GROUP_ORDER = ['Boards', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
-  catalog.sort((a, b) => {
-    const idxA = GROUP_ORDER.indexOf(a.group);
-    const idxB = GROUP_ORDER.indexOf(b.group);
-    if (idxA === -1 && idxB === -1) return a.group.localeCompare(b.group);
-    if (idxA === -1) return 1;
-    if (idxB === -1) return -1;
-    return idxA - idxB;
-  });
-}
-
-function resolveUiExport(exportsUI) {
-  if (!exportsUI) return null;
-
-  if (exportsUI.default && typeof exportsUI.default === 'function') return exportsUI.default;
-  if (exportsUI.UI && typeof exportsUI.UI === 'function') return exportsUI.UI;
-
-  const keys = Object.keys(exportsUI);
-  const blocked = (k) => {
-    const l = String(k).toLowerCase();
-    return l.includes('contextmenu') || l === 'bounds' || l === 'contextmenuduringrun' || l === 'contextmenuonlyduringrun';
-  };
-
-  const fnKey = keys.find((k) => typeof exportsUI[k] === 'function' && !blocked(k));
-  if (fnKey) return exportsUI[fnKey];
-
-  const anyKey = keys.find((k) => !blocked(k));
-  if (anyKey) return exportsUI[anyKey];
-
-  return null;
-}
-
-function toPascalCase(value) {
-  const safe = String(value || 'component');
-  return safe
-    .replace(/[^a-zA-Z0-9]+(.)/g, (_, c) => c.toUpperCase())
-    .replace(/^[a-z]/, c => c.toUpperCase())
-    .replace(/[^a-zA-Z0-9]/g, '') || 'Component';
-}
-
-function extractFunctionSource(fn) {
-  if (typeof fn !== 'function') return '';
-  try {
-    let src = String(fn).trim();
-    // Remove common fast-refresh signature calls that may appear in function bodies.
-    src = src.replace(/\b_s\s*\([^)]*\);?/g, '');
-    src = src.replace(/\$RefreshSig\$\s*\([^)]*\)/g, '(() => {})');
-    src = src.replace(/\$RefreshReg\$\s*\([^)]*\);?/g, '');
-    return src.trim();
-  } catch (e) {
-    return '';
-  }
-}
-
-function buildUiSourceFromRegistry(registryInfo, fallbackType) {
-  if (registryInfo?.uiRaw) return registryInfo.uiRaw;
-
-  const manifest = registryInfo?.manifest || {};
-  const name = toPascalCase(manifest.type || fallbackType || 'component');
-  const uiFn = extractFunctionSource(registryInfo?.UI);
-  if (!uiFn) return '';
-
-  const b = registryInfo?.BOUNDS;
-  const bounds = (b && typeof b === 'object')
-    ? b
-    : { x: 5, y: 5, w: Math.max((manifest.w || 100) - 10, 10), h: Math.max((manifest.h || 80) - 10, 10) };
-
-  const lines = [
-    "import React from 'react';",
-    '',
-    `export const BOUNDS = { x: ${Number(bounds.x) || 0}, y: ${Number(bounds.y) || 0}, w: ${Number(bounds.w) || 10}, h: ${Number(bounds.h) || 10} };`,
-  ];
-
-  if (registryInfo?.contextMenuDuringRun || manifest.contextMenuDuringRun) {
-    lines.push('export const contextMenuDuringRun = true;');
-  }
-  if (registryInfo?.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun) {
-    lines.push('export const contextMenuOnlyDuringRun = true;');
-  }
-
-  lines.push('', `export const ${name}UI = ${uiFn};`);
-
-  const ctxFn = extractFunctionSource(registryInfo?.ContextMenu);
-  if (ctxFn) {
-    lines.push('', `export const ContextMenu = ${ctxFn};`);
-  }
-
-  return lines.join('\n');
-}
-
-function buildLogicSourceFromRegistry(registryInfo, fallbackType) {
-  if (registryInfo?.logicRaw) return registryInfo.logicRaw;
-
-  const logicClassSrc = extractFunctionSource(registryInfo?.LogicClass);
-  if (logicClassSrc.startsWith('class ')) {
-    return `import { BaseComponent } from '../BaseComponent';\n\nexport ${logicClassSrc}\n`;
-  }
-
-  const name = toPascalCase(registryInfo?.manifest?.type || fallbackType || 'component');
-  return `import { BaseComponent } from '../BaseComponent';\n\nexport class ${name}Logic extends BaseComponent {\n  reset() {}\n  update() {}\n}\n`;
-}
-
-function buildValidationSourceFromRegistry(registryInfo) {
-  if (registryInfo?.validationRaw) return registryInfo.validationRaw;
-  const validation = registryInfo?.validation;
-  if (Array.isArray(validation)) {
-    const rows = validation.map((rule) => {
-      const id = JSON.stringify(rule?.id || 'rule');
-      const description = JSON.stringify(rule?.description || '');
-      const check = typeof rule?.check === 'function'
-        ? String(rule.check)
-        : '() => ({ pass: true })';
-      return `  {\n    id: ${id},\n    description: ${description},\n    check: ${check},\n  }`;
-    });
-    return `export const validation = [\n${rows.join(',\n')}\n];\n`;
-  }
-  if (typeof validation === 'function') {
-    return `export const validation = ${String(validation)};\n`;
-  }
-  return 'export const validation = [];\n';
-}
-
-function buildIndexSourceFromRegistry(registryInfo, fallbackType) {
-  if (registryInfo?.indexRaw) return registryInfo.indexRaw;
-  const manifest = registryInfo?.manifest || {};
-  const name = toPascalCase(manifest.type || fallbackType || 'component');
-  const hasCtxMenu = typeof registryInfo?.ContextMenu === 'function';
-  const hasDuringRun = !!(registryInfo?.contextMenuDuringRun || manifest.contextMenuDuringRun);
-  const hasOnlyDuringRun = !!(registryInfo?.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun);
-
-  return `import manifest from './manifest.json';\nimport { ${name}UI, BOUNDS${hasDuringRun ? ', contextMenuDuringRun' : ''}${hasOnlyDuringRun ? ', contextMenuOnlyDuringRun' : ''}${hasCtxMenu ? ', ContextMenu' : ''} } from './ui';\nimport { ${name}Logic } from './logic';\nimport { validation } from './validation';\n\nexport default {\n  manifest,\n  UI: ${name}UI,\n  LogicClass: ${name}Logic,\n  BOUNDS,\n  validation,${hasCtxMenu ? '\n  ContextMenu,' : ''}${hasDuringRun ? '\n  contextMenuDuringRun,' : ''}${hasOnlyDuringRun ? '\n  contextMenuOnlyDuringRun,' : ''}\n};\n`;
-}
-
-function cleanupEditCopyPayloadStorage() {
-  const removeMatching = (storageLike) => {
-    try {
-      const keys = [];
-      for (let i = 0; i < storageLike.length; i += 1) {
-        const k = storageLike.key(i);
-        if (k && k.startsWith(EDIT_COPY_PAYLOAD_PREFIX)) keys.push(k);
-      }
-      keys.forEach((k) => storageLike.removeItem(k));
-    } catch (_) {
-      // Ignore storage access failures (private mode, disabled storage, etc.)
-    }
-  };
-
-  removeMatching(sessionStorage);
-  removeMatching(localStorage);
-}
-
-function writeEditCopyPayload(data) {
-  const serialized = JSON.stringify(data || {});
-  const payloadKey = `${EDIT_COPY_PAYLOAD_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-  const pointer = JSON.stringify({
-    __openhwEditCopyPointer: true,
-    version: 2,
-    storage: 'session',
-    key: payloadKey,
-    createdAt: Date.now(),
-  });
-
-  const writePointerPayload = () => {
-    sessionStorage.setItem(payloadKey, serialized);
-    localStorage.setItem(EDIT_COPY_KEY, pointer);
-  };
-
-  try {
-    writePointerPayload();
-    return { ok: true };
-  } catch (_) {
-    // Fall through to next strategy
-  }
-
-  try {
-    localStorage.setItem(EDIT_COPY_KEY, serialized);
-    return { ok: true };
-  } catch (_) {
-    // Fall through to cleanup + retry
-  }
-
-  cleanupEditCopyPayloadStorage();
-
-  try {
-    writePointerPayload();
-    return { ok: true };
-  } catch (error) {
-    return { ok: false, error };
-  }
-}
-
-Object.values(COMPONENT_REGISTRY).forEach(module => {
-  const manifest = module.manifest;
-  if (!manifest) return;
-
-  if (manifest.pins) {
-    LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
-  }
-
-  if (manifest.hiddenAlias) {
-    return;
-  }
-
-  const groupName = normalizeGroupName(manifest.group);
-  let group = LOCAL_CATALOG.find(g => g.group === groupName);
-  if (!group) {
-    group = { group: groupName, items: [] };
-    LOCAL_CATALOG.push(group);
-  }
-
-  const { pins: _pins, group: _, ...catalogItem } = manifest;
-  group.items.push(catalogItem);
-});
-
-sortCatalog(LOCAL_CATALOG);
-
 // Tracks component types that were dynamically injected from the backend (not built-in).
 const BACKEND_INJECTED_TYPES = new Set();
 
-/**
- * Injects an array of pre-transpiled backend components into the global registry and catalog.
- * Works for both cached (IDB) and freshly fetched components.
- * @param {Array<{id, manifest, transpiledUI, transpiledLogic, uiRaw, logicRaw, validationRaw, indexRaw}>} comps
- */
-function injectComponentsIntoRegistry(comps) {
-  for (const comp of comps) {
-    const { id, manifest, transpiledUI, transpiledLogic, uiRaw, logicRaw, validationRaw, indexRaw } = comp;
-    if (!manifest || !transpiledUI) continue;
+// Cache for high-fidelity PNG exports to prevent redundant rendering
+const _exportPngResultCache = new Map();
 
-    // Skip core components natively present in the frontend bundle
-    if (BUILTIN_COMPONENT_TYPES.has(manifest.type)) continue;
-    try {
-      const exportsUI = {};
-      const evalUI = new Function('exports', 'require', 'React', transpiledUI);
-      evalUI(exportsUI, (mod) => {
-        if (mod === 'react') return React;
-        if (mod.endsWith('manifest.json')) return manifest;
-        return null;
-      }, React);
-
-      const uiComponent = resolveUiExport(exportsUI);
-      if (!uiComponent) continue;
-
-      COMPONENT_REGISTRY[manifest.type] = {
-        manifest,
-        UI: uiComponent,
-        BOUNDS: exportsUI.BOUNDS,
-        ContextMenu: exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))] || null,
-        contextMenuDuringRun: !!(exportsUI.contextMenuDuringRun || manifest.contextMenuDuringRun),
-        contextMenuOnlyDuringRun: !!(exportsUI.contextMenuOnlyDuringRun || manifest.contextMenuOnlyDuringRun),
-        logicCode: transpiledLogic,
-        uiRaw: uiRaw || '',
-        logicRaw: logicRaw || '',
-        validationRaw: validationRaw || '',
-        indexRaw: indexRaw || '',
-        isDynamic: true,
-      };
-
-      if (manifest.pins) LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
-      BACKEND_INJECTED_TYPES.add(manifest.type);
-
-      const groupName = normalizeGroupName(manifest.group);
-      let group = LOCAL_CATALOG.find(g => g.group === groupName);
-      if (!group) { group = { group: groupName, items: [] }; LOCAL_CATALOG.push(group); }
-      group.items = group.items.filter(i => i.type !== manifest.type);
-      const { pins: _p, group: _g, ...catalogItem } = manifest;
-      group.items.push(catalogItem);
-    } catch (err) {
-      console.warn(`[ComponentCache] Failed to inject component ${id}:`, err);
-    }
-  }
-  sortCatalog(LOCAL_CATALOG);
-}
 
 let nextWireId = 1
-
-// ─── SYNC WIRE ID COUNTER AFTER LOADING EXTERNAL DATA ──────────────────────
-function syncNextIds(_comps, ws) {
-  for (const w of (ws || [])) {
-    const m = w.id && w.id.match(/^w(\d+)$/);
-    if (m) nextWireId = Math.max(nextWireId, parseInt(m[1]) + 1);
-  }
-}
-
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api').replace(/\/$/, '');
-
-// ── Palette group visual helpers ─────────────────────────────────────────────
-const GROUP_ICON_SVG = {
-  'Boards': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="18" x2="8" y2="22" /><line x1="16" y1="18" x2="16" y2="22" /><line x1="2" y1="8" x2="6" y2="8" /><line x1="2" y1="16" x2="6" y2="16" /><line x1="18" y1="8" x2="22" y2="8" /><line x1="18" y1="16" x2="22" y2="16" /><rect x="8" y="8" width="8" height="8" rx="1" fill={c} fillOpacity="0.2" /></svg>,
-  'output': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="5" /><path d="M12 15v4M9 19h6M8.5 7.5A5 5 0 0 1 12 5" /></svg>,
-  'input': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="10" width="12" height="8" rx="2" /><circle cx="12" cy="10" r="2" fill={c} fillOpacity="0.3" /><line x1="12" y1="2" x2="12" y2="8" /><line x1="4" y1="18" x2="6" y2="18" /><line x1="18" y1="18" x2="20" y2="18" /></svg>,
-  'basic': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="12" x2="6" y2="12" /><rect x="6" y="8" width="12" height="8" rx="1" /><line x1="18" y1="12" x2="22" y2="12" /></svg>,
-  'Actuators': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12" /></svg>,
-  'misc': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="5" width="16" height="14" rx="2" /><line x1="8" y1="5" x2="8" y2="19" /><line x1="12" y1="5" x2="12" y2="19" /><line x1="16" y1="5" x2="16" y2="19" /></svg>,
-  'display': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="14" rx="2" /><line x1="8" y1="22" x2="16" y2="22" /><line x1="12" y1="18" x2="12" y2="22" /></svg>,
-  'sensor': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5.5 5.5A11 11 0 0 0 5.5 18.5M18.5 5.5A11 11 0 0 1 18.5 18.5M8.5 8.5A6 6 0 0 0 8.5 15.5M15.5 8.5A6 6 0 0 1 15.5 15.5" /><circle cx="12" cy="12" r="1.5" fill={c} /></svg>,
-  'logic': (c) => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h8c3.3 0 6 2.7 6 6s-2.7 6-6 6H4z" /><line x1="4" y1="4" x2="4" y2="20" /><line x1="2" y1="11" x2="4" y2="11" /><line x1="2" y1="17" x2="4" y2="17" /><line x1="18" y1="14" x2="22" y2="14" /></svg>,
-};
-const GROUP_COLORS = {
-  'Boards': '#6366f1', 'output': '#22c55e', 'input': '#3b82f6',
-  'basic': '#f59e0b', 'Actuators': '#06b6d4',
-  'misc': '#8b5cf6', 'display': '#ec4899', 'sensor': '#14b8a6', 'logic': '#8b5cf6',
-};
-
-const BOARD_BAUD_PRESETS = {
-  arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
-  esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
-  stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
-  rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
-};
-
-const BOARD_DEFAULT_BAUD = {
-  arduino_uno: '9600',
-  esp32: '115200',
-  stm32: '115200',
-  rp2040: '115200',
-};
-
-const SERIAL_LINE_ENDINGS = {
-  none: '',
-  nl: '\n',
-  crlf: '\r\n',
-  cr: '\r',
-};
-
-const BOARD_FQBN = {
-  arduino_uno: 'arduino:avr:uno',
-  esp32: 'esp32:esp32:esp32',
-  stm32: 'STMicroelectronics:stm32:GenF1',
-  rp2040: 'rp2040:rp2040:rpipico',
-};
-
-const BOARD_DISPLAY_NAME = {
-  arduino_uno: 'Arduino Uno',
-  esp32: 'ESP32',
-  stm32: 'STM32',
-  rp2040: 'Raspberry Pi Pico',
-};
-
-const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
-const DEFAULT_PICO_MICROPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/micropython-uf2`;
-const DEFAULT_PICO_CIRCUITPYTHON_UF2_URL = `${API_BASE_URL}/compile/pico/circuitpython-uf2`;
-const DEFAULT_PICO_CIRCUITPYTHON_VERSION = '8.2.7';
-const DISABLED_FILE_SUFFIX = '.disabled';
-const ARDUINO_CODE_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp']);
-const ROOT_UPLOADABLE_EXTENSIONS = new Set(['.ino', '.cpp', '.h', '.hpp', '.c', '.txt', '.json', '.xml', '.py', '.uf2']);
-const RP2040_NATIVE_ALLOWED_EXTENSIONS = new Set(['.ino', '.h', '.hpp', '.c', '.cpp', '.txt', '.json', '.xml', '.uf2']);
-const RP2040_MICROPYTHON_ALLOWED_EXTENSIONS = new Set(['.py', '.txt', '.json', '.xml', '.uf2']);
-
-function boardKindToDisplayName(kind) {
-  const normalized = normalizeBoardKind(kind);
-  return BOARD_DISPLAY_NAME[normalized] || BOARD_DISPLAY_NAME.arduino_uno;
-}
-
-function boardCompToDisplayName(boardComp, fallbackKind = 'arduino_uno') {
-  if (!boardComp || typeof boardComp !== 'object') {
-    return boardKindToDisplayName(fallbackKind);
-  }
-
-  const boardLabel = String(boardComp.label || '').trim();
-  if (boardLabel) return boardLabel;
-  const boardId = String(boardComp.id || '').trim();
-  const kindLabel = boardKindToDisplayName(boardComp.type || fallbackKind);
-  return boardId ? `${kindLabel} (${boardId})` : kindLabel;
-}
-
-function extractCompileSummaryLines(stdoutText) {
-  const text = String(stdoutText || '');
-  if (!text.trim()) return [];
-
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const summaryPatterns = [
-    /^Sketch uses\s+/i,
-    /^Global variables use\s+/i,
-    /^Program\s+size\s*:/i,
-    /^Flash\s*:/i,
-    /^RAM\s*:/i,
-    /\btext\s+data\s+bss\s+dec\s+hex\b/i,
-    /^\d+\s+\d+\s+\d+\s+\d+\s+[0-9a-f]+\s+/i,
-  ];
-
-  const dedup = new Set();
-  const out = [];
-  lines.forEach((line) => {
-    if (!summaryPatterns.some((pattern) => pattern.test(line))) return;
-    if (dedup.has(line)) return;
-    dedup.add(line);
-    out.push(line);
-  });
-
-  return out.slice(0, 8);
-}
-
-function formatRunDuration(secondsValue) {
-  const totalSeconds = Math.max(0, Math.floor(Number(secondsValue || 0)));
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function normalizeHashValue(value, depth = 0) {
-  if (value === null || value === undefined) return value;
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
-
-  if (ArrayBuffer.isView(value)) {
-    const len = Number(value.length || 0);
-    return {
-      kind: 'typed-array',
-      length: len,
-      preview: Array.from(value).slice(0, 24),
-    };
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length > 64) {
-      return {
-        kind: 'array',
-        length: value.length,
-        preview: value.slice(0, 64).map((entry) => normalizeHashValue(entry, depth + 1)),
-      };
-    }
-    return value.map((entry) => normalizeHashValue(entry, depth + 1));
-  }
-
-  if (typeof value === 'object') {
-    const keys = Object.keys(value);
-    if (depth > 4 && keys.length > 24) {
-      return {
-        kind: 'object',
-        keys: keys.sort().slice(0, 24),
-        size: keys.length,
-      };
-    }
-
-    const out = {};
-    keys
-      .sort((a, b) => a.localeCompare(b))
-      .forEach((key) => {
-        out[key] = normalizeHashValue(value[key], depth + 1);
-      });
-    return out;
-  }
-
-  return String(value);
-}
-
-function fnv1aHash(input) {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
-}
-
-function computeRenderSyncHash(payload) {
-  return fnv1aHash(JSON.stringify(normalizeHashValue(payload, 0)));
-}
-
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
-}
-
-function normalizeRp2040Env(source) {
-  const value = String(source || '').trim().toLowerCase();
-  if (!value || value === 'none' || value === 'native' || value === 'ino') return 'native';
-  if (value === 'cp' || value === 'circuitpy' || value === 'circuitpython') return 'circuitpython';
-  if (value.startsWith('circuitpython')) return 'circuitpython';
-  if (value === 'py' || value === 'python') return 'micropython';
-  if (value.startsWith('micropython')) return 'micropython';
-  return 'native';
-}
-
-function isRp2040PythonEnv(source) {
-  const env = normalizeRp2040Env(source);
-  return env === 'micropython' || env === 'circuitpython';
-}
-
-function getRp2040PythonEntryFileName(source) {
-  return normalizeRp2040Env(source) === 'circuitpython' ? 'code.py' : 'main.py';
-}
-
-function mapRp2040EnvForLegacyContextMenu(source) {
-  const env = normalizeRp2040Env(source);
-  if (env === 'micropython') return 'micropython-20241129-v1.24.1';
-  if (env === 'circuitpython') return `circuitpython-${DEFAULT_PICO_CIRCUITPYTHON_VERSION}`;
-  return '';
-}
-
-function resolveComponentIdFormat(type) {
-  const rawType = String(type || '').toLowerCase();
-
-  if (rawType.includes('arduino') && rawType.includes('uno')) {
-    return { prefix: 'uno', separator: '' };
-  }
-  if (rawType.includes('pico-w') || rawType.includes('picow')) {
-    return { prefix: 'picow', separator: '' };
-  }
-  if (rawType.includes('rp2040') || rawType.includes('pico')) {
-    return { prefix: 'pico', separator: '' };
-  }
-
-  const fallback = String(type || 'component')
-    .replace(/[^a-zA-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .toLowerCase() || 'component';
-
-  return { prefix: fallback, separator: '_' };
-}
-
-function allocateComponentId(type, usedIdsInput) {
-  const usedIds = usedIdsInput instanceof Set
-    ? usedIdsInput
-    : new Set(Array.isArray(usedIdsInput) ? usedIdsInput : []);
-  const { prefix, separator } = resolveComponentIdFormat(type);
-  const pattern = new RegExp(`^${prefix}${separator}(\\d+)$`, 'i');
-
-  let maxIndex = 0;
-  usedIds.forEach((id) => {
-    const match = String(id || '').match(pattern);
-    if (!match) return;
-    const parsed = Number(match[1]);
-    if (Number.isFinite(parsed)) {
-      maxIndex = Math.max(maxIndex, parsed);
-    }
-  });
-
-  let index = Math.max(1, maxIndex + 1);
-  let candidate = `${prefix}${separator}${index}`;
-  while (usedIds.has(candidate)) {
-    index += 1;
-    candidate = `${prefix}${separator}${index}`;
-  }
-
-  usedIds.add(candidate);
-  return candidate;
-}
-
-function normalizeBoardKind(source) {
-  const s = String(source || '').toLowerCase();
-  if (s.includes('esp32')) return 'esp32';
-  if (s.includes('stm32')) return 'stm32';
-  if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
-  return 'arduino_uno';
-}
-
-
-function resolveBoardFqbnForComponent(boardComp, boardKind) {
-  const type = String(boardComp?.type || '').toLowerCase();
-  if (type.includes('pico-w') || type.includes('picow')) {
-    return 'rp2040:rp2040:rpipicow';
-  }
-  return BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
-}
-
-function createDefaultMainCode(boardKind, boardId, options = {}) {
-  const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
-
-  if (boardKind === 'rp2040' && rp2040Mode === 'micropython') {
-    return `# ${boardId} MicroPython script\nfrom machine import Pin\nfrom time import sleep\n\nled = Pin('LED', Pin.OUT)\n\nwhile True:\n  led.toggle()\n  sleep(0.5)\n`;
-  }
-  if (boardKind === 'rp2040' && rp2040Mode === 'circuitpython') {
-    return `# ${boardId} CircuitPython script\nimport time\nimport board\nimport digitalio\n\nled = digitalio.DigitalInOut(board.LED)\nled.direction = digitalio.Direction.OUTPUT\n\nwhile True:\n  led.value = not led.value\n  time.sleep(0.5)\n`;
-  }
-  if (boardKind === 'esp32' || boardKind === 'stm32' || boardKind === 'rp2040') {
-    return `// ${boardId} main sketch\nvoid setup() {\n  // Serial.begin(${BOARD_DEFAULT_BAUD[boardKind] || 115200});\n}\n\nvoid loop() {\n  delay(1000);\n}\n`;
-  }
-  return `// ${boardId} main sketch\nvoid setup() {\n  pinMode(13, OUTPUT);\n  // Serial.begin(${BOARD_DEFAULT_BAUD.arduino_uno});\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(500);\n  digitalWrite(13, LOW);\n  delay(500);\n}\n`;
-}
-
-function getDefaultMainFileName(boardKind, boardId, options = {}) {
-  if (boardKind === 'rp2040') {
-    const rp2040Mode = normalizeRp2040Env(options?.rp2040Mode || 'native');
-    if (isRp2040PythonEnv(rp2040Mode)) {
-      return getRp2040PythonEntryFileName(rp2040Mode);
-    }
-    return `${boardId}.ino`;
-  }
-  return `${boardId}.ino`;
-}
-
-
-function toBoardRelativePath(boardId, fullPath) {
-  const prefix = `project/${boardId}/`;
-  const raw = String(fullPath || '').replace(/\\/g, '/');
-  if (!raw.startsWith(prefix)) {
-    return String(raw.split('/').pop() || '').trim();
-  }
-
-  const relative = raw.slice(prefix.length).trim();
-  const parts = relative
-    .split('/')
-    .map((part) => part.trim())
-    .filter((part) => part && part !== '.' && part !== '..');
-  return parts.join('/');
-}
-
-
-function baseFileExt(pathLike) {
-  const normalized = isFileDisabled(pathLike)
-    ? String(pathLike || '').slice(0, -DISABLED_FILE_SUFFIX.length)
-    : String(pathLike || '');
-  return fileExt(normalized);
-}
-
-
-function normalizeOpenCodeTabs(tabs, projectFiles) {
-  const list = Array.isArray(tabs) ? tabs : [];
-  const fileIds = new Set((projectFiles || []).map((f) => f.id));
-  const seen = new Set();
-  const out = [];
-
-  list.forEach((tabId) => {
-    const id = String(tabId || '').trim();
-    if (!id || seen.has(id) || !fileIds.has(id)) return;
-    seen.add(id);
-    out.push(id);
-  });
-
-  return out;
-}
-
-function buildProjectPayload({
-  name = '',
-  board = 'arduino_uno',
-  components = [],
-  wires = [],
-  code = '',
-  includeCode = true,
-  blocklyXml = '',
-  blocklyGeneratedCode = '',
-  useBlocklyCode = false,
-  projectFiles = [],
-  openCodeTabs = [],
-  activeCodeFileId = '',
-  exportedAt = '',
-} = {}) {
-  const componentsArray = Array.isArray(components) ? components : [];
-  const detectedBoardComponent = componentsArray.find((component) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(component?.type || '')));
-  const resolvedBoard = detectedBoardComponent?.type || String(board || 'arduino_uno');
-
-  const normalizedFiles = normalizeProjectFiles(projectFiles)
-    .filter((file) => file.id !== 'project/diagram.json')
-    .map((file) => ({
-      ...file,
-      content: typeof file.content === 'string' ? file.content : String(file.content ?? ''),
-    }));
-  const normalizedTabs = normalizeOpenCodeTabs(openCodeTabs, normalizedFiles);
-  const preferredActive = String(activeCodeFileId || '').trim();
-  const resolvedActiveId = normalizedFiles.some((file) => file.id === preferredActive)
-    ? preferredActive
-    : (normalizedTabs[0] || normalizedFiles[0]?.id || '');
-
-  const payload = {
-    schemaVersion: 'openhw-project-v2',
-    board: resolvedBoard,
-    components: componentsArray.map((component) => {
-      const isSnapped = (Array.isArray(wires) ? wires : []).some(w => w.isSocket && (w.from.startsWith(component.id + ':') || w.to.startsWith(component.id + ':')));
-      return {
-        id: String(component?.id || ''),
-        type: String(component?.type || ''),
-        label: String(component?.label || ''),
-        x: Number(component?.x ?? 0),
-        y: Number(component?.y ?? 0),
-        w: Number(component?.w ?? 0),
-        h: Number(component?.h ?? 0),
-        rotation: Number(component?.rotation ?? 0),
-        attrs: component?.attrs && typeof component.attrs === 'object' ? component.attrs : {},
-        snap: isSnapped || undefined,
-      };
-    }),
-    connections: (Array.isArray(wires) ? wires : []).map((wire) => ({
-      id: String(wire?.id || ''),
-      from: String(wire?.from || ''),
-      to: String(wire?.to || ''),
-      color: String(wire?.color || ''),
-      waypoints: Array.isArray(wire?.waypoints) ? wire.waypoints : [],
-      isBelow: wire?.isBelow === true,
-      isSocket: wire?.isSocket === true,
-      isHidden: wire?.isHidden === true,
-      isHelp: wire?.isHelp === true,
-      fromLabel: String(wire?.fromLabel || ''),
-      toLabel: String(wire?.toLabel || ''),
-    })),
-    blocklyXml: String(blocklyXml || ''),
-    blocklyGeneratedCode: String(blocklyGeneratedCode || ''),
-    useBlocklyCode: !!useBlocklyCode,
-    projectFiles: normalizedFiles,
-    openCodeTabs: normalizedTabs,
-    activeCodeFileId: resolvedActiveId,
-  };
-
-  if (includeCode) {
-    payload.code = String(code || '');
-  }
-
-  if (name) payload.name = String(name);
-  if (exportedAt) payload.exportedAt = String(exportedAt);
-  return payload;
-}
-
-function normalizeImportedCircuitData(rawComponents, rawConnections) {
-  const componentsInput = Array.isArray(rawComponents) ? rawComponents : [];
-  const wiresInput = Array.isArray(rawConnections) ? rawConnections : [];
-
-  const usedComponentIds = new Set();
-  let layoutSlot = 0;
-
-  const normalizedComponents = componentsInput
-    .map((component) => {
-      if (!component || typeof component !== 'object') return null;
-      const type = String(component.type || '').trim();
-      if (!type) return null;
-
-      const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
-
-      const rawId = String(component.id || '').trim();
-      const id = rawId && !usedComponentIds.has(rawId)
-        ? (usedComponentIds.add(rawId), rawId)
-        : allocateComponentId(type, usedComponentIds);
-
-      const defaultW = Number(regManifest.w ?? 80);
-      const defaultH = Number(regManifest.h ?? 60);
-      const width = Number(component.w);
-      const height = Number(component.h);
-
-      const hasX = Number.isFinite(Number(component.x));
-      const hasY = Number.isFinite(Number(component.y));
-      let x = Number(component.x);
-      let y = Number(component.y);
-      if (!hasX || !hasY) {
-        const col = layoutSlot % 4;
-        const row = Math.floor(layoutSlot / 4);
-        x = 120 + col * 220;
-        y = 80 + row * 170;
-        layoutSlot += 1;
-      }
-
-      const attrs = component.attrs && typeof component.attrs === 'object'
-        ? { ...component.attrs }
-        : {};
-      if (normalizeBoardKind(type) === 'rp2040') {
-        attrs.env = normalizeRp2040Env(resolveComponentAttrString(attrs, 'env', 'native'));
-      }
-
-      return {
-        ...component,
-        id,
-        type,
-        label: String(component.label || regManifest.label || type),
-        x,
-        y,
-        w: Number.isFinite(width) && width > 0
-          ? width
-          : (Number.isFinite(defaultW) && defaultW > 0 ? defaultW : 80),
-        h: Number.isFinite(height) && height > 0
-          ? height
-          : (Number.isFinite(defaultH) && defaultH > 0 ? defaultH : 60),
-        rotation: Number.isFinite(Number(component.rotation))
-          ? ((Number(component.rotation) % 360) + 360) % 360
-          : 0,
-        attrs,
-      };
-    })
-    .filter(Boolean);
-
-  const endpointLabel = (endpoint) => {
-    const parts = String(endpoint || '').split(':');
-    return parts.length > 1 ? parts.slice(1).join(':') : '';
-  };
-
-  const normalizeWaypoint = (point) => {
-    if (!point || typeof point !== 'object') return null;
-    const x = Number(point.x);
-    const y = Number(point.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y, ...(point._corner ? { _corner: true } : {}) };
-  };
-
-  const usedWireIds = new Set();
-  const allocateWireId = () => {
-    let idx = 1;
-    let candidate = `w${idx}`;
-    while (usedWireIds.has(candidate)) {
-      idx += 1;
-      candidate = `w${idx}`;
-    }
-    usedWireIds.add(candidate);
-    return candidate;
-  };
-
-  const normalizedWires = wiresInput
-    .map((wire) => {
-      if (!wire || typeof wire !== 'object') return null;
-      const from = String(wire.from || '').trim();
-      const to = String(wire.to || '').trim();
-      if (!from || !to) return null;
-
-      const rawWireId = String(wire.id || '').trim();
-      const id = rawWireId && !usedWireIds.has(rawWireId)
-        ? (usedWireIds.add(rawWireId), rawWireId)
-        : allocateWireId();
-
-      return {
-        ...wire,
-        id,
-        from,
-        to,
-        color: typeof wire.color === 'string' && wire.color.trim() ? wire.color : wireColor(),
-        waypoints: Array.isArray(wire.waypoints)
-          ? wire.waypoints.map(normalizeWaypoint).filter(Boolean)
-          : [],
-        isBelow: wire.isBelow === true,
-        isSocket: wire.isSocket === true,
-        isHidden: wire.isHidden === true,
-        isHelp: wire.isHelp === true,
-        fromLabel: String(wire.fromLabel || endpointLabel(from) || ''),
-        toLabel: String(wire.toLabel || endpointLabel(to) || ''),
-      };
-    })
-    .filter(Boolean);
-
-  return { components: normalizedComponents, wires: normalizedWires };
-}
-
-function isRp2040CoreMissingError(err) {
-  const msg = String(err?.message || err || '').toLowerCase();
-  return msg.includes("platform 'rp2040:rp2040' not found")
-    || msg.includes('platform rp2040:rp2040 is not found')
-    || msg.includes('platform not installed');
-}
-
-function looksLikeMicroPythonSource(source) {
-  const text = String(source || '').trim();
-  if (!text) return false;
-  const lower = text.toLowerCase();
-
-  return lower.includes('from machine import')
-    || lower.includes('import machine')
-    || lower.includes('machine.pin(')
-    || lower.includes('while true:')
-    || lower.includes('sleep_ms(')
-    || lower.includes('sleep_us(');
-}
-
-/**
- * Best-effort converter: takes a simple Arduino blink sketch and returns
- * a MicroPython equivalent. Extracts the LED pin from #define / const,
- * and delay values from delay() calls. Falls back gracefully.
- */
-function arduinoBlinkToMicroPython(sourceCode, boardId) {
-  const src = String(sourceCode || '');
-
-  // Extract LED pin number: #define LED <n> or const int LED = <n> or similar
-  const pinMatch =
-    src.match(/#define\s+\w*LED\w*\s+(\d+)/i) ||
-    src.match(/const\s+\w+\s+\w*LED\w*\s*=\s*(\d+)/i) ||
-    src.match(/int\s+\w*LED\w*\s*=\s*(\d+)/i) ||
-    src.match(/LED_BUILTIN\b/);
-
-  let pinExpr;
-  if (pinMatch && pinMatch[1]) {
-    pinExpr = pinMatch[1]; // bare numeric pin string, e.g. "20"
-  } else if (src.includes('LED_BUILTIN')) {
-    pinExpr = "'LED'"; // MicroPython Pico built-in LED
-  } else {
-    // Try to find any pin used with pinMode or digitalWrite
-    const pinModeMatch = src.match(/pinMode\s*\(\s*(\d+)/) ||
-      src.match(/digitalWrite\s*\(\s*(\d+)/);
-    pinExpr = pinModeMatch ? pinModeMatch[1] : "'LED'";
-  }
-
-  // Extract delay values (ms) from delay() calls (skip delayMicroseconds)
-  const delayMatches = [...src.matchAll(/\bdelay\s*\(\s*(\d+)\s*\)/g)].map(m => Number(m[1]));
-  const delayOn = delayMatches[0] ?? 1000;
-  const delayOff = delayMatches[1] ?? delayOn;
-
-  // Numeric pin → bare int; quoted string stays as is
-  const pinArg = /^\d+$/.test(String(pinExpr)) ? Number(pinExpr) : pinExpr;
-
-  return (
-    `# Auto-converted from Arduino sketch for ${boardId}\n` +
-    `from machine import Pin\n` +
-    `from time import sleep_ms\n` +
-    `\n` +
-    `led = Pin(${pinArg}, Pin.OUT)\n` +
-    `\n` +
-    `while True:\n` +
-    `    led.value(1)   # LED ON\n` +
-    `    sleep_ms(${delayOn})\n` +
-    `    led.value(0)   # LED OFF\n` +
-    `    sleep_ms(${delayOff})\n`
-  );
-}
-
-function arduinoSerialToMicroPython(sourceCode, boardId) {
-  const src = String(sourceCode || '');
-  if (!/\bSerial1?\s*\.\s*println\s*\(/.test(src)) return '';
-
-  const printMatches = [...src.matchAll(/\bSerial1?\s*\.\s*println\s*\(([^)]*)\)\s*;/g)]
-    .map((m) => String(m[1] || '').trim())
-    .filter(Boolean);
-  if (printMatches.length === 0) return '';
-
-  const pyLiteral = (expr) => {
-    const e = String(expr || '').trim();
-    if (/^"[\s\S]*"$/.test(e) || /^'[\s\S]*'$/.test(e)) return e;
-    if (/^[0-9.+\-*/ ()]+$/.test(e)) return `str(${e})`;
-    return `str(${JSON.stringify(e)})`;
-  };
-
-  const setupMsg = pyLiteral(printMatches[0]);
-  const loopMsg = pyLiteral(printMatches[1] || printMatches[0]);
-  const delayMatch = src.match(/\bdelay\s*\(\s*(\d+)\s*\)/i);
-  const loopDelay = delayMatch ? Math.max(1, Number(delayMatch[1])) : 1000;
-
-  return [
-    `# Auto-converted Serial sketch for ${boardId}`,
-    'from time import sleep_ms',
-    '',
-    `print(${setupMsg})`,
-    '',
-    'while True:',
-    `  print(${loopMsg})`,
-    `  sleep_ms(${loopDelay})`,
-    '',
-  ].join('\n');
-}
-
-function prepareRp2040SketchForSimulation(sourceCode) {
-  const source = String(sourceCode || '');
-  if (!source.trim()) return source;
-  if (!/\bSerial1?\b/.test(source)) return source;
-  if (/OPENHW_SIM_SERIAL_REWRITE/.test(source)) return source;
-
-  const hasBlockingSerialWaitCondition = (condition) => {
-    const cond = String(condition || '');
-    if (!/!\s*Serial1?\b/.test(cond)) return false;
-    // Keep loops like !Serial1.available() intact; only strip plain readiness waits.
-    if (/!\s*Serial1?\s*(?:\.|\[)/.test(cond)) return false;
-    return true;
-  };
-
-  const stripBlockingSerialWaits = (text) => String(text || '')
-    // Many Arduino RP2040 sketches block forever in simulation with
-    // while (!Serial) { ... } because USB CDC is not attached.
-    .replace(/\bwhile\s*\(([^)]*)\)\s*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ))
-    .replace(/\bwhile\s*\(([^)]*)\)\s*\{/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
-        : match
-    ))
-    .replace(/\bwhile\s*\(([^)]*)\)\s*(?!\{|;)[^;\n]*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ))
-    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*\{/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? 'if (false) { /* OPENHW_SIM_SERIAL_WAIT_REMOVED */'
-        : match
-    ))
-    .replace(/\bfor\s*\(\s*;\s*([^;]*?)\s*;\s*\)\s*;/g, (match, condition) => (
-      hasBlockingSerialWaitCondition(condition)
-        ? '/* OPENHW_SIM_SERIAL_WAIT_REMOVED: skip blocking serial wait in simulator. */'
-        : match
-    ));
-
-  const rewritten = stripBlockingSerialWaits(source.replace(/\bSerial\b(?!1)/g, 'Serial1'));
-  if (rewritten === source) return source;
-
-  const serialShim = [
-    '#ifdef ARDUINO_ARCH_RP2040',
-    '// OPENHW_SIM_SERIAL_REWRITE: route Serial monitor traffic to UART0 (GP0/GP1)',
-    '// and prevent blocking while(!Serial...) waits in simulator mode.',
-    '#endif',
-    '',
-  ].join('\n');
-
-  return `${serialShim}${rewritten}`;
-}
-
-const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
-
-function resolveRp2040SourceMode({
-  configuredMode,
-  activePrefersIno,
-  activePrefersPy,
-  hasNativeSketch,
-  hasPythonSource,
-  prefersNativeFromSyntax = false,
-}) {
-  const mode = String(configuredMode || 'auto').toLowerCase();
-
-  if (mode === 'cp' || mode === 'circuitpy' || mode === 'circuitpython') {
-    return 'cp';
-  }
-
-  if (mode === 'py' || mode === 'python' || mode === 'micropython') {
-    return 'py';
-  }
-
-  if (mode === 'ino' || mode === 'native' || mode === 'none') return 'ino';
-
-  if (activePrefersIno) return 'ino';
-  if (activePrefersPy) return mode === 'cp' ? 'cp' : 'py';
-
-  if (hasNativeSketch || prefersNativeFromSyntax) return 'ino';
-  if (hasPythonSource) return mode === 'cp' ? 'cp' : 'py';
-  return 'ino';
-}
-
-function resolveComponentAttrString(attrs, key, fallback = '') {
-  const raw = attrs?.[key];
-  if (typeof raw === 'string') return raw;
-  if (raw && typeof raw === 'object') {
-    if (typeof raw.value === 'string') return raw.value;
-    if (typeof raw.default === 'string') return raw.default;
-    if (raw.value != null) return String(raw.value);
-    if (raw.default != null) return String(raw.default);
-  }
-  if (raw == null) return fallback;
-  return String(raw);
-}
-
-function ensureMicroPythonSerialProbe(sourceCode, boardId) {
-  const script = String(sourceCode || '').trim();
-  const marker = 'OpenHW RP2040 UART0 ready';
-  if (script.includes(marker)) return script;
-
-  const probe = `print("${marker}: ${boardId}")`;
-  if (!script) return `${probe}\n`;
-  return `${probe}\n${script}\n`;
-}
-
-function applyRp2040MicroPythonCompat(sourceCode) {
-  const script = String(sourceCode || '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
-  if (!script) return script;
-  if (script.includes('OPENHW_RP2040_SLEEP_COMPAT')) return script;
-
-  const needsSleepCompat = /\btime\.sleep_ms\s*\(|\bsleep_ms\s*\(/.test(script);
-  if (!needsSleepCompat) return script;
-
-  const prelude = [
-    '# OPENHW_RP2040_SLEEP_COMPAT',
-    'def _openhw_sleep_ms(ms):',
-    '    ms = int(ms)',
-    '    if ms <= 0:',
-    '        return',
-    '    for _ in range(ms * 500):',
-    '        pass',
-    '',
-  ].join('\n');
-
-  const rewritten = script
-    .replace(/\btime\.sleep_ms\s*\(/g, '_openhw_sleep_ms(')
-    .replace(/\bsleep_ms\s*\(/g, '_openhw_sleep_ms(');
-
-  return `${prelude}\n${rewritten}\n`;
-}
-
-function isProgrammableBoardType(type) {
-  return /(arduino|esp32|stm32|rp2040|pico)/i.test(String(type || ''));
-}
-
-
-function endpointAliases(endpoint) {
-  const [compId, pinIdRaw] = String(endpoint || '').split(':');
-  const pinId = String(pinIdRaw || '');
-  if (!compId || !pinId) return [String(endpoint || '')];
-
-  const aliases = new Set([`${compId}:${pinId}`]);
-  if (/^\d+$/.test(pinId)) aliases.add(`${compId}:D${pinId}`);
-  if (/^D\d+$/i.test(pinId)) aliases.add(`${compId}:${pinId.substring(1)}`);
-  if (/^gnd(_\d+)?$/i.test(pinId) || /^GND$/i.test(pinId)) aliases.add(`${compId}:gnd`);
-  if (/^5v$/i.test(pinId) || /^VCC$/i.test(pinId)) aliases.add(`${compId}:5V`);
-  return Array.from(aliases);
-}
-
-/**
- * Helper to check if two category sets (strings or arrays) have any common elements.
- * Used by the canvas pin-matching and suggestion UI.
- */
-function hasCategoryIntersection(cat1, cat2) {
-  if (!cat1 || !cat2) return false;
-  const arr1 = Array.isArray(cat1) ? cat1 : [cat1];
-  const arr2 = Array.isArray(cat2) ? cat2 : [cat2];
-  return arr1.some(c => arr2.includes(c));
-}
-
-/**
- * Determines the logical category (or categories) of a pin.
- * Returns an array of strings, or null if no category matches.
- * Used by the canvas pin-matching and suggestion UI.
- */
-function getPinCategory(pId, pDesc, compType) {
-  const sId = String(pId || '').toLowerCase();
-  const sDesc = String(pDesc || '').toLowerCase();
-  const matches = (regex) => regex.test(sId) || regex.test(sDesc);
-  const categories = [];
-
-  // 1. GND
-  if (matches(/^([a-z0-9]+[._])?(gnd|vss|0v|ground|com)([._]?\d+)?$/i)) categories.push('GND');
-
-  // 2. POWER
-  if (matches(/^([a-z0-9]+[._])?(vcc|vdd|5v|3v3|3\.3v|v\+|power|vcc[12]|vbat|1\.8v|led|light|vout)([._]?\d+)?$/i)) {
-    if (compType?.includes('arduino') && (sId === 'vin' || sId.includes('vin.'))) {
-      categories.push('VIN');
-    } else {
-      categories.push('POWER');
-    }
-  }
-
-  // 3. I2C
-  if (matches(/^sda([._]?\d+)?$/i)) categories.push('I2C_SDA');
-  if (matches(/^scl([._]?\d+)?$/i)) categories.push('I2C_SCL');
-  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano')) {
-    if (sId === 'a4') categories.push('I2C_SDA');
-    if (sId === 'a5') categories.push('I2C_SCL');
-  }
-
-  // 4. SPI
-  if (matches(/^(mosi|din|dn|sdi)([._]?\d+)?$/i)) categories.push('SPI_MOSI');
-  if (matches(/^(miso|dout|sdo)([._]?\d+)?$/i)) categories.push('SPI_MISO');
-  if (matches(/^(sck|sclk|clk|clock)([._]?\d+)?$/i)) categories.push('SPI_SCK');
-
-  // 5. ANALOG
-  if (matches(/^(a\d+|vrx|vry|an|adc|out)([._]?\d+)?$/i)) {
-    if (sId === 'vrx' || (compType?.includes('arduino') && sId === 'a0')) categories.push('ANALOG_X');
-    if (sId === 'vry' || (compType?.includes('arduino') && sId === 'a1')) categories.push('ANALOG_Y');
-    categories.push('ANALOG');
-  }
-
-  // 6. PWM
-  if (matches(/^(pwm|~)([._]?\d+)?$/i)) categories.push('PWM');
-  if ((compType === 'wokwi-arduino-uno' || compType === 'wokwi-arduino-nano') && ['3', '5', '6', '9', '10', '11'].includes(sId)) categories.push('PWM');
-  if (compType === 'wokwi-arduino-mega') {
-    const pinNum = parseInt(sId);
-    if ((pinNum >= 2 && pinNum <= 13) || [44, 45, 46].includes(pinNum)) categories.push('PWM');
-  }
-
-  // 7. Motor Driver / EN Special
-  if (matches(/^en([._]?\d+(,\d+)?)?$/i)) {
-    if (!categories.includes('PWM')) categories.push('PWM');
-    if (!categories.includes('POWER')) categories.push('POWER');
-  }
-
-  // 8. MOTOR OUTPUT
-  if (matches(/^(out\d+)([._]?\d+)?$/i) || ((compType === 'wokwi-motor' || compType === 'wokwi-stepper-motor') && /^\d+$/.test(sId))) {
-    categories.push('MOTOR');
-  }
-
-  // 9. DIGITAL
-  if (matches(/^(d\d+|io\d+|gpio\d+|sw|joy_sw|dc|rst|reset|cs|ce|sce|ss|rs|en|enable|in\d+|\d+)([._]?\d+)?$/i)) {
-    if (!(compType?.includes('arduino') && sId.startsWith('a'))) {
-      if (!categories.includes('DIGITAL')) categories.push('DIGITAL');
-    }
-  }
-
-  // 10. Breadboard
-  if (compType?.startsWith('wokwi-breadboard') && /^\d+[a-j]$/i.test(sId)) {
-    const colNum = sId.match(/^\d+/)[0];
-    const rowLetter = sId.slice(-1);
-    const rowHalf = 'abcde'.includes(rowLetter) ? 'top' : 'bottom';
-    categories.push(`BB_${colNum}_${rowHalf}`);
-  }
-
-  return categories.length > 0 ? categories : null;
-}
-
-// ─── Memoized Wire Component ────────────────────────────────────────────────
-const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset), [p1, e1, e2, p2, wire.waypoints, wire.path, offset]);
-  const isOrphaned = p1.isFallback || p2.isFallback;
-
-  // Logic: 
-  // - If forced to top: non-selected wires use 0.6 opacity/1.5px (Feedback)
-  // - If at bottom: non-selected wires use 1.0 opacity/2.0px (Normal)
-  const isBelow = !wiresAlwaysOnTop && !isSelected;
-  const useFeedback = wiresAlwaysOnTop && !isSelected;
-
-  return (
-    <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
-      <path id={`wire-path-hit-${wire.id}`} d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
-      <path id={`wire-path-ui-${wire.id}`} d={wirePath}
-        stroke={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))}
-        strokeWidth={isSelected ? 2.5 : (useFeedback ? 1.8 : 2.0)}
-        fill="none"
-        strokeDasharray={isSelected || wire.isNew || isOrphaned ? "6 4" : "none"}
-        strokeLinecap="round"
-        opacity={useFeedback ? 0.75 : 1.0}
-        style={{ animation: (wire.isNew || isOrphaned) ? 'autofixWirePulse 1.5s infinite linear' : 'none' }}
-      />
-      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
-      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, _, i, arr) => {
-        if (i < 1 || i >= arr.length - 2) return acc;
-        const a = arr[i], b = arr[i + 1];
-        const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-        if (segLen < 20) return acc;
-        const isHoriz = Math.abs(b.y - a.y) < 1;
-        const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-        acc.push(
-          <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
-            fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
-            stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
-            opacity={isSelected ? 1 : 0.55}
-            style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-            title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-            onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr)}
-            onClick={ev => ev.stopPropagation()}
-          />
-        );
-        return acc;
-      }, [])}
-    </g>
-  );
-});
-
-// ─── Memoized Component Wrapper ──────────────────────────────────────────────
-const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
-  const liveState = useSyncExternalStore(
-    useCallback((onStoreChange) => subscribeLiveOopState(comp.id, onStoreChange), [comp.id, subscribeLiveOopState]),
-    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot]),
-    useCallback(() => getLiveOopStateSnapshot(comp.id), [comp.id, getLiveOopStateSnapshot])
-  );
-
-  const rad = ((comp.rotation || 0) * Math.PI) / 180;
-  const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
-
-  const getBounds = () => {
-    const reg = COMPONENT_REGISTRY[comp.type];
-    if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-    if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-    return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-  };
-  const b = getBounds();
-
-  const attrs = getComponentStateAttrs(comp, liveState);
-  const isOverloaded = attrs.glow === true || attrs.isOverloaded === true;
-
-  return (
-    <React.Fragment>
-      {isOverloaded && (
-        <div
-          className="overload-glow"
-          style={{
-            position: 'absolute',
-            left: comp.x + b.x - 10, top: comp.y + b.y - 10,
-            width: b.w + 20, height: b.h + 20,
-            borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(239,68,68,0.5) 0%, transparent 70%)',
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        />
-      )}
-      <div
-        id={`comp-hit-${comp.id}`}
-        style={{
-          position: 'absolute',
-          left: 0, top: 0,
-          width: comp.w, height: comp.h,
-          zIndex: isSelected ? 4 : 2,
-          userSelect: 'none',
-          pointerEvents: 'none',
-          transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-          transformOrigin: 'center center',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            left: b.x, top: b.y,
-            width: b.w, height: b.h,
-            cursor: 'move',
-            pointerEvents: 'auto',
-            zIndex: 0,
-          }}
-          onMouseDown={onMouseDown}
-          onClick={onClick}
-          onDoubleClick={e => e.stopPropagation()}
-        />
-
-        {/* Autofix preview panel intentionally rendered at page level (not per-component) */}
-        {isSelected && (
-          <div style={{
-            position: 'absolute',
-            left: b.x - 6, top: b.y - 6,
-            width: b.w + 12, height: b.h + 12,
-            borderRadius: 8,
-            border: '2px solid var(--accent)',
-            boxShadow: '0 0 16px var(--glow)',
-            pointerEvents: 'none', zIndex: 10,
-          }} />
-        )}
-        {hasError && (
-          <div
-            className="safety-pulse"
-            style={{
-              position: 'absolute',
-              left: b.x - 8, top: b.y - 8,
-              width: b.w + 16, height: b.h + 16,
-              borderRadius: 12,
-              border: '2px solid #ef4444',
-              boxShadow: '0 0 20px rgba(239,68,68,0.6)',
-              pointerEvents: 'none', zIndex: 9,
-              background: 'rgba(239,68,68,0.05)',
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'flex-end',
-              padding: '4px'
-            }}
-          >
-            <div style={{
-              background: '#ef4444',
-              borderRadius: '50%',
-              width: '18px', height: '18px',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'white', fontSize: '12px', fontWeight: 'bold',
-              boxShadow: '0 0 8px rgba(239,68,68,0.8)',
-              transform: 'translate(4px, -4px)'
-            }}>!</div>
-          </div>
-        )}
-      </div>
-    </React.Fragment>
-  );
-});
-
 const EMPTY_LIVE_STATE = {};
+
+function syncNextIds(components, wires) {
+  let max = 0;
+  (wires || []).forEach(w => {
+    const m = String(w.id || '').match(/^w(\d+)$/);
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  nextWireId = max + 1;
+}
+
 
 export function SimulatorPage({ gamificationMode = false }) {
   const { isAuthenticated, isAdminAuthenticated, user, adminUser, token, logout, loading: authLoading } = useAuth()
@@ -1575,20 +238,112 @@ export function SimulatorPage({ gamificationMode = false }) {
   const gamProject = useMemo(() => gamificationMode && typeof PROJECTS !== 'undefined' ? (PROJECTS.find(p => p.slug === projectName) ?? null) : null, [gamificationMode, projectName])
   const [gamPanelOpen, setGamPanelOpen] = useState(true)
   const [gamTab, setGamTab] = useState('components')
-
   const WOKWI_TO_COMP_ID = useMemo(() => ({
     'wokwi-led': 'led',
+    'openhw-led': 'led',
     'wokwi-resistor': 'resistor',
+    'openhw-resistor': 'resistor',
     'wokwi-pushbutton': 'button',
+    'openhw-pushbutton': 'button',
     'wokwi-potentiometer': 'potentiometer',
+    'openhw-potentiometer': 'potentiometer',
+    'wokwi-slide-potentiometer': 'potentiometer',
+    'openhw-slide-potentiometer': 'potentiometer',
     'wokwi-buzzer': 'buzzer',
+    'openhw-buzzer': 'buzzer',
     'wokwi-rgb-led': 'rgb-led',
+    'openhw-rgb-led': 'rgb-led',
     'wokwi-ntc-temperature-sensor': 'dht11',
+    'openhw-ntc-temperature-sensor': 'dht11',
     'wokwi-hc-sr04': 'ultrasonic',
+    'openhw-hc-sr04': 'ultrasonic',
     'wokwi-servo': 'servo',
+    'openhw-servo': 'servo',
     'wokwi-lcd1602': 'lcd',
+    'wokwi-lcd1602-i2c': 'lcd',
+    'openhw-lcd1602-i2c': 'lcd',
+    'wokwi-lcd2004-i2c': 'lcd',
+    'openhw-lcd2004-i2c': 'lcd',
     'wokwi-analog-joystick': 'analog-joystick',
+    'openhw-analog-joystick': 'analog-joystick',
     'wokwi-membrane-keypad': 'keypad',
+    'openhw-membrane-keypad': 'keypad',
+    'wokwi-rotary-encoder': 'rotary-encoder',
+    'openhw-rotary-encoder': 'rotary-encoder',
+    'wokwi-nokia-5110': 'nokia-5110',
+    'openhw-nokia-5110': 'nokia-5110',
+    'wokwi-soil-moisture-sensor': 'soil-moisture-sensor',
+    'openhw-soil-moisture-sensor': 'soil-moisture-sensor',
+    'wokwi-logic-analyzer': 'logic-analyzer',
+    'openhw-logic-analyzer': 'logic-analyzer',
+    'wokwi-sd-card': 'sd-card',
+    'openhw-sd-card': 'sd-card',
+    'wokwi-ldr-module': 'ldr-module',
+    'openhw-ldr-module': 'ldr-module',
+    'wokwi-tm1637-7segment': 'tm1637-7segment',
+    'openhw-tm1637-7segment': 'tm1637-7segment',
+    'wokwi-cd74hc4067': 'cd74hc4067',
+    'openhw-cd74hc4067': 'cd74hc4067',
+    'wokwi-7segment': '7segment',
+    'openhw-7segment': '7segment',
+    'wokwi-a4988': 'a4988',
+    'openhw-a4988': 'a4988',
+    'wokwi-bmp180': 'bmp180',
+    'openhw-bmp180': 'bmp180',
+    'wokwi-bmp180-breakout': 'bmp180',
+    'openhw-bmp180-breakout': 'bmp180',
+    'wokwi-ds1307-rtc': 'rtc',
+    'openhw-ds1307-rtc': 'rtc',
+    'wokwi-ili9341': 'ili9341',
+    'openhw-ili9341': 'ili9341',
+    'wokwi-l293d': 'l293d',
+    'openhw-l293d': 'l293d',
+    'wokwi-max7219': 'max7219',
+    'openhw-max7219': 'max7219',
+    'wokwi-mpu6050': 'mpu6050',
+    'openhw-mpu6050': 'mpu6050',
+    'wokwi-nlsf595': 'nlsf595',
+    'openhw-nlsf595': 'nlsf595',
+    'wokwi-pca9685': 'pca9685',
+    'openhw-pca9685': 'pca9685',
+    'wokwi-pca9865': 'pca9865',
+    'openhw-pca9865': 'pca9865',
+    'wokwi-relay-module': 'relay',
+    'openhw-relay-module': 'relay',
+    'wokwi-ssd1306-oled': 'oled',
+    'openhw-ssd1306-oled': 'oled',
+    'wokwi-stepper-motor': 'stepper',
+    'openhw-stepper-motor': 'stepper',
+    'wokwi-arduino-uno': 'uno',
+    'openhw-arduino-uno': 'uno',
+    'wokwi-arduino-mega': 'mega',
+    'openhw-arduino-mega': 'mega',
+    'wokwi-arduino-nano': 'nano',
+    'openhw-arduino-nano': 'nano',
+    'wokwi-attiny85': 'attiny85',
+    'openhw-attiny85': 'attiny85',
+    'wokwi-raspberry-pi-pico': 'pico',
+    'openhw-pico': 'pico',
+    'wokwi-raspberry-pi-pico-w': 'pico-w',
+    'openhw-pico-w': 'pico-w',
+    'wokwi-power-supply': 'power-supply',
+    'openhw-power-supply': 'power-supply',
+    'wokwi-battery': 'battery',
+    'openhw-battery': 'battery',
+    'wokwi-charger': 'charger',
+    'openhw-charger': 'charger',
+    'wokwi-breadboard': 'breadboard',
+    'openhw-breadboard': 'breadboard',
+    'wokwi-breadboard-half': 'breadboard',
+    'openhw-breadboard-half': 'breadboard',
+    'wokwi-breadboard-mini': 'breadboard',
+    'openhw-breadboard-mini': 'breadboard',
+    'wokwi-neopixel-matrix': 'neopixel',
+    'openhw-neopixel-matrix': 'neopixel',
+    'wokwi-neopixel-ring': 'neopixel',
+    'openhw-neopixel-ring': 'neopixel',
+    'wokwi-arduino-sensor-shield': 'shield',
+    'openhw-arduino-sensor-shield': 'shield',
   }), [])
 
   const isPaletteItemLocked = useCallback((itemType) => {
@@ -1597,12 +352,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (!compId) return false
     return isUnlocked ? !isUnlocked(compId) : false
   }, [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID])
-
-  const [lockToast, setLockToast] = useState(null)
-  const showLockToast = useCallback((label, compId) => {
-    setLockToast({ label, compId })
-    setTimeout(() => setLockToast(null), 3500)
-  }, [])
 
   const gamProjectComponents = useMemo(() => {
     if (!gamProject?.components) return []
@@ -1675,6 +424,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const [, setCustomCatalogCounter] = useState(0); // Trigger palette re-render on injection
   const [previewBanner, setPreviewBanner] = useState(null); // { id, label } — set when opened from admin "Test in Simulator"
+  const [lockToast, setLockToast] = useState(null)
   const [isSubmittingAssessment, setIsSubmittingAssessment] = useState(false)
   const [autoWiringEnabled, setAutoWiringEnabled] = useState(false);
   const [autoBreadboardEnabled, setAutoBreadboardEnabled] = useState(false);
@@ -1695,7 +445,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [hoveredPin, setHoveredPin] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
   const [codeTab, setCodeTab] = useState('code')
-  const [code, setCode] = useState('void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n')
+  const { code, setCode } = useEditorStore();
   const [solverMode, setSolverMode] = useState('logic')
   const [webGpuSupported, setWebGpuSupported] = useState(false)
   const [blocklyXml, setBlocklyXml] = useState('')
@@ -1703,6 +453,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [renameState, setRenameState] = useState({ id: null, x: 0, y: 0 });
   const [valueState, setValueState] = useState({ id: null, x: 0, y: 0, key: 'value' });
   const [showEngineSelector, setShowEngineSelector] = useState(false)
+
+
   useEffect(() => {
     if (navigator.gpu) {
       setWebGpuSupported(true);
@@ -1718,10 +470,23 @@ export function SimulatorPage({ gamificationMode = false }) {
       return saved === null ? true : saved === 'true';
     } catch (_) { return true; }
   })
-  const [projectFiles, setProjectFiles] = useState([])
-  const [openCodeTabs, setOpenCodeTabs] = useState([])
-  const [activeCodeFileId, setActiveCodeFileId] = useState('')
-  const [showCodeExplorer, setShowCodeExplorer] = useState(true)
+  const {
+    projectFiles,
+    setProjectFiles,
+    openCodeTabs,
+    setOpenCodeTabs,
+    activeCodeFileId,
+    setActiveCodeFileId,
+    showCodeExplorer,
+    setShowCodeExplorer,
+    openCodeFile,
+    closeCodeTab,
+    saveCodeFile,
+    duplicateCodeFile,
+    renameCodeFile,
+    toggleCodeFileDisabled,
+    deleteCodeFile,
+  } = useEditorStore();
   const suppressCodeSyncRef = useRef(false)
   const [isPanelOpen, setIsPanelOpen] = useState(true)
   const [panelWidth, setPanelWidth] = useState(580)
@@ -1729,11 +494,34 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [isDragging, setIsDragging] = useState(false)
   const [isExplorerDragging, setIsExplorerDragging] = useState(false)
   const [isComponentDragging, setIsComponentDragging] = useState(false)
-  const [showComponentDesc, setShowComponentDesc] = useState(false) // description panel visible
   const [showCreateComponentModal, setShowCreateComponentModal] = useState(false)
+  const handleCloseCreateComponentModal = useCallback(() => {
+    setShowCreateComponentModal(false);
+  }, []);
+  const [showComponentDesc, setShowComponentDesc] = useState(false) // description panel visible
   const [showInspector, setShowInspector] = useState(false);
   const [hoveredElement, setHoveredElement] = useState(null); // { type: 'wire'|'pin'|'comp', id, data }
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const rightPanelRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const isExplorerDraggingRef = useRef(false);
+
+  useEffect(() => { isDraggingRef.current = isDragging; }, [isDragging]);
+  useEffect(() => { isExplorerDraggingRef.current = isExplorerDragging; }, [isExplorerDragging]);
+
+  const {
+    showTour,
+    setShowTour,
+    tourActiveStep,
+    setTourActiveStep,
+    handleFinishTour,
+    handleTourDemoAction
+  } = useTourLogic({
+    setComponents,
+    setWires,
+    setCodeTab,
+    setIsPanelOpen
+  });
 
   useEffect(() => {
     if (showInspector) {
@@ -2061,7 +849,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const projectFileMap = useMemo(() => {
     const m = new Map();
-    projectFiles.forEach((f) => m.set(f.id, f));
+    (projectFiles || []).forEach((f) => m.set(f.id, f));
     return m;
   }, [projectFiles]);
 
@@ -2070,7 +858,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const boardComponents = useMemo(() => components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type)), [components]);
   const boardComponentMap = useMemo(() => {
     const map = new Map();
-    boardComponents.forEach((component) => {
+    (boardComponents || []).forEach((component) => {
       map.set(component.id, component);
     });
     return map;
@@ -2115,9 +903,15 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // View Panel State
   const [showViewPanel, setShowViewPanel] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const [viewPanelSection, setViewPanelSection] = useState(null); // null | 'schematic' | 'components'
   const [schematicLoading, setSchematicLoading] = useState(false);
   const [schematicDataUrl, setSchematicDataUrl] = useState(null);
+
+  const showLockToast = useCallback((label, compId) => {
+    setLockToast({ label, compId })
+    setTimeout(() => setLockToast(null), 3500)
+  }, [])
 
   useEffect(() => {
     if (!showFirmwareDownloadDialog) return;
@@ -2162,6 +956,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const liveNeopixelDataRef = useRef({})
   const liveOopStatesRef = useRef({})
   const liveOopStateListenersRef = useRef(new Map())
+  const buttonInteractStartTimeRef = useRef(null)
 
   const serialPlotBufferRef = useRef('');
   const serialPlotLabelsRef = useRef([]);
@@ -2218,17 +1013,17 @@ export function SimulatorPage({ gamificationMode = false }) {
     // Remote OOP state takes priority
     const remoteState = liveStateOverride || liveOopStatesRef.current[comp.id];
 
-    if (comp.type === 'wokwi-led') {
+    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       delete attrs.value; // Let ui.tsx handle it
-    } else if (comp.type === 'wokwi-servo') {
+    } else if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
-    } else if (comp.type === 'wokwi-stepper-motor') {
+    } else if (comp.type === 'wokwi-stepper-motor' || comp.type === 'openhw-stepper-motor') {
       if (remoteState && remoteState.angle !== undefined) {
         attrs.angle = remoteState.angle.toString();
       }
-    } else if (comp.type === 'wokwi-buzzer') {
+    } else if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
       if (remoteState && remoteState.isBuzzing) {
         // Wokwi buzzer visual indicator (if supported) can be driven here
         attrs.color = "red";
@@ -2237,12 +1032,26 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Pass interactions to the Web Worker
     attrs.onInteract = (event) => {
-      console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
+      // console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
+
+      // Track keydown/press start time for latency monitoring
+      if (event === 'press') {
+        buttonInteractStartTimeRef.current = {
+          compId: comp.id,
+          time: performance.now()
+        };
+        console.log(`[Latency Trace] [START] Interaction 'press' initiated on component ${comp.id}`);
+      }
 
       // Handle physical board reset button presses
       if (isProgrammableBoardType(comp.type) && event === 'RESET') {
         if (isRunning) handleReset();
         return;
+      }
+
+      // Persist input values (e.g. potentiometer position) to project state immediately
+      if (typeof event === 'object' && event?.type === 'input' && event.value !== undefined) {
+        updateComponentAttr(comp.id, 'value', event.value);
       }
 
       if (workerRef.current && isRunning) {
@@ -2302,10 +1111,43 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentProjectName, setCurrentProjectName] = useState('Untitled');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [isPaletteHovered, setIsPaletteHovered] = useState(false);
   const [showF1Menu, setShowF1Menu] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1.0);
   const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
   const [showSpeedDialog, setShowSpeedDialog] = useState(false);
+
+  const [componentTelemetryEnabled, setComponentTelemetryEnabled] = useState(false);
+  const [deepSiliconDebuggingEnabled, setDeepSiliconDebuggingEnabled] = useState(() => {
+    return localStorage.getItem('openhw.deepSiliconDebugging') === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('openhw.deepSiliconDebugging', deepSiliconDebuggingEnabled ? 'true' : 'false');
+  }, [deepSiliconDebuggingEnabled]);
+
+  const [telemetryMode, setTelemetryMode] = useState('detail');
+  const [telemetrySampleInterval, setTelemetrySampleInterval] = useState(250);
+  const [selectedTelemetryComponentIds, setSelectedTelemetryComponentIds] = useState([]);
+  const [showTelemetrySelectModal, setShowTelemetrySelectModal] = useState(false);
+
+  const { handleTelemetryStateMessage, telemetryWatchedParamsMap, setTelemetryWatchedParamsMap } = useTelemetryManager({
+    workerRef,
+    appendConsoleEntry,
+    simulationSpeed,
+    componentTelemetryEnabled,
+    setComponentTelemetryEnabled,
+    telemetryMode,
+    setTelemetryMode,
+    telemetrySampleInterval,
+    selectedTelemetryComponentIds,
+    setSelectedTelemetryComponentIds,
+  });
+
+  const handleTelemetryStateMessageRef = useRef(handleTelemetryStateMessage);
+  useEffect(() => {
+    handleTelemetryStateMessageRef.current = handleTelemetryStateMessage;
+  }, [handleTelemetryStateMessage]);
+
   const [saveDialogName, setSaveDialogName] = useState('');
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
@@ -2361,6 +1203,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   });
   const backupRestoreInputRef = useRef(null);
+  const wokwiImportInputRef = useRef(null);
 
   const handleUploadZip = useCallback(async (event) => {
     const file = event.target.files[0];
@@ -2725,6 +1568,11 @@ export function SimulatorPage({ gamificationMode = false }) {
     openCodeTabs,
     activeCodeFileId,
   }), [activeCodeFileId, board, code, components, currentProjectName, openCodeTabs, projectFiles, wires]);
+  const replaceFilePath = useCallback((oldPath, newPath) => {
+    const nextName = String(newPath || '').split('/').pop();
+    if (nextName) renameCodeFile(oldPath, nextName);
+  }, [renameCodeFile]);
+
   const applyLiveMeetingSnapshot = useCallback((snapshot) => {
     const normalizedSnapshot = snapshot && typeof snapshot === 'object' ? snapshot : {};
     lastLiveSyncPayloadRef.current = JSON.stringify(normalizedSnapshot);
@@ -3227,7 +2075,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         currentProjectIdRef.current = id;
         setCurrentProjectId(id);
       }
-      await saveProject({
+      const finalName = await saveProject({
         id,
         name: currentProjectName || 'Untitled',
         board,
@@ -3242,6 +2090,9 @@ export function SimulatorPage({ gamificationMode = false }) {
         activeCodeFileId,
         owner,
       });
+      if (finalName && finalName !== currentProjectName) {
+        setCurrentProjectName(finalName);
+      }
     }, 2500);
 
     return () => clearTimeout(autoSaveTimerRef.current);
@@ -3298,7 +2149,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const signature = `${dragMode}:${Math.round(fps)}:${Math.round(worstFrameMs)}:${solverMode}`;
         const prev = runFpsTelemetryLastLogRef.current.get('browser') || null;
 
-        if (prev !== signature) {
+        if (prev !== signature && !isDragging && !isExplorerDragging) {
           const line = [
             'FPS browser',
             `mode=${dragMode}`,
@@ -3684,18 +2535,34 @@ export function SimulatorPage({ gamificationMode = false }) {
   // ── Handle Panel Resize ──────────────────────────────────────────────────────
   const onMouseDownResize = useCallback((e) => {
     e.preventDefault();
+    const startWidth = panelWidth;
+    if (rightPanelRef.current?.aside) {
+      rightPanelRef.current.aside.style.setProperty('--panel-width', `${startWidth}px`);
+    }
     setIsDragging(true);
     const startX = e.clientX;
-    const startWidth = panelWidth;
+    let finalWidth = startWidth;
 
     const onMouseMove = (moveEvent) => {
+      const start = performance.now();
       const delta = startX - moveEvent.clientX; // Left drag increases width
-      const newWidth = Math.max(250, Math.min(800, startWidth + delta));
-      setPanelWidth(newWidth);
+      const maxWidth = Math.min(1100, window.innerWidth * 0.7);
+      finalWidth = Math.max(250, Math.min(maxWidth, startWidth + delta));
+      if (rightPanelRef.current?.aside) {
+        rightPanelRef.current.aside.style.setProperty('--panel-width', `${finalWidth}px`);
+      }
+      const duration = performance.now() - start;
+      if (duration > 5) {
+        console.warn(`[Performance] onMouseDownResize.onMouseMove took ${duration.toFixed(2)}ms`);
+      }
     };
 
     const onMouseUp = () => {
       setIsDragging(false);
+      setPanelWidth(finalWidth);
+      if (rightPanelRef.current?.aside) {
+        rightPanelRef.current.aside.style.removeProperty('--panel-width');
+      }
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -3709,14 +2576,26 @@ export function SimulatorPage({ gamificationMode = false }) {
     e.stopPropagation();
     const startY = e.clientY;
     const startHeight = consoleHeight;
+    const consoleEl = document.querySelector('[data-simulation-console="true"]');
+    if (consoleEl) {
+      consoleEl.style.setProperty('--console-height', `${startHeight}px`);
+    }
+    let finalHeight = startHeight;
 
     const onMouseMove = (moveEvent) => {
       const delta = startY - moveEvent.clientY;
       const newHeight = Math.max(140, Math.min(540, startHeight + delta));
-      setConsoleHeight(newHeight);
+      finalHeight = newHeight;
+      if (consoleEl) {
+        consoleEl.style.setProperty('--console-height', `${finalHeight}px`);
+      }
     };
 
     const onMouseUp = () => {
+      setConsoleHeight(finalHeight);
+      if (consoleEl) {
+        consoleEl.style.removeProperty('--console-height');
+      }
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
     };
@@ -3727,24 +2606,41 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const onMouseDownExplorerResize = useCallback((e) => {
     e.preventDefault();
+    if (rightPanelRef.current?.explorer) {
+      rightPanelRef.current.explorer.style.setProperty('--explorer-width', `${explorerWidth}px`);
+    }
     setIsExplorerDragging(true);
-  }, []);
+  }, [explorerWidth]);
 
   useEffect(() => {
     if (!isExplorerDragging) return;
+    let finalExpWidth = explorerWidth;
     const onMouseMove = (e) => {
+      const start = performance.now();
       const rightPanelStart = window.innerWidth - panelWidth;
-      const newWidth = e.clientX - rightPanelStart;
-      setExplorerWidth(Math.max(120, Math.min(panelWidth - 100, newWidth)));
+      finalExpWidth = Math.max(120, Math.min(200, panelWidth - 100, e.clientX - rightPanelStart));
+      if (rightPanelRef.current?.explorer) {
+        rightPanelRef.current.explorer.style.setProperty('--explorer-width', `${finalExpWidth}px`);
+      }
+      const duration = performance.now() - start;
+      if (duration > 5) {
+        console.warn(`[Performance] onMouseDownExplorerResize.onMouseMove took ${duration.toFixed(2)}ms`);
+      }
     };
-    const onMouseUp = () => setIsExplorerDragging(false);
+    const onMouseUp = () => {
+      setIsExplorerDragging(false);
+      setExplorerWidth(finalExpWidth);
+      if (rightPanelRef.current?.explorer) {
+        rightPanelRef.current.explorer.style.removeProperty('--explorer-width');
+      }
+    };
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [isExplorerDragging, panelWidth]);
+  }, [isExplorerDragging, panelWidth, explorerWidth]);
 
   // ── Close palette context menu on outside click ──────────────────────────
   // paletteContextMenu effect moved to PalettePanel
@@ -3786,20 +2682,100 @@ export function SimulatorPage({ gamificationMode = false }) {
   // ── Static component descriptions ────────────────────────────────────────────
   const COMPONENT_DESCRIPTIONS = {
     'wokwi-led': 'Light-emitting diode. Emits light when current flows through it. Supports multiple colors.',
+    'openhw-led': 'Light-emitting diode. Emits light when current flows through it. Supports multiple colors.',
     'wokwi-arduino-uno': 'ATmega328P-based microcontroller board. 14 digital I/O pins, 6 analog inputs, USB connectivity.',
+    'openhw-arduino-uno': 'ATmega328P-based microcontroller board. 14 digital I/O pins, 6 analog inputs, USB connectivity.',
+    'wokwi-arduino-mega': 'ATmega2560-based microcontroller board. 54 digital I/O pins, 16 analog inputs, 4 UARTs.',
+    'openhw-arduino-mega': 'ATmega2560-based microcontroller board. 54 digital I/O pins, 16 analog inputs, 4 UARTs.',
+    'wokwi-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
+    'openhw-arduino-nano': 'Compact ATmega328P-based board. Similar to Uno but in a breadboard-friendly form factor.',
+    'wokwi-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
+    'openhw-attiny85': 'Small 8-pin microcontroller. Perfect for simple, low-power projects.',
+    'wokwi-raspberry-pi-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
+    'openhw-pico': 'Dual-core ARM Cortex-M0+ microcontroller. High performance and flexible digital interfaces.',
+    'wokwi-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
+    'openhw-breadboard': 'Full-size solderless breadboard. 830 tie points for prototyping circuits.',
+    'wokwi-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
+    'openhw-breadboard-half': 'Half-size solderless breadboard. 400 tie points for smaller circuits.',
+    'wokwi-breadboard-mini': 'Mini solderless breadboard. 170 tie points for very compact prototypes.',
+    'openhw-breadboard-mini': 'Mini solderless breadboard. 170 tie points for very compact prototypes.',
     'wokwi-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
+    'openhw-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
     'wokwi-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
+    'openhw-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
     'wokwi-power-supply': 'Provides stable DC power to the circuit. Configurable voltage output.',
+    'openhw-power-supply': 'Provides stable DC power to the circuit. Configurable voltage output.',
     'wokwi-neopixel-matrix': 'Addressable RGB LED matrix. Individually controllable pixels via single data line.',
+    'openhw-neopixel-matrix': 'Addressable RGB LED matrix. Individually controllable pixels via single data line.',
     'wokwi-buzzer': 'Piezoelectric buzzer. Generates audio tones when driven by PWM or digital signals.',
+    'openhw-buzzer': 'Piezoelectric buzzer. Generates audio tones when driven by PWM or digital signals.',
     'wokwi-motor': 'DC motor. Converts electrical energy to rotational motion. Controlled via H-bridge.',
+    'openhw-motor': 'DC motor. Converts electrical energy to rotational motion. Controlled via H-bridge.',
     'wokwi-servo': 'Hobby servo motor. Precise angular position control via PWM signal (0–180°).',
+    'openhw-servo': 'Hobby servo motor. Precise angular position control via PWM signal (0–180°).',
     'wokwi-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
+    'openhw-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
     'wokwi-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
+    'openhw-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
     'wokwi-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
+    'openhw-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
     'wokwi-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
+    'openhw-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
     'shift_register': '74HC595 8-bit serial-in, parallel-out shift register. Expands digital outputs.',
     'wokwi-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
+    'openhw-membrane-keypad': '4x4 Membrane Keypad. Provides a matrix of 16 buttons for code input or navigation.',
+    'wokwi-rgb-led': 'RGB LED. Emits red, green, blue, or mixed colors.',
+    'openhw-rgb-led': 'RGB LED. Emits red, green, blue, or mixed colors.',
+    'wokwi-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
+    'openhw-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
+    'wokwi-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
+    'openhw-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
+    'wokwi-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
+    'openhw-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
+    'wokwi-sd-card': 'MicroSD card module for SPI data logging and storage.',
+    'openhw-sd-card': 'MicroSD card module for SPI data logging and storage.',
+    'wokwi-ldr-module': 'Light-dependent resistor module with digital and analog outputs.',
+    'openhw-ldr-module': 'Light-dependent resistor module with digital and analog outputs.',
+    'wokwi-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
+    'openhw-tm1637-7segment': 'TM1637 4-digit 7-segment display module.',
+    'wokwi-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
+    'openhw-cd74hc4067': 'CD74HC4067 16-channel analog/digital multiplexer.',
+    'wokwi-7segment': '7-segment LED display.',
+    'openhw-7segment': '7-segment LED display.',
+    'wokwi-a4988': 'A4988 stepper motor driver.',
+    'openhw-a4988': 'A4988 stepper motor driver.',
+    'wokwi-bmp180': 'BMP180 barometric pressure and temperature sensor.',
+    'openhw-bmp180': 'BMP180 barometric pressure and temperature sensor.',
+    'wokwi-bmp180-breakout': 'BMP180 barometric pressure and temperature sensor breakout.',
+    'openhw-bmp180-breakout': 'BMP180 barometric pressure and temperature sensor breakout.',
+    'wokwi-ds1307-rtc': 'DS1307 Real-Time Clock module.',
+    'openhw-ds1307-rtc': 'DS1307 Real-Time Clock module.',
+    'wokwi-hc-sr04': 'HC-SR04 ultrasonic distance sensor.',
+    'openhw-hc-sr04': 'HC-SR04 ultrasonic distance sensor.',
+    'wokwi-ili9341': 'ILI9341 2.8 inch TFT LCD display.',
+    'openhw-ili9341': 'ILI9341 2.8 inch TFT LCD display.',
+    'wokwi-l293d': 'L293D motor driver IC.',
+    'openhw-l293d': 'L293D motor driver IC.',
+    'wokwi-lcd1602-i2c': '16x2 LCD display with I2C backpack.',
+    'openhw-lcd1602-i2c': '16x2 LCD display with I2C backpack.',
+    'wokwi-lcd2004-i2c': '20x4 LCD display with I2C backpack.',
+    'openhw-lcd2004-i2c': '20x4 LCD display with I2C backpack.',
+    'wokwi-max7219': 'MAX7219 8x8 LED matrix module.',
+    'openhw-max7219': 'MAX7219 8x8 LED matrix module.',
+    'wokwi-mpu6050': 'MPU6050 6-axis accelerometer and gyroscope.',
+    'openhw-mpu6050': 'MPU6050 6-axis accelerometer and gyroscope.',
+    'wokwi-nlsf595': 'NLSF595 tri-state shift register.',
+    'openhw-nlsf595': 'NLSF595 tri-state shift register.',
+    'wokwi-pca9685': 'PCA9685 16-channel 12-bit PWM/servo driver.',
+    'openhw-pca9685': 'PCA9685 16-channel 12-bit PWM/servo driver.',
+    'wokwi-pca9865': 'PCA9865 16-channel PWM module.',
+    'openhw-pca9865': 'PCA9865 16-channel PWM module.',
+    'wokwi-relay-module': 'Relay module for controlling high-power devices.',
+    'openhw-relay-module': 'Relay module for controlling high-power devices.',
+    'wokwi-ssd1306-oled': 'SSD1306 128x64 OLED display.',
+    'openhw-ssd1306-oled': 'SSD1306 128x64 OLED display.',
+    'wokwi-stepper-motor': 'Bipolar stepper motor.',
+    'openhw-stepper-motor': 'Bipolar stepper motor.',
   };
 
   // ── Error component IDs for highlighting ────────────────────────────────────
@@ -3860,12 +2836,107 @@ export function SimulatorPage({ gamificationMode = false }) {
       let changed = normalized.length !== prev.length;
       let result = [...normalized];
 
-      // Remove board files for boards no longer present
+      // Preserve and migrate board files for boards no longer present
       const validBoardIds = new Set(boardComponents.map(b => b.id));
-      const pruned = result.filter(f => {
+      const pruned = [];
+
+      // If boardComponents is empty (e.g. during initial mount/project loading before React setComponents commits,
+      // or when canvas is cleared/only contains non-board components), do not prune project files or generate board code
+      // to prevent wiping out loaded code files. However, we MUST still generate/update project/diagram.json.
+      if (boardComponents.length === 0) {
+        const diagramPayload = buildProjectPayload({
+          board,
+          components,
+          wires,
+          code,
+          includeCode: false,
+          blocklyXml,
+          blocklyGeneratedCode,
+          useBlocklyCode,
+          projectFiles: result,
+          openCodeTabs,
+          activeCodeFileId,
+        });
+        const diagramJsonPayload = { ...diagramPayload };
+        delete diagramJsonPayload.schemaVersion;
+        if (diagramJsonPayload.board === 'arduino_uno') delete diagramJsonPayload.board;
+        if (!diagramJsonPayload.components || diagramJsonPayload.components.length === 0) delete diagramJsonPayload.components;
+        if (!diagramJsonPayload.connections || diagramJsonPayload.connections.length === 0) delete diagramJsonPayload.connections;
+        if (!diagramJsonPayload.blocklyXml) delete diagramJsonPayload.blocklyXml;
+        if (!diagramJsonPayload.blocklyGeneratedCode) delete diagramJsonPayload.blocklyGeneratedCode;
+        if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
+        delete diagramJsonPayload.projectFiles;
+        delete diagramJsonPayload.openCodeTabs;
+        delete diagramJsonPayload.activeCodeFileId;
+        const diagramJson = JSON.stringify(diagramJsonPayload, null, 2);
+
+        const generatedRootFiles = [
+          { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
+        ];
+
+        generatedRootFiles.forEach((rootFile) => {
+          const idx = result.findIndex((file) => file.id === rootFile.id);
+          if (idx === -1) {
+            result.push(rootFile);
+            changed = true;
+            return;
+          }
+
+          const current = result[idx];
+          if (
+            current.path !== rootFile.path
+            || current.name !== rootFile.name
+            || current.kind !== rootFile.kind
+            || current.content !== rootFile.content
+            || current.dirty !== false
+          ) {
+            result[idx] = {
+              ...current,
+              path: rootFile.path,
+              name: rootFile.name,
+              kind: rootFile.kind,
+              content: rootFile.content,
+              dirty: false,
+            };
+            changed = true;
+          }
+        });
+
+        return changed ? normalizeProjectFiles(result) : prev;
+      }
+
+      result.forEach(f => {
         const m = f.path.match(/^project\/([^/]+)\//);
-        if (!m) return true;
-        return validBoardIds.has(m[1]);
+        if (!m) {
+          pruned.push(f);
+          return;
+        }
+        const fileBoardId = m[1];
+        if (validBoardIds.has(fileBoardId)) {
+          pruned.push(f);
+        } else if (boardComponents.length > 0) {
+          // Adopt orphan files into the first board that doesn't already have code files
+          const targetBoard = boardComponents.find(b => !result.some(existing => existing.boardId === b.id && existing.kind === 'code'));
+          if (targetBoard) {
+            const targetKind = normalizeBoardKind(targetBoard.type);
+            let newName = f.name;
+            if (f.name.startsWith(fileBoardId)) {
+              newName = f.name.replace(fileBoardId, targetBoard.id);
+            }
+            const newPath = `project/${targetBoard.id}/${newName}`;
+            if (!result.some(existing => existing.boardId === targetBoard.id && existing.path === newPath)) {
+              pruned.push({
+                ...f,
+                id: newPath,
+                path: newPath,
+                name: newName,
+                boardId: targetBoard.id,
+                boardKind: targetKind
+              });
+              changed = true;
+            }
+          }
+        }
       });
 
       if (pruned.length !== result.length) changed = true;
@@ -3907,6 +2978,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       };
 
+      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
+
       boardComponents.forEach((bc) => {
         const kind = normalizeBoardKind(bc.type);
         const basePath = `project/${bc.id}`;
@@ -3933,7 +3006,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const hasEnabledMainForMode = result.some((file) => {
           if (!file.path.startsWith(`${basePath}/`)) return false;
           if (isFileDisabled(file.path)) return false;
-          const ext = baseFileExt(file.path);
+          const ext = fileExt(file.path);
           if (kind !== 'rp2040') return ext === '.ino';
           return isRp2040PythonEnv(rp2040Mode) ? ext === '.py' : ext === '.ino';
         });
@@ -3958,7 +3031,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             .map((file) => file.path);
 
           boardFilePaths.forEach((pathLike) => {
-            const ext = baseFileExt(pathLike);
+            const ext = fileExt(pathLike);
             const disabled = isFileDisabled(pathLike);
             const shouldDisable = isRp2040PythonEnv(rp2040Mode)
               ? ARDUINO_CODE_EXTENSIONS.has(ext)
@@ -3969,9 +3042,20 @@ export function SimulatorPage({ gamificationMode = false }) {
             }
           });
         }
+
+        const libPath = `${basePath}/library.txt`;
+        upsert({
+          id: libPath,
+          path: libPath,
+          name: 'library.txt',
+          kind: 'code',
+          boardId: bc.id,
+          boardKind: kind,
+          content: libraries.join('\n'),
+          dirty: false,
+        });
       });
 
-      const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
       const diagramPayload = buildProjectPayload({
         board,
         components,
@@ -4002,8 +3086,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       const generatedRootFiles = [
         { id: 'project/diagram.json', path: 'project/diagram.json', name: 'diagram.json', kind: 'root', content: diagramJson, dirty: false },
-        { id: 'project/library.txt', path: 'project/library.txt', name: 'library.txt', kind: 'root', content: libraries.join('\n'), dirty: false },
       ];
+
+      const oldLibIdx = result.findIndex(f => f.id === 'project/library.txt');
+      if (oldLibIdx !== -1) {
+        result.splice(oldLibIdx, 1);
+        changed = true;
+      }
 
       generatedRootFiles.forEach((rootFile) => {
         const idx = result.findIndex((file) => file.id === rootFile.id);
@@ -4062,15 +3151,22 @@ export function SimulatorPage({ gamificationMode = false }) {
     setOpenCodeTabs(prev => prev.includes(firstCodeFile.id) ? prev : [...prev, firstCodeFile.id]);
   }, [projectFiles, activeCodeFileId, projectFileMap]);
 
+  const currentCodeRef = useRef(code);
+  useEffect(() => {
+    currentCodeRef.current = code;
+  }, [code]);
+
   useEffect(() => {
     if (!activeCodeFile) {
       suppressCodeSyncRef.current = true;
       setCode('');
       return;
     }
+    if (activeCodeFile.content === currentCodeRef.current) return;
+
     suppressCodeSyncRef.current = true;
     setCode(activeCodeFile.content || '');
-  }, [activeCodeFile?.id]);
+  }, [activeCodeFile?.id, activeCodeFile?.content]);
 
   useEffect(() => {
     if (!activeCodeFileId) return;
@@ -4119,12 +3215,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Normalize aliases
     const normalize = (id) => {
-      const s = String(id).toLowerCase();
+      let s = String(id).toLowerCase();
       if (s === 'p1') return '1';
       if (s === 'p2') return '2';
       if (s === 'a') return 'anode';
       if (s === 'k') return 'cathode';
-      return s;
+      if (s === '3.3v' || s === '3v3') return '3v3';
+      return s.replace(/[:.]/g, '_');
     };
 
     const normSearch = normalize(searchId);
@@ -4138,7 +3235,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       // Resilience: Try to find a pin that starts with the ID (e.g. "GND" matches "GND.1" or "gnd_1")
       pin = pins.find(p => {
         const pid = String(p.id).toLowerCase();
-        return pid === searchId || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
+        const normPid = normalize(pid);
+        return pid === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
       });
     }
     if (!pin) {
@@ -4168,7 +3266,33 @@ export function SimulatorPage({ gamificationMode = false }) {
     const comp = componentsMap.get(compId);
     if (!comp) return null;
     const pins = PIN_DEFS[comp.type] || [];
-    const pin = pins.find(p => String(p.id) === String(pinId));
+    const searchId = String(pinId).toLowerCase();
+
+    const normalize = (id) => {
+      let s = String(id).toLowerCase();
+      if (s === 'p1') return '1';
+      if (s === 'p2') return '2';
+      if (s === 'a') return 'anode';
+      if (s === 'k') return 'cathode';
+      if (s === '3.3v' || s === '3v3') return '3v3';
+      return s.replace(/[:.]/g, '_');
+    };
+
+    const normSearch = normalize(searchId);
+
+    let pin = pins.find(p => {
+      const pid = String(p.id).toLowerCase();
+      return pid === searchId || normalize(pid) === normSearch;
+    });
+
+    if (!pin) {
+      pin = pins.find(p => {
+        const pid = String(p.id).toLowerCase();
+        const normPid = normalize(pid);
+        return pid === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pid.startsWith(searchId + '.') || pid.startsWith(searchId + '_');
+      });
+    }
+
     if (!pin) {
       return { x: comp.x + (comp.w || 40) / 2, y: comp.y + (comp.h || 40) / 2, isFallback: true };
     }
@@ -4391,7 +3515,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     const catalogItem = COMPONENT_REGISTRY[item.type];
     const manifest = catalogItem?.manifest || catalogItem;
 
-    if (catalogItem && !isProgrammableBoardType(item.type) && !item.type.startsWith('wokwi-breadboard') && !item.type.startsWith('wokwi-resistor')) {
+    if (catalogItem && !isProgrammableBoardType(item.type) && !isBreadboardType(item.type) && !isResistorType(item.type)) {
       if (autoWiringEnabled || autoCodingEnabled) {
         const plan = await generateAutonomousSetup(
           components,
@@ -4659,10 +3783,10 @@ export function SimulatorPage({ gamificationMode = false }) {
       originalComps: JSON.parse(JSON.stringify(components))
     };
 
-    dragData.breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
+    dragData.breadboards = components.filter(c => isBreadboardType(c.type));
 
     // Performance: If breadboard, pre-calculate children once here
-    if (comp.type.startsWith('wokwi-breadboard')) {
+    if (isBreadboardType(comp.type)) {
       const childComps = components.filter(c => {
         if (c.id === id) return false;
         return wires.some(w =>
@@ -4698,6 +3822,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     // store it in a ref, then schedule one rAF callback to do all state updates.
     // This caps React renders at 60fps regardless of mouse polling rate.
     const onMove = (e) => {
+      // If we are resizing panels, BAIL OUT of all canvas mouse tracking to save CPU and prevent re-renders
+      if (isDraggingRef.current || isExplorerDraggingRef.current) return;
+
       // ── Synchronously read event data ───
       let compUpdate = null;
       let wireUpdate = null;
@@ -4714,7 +3841,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
         compUpdate = { id, newX: nx, newY: ny, snappingHoles: [] };
 
-        if (type && type.startsWith('wokwi-breadboard')) {
+        if (type && isBreadboardType(type)) {
           // Breadboard movement propagation
           const dx = nx - cx;
           const dy = ny - cy;
@@ -4762,24 +3889,36 @@ export function SimulatorPage({ gamificationMode = false }) {
           }
         }
       } else if (sd && canvasRef.current) {
-        // Fix #2 ─ wire segment drag
+        // Advanced Wire Interaction: Segment or Waypoint drag
         const rect = canvasRef.current.getBoundingClientRect();
         const mx = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
         const my = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
         const ddx = mx - sd.startMouseCanvas.x;
         const ddy = my - sd.startMouseCanvas.y;
+        
         if (Math.abs(ddx) >= 1 || Math.abs(ddy) >= 1) {
           sd.hasMoved = true;
           const newPts = sd.startPts.map(pt => ({ ...pt }));
-          const { segIdx, isHoriz } = sd;
-          if (isHoriz) {
-            newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
-            newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+          const { segIdx, isHoriz, mode } = sd;
+
+          if (mode === 'waypoint') {
+            // Free move waypoint
+            newPts[segIdx].x += ddx;
+            newPts[segIdx].y += ddy;
           } else {
-            newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
-            newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+            // Orthogonal segment drag
+            if (isHoriz) {
+              newPts[segIdx] = { ...newPts[segIdx], y: newPts[segIdx].y + ddy };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newPts[segIdx + 1].y + ddy };
+            } else {
+              newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
+            }
           }
-          wireUpdate = { wireId: sd.wireId, cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) };
+          wireUpdate = { 
+            wireId: sd.wireId, 
+            cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) 
+          };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
         // Fix #4 ─ canvas panning via direct DOM transform (zero React renders mid-pan)
@@ -4946,7 +4085,32 @@ export function SimulatorPage({ gamificationMode = false }) {
                   if (u) { curX = u.newX; curY = u.newY; }
                 }
                 const pins = LOCAL_PIN_DEFS[c.type] || [];
-                const pDef = pins.find(p => p.id === pid);
+                const searchId = String(pid).toLowerCase();
+
+                const normalize = (id) => {
+                  let s = String(id).toLowerCase();
+                  if (s === 'p1') return '1';
+                  if (s === 'p2') return '2';
+                  if (s === 'a') return 'anode';
+                  if (s === 'k') return 'cathode';
+                  if (s === '3.3v' || s === '3v3') return '3v3';
+                  return s.replace(/[:.]/g, '_');
+                };
+
+                const normSearch = normalize(searchId);
+
+                let pDef = pins.find(p => {
+                  const pId = String(p.id).toLowerCase();
+                  return pId === searchId || normalize(pId) === normSearch;
+                });
+
+                if (!pDef) {
+                  pDef = pins.find(p => {
+                    const pId = String(p.id).toLowerCase();
+                    const normPid = normalize(pId);
+                    return pId === searchId || normPid.startsWith(normSearch + '_') || normPid.startsWith(normSearch + '.') || pId.startsWith(searchId + '.') || pId.startsWith(searchId + '_');
+                  });
+                }
                 if (!pDef) return null;
                 const rotation = c.rotation || 0;
                 return getRotatedPoint(curX + pDef.x, curY + pDef.y, rotation, curX + c.w / 2, curY + c.h / 2);
@@ -5056,7 +4220,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         setHistory(h => ({ past: [...h.past.slice(-20), { components: origComps, wires: JSON.parse(JSON.stringify(wires)) }], future: [] }));
 
         // DETACHMENT: Remove old socket wires for this component (ONLY if moving a component, NOT a breadboard)
-        const isBreadboard = componentsRef.current.find(c => c.id === movedId)?.type.startsWith('wokwi-breadboard');
+        const isBreadboard = isBreadboardType(componentsRef.current.find(c => c.id === movedId)?.type);
         if (!isBreadboard) {
           setWires(prev => prev.filter(w => {
             const isFrom = w.from.startsWith(movedId + ':');
@@ -5068,7 +4232,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         // ATTACHMENT: Auto-create socket wires if snapped
         const comp = componentsRef.current.find(c => c.id === movedId);
         const finalComp = comp ? { ...comp, x: finalX, y: finalY } : null;
-        if (finalComp && !finalComp.type.startsWith('wokwi-breadboard')) {
+        if (finalComp && !isBreadboardType(finalComp.type)) {
           const { snappedWires } = robustSnapComponent(finalComp, componentsRef.current, LOCAL_PIN_DEFS);
           if (snappedWires.length > 0) {
             setWires(prev => [...prev, ...snappedWires]);
@@ -5109,6 +4273,23 @@ export function SimulatorPage({ gamificationMode = false }) {
       isPanningRef.current = false;
       if (segDragRef.current) {
         if (segDragRef.current.hasMoved) {
+          const wireId = segDragRef.current.wireId;
+          // Apply simplification to clean up redundant segments/waypoints
+          setWires(prev => prev.map(w => {
+            if (w.id === wireId && w.waypoints?.length) {
+              const fromParts = w.from.split(':');
+              const toParts = w.to.split(':');
+              const p1 = getPinPosRef.current(fromParts[0], fromParts.slice(1).join(':'));
+              const p2 = getPinPosRef.current(toParts[0], toParts.slice(1).join(':'));
+              if (p1 && p2) {
+                const fullPath = [p1, ...w.waypoints, p2];
+                const simplified = simplifyOrthogonalPath(fullPath);
+                return { ...w, waypoints: simplified.slice(1, -1) };
+              }
+            }
+            return w;
+          }));
+
           // Save undo snapshot using pre-drag wires captured at drag start
           const pre = segDragRef.current.preWires;
           setHistory(h => ({ past: [...h.past.slice(-20), { components: JSON.parse(JSON.stringify(componentsRef.current)), wires: JSON.parse(JSON.stringify(pre)) }], future: [] }));
@@ -5135,7 +4316,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const nextValue = (key === 'env' && normalizeBoardKind(c.type) === 'rp2040')
           ? normalizeRp2040Env(value)
           : value;
-        if (c.type === 'wokwi-neopixel-matrix') {
+        if (c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix') {
           const rows = key === 'rows' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.rows) || 1);
           const cols = key === 'cols' ? (parseInt(nextValue) || 1) : (parseInt(c.attrs?.cols) || 1);
           newW = Math.max(30, cols * 30);
@@ -5286,6 +4467,14 @@ export function SimulatorPage({ gamificationMode = false }) {
     );
 
     if (plan) {
+      if (plan.reasoning) {
+        const critical = plan.reasoning.find(r => r.toUpperCase().includes('CRITICAL'));
+        if (critical) {
+          alert(`Autowiring Critical Error:\n\n${critical}`);
+          return;
+        }
+      }
+
       // Re-map IDs for added components to ensure uniqueness during re-wiring
       const mainCompId = compId;
       const adjustedPlan = {
@@ -5302,52 +4491,204 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       setComponents(finalComponents);
       setWires(result.wires);
+
+      // Remove any existing autocoded snippet for this component from all project files
+      setProjectFiles(prev => prev.map(f => {
+        if (f.content) {
+          const newContent = removeCodeSnippet(f.content, compId);
+          if (activeCodeFileId === f.id && code !== newContent) {
+            setCode(newContent);
+          }
+          return { ...f, content: newContent };
+        }
+        return f;
+      }));
     }
   };
 
-
-  // Cancel wire on Escape / delete selected
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'F1') {
-        e.preventDefault();
-        setShowF1Menu(prev => !prev);
-        return;
-      }
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
-
-      if (e.key === 'Escape') { setWireStart(null); setSelected(null); setWireClickPos(null); }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning && !liveEditingDisabled) {
-        saveHistory();
-        if (selected.match(/^w\d+$/)) {
-          setWires(prev => prev.filter(w => w.id !== selected))
+  const handleOpenCode = (comp) => {
+    console.log('[handleOpenCode] Triggered for component:', comp.id, comp.type);
+    const boardKind = normalizeBoardKind(comp.type);
+    const filename = getDefaultMainFileName(boardKind, comp.id, {
+      rp2040Mode: comp.attrs?.env || 'native'
+    });
+    
+    // Try to find existing file by boardId or filename or just the first code file
+    let targetFile = projectFiles.find(f => f.boardId === comp.id || f.id === filename || f.name === filename);
+    if (!targetFile) {
+        // Fallback: if there's only one code file, just use it
+        const codeFiles = projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
+        if (codeFiles.length > 0) {
+            targetFile = codeFiles[0];
+            console.log('[handleOpenCode] Fallback to first code file:', targetFile.id);
         } else {
-          // Shared Ownership Cleanup: Only delete if no other owners exist
-          const id = selected;
-          setComponents(prev => prev.map(c => {
-            if (c.ownerIds?.includes(id)) {
-              return { ...c, ownerIds: c.ownerIds.filter(oid => oid !== id) };
-            }
-            return c;
-          }).filter(c => c.id !== id && (!c.ownerIds || c.ownerIds.length > 0)));
+            console.log('[handleOpenCode] File not found, creating new file:', filename);
+            // Create the file
+            targetFile = {
+                id: filename,
+                path: filename,
+                name: filename,
+                kind: 'code',
+                boardId: comp.id,
+                boardKind: boardKind,
+                content: createDefaultMainCode(boardKind, comp.id, { rp2040Mode: comp.attrs?.env || 'native' }),
+                dirty: false
+            };
+            setProjectFiles(prev => [...prev, targetFile]);
+        }
+    } else {
+        console.log('[handleOpenCode] Found existing file:', targetFile.id);
+    }
 
-          setWires(prev => prev.map(w => {
-            if (w.ownerIds?.includes(id)) {
-              return { ...w, ownerIds: w.ownerIds.filter(oid => oid !== id) };
-            }
-            return w;
-          }).filter(w =>
-            !w.from.startsWith(id + ':') &&
-            !w.to.startsWith(id + ':') &&
-            (!w.ownerIds || w.ownerIds.length > 0)
-          ));
-          setSelected(null);
+    if (!openCodeTabs.includes(targetFile.id)) {
+      setOpenCodeTabs(prev => [...prev, targetFile.id]);
+    }
+    setActiveCodeFileId(targetFile.id);
+    setCodeTab('code');
+    setIsPanelOpen(true);
+    setShowCodeExplorer(true);
+  };
+
+  const handleAutoCode = async (compId) => {
+    console.log('[handleAutoCode] Triggered for component:', compId);
+    const comp = components.find(c => c.id === compId);
+    if (!comp) {
+        console.error('[handleAutoCode] Component not found in state:', compId);
+        return;
+    }
+
+    // Find the board it is connected to (Recursive Tracing)
+    const findConnectedBoardId = (currentId, visited = new Set()) => {
+      if (visited.has(currentId)) return null;
+      visited.add(currentId);
+
+      // Check if current is a board
+      const comp = components.find(c => c.id === currentId);
+      if (comp && isProgrammableBoardType(comp.type)) return comp.id;
+
+      // Find all neighbors via wires
+      for (const w of wires) {
+        const fromParts = w.from.split(':');
+        const toParts = w.to.split(':');
+        
+        let neighborId = null;
+        if (fromParts[0] === currentId) neighborId = toParts[0];
+        else if (toParts[0] === currentId) neighborId = fromParts[0];
+
+        if (neighborId) {
+          const boardId = findConnectedBoardId(neighborId, visited);
+          if (boardId) return boardId;
         }
       }
+      return null;
+    };
+
+    let targetBoardId = findConnectedBoardId(compId);
+
+    if (!targetBoardId) {
+      console.warn('[handleAutoCode] No target board found for component:', compId);
+      alert('Component must be wired to a board first to generate code.');
+      return;
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [selected, isRunning, liveEditingDisabled, saveHistory])
+
+    console.log('[handleAutoCode] Target board found:', targetBoardId);
+    const manifest = COMPONENT_REGISTRY[comp.type]?.manifest || {};
+    
+    // Call the worker
+    console.log('[handleAutoCode] Sending request to worker...');
+    const worker = new Worker(new URL('../../workers/autowiring.worker.ts', import.meta.url), { type: 'module' });
+    worker.postMessage({
+      type: 'GENERATE_CODE_SNIPPET',
+      payload: { compId, wires, manifest, components }
+    });
+
+    worker.onmessage = async (e) => {
+      const { type, payload } = e.data;
+      if (type === 'AUTONOMOUS_RESULT') {
+        const snippet = payload.code_snippet;
+        console.log('[handleAutoCode] Worker returned snippet:', snippet);
+        if (snippet) {
+          const boardComp = components.find(c => c.id === targetBoardId);
+          const boardKind = normalizeBoardKind(boardComp.type);
+          const filename = getDefaultMainFileName(boardKind, targetBoardId, {
+            rp2040Mode: boardComp.attrs?.env || 'native'
+          });
+
+          // Inject libraries if any
+          if (payload.libraries && payload.libraries.length > 0) {
+            console.log('[handleAutoCode] Libraries required:', payload.libraries);
+            alert(`Note: This component requires libraries: ${payload.libraries.join(', ')}.\nPlease ensure they are installed.`);
+          }
+
+          setProjectFiles(prev => {
+            let targetFile = prev.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename);
+            if (!targetFile) {
+                const codeFiles = prev.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
+                if (codeFiles.length > 0) {
+                    targetFile = codeFiles[0];
+                } else {
+                    console.log('[handleAutoCode] Creating new file for injection:', filename);
+                    targetFile = {
+                        id: filename,
+                        path: filename,
+                        name: filename,
+                        kind: 'code',
+                        boardId: targetBoardId,
+                        boardKind: boardKind,
+                        content: createDefaultMainCode(boardKind, targetBoardId, { rp2040Mode: boardComp.attrs?.env || 'native' }),
+                        dirty: false
+                    };
+                    prev = [...prev, targetFile];
+                }
+            }
+
+            console.log('[handleAutoCode] Injecting code into file:', targetFile.id);
+            return prev.map(f => {
+              if (f.id === targetFile.id) {
+                const newContent = mergeCodeSnippet(f.content, snippet, compId);
+                // Also update live code if it's the active file
+                if (activeCodeFileId === targetFile.id) {
+                  setCode(newContent);
+                }
+                return { ...f, content: newContent };
+              }
+              return f;
+            });
+          });
+          
+          setOpenCodeTabs(prevTabs => {
+            // Re-find the target file ID since state update is asynchronous
+            const targetFile = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
+                               || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                               || { id: filename };
+            if (!prevTabs.includes(targetFile.id)) {
+              return [...prevTabs, targetFile.id];
+            }
+            return prevTabs;
+          });
+          
+          // Re-find to set active
+          setTimeout(() => {
+              const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
+              setActiveCodeFileId(prev => {
+                   const file = (projectFiles || []).find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
+                               || (projectFiles || []).filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                               || { id: filename };
+                   return file.id;
+              });
+              setCodeTab('code');
+              setIsPanelOpen(true);
+              setShowCodeExplorer(true);
+          }, 0);
+        } else {
+            console.warn('[handleAutoCode] Worker returned empty snippet.');
+        }
+      }
+      worker.terminate();
+    };
+  };
+
+
 
   const deleteWire = (id) => {
     if (isRunning || liveEditingDisabled) return;
@@ -5367,7 +4708,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       const newRotation = ((comp.rotation || 0) + 90) % 360;
 
       // If breadboard, rotate children
-      if (comp.type.startsWith('wokwi-breadboard')) {
+      if (isBreadboardType(comp.type)) {
         const childIds = new Set(wiresRef.current
           .filter(w => w.isSocket && (w.from.startsWith(id + ':') || w.to.startsWith(id + ':')))
           .map(w => {
@@ -5403,83 +4744,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     });
   };
 
-  const openCodeFile = useCallback((fileId) => {
-    setOpenCodeTabs(prev => prev.includes(fileId) ? prev : [...prev, fileId]);
-    setActiveCodeFileId(fileId);
-  }, []);
-
-  const closeCodeTab = useCallback((fileId) => {
-    setOpenCodeTabs(prev => {
-      const next = prev.filter(id => id !== fileId);
-      if (activeCodeFileId === fileId) {
-        setActiveCodeFileId(next[next.length - 1] || null);
-      }
-      return next;
-    });
-  }, [activeCodeFileId]);
-
-  const saveCodeFile = useCallback((fileId) => {
-    setProjectFiles(prev => prev.map(f => f.id === fileId ? { ...f, dirty: false } : f));
-  }, []);
-
-  const duplicateCodeFile = useCallback((fileId) => {
-    setProjectFiles(prev => {
-      const source = prev.find(f => f.id === fileId);
-      if (!source) return prev;
-      const ext = fileExt(source.name);
-      const base = ext ? source.name.slice(0, -ext.length) : source.name;
-      let name = `${base}_copy${ext}`;
-      let path = `${source.path.substring(0, source.path.lastIndexOf('/') + 1)}${name}`;
-      let i = 2;
-      while (prev.some(f => f.path === path)) {
-        name = `${base}_copy${i}${ext}`;
-        path = `${source.path.substring(0, source.path.lastIndexOf('/') + 1)}${name}`;
-        i++;
-      }
-      const dup = { ...source, id: path, path, name, dirty: true };
-      return [...prev, dup];
-    });
-  }, []);
-
-  const renameCodeFile = useCallback((fileId, nextName) => {
-    const cleaned = String(nextName || '').trim();
-    if (!cleaned) return;
-    const source = projectFileMap.get(fileId);
-    if (!source) return;
-    const parent = source.path.substring(0, source.path.lastIndexOf('/') + 1);
-    const nextPath = `${parent}${cleaned}`;
-
-    setProjectFiles(prev => {
-      if (prev.some(f => f.id !== fileId && f.path === nextPath)) return prev;
-      return prev.map(f => f.id === fileId ? { ...f, id: nextPath, path: nextPath, name: cleaned, dirty: true } : f);
-    });
-    setOpenCodeTabs(prev => prev.map(id => id === fileId ? nextPath : id));
-    if (activeCodeFileId === fileId) {
-      setActiveCodeFileId(nextPath);
-    }
-  }, [activeCodeFileId, projectFileMap]);
-
-  const toggleCodeFileDisabled = useCallback((fileId) => {
-    const source = projectFileMap.get(fileId);
-    if (!source || source.kind !== 'code') return;
-
-    const currentlyDisabled = isFileDisabled(source.name);
-    const nextName = currentlyDisabled
-      ? source.name.slice(0, -DISABLED_FILE_SUFFIX.length)
-      : `${source.name}${DISABLED_FILE_SUFFIX}`;
-
-    renameCodeFile(fileId, nextName);
-  }, [projectFileMap, renameCodeFile]);
-
-  const deleteCodeFile = useCallback((fileId) => {
-    setProjectFiles(prev => prev.filter(f => f.id !== fileId));
-    setOpenCodeTabs(prev => prev.filter(id => id !== fileId));
-    if (activeCodeFileId === fileId) {
-      const next = openCodeTabs.find(id => id !== fileId) || null;
-      setActiveCodeFileId(next);
-    }
-  }, [activeCodeFileId, openCodeTabs]);
-
   const downloadCodeFile = useCallback((fileId) => {
     const file = projectFileMap.get(fileId);
     if (!file) return;
@@ -5497,7 +4761,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     const prefFile = projectFileMap.get(preferred);
     if (prefFile && prefFile.content && !isFileDisabled(prefFile.path)) return prefFile.content;
 
-    const ino = projectFiles.find(
+    const ino = (projectFiles || []).find(
       (f) => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino' && !isFileDisabled(f.path)
     );
     if (ino?.content) return ino.content;
@@ -5507,7 +4771,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const getBoardCompileFiles = useCallback((boardId, preferredMainPath = '') => {
     // Virtualize project files to include current editor changes
-    const virtualProjectFiles = projectFiles.map(f => ({
+    const virtualProjectFiles = (projectFiles || []).map(f => ({
       ...f,
       content: f.id === activeCodeFileId ? code : (f.content || '')
     }));
@@ -6159,9 +5423,9 @@ export function SimulatorPage({ gamificationMode = false }) {
       currentProjectIdRef.current = id;
       setCurrentProjectId(id);
     }
-    setCurrentProjectName(name);
     clearTimeout(autoSaveTimerRef.current);
-    await saveProject({ id, name, board, components, connections: wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, projectFiles, openCodeTabs, activeCodeFileId, owner });
+    const finalName = await saveProject({ id, name, board, components, connections: wires, code, blocklyXml, blocklyGeneratedCode, useBlocklyCode, projectFiles, openCodeTabs, activeCodeFileId, owner });
+    setCurrentProjectName(finalName || name);
     setShowSaveDialog(false);
   };
 
@@ -6240,8 +5504,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       return;
     }
     const newName = renameValue.trim() || 'Untitled';
-    await renameProject(id, newName);
-    if (currentProjectIdRef.current === id) setCurrentProjectName(newName);
+    const finalName = await renameProject(id, newName);
+    if (currentProjectIdRef.current === id) setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
     await refreshProjectList();
   };
@@ -6294,10 +5558,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (!diagramJsonPayload.useBlocklyCode) delete diagramJsonPayload.useBlocklyCode;
     zip.file('diagram.json', JSON.stringify(diagramJsonPayload, null, 2));
 
-    // 3. Generate library.txt (root)
-    const libraries = (libInstalled || []).map(l => l?.library?.name || l?.name).filter(Boolean);
-    zip.file('library.txt', libraries.join('\n'));
-
     // 4. Organize files into board-specific folders
     (projectFiles || []).forEach(file => {
       // file.id is typically "project/<boardId>/<filename>"
@@ -6309,7 +5569,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       } else if (parts[0] === 'project' && parts.length === 2) {
         // Root files that aren't the special ones we just handled
         const fileName = parts[1];
-        const reservedNames = ['workflow.json', 'diagram.json', 'library.txt'];
+        const reservedNames = ['workflow.json', 'diagram.json'];
         if (!reservedNames.includes(fileName)) {
           zip.file(fileName, file.content || '');
         }
@@ -6356,6 +5616,47 @@ export function SimulatorPage({ gamificationMode = false }) {
     } catch (e) { alert('Failed to restore backup: ' + e.message); }
   };
 
+  const handleImportWokwiZip = async (file) => {
+    if (!file) return;
+    try {
+      const result = await importWokwiProjectZip(file, components, wires);
+      if (!result) return;
+      
+      const newId = generateProjectId();
+      currentProjectIdRef.current = newId;
+      setCurrentProjectId(newId);
+      setCurrentProjectName(result.projectName);
+      setBoard(result.board);
+      setComponents(result.components);
+      setWires(result.wires);
+      setProjectFiles(result.projectFiles);
+      setOpenCodeTabs(result.openCodeTabs);
+      setActiveCodeFileId(result.activeCodeFileId);
+      syncNextIds(result.components, result.wires);
+      setHistory({ past: [], future: [] });
+      lastCompiledRef.current = null;
+
+      const owner = getOwner();
+      const finalName = await saveProject({
+        id: newId,
+        name: result.projectName,
+        board: result.board,
+        components: result.components,
+        connections: result.wires,
+        code: result.code || '',
+        blocklyXml: '',
+        blocklyGeneratedCode: '',
+        useBlocklyCode: false,
+        projectFiles: result.projectFiles,
+        openCodeTabs: result.openCodeTabs,
+        activeCodeFileId: result.activeCodeFileId,
+        owner,
+      });
+      setCurrentProjectName(finalName || result.projectName);
+      await refreshProjectList();
+    } catch (e) { alert(e.message); }
+  };
+
   // ─── Cloud Sync (placeholder) ───────────────────────────────────────────────
   const handleSyncToCloud = () => { alert('Sync feature coming soon!'); };
 
@@ -6388,12 +5689,13 @@ export function SimulatorPage({ gamificationMode = false }) {
   };
 
   const handleShareSimulation = async () => {
+    console.log("[SimulatorPage] handleShareSimulation - activeUser:", activeUser);
     if (!['teacher', 'user', 'admin'].includes(activeUser?.role)) {
       alert('Only signed-in teachers and users can share simulator templates.');
       return;
     }
 
-    if (!isAuthenticated) {
+    if (!isAnyAuthenticated) {
       alert('Please sign in to share this simulation.');
       navigate('/login');
       return;
@@ -6492,16 +5794,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const runCircuitValidation = useCallback((overriddenComponents, overriddenWires) => {
     try {
-      if (isRunning) {
-        return true;
-      }
+      if (isRunning) return true;
 
-      if (typeof FullCircuitValidator !== 'function') {
-        console.warn('[Validation] FullCircuitValidator not available in this build.');
-        return true;
-      }
-
-      // Use overridden state if provided (e.g. after autofix), otherwise use current state
       const targetComponents = overriddenComponents || components;
       const targetWires = overriddenWires || wires;
 
@@ -6521,98 +5815,49 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       }
 
-      // Adapter: convert frontend format (comp:pin) → engine format (comp.pin)
-      const engineConnections = (targetWires || []).map(w => ({
-        from: String(w.from || '').replace(':', '.'),
-        to: String(w.to || '').replace(':', '.'),
-      }));
-
       const projectData = {
-        components: targetComponents,      // engine reads .id, .type, .pins[], .attrs{}
-        connections: engineConnections,
-      };
-
-      const validator = new FullCircuitValidator(projectData);
-      const isSafe = validator.runValidation({
-        profile: 'balanced',
-        useCache: true,
-        cacheKey: overriddenComponents ? 'force-new' : buildValidationSignature(),
-        incremental: true,
-        incrementalScope: 'webui',
-      });
-
-      // ── Software-Hardware Sync Analysis ──────────────────────────────────
-      const projectForSync = {
-        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
         components: targetComponents,
         connections: targetWires,
-        activeCodeFileId: activeCodeFileId
+        code: useBlocklyCode ? blocklyGeneratedCode : (code || ''),
+        activeCodeFileId
       };
-      const syncResult = typeof analyzeCodeHardwareSync === 'function'
-        ? analyzeCodeHardwareSync(projectForSync)
-        : { passed: true, issues: [] };
 
-      let allowRun = true;
+      // USE UNIFIED ENGINE (Locally)
+      const { safe, physicsSafe, errors, healthScore } = runUnifiedValidation(projectData, {
+        profile: 'balanced',
+        incremental: true,
+        incrementalScope: 'webui',
+        registry: EmulatorComponents // Pass the full component library for rule discovery
+      });
+
+      setHealthScore(healthScore);
+      setValidationErrors(errors);
+
+      const hasFatalPhysics = errors.some(e => e.severity === 'error' || e.type === 'error');
+      const allowRun = physicsSafe && !hasFatalPhysics; // Block if physics is unsafe (short circuit etc)
+
       let nextToast = null;
-
-      if (!isSafe || !syncResult.passed) {
-        const physicsErrors = validator.errors || [];
-
-        const syncErrors = (syncResult.issues || []).map(issue => ({
-          severity: 'warn',
-          type: 'warn',
-          message: issue.message,
-          compIds: []
-        }));
-
-        const formattedErrors = [...physicsErrors, ...syncErrors];
-
-        // Use emulator's Health Score engine
-        const score = validator.calculateHealthScore(syncErrors);
-        setHealthScore(score);
-
-        const hasFatalPhysics = physicsErrors.some(e => e.severity === 'error' || e.type === 'error');
-
-        setValidationErrors(formattedErrors);
-
-        // Trigger Intelligent Autofix Analysis (only if panel is active)
-        if (formattedErrors.length > 0 && showAutofix) {
-          triggerAutofixAnalysis(formattedErrors, targetComponents, targetWires);
+      if (!safe) {
+        if (errors.length > 0 && showAutofix) {
+          triggerAutofixAnalysis(errors, targetComponents, targetWires);
         }
         setShowValidation(true);
         if (typeof setIsPanelOpen === 'function') setIsPanelOpen(true);
 
-        setValidationToast({
-          title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-          reasons: formattedErrors.slice(0, 3).map(e => e.message),
-        });
-
         nextToast = {
           title: hasFatalPhysics ? `🛑 Circuit Error` : `⚠️ Circuit Warning`,
-          reasons: formattedErrors.slice(0, 3).map(e => e.message),
+          reasons: errors.slice(0, 3).map(e => e.message),
         };
-
-        // Only block the run if there is a fatal physics error
-        if (hasFatalPhysics) {
-          allowRun = false;
-        }
-      }
-
-      if (isSafe && syncResult.passed) {
-        setValidationErrors([]);
+        setValidationToast(nextToast);
+      } else {
         setValidationToast(null);
-        setHealthScore(100);
       }
 
       validationRunCacheRef.current = {
         signature: overriddenComponents ? 'invalidated' : buildValidationSignature(),
         allowRun,
-        errors: (isSafe && syncResult.passed) ? [] : (validator.errors || []).concat(
-          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
-        ),
-        healthScore: isSafe && syncResult.passed ? 100 : validator.calculateHealthScore(
-          (syncResult.issues || []).map(issue => ({ severity: 'warn', type: 'warn', message: issue.message, compIds: [] }))
-        ),
+        errors,
+        healthScore,
         toast: nextToast,
       };
 
@@ -6654,9 +5899,8 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     // Re-run validation to verify the fix worked
     try {
-      const validator = new FullCircuitValidator({ components: result.components }, result.connections);
+      const validator = new FullCircuitValidator({ components: result.components, connections: result.connections });
       const verifyResult = await validator.runValidation(
-        { components: result.components, connections: result.connections },
         { profile: 'balanced', incrementalScope: 'webui' }
       );
 
@@ -6713,18 +5957,6 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       // 1) Trigger Local Simulator Validation check against new topology 
       runCircuitValidation(nextComponents, nextWires);
-
-      // 2) Optional: Call the backend Validation API dynamically to keep systems synced
-      try {
-        const engineConnections = nextWires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
-        await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/validation/run`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project: { components: nextComponents, connections: engineConnections } })
-        });
-      } catch (e) {
-        console.warn("Backend validation out of sync:", e);
-      }
 
       appendConsoleEntry('info', '📡 Re-validating circuit after repair...', 'simulator');
     }, 150);
@@ -6963,6 +6195,14 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [hardwareConnected, resolvedHardwarePort, hardwareBoardId]);
 
   const handleUploadToHardware = useCallback(async () => {
+    // RUN VALIDATION BEFORE FLASHING
+    appendConsoleEntry('info', '🔍 Validating circuit health before hardware flash...', 'hardware');
+    if (!runCircuitValidation()) {
+      appendConsoleEntry('error', '❌ Flash blocked: The circuit has electrical/safety violations. Fix them first.', 'hardware');
+      setHardwareStatus('Flash blocked: validation failed');
+      return;
+    }
+
     // Disconnect browser Web Serial first to release COM port lock for arduino-cli upload.
     if (hardwareConnected) {
       setHardwareStatus('Disconnecting Web Serial before flash...');
@@ -6971,7 +6211,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
 
     await uploadToHardware();
-  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry]);
+  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry, runCircuitValidation]);
 
   const handleRun = async () => {
     try {
@@ -6981,6 +6221,16 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
 
       runStartGuardRef.current = true;
+
+      // 1. Unified Validation Gate (BLOCKING)
+      appendConsoleEntry('info', '🔍 Validating circuit health...', 'simulator');
+      if (!runCircuitValidation()) {
+        appendConsoleEntry('error', '❌ Run blocked: The circuit has electrical or safety violations.', 'simulator');
+        runStartGuardRef.current = false;
+        return;
+      }
+      appendConsoleEntry('info', '✅ Circuit validated. Initializing simulation...', 'simulator');
+
       appendConsoleEntry('info', 'Run requested.', 'simulator');
       rp2040GdbLastLogRef.current.clear();
       rp2040WirelessLastLogRef.current.clear();
@@ -6994,42 +6244,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       runLagTelemetryLastLogRef.current.clear();
       runFpsTelemetryLastLogRef.current.clear();
       runLastBoardPinsRef.current = new Map();
-
-      // Ensure consistent validation report across applications (Frontend, CLI, Autofix loop)
-      const engineConnections = wires.map(w => ({ from: w.from.replace(':', '.'), to: w.to.replace(':', '.') }));
-      try {
-        const valRes = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/validation/run`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project: { components: components, connections: engineConnections } })
-        });
-
-        if (valRes.ok) {
-          const valData = await valRes.json();
-          setValidationErrors(valData.errors || []);
-          if (!valData.safe) {
-            appendConsoleEntry('warn', 'Run blocked: validation errors found (via backend).', 'simulator');
-            runStartGuardRef.current = false;
-            setShowValidation(true);
-            return;
-          }
-        } else {
-          // Fallback to local
-          if (!runCircuitValidation()) {
-            appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
-            runStartGuardRef.current = false;
-            return;
-          }
-        }
-      } catch (err) {
-        // Fallback to local offline validation 
-        if (!runCircuitValidation()) {
-          appendConsoleEntry('warn', 'Run blocked: validation errors found.', 'simulator');
-          // The useEffect will auto-trigger re-analysis when validationErrors state updates
-          runStartGuardRef.current = false;
-          return;
-        }
-      }
 
       setIsRunning(true);
       setIsCompiling(true);
@@ -7662,11 +6876,28 @@ export function SimulatorPage({ gamificationMode = false }) {
             if (!compId) return;
             runComponentUpdateCountsRef.current[compId] = (runComponentUpdateCountsRef.current[compId] || 0) + 1;
             boardComponentState[compId] = c.state;
+
+            // Trace latency when buzzer starts buzzing
+            if (c.id === 'buzzer' && c.state?.isBuzzing && buttonInteractStartTimeRef.current) {
+              const latency = performance.now() - buttonInteractStartTimeRef.current.time;
+              const sourceBtnId = buttonInteractStartTimeRef.current.compId;
+              console.log(
+                `%c[Latency Trace] [SUCCESS] Keypress round-trip took: ${latency.toFixed(1)}ms (Button: ${sourceBtnId} -> Buzzer Sound)`,
+                'color: #22c55e; font-weight: bold; font-size: 11px;'
+              );
+              if (latency > 80) {
+                console.warn(
+                  `[Latency Trace] High round-trip latency detected (${latency.toFixed(1)}ms)! Thread contention or frame drops may be causing audible lag.`
+                );
+              }
+              buttonInteractStartTimeRef.current = null; // Reset tracking
+            }
           });
 
           renderComponentsByBoardRef.current[boardIdKey] = boardComponentState;
 
           updateLiveOopStates(msg.components);
+          handleTelemetryStateMessageRef.current(msg);
         }
         if (msg.type === 'state') {
           const boardIdKey = String(msg.boardId || 'default');
@@ -7738,11 +6969,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Handle Protocol Events
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log]);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
       };
 
@@ -7761,7 +6992,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       logSerial('Simulator started in Web Worker.');
 
       const neopixelWiring = components
-        .filter(c => c.type === 'wokwi-neopixel-matrix')
+        .filter(c => c.type === 'wokwi-neopixel-matrix' || c.type === 'openhw-neopixel-matrix')
         .map(c => {
           return null; // Handle Neopixels later
         }).filter(n => n);
@@ -7793,6 +7024,10 @@ export function SimulatorPage({ gamificationMode = false }) {
         debugRp2040: rp2040DebugTelemetryEnabled,
         debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
         speed: simulationSpeed,
+        telemetryEnabled: componentTelemetryEnabled,
+        telemetryMode: telemetryMode,
+        watchedParamsMap: telemetryWatchedParamsMap,
+        deepSilicon: deepSiliconDebuggingEnabled,
       });
 
       runStartGuardRef.current = false;
@@ -8022,7 +7257,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const canvasEl = canvasRef.current;
-      const SCALE = 2.5;
+      const SCALE = 1.5; // High-res (Retina) but uses ~44% less RAM than 2.0
       const PAD = 60; // padding around content in canvas-space pixels
       const pinPosCache = new Map();
       const getCachedPinPos = (compId, pinId) => {
@@ -8073,6 +7308,9 @@ export function SimulatorPage({ gamificationMode = false }) {
         if (tp) { minX = Math.min(minX, tp.x); minY = Math.min(minY, tp.y); maxX = Math.max(maxX, tp.x); maxY = Math.max(maxY, tp.y); }
       });
       if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+      
+      // DIAGNOSTIC LOG: See the calculated bounds
+      console.log('[PNG Export] Raw Bounds:', { minX, minY, maxX, maxY });
 
       minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
       const bboxW = maxX - minX;
@@ -8090,7 +7328,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         projectFiles: (projectFiles || []).map(f => ({ id: f.id, content: typeof f.content === 'string' ? f.content : String(f.content || '') })),
         openCodeTabs: openCodeTabs || [],
         activeCodeFileId: activeCodeFileId || '',
-        options: { SCALE, PAD },
+        options: { SCALE: 2.0, PAD },
       };
       const signature = computeRenderSyncHash(exportSignaturePayload);
 
@@ -8119,132 +7357,235 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       }
 
-      // 2. Prepare a cloned canvas and adjust clone for full-content capture
+      // 2. Capture the canvas
       const t_start = performance.now();
       console.log('[PNG Export] signature:', signature);
-      // We avoid mutating the live DOM (which causes visible layout shifts)
-      const shadowHostEls = [];
-      // Tag live elements that have shadow roots so we can inline their shadow DOM
-      canvasEl.querySelectorAll('*').forEach(el => {
-        if (el.shadowRoot) {
-          el.dataset.h2cShadow = String(shadowHostEls.length);
-          shadowHostEls.push(el);
-        }
-      });
+      
+      const MAX_EXPORT_DIM = 4000;
+      const actualW = Math.min(bboxW, MAX_EXPORT_DIM);
+      const actualH = Math.min(bboxH, MAX_EXPORT_DIM);
 
-      // Deep-clone the canvas element and operate on the clone
-      const clonedCanvas = canvasEl.cloneNode(true);
-      // Place clone off-screen so it doesn't affect layout
-      const holder = document.createElement('div');
-      holder.style.position = 'fixed';
-      holder.style.left = '-9999px';
-      holder.style.top = '0';
-      holder.style.pointerEvents = 'none';
-      holder.appendChild(clonedCanvas);
-      document.body.appendChild(holder);
+      // 1. Deep Tagging with Identity Mapping
+      const t_tag_start = performance.now();
+      let tagCount = 0;
+      const elementMap = new Map(); // id -> liveElement
+      const zoomWrapper = innerCanvasRef.current;
+      if (!zoomWrapper) throw new Error('Zoom wrapper not found');
 
-      // Hide overlays inside the clone only
-      const cloneOverlays = clonedCanvas.querySelectorAll('[data-export-ignore="true"]');
-      cloneOverlays.forEach(el => { el.style.visibility = 'hidden'; });
+      const deepTag = (root) => {
+        const elements = [root, ...Array.from(root.querySelectorAll('*'))];
+        elements.forEach(el => {
+          if (!el.getAttribute) return;
+          const id = `h2c-p-${tagCount++}`;
+          el.setAttribute('data-h2c-id', id);
+          elementMap.set(id, el);
+          if (el.shadowRoot) deepTag(el.shadowRoot);
+        });
+      };
+      
+      deepTag(zoomWrapper);
+      const shadowHostEls = Array.from(elementMap.values()).filter(el => !!el.shadowRoot);
+      console.log(`[PNG Export] Mapped ${tagCount} elements in ${Math.round(performance.now() - t_tag_start)}ms`);
 
-      // Find the zoom wrapper inside the clone (first absolutely-positioned child)
-      const zoomWrapperClone = clonedCanvas.querySelector(':scope > div');
-
-      // Apply temporary sizing/transform to the clone to fit all content at scale 1
-      clonedCanvas.style.overflow = 'visible';
-      clonedCanvas.style.width = bboxW + 'px';
-      clonedCanvas.style.height = bboxH + 'px';
-      clonedCanvas.style.flex = 'none';
-      clonedCanvas.style.minWidth = bboxW + 'px';
-      clonedCanvas.style.minHeight = bboxH + 'px';
-      clonedCanvas.style.backgroundImage = 'none'; // hide grid dots from export
-      if (zoomWrapperClone) {
-        zoomWrapperClone.style.transform = `translate(${-minX}px, ${-minY}px) scale(1)`;
-        zoomWrapperClone.style.width = bboxW + 'px';
-        zoomWrapperClone.style.height = bboxH + 'px';
-      }
+      // Dummy canvas used to filter itself out in ignoreElements
+      const filterCanvas = document.createElement('canvas');
 
       let circuitCanvas;
       try {
-        const html2canvas = await getHtml2canvas();
+        const h2c = await getHtml2canvas();
+        const t_prep_start = performance.now();
+        console.log('[PNG Export] Initializing Isolated Iframe...');
+
+        // 1. Create a hidden iframe to isolate the DOM tree
+        const iframe = document.createElement('iframe');
+        Object.assign(iframe.style, {
+          position: 'fixed', left: '-10000px', top: '-10000px',
+          width: actualW + 'px', height: actualH + 'px'
+        });
+        document.body.appendChild(iframe);
+
+        const idoc = iframe.contentDocument || iframe.contentWindow.document;
+        idoc.open();
+        idoc.write('<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#070b14;"></body></html>');
+        idoc.close();
+
+        // 2. NO Stylesheet Copying (Massive RAM saver)
+        // We will inline only what's absolutely necessary below
+        const styleReset = idoc.createElement('style');
+        styleReset.textContent = `
+          * { box-sizing: border-box; filter: none !important; box-shadow: none !important; }
+          text, span, div { font-family: sans-serif; }
+        `;
+        idoc.head.appendChild(styleReset);
+
+        const filterKiller = idoc.createElement('style');
+        filterKiller.textContent = '* { filter: none !important; box-shadow: none !important; }';
+        idoc.head.appendChild(filterKiller);
+
+        // 3. Clone and Inject
+        const circuitClone = idoc.importNode(zoomWrapper, true);
+        idoc.body.appendChild(circuitClone);
+        
+        // 4. Filtered Style Teleportation (Live HTML Mode)
+        console.log(`[PNG Export] Teleporting styles for ${tagCount} elements...`);
+        
+        // 4a. Inline Shadow DOM Content as Live HTML
+        let inlinedCount = 0;
+        shadowHostEls.forEach((liveEl) => {
+          const dataId = liveEl.getAttribute('data-h2c-id');
+          const clonedHost = idoc.querySelector(`[data-h2c-id="${dataId}"]`);
+          if (!clonedHost) return;
+
+          inlinedCount++;
+          // Copy adopted styles (the component's internal design)
+          if (liveEl.shadowRoot.adoptedStyleSheets) {
+            liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
+              const styleEl = idoc.createElement('style');
+              styleEl.textContent = getSerializedShadowSheet(sheet);
+              clonedHost.appendChild(styleEl);
+            });
+          }
+          
+          // Inline the actual graphics/nodes
+          for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
+            clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
+          }
+        });
+        console.log(`[PNG Export] Inlined shadow content for ${inlinedCount}/${shadowHostEls.length} components`);
+
+        // 4b. Total Parity Style Teleportation
+        console.log(`[PNG Export] Teleporting styles for ${tagCount} nodes...`);
+        
+        const propsToCopy = [
+          'display', 'position', 'left', 'top', 'width', 'height', 'transform', 'transformOrigin',
+          'color', 'fontSize', 'fontWeight', 'fontFamily', 'textAlign', 
+          'visibility', 'opacity', 'backgroundColor', 'zIndex',
+          'border', 'borderWidth', 'borderStyle', 'borderColor', 'borderRadius',
+          'padding', 'margin', 'lineHeight', 'overflow', 'boxSizing',
+          'clipPath', 'mask', 'filter', 'mixBlendMode', 'outline',
+          'boxShadow', 'textShadow', 'cursor'
+        ];
+
+        const svgProps = [
+          'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 
+          'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-opacity',
+          'fill-opacity', 'fill-rule', 'marker-start', 'marker-mid', 'marker-end'
+        ];
+
+        const clonedNodes = [idoc.body, ...Array.from(idoc.body.querySelectorAll('*'))];
+        let styleCount = 0;
+        let wireCount = 0;
+        
+        clonedNodes.forEach(cloned => {
+          const dataId = cloned.getAttribute('data-h2c-id');
+          if (!dataId) return;
+          
+          const liveEl = elementMap.get(dataId);
+          if (!liveEl) return;
+
+          styleCount++;
+          if (cloned.tagName === 'path' || cloned.tagName === 'line') wireCount++;
+
+          const s = window.getComputedStyle(liveEl);
+          
+          // Copy Layout and Visual Styles with FORCED priority
+          propsToCopy.forEach(p => {
+            // SAFETY: Prevent Giant Text bug
+            if (p === 'fontSize' && (cloned.tagName === 'text' || cloned.tagName === 'tspan')) return;
+            cloned.style.setProperty(p, s.getPropertyValue(p), 'important');
+          });
+
+          // Copy SVG-specific properties with FORCED priority
+          if (['path', 'circle', 'rect', 'line', 'polygon', 'text', 'ellipse', 'g', 'svg'].includes(cloned.tagName)) {
+            svgProps.forEach(attr => {
+              const val = liveEl.getAttribute(attr) || s.getPropertyValue(attr);
+              if (val) {
+                const finalVal = val.includes('color(') ? '#777' : val;
+                cloned.setAttribute(attr, finalVal);
+                // Also set as important style if it's a CSS-mappable property
+                if (['fill', 'stroke', 'stroke-width', 'opacity', 'visibility'].includes(attr)) {
+                  cloned.style.setProperty(attr, finalVal, 'important');
+                }
+              }
+            });
+            
+            // Hardcode width/height attributes to match computed logical size
+            const w = s.getPropertyValue('width');
+            const h = s.getPropertyValue('height');
+            if (w && w !== 'auto' && w !== '100%') {
+              cloned.setAttribute('width', w.replace('px', ''));
+              cloned.style.setProperty('width', w, 'important');
+            }
+            if (h && h !== 'auto' && h !== '100%') {
+              cloned.setAttribute('height', h.replace('px', ''));
+              cloned.style.setProperty('height', h, 'important');
+            }
+          }
+          
+          // Final Safety: Ensure nothing is accidentally hidden
+          cloned.style.setProperty('visibility', 'visible', 'important');
+          cloned.style.setProperty('opacity', s.opacity || '1', 'important');
+          if (liveEl.shadowRoot) {
+            cloned.style.setProperty('overflow', 'visible', 'important');
+          }
+        });
+        
+        console.log(`[PNG Export] Successfully styled ${styleCount} elements, including ${wireCount} wires`);
+        elementMap.clear(); 
+
+
+        // Ensure all components are visible
+        idoc.body.style.overflow = 'visible';
+        circuitClone.style.overflow = 'visible';
+
+        // 5. Adjust clone for capture
+        Object.assign(circuitClone.style, {
+          transform: `translate(${-minX}px, ${-minY}px) scale(1)`,
+          transformOrigin: '0 0',
+          width: actualW + 'px', height: actualH + 'px',
+          display: 'block', margin: '0', padding: '0'
+        });
+
+        console.log(`[PNG Export] Isolation prep finished. Nodes in iframe: ${idoc.querySelectorAll('*').length}`);
+
         const t_html2c_start = performance.now();
-        circuitCanvas = await html2canvas(clonedCanvas, {
+        circuitCanvas = await h2c(idoc.body, {
           backgroundColor: '#070b14',
           scale: SCALE,
           useCORS: true,
-          allowTaint: true,
-          logging: false,
-          width: bboxW,
-          height: bboxH,
-          x: 0,
-          y: 0,
-          scrollX: 0,
-          scrollY: 0,
+          allowTaint: false,
+          logging: true,
+          imageTimeout: 10000, 
+          skipFonts: true,
+          width: actualW,
+          height: actualH,
           onclone: (_clonedDoc, clonedEl) => {
-            // Fix for "unsupported color function color()" error in html2canvas
-            const allElements = clonedEl.querySelectorAll('*');
-            allElements.forEach(el => {
-              if (!el.style) return;
-              const props = ['color', 'backgroundColor', 'borderColor', 'fill', 'stroke', 'outlineColor', 'stopColor'];
-              props.forEach(prop => {
-                const val = el.style[prop];
-                if (val && val.includes('color(')) {
-                  // html2canvas fails on color(display-p3 ...) or color(srgb ...)
-                  // We strip it to a fallback or attempt a simple regex replacement if possible
-                  // For now, replacing with a visible fallback to avoid crash
-                  el.style[prop] = '#777';
-                }
-              });
+            // Selective color fix: Target graphics but SPARE the text
+            clonedEl.querySelectorAll('path, rect, circle, polygon').forEach(el => {
+              const fill = el.getAttribute('fill');
+              if (fill && fill.includes('color(')) el.setAttribute('fill', '#777');
+              const stroke = el.getAttribute('stroke');
+              if (stroke && stroke.includes('color(')) el.setAttribute('stroke', '#777');
             });
-
-            // Inline shadow DOM content from live elements into the cloned document
-            shadowHostEls.forEach((liveEl, idx) => {
-              const cloned = clonedEl.querySelector(`[data-h2c-shadow="${idx}"]`);
-              if (!cloned || !liveEl.shadowRoot) return;
-              const wrapper = _clonedDoc.createElement((liveEl.tagName || 'div').toLowerCase());
-              // Preserve the original element identity and inline styles so board-specific CSS keeps applying.
-              Array.from(cloned.attributes).forEach(attr => {
-                if (attr.name === 'data-h2c-shadow') return;
-                wrapper.setAttribute(attr.name, attr.value);
-              });
-              // Preserve inline styles from the cloned host element
-              Array.from(cloned.style).forEach(p =>
-                wrapper.style.setProperty(p, cloned.style.getPropertyValue(p))
-              );
-              // Also copy computed styles (more reliable for transforms/size)
-              try {
-                const comp = window.getComputedStyle(liveEl);
-                // copy transform, width, height, display
-                if (comp.transform) wrapper.style.transform = comp.transform;
-                if (comp.transformOrigin) wrapper.style.transformOrigin = comp.transformOrigin;
-                if (comp.width) wrapper.style.width = comp.width;
-                if (comp.height) wrapper.style.height = comp.height;
-                if (comp.display) wrapper.style.display = comp.display;
-                if (comp.position) wrapper.style.position = comp.position;
-              } catch (e) {
-                // ignore getComputedStyle failures in some environments
-              }
-              // Deep-copy shadow root children into the wrapper so html2canvas sees them
-              if (liveEl.shadowRoot.adoptedStyleSheets?.length) {
-                liveEl.shadowRoot.adoptedStyleSheets.forEach(sheet => {
-                  const styleEl = _clonedDoc.createElement('style');
-                  styleEl.textContent = getSerializedShadowSheet(sheet);
-                  wrapper.appendChild(styleEl);
-                });
-              }
-              liveEl.shadowRoot.childNodes.forEach(node =>
-                wrapper.appendChild(_clonedDoc.importNode(node, true))
-              );
-              cloned.replaceWith(wrapper);
+            // Ensure labels are visible
+            clonedEl.querySelectorAll('text, span, div').forEach(el => {
+              if (el.style.color && el.style.color.includes('color(')) el.style.color = '#ccc';
             });
-          },
+          }
         });
+        
+        // Memory Flush: Clear the iframe content immediately to free RAM
+        idoc.body.innerHTML = '';
+        idoc.head.innerHTML = '';
+        document.body.removeChild(iframe);
         const t_html2c_end = performance.now();
-        console.log('[PNG Export] html2canvas ms:', Math.round(t_html2c_end - t_html2c_start));
+        console.log('[PNG Export] Isolated html2canvas ms:', Math.round(t_html2c_end - t_html2c_start));
       } finally {
-        // Clean up: remove clone holder and temporary data attributes on live elements
-        holder.remove();
-        shadowHostEls.forEach(el => { delete el.dataset.h2cShadow; });
+        // Remove temporary classes from live elements
+        shadowHostEls.forEach(el => {
+          const classId = Array.from(el.classList).find(c => c.startsWith('h2c-shadow-host-'));
+          if (classId) el.classList.remove(classId);
+        });
       }
 
       const t_compose_start = performance.now();
@@ -8263,21 +7604,15 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       // Branding logo (bottom-right)
       try {
-        if (!_exportLogoPromise) {
-          _exportLogoPromise = new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => resolve(img);
-            img.onerror = reject;
-            img.src = '/logo-Photoroom.png';
-          });
+        const logo = await ensureExportLogo();
+        if (logo) {
+          const logoW = Math.min(Math.round(130 * SCALE), Math.max(96 * SCALE, Math.round(CW * 0.16)));
+          const logoH = Math.round(logoW * (logo.height / logo.width));
+          ctx.save();
+          ctx.globalAlpha = 0.62;
+          ctx.drawImage(logo, CW - logoW - 14 * SCALE, CH - logoH - 14 * SCALE, logoW, logoH);
+          ctx.restore();
         }
-        const logo = await _exportLogoPromise;
-        const logoW = Math.min(Math.round(130 * SCALE), Math.max(96 * SCALE, Math.round(CW * 0.16)));
-        const logoH = Math.round(logoW * (logo.height / logo.width));
-        ctx.save();
-        ctx.globalAlpha = 0.62;
-        ctx.drawImage(logo, CW - logoW - 14 * SCALE, CH - logoH - 14 * SCALE, logoW, logoH);
-        ctx.restore();
       } catch (logoErr) {
         // Ignore logo load failures so export still succeeds.
       }
@@ -8428,7 +7763,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             `<path d="M${x + 21},${y + 16} Q${x + 26},${y + 11} ${x + 31},${y + 16}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             `<path d="M${x + 17},${y + 13} Q${x + 26},${y + 5} ${x + 35},${y + 13}" fill="none" stroke="#1a1a1a" stroke-width="1"/>`,
             ln(x + 26, y + 24, x + 26, y + 30, 1.5), ln(x + 42, y + 24, x + 52, y + 24),
-            tx(x + 6, y + 22, '+', 7, 'middle', false, '#777'),
+            tx(x + 46, y + 22, '+', 7, 'middle', false, '#777'),
             tx(x + 26, y + 60, ref, 9, 'middle', true),
           ].join('');
         }
@@ -8574,6 +7909,19 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       };
 
+      // Aliases for openhw- rebranded components
+      SYMS['openhw-led'] = SYMS['wokwi-led'];
+      SYMS['openhw-resistor'] = SYMS['wokwi-resistor'];
+      SYMS['openhw-pushbutton'] = SYMS['wokwi-pushbutton'];
+      SYMS['openhw-buzzer'] = SYMS['wokwi-buzzer'];
+      SYMS['openhw-power-supply'] = SYMS['wokwi-power-supply'];
+      SYMS['openhw-potentiometer'] = SYMS['wokwi-potentiometer'];
+      SYMS['openhw-servo'] = SYMS['wokwi-servo'];
+      SYMS['openhw-motor'] = SYMS['wokwi-motor'];
+      SYMS['openhw-neopixel-matrix'] = SYMS['wokwi-neopixel-matrix'];
+      SYMS['openhw-motor-driver'] = SYMS['wokwi-motor-driver'];
+      SYMS['openhw-arduino-uno'] = SYMS['wokwi-arduino-uno'];
+
       // Generic fallback IC ─────────────────────────────────────────────────
       const makeGenericSym = (comp) => {
         const used = new Set();
@@ -8590,7 +7938,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         return {
           w: gw + 30, h: gh, refPrefix: 'IC', pins,
           draw(x, y, _c, ref) {
-            const sType = _c.type.replace('wokwi-', '');
+            const sType = _c.type.replace(/^(wokwi-|openhw-)/, '');
             return [
               bx(x + 15, y + 12, gw, gh - 24), tx(x + 15 + gw / 2, y + 28, sType, 8, 'middle', true), tx(x + 15 + gw / 2, y + 10, ref, 7, 'middle', false, '#555'),
               ...lp.map((id, i) => ln(x, y + 32 + i * 20, x + 15, y + 32 + i * 20) + `<text x="${x + 18}" y="${y + 36 + i * 20}" font-size="6.5" font-family="monospace" fill="#1a1a1a">${id}</text>`),
@@ -8913,16 +8261,9 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <ChromeUIProvider>
-      {SimulatorPageContent()}
-    </ChromeUIProvider>
+    SimulatorPageContent()
   );
 
-
-  /**
-   * Inner component that consumes ChromeUIContext and renders the main simulator UI.
-   * Can gradually migrate props to use useChromeUI() in phases.
-   */
   function SimulatorPageContent() {
     const chrome = {
       setShowCanvasMenu,
@@ -8936,352 +8277,124 @@ export function SimulatorPage({ gamificationMode = false }) {
       setShowSaveDialog,
     };
 
+    // Global Keyboard Shortcuts
+    useSimulatorShortcuts({
+      selected, isRunning, liveEditingDisabled, saveHistory, handleSave, undo, redo, handleRun, handleStop,
+      rotateComponent, components, setShowShortcuts, setCanvasZoom, setCanvasOffset, setShowProjectsSidebar,
+      setProjectsSidebarTab, wireStart, setWireStart, setSelected, setWireClickPos, setWires, setComponents,
+      applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked,
+      isPanelOpen, setIsPanelOpen, codeTab, setCodeTab, fitToView, setWiresAlwaysOnTop, setShowCodeExplorer,
+      setShowF1Menu, canvasZoomRef, canvasOffsetRef, innerCanvasRef,
+      setProjectFiles, activeCodeFileId, code, setCode
+    });
+
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
 
-        {/* ADMIN PREVIEW BANNER — shown when opened via "Test in Simulator" from admin dashboard */}
-        {previewBanner && (
-          <div style={{
-            position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
-            background: 'linear-gradient(90deg, #92400e, #b45309)',
-            color: '#fff', padding: '10px 20px',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            fontFamily: 'monospace', fontSize: 13, boxShadow: '0 2px 12px rgba(0,0,0,0.4)'
-          }}>
-            <span>
-              🧪 <strong>Admin Preview Mode</strong> &nbsp;—&nbsp;
-              Component <strong style={{ color: '#fde68a' }}>{previewBanner.label}</strong>
-              &nbsp;(<code style={{ background: 'rgba(0,0,0,0.3)', padding: '2px 6px', borderRadius: 3 }}>{previewBanner.id}</code>)
-              &nbsp;is injected in <strong>browser memory only</strong>. It is NOT approved or installed on the backend.
-            </span>
-            <button
-              onClick={() => setPreviewBanner(null)}
-              style={{ background: 'rgba(0,0,0,0.3)', border: 'none', color: '#fff', borderRadius: 4, padding: '4px 10px', cursor: 'pointer', fontSize: 13 }}
-            >✕ Dismiss</button>
-          </div>
-        )}
-
-        {isExporting && (
-          <div style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 10000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(7, 11, 20, 0.36)',
-            backdropFilter: 'blur(2px)',
-            pointerEvents: 'all'
-          }}>
-            <style>{`
-            @keyframes openhw-png-spin {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-          `}</style>
-            <div style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 12,
-              padding: '18px 22px',
-              borderRadius: 16,
-              background: 'rgba(10, 15, 28, 0.94)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 18px 60px rgba(0,0,0,0.35)',
-              minWidth: 220
-            }}>
-              <div style={{
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                border: '3px solid rgba(255,255,255,0.18)',
-                borderTopColor: 'var(--accent)',
-                animation: 'openhw-png-spin 0.9s linear infinite'
-              }} />
-              <div style={{ color: 'var(--text)', fontSize: 14, fontWeight: 700 }}>Exporting to PNG</div>
-              <div style={{ color: 'var(--text3)', fontSize: 12 }}>Please wait while the image is rendered.</div>
-            </div>
-          </div>
-        )}
-
         {/* TOP BAR */}
-        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} />
-        {studentAssignmentMode && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }}>
-            <div style={{ minWidth: 0 }}>
-              <strong style={{ display: 'block', fontSize: 13 }}>{assignmentSubmissionAssignment?.title || 'Assignment Template'}</strong>
-              <span style={{ color: 'var(--text3)', fontSize: 12 }}>
-                {isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Complete the simulation and submit your work here.'}
-              </span>
-            </div>
-            <Btn
-              color="var(--accent)"
-              onClick={handleSubmitClassAssignment}
-              disabled={assignmentSubmissionState.saving || !assignmentSubmissionAssignment || isAssignmentSubmissionClosed(assignmentSubmissionAssignment)}
-              title={assignmentSubmissionState.saving ? 'Submitting...' : isAssignmentSubmissionClosed(assignmentSubmissionAssignment) ? 'Submission closed' : 'Submit assignment'}
-            >
-              {assignmentSubmissionState.data ? 'Update Submission' : 'Submit Assignment'}
-            </Btn>
-          </div>
-        )}
+        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
 
-        {liveMeetingMode && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'linear-gradient(90deg, rgba(37,99,235,0.12), rgba(14,165,233,0.08))', flexShrink: 0 }}>
-            <div style={{ minWidth: 0 }}>
-              <strong style={{ display: 'block', fontSize: 13 }}>
-                {isLiveTeacher ? 'Live simulation host' : (liveCanEdit ? 'Live simulation editor' : 'Live simulation viewer')}
-              </strong>
-              <span style={{ color: 'var(--text3)', fontSize: 12 }}>
-                Code {liveMeetingShareCode || liveSessionCode} • {liveMeetingStatus || 'Connecting'}
-                {liveMeetingParticipantCounts.students ? ` • ${liveMeetingParticipantCounts.students} student${liveMeetingParticipantCounts.students > 1 ? 's' : ''} connected` : ''}
-              </span>
-            </div>
-            {isLiveTeacher && (
-              <Btn
-                color="var(--accent)"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(liveMeetingShareCode || liveSessionCode);
-                  } catch (error) {
-                    console.error('Failed to copy live meeting code', error);
-                  }
-                }}
-                title="Copy the live meeting code"
-              >
-                Copy Code
-              </Btn>
-            )}
-            {!isLiveTeacher && !liveCanEdit && (
-              <Btn
-                color="var(--orange)"
-                onClick={handleRequestLiveEditAccess}
-                disabled={liveEditRequestPending}
-                title="Ask the teacher for edit access"
-              >
-                {liveEditRequestPending ? 'Request Sent' : 'Request Edit Access'}
-              </Btn>
-            )}
-            {!isLiveTeacher && liveCanEdit && (
-              <Btn
-                color="var(--red)"
-                onClick={handleEndLiveEditAccess}
-                title="End your edit permission"
-              >
-                End Edit Access
-              </Btn>
-            )}
-          </div>
-        )}
+        <SimulatorStatusBanners
+          studentAssignmentMode={studentAssignmentMode}
+          assignmentSubmissionAssignment={assignmentSubmissionAssignment}
+          isAssignmentSubmissionClosed={isAssignmentSubmissionClosed}
+          assignmentSubmissionState={assignmentSubmissionState}
+          handleSubmitClassAssignment={handleSubmitClassAssignment}
+          liveMeetingMode={liveMeetingMode}
+          isLiveTeacher={isLiveTeacher}
+          liveCanEdit={liveCanEdit}
+          liveMeetingShareCode={liveMeetingShareCode}
+          liveSessionCode={liveSessionCode}
+          liveMeetingStatus={liveMeetingStatus}
+          liveMeetingParticipantCounts={liveMeetingParticipantCounts}
+          liveEditRequestPending={liveEditRequestPending}
+          handleRequestLiveEditAccess={handleRequestLiveEditAccess}
+          handleEndLiveEditAccess={handleEndLiveEditAccess}
+          liveGrantedEditors={liveGrantedEditors}
+          handleRespondToLiveEditRequest={handleRespondToLiveEditRequest}
+          livePendingEditRequests={livePendingEditRequests}
+        />
 
-        {isLiveTeacher && liveGrantedEditors.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg2)' }}>
-            <strong style={{ fontSize: 12 }}>Editors with access:</strong>
-            {liveGrantedEditors.map((editor) => (
-              <div key={editor.userId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 999, border: '1px solid var(--border)', background: 'var(--card)' }}>
-                <span style={{ fontSize: 12 }}>{editor.userName || 'Student'}</span>
-                <button type="button" onClick={() => handleRespondToLiveEditRequest(editor.userId, 'revoke')} style={{ border: 'none', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <SimulatorDialogsGroup
+          activeUser={activeUser}
+          showShareDialog={showShareDialog}
+          setShowShareDialog={setShowShareDialog}
+          isSharingSimulation={isSharingSimulation}
+          shareUrl={shareUrl}
+          handleCopyShareUrl={handleCopyShareUrl}
+          shareCopied={shareCopied}
+          showSaveDialog={showSaveDialog}
+          setShowSaveDialog={setShowSaveDialog}
+          saveDialogName={saveDialogName}
+          setSaveDialogName={setSaveDialogName}
+          handleConfirmSave={handleConfirmSave}
+          showFirmwareDownloadDialog={showFirmwareDownloadDialog}
+          setShowFirmwareDownloadDialog={setShowFirmwareDownloadDialog}
+          firmwareDownloadTarget={firmwareDownloadTarget}
+          setFirmwareDownloadTarget={setFirmwareDownloadTarget}
+          firmwareBoardOptions={firmwareBoardOptions}
+          handleDownloadFirmware={handleDownloadFirmware}
+          showFirmwareUploadDialog={showFirmwareUploadDialog}
+          setShowFirmwareUploadDialog={setShowFirmwareUploadDialog}
+          boardComponentMap={boardComponentMap}
+          normalizeBoardKind={normalizeBoardKind}
+          toggleBoardFirmwareSource={toggleBoardFirmwareSource}
+          setFirmwareUploadTarget={setFirmwareUploadTarget}
+          firmwareUploadInputRef={firmwareUploadInputRef}
+          firmwareUploadTarget={firmwareUploadTarget}
+          applyUploadedFirmwareToBoard={applyUploadedFirmwareToBoard}
+        />
 
-        {isLiveTeacher && livePendingEditRequests.length > 0 && (
-          <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Live edit requests">
-            <div className="teacher-modal__backdrop" />
-            <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
-              <header className="teacher-modal__header">
-                <h3>Simulation Edit Request</h3>
-              </header>
-              <p className="simulator-share-dialog__copy">
-                Students are read-only by default. Approve a request to temporarily let that student update the shared simulation.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {livePendingEditRequests.map((request) => (
-                  <div key={request.userId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 14px', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg)' }}>
-                    <div>
-                      <strong style={{ display: 'block', fontSize: 13 }}>{request.userName || 'Student'}</strong>
-                      <span style={{ color: 'var(--text3)', fontSize: 12 }}>Wants permission to edit the live simulation.</span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" className="simulator-share-dialog__secondary" onClick={() => handleRespondToLiveEditRequest(request.userId, 'deny')}>Deny</button>
-                      <button type="button" className="simulator-share-dialog__primary" onClick={() => handleRespondToLiveEditRequest(request.userId, 'approve')}>Allow</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-        )}
+        <SimulatorChromeOverlays
+          previewBanner={previewBanner}
+          setPreviewBanner={setPreviewBanner}
+          isExporting={isExporting}
+          gamificationMode={gamificationMode}
+          gamProject={gamProject}
+          navigate={navigate}
+          currentLevelData={currentLevelData}
+          currentLevel={currentLevel}
+          xpProgress={xpProgress}
+          nextLevel={nextLevel}
+          coins={coins}
+          gamAllUnlocked={gamAllUnlocked}
+          gamLockedCount={gamLockedCount}
+          gamPanelOpen={gamPanelOpen}
+          setGamPanelOpen={setGamPanelOpen}
+          handleGamificationSubmit={handleGamificationSubmit}
+          lockToast={lockToast}
+          wireStart={wireStart}
+        />
 
-        {showShareDialog && ['teacher', 'user', 'admin'].includes(activeUser?.role) && (
-          <div className="teacher-modal" role="dialog" aria-modal="true" aria-label="Share simulation">
-            <div className="teacher-modal__backdrop" onClick={() => setShowShareDialog(false)} />
-            <section className="teacher-modal__content simulator-share-dialog" onClick={(event) => event.stopPropagation()}>
-              <header className="teacher-modal__header">
-                <h3>Share Simulation</h3>
-                <button type="button" onClick={() => setShowShareDialog(false)} aria-label="Close share dialog">x</button>
-              </header>
-              <p className="simulator-share-dialog__copy">
-                Distribute your interactive learning module by generating a secure link. Choose the visibility level to control who can access this curriculum asset.
-              </p>
-              <div className="simulator-share-dialog__label">Generated Access Link</div>
-              <div className="simulator-share-dialog__link-box">
-                <svg className="simulator-share-dialog__link-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.2 4.73" />
-                  <path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.63-1.63" />
-                </svg>
-                <span className="simulator-share-dialog__link-text">
-                  {isSharingSimulation ? 'Creating secure link...' : (shareUrl || 'Unable to create link. Try Share again.')}
-                </span>
-                {shareUrl && (
-                  <button type="button" className="simulator-share-dialog__inline-copy" onClick={handleCopyShareUrl} aria-label="Copy share URL">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="9" y="9" width="13" height="13" rx="2" />
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-              <div className="simulator-share-dialog__footer">
-                <button type="button" className="simulator-share-dialog__secondary" onClick={() => setShowShareDialog(false)}>Close</button>
-                <button type="button" className="simulator-share-dialog__primary" onClick={handleCopyShareUrl} disabled={!shareUrl}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="18" cy="5" r="3" />
-                    <circle cx="6" cy="12" r="3" />
-                    <circle cx="18" cy="19" r="3" />
-                    <path d="M8.59 13.51l6.83 3.98" />
-                    <path d="M15.41 6.51l-6.82 3.98" />
-                  </svg>
-                  {shareCopied ? 'Copied' : 'Copy URL'}
-                </button>
-              </div>
-            </section>
-          </div>
-        )}
-
-        {gamificationMode && gamProject && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
-            background: 'rgba(7,8,15,0.97)', borderBottom: `2px solid ${gamProject.color || '#22c55e'}44`,
-            fontFamily: "'Space Grotesk', sans-serif", flexShrink: 0, flexWrap: 'wrap', zIndex: 50,
-          }}>
-            <button
-              onClick={() => navigate('/projects')}
-              style={{ background: 'transparent', border: '1px solid rgba(255,255,255,.12)', color: 'rgba(255,255,255,.55)', borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-            >← Projects</button>
-
-            <span style={{ fontSize: 18, flexShrink: 0 }}>{gamProject.icon}</span>
-            <div style={{ flexShrink: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1 }}>{gamProject.title}</div>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,.4)', marginTop: 1 }}>
-                Project {String(gamProject.number).padStart(2, '0')} ·{' '}
-                <span style={{ color: gamProject.color || '#22c55e' }}>{gamProject.difficultyLabel}</span>
-                {' '}· ⏱ {gamProject.estimatedTime}
-              </div>
-            </div>
-
-            <div style={{ flex: 1 }} />
-
-            {/* XP bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <div style={{
-                width: 26, height: 26, borderRadius: '50%',
-                background: `${currentLevelData?.color || '#22c55e'}22`,
-                border: `2px solid ${currentLevelData?.color || '#22c55e'}`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 800, color: currentLevelData?.color || '#22c55e',
-              }}>{currentLevel}</div>
-              <div style={{ width: 90 }}>
-                <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,.1)', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', borderRadius: 999, width: `${xpProgress}%`, background: `${currentLevelData?.color || '#22c55e'}` }} />
-                </div>
-                <div style={{ fontSize: 9, color: 'rgba(255,255,255,.3)', marginTop: 2 }}>{xpProgress}% to Lvl {nextLevel?.id ?? '—'}</div>
-              </div>
-            </div>
-
-            {/* Coins */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.2)', borderRadius: 7, padding: '4px 9px', flexShrink: 0 }}>
-              <span style={{ fontSize: 13 }}>🪙</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#fbbf24' }}>{coins}</span>
-            </div>
-
-            {/* XP reward */}
-            <div style={{ fontSize: 10, color: '#22c55e', background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.2)', borderRadius: 7, padding: '4px 9px', flexShrink: 0, fontWeight: 700 }}>
-              +{gamProject.xpReward} XP on complete
-            </div>
-
-            {/* Component lock status */}
-            <div style={{
-              fontSize: 10, fontWeight: 700, padding: '4px 10px', borderRadius: 7,
-              background: gamAllUnlocked ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)',
-              border: `1px solid ${gamAllUnlocked ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)'}`,
-              color: gamAllUnlocked ? '#22c55e' : '#ef4444', flexShrink: 0,
-            }}>
-              {gamAllUnlocked ? '✅ All unlocked' : `🔒 ${gamLockedCount} locked`}
-            </div>
-
-            {/* Toggle guide panel */}
-            <button
-              onClick={() => setGamPanelOpen(p => !p)}
-              style={{
-                background: gamPanelOpen ? 'rgba(0,180,255,.1)' : 'transparent',
-                border: `1px solid ${gamPanelOpen ? 'rgba(0,180,255,.3)' : 'rgba(255,255,255,.12)'}`,
-                color: gamPanelOpen ? '#00b4ff' : 'rgba(255,255,255,.5)',
-                borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 700,
-                cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-              }}
-            >{gamPanelOpen ? '⟩ Hide Guide' : '⟨ Guide'}</button>
-
-            {/* Submit assessment */}
-            <button
-              onClick={handleGamificationSubmit}
-              style={{
-                background: gamProject.color || '#22c55e', border: 'none', color: '#fff',
-                borderRadius: 7, padding: '5px 13px', fontSize: 12, fontWeight: 700,
-                cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
-              }}
-            >Submit →</button>
-          </div>
-        )}
-
-        {/* GAMIFICATION LOCK TOAST */}
-        {lockToast && (
-          <div style={{
-            position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-            background: 'rgba(7, 11, 25, 0.95)', border: '1px solid rgba(239, 68, 68, 0.3)',
-            boxShadow: '0 8px 32px rgba(239, 68, 68, 0.2)', padding: '12px 20px', borderRadius: 12,
-            display: 'flex', alignItems: 'center', gap: 12, zIndex: 9999, animation: 'slideUp 0.3s ease-out'
-          }}>
-            <span style={{ fontSize: 24 }}>🔒</span>
-            <div>
-              <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 14 }}>{lockToast.label} is Locked</div>
-              <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>Study the theory and pass the quiz to unlock this component.</div>
-            </div>
-            {lockToast.compId && (
-              <button
-                onClick={() => navigate(`/components/${lockToast.compId}/theory`)}
-                style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontWeight: 600, cursor: 'pointer', fontSize: 12, marginLeft: 8 }}
-              >Study Now</button>
-            )}
-          </div>
-        )}
-
-
-        {/* WIRING MODE HINT */}
-        {wireStart && (
-          <div className="bg-[rgba(255,145,0,.1)] border-b border-[rgba(255,145,0,.25)] text-[var(--orange)] px-5 py-2 text-[13px] flex items-center shrink-0" style={{ background: 'rgba(255,170,0,.12)', borderColor: 'rgba(255,170,0,.3)', color: 'var(--orange)' }}>
-            〰 <strong>Wiring in progress</strong> — Click another pin to connect. Press Esc to cancel.
-            <span style={{ marginLeft: 12 }}>🔵 Started from <strong>{wireStart.compId} [{wireStart.pinLabel}]</strong></span>
-          </div>
-        )}
+        <F1MenuOverlay
+          showF1Menu={showF1Menu}
+          setShowF1Menu={setShowF1Menu}
+          downloadSimulationJson={downloadSimulationJson}
+          openFirmwareDownloadDialog={openFirmwareDownloadDialog}
+          openFirmwareUploadDialog={openFirmwareUploadDialog}
+          rp2040DebugTelemetryEnabled={rp2040DebugTelemetryEnabled}
+          setRp2040DebugTelemetryEnabled={setRp2040DebugTelemetryEnabled}
+          componentTelemetryEnabled={componentTelemetryEnabled}
+          setComponentTelemetryEnabled={setComponentTelemetryEnabled}
+          deepSiliconDebuggingEnabled={deepSiliconDebuggingEnabled}
+          setDeepSiliconDebuggingEnabled={setDeepSiliconDebuggingEnabled}
+          telemetryMode={telemetryMode}
+          setTelemetryMode={setTelemetryMode}
+          onOpenTelemetryModal={() => setShowTelemetrySelectModal(true)}
+          setShowSpeedDialog={setShowSpeedDialog}
+          simulationSpeed={simulationSpeed}
+          setSimulationSpeed={setSimulationSpeed}
+          isRunning={isRunning}
+          workerRef={workerRef}
+          handleStartGDB={handleStartGDB}
+        />
 
         <div className="flex flex-1 overflow-hidden" onClick={() => setProjContextMenu(null)}>
 
           {/* PALETTE — hover to expand */}
           <PalettePanel
+            isPaletteHovered={isPaletteHovered}
+            setIsPaletteHovered={setIsPaletteHovered}
             theme={theme}
             liveEditingDisabled={liveEditingDisabled}
             addComponentAtCenter={addComponentAtCenter}
@@ -9290,7 +8403,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             openComponentEditor={openComponentEditor}
             showLockToast={showLockToast}
             isPaletteItemLocked={isPaletteItemLocked}
-            CATALOG={CATALOG}
+            CATALOG={LOCAL_CATALOG}
             GROUP_COLORS={GROUP_COLORS}
             GROUP_ICON_SVG={GROUP_ICON_SVG}
             COMPONENT_REGISTRY={COMPONENT_REGISTRY}
@@ -9301,25 +8414,14 @@ export function SimulatorPage({ gamificationMode = false }) {
             buildUiSourceFromRegistry={buildUiSourceFromRegistry}
             buildValidationSourceFromRegistry={buildValidationSourceFromRegistry}
             buildIndexSourceFromRegistry={buildIndexSourceFromRegistry}
+            forceExpand={tourActiveStep === 'palette' || tourActiveStep === 'drag-demo'}
             writeEditCopyPayload={writeEditCopyPayload}
           />
 
-          {/* Create Component Modal (placeholder) */}
-          {showCreateComponentModal && (
-            <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowCreateComponentModal(false)}>
-              <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-                <div className="text-base font-bold mb-3.5 text-[var(--text)]">Create Component</div>
-                <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 16 }}>
-                  To create a custom component, build a ZIP package with <code>manifest.json</code>, <code>ui.tsx</code>, <code>logic.ts</code>, and optionally <code>validation.ts</code>, then upload via <strong>Upload ZIP to Test</strong>.
-                </p>
-                <button
-                  onClick={() => setShowCreateComponentModal(false)}
-                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                  Got it
-                </button>
-              </div>
-            </div>
-          )}
+          <CreateComponentModal
+            open={showCreateComponentModal}
+            onClose={handleCloseCreateComponentModal}
+          />
 
           {/* CANVAS + SVG WIRE LAYER */}
           <main
@@ -9331,6 +8433,10 @@ export function SimulatorPage({ gamificationMode = false }) {
               touchAction: 'none', // Block browser pinch-to-zoom
               pointerEvents: liveEditingDisabled ? 'none' : 'auto',
               opacity: liveEditingDisabled ? 0.8 : 1,
+              marginLeft: '38px',
+              transform: `translateX(${isPaletteHovered ? '302px' : '0'})`,
+              transition: 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)',
+              willChange: 'transform'
             }}
             ref={canvasRef}
             onTouchStart={onTouchStart}
@@ -9375,1061 +8481,160 @@ export function SimulatorPage({ gamificationMode = false }) {
             {/* Zoom Wrapper — scales all circuit content */}
             {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
                React state (canvasOffset) is only committed once on mouseup. */}
-            <div ref={innerCanvasRef} style={{
-              position: 'absolute', top: 0, left: 0,
-              width: '10000px', height: '8000px',
-              transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
-            }}>
-              {/* BOTTOM SVG layer for wires (Below Components) */}
-              <svg
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
-              >
-                {/* Placed wires (Bottom layer) - All non-selected wires when alwaysOnTop is disabled */}
-                {wires.filter(w => !wiresAlwaysOnTop && selected !== w.id).map((w, index) => {
-                  const fromParts = w.from.split(':')
-                  const toParts = w.to.split(':')
-                  const fromComp = components.find(c => c.id === fromParts[0]);
-                  const toComp = components.find(c => c.id === toParts[0]);
-                  let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                  let p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                  if (!p1 || !p2) {
-                    if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-                    if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-                  }
-                  const globalIndex = wires.findIndex(ww => ww.id === w.id);
-                  const offset = (globalIndex !== -1 ? globalIndex : index) % 7;
-                  const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
-                  const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
+            <CanvasSceneLayer
+              innerCanvasRef={innerCanvasRef}
+              canvasOffset={canvasOffset}
+              canvasZoom={canvasZoom}
+              wires={wires}
+              wiresAlwaysOnTop={wiresAlwaysOnTop}
+              selected={selected}
+              components={components}
+              getPinPos={getPinPos}
+              getPinExitPoint={getPinExitPoint}
+              wirepointsEnabled={wirepointsEnabled}
+              theme={theme}
+              setSelected={setSelected}
+              canvasRef={canvasRef}
+              setWireClickPos={setWireClickPos}
+              canvasOffsetRef={canvasOffsetRef}
+              canvasZoomRef={canvasZoomRef}
+              setSegDrag={setSegDrag}
+              segDragRef={segDragRef}
+              autofixPlan={autofixPlan}
+              getPinPosWithGhosts={getPinPosWithGhosts}
+              wireStart={wireStart}
+              mousePos={mousePos}
+              multiRoutePath={multiRoutePath}
+              svgRef={svgRef}
+              isRunning={isRunning}
+              COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+              getComponentStateAttrs={getComponentStateAttrs}
+              updateComponentAttr={updateComponentAttr}
+              wireClickPos={wireClickPos}
+              updateWireColor={updateWireColor}
+              saveHistory={saveHistory}
+              setWires={setWires}
+              deleteWire={deleteWire}
+              PIN_DEFS={PIN_DEFS}
+              errorCompIds={errorCompIds}
+              serialBoardFilter={serialBoardFilter}
+              onCompContextMenu={onCompContextMenu}
+              onCompMouseDown={onCompMouseDown}
+              onCompClick={onCompClick}
+              getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+              subscribeLiveOopState={subscribeLiveOopState}
+              neopixelRefs={neopixelRefs}
+              hoveredPin={hoveredPin}
+              setHoveredPin={setHoveredPin}
+              snappingHoles={snappingHoles}
+              getPinCategory={getPinCategory}
+              hasCategoryIntersection={hasCategoryIntersection}
+              onPinClick={onPinClick}
+              setWireStart={setWireStart}
+            />
 
-                  return (
-                    <CanvasWire
-                      key={w.id}
-                      wire={w}
-                      p1={p1} p2={p2} e1={e1} e2={e2}
-                      isSelected={selected === w.id}
-                      offset={offset}
-                      wirepointsEnabled={wirepointsEnabled}
-                      theme={theme}
-                      wiresAlwaysOnTop={wiresAlwaysOnTop}
-                      onSelect={(e) => {
-                        e.stopPropagation();
-                        setSelected(w.id);
-                        const rect = canvasRef.current.getBoundingClientRect();
-                        setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                      }}
-                      onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
-                        if (selected !== wire.id) { setSelected(wire.id); return; }
-                        const rect = canvasRef.current.getBoundingClientRect();
-                        const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                        const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                        const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                        segDragRef.current = dragData;
-                        setSegDrag(dragData);
-                      }}
-                    />
-                  );
-                })}
-                {autofixPlan?.addedWires?.filter(w => w.isBelow === true).map(w => {
-                  const fromParts = (w.from || '').split(':');
-                  const toParts = (w.to || '').split(':');
-                  let p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
-                  let p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
-                  if (!p1 || !p2) {
-                    if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-                    if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-                  }
-                  const e1 = p1; // Simplify ghost exits for preview
-                  const e2 = p2;
-                  return (
-                    <CanvasWire
-                      key={`ghost-${w.id}`}
-                      wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
-                      p1={p1} p2={p2} e1={e1} e2={e2}
-                      isGhost={true}
-                      theme={theme}
-                    />
-                  );
-                })}
-                {autofixPlan?.addedWires?.filter(w => w.isBelow !== true).map(w => {
-                  const fromParts = (w.from || '').split(':');
-                  const toParts = (w.to || '').split(':');
-                  let p1 = getPinPosWithGhosts(fromParts[0], fromParts.slice(1).join(':'));
-                  let p2 = getPinPosWithGhosts(toParts[0], toParts.slice(1).join(':'));
-                  if (!p1 || !p2) {
-                    if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-                    if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-                  }
-                  const e1 = p1;
-                  const e2 = p2;
-                  return (
-                    <CanvasWire
-                      key={`ghost-${w.id}`}
-                      wire={{ ...w, color: '#38bdf8', path: (w.path && w.path.length >= 2) ? [p1, ...w.path.slice(1, -1), p2] : null }}
-                      p1={p1} p2={p2} e1={e1} e2={e2}
-                      isGhost={true}
-                      theme={theme}
-                    />
-                  );
-                })}
-              </svg>
+            <SimulatorRuntimePanel
+              isRunning={isRunning}
+              isCompiling={isCompiling}
+              isPaused={isPaused}
+              runDurationSec={runDurationSec}
+              simulationSpeedPercent={simulationSpeedPercent}
+              formatRunDuration={formatRunDuration}
+            />
 
-              {/* TOP SVG layer for wires (Above Components) & Context Menu */}
-              <svg
-                ref={svgRef}
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
-              >
-                {/* Placed wires (Top layer) - Selected wire OR all wires if enabled */}
-                {wires.filter(w => wiresAlwaysOnTop || selected === w.id).map((w, index) => {
-                  const fromParts = w.from.split(':')
-                  const toParts = w.to.split(':')
-                  const fromComp = components.find(c => c.id === fromParts[0]);
-                  const toComp = components.find(c => c.id === toParts[0]);
-                  let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                  let p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                  if (!p1 || !p2) {
-                    if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-                    if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-                  }
-                  const globalIndexTop = wires.findIndex(ww => ww.id === w.id);
-                  const offset = (globalIndexTop !== -1 ? globalIndexTop : index) % 7;
-                  const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
-                  const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
+            <ComponentInspectorPanel
+              selectedComponentInfo={selectedComponentInfo}
+              showComponentDesc={showComponentDesc}
+              setShowComponentDesc={setShowComponentDesc}
+              selected={selected}
+              components={components}
+              wires={wires}
+              COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+              GROUP_COLORS={GROUP_COLORS}
+              LOCAL_PIN_DEFS={LOCAL_PIN_DEFS}
+              getPinCategory={getPinCategory}
+              hasCategoryIntersection={hasCategoryIntersection}
+              pendingPinColors={pendingPinColors}
+              setPendingPinColors={setPendingPinColors}
+              updateWireColor={updateWireColor}
+              setWires={setWires}
+              setWireStart={setWireStart}
+              isPinMappingExpanded={isPinMappingExpanded}
+              setIsPinMappingExpanded={setIsPinMappingExpanded}
+            />
 
-                  return (
-                    <CanvasWire
-                      key={w.id}
-                      wire={w}
-                      p1={p1} p2={p2} e1={e1} e2={e2}
-                      isSelected={selected === w.id}
-                      offset={offset}
-                      wirepointsEnabled={wirepointsEnabled}
-                      theme={theme}
-                      wiresAlwaysOnTop={wiresAlwaysOnTop}
-                      onSelect={(e) => {
-                        e.stopPropagation();
-                        setSelected(w.id);
-                        const rect = canvasRef.current.getBoundingClientRect();
-                        setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                      }}
-                      onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
-                        if (selected !== wire.id) { setSelected(wire.id); return; }
-                        const rect = canvasRef.current.getBoundingClientRect();
-                        const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                        const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                        const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                        segDragRef.current = dragData;
-                        setSegDrag(dragData);
-                      }}
-                    />
-                  );
-                })}
-
-                {/* Preview wire while drawing */}
-                {wireStart && (
-                  <path
-                    d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
-                    stroke="var(--orange)"
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                    fill="none"
-                    strokeLinecap="round"
-                    opacity={0.8}
-                  />
-                )}
-              </svg>
-
-              {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
-              {(() => {
-                const comp = components.find(c => c.id === selected);
-                if (!comp) return null;
-                const reg = COMPONENT_REGISTRY[comp.type];
-                if (!reg?.ContextMenu) return null;
-                const showDuringRun = !!reg.contextMenuDuringRun || !!reg.contextMenuOnlyDuringRun;
-                if (isRunning && !showDuringRun) return null;
-                if (!isRunning && reg.contextMenuOnlyDuringRun) return null;
-                return (
-                  <div key={`cmenu-${comp.id}`} data-contextmenu="true" style={{
-                    position: 'absolute',
-                    left: comp.x + comp.w / 2,
-                    top: comp.y - 14,
-                    transform: `translateX(-50%) translateY(-100%) scale(${1 / Math.max(canvasZoom, 0.01)})`,
-                    transformOrigin: 'bottom center',
-                    background: 'var(--bg2)', border: '1px solid var(--border)',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '6px 10px', borderRadius: '10px',
-                    boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                    pointerEvents: 'all', whiteSpace: 'nowrap', zIndex: 200
-                  }}
-                    onMouseDown={e => e.stopPropagation()}
-                    onClick={e => e.stopPropagation()}
-                    onDoubleClick={e => e.stopPropagation()}
-                  >
-                    {React.createElement(reg.ContextMenu, {
-                      attrs: getComponentStateAttrs(comp),
-                      onUpdate: (key, value) => updateComponentAttr(comp.id, key, value)
-                    })}
-                    <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                    <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
-                  </div>
-                );
-              })()}
-
-              {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
-              {(() => {
-                const w = wires.find(w => w.id === selected);
-                if (!w || isRunning) return null;
-
-                const fromParts = w.from.split(':')
-                const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                if (!p1 || !p2) return null
-
-                // Use click position, fall back to wire midpoint
-                const pts = [p1, ...(w.waypoints || []), p2];
-                const midPt = pts[Math.floor(pts.length / 2)];
-                const menuPos = wireClickPos || midPt;
-
-                // Build connection label — "LED [anode]" style, no instance number
-                const fromComp = components.find(c => c.id === fromParts[0]);
-                const toComp = components.find(c => c.id === toParts[0]);
-                const fromLabel = `${fromComp?.label || fromParts[0]} [${w.fromLabel || fromParts[1]}]`;
-                const toLabel = `${toComp?.label || toParts[0]} [${w.toLabel || toParts[1]}]`;
-
-                return (
-                  <div key={`menu-${w.id}`} style={{
-                    position: 'absolute',
-                    left: menuPos.x,
-                    top: menuPos.y - 8,
-                    transform: 'translateX(-50%) translateY(-100%)',
-                    zIndex: 50,
-                    background: 'var(--bg2)', border: '1px solid var(--border)',
-                    display: 'flex', flexDirection: 'column', gap: 6,
-                    padding: '8px 10px', borderRadius: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.6)', cursor: 'default',
-                    minWidth: 180,
-                  }}
-                    onPointerDown={e => e.stopPropagation()}
-                    onClick={e => e.stopPropagation()}>
-                    {/* Row 1: connection info — two lines, centered */}
-                    <div style={{ fontFamily: 'JetBrains Mono, monospace', lineHeight: 1.5, textAlign: 'center' }}
-                      title={`${fromLabel} → ${toLabel}`}>
-                      <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{fromLabel}</div>
-                      <div style={{ fontSize: 9, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 }}>{toLabel}</div>
-                    </div>
-                    {/* Row 2: controls — centered */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                      <input type="color" value={w.color} onChange={e => updateWireColor(w.id, e.target.value)} style={{ width: 22, height: 22, padding: 0, border: 'none', cursor: 'pointer', background: 'transparent', borderRadius: 4 }} title="Change Color" />
-                      <button
-                        style={{ background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                        title="Reset route to auto"
-                        onPointerDown={e => e.stopPropagation()}
-                        onClick={e => {
-                          e.stopPropagation();
-                          saveHistory();
-                          setWires(prev => prev.map(ww => ww.id === w.id ? { ...ww, waypoints: [] } : ww));
-                        }}
-                      >↺</button>
-                      <button style={{ background: 'var(--red)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 13, padding: '4px 8px', borderRadius: 6, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }} onPointerDown={(e) => { e.stopPropagation(); deleteWire(w.id); }} onClick={(e) => { e.stopPropagation(); deleteWire(w.id); }} title="Delete Wire">✕</button>
-                    </div>
-                    <div style={{ position: 'absolute', bottom: -6, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '6px solid var(--border)' }} />
-                    <div style={{ position: 'absolute', bottom: -5, left: '50%', transform: 'translateX(-50%)', width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid var(--bg2)' }} />
-                  </div>
-                )
-              })()}
-
-              {/* Empty state */}
-              {components.length === 0 && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-[var(--text3)] text-center pointer-events-none">
-                  <div style={{ fontSize: 52, marginBottom: 16 }}>🔌</div>
-                  <p style={{ fontSize: 16, marginBottom: 8 }}>Drag components from the left panel</p>
-                  <p style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>
-                    Arduino Uno · LED · Resistor · Button · Servo · LCD
-                  </p>
-                </div>
-              )}
-
-              {/* Components (Layered: Breadboards on Bottom) */}
-              {(() => {
-                const renderComponent = (comp) => {
-                  const pins = comp.pins || PIN_DEFS[comp.type] || COMPONENT_REGISTRY[comp.type]?.manifest?.pins || []
-                  const hasError = errorCompIds.has(comp.id)
-                  const isSelected = selected === comp.id
-                  const isSerialBoardSelected = serialBoardFilter !== 'all' && serialBoardFilter === comp.id
-
-                  const rad = ((comp.rotation || 0) * Math.PI) / 180;
-                  const visualH = Math.abs(Math.sin(rad)) * comp.w + Math.abs(Math.cos(rad)) * comp.h;
-                  const visualHalfHeight = visualH / 2;
-
-                  return (
-                    <div
-                      key={comp.id}
-                      id={comp.isGhost ? `ghost-${comp.id}` : `comp-master-${comp.id}`}
-                      style={{
-                        position: 'absolute',
-                        left: comp.x, top: comp.y,
-                        zIndex: comp.type.startsWith('wokwi-breadboard')
-                          ? (isSelected ? 4 : 2)
-                          : (isSelected ? 10 : 5),
-                        opacity: comp.isGhost ? 0.4 : 1,
-                        filter: comp.isGhost ? 'grayscale(0.5) blur(0.5px)' : 'none',
-                        pointerEvents: comp.isGhost ? 'none' : 'auto',
-                      }}
-                      onContextMenu={e => onCompContextMenu(e, comp.id)}
-                    >
-                      <CanvasComponent
-                        comp={comp}
-                        isSelected={isSelected}
-                        hasError={hasError}
-                        onMouseDown={e => onCompMouseDown(e, comp.id)}
-                        onClick={e => onCompClick(e, comp.id)}
-                        getComponentStateAttrs={getComponentStateAttrs}
-                        COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-                        PIN_DEFS={PIN_DEFS}
-                        getLiveOopStateSnapshot={getLiveOopStateSnapshot}
-                        subscribeLiveOopState={subscribeLiveOopState}
-                      />
-
-                      {/* Wrapper for the actual emulator component and its dynamic pins */}
-                      <div style={{
-                        position: 'absolute',
-                        left: 0, top: 0,
-                        width: comp.w, height: comp.h,
-                        userSelect: 'none',
-                        pointerEvents: 'none',
-                        transform: comp.rotation ? `rotate(${comp.rotation}deg)` : undefined,
-                        transformOrigin: 'center center',
-                      }}>
-                        {/* Serial-target board ring */}
-                        {isSerialBoardSelected && (() => {
-                          const getBounds = () => {
-                            const reg = COMPONENT_REGISTRY[comp.type];
-                            if (!reg) return { x: 0, y: 0, w: comp.w, h: comp.h };
-                            if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-                            return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
-                          };
-                          const b = getBounds();
-                          return (
-                            <>
-                              <div style={{
-                                position: 'absolute',
-                                left: b.x - 10, top: b.y - 10,
-                                width: b.w + 20, height: b.h + 20,
-                                borderRadius: 10,
-                                border: '2px dashed #38bdf8',
-                                boxShadow: '0 0 18px rgba(56,189,248,.45)',
-                                pointerEvents: 'none', zIndex: 9,
-                              }} />
-                              <div style={{
-                                position: 'absolute',
-                                left: b.x - 10,
-                                top: b.y - 26,
-                                background: '#0c4a6e',
-                                color: '#e0f2fe',
-                                border: '1px solid #38bdf8',
-                                borderRadius: 6,
-                                fontSize: 9,
-                                padding: '1px 6px',
-                                letterSpacing: '0.04em',
-                                fontFamily: 'JetBrains Mono, monospace',
-                                pointerEvents: 'none',
-                                zIndex: 11,
-                              }}>
-                                SERIAL TARGET
-                              </div>
-                            </>
-                          );
-                        })()}
-
-                        {/* Component Render — wrapped to allow pass-through to Hit Box */}
-                        <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 1 }}>
-                          {COMPONENT_REGISTRY[comp.type] ? (
-                            // Local UI component rendering SVG
-                            React.createElement(COMPONENT_REGISTRY[comp.type].UI, {
-                              state: getLiveOopStateSnapshot(comp.id),
-                              attrs: getComponentStateAttrs(comp, getLiveOopStateSnapshot(comp.id)),
-                              isRunning: isRunning,
-                              comp: comp
-                            })
-                          ) : (
-                            // Fallback for unsupported components (if any left)
-                            <div
-                              style={{ width: '100%', height: '100%', pointerEvents: 'none', background: '#444', border: '1px solid #777' }}
-                              ref={el => {
-                                if (comp.type === 'wokwi-neopixel-matrix' && el) {
-                                  neopixelRefs.current[comp.id] = el;
-                                }
-                              }}
-                            >
-                              {React.createElement(comp.type, getComponentStateAttrs(comp))}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Pins */}
-                        {pins.map(pin => {
-                          const pinStrRef = `${comp.id}:${pin.id}`;
-                          const isHovered = hoveredPin === pinStrRef;
-                          const isWireStartPin = wireStart?.compId === comp.id && wireStart?.pinId === pin.id;
-
-                          // Snapping highlight
-                          const isSnapping = Array.isArray(snappingHoles) && snappingHoles.some(h => h.bbId === comp.id && h.holeId === pin.id);
-
-                          // Hovered pin's category for passive highlighting
-                          const hoverCompId = hoveredPin?.split(':')[0];
-                          const hoverPinId = hoveredPin?.split(':')[1];
-                          const hoverComp = hoverCompId ? components.find(c => c.id === hoverCompId) : null;
-                          const hoverCat = (hoverComp && hoverPinId) ? getPinCategory(hoverPinId, '', hoverComp.type) : null;
-
-                          const startCat = wireStart ? getPinCategory(wireStart.pinId, wireStart.pinLabel, wireStart.compType) : null;
-                          const currentCat = getPinCategory(pin.id, pin.description, comp.type);
-
-                          const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                          const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
-
-                          const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
-
-                          // Check if a wire is connected to this pin
-                          const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
-                          const isSocket = connectedWire?.isSocket;
-
-                          // Check if the component is "seated" (has at least one socket wire)
-                          const isCompSeated = wires.some(w => w.isSocket && (w.from.startsWith(comp.id + ':') || w.to.startsWith(comp.id + ':')));
-                          const isBreadboard = comp.type.startsWith('wokwi-breadboard');
-                          const isFloating = !isBreadboard && isCompSeated && !isSocket;
-
-                          const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
-                          const pinBorder = isSnapping ? '#fff' : (isSocket ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
-
-                          return (
-                            <div
-                              key={pin.id}
-                              id={`pin-dot-${comp.id}-${pin.id}`}
-                              title={`${pin.description || pin.id} — click to wire`}
-                              style={{
-                                position: 'absolute',
-                                left: pin.x, top: pin.y,
-                                width: 5, height: 5,
-                                background: pinColor === 'none' ? 'none' : pinColor,
-                                border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
-                                borderRadius: '0%', /* matching task3.html */
-                                cursor: 'crosshair',
-                                zIndex: isHovered || isSuggested || isSnapping ? 30 : 20, /* matching task3.html hover and port z-index */
-                                transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`, /* matching task3.html scale */
-                                transition: '0.2s', /* matching task3.html transition */
-                                pointerEvents: 'all', /* Fix hit detection */
-                                boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
-                              }}
-                              onMouseEnter={() => setHoveredPin(pinStrRef)}
-                              onMouseLeave={() => setHoveredPin(null)}
-                              onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
-                            >
-                              {/* Pin label tooltip */}
-                              {isHovered && (
-                                <div style={{
-                                  position: 'absolute', bottom: 18, left: '50%',
-                                  transform: 'translateX(-50%)',
-                                  background: '#111', color: '#fff',
-                                  padding: '4px 8px', borderRadius: 4,
-                                  fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                                  pointerEvents: 'none', border: '1px solid #444',
-                                  boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                                }}>
-                                  {pin.description || pin.id}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {/* Component label (Outside rotated container) */}
-                      <div style={{
-                        position: 'absolute',
-                        top: (comp.rotation === 90 || comp.rotation === 270)
-                          ? comp.h / 2 + comp.w / 2 + 4
-                          : comp.h + 4,
-                        left: comp.w / 2,
-                        transform: 'translateX(-50%)',
-                        fontSize: 10, color: hasError ? 'var(--red)' : 'var(--text3)',
-                        whiteSpace: 'nowrap', fontFamily: 'JetBrains Mono, monospace',
-                        pointerEvents: 'none',
-                        zIndex: 5,
-                      }}>
-                        {comp.label}
-                      </div>
-                    </div>
-                  );
-                };
-
-                const breadboards = components.filter(c => c.type.startsWith('wokwi-breadboard'));
-                const others = components.filter(c => !c.type.startsWith('wokwi-breadboard'));
-
-                return (
-                  <>
-                    {breadboards.map(renderComponent)}
-                    {others.map(renderComponent)}
-                    {autofixPlan?.addedComponents?.map(c => renderComponent({ ...c, isGhost: true }))}
-                  </>
-                );
-              })()}
-            </div>{/* end zoom wrapper */}
-
-            {/* Minimalist Runtime panel (top-left) */}
-            {isRunning && !isCompiling && (
-              <div
-                data-export-ignore="true"
-                onClick={e => e.stopPropagation()}
-                onMouseDown={e => e.stopPropagation()}
-                style={{
-                  position: 'absolute',
-                  top: 14,
-                  left: 14,
-                  zIndex: 90,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '16px',
-                  background: 'rgba(25, 25, 25, 0.65)',
-                  backdropFilter: 'blur(10px)',
-                  WebkitBackdropFilter: 'blur(10px)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '10px',
-                  boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
-                  padding: '6px 12px',
-                  pointerEvents: 'auto'
-                }}
-              >
-                {/* Duration Segment */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ color: 'var(--text3)', display: 'flex', alignItems: 'center' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10 2h4" /><path d="M12 14v-4" /><path d="M4 13a8 8 0 0 1 8-7 8 8 0 1 1-5.3 14L4 17.6V13z" />
-                    </svg>
-                  </div>
-                  <span style={{
-                    color: 'var(--text)',
-                    fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    letterSpacing: '0.02em',
-                    minWidth: '65px'
-                  }}>
-                    {formatRunDuration(runDurationSec)}
-                  </span>
-                </div>
-
-                {/* Divider */}
-                <div style={{ width: '1px', height: '12px', background: 'rgba(255, 255, 255, 0.1)' }} />
-
-                {/* Speed Segment */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" />
-                    </svg>
-                  </div>
-                  <span style={{
-                    color: 'var(--accent)',
-                    fontFamily: 'var(--font-mono, "JetBrains Mono", monospace)',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    minWidth: '35px'
-                  }}>
-                    {simulationSpeedPercent}%
-                  </span>
-                </div>
-
-                {/* Paused Indicator Overlay */}
-                {isPaused && (
-                  <div style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: 'rgba(245, 158, 11, 0.15)',
-                    borderRadius: '10px',
-                    border: '1px solid var(--orange)',
-                    zIndex: -1,
-                    animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-                  }} />
-                )}
-              </div>
-            )}
-
-            {/* Component Description Panel — shows info of canvas-selected component */}
-            {showComponentDesc && selectedComponentInfo && (
-              <div
-                data-export-ignore="true"
-                onClick={e => e.stopPropagation()}
-                onMouseDown={e => e.stopPropagation()}
-                onDoubleClick={e => e.stopPropagation()}
-                style={{
-                  position: 'absolute',
-                  top: 12,
-                  right: 12,
-                  zIndex: 90,
-                  width: 220,
-                  background: 'var(--bg2)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 12,
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
-                  overflow: 'hidden',
-                  maxHeight: 'calc(100vh - 130px)', // Limit height to stay above zoom controls
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-                data-no-canvas-scroll="true"
-              >
-                {/* Header */}
-                <div style={{
-                  padding: '16px 16px 14px',
-                  borderBottom: '1px solid var(--border)',
-                  flexShrink: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
-                  background: 'linear-gradient(to bottom, var(--bg2), var(--bg1))'
-                }}>
-                  <div style={{
-                    fontSize: 15,
-                    fontWeight: 800,
-                    color: 'var(--text)',
-                    letterSpacing: '-0.02em',
-                    lineHeight: '1.1'
-                  }}>
-                    {selectedComponentInfo.label}
-                  </div>
-
-
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8
-                  }}>
-                    {/* Category Chip */}
-                    <div style={{
-                      height: 24,
-                      fontSize: 9,
-                      fontWeight: 800,
-                      color: GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)',
-                      background: `${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}12`,
-                      borderRadius: 6,
-                      padding: '0 10px',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      border: `1px solid ${GROUP_COLORS[selectedComponentInfo.group] || 'var(--accent)'}22`
-                    }}>
-                      {selectedComponentInfo.group}
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        const doc = COMPONENT_REGISTRY[selectedComponentInfo.type]?.doc;
-                        if (doc) {
-                          // Replace hardcoded localhost URLs with current origin
-                          const finalDoc = doc.replace(/http:\/\/localhost:5173/g, window.location.origin);
-                          const b = new Blob([finalDoc], { type: 'text/html' });
-                          window.open(URL.createObjectURL(b), '_blank');
-                        } else {
-                          window.open(`https://wokwi.com/docs/parts/${selectedComponentInfo.type}`, '_blank');
-                        }
-                      }}
-                      style={{
-                        height: 24,
-                        background: 'var(--bg3)',
-                        border: '1px solid var(--border)',
-                        padding: '0 12px',
-                        color: 'var(--text2)',
-                        fontSize: 10,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        borderRadius: 6,
-                        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-                      }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.background = 'var(--bg4)';
-                        e.currentTarget.style.borderColor = 'var(--accent)';
-                        e.currentTarget.style.color = 'var(--accent)';
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.background = 'var(--bg3)';
-                        e.currentTarget.style.borderColor = 'var(--border)';
-                        e.currentTarget.style.color = 'var(--text2)';
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.05)';
-                      }}
-                    >
-                      <svg
-                        width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                      </svg>
-                      Documentation
-                    </button>
-                  </div>
-                </div>
-
-                {/* Pin Wiring Dropdowns */}
-                <div className="panel-scroll" style={{ padding: '10px 12px', flex: 1, overflowY: 'auto' }}>
-                  <div
-                    onClick={() => setIsPinMappingExpanded(!isPinMappingExpanded)}
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 'bold',
-                      color: 'var(--text3)',
-                      textTransform: 'uppercase',
-                      letterSpacing: 1,
-                      marginBottom: 8,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                      padding: '4px 0'
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.color = 'var(--text2)'}
-                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text3)'}
-                  >
-                    <span>Pin Mapping</span>
-                    <svg
-                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                      style={{
-                        transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        transform: isPinMappingExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                        opacity: 0.6
-                      }}
-                    >
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </div>
-                  {isPinMappingExpanded && (() => {
-                    const compPins = LOCAL_PIN_DEFS[selectedComponentInfo.type] || [];
-                    if (compPins.length === 0) {
-                      return <div style={{ fontSize: 12, color: 'var(--text3)' }}>No pins exposed.</div>;
-                    }
-
-                    // Gather ALL components for destination endpoints (excluding self)
-                    const validTargets = components.filter(c => c.id !== selected);
-                    const targetOptions = [];
-                    validTargets.forEach(b => {
-                      const bPins = LOCAL_PIN_DEFS[b.type] || [];
-                      bPins.forEach(p => targetOptions.push({
-                        id: `${b.id}:${p.id}`,
-                        label: `${b.label || b.id} : ${p.id}`,
-                        type: b.type,
-                        description: p.description
-                      }));
-                    });
-
-                    return compPins.map(pin => {
-                      const pinIdStr = `${selected}:${pin.id}`;
-                      const currentPinCat = getPinCategory(pin.id, pin.description, selectedComponentInfo.type);
-
-                      // Filter target options to show only compatible pins for special categories (GND, POWER, etc.)
-                      const filteredOptions = targetOptions.filter(opt => {
-                        if (!currentPinCat) return true; // Show all for unmapped/general pins
-                        const targetPinCat = getPinCategory(opt.id.split(':')[1], opt.description, opt.type);
-                        return hasCategoryIntersection(currentPinCat, targetPinCat);
-                      });
-
-                      // Find if any wire is connected to this pin specifically
-                      const connectedWire = wires.find(w => w.from === pinIdStr || w.to === pinIdStr);
-                      // Determine current dropdown value
-                      let currentVal = '';
-                      if (connectedWire) {
-                        currentVal = connectedWire.from === pinIdStr ? connectedWire.to : connectedWire.from;
-                      }
-
-                      const pinPreferredColor = pendingPinColors[pinIdStr] || (connectedWire ? connectedWire.color : wireColor(pin.id));
-
-                      return (
-                        <div key={pin.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6, gap: 4 }}>
-                          <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 0, width: 44 }} title={pin.description || pin.id}>
-                            {pin.id}
-                          </span>
-
-                          {/* Interactive Arrow & Color Picker */}
-                          <div
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const picker = e.currentTarget.querySelector('input[type="color"]');
-                              if (picker) picker.click();
-                            }}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                              opacity: connectedWire ? 1 : 0.6,
-                              transition: 'all 0.2s ease',
-                              position: 'relative',
-                              padding: '0 4px',
-                              flexShrink: 0
-                            }}
-                            onMouseEnter={e => {
-                              e.currentTarget.style.opacity = '1';
-                              e.currentTarget.style.transform = 'scale(1.1)';
-                            }}
-                            onMouseLeave={e => {
-                              e.currentTarget.style.opacity = connectedWire ? '1' : '0.6';
-                              e.currentTarget.style.transform = 'scale(1)';
-                            }}
-                            title={connectedWire ? "Change wire color" : "Set wire color before connecting"}
-                          >
-                            <svg
-                              width="14" height="14" viewBox="0 0 24 24" fill="none"
-                              stroke={pinPreferredColor}
-                              strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-                            >
-                              <line x1="5" y1="12" x2="19" y2="12"></line>
-                              <polyline points="12 5 19 12 12 19"></polyline>
-                            </svg>
-                            <input
-                              type="color"
-                              value={pinPreferredColor}
-                              onChange={(e) => {
-                                const newColor = e.target.value;
-                                setPendingPinColors(prev => ({ ...prev, [pinIdStr]: newColor }));
-                                if (connectedWire) {
-                                  updateWireColor(connectedWire.id, newColor);
-                                }
-                              }}
-                              style={{
-                                position: 'absolute',
-                                top: 0, left: 0, width: 0, height: 0, opacity: 0, padding: 0, border: 'none', pointerEvents: 'none'
-                              }}
-                            />
-                          </div>
-
-                          <select
-                            value={currentVal}
-                            onChange={(e) => {
-                              const selectedTarget = e.target.value;
-                              setWires(prev => {
-                                // 1. Generate the exact same wire syntax as manual mapping
-                                const toPinLabel = selectedTarget ? (selectedTarget.includes(':') ? selectedTarget.split(':').slice(1).join(':') : '') : '';
-                                const finalColor = pendingPinColors[pinIdStr] || wireColor(toPinLabel);
-
-                                const newWire = selectedTarget ? {
-                                  id: `w${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-                                  from: pinIdStr,
-                                  to: selectedTarget,
-                                  fromLabel: pin.id,
-                                  toLabel: toPinLabel,
-                                  color: finalColor,
-                                  waypoints: []
-                                } : null;
-
-                                // 2. Filter cleanly using a map proxy to avoid reference staleness
-                                const filtered = prev.filter(w => w.from !== pinIdStr && w.to !== pinIdStr);
-
-                                setWireStart(null); // Cancel manual wire draw
-                                return newWire ? [...filtered, newWire] : filtered;
-                              });
-                            }}
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              padding: '3px 6px',
-                              background: 'var(--card)',
-                              border: '1px solid var(--border)',
-                              color: currentVal ? 'var(--accent)' : 'var(--text2)',
-                              borderRadius: 4,
-                              fontSize: 10,
-                              fontFamily: 'JetBrains Mono, monospace',
-                              cursor: 'pointer',
-                              outline: 'none'
-                            }}
-                          >
-                            <option value="">Disconnected</option>
-                            {filteredOptions.map(opt => (
-                              <option key={opt.id} value={opt.id}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-            )}
-
-            {/* Canvas Zoom Toolbar — anchored inside canvas so it moves with code panel resize */}
-            {validationToast && (
-              <div
-                className="validation-toast-canvas"
-                role="alert"
-                data-export-ignore="true"
-                onClick={e => e.stopPropagation()}
-                onMouseDown={e => e.stopPropagation()}
-              >
-                <div className="validation-toast-canvas__header">
-                  <span>{validationToast.title}</span>
-                  <button
-                    type="button"
-                    className="validation-toast-canvas__close"
-                    onClick={() => setValidationToast(null)}
-                    aria-label="Close validation notification"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-                    </svg>
-                  </button>
-                </div>
-                <ul className="validation-toast-canvas__list">
-                  {validationToast.reasons.map((reason, idx) => (
-                    <li key={idx}>{reason}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            <div
-              data-export-ignore="true"
-              style={{ position: 'absolute', bottom: 12, right: 12, zIndex: 100, display: 'flex', alignItems: 'center', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '4px 6px', boxShadow: '0 4px 16px rgba(0,0,0,0.4)' }}
-              onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-              onDoubleClick={e => e.stopPropagation()}
-            >
-              <button
-                className="zoom-btn"
-                onClick={() => setIsConsoleOpen(v => !v)}
-                style={{
-                  background: isConsoleOpen ? 'var(--card)' : 'none',
-                  border: isConsoleOpen ? '1px solid var(--accent)' : 'none',
-                  color: isConsoleOpen ? 'var(--accent)' : 'var(--text)',
-                  cursor: 'pointer',
-                  lineHeight: 1,
-                  padding: '4px 7px',
-                  borderRadius: 6,
-                  display: 'flex',
-                  alignItems: 'center'
-                }}
-                title="Toggle Console"
-              >
-                <TerminalIcon size={16} />
-              </button>
-              <button
-                className="zoom-btn"
-                onClick={() => applyZoomAtCenter(Math.max(0.25, parseFloat((canvasZoomRef.current - 0.25).toFixed(2))))}
-                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', lineHeight: 1, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                title="Zoom Out"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  <line x1="8" y1="11" x2="14" y2="11" />
-                </svg>
-              </button>
-              <button
-                onClick={handleZoomTextClick}
-                style={{ background: 'none', border: 'none', color: 'var(--text2)', cursor: 'pointer', fontSize: 11, padding: '2px 6px', borderRadius: 6, minWidth: 40, fontFamily: 'JetBrains Mono, monospace' }}
-                title="Center & Reset Zoom (Click) | Center Only (Double Click)"
-              >{Math.round(canvasZoom * 100)}%</button>
-              <button
-                className="zoom-btn"
-                onClick={() => applyZoomAtCenter(Math.min(2, parseFloat((canvasZoomRef.current + 0.25).toFixed(2))))}
-                style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', lineHeight: 1, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
-                title="Zoom In"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-                  <line x1="11" y1="8" x2="11" y2="14" /><line x1="8" y1="11" x2="14" y2="11" />
-                </svg>
-              </button>
-              <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={() => chrome.setShowCanvasMenu(m => !m)}
-                  style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', fontSize: 16, padding: '2px 7px', borderRadius: 6 }}
-                  title="Canvas Menu"
-                >⋮</button>
-                {showCanvasMenu && (
-                  <div
-                    className="canvas-menu"
-                    onMouseLeave={() => chrome.setShowCanvasMenu(false)}
-                    style={{
-                      position: 'absolute',
-                      bottom: '100%',
-                      right: 0,
-                      marginBottom: 10,
-                      zIndex: 10000,
-                      background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-                      backdropFilter: 'blur(16px) saturate(1.4)',
-                      WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                      border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                      borderRadius: 12,
-                      boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                      padding: '5px',
-                      minWidth: 190,
-                      animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                      transformOrigin: 'bottom right',
-                      fontFamily: "'Space Grotesk', sans-serif",
-                      willChange: 'transform, opacity, backdrop-filter',
-                      backfaceVisibility: 'hidden',
-                      WebkitBackfaceVisibility: 'hidden',
-                    }}
-                  >
-                    <button className="canvas-menu-item" onClick={() => { fitToView('fit'); chrome.setShowCanvasMenu(false); }}>Fit to Canvas</button>
-                    <button className={`canvas-menu-item${history.past.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { undo(); chrome.setShowCanvasMenu(false); }} disabled={history.past.length === 0 || isRunning}>Undo</button>
-                    <button className={`canvas-menu-item${history.future.length === 0 || isRunning ? ' canvas-menu-item--disabled' : ''}`} onClick={() => { redo(); chrome.setShowCanvasMenu(false); }} disabled={history.future.length === 0 || isRunning}>Redo</button>
-                    <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                    <button className="canvas-menu-item" onClick={() => { chrome.setShowInspector(v => !v); chrome.setShowCanvasMenu(false); }}>
-                      {showInspector ? 'Disable Inspector' : 'Enable Component Inspector'}
-                    </button>
-                    <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                    <button className="canvas-menu-item" onClick={() => { chrome.setShowGrid(g => !g); chrome.setShowCanvasMenu(false); }}>{showGrid ? 'Hide Grid' : 'Show Grid'}</button>
-                    <button className="canvas-menu-item" onClick={() => { chrome.setIsCanvasLocked(l => !l); chrome.setShowCanvasMenu(false); }}>{isCanvasLocked ? 'Unlock Canvas' : 'Lock Canvas'}</button>
-                    <button className="canvas-menu-item" onClick={() => { toggleFullscreen(); chrome.setShowCanvasMenu(false); }}>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</button>
-                    <button className="canvas-menu-item" onClick={() => {
-                      const enabling = !wirepointsEnabled;
-                      setWirepointsEnabled(enabling);
-                      setShowCanvasMenu(false);
-                    }}>{wirepointsEnabled ? 'Disable Wire Waypoints' : 'Enable Wire Waypoints'}</button>
-                    <button className="canvas-menu-item" onClick={() => { chrome.setShowComponentDesc(d => !d); chrome.setShowCanvasMenu(false); }}>{showComponentDesc ? 'Hide Component Info' : 'Show Component Info'}</button>
-                    <button className="canvas-menu-item" onClick={() => {
-                      setWiresAlwaysOnTop(v => !v);
-                      chrome.setShowCanvasMenu(false);
-                    }}>{wiresAlwaysOnTop ? 'Move Wires to Bottom' : 'Move Wires to Top'}</button>
-                    <button className="canvas-menu-item" onClick={() => { chrome.setShowConnectionsPanel(p => !p); chrome.setShowCanvasMenu(false); }}>{showConnectionsPanel ? 'Hide Connections Panel' : 'Show Connections Panel'}</button>
-                    <button
-                      className="canvas-menu-item"
-                      onClick={() => {
-                        const next = !blocklyDisabled;
-                        setBlocklyDisabled(next);
-                        try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) { }
-                        setShowCanvasMenu(false);
-                      }}
-                      title={blocklyDisabled ? 'Re-enable block code editor (uses more CPU)' : 'Disable block code editor to improve canvas performance'}
-                    >
-                      {blocklyDisabled ? 'Enable Block Coding' : 'Disable Block Coding'}
-                    </button>
-                    <div style={{ borderTop: '1px solid var(--border)', margin: '4px 0' }} />
-                    <button className="canvas-menu-item canvas-menu-item--danger" onClick={() => { if (!isRunning) { saveHistory(); setComponents([]); setWires([]); setSelected(null); } chrome.setShowCanvasMenu(false); }}>Clear Canvas</button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <SimulationConsolePanel
-              isOpen={isConsoleOpen}
-              height={consoleHeight}
-              entries={consoleEntries}
-              activeTab={activeConsoleTab}
-              onTabChange={setActiveConsoleTab}
+            <CanvasBottomControls
+              validationToast={validationToast}
+              setValidationToast={setValidationToast}
+              isConsoleOpen={isConsoleOpen}
+              setIsConsoleOpen={setIsConsoleOpen}
+              consoleHeight={consoleHeight}
+              consoleEntries={consoleEntries}
+              activeConsoleTab={activeConsoleTab}
+              setActiveConsoleTab={setActiveConsoleTab}
               protocolLogs={protocolLogs}
-              onResizeStart={onMouseDownConsoleResize}
-              onClose={() => setIsConsoleOpen(false)}
-              onClear={() => {
-                if (activeConsoleTab === 'protocol') setProtocolLogs([]);
-                else clearConsoleEntries();
+              setProtocolLogs={setProtocolLogs}
+              components={components}
+              componentTelemetryEnabled={componentTelemetryEnabled}
+              setComponentTelemetryEnabled={setComponentTelemetryEnabled}
+              telemetryMode={telemetryMode}
+              setTelemetryMode={setTelemetryMode}
+              telemetrySampleInterval={telemetrySampleInterval}
+              setTelemetrySampleInterval={setTelemetrySampleInterval}
+              selectedTelemetryComponentIds={selectedTelemetryComponentIds}
+              setSelectedTelemetryComponentIds={setSelectedTelemetryComponentIds}
+              onOpenTelemetryModal={() => setShowTelemetrySelectModal(true)}
+              onMouseDownConsoleResize={onMouseDownConsoleResize}
+              clearConsoleEntries={clearConsoleEntries}
+              downloadConsoleLog={downloadConsoleLog}
+              showCanvasMenu={showCanvasMenu}
+              setShowCanvasMenu={setShowCanvasMenu}
+              theme={theme}
+              history={history}
+              isRunning={isRunning}
+              showInspector={showInspector}
+              showGrid={showGrid}
+              isCanvasLocked={isCanvasLocked}
+              isFullscreen={isFullscreen}
+              wirepointsEnabled={wirepointsEnabled}
+              showComponentDesc={showComponentDesc}
+              showConnectionsPanel={showConnectionsPanel}
+              blocklyDisabled={blocklyDisabled}
+              fitToView={fitToView}
+              undo={undo}
+              redo={redo}
+              toggleFullscreen={toggleFullscreen}
+              setWirepointsEnabled={setWirepointsEnabled}
+              setWiresAlwaysOnTop={setWiresAlwaysOnTop}
+              wiresAlwaysOnTop={wiresAlwaysOnTop}
+              saveHistory={saveHistory}
+              setComponents={setComponents}
+              setWires={setWires}
+              setProjectFiles={setProjectFiles}
+              setCode={setCode}
+              setSelected={setSelected}
+              chrome={{
+                setShowInspector: chrome.setShowInspector,
+                setShowGrid: chrome.setShowGrid,
+                setIsCanvasLocked: chrome.setIsCanvasLocked,
+                setShowComponentDesc: chrome.setShowComponentDesc,
+                setShowConnectionsPanel: chrome.setShowConnectionsPanel,
+                setBlocklyDisabled: setBlocklyDisabled,
               }}
-              onDownload={downloadConsoleLog}
+              applyZoomAtCenter={applyZoomAtCenter}
+              canvasZoomRef={canvasZoomRef}
+              canvasZoom={canvasZoom}
+              handleZoomTextClick={handleZoomTextClick}
+            />
+
+            <ComponentTelemetrySelectModal
+              isOpen={showTelemetrySelectModal}
+              onClose={() => setShowTelemetrySelectModal(false)}
+              components={components}
+              selectedIds={selectedTelemetryComponentIds}
+              onChangeSelectedIds={setSelectedTelemetryComponentIds}
+              watchedParamsMap={telemetryWatchedParamsMap}
+              onChangeWatchedParamsMap={setTelemetryWatchedParamsMap}
             />
 
             {/* ── Quick-Add Portal — rendered to document.body, isolated from canvas re-renders ── */}
@@ -10441,6 +8646,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           {/* RIGHT PANEL */}
           <RightPanel
+            ref={rightPanelRef}
             isPanelOpen={isPanelOpen} panelWidth={panelWidth} isDragging={isDragging} onMouseDownResize={onMouseDownResize} setIsPanelOpen={setIsPanelOpen}
             explorerWidth={explorerWidth} isExplorerDragging={isExplorerDragging} onMouseDownExplorerResize={onMouseDownExplorerResize}
             selected={selected} setSelected={setSelected} theme={theme}
@@ -10478,637 +8684,42 @@ export function SimulatorPage({ gamificationMode = false }) {
             serialBoardFilter2={serialBoardFilter2} setSerialBoardFilter2={setSerialBoardFilter2}
           />
 
-          {/* MY PROJECTS SIDEBAR */}
-          <aside
-            className="bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden transition-[width] duration-200"
-            style={{ width: showProjectsSidebar ? 320 : 0, borderLeft: showProjectsSidebar ? '1px solid var(--border)' : 'none' }}
-          >
-            {showProjectsSidebar && (
-              <>
-                <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
-                  <span className="text-sm font-bold text-[var(--text)] tracking-tight">My Projects</span>
-                  <button
-                    onClick={() => setShowProjectsSidebar(false)}
-                    className="bg-[var(--card)] hover:bg-[var(--bg)] border border-[var(--border)] text-[var(--text3)] hover:text-[var(--text)] rounded-lg w-7 h-7 flex items-center justify-center transition-all active:scale-95"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                  </button>
-                </div>
-
-                <div className="px-5 pb-4 shrink-0">
-                  <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
-                    {[
-                      { id: 'favourites', label: 'Fav' },
-                      { id: 'projects', label: 'Projects' },
-                      { id: 'custom', label: 'Custom' },
-                      { id: 'settings', label: 'Settings' },
-                    ].map((tab) => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setProjectsSidebarTab(tab.id)}
-                        className={`flex-1 py-1.5 px-1 rounded-lg text-[11px] font-bold transition-all duration-200
-                        ${projectsSidebarTab === tab.id
-                            ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm'
-                            : 'text-[var(--text3)] hover:text-[var(--text2)]'
-                          }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-2">
-                  {projectsSidebarTab === 'favourites' && (
-                    <div>
-                      <div className="text-[11px] text-[var(--text3)] px-1 py-1.5">Starred projects appear here.</div>
-                      {myProjects.filter(p => favouriteProjectIds.includes(p.id)).length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                          <div className="w-16 h-16 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                          </div>
-                          <div className="text-sm font-bold text-[var(--text)] mb-1">No Favourites Yet</div>
-                          <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Star a project from the Projects tab to see it here.</div>
-                        </div>
-                      ) : myProjects.filter(p => favouriteProjectIds.includes(p.id)).map(proj => (
-                        <ProjectCard
-                          key={proj.id}
-                          proj={proj}
-                          currentProjectId={currentProjectId}
-                          renamingProjectId={renamingProjectId}
-                          renameValue={renameValue}
-                          setRenameValue={setRenameValue}
-                          handleConfirmRename={handleConfirmRename}
-                          setRenamingProjectId={setRenamingProjectId}
-                          handleLoadProject={handleLoadProject}
-                          isRunning={isRunning}
-                          setShowProjectsSidebar={setShowProjectsSidebar}
-                          onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
-                          formatProjectDate={formatProjectDate}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {projectsSidebarTab === 'projects' && (
-                    <div>
-                      <div className="flex justify-between items-center mb-4 px-1">
-                        <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Your Library</div>
-                        <button
-                          onClick={() => { setShowProjectsSidebar(false); handleNewProject(); }}
-                          className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                          NEW
-                        </button>
-                      </div>
-                      {myProjects.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-2xl bg-[var(--bg)]/30">
-                          <div className="w-14 h-14 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--text3)]">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
-                          </div>
-                          <div className="text-sm font-bold text-[var(--text)] mb-1">No saved projects</div>
-                          <div className="text-[11px] text-[var(--text3)] leading-normal max-w-[180px]">Your circuits are auto-saved as you work.</div>
-                        </div>
-                      ) : myProjects.map(proj => (
-                        <ProjectCard
-                          key={proj.id}
-                          proj={proj}
-                          currentProjectId={currentProjectId}
-                          renamingProjectId={renamingProjectId}
-                          renameValue={renameValue}
-                          setRenameValue={setRenameValue}
-                          handleConfirmRename={handleConfirmRename}
-                          setRenamingProjectId={setRenamingProjectId}
-                          handleLoadProject={handleLoadProject}
-                          isRunning={isRunning}
-                          setShowProjectsSidebar={setShowProjectsSidebar}
-                          onContextMenu={(projData, x, y) => setProjContextMenu({ proj: projData, x, y })}
-                          formatProjectDate={formatProjectDate}
-                        />
-                      ))}
-                    </div>
-                  )}
-
-                  {projectsSidebarTab === 'custom' && (
-                    <div>
-                      <div className="flex justify-between items-center mb-4 px-1">
-                        <div className="text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider">Custom Parts</div>
-                        <button
-                          onClick={() => setShowCreateComponentModal(true)}
-                          className="flex items-center gap-1.5 bg-[var(--accent)] text-white px-3 py-1.5 rounded-lg text-[10px] font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-95 transition-all"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                          CREATE
-                        </button>
-                      </div>
-                      <div className="flex flex-col items-center justify-center py-12 px-4 text-center border border-dashed border-[var(--border)] rounded-xl">
-                        <div className="text-sm font-bold text-[var(--text)] mb-1 opacity-50">Nothing here yet</div>
-                        <div className="text-[11px] text-[var(--text3)] leading-normal">Custom components will appear here.</div>
-                      </div>
-                    </div>
-                  )}
-
-                  {projectsSidebarTab === 'settings' && (
-                    <div className="flex flex-col gap-2 py-1">
-                      <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Preferences</div>
-                      <div className="flex items-center justify-between bg-[var(--card)] border border-[var(--border)] rounded-lg px-3 py-2.5 shadow-sm">
-                        <div className="flex flex-col">
-                          <span className="text-[12px] font-bold text-[var(--text)]">Auto-save Projects</span>
-                          <span className="text-[9px] text-[var(--text3)]">Saves changes every 2.5s</span>
-                        </div>
-                        <button
-                          onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
-                          className={`w-9 h-5 rounded-full relative transition-all duration-300 ${autoSaveEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--bg3)]'}`}
-                        >
-                          <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm transition-transform duration-300 ${autoSaveEnabled ? 'translate-x-4' : ''}`} />
-                        </button>
-                      </div>
-
-                      <div className="h-px bg-[var(--border)] my-1 opacity-50" />
-                      <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Data Management</div>
-                      <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleBackupWorkflow}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                        Backup
-                        <span className="ml-auto text-[11px] text-[var(--text3)]">Download ZIP</span>
-                      </button>
-                      <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => backupRestoreInputRef.current?.click()}>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
-                        Restore
-                        <span className="ml-auto text-[11px] text-[var(--text3)]">From ZIP</span>
-                      </button>
-                      {isAuthenticated && (
-                        <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--border)] text-[var(--text)] rounded-lg px-3 py-2.5 text-[13px]" onClick={handleSyncToCloud}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>
-                          Sync to Cloud
-                          <span className="ml-auto text-[11px] text-[var(--text3)]">Upload</span>
-                        </button>
-                      )}
-                      {isAuthenticated && (
-                        <>
-                          <div className="h-px bg-[var(--border)] my-1" />
-                          <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-wider px-1 py-1.5">Account</div>
-                          <button className="w-full flex items-center gap-2.5 bg-[var(--card)] border border-[var(--red)] text-[var(--red)] rounded-lg px-3 py-2.5 text-[13px]" onClick={() => { logout(); setShowProjectsSidebar(false); }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
-                            Logout
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="border-t border-[var(--border)] p-4 bg-[var(--bg2)] flex flex-col gap-3 shrink-0">
-                  {!isAnyAuthenticated ? (
-                    <button
-                      onClick={() => { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); }}
-                      className="w-full flex items-center justify-center gap-2 bg-[var(--accent)] text-white py-2.5 rounded-xl text-xs font-bold shadow-lg shadow-[var(--accent)]/20 hover:brightness-110 active:scale-[0.98] transition-all"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><polyline points="10 17 15 12 10 7" /><line x1="15" y1="12" x2="3" y2="12" /></svg>
-                      Sign In to Sync
-                    </button>
-                  ) : (
-                    <div
-                      className="flex items-center gap-3 p-2.5 rounded-xl bg-[var(--card)] border border-[var(--border)] group cursor-pointer hover:border-[var(--text3)] transition-all"
-                      onClick={() => {
-                        if (activeUser?.role === 'teacher') navigate('/teacher/dashboard')
-                        else if (activeUser?.role === 'student') navigate('/student/dashboard')
-                        else if (activeUser?.role === 'admin') navigate(`/${activeUser?.role}/dashboard`)
-                        else navigate(`${activeUser?.role || 'user'}/dashboard`)
-                      }}
-                      title="Go to dashboard"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-[var(--accent)]/10 border border-[var(--accent)]/20 flex items-center justify-center text-[var(--accent)] text-xs font-bold uppercase">
-                        {activeUser?.name?.[0] || 'U'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold text-[var(--text)] truncate">{activeUser?.name || 'User'}</div>
-                        <div className="text-[9px] text-[var(--text3)] font-medium uppercase tracking-tight">{activeUser?.role || 'Developer'}</div>
-                      </div>
-                      <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
-                    </div>
-                  )}
-
-                  <div className="flex p-1 bg-[var(--bg)] rounded-xl border border-[var(--border)] shadow-inner">
-                    <button
-                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
-                      ${!isAuthenticated
-                          ? 'bg-[var(--card)] text-[var(--accent)] shadow-sm border border-[var(--border)]'
-                          : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
-                      onClick={() => { if (isAnyAuthenticated) { if (activeUser?.email) localStorage.setItem('ohw_last_email', activeUser.email); logout(); } }}
-                    >
-                      Local
-                    </button>
-                    <button
-                      className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all
-                      ${isAuthenticated
-                          ? 'bg-[var(--accent)] text-white shadow-md'
-                          : 'text-[var(--text3)] hover:text-[var(--text2)]'}`}
-                      onClick={() => { if (!isAuthenticated) { const lastEmail = localStorage.getItem('ohw_last_email'); navigate('/login', { state: { email: lastEmail, from: window.location.pathname } }); } }}
-                    >
-                      Cloud
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-          </aside>
-
-          {/* GAMIFICATION GUIDE PANEL */}
-          {gamificationMode && gamPanelOpen && (
-            <aside style={{
-              width: 280, background: '#0a0d1a', borderLeft: '1px solid rgba(255,255,255,.07)',
-              display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden',
-              fontFamily: "'Space Grotesk', sans-serif",
-            }}>
-              {/* Tabs */}
-              <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,.07)', flexShrink: 0 }}>
-                {[{ id: 'components', label: '🔧 Parts' }, { id: 'wiring', label: '〰 Wiring' }, { id: 'concepts', label: '📚 Code' }].map(tab => (
-                  <button key={tab.id} onClick={() => setGamTab(tab.id)} style={{
-                    flex: 1, padding: '9px 4px', background: 'none', border: 'none',
-                    borderBottom: `2px solid ${gamTab === tab.id ? '#00b4ff' : 'transparent'}`,
-                    color: gamTab === tab.id ? '#00b4ff' : 'rgba(255,255,255,.4)',
-                    fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                  }}>{tab.label}</button>
-                ))}
-              </div>
-
-              {/* Body */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px 80px' }}>
-
-                {gamTab === 'components' && (
-                  <div>
-                    <div style={{
-                      padding: '9px 12px', borderRadius: 9, marginBottom: 14,
-                      background: gamAllUnlocked ? 'rgba(34,197,94,.08)' : 'rgba(239,68,68,.08)',
-                      border: `1px solid ${gamAllUnlocked ? 'rgba(34,197,94,.25)' : 'rgba(239,68,68,.25)'}`,
-                      fontSize: 12, fontWeight: 600,
-                      color: gamAllUnlocked ? '#22c55e' : '#ef4444',
-                      display: 'flex', alignItems: 'center', gap: 8,
-                    }}>
-                      {gamAllUnlocked ? '✅ All components unlocked' : `⚠️ ${gamLockedCount} need unlocking`}
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      {(gamProjectComponents || []).map((c, i) => (
-                        <div key={i} style={{
-                          display: 'flex', alignItems: 'center', gap: 9,
-                          padding: '9px 11px', borderRadius: 9,
-                          background: c.isLocked ? 'rgba(239,68,68,.05)' : 'rgba(34,197,94,.05)',
-                          border: `1px solid ${c.isLocked ? 'rgba(239,68,68,.2)' : 'rgba(34,197,94,.18)'}`,
-                        }}>
-                          <span style={{ fontSize: 18, flexShrink: 0 }}>{c.isLocked ? '🔒' : (c.compDef?.icon || '✅')}</span>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: c.isLocked ? 'rgba(255,255,255,.45)' : '#fff' }}>
-                              {c.qty > 1 ? `${c.qty}× ` : ''}{c.label}
-                            </div>
-                            <div style={{ fontSize: 9, color: c.isLocked ? '#ef4444' : '#22c55e', marginTop: 2 }}>
-                              {c.isLocked ? 'Study theory to unlock' : 'Available in palette'}
-                            </div>
-                          </div>
-                          {c.isLocked && c.compId && (
-                            <button
-                              onClick={() => navigate(`/components/${c.compId}/theory`)}
-                              style={{ background: 'rgba(239,68,68,.15)', border: '1px solid rgba(239,68,68,.35)', color: '#ef4444', borderRadius: 6, padding: '3px 7px', fontSize: 9, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-                            >Unlock →</button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-
-                    <button onClick={() => navigate('/components')} style={{ marginTop: 16, width: '100%', padding: '9px', background: 'rgba(0,180,255,.06)', border: '1px solid rgba(0,180,255,.2)', color: '#00b4ff', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                      🔓 Unlock More Components
-                    </button>
-                  </div>
-                )}
-
-                {gamTab === 'wiring' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {gamProject?.wiring?.length > 0 ? gamProject.wiring.map((w, i) => (
-                      <div key={i} style={{ padding: '9px 11px', borderRadius: 8, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.07)', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                        <div style={{ width: 18, height: 18, borderRadius: '50%', background: 'rgba(0,180,255,.15)', border: '1px solid rgba(0,180,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#00b4ff', flexShrink: 0 }}>{i + 1}</div>
-                        <div style={{ flex: 1, fontSize: 10, color: 'rgba(255,255,255,.75)', lineHeight: 1.5 }}>
-                          <span style={{ color: '#00b4ff', fontFamily: 'monospace' }}>{w.from}</span>
-                          <span style={{ color: 'rgba(255,255,255,.3)', margin: '0 5px' }}>→</span>
-                          <span style={{ color: '#22c55e', fontFamily: 'monospace' }}>{w.to}</span>
-                        </div>
-                      </div>
-                    )) : (
-                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,.3)', textAlign: 'center', padding: '32px 0' }}>No wiring guide yet.</div>
-                    )}
-                  </div>
-                )}
-
-                {gamTab === 'concepts' && gamProject && (
-                  <div>
-                    {gamProject.concepts?.length > 0 && (
-                      <>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Concepts</div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 16 }}>
-                          {gamProject.concepts.map((c, i) => (
-                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 10px', borderRadius: 6, background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,.06)' }}>
-                              <span style={{ color: gamProject.color || '#22c55e', fontSize: 11 }}>▸</span>
-                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,.65)', fontFamily: 'monospace' }}>{c}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {gamProject.starterCode && (
-                      <>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.3)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>Starter Code</div>
-                        <div style={{ background: 'rgba(0,0,0,.4)', border: '1px solid rgba(255,255,255,.07)', borderRadius: 9, padding: '11px', overflow: 'auto' }}>
-                          <pre style={{ margin: 0, fontSize: 10, color: '#a5f3fc', lineHeight: 1.7, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'pre-wrap' }}>{gamProject.starterCode}</pre>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Footer */}
-              {gamProject && (
-                <div style={{ flexShrink: 0, padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,.07)', background: 'rgba(0,0,0,.3)' }}>
-                  <button
-                    onClick={handleGamificationSubmit}
-                    disabled={!gamAllUnlocked}
-                    style={{ width: '100%', padding: '10px', background: gamAllUnlocked ? (gamProject.color || '#22c55e') : 'rgba(255,255,255,.05)', border: gamAllUnlocked ? 'none' : '1px solid rgba(255,255,255,.1)', color: gamAllUnlocked ? '#fff' : 'rgba(255,255,255,.25)', borderRadius: 9, fontFamily: 'inherit', fontSize: 12, fontWeight: 700, cursor: gamAllUnlocked ? 'pointer' : 'not-allowed', marginBottom: 7 }}
-                    title={gamAllUnlocked ? '' : `Unlock ${gamLockedCount} component${gamLockedCount > 1 ? 's' : ''} first`}
-                  >
-                    {gamAllUnlocked ? '▶ Submit Assessment' : `🔒 Unlock ${gamLockedCount} first`}
-                  </button>
-                  <button onClick={() => navigate(`/${gamProject.slug}/guide`)} style={{ width: '100%', padding: '7px', background: 'transparent', border: '1px solid rgba(255,255,255,.1)', color: 'rgba(255,255,255,.35)', borderRadius: 9, fontFamily: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
-                    📖 Full Guide
-                  </button>
-                </div>
-              )}
-            </aside>
-          )}
-
-
-
-          {/* ── SAVE DIALOG ──────────────────────────────────────────────────────── */}
-          {showSaveDialog && (
-            <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => chrome.setShowSaveDialog(false)}>
-              <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[360px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-                <div className="text-base font-bold mb-3.5 text-[var(--text)]">Save Project</div>
-                <input
-                  autoFocus
-                  className="bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-xs w-full mb-2 outline-none font-inherit box-border" style={{ marginBottom: 16, fontSize: 14, padding: '10px 12px' }}
-                  placeholder="Project name..."
-                  value={saveDialogName}
-                  onChange={e => setSaveDialogName(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleConfirmSave(); if (e.key === 'Escape') chrome.setShowSaveDialog(false); }}
-                />
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <Btn onClick={() => chrome.setShowSaveDialog(false)}>Cancel</Btn>
-                  <Btn color="var(--accent)" onClick={handleConfirmSave}>Save</Btn>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── FIRMWARE DOWNLOAD DIALOG ─────────────────────────────────────── */}
-          {showFirmwareDownloadDialog && (
-            <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareDownloadDialog(false)}>
-              <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[390px] shadow-[0_8px_40px_rgba(0,0,0,.4)]" onClick={e => e.stopPropagation()}>
-                <div className="text-base font-bold mb-2 text-[var(--text)]">Download Firmware</div>
-                <div className="text-xs text-[var(--text3)] mb-4">
-                  Choose a board firmware artifact to download, or download all compiled board firmwares.
-                </div>
-
-                <label className="text-xs font-semibold text-[var(--text2)] block mb-2">Target</label>
-                <select
-                  className="w-full bg-[var(--card)] border border-[var(--border)] text-[var(--text)] px-3 py-2 rounded-lg text-sm mb-4"
-                  value={firmwareDownloadTarget}
-                  onChange={(e) => setFirmwareDownloadTarget(e.target.value)}
-                >
-                  <option value="__latest__">Latest compiled firmware</option>
-                  {firmwareBoardOptions.map((option) => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
-                  ))}
-                  <option value="__all__">All boards</option>
-                </select>
-
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <Btn onClick={() => setShowFirmwareDownloadDialog(false)}>Cancel</Btn>
-                  <Btn
-                    color="var(--accent)"
-                    onClick={async () => {
-                      await handleDownloadFirmware(firmwareDownloadTarget || '__latest__');
-                      setShowFirmwareDownloadDialog(false);
-                    }}
-                  >
-                    Download
-                  </Btn>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── BOARD FIRMWARE MANAGER ─────────────────────────────────────── */}
-          {showFirmwareUploadDialog && (
-            <div className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]" onClick={() => setShowFirmwareUploadDialog(false)}>
-              <div className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[580px] max-w-[90vw] shadow-[0_12px_50px_rgba(0,0,0,.5)] max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-3">
-                  <div className="text-lg font-bold text-[var(--text)]">Board Firmware Manager</div>
-                  <button
-                    onClick={() => setShowFirmwareUploadDialog(false)}
-                    className="text-[var(--text3)] hover:text-[var(--text)] transition-colors p-1"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                  </button>
-                </div>
-                <div className="text-xs text-[var(--text3)] mb-8 leading-relaxed">
-                  Toggle between using the online code editor or a custom uploaded firmware binary (.hex/.uf2).
-                </div>
-
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                  {firmwareBoardOptions.length === 0 ? (
-                    <div className="text-center py-12 border-2 border-dashed border-[var(--border)] rounded-xl opacity-60">
-                      <div className="text-[var(--text3)] text-sm">No programmable boards found on canvas.</div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-5">
-                      {firmwareBoardOptions.map((option) => {
-                        const boardComp = boardComponentMap.get(option.id);
-                        const attrs = boardComp?.attrs || {};
-                        const useUploaded = !!attrs.useUploadedFirmware;
-                        const firmwareName = attrs.firmwareArtifactName || '';
-                        const hasFirmware = !!(attrs.firmwareHex || attrs.hex);
-                        const kind = normalizeBoardKind(boardComp?.type || '');
-
-                        return (
-                          <div key={option.id} className="bg-[var(--card)] border border-[var(--border)] p-4 rounded-xl flex items-center justify-between gap-6 transition-all hover:border-[var(--accent)]/30 group">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1.5">
-                                <span className="font-bold text-[13px] text-[var(--text)] truncate">{option.id}</span>
-                                <span className="px-1.5 py-0.5 bg-[var(--bg2)] border border-[var(--border)] rounded text-[9px] uppercase text-[var(--text3)] font-bold tracking-wider">
-                                  {kind}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className={`w-1.5 h-1.5 rounded-full ${useUploaded && hasFirmware ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]' : 'bg-blue-500 op-40'}`} />
-                                <span className="text-[10px] text-[var(--text2)]">
-                                  Source: <strong className={useUploaded && hasFirmware ? "text-[var(--accent)]" : "text-[var(--text)]"}>{useUploaded && hasFirmware ? 'Uploaded Binary' : 'Code Editor'}</strong>
-                                </span>
-                              </div>
-                              {hasFirmware && (
-                                <div className="mt-2 text-[9px] text-[var(--text3)] flex items-center gap-1.5 bg-[var(--bg)]/40 px-2 py-1 rounded inline-flex">
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
-                                  <span className="truncate max-w-[180px]">{firmwareName || 'Custom Upload'}</span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-3 shrink-0">
-                              <Btn
-                                onClick={() => toggleBoardFirmwareSource(option.id, !useUploaded)}
-                                disabled={!hasFirmware}
-                                color={useUploaded ? 'var(--accent)' : ''}
-                                title={!hasFirmware ? 'Upload a binary first to use this source override' : (useUploaded ? 'Switch to Code Editor' : 'Use Uploaded Binary')}
-                              >
-                                <span className="text-[11px] font-bold">{useUploaded ? 'Using Upload' : 'Use Upload'}</span>
-                              </Btn>
-
-                              <Btn
-                                onClick={() => {
-                                  setFirmwareUploadTarget(option.id);
-                                  firmwareUploadInputRef.current?.click();
-                                }}
-                                iconOnly
-                                title="Upload New Binary"
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path><polyline points="16 16 12 12 8 16"></polyline></svg>
-                              </Btn>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="mt-8 flex justify-end gap-3 pt-5 border-t border-[var(--border)]">
-                  <Btn onClick={() => setShowFirmwareUploadDialog(false)}>
-                    Close
-                  </Btn>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Hidden file input for manager */}
-          <input
-            ref={firmwareUploadInputRef}
-            type="file"
-            accept=".hex,.uf2"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file && firmwareUploadTarget) {
-                applyUploadedFirmwareToBoard(firmwareUploadTarget, file);
-              }
-            }}
+          <ProjectsSidebarChrome
+            showProjectsSidebar={showProjectsSidebar} setShowProjectsSidebar={setShowProjectsSidebar}
+            projectsSidebarTab={projectsSidebarTab} setProjectsSidebarTab={setProjectsSidebarTab}
+            favouriteProjectIds={favouriteProjectIds} myProjects={myProjects} currentProjectId={currentProjectId}
+            renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId}
+            renameValue={renameValue} setRenameValue={setRenameValue}
+            handleConfirmRename={handleConfirmRename}
+            formatProjectDate={formatProjectDate} handleNewProject={handleNewProject} handleLoadProject={handleLoadProject}
+            isRunning={isRunning} isAnyAuthenticated={isAnyAuthenticated}
+            isAuthenticated={isAuthenticated} activeUser={activeUser}
+            navigate={navigate} logout={logout}
+            autoSaveEnabled={autoSaveEnabled} setAutoSaveEnabled={setAutoSaveEnabled}
+            handleBackupWorkflow={handleBackupWorkflow}
+            backupRestoreInputRef={backupRestoreInputRef}
+            wokwiImportInputRef={wokwiImportInputRef}
+            handleSyncToCloud={handleSyncToCloud}
+            setShowCreateComponentModal={setShowCreateComponentModal}
+            projContextMenu={projContextMenu}
+            toggleFavourite={toggleFavourite}
+            handleCopyProject={handleCopyProject}
+            handleStartRename={handleStartRename}
+            handleDeleteProject={handleDeleteProject}
+            setProjContextMenu={setProjContextMenu}
           />
 
-          {/* F1 MENU */}
-          {showF1Menu && (
-            <div
-              className="fixed inset-0 bg-[rgba(0,0,0,.55)] flex items-center justify-center z-[9999]"
-              onClick={() => setShowF1Menu(false)}
-            >
-              <div
-                className="bg-[var(--bg2)] border border-[var(--border)] rounded-xl p-6 w-[420px] shadow-[0_8px_40px_rgba(0,0,0,.4)]"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="text-base font-bold mb-5 text-[var(--text)] tracking-tight">Quick Actions (F1)</div>
-                <div className="flex flex-col gap-3">
-                  <Btn
-                    onClick={() => {
-                      downloadSimulationJson();
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Download Simulation JSON
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      openFirmwareDownloadDialog();
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Download Firmware
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      openFirmwareUploadDialog();
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Board Firmware Manager
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      setRp2040DebugTelemetryEnabled((prev) => !prev);
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    {rp2040DebugTelemetryEnabled ? 'Disable RP2040 dbg Telemetry' : 'Enable RP2040 dbg Telemetry'}
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      setShowEngineSelector(true);
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Select Simulation Engine
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      chrome.setShowSpeedDialog(true);
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Simulation Speed ({simulationSpeed.toFixed(1)}x)
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      const resetSpeed = 1.0;
-                      setSimulationSpeed(resetSpeed);
-                      if (isRunning && workerRef.current) {
-                        workerRef.current.postMessage({ type: 'SET_SPEED', speed: resetSpeed });
-                      }
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Reset Simulation Speed (1.0x)
-                  </Btn>
-                  <Btn
-                    onClick={() => {
-                      handleStartGDB();
-                      chrome.setShowF1Menu(false);
-                    }}
-                    style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px' }}
-                  >
-                    Start GDB Session
-                  </Btn>
-                </div>
-                <button
-                  className="mt-6 w-full px-3 py-2 text-xs font-bold text-[var(--text3)] hover:text-[var(--text)] transition-colors uppercase tracking-widest"
-                  onClick={() => chrome.setShowF1Menu(false)}
-                >
-                  Close (Esc)
-                </button>
-              </div>
-            </div>
+          {gamificationMode && gamPanelOpen && (
+            <GamificationGuidePanel
+              gamTab={gamTab}
+              setGamTab={setGamTab}
+              gamProject={gamProject}
+              gamAllUnlocked={gamAllUnlocked}
+              gamLockedCount={gamLockedCount}
+              gamProjectComponents={gamProjectComponents}
+              navigate={navigate}
+              handleGamificationSubmit={handleGamificationSubmit}
+            />
           )}
 
           {/* ── SIMULATION SPEED DIALOG ─────────────────────────────────────── */}
@@ -11224,81 +8835,6 @@ export function SimulatorPage({ gamificationMode = false }) {
             </div>
           )}
 
-          {/* Project right-click context menu */}
-          {projContextMenu && (
-            <div
-              className="canvas-menu"
-              onMouseDown={e => e.stopPropagation()}
-              onClick={e => e.stopPropagation()}
-              onMouseLeave={() => setProjContextMenu(null)}
-              style={{
-                position: 'fixed',
-                left: projContextMenu.x,
-                top: Math.min(projContextMenu.y, window.innerHeight - 240),
-                zIndex: 10000,
-                background: theme === 'light' ? 'rgba(248, 250, 252, 0.8)' : 'rgba(13, 21, 37, 0.75)',
-                backdropFilter: 'blur(16px) saturate(1.4)',
-                WebkitBackdropFilter: 'blur(16px) saturate(1.4)',
-                border: theme === 'light' ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(30, 45, 71, 0.6)',
-                borderRadius: 12,
-                boxShadow: theme === 'light' ? '0 8px 32px rgba(0, 0, 0, 0.08)' : '0 10px 40px rgba(0,0,0,0.5)',
-                minWidth: 200,
-                padding: '5px',
-                animation: 'canvasMenuIn 0.12s cubic-bezier(0.16, 1, 0.3, 1)',
-                transformOrigin: 'top left',
-                fontFamily: "'Space Grotesk', sans-serif",
-                willChange: 'transform, opacity, backdrop-filter',
-                backfaceVisibility: 'hidden',
-                WebkitBackfaceVisibility: 'hidden',
-              }}
-            >
-              <div className="px-4 py-2.5 text-[10px] font-extrabold text-[var(--text3)] uppercase tracking-wider border-b border-[var(--border)] bg-[var(--bg)]/40 flex items-center justify-between">
-                <span className="truncate mr-2">{projContextMenu.proj.name || 'Untitled Project'}</span>
-                <div className="flex gap-1">
-                  <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]/30" />
-                  <div className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]/50" />
-                </div>
-              </div>
-
-              <div className="p-1 flex flex-col gap-0.5">
-                <button
-                  className="canvas-menu-item"
-                  onClick={() => { toggleFavourite(projContextMenu.proj.id); setProjContextMenu(null); }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "none"} stroke={favouriteProjectIds.includes(projContextMenu.proj.id) ? "var(--orange, #f59e0b)" : "currentColor"} strokeWidth="2.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
-                  {favouriteProjectIds.includes(projContextMenu.proj.id) ? 'Unfavourite' : 'Favourite'}
-                </button>
-
-                <button
-                  className="canvas-menu-item"
-                  onClick={() => { handleCopyProject(projContextMenu.proj); setProjContextMenu(null); }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
-                  Make a Copy
-                </button>
-
-                <button
-                  className="canvas-menu-item"
-                  onClick={() => { handleStartRename(projContextMenu.proj, { stopPropagation: () => { } }); setProjContextMenu(null); setProjectsSidebarTab('projects'); }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                  Rename Project
-                </button>
-
-                <div className="h-px bg-[var(--border)] my-1 mx-2 opacity-50" />
-
-                <button
-                  className="canvas-menu-item canvas-menu-item--danger"
-                  onClick={() => { handleDeleteProject(projContextMenu.proj.id); setProjContextMenu(null); }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6" /></svg>
-                  Delete Project
-                </button>
-              </div>
-            </div>
-          )}
-
-
           {/* COMPONENT INSPECTOR HUD - High Performance Telemetry */}
           {showInspector && hoveredElement && (
             <div style={{
@@ -11385,7 +8921,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             info={(() => {
               const comp = components.find(c => c.id === compContextMenu?.compId);
               if (!comp) return null;
-              for (const g of CATALOG) {
+              for (const g of LOCAL_CATALOG) {
                 const item = g.items.find(i => i.type === comp.type);
                 if (item) return { ...item, group: g.group };
               }
@@ -11432,6 +8968,20 @@ export function SimulatorPage({ gamificationMode = false }) {
                 !w.to.startsWith(id + ':') &&
                 (!w.ownerIds || w.ownerIds.length > 0)
               ));
+
+              // Remove AutoCode snippet
+              if (id) {
+                setProjectFiles(prev => prev.map(f => {
+                  if (f.content) {
+                    const newContent = removeCodeSnippet(f.content, id);
+                    if (activeCodeFileId === f.id && code !== newContent) {
+                      setCode(newContent);
+                    }
+                    return { ...f, content: newContent };
+                  }
+                  return f;
+                }));
+              }
               if (selected === id) setSelected(null);
             }}
             onDoc={() => {
@@ -11454,6 +9004,8 @@ export function SimulatorPage({ gamificationMode = false }) {
             programmableBoards={components.filter(c => isProgrammableBoardType(c.type))}
             boardColors={boardColors}
             onWireToBoard={handleWireToBoard}
+            onOpenCode={handleOpenCode}
+            onAutoCode={handleAutoCode}
           />
 
           <ComponentRenamePanel
@@ -11465,6 +9017,14 @@ export function SimulatorPage({ gamificationMode = false }) {
             onCancel={() => setRenameState({ id: null, x: 0, y: 0 })}
             theme={theme}
           />
+
+          {showTour && (
+            <TourGuide
+              onFinish={handleFinishTour}
+              onStepChange={setTourActiveStep}
+              onDemoAction={handleTourDemoAction}
+            />
+          )}
 
           <ComponentValuePanel
             comp={components.find(c => c.id === valueState.id)}
@@ -11483,82 +9043,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       </div>
     );
   }
-
-  function ProjectCard({ proj, currentProjectId, renamingProjectId, renameValue, setRenameValue, handleConfirmRename, setRenamingProjectId, handleLoadProject, isRunning, setShowProjectsSidebar, onContextMenu, formatProjectDate }) {
-    const isCurrent = proj.id === currentProjectId;
-
-    return (
-      <div
-        className={`group relative rounded-xl p-3.5 mb-3 cursor-pointer transition-all duration-200 border shadow-sm
-        ${isCurrent
-            ? 'bg-[rgba(var(--accent-rgb,100,180,255),0.08)] border-[var(--accent)]'
-            : 'bg-[var(--card)] border-[var(--border)] hover:border-[var(--text3)] hover:shadow-md'
-          }`}
-        onClick={() => { if (renamingProjectId !== proj.id) handleLoadProject(proj); }}
-        onContextMenu={(e) => { e.preventDefault(); onContextMenu(proj, e.clientX, e.clientY); }}
-      >
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              {renamingProjectId === proj.id ? (
-                <input
-                  autoFocus
-                  className="bg-[var(--bg)] border border-[var(--accent)] text-[var(--text)] px-2.5 py-1.5 rounded-lg text-sm w-full outline-none ring-2 ring-[var(--accent)]/20"
-                  value={renameValue}
-                  onChange={e => setRenameValue(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') handleConfirmRename(proj.id); if (e.key === 'Escape') setRenamingProjectId(null); }}
-                  onBlur={() => handleConfirmRename(proj.id)}
-                  onClick={e => e.stopPropagation()}
-                />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-[var(--text)] truncate block leading-tight">
-                    {proj.name || 'Untitled Project'}
-                  </span>
-                  {isCurrent && (
-                    <span className="flex h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_8px_var(--accent)] shrink-0 animate-pulse" title="Currently open" />
-                  )}
-                </div>
-              )}
-            </div>
-            {!renamingProjectId && (
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity translate-x-1 group-hover:translate-x-0">
-                <button
-                  className="bg-[var(--accent)] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg shadow-sm hover:brightness-110 active:scale-95 transition-all"
-                  onClick={(e) => { e.stopPropagation(); handleLoadProject(proj); setShowProjectsSidebar(false); }}
-                  disabled={isRunning}
-                >
-                  Load
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <div className="flex items-center gap-1.5 text-[11px] text-[var(--text3)] font-medium">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 12L12 6L18 12" /><path d="M6 18L12 12L18 18" /></svg>
-              {proj.board === 'arduino_uno' ? 'Arduino Uno' : (proj.board || 'Custom Board')}
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-[var(--text3)] font-medium">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
-              {proj.components?.length ?? 0} components
-            </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-[var(--text3)] opacity-70 ml-auto">
-              {formatProjectDate(proj.savedAt)}
-            </div>
-          </div>
-        </div>
-
-        {renamingProjectId === proj.id && (
-          <div className="flex gap-2 mt-3 justify-end">
-            <button className="px-3 py-1.5 text-xs font-semibold text-[var(--text3)] hover:text-[var(--text)] transition-colors" onClick={(e) => { e.stopPropagation(); setRenamingProjectId(null); }}>Cancel</button>
-            <button className="px-4 py-1.5 bg-[var(--accent)] text-white text-xs font-bold rounded-lg shadow-md" onClick={(e) => { e.stopPropagation(); handleConfirmRename(proj.id); }}>Rename</button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
 }
 
 export default SimulatorPage;

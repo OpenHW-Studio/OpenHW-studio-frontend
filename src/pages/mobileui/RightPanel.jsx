@@ -281,47 +281,76 @@ function RightPanelInternal(props) {
                 </div>
                 <button className="bg-transparent border-none text-[var(--text3)] cursor-pointer text-sm font-inherit" onClick={() => setShowValidation(false)}>✕</button>
               </div>
-              {validationErrors.map((err, i) => {
-                const isError = err.severity === 'error' || err.type === 'error';
-                const confidence = err.confidence ? `${Math.round(err.confidence * 100)}%` : 'unknown';
-                return (
-                <div key={i} className="px-3 py-2 text-xs border-l-4 mb-0.5 leading-relaxed group relative" style={{
-                  borderLeftColor: isError ? 'var(--red)' : 'var(--orange)',
-                  background: 'rgba(0,0,0,0.1)'
-                }}>
-                  <div className="flex justify-between items-start gap-2">
-                    <div className="flex-1">
-                      <span style={{ color: isError ? 'var(--red)' : 'var(--orange)' }}>
-                        {isError ? '🔴' : '🟡'} {err.message}
-                      </span>
-                      {err.remediation && (
-                        <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '2px' }}>
-                          💡 {err.remediation}
+              <div style={{ maxHeight: '170px', overflowY: 'auto' }} className="panel-scroll">
+                {validationErrors.map((err, i) => {
+                  const isError = err.severity === 'error' || err.type === 'error';
+                  const confidence = err.confidence ? `${Math.round(err.confidence * 100)}%` : 'unknown';
+                  return (
+                    <div key={i} className="px-3 py-2 text-xs border-l-4 mb-0.5 leading-relaxed group relative" style={{
+                      borderLeftColor: isError ? 'var(--red)' : 'var(--orange)',
+                      background: 'rgba(0,0,0,0.1)'
+                    }}>
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="flex-1">
+                          <span style={{ color: isError ? 'var(--red)' : 'var(--orange)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            {isError ? (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="12" y1="8" x2="12" y2="12" />
+                                <line x1="12" y1="16" x2="12.01" y2="16" />
+                              </svg>
+                            ) : (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                                <line x1="12" y1="9" x2="12" y2="13" />
+                                <line x1="12" y1="17" x2="12.01" y2="17" />
+                              </svg>
+                            )}
+                            <span>{err.message}</span>
+                          </span>
+                          {err.remediation && (
+                            <div style={{ fontSize: '10px', color: 'var(--text3)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .6 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
+                                <line x1="9" y1="18" x2="15" y2="18" />
+                                <line x1="10" y1="22" x2="14" y2="22" />
+                              </svg>
+                              <span>{err.remediation}</span>
+                            </div>
+                          )}
+                          {err.details?.rootCauseGroup && (
+                            <div style={{ fontSize: '9px', color: 'var(--text4)', marginTop: '2px' }}>
+                              Root cause: {err.details.rootCauseGroup}
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {err.details?.rootCauseGroup && (
-                        <div style={{ fontSize: '9px', color: 'var(--text4)', marginTop: '2px' }}>
-                          Root cause: {err.details.rootCauseGroup}
-                        </div>
-                      )}
-                    </div>
-                    {err.remediation && applyFix && (
-                      <div className="shrink-0 flex gap-1">
-                        <button 
-                          onClick={() => applyFix(err)}
-                          className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all"
-                          title={`Fix with ${confidence} confidence`}
-                        >
-                          <span>🪄</span>
-                          <span>FIX</span>
-                          <span style={{ fontSize: '8px', opacity: 0.7 }}>({confidence})</span>
-                        </button>
+                        {err.remediation && applyFix && (
+                          <div className="shrink-0 flex gap-1">
+                            <button 
+                              onClick={() => applyFix(err)}
+                              className="bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-black font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 transition-all"
+                              title={`Fix with ${confidence} confidence`}
+                            >
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.21 1.21 0 0 0 1.72 0L21.64 5.36a1.21 1.21 0 0 0 0-1.72Z" />
+                                <path d="m14 7 3 3" />
+                                <path d="M5 6v4" />
+                                <path d="M19 14v4" />
+                                <path d="M10 2v2" />
+                                <path d="M7 8H3" />
+                                <path d="M21 16h-4" />
+                                <path d="M11 3H9" />
+                              </svg>
+                              <span>FIX</span>
+                              <span style={{ fontSize: '8px', opacity: 0.7 }}>({confidence})</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              );
-              })}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

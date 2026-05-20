@@ -112,7 +112,6 @@ export default function TeacherComposerModal({
                 </header>
 
                 <TeacherGradingPanel 
-                  isEnabled={true}
                   autogradingKey={assignmentForm.autogradingKey}
                   isEnabled={assignmentForm.isAutogradingEnabled}
                   onKeyGenerated={(key) => {

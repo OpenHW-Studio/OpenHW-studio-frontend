@@ -44,6 +44,13 @@ jobs:
           path: openhw-studio-backend
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Checkout documentation code
+        uses: actions/checkout@v4
+        with:
+          repository: OpenHW-Studio/openhw-studio-docs
+          path: openhw-studio-docs
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -119,6 +126,7 @@ jobs:
             VITE_EXAMPLES_BASE_URL=${{ secrets.VITE_EXAMPLES_BASE_URL }}
             VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
             VITE_ADMIN_EMAILS=${{ secrets.VITE_ADMIN_EMAILS }}
+            VITE_DOCS_URL=https://openhw-studio.fossee.in/docs/
 
   notify_admin:
     name: Notify Dashboard
@@ -177,11 +185,18 @@ jobs:
           # Log in to Docker Hub (required if your images are private or to avoid rate limits)
           echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
           
+          # Check space and proactive cleanup
+          df -h
+          docker image prune -af
+          df -h
+          
           docker compose -f docker-compose.prod.yml pull frontend
           docker compose -f docker-compose.prod.yml up -d frontend
           
           # Clean up old images to save disk space
+          df -h
           docker image prune -af
+          df -h
 
   notify_deployed:
     name: Notify Deployed
