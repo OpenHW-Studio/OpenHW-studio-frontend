@@ -216,69 +216,107 @@ export function calculateWireBundleOffsets(wires, resolveWirePoints) {
     if (wire?.id != null) offsets.set(wire.id, { offset: 0, stagger: 0 });
   }
 
-  const allSegments = [];
+  const allResolved = [];
   for (const wire of wires || []) {
-    const resolved = resolveWirePoints ? resolveWirePoints(wire) : null;
-    if (!resolved) continue;
-    // build the canonical trunk-first route (no offset) for overlap detection
-    const points = buildBaseRoutePoints(resolved.p1, resolved.e1, resolved.e2, resolved.p2, resolved.waypoints || [], 0);
-    if (points.length < 2) continue;
-    allSegments.push(...segmentsFromPoints(points, wire.id));
-  }
-
-  // Compute global wire average centerline for stable ordering
-  const globalWireCenter = new Map();
-  for (const seg of allSegments) {
-    const cur = globalWireCenter.get(seg.wireId) || { sum: 0, n: 0 };
-    cur.sum += seg.centerLine; cur.n += 1;
-    globalWireCenter.set(seg.wireId, cur);
-  }
-
-  const groups = [];
-  const seen = new Set();
-  for (let i = 0; i < allSegments.length; i++) {
-    if (seen.has(i)) continue;
-    const seed = allSegments[i];
-    const group = [seed];
-    seen.add(i);
-    for (let j = i + 1; j < allSegments.length; j++) {
-      if (seen.has(j)) continue;
-      const seg = allSegments[j];
-      if (group.some(item => segmentsOverlap(item, seg))) {
-        group.push(seg);
-        seen.add(j);
+    const r = resolveWirePoints ? resolveWirePoints(wire) : null;
+    if (!r || !r.p1 || !r.e1 || !r.e2 || !r.p2) continue;
+    
+    // Determine exit direction for e1
+    let e1Dir = r.e1.dir;
+    if (!e1Dir) {
+      if (Math.abs(r.e1.y - r.p1.y) >= Math.abs(r.e1.x - r.p1.x)) {
+        e1Dir = r.e1.y < r.p1.y ? 'top' : 'bottom';
+      } else {
+        e1Dir = r.e1.x < r.p1.x ? 'left' : 'right';
       }
     }
-    if (group.length > 1) groups.push(group);
-  }
 
-  for (const group of groups) {
-    const uniqueWireIds = [...new Set(group.map(seg => seg.wireId))].filter(id => id != null);
-    uniqueWireIds.sort((a, b) => {
-      const aa = globalWireCenter.get(a) || { sum: 0, n: 1 };
-      const bb = globalWireCenter.get(b) || { sum: 0, n: 1 };
-      return (aa.sum / aa.n) - (bb.sum / bb.n);
-    });
-    const count = uniqueWireIds.length;
-    uniqueWireIds.forEach((wireId, index) => {
-      const offsetVal = (index - Math.floor(count / 2)) * WIRE_SPACING;
-      const staggerVal = (index + count) * STAGGER_STEP;
-      const current = offsets.get(wireId) || { offset: 0, stagger: 0 };
-      if (Math.abs(offsetVal) > Math.abs(current.offset) || (Math.abs(offsetVal) === Math.abs(current.offset) && staggerVal > current.stagger)) {
-        offsets.set(wireId, { offset: offsetVal, stagger: staggerVal });
+    // Determine exit direction for e2 (destination approach direction)
+    let e2Dir = r.e2.dir;
+    if (!e2Dir) {
+      if (Math.abs(r.e2.y - r.p2.y) >= Math.abs(r.e2.x - r.p2.x)) {
+        e2Dir = r.e2.y < r.p2.y ? 'top' : 'bottom';
+      } else {
+        e2Dir = r.e2.x < r.p2.x ? 'left' : 'right';
       }
-    });
-    // Debug: report grouping and assigned offsets
-    try {
-      console.debug('[wireRouting] group assigned', group.map(s => ({ wireId: s.wireId, centerLine: s.centerLine })), 'offsetsSnapshot', uniqueWireIds.map(id => ({ id, offset: offsets.get(id) })));
-    } catch (e) {
-      // noop in environments without console
     }
+
+    const [srcCompId] = (wire.from || '').split(':');
+    const [dstCompId] = (wire.to || '').split(':');
+
+    allResolved.push({
+      wire,
+      p1: r.p1,
+      e1: r.e1,
+      e2: r.e2,
+      p2: r.p2,
+      srcCompId,
+      dstCompId,
+      e1Dir,
+      e2Dir
+    });
   }
 
-  try {
-    console.debug('[wireRouting] final offsets map', Array.from(offsets.entries()));
-  } catch (e) {}
+  // Group by exit edge (component + direction)
+  const srcGroups = new Map();
+  for (const r of allResolved) {
+    const key = `${r.srcCompId}::${r.e1Dir}`;
+    if (!srcGroups.has(key)) srcGroups.set(key, []);
+    srcGroups.get(key).push(r);
+  }
+
+  for (const group of srcGroups.values()) {
+    if (group.length === 0) continue;
+    
+    // Sort based on pin position along the exit edge
+    const first = group[0];
+    const isHorizontalEdge = first.e1Dir === 'top' || first.e1Dir === 'bottom';
+    
+    if (isHorizontalEdge) {
+      // Top/Bottom edge: pins are aligned horizontally, sort by x coordinate
+      group.sort((a, b) => a.p1.x - b.p1.x);
+    } else {
+      // Left/Right edge: pins are aligned vertically, sort by y coordinate
+      group.sort((a, b) => a.p1.y - b.p1.y);
+    }
+
+    // Assign incremental stagger values: 15px, 30px, 45px...
+    group.forEach((r, index) => {
+      const cur = offsets.get(r.wire.id) || { offset: 0, stagger: 0 };
+      cur.stagger = (index + 1) * STAGGER_STEP;
+      offsets.set(r.wire.id, cur);
+    });
+  }
+
+  // Group by destination edge (component + direction)
+  const dstGroups = new Map();
+  for (const r of allResolved) {
+    const key = `${r.dstCompId}::${r.e2Dir}`;
+    if (!dstGroups.has(key)) dstGroups.set(key, []);
+    dstGroups.get(key).push(r);
+  }
+
+  for (const group of dstGroups.values()) {
+    if (group.length === 0) continue;
+
+    // Sort based on pin position along the destination edge
+    const first = group[0];
+    const isHorizontalEdge = first.e2Dir === 'top' || first.e2Dir === 'bottom';
+
+    if (isHorizontalEdge) {
+      group.sort((a, b) => a.p2.x - b.p2.x);
+    } else {
+      group.sort((a, b) => a.p2.y - b.p2.y);
+    }
+
+    const count = group.length;
+    // Assign symmetric laneOffset values
+    group.forEach((r, index) => {
+      const cur = offsets.get(r.wire.id) || { offset: 0, stagger: 0 };
+      cur.offset = (index - Math.floor(count / 2)) * WIRE_SPACING;
+      offsets.set(r.wire.id, cur);
+    });
+  }
 
   return offsets;
 }
