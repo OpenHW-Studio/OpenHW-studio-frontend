@@ -687,6 +687,56 @@ export class RP2040Runner implements BoardRunner {
         return Math.floor(((Number(this.cpu.core.cycles) - this.cpuCyclesAtStart) / 125_000_000) * 1000);
     }
 
+    writeDirectMemory(address: number, data: Uint8Array) {
+        if (!this.cpu) return;
+        const targetAddress = address >>> 0;
+        
+        // Handle SRAM writes (0x20000000 -> 0x20040000)
+        if (targetAddress >= 0x20000000 && targetAddress < (0x20000000 + this.cpu.sram.length)) {
+            const offset = targetAddress - 0x20000000;
+            const maxLen = Math.min(data.length, this.cpu.sram.length - offset);
+            this.cpu.sram.set(data.subarray(0, maxLen), offset);
+        }
+        // Handle USB RAM writes if needed (0x50100000)
+        else if (targetAddress >= 0x50100000 && targetAddress < (0x50100000 + 0x1000)) {
+            const offset = targetAddress - 0x50100000;
+            const maxLen = Math.min(data.length, 0x1000 - offset);
+            for (let i = 0; i < maxLen; i++) {
+                this.cpu.writeUint8(targetAddress + i, data[i]);
+            }
+        } else {
+            // Memory mapped peripheral registers (e.g. PIO RX FIFO at 0x50200020)
+            if (data.length === 4 && (targetAddress & 3) === 0) {
+                const val32 = (data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)) >>> 0;
+                this.cpu.writeUint32(targetAddress, val32);
+            } else {
+                for (let i = 0; i < data.length; i++) {
+                    this.cpu.writeUint8(targetAddress + i, data[i]);
+                }
+            }
+        }
+    }
+
+    readDirectMemory(address: number, length: number): Uint8Array | null {
+        if (!this.cpu) return null;
+        const targetAddress = address >>> 0;
+        
+        // Handle SRAM reads (0x20000000 -> 0x20040000)
+        if (targetAddress >= 0x20000000 && targetAddress < (0x20000000 + this.cpu.sram.length)) {
+            const offset = targetAddress - 0x20000000;
+            const maxLen = Math.min(length, this.cpu.sram.length - offset);
+            return new Uint8Array(this.cpu.sram.buffer, this.cpu.sram.byteOffset + offset, maxLen);
+        }
+        
+        // Slow fallback for other memory mapped regions
+        const result = new Uint8Array(length);
+        for (let i = 0; i < length; i++) {
+            result[i] = this.cpu.readUint8(targetAddress + i);
+        }
+        return result;
+    }
+
+
     setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean) {
         for (const inst of this.instances.values()) {
             inst.telemetryEnabled = !!enabled;
@@ -868,7 +918,12 @@ export class RP2040Runner implements BoardRunner {
                 const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
-                if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
+                (inst as any)._runner = this;
+                
+                // Hack: Pass the component attributes so logic can read them
+                if (cDef.attrs) {
+                    inst.state = { ...inst.state, ...cDef.attrs };
+                }
                 inst.onTelemetryFinding = (finding: any) => {
                     this.onStateUpdate({
                         type: 'telemetry_finding',

@@ -77,7 +77,9 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
   if (q) {
     outer: for (const group of catalog) {
       for (const item of group.items) {
-        if (item.label.toLowerCase().includes(q) || item.type.toLowerCase().includes(q)) {
+        const searchLabel = (item.label || item.name || '').toLowerCase();
+        const searchType = (item.type || '').toLowerCase();
+        if (searchLabel.includes(q) || searchType.includes(q)) {
           results.push(item);
           if (results.length >= 6) break outer;
         }

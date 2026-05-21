@@ -401,6 +401,8 @@ export type BoardRunner = {
     getRichTelemetrySnapshot: (options?: { mode?: 'standard' | 'deep' | 'delta' }) => any;
     getSimulatedTimeMs: () => number;
     forceEmitState?: () => void;
+    writeDirectMemory?: (address: number, data: Uint8Array) => void;
+    readDirectMemory?: (address: number, length: number) => Uint8Array | null;
     running?: boolean;
 };
 
