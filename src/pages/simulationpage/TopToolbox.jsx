@@ -274,7 +274,7 @@ function TopToolboxInternal(props) {
       submenu: assistMenuItems
     },
     { type: 'separator' },
-    { label: 'About OpenHW Studio', onClick: () => { } }
+    { label: 'About OpenHW Studio', onClick: () => navigate('/about') }
   ];
 
   return (
