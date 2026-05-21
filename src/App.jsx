@@ -41,6 +41,7 @@ const MobileSimulatorPage = React.lazy(() => import('./pages/mobileui/SimulatorP
 const ComponentLab = React.lazy(() => import('./pages/simulationpage/ComponentLab.jsx'));
 const GradingPage = React.lazy(() => import('./pages/GradingPage.jsx'));
 const MaintenancePage = React.lazy(() => import('./pages/MaintenancePage.jsx'));
+import AboutUs from './pages/AboutUsPage.jsx';
 
 import { fetchMaintenanceStatus } from './services/simulatorService.js';
 import axios from 'axios';
