@@ -6681,6 +6681,14 @@ export function SimulatorPage({ gamificationMode = false }) {
           return;
         }
 
+        if (msg.type === 'toast') {
+          setValidationToast({
+            level: msg.level || 'info',
+            message: msg.message
+          });
+          return;
+        }
+
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
