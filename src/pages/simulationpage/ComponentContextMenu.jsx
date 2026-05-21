@@ -397,6 +397,26 @@ export const ComponentContextMenu = ({
       }
     }
 
+    if (comp.type === 'openhw-inmp441' || comp.type === 'openhw-sph0645') {
+      const micMode = resolveComponentAttrString(comp?.attrs, 'micMode', 'simulated');
+      menus.push({
+        label: 'Mic Input',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/><line x1="8" x2="16" y1="22" y2="22"/></svg>,
+        options: [
+          {
+            label: 'Simulated (Sine)',
+            active: micMode === 'simulated',
+            onClick: () => updateComponentAttr?.(comp.id, 'micMode', 'simulated')
+          },
+          {
+            label: 'Real (Live Mic)',
+            active: micMode === 'real',
+            onClick: () => updateComponentAttr?.(comp.id, 'micMode', 'real')
+          }
+        ]
+      });
+    }
+
     return menus;
   }, [comp, updateComponentAttr, onValueEdit, onClose]);
 

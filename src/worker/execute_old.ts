@@ -1255,7 +1255,7 @@ class SDCardLogic extends BaseComponent {
     }
 }
 
-class GenericI2CDeviceLogic extends BaseComponent {
+class I2CProtocol extends BaseComponent {
     private readonly address: number;
     private readonly readQueue: number[] = [];
 
@@ -1316,7 +1316,7 @@ class GenericI2CDeviceLogic extends BaseComponent {
     }
 }
 
-class GenericSPIDeviceLogic extends BaseComponent {
+class SPIProtocol extends BaseComponent {
     onSPIByte(data: number): number {
         const byte = data & 0xff;
         this.state.lastWrite = byte;
@@ -1928,9 +1928,9 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-lcd1602-i2c': Lcd2004I2CFallbackLogic,
     'wokwi-ssd1306-oled': SSD1306FallbackLogic,
     'openhw-ssd1306-oled': SSD1306FallbackLogic,
-    max30102: GenericI2CDeviceLogic,
-    'wokwi-max7219': GenericSPIDeviceLogic,
-    'openhw-max7219': GenericSPIDeviceLogic,
+    max30102: I2CProtocol,
+    'wokwi-max7219': SPIProtocol,
+    'openhw-max7219': SPIProtocol,
     'wokwi-ldr-module': BaseComponent,
     'openhw-ldr-module': BaseComponent,
     'wokwi-7segment': BaseComponent,
