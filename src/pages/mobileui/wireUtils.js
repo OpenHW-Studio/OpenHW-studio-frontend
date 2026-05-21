@@ -1,3 +1,5 @@
+import { buildWireRoutePoints } from '../../utils/wireRouting.js';
+
 // ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
 export function renderRoundedPath(pts) {
   if (!pts || pts.length < 2) return '';
@@ -21,56 +23,92 @@ export function renderRoundedPath(pts) {
 }
 
 // ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
-export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = []) {
-  if (waypoints.length > 0 && waypoints[0]._corner) {
-    const pts = [p1, ...waypoints, p2];
-    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 0, routingInstructions = []) {
+  if (routingInstructions && routingInstructions.length > 0) {
+    let currentX = p1.x;
+    let currentY = p1.y;
+    const pts = [{ x: currentX, y: currentY }];
+    let starIndex = routingInstructions.indexOf('*');
+    const SCALE = 1.5; 
+
+    if (starIndex === -1) {
+      for (const inst of routingInstructions) {
+        if (inst.startsWith('v')) currentY += Number(inst.slice(1)) * SCALE;
+        if (inst.startsWith('h')) currentX += Number(inst.slice(1)) * SCALE;
+        pts.push({ x: currentX, y: currentY });
+      }
+      pts.push(p2);
+    } else {
+      for (let i = 0; i < starIndex; i++) {
+        const inst = routingInstructions[i];
+        if (inst.startsWith('v')) currentY += Number(inst.slice(1)) * SCALE;
+        if (inst.startsWith('h')) currentX += Number(inst.slice(1)) * SCALE;
+        pts.push({ x: currentX, y: currentY });
+      }
+
+      let endX = p2.x;
+      let endY = p2.y;
+      const endPtsBackwards = [{ x: endX, y: endY }];
+      
+      for (let i = routingInstructions.length - 1; i > starIndex; i--) {
+        const inst = routingInstructions[i];
+        if (inst.startsWith('v')) endY -= Number(inst.slice(1)) * SCALE;
+        if (inst.startsWith('h')) endX -= Number(inst.slice(1)) * SCALE;
+        endPtsBackwards.unshift({ x: endX, y: endY });
+      }
+
+      if (endPtsBackwards.length > 0) {
+         const joinPt = endPtsBackwards[0];
+         const dx = joinPt.x - currentX;
+         const dy = joinPt.y - currentY;
+         
+         if (Math.abs(dx) > 0.1 && Math.abs(dy) > 0.1) {
+             const prevInst = starIndex > 0 ? routingInstructions[starIndex - 1] : '';
+             if (prevInst.startsWith('h')) pts.push({ x: currentX, y: joinPt.y });
+             else pts.push({ x: joinPt.x, y: currentY });
+         }
+         pts.push(...endPtsBackwards);
+      } else {
+         pts.push(p2);
+      }
+    }
+    return snapPointsToHalfPixel(makeOrthogonal(pts));
   }
 
-  const dx1 = e1.x - p1.x, dy1 = e1.y - p1.y;
-  const dx2 = e2.x - p2.x, dy2 = e2.y - p2.y;
-  const e1IsVert = Math.abs(dy1) > Math.abs(dx1);
-  const e2IsVert = Math.abs(dy2) > Math.abs(dx2);
+  const numericOffset = typeof offset === 'object' && offset !== null ? (Number(offset.offset) || 0) : (Number(offset) || 0);
 
-  let se1 = e1, se2 = e2;
-  if (e1IsVert) {
-    if (dy1 !== 0 && (p2.y - p1.y) * dy1 < 0) se1 = { x: p1.x, y: p1.y - dy1 };
-  } else {
-    if (dx1 !== 0 && (p2.x - p1.x) * dx1 < 0) se1 = { x: p1.x - dx1, y: p1.y };
+  if (waypoints.length > 0 && waypoints[0]?._corner) {
+    let pts = [p1, ...waypoints, p2];
+    pts = pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+    if (numericOffset !== 0 && pts.length > 2) {
+      const newPts = [p1];
+      for (let i = 1; i < pts.length - 1; i++) {
+        newPts.push({ x: pts[i].x + numericOffset, y: pts[i].y + numericOffset });
+      }
+      newPts.push(p2);
+      return newPts;
+    }
+    return pts;
   }
-  if (e2IsVert) {
-    if (dy2 !== 0 && (p1.y - p2.y) * dy2 < 0) se2 = { x: p2.x, y: p2.y - dy2 };
-  } else {
-    if (dx2 !== 0 && (p1.x - p2.x) * dx2 < 0) se2 = { x: p2.x - dx2, y: p2.y };
-  }
-
-  const sdx1 = se1.x - p1.x, sdy1 = se1.y - p1.y;
-  const sdx2 = se2.x - p2.x, sdy2 = se2.y - p2.y;
-  const e1Horiz = Math.abs(sdx1) >= Math.abs(sdy1);
-  const e2Horiz = Math.abs(sdx2) >= Math.abs(sdy2);
-
-  let midPts;
-  if (e1Horiz && e2Horiz) {
-    const midX = (se1.x + se2.x) / 2;
-    midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
-  } else if (!e1Horiz && !e2Horiz) {
-    const midY = (se1.y + se2.y) / 2;
-    midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
-  } else if (e1Horiz && !e2Horiz) {
-    midPts = [{ x: se2.x, y: se1.y }];
-  } else {
-    midPts = [{ x: se1.x, y: se2.y }];
-  }
-
-  let pts = [p1, se1, ...midPts, se2, p2];
-  return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+  return buildWireRoutePoints(p1, e1, e2, p2, waypoints, offset);
 }
 
 // ─── SINGLE SOURCE OF TRUTH: full orthogonal point list for any wire mode ──
-export function getWirePoints(p1, e1, e2, p2, waypoints = []) {
-  if (waypoints.length > 0 && waypoints[0]._corner) {
+export function getWirePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
+  const numericOffset = typeof offset === 'object' && offset !== null ? (Number(offset.offset) || 0) : (Number(offset) || 0);
+
+  if (waypoints.length > 0 && waypoints[0]?._corner) {
     let pts = [p1, ...waypoints, p2];
-    return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+    pts = pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
+    if (numericOffset !== 0 && pts.length > 2) {
+      const newPts = [p1];
+      for (let i = 1; i < pts.length - 1; i++) {
+        newPts.push({ x: pts[i].x + numericOffset, y: pts[i].y + numericOffset });
+      }
+      newPts.push(p2);
+      return newPts;
+    }
+    return pts;
   }
 
   if (waypoints.length > 0) {
@@ -87,7 +125,7 @@ export function getWirePoints(p1, e1, e2, p2, waypoints = []) {
     return pts.filter((pt, i, arr) => i === 0 || pt.x !== arr[i - 1].x || pt.y !== arr[i - 1].y);
   }
 
-  return computeWireOrthoPoints(p1, e1, e2, p2, []);
+  return computeWireOrthoPoints(p1, e1, e2, p2, [], offset);
 }
 
 // Preview wire while drawing
@@ -108,8 +146,16 @@ export function multiRoutePath(p1, p2, waypoints = []) {
 }
 
 // Builds the SVG path string for a placed wire.
-export function buildWirePath(p1, e1, e2, p2, waypoints = []) {
-  return renderRoundedPath(getWirePoints(p1, e1, e2, p2, waypoints));
+export function buildWirePath(p1, e1, e2, p2, waypoints = [], pathOverride = null, offset = 0, routingInstructions = []) {
+  if (routingInstructions && routingInstructions.length > 0) {
+    const pts = computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset, routingInstructions);
+    return renderRoundedPath(pts);
+  }
+
+  const pts = Array.isArray(pathOverride) && pathOverride.length > 1
+    ? pathOverride
+    : getWirePoints(p1, e1, e2, p2, waypoints, offset);
+  return renderRoundedPath(pts);
 }
 
 export function wireColor(pinLabel) {

@@ -6,11 +6,11 @@ if (typeof window === 'undefined') {
         createTextNode: () => ({}),
         querySelector: () => null,
         querySelectorAll: () => [],
-        addEventListener: () => {},
-        removeEventListener: () => {},
+        addEventListener: () => { },
+        removeEventListener: () => { },
     };
 }
-(self as any).$RefreshReg$ = () => {};
+(self as any).$RefreshReg$ = () => { };
 (self as any).$RefreshSig$ = () => () => (type: any) => type;
 
 import { BoardRunner, createRunnerForBoard, LOGIC_REGISTRY, COMPONENT_PINS, buildFatFsImage, buildLittleFsImage } from './execute';
@@ -710,6 +710,7 @@ function stopAllRunners() {
         clearInjectSession(boardId);
     }
     boardInjectSessions.clear();
+    dmaWarned = false;
 }
 
 function endpointAliases(endpoint: string): string[] {
@@ -770,8 +771,24 @@ function resolveRp2040ExecutableRanges(boardComp: any, boardExecutableRangesMap:
     return Array.isArray(candidate) ? candidate : undefined;
 }
 
+let dmaWarned = false;
+
 function postRunnerState(stateObj: any, boardId: string) {
     const resolvedBoardId = String(stateObj?.boardId || boardId || 'default').trim() || 'default';
+
+    if (!dmaWarned && stateObj?.components && Array.isArray(stateObj.components)) {
+        for (const comp of stateObj.components) {
+            if (comp.state?.dmaBypassDisabled) {
+                dmaWarned = true;
+                postMessage({
+                    type: 'toast',
+                    level: 'warning',
+                    message: 'Logic Analyzer detected. High-speed DMA bypassed. Simulation running in cycle-accurate mode.'
+                });
+                break;
+            }
+        }
+    }
 
     if (mode === 'single') {
         const msg = (stateObj && typeof stateObj === 'object')
@@ -929,29 +946,37 @@ self.onmessage = async (e) => {
                 && (!singleBoardFlashPartitions || singleBoardFlashPartitions.length === 0)
                 && !!pyScript.trim();
 
-            runner = createRunnerForBoard(
-                singleBoardType,
-                hex,
-                components,
-                wires,
-                (stateObj) => postRunnerState(stateObj, singleBoardId || 'default'),
-                {
-                    boardId: singleBoardId,
-                    serialBaudRate: Number(boardBaudMap?.[singleBoardId] ?? baudRate ?? 9600),
-                    debugEnabled: singleBoardIsRp2040 && rp2040DebugEnabled,
-                    debugIntervalMs: singleBoardIsRp2040 && rp2040DebugEnabled ? 1200 : 0,
-                    speed: initialSpeed,
-                    // Pass pyScript metadata so the worker can inject over UART0 after boot.
-                    pyScript: typeof pyScript === 'string' ? pyScript : '',
-                    onByteTransmit: ({ boardId, value, char, source }) => {
-                        appendBoardSerialOutput(String(boardId || ''), String(char || ''));
-                        postMessage({ type: 'serial', data: char, boardId, value, source });
-                    },
-                    rp2040ExecutableRanges: singleBoardIsRp2040 ? singleBoardExecutableRanges : undefined,
-                    rp2040LogicalFlashBytes: singleBoardIsRp2040 ? RP2040_LOGICAL_FLASH_BYTES : undefined,
-                    rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
-                }
-            );
+            console.log(`[Worker] Creating runner for board: ${singleBoardType}, boardId: ${singleBoardId}`);
+            try {
+                runner = createRunnerForBoard(
+                    singleBoardType,
+                    hex,
+                    components,
+                    wires,
+                    (stateObj) => postRunnerState(stateObj, singleBoardId || 'default'),
+                    {
+                        boardId: singleBoardId,
+                        serialBaudRate: Number(boardBaudMap?.[singleBoardId] ?? baudRate ?? 9600),
+                        debugEnabled: singleBoardIsRp2040 && rp2040DebugEnabled,
+                        debugIntervalMs: singleBoardIsRp2040 && rp2040DebugEnabled ? 1200 : 0,
+                        speed: initialSpeed,
+                        // Pass pyScript metadata so the worker can inject over UART0 after boot.
+                        pyScript: typeof pyScript === 'string' ? pyScript : '',
+                        onByteTransmit: ({ boardId, value, char, source }) => {
+                            appendBoardSerialOutput(String(boardId || ''), String(char || ''));
+                            postMessage({ type: 'serial', data: char, boardId, value, source });
+                        },
+                        rp2040ExecutableRanges: singleBoardIsRp2040 ? singleBoardExecutableRanges : undefined,
+                        rp2040LogicalFlashBytes: singleBoardIsRp2040 ? RP2040_LOGICAL_FLASH_BYTES : undefined,
+                        rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
+                    }
+                );
+                console.log(`[Worker] Runner created OK. running=${(runner as any)?.running}`);
+            } catch (runnerErr: any) {
+                console.error('[Worker] FATAL: createRunnerForBoard threw:', runnerErr);
+                postMessage({ type: 'error', message: `Runner init failed: ${runnerErr?.message || runnerErr}` });
+                return;
+            }
 
             if (typeof (runner as any).setTelemetryEnabled === 'function') {
                 (runner as any).setTelemetryEnabled(activeTelemetryEnabled, activeTelemetryMode, activeTelemetryWatchedParamsMap, activeDeepSiliconEnabled);

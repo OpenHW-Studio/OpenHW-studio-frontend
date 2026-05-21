@@ -20,11 +20,12 @@ const areCanvasWirePropsEqual = (prev, next) => (
   prev.isSelected === next.isSelected &&
   prev.wirepointsEnabled === next.wirepointsEnabled &&
   prev.offset === next.offset &&
-  prev.wiresAlwaysOnTop === next.wiresAlwaysOnTop
+  prev.wiresAlwaysOnTop === next.wiresAlwaysOnTop &&
+  prev.isDragging === next.isDragging
 );
 
-export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset), [p1, e1, e2, p2, wire.waypoints, wire.path, offset]);
+export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false, isDragging = false }) => {
+  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions), [p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions]);
   const isOrphaned = p1.isFallback || p2.isFallback;
 
   // Logic:
