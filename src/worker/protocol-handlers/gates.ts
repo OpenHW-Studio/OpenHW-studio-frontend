@@ -1,4 +1,4 @@
-import { BaseComponent } from '@openhw/emulator';
+import { BaseComponent, DigitalProtocol } from '@openhw/emulator';
 
 function gateVoltage(isHigh: boolean): number {
     return isHigh ? 5.0 : 0.0;
@@ -18,13 +18,13 @@ function setGateOutput(inst: BaseComponent, pinId: string, isHigh: boolean) {
     }
 }
 
-export class NotGateLogic extends BaseComponent {
+export class NotGateLogic extends DigitalProtocol {
     constructor(id: string, manifest: any) {
         super(id, manifest);
-        this.state = { out: true };
+        this.state = { ...this.state, out: true };
     }
 
-    onPinStateChange(pinId: string, isHigh: boolean) {
+    onPinEdge(pinId: string, isHigh: boolean) {
         const pin = String(pinId || '').toUpperCase();
         if (pin === 'IN' || pin === 'A' || pin === 'P1' || pin === '1') {
             const next = !isHigh;
@@ -34,7 +34,7 @@ export class NotGateLogic extends BaseComponent {
     }
 }
 
-export class TwoInputGateLogic extends BaseComponent {
+export class TwoInputGateLogic extends DigitalProtocol {
     protected evaluate(_a: boolean, _b: boolean): boolean {
         return false;
     }
@@ -47,7 +47,7 @@ export class TwoInputGateLogic extends BaseComponent {
         setGateOutput(this, 'OUT', next);
     }
 
-    onPinStateChange(pinId: string) {
+    onPinEdge(pinId: string, isHigh: boolean) {
         const pin = String(pinId || '').toUpperCase();
         if (['A', 'B', 'D0', 'D1', 'IN1', 'IN2', '1', '2', 'P1', 'P2'].includes(pin)) {
             this.refreshOutput();

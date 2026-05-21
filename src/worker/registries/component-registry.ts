@@ -49,11 +49,14 @@ import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/log
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles.ts';
 
-import { NotGateLogic, TwoInputGateLogic, AndGateLogic, NandGateLogic, NorGateLogic, XorGateLogic } from '../fallback-components/gates.ts';
-import { KeypadLogic } from '../fallback-components/keypad.ts';
-import { SDCardLogic } from '../fallback-components/sd-card.ts';
-import { GenericI2CDeviceLogic, GenericSPIDeviceLogic } from '../fallback-components/generic-devices.ts';
-import { SimulationMonitorLogic } from '../fallback-components/simulation-monitor.ts';
+import { 
+    NotGateLogic, TwoInputGateLogic, AndGateLogic, NandGateLogic, NorGateLogic, XorGateLogic,
+    KeypadLogic, SDCardLogic, SimulationMonitorLogic,
+    I2CProtocol, SPIProtocol, PWMProtocol, 
+    DigitalProtocol, AnalogProtocol,    UARTProtocol,
+    OneWireProtocol,
+    I2SProtocol,
+} from '@openhw/emulator';
 
 export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-led': LEDLogic,
@@ -98,9 +101,9 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-lcd1602-i2c': Lcd2004I2CLogic,
     'wokwi-ssd1306-oled': SSD1306Logic,
     'openhw-ssd1306-oled': SSD1306Logic,
-    max30102: GenericI2CDeviceLogic,
-    'wokwi-max7219': GenericSPIDeviceLogic,
-    'openhw-max7219': GenericSPIDeviceLogic,
+    max30102: I2CProtocol,
+    'wokwi-max7219': SPIProtocol,
+    'openhw-max7219': SPIProtocol,
     'wokwi-ldr-module': BaseComponent,
     'openhw-ldr-module': BaseComponent,
     'wokwi-7segment': BaseComponent,
@@ -148,8 +151,15 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-a4988': A4988Logic,
     'wokwi-cd74hc4067': CD74HC4067Logic,
     'openhw-cd74hc4067': CD74HC4067Logic,
-    'wokwi-logic-analyzer': LogicAnalyzerLogic,
-    'openhw-logic-analyzer': LogicAnalyzerLogic,
+    'wokwi-logic-analyzer': SimulationMonitorLogic,
+    'openhw-logic-analyzer': SimulationMonitorLogic,
+    
+    // I2S Audio Components
+    'openhw-pcm5102':  I2SProtocol,
+    'openhw-max98357': I2SProtocol,
+    'openhw-inmp441':  I2SProtocol,
+    'openhw-sph0645':  I2SProtocol,
+
     'wokwi-breadboard': BaseComponent,
     'openhw-breadboard': BaseComponent,
     'wokwi-breadboard-half': BaseComponent,
@@ -269,6 +279,11 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
     'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
     'openhw-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
+    'openhw-dip-switch-8': [{ id: '1a' }, { id: '1b' }, { id: '2a' }, { id: '2b' }, { id: '3a' }, { id: '3b' }, { id: '4a' }, { id: '4b' }, { id: '5a' }, { id: '5b' }, { id: '6a' }, { id: '6b' }, { id: '7a' }, { id: '7b' }, { id: '8a' }, { id: '8b' }],
+    'openhw-pcm5102':  [{ id:'VCC' },{ id:'GND' },{ id:'BCK' },{ id:'LRCK' },{ id:'DIN' },{ id:'SCK' },{ id:'FMT' },{ id:'DEMP' },{ id:'XSMT' }],
+    'openhw-max98357': [{ id:'VDD' },{ id:'GND' },{ id:'BCLK' },{ id:'LRC' },{ id:'DIN' },{ id:'GAIN' },{ id:'SD' }],
+    'openhw-inmp441':  [{ id:'VDD' },{ id:'GND' },{ id:'WS' },{ id:'SCK' },{ id:'SD' },{ id:'LR' }],
+    'openhw-sph0645':  [{ id:'3V' },{ id:'GND' },{ id:'BCLK' },{ id:'LRCLK' },{ id:'DOUT' },{ id:'SEL' }],
     'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
     'openhw-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
     'wokwi-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
@@ -706,6 +721,26 @@ export function invokeOptional(inst: any, names: string[], args: any[]): any {
         }
     }
     return undefined;
+}
+
+export function resolveLogicClass(type: string): any {
+    if (LOGIC_REGISTRY[type]) return LOGIC_REGISTRY[type];
+    
+    const pins = (COMPONENT_PINS[type] || []).map((p: any) => String(p.id).toUpperCase());
+    
+    // I2S: BCLK + WS/LRCK + data pin
+    const hasI2S = pins.some((p: string) => ['BCK','BCLK'].includes(p))
+                && pins.some((p: string) => ['LRCK','WS','LRC','LRCLK'].includes(p));
+    if (hasI2S) return I2SProtocol;
+    
+    if (pins.includes('SDA') && pins.includes('SCL')) return I2CProtocol;
+    if (pins.some((p: string) => ['MOSI','DIN','SDI','MISO'].includes(p))) return SPIProtocol;
+    if (pins.some((p: string) => ['PWM','SIG'].includes(p))) return PWMProtocol;
+    if (pins.some((p: string) => ['TX','TXD','RX','RXD'].includes(p))) return UARTProtocol;
+    if (pins.some((p: string) => ['DQ','DATA'].includes(p))) return OneWireProtocol;
+    if (pins.some((p: string) => ['AO','AOUT'].includes(p))) return AnalogProtocol;
+    
+    return BaseComponent;
 }
 
 export const MEDIUM_COMPONENT_STATE_WEIGHT = 2_048;

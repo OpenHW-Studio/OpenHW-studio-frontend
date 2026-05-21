@@ -20,8 +20,7 @@ export function createRunnerForBoard(
 // 100% backward compatibility re-exports
 export * from './fs/fs-builders.ts';
 export * from './registries/component-registry.ts';
-export * from './fallback-components/gates.ts';
-export * from './fallback-components/keypad.ts';
-export * from './fallback-components/sd-card.ts';
-export * from './fallback-components/generic-devices.ts';
-export * from './fallback-components/simulation-monitor.ts';
+export * from './protocol-handlers/gates.ts';
+export * from './protocol-handlers/keypad.ts';
+export * from './protocol-handlers/sd-card.ts';
+export * from './protocol-handlers/simulation-monitor.ts';
