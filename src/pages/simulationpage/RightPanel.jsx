@@ -636,7 +636,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                   <button
                     key={id}
                     data-tour-id={`tab-${id}`}
-                    onClick={() => setCodeTab(id)}
+                    onClick={() => React.startTransition(() => setCodeTab(id))}
                     className="group"
                     style={{
                       flex: 1,

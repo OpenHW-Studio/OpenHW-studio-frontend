@@ -698,6 +698,9 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [activeConsoleTab, setActiveConsoleTab] = useState('console')
   const [healthScore, setHealthScore] = useState(100)
   const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
+  const pendingProtocolLogsRef = useRef([]);
+  const protocolLogsTimerRef = useRef(null);
+  const lastRenderSyncCacheRef = useRef({}); // { [boardId]: { hash, timestamp, pins, analog, components, neopixels } }
   const [serialHistory, setSerialHistory] = useState([]);
   const [serialInput, setSerialInput] = useState('');
   const [serialPaused, setSerialPaused] = useState(false);
@@ -6914,14 +6917,37 @@ export function SimulatorPage({ gamificationMode = false }) {
           const boardId = String(msg.boardId || 'default').trim() || 'default';
           const frameId = Number(msg.frameId || 0);
 
-          const renderPayload = {
-            pins: renderPinsByBoardRef.current[boardId] || {},
-            analog: renderAnalogByBoardRef.current[boardId] || [],
-            components: renderComponentsByBoardRef.current[boardId] || {},
-            neopixels: renderNeopixelsByBoardRef.current[boardId] || {},
-          };
+          const pins = renderPinsByBoardRef.current[boardId] || {};
+          const analog = renderAnalogByBoardRef.current[boardId] || [];
+          const components = renderComponentsByBoardRef.current[boardId] || {};
+          const neopixels = renderNeopixelsByBoardRef.current[boardId] || {};
 
-          const renderedHash = computeRenderSyncHash(renderPayload);
+          const cache = lastRenderSyncCacheRef.current[boardId];
+          const now = Date.now();
+          let renderedHash;
+
+          if (
+            cache &&
+            now - cache.timestamp < 33 &&
+            cache.pins === pins &&
+            cache.analog === analog &&
+            cache.components === components &&
+            cache.neopixels === neopixels
+          ) {
+            renderedHash = cache.hash;
+          } else {
+            const renderPayload = { pins, analog, components, neopixels };
+            renderedHash = computeRenderSyncHash(renderPayload);
+            lastRenderSyncCacheRef.current[boardId] = {
+              hash: renderedHash,
+              timestamp: now,
+              pins,
+              analog,
+              components,
+              neopixels,
+            };
+          }
+          
           workerRef.current?.postMessage({
             type: 'RENDER_REPORT',
             boardId,
@@ -7103,11 +7129,29 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Handle Protocol Events
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+          pendingProtocolLogsRef.current.push(log.message);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        
+        if ((msg.type === 'protocol:i2c' || msg.type === 'protocol:spi') && !protocolLogsTimerRef.current) {
+          protocolLogsTimerRef.current = setTimeout(() => {
+            protocolLogsTimerRef.current = null;
+            const pending = pendingProtocolLogsRef.current;
+            if (pending.length === 0) return;
+            pendingProtocolLogsRef.current = [];
+            
+            // Limit batch to prevent dropping frames
+            const batch = pending.length > 200 ? pending.slice(-200) : pending;
+            
+            // Use standard state setting (startTransition might be undefined if not imported, React 18 auto-batches timeouts anyway)
+            setProtocolLogs(prev => {
+              const next = [...prev, ...batch];
+              return next.length > 200 ? next.slice(-200) : next;
+            });
+          }, 150);
         }
       };
 
