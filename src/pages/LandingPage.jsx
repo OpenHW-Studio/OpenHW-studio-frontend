@@ -15,9 +15,7 @@ export default function LandingPage() {
   }
 
   const handleNavigate = (path) => {
-    startTransition(() => {
-      navigate(path);
-    });
+    navigate(path);
   }
 
   const handleDashboard = () => {
