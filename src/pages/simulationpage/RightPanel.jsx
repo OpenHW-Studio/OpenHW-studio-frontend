@@ -371,6 +371,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
   return (
     <aside
       ref={asideRef}
+      data-tour-step="ide"
       className="relative bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden"
       style={{
         width: isDragging ? 'var(--panel-width)' : (isPanelOpen ? panelWidth : 21),
@@ -854,6 +855,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                         {/* Libraries Button at bottom of Explorer */}
                         <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.05)' }}>
                           <button
+                            data-tour-step="library"
                             onClick={(e) => {
                               e.stopPropagation();
                               setFileMenu(null);
@@ -1323,7 +1325,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
               </div>
             )}
             {/* Block editor — always mounted to preserve workspace state, hidden via CSS when not active */}
-            <div style={{ display: codeTab === 'block' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', position: 'relative', pointerEvents: editingDisabled ? 'none' : 'auto' }}>
+            <div data-tour-step="blockly" style={{ display: codeTab === 'block' ? 'flex' : 'none', flex: 1, flexDirection: 'column', overflow: 'hidden', position: 'relative', pointerEvents: editingDisabled ? 'none' : 'auto' }}>
               {blocklyDisabled ? (
                 /* ── Block editor disabled placeholder ─────────────── */
                 <div style={{
@@ -1373,7 +1375,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
               )}
             </div>
             {codeTab === 'serial' && (
-              <div id="serial-container" style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden', position: 'relative' }}>
+              <div id="serial-container" data-tour-step="serial" style={{ display: 'flex', flexDirection: 'column', flex: 1, background: 'var(--bg)', overflow: 'hidden', position: 'relative' }}>
                 {/* Topmost Header */}
                 <div style={{
                   display: 'flex',
@@ -1411,6 +1413,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                     {['monitor', 'plotter'].map((mode) => (
                       <button
                         key={mode}
+                        data-tour-id={mode === 'plotter' ? 'plotter-view-btn' : undefined}
                         onClick={() => setSerialViewMode(mode)}
                         style={{
                           position: 'relative',
@@ -1591,6 +1594,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                     </div>
                   ) : (
                     /* Plotter Mode - Modernized with Per-Board Management */
+                    <div data-tour-step="plotter" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
                     <PlotterManager
                       showAddChannel={showAddChannel}
                       setShowAddChannel={setShowAddChannel}
@@ -1608,6 +1612,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                       theme={theme}
                       isRunning={isRunning}
                     />
+                    </div>
                   )}
                 </div>
               </div>
@@ -1706,6 +1711,3 @@ const RightPanelBase = React.forwardRef((props, ref) => {
 
 
 export const RightPanel = React.memo(RightPanelBase);
-
-
-

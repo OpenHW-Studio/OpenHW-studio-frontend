@@ -1,3 +1,10 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   TourGuide.css
+   CSS is the single source of truth for all tour styles.
+   The JSX applies only class names; no inline overrides.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay ────────────────────────────────────────────────────────────── */
 .tour-overlay {
   position: fixed;
   inset: 0;
@@ -5,121 +12,341 @@
   pointer-events: none;
 }
 
+/* ── Spotlight ──────────────────────────────────────────────────────────── */
 .tour-spotlight {
   position: absolute;
-  background: rgba(0, 0, 0, 0.4);
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+  /* Subtle inner tint keeps the target readable while the surround dims */
+  background: rgba(0, 180, 255, 0.04);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.62);
   border-radius: 8px;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1.5px solid rgba(0, 180, 255, 0.35);
+  transition:
+    top    0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    left   0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    width  0.4s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: auto;
 }
 
+/* ── Tooltip ────────────────────────────────────────────────────────────── */
 .tour-tooltip {
   position: fixed;
   width: 320px;
   background: var(--bg2, #1a1a1a);
-  border: 1px solid var(--border, #333);
+  border: 2px solid var(--accent, #00b4ff);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.55),
+    0 0 0 0 transparent;
   z-index: 1000001;
   pointer-events: auto;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Remove outline default; we supply our own focus ring */
+  outline: none;
+  transition: box-shadow 0.15s ease;
+}
+
+/* Visible keyboard-focus ring that matches the accent colour */
+.tour-tooltip:focus-visible {
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.55),
+    0 0 0 3px rgba(0, 180, 255, 0.45);
 }
 
 .tour-tooltip h3 {
   margin: 0;
   color: var(--accent, #00b4ff);
   font-size: 1.1rem;
+  font-weight: 600;
 }
 
 .tour-tooltip p {
   margin: 0;
   color: var(--text2, #ccc);
-  line-height: 1.5;
+  line-height: 1.55;
   font-size: 0.95rem;
 }
 
+/* ── Segmented progress bar ─────────────────────────────────────────────── */
+.tour-progress-bar {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+
+.tour-progress-segment {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border, #2e2e2e);
+  transition: background 0.35s ease;
+}
+
+.tour-progress-segment.active {
+  background: var(--accent, #00b4ff);
+}
+
+/* Completed segments use a muted tint so the active one pops */
+.tour-progress-segment.completed {
+  background: color-mix(in srgb, var(--accent, #00b4ff) 50%, transparent);
+}
+
+/* Fallback for browsers without color-mix */
+@supports not (background: color-mix(in srgb, red 50%, transparent)) {
+  .tour-progress-segment.completed {
+    background: rgba(0, 180, 255, 0.4);
+  }
+}
+
+/* ── Show Me / Let Me Try toggle ────────────────────────────────────────── */
+.tour-mode-toggle {
+  display: flex;
+  gap: 5px;
+  background: var(--bg1, #111);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.tour-mode-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text3, #888);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.tour-mode-btn:hover:not(.active) {
+  background: var(--bg3, #252525);
+  color: var(--text1, #fff);
+}
+
+.tour-mode-btn.active {
+  background: var(--accent, #00b4ff);
+  color: #fff;
+}
+
+.tour-mode-btn:focus-visible {
+  outline: 2px solid var(--accent, #00b4ff);
+  outline-offset: 2px;
+}
+
+/* ── Let Me Try active state ────────────────────────────────────────────── */
+/* When the user clicks "Let Me Try" the ENTIRE overlay disappears and only  */
+/* this small fixed badge remains. pointer-events: none on the wrapper means */
+/* the canvas receives all clicks/drags unobstructed.                        */
+.tour-lmt-active {
+  position: fixed;
+  inset: 0;
+  z-index: 9999999;
+  pointer-events: none; /* let ALL clicks pass through to the app */
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 28px;
+}
+
+.tour-lmt-badge {
+  pointer-events: auto; /* badge itself is still clickable */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 99px;
+  background: var(--bg2, #1a1a1a);
+  border: 1.5px solid var(--accent, #00b4ff);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  animation: lmt-badge-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes lmt-badge-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.92); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+.tour-lmt-badge-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.tour-lmt-badge-text {
+  color: var(--accent, #00b4ff);
+  font-size: 0.85rem;
+  font-weight: 600;
+  animation: lmt-pulse 2s ease-in-out infinite;
+}
+
+@keyframes lmt-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+.tour-lmt-badge-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.tour-lmt-badge-cancel,
+.tour-lmt-badge-done {
+  padding: 4px 12px;
+  border-radius: 99px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+  border: 1px solid transparent;
+}
+
+/* "← Show Me" — ghost/secondary */
+.tour-lmt-badge-cancel {
+  background: transparent;
+  color: var(--text3, #888);
+  border-color: var(--border, #333);
+}
+.tour-lmt-badge-cancel:hover {
+  color: var(--text1, #fff);
+  border-color: var(--text3, #888);
+}
+
+/* "Done ✓" — primary accent */
+.tour-lmt-badge-done {
+  background: var(--accent, #00b4ff);
+  color: #fff;
+  border-color: var(--accent, #00b4ff);
+}
+.tour-lmt-badge-done:hover {
+  filter: brightness(1.12);
+  transform: translateY(-1px);
+}
+.tour-lmt-badge-done:active {
+  transform: translateY(0);
+  filter: brightness(0.95);
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
 .tour-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 .tour-steps-indicator {
   font-size: 0.8rem;
   color: var(--text3, #888);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
 .tour-btns {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  align-items: center;
 }
 
+/* ── Buttons ────────────────────────────────────────────────────────────── */
 .tour-btn {
   padding: 6px 14px;
   border-radius: 6px;
   border: none;
   cursor: pointer;
   font-weight: 500;
-  transition: all 0.2s;
+  font-size: 0.85rem;
+  transition: background 0.2s, color 0.2s, filter 0.2s, transform 0.15s;
 }
 
+.tour-btn:focus-visible {
+  outline: 2px solid var(--accent, #00b4ff);
+  outline-offset: 2px;
+}
+
+/* Skip — ghost style */
 .tour-btn.skip {
   background: transparent;
-  color: var(--text3);
+  color: var(--text3, #888);
 }
 
 .tour-btn.skip:hover {
-  color: var(--text1);
+  color: var(--text1, #fff);
 }
 
+/* Back — subtle secondary style */
+.tour-btn.back {
+  background: var(--bg3, #252525);
+  color: var(--text2, #ccc);
+  border: 1px solid var(--border, #333);
+}
+
+.tour-btn.back:hover {
+  background: var(--bg4, #303030);
+  border-color: var(--text3, #888);
+}
+
+/* Next / Finish — primary accent */
 .tour-btn.next {
-  background: var(--accent);
-  color: white;
+  background: var(--accent, #00b4ff);
+  color: #fff;
 }
 
 .tour-btn.next:hover {
-  filter: brightness(1.1);
+  filter: brightness(1.12);
   transform: translateY(-1px);
 }
 
-/* Ghost Cursor Styles */
+.tour-btn.next:active {
+  transform: translateY(0);
+  filter: brightness(0.95);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Ghost Cursor
+   ═══════════════════════════════════════════════════════════════════════════ */
 .tour-ghost-cursor {
   position: fixed;
-  z-index: 999999;
+  z-index: 9999999;
   pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.4));
+  /* Offset so the cursor's hot-spot tip aligns with the target centre */
+  transform: translate(-8px, -4px);
+  /* Smooth cursor glide between positions */
+  transition:
+    left 0.6s cubic-bezier(0.23, 1, 0.32, 1),
+    top  0.6s cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+/* Click / tap ripple */
 .tour-ghost-ripple {
   position: absolute;
   width: 40px;
   height: 40px;
-  border: 2px solid var(--accent);
+  border: 2px solid var(--accent, #00b4ff);
   border-radius: 50%;
   animation: tour-ripple 0.8s ease-out infinite;
 }
 
 @keyframes tour-ripple {
-  0% { transform: scale(0.5); opacity: 1; }
+  0%   { transform: scale(0.5); opacity: 1; }
   100% { transform: scale(2.5); opacity: 0; }
 }
 
+/* Component dragging preview */
 .tour-ghost-comp-small {
   position: absolute;
   top: 10px;
   left: 10px;
-  background: var(--bg1);
-  border: 1px solid var(--accent);
+  background: var(--bg1, #111);
+  border: 1px solid var(--accent, #00b4ff);
   border-radius: 4px;
   padding: 4px;
   opacity: 0.8;
@@ -128,21 +355,20 @@
 
 @keyframes tour-float {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-5px); }
+  50%       { transform: translateY(-5px); }
 }
 
+/* Wire draw preview */
 .tour-ghost-wire-preview {
   position: absolute;
-  width: 100px;
   height: 3px;
-  background: var(--accent);
-  opacity: 0.5;
+  background: var(--accent, #00b4ff);
   transform-origin: left center;
   animation: ghost-wire-draw 1.2s ease-in-out infinite;
 }
 
 @keyframes ghost-wire-draw {
-  0% { width: 0; opacity: 0; }
-  50% { width: 100px; opacity: 0.5; }
+  0%   { width: 0;     opacity: 0; }
+  50%  { width: 100px; opacity: 0.5; }
   100% { width: 100px; opacity: 0; }
 }

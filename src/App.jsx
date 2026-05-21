@@ -150,6 +150,7 @@ export default function App() {
             <Routes>
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />
+            <Route path="/about" element={<AboutUs />} />
             <Route path="/login" element={<UserLoginPage />} />
             <Route path="/signin" element={<Navigate to="/classroom/signin" replace />} />
             <Route path="/signup" element={<Navigate to="/classroom/signup" replace />} />
