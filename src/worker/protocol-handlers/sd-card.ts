@@ -1,4 +1,4 @@
-import { BaseComponent } from '@openhw/emulator';
+import { BaseComponent, SPIProtocol } from '@openhw/emulator';
 import { SD_BLOCK_SIZE, SD_DATA_TOKEN } from '../fs/fs-builders.ts';
 
 // Re-define LittleFsVolume interface
@@ -197,9 +197,8 @@ function createLittleFsVolume(
     };
 }
 
-export class SDCardLogic extends BaseComponent {
+export class SDCardLogic extends SPIProtocol {
     private powered = false;
-    private csHigh = true;
     private mounted = true;
     private appCmdPending = false;
     private responseQueue: number[] = [];
@@ -236,6 +235,7 @@ export class SDCardLogic extends BaseComponent {
         this.writeShadowFile('/README.TXT', this.textEncoder.encode('OpenHW virtual SD card\n'));
 
         this.state = {
+            ...this.state,
             mounted: this.mounted,
             powered: false,
             selected: false,
@@ -544,18 +544,15 @@ export class SDCardLogic extends BaseComponent {
         return new Uint8Array(found);
     }
 
-    onPinStateChange(pinId: string, isHigh: boolean) {
+    onCSAssert() {
+        this.commandFrame = [];
+        this.writeState = null;
+    }
+
+    onPinStateChange(pinId: string, isHigh: boolean, cycles: number) {
+        super.onPinStateChange(pinId, isHigh, cycles);
+
         const pin = String(pinId || '').toUpperCase();
-        if (pin === 'CS') {
-            this.csHigh = isHigh;
-            this.state.selected = !this.csHigh;
-            if (this.csHigh) {
-                this.commandFrame = [];
-                this.writeState = null;
-            }
-            this.stateChanged = true;
-            return;
-        }
 
         if (pin === 'VCC' || pin === 'GND') {
             this.refreshPowerState();
@@ -604,10 +601,10 @@ export class SDCardLogic extends BaseComponent {
         }
     }
 
-    onSPIByte(value: number) {
+    onSPIByteExchange(value: number, index: number) {
         this.refreshPowerState();
 
-        if (!this.mounted || !this.powered || this.csHigh) {
+        if (!this.mounted || !this.powered || !this.state.csActive) {
             return 0xff;
         }
 

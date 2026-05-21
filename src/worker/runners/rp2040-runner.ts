@@ -641,6 +641,7 @@ export class RP2040Runner implements BoardRunner {
     private spiDeviceCache = new Map<'spi0' | 'spi1', BaseComponent[]>();
     private peripheralDeviceCacheReady: boolean = false;
     private pwmState = new Map<string, { lastRiseCycle: number; lastFallCycle: number; lastPeriodCycles: number }>();
+    private i2sState = new Map<string, { bclkLast: boolean; wsLast: boolean; shiftBuf: number; bitCount: number }>();
     private oneWireState = new Map<string, { lowStartCycle: number | null; highStartCycle: number | null }>();
     private componentSyncMeta = new Map<string, { lastSentAt: number; lastWeight: number }>();
     private hasFaulted: boolean = false;
@@ -1978,6 +1979,68 @@ export class RP2040Runner implements BoardRunner {
         return endpoints;
     }
 
+    /** Finds the first existing pin on `inst` from a list of candidate names
+     *  (case-insensitive, lower then UPPER checked). */
+    private findI2SPinName(inst: BaseComponent, candidates: string[]): string | null {
+        for (const name of candidates) {
+            if (inst.pins[name])               return name;
+            if (inst.pins[name.toUpperCase()]) return name.toUpperCase();
+        }
+        return null;
+    }
+
+    private tickI2S(inst: BaseComponent, compId: string, compPin: string, isHigh: boolean) {
+        if (!inst || typeof (inst as any).onI2SFrame !== 'function') return;
+
+        // Try to identify if the transitioning pin is BCLK or WS
+        const isBclk = ['bclk', 'bck', 'sck'].includes(compPin.toLowerCase());
+        const isWs   = ['ws', 'lrck', 'lrc', 'lrclk'].includes(compPin.toLowerCase());
+        if (!isBclk && !isWs) return;
+
+        if (!this.i2sState.has(compId)) {
+            this.i2sState.set(compId, { bclkLast: false, wsLast: false, shiftBuf: 0, bitCount: 0 });
+        }
+        const state = this.i2sState.get(compId)!;
+
+        if (isWs) {
+            if (state.wsLast !== isHigh) {
+                // WS edge → end of the current-channel frame
+                const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
+                if (state.bitCount >= bpf) {
+                    const channel = state.wsLast ? 1 : 0;
+                    const sample  = (state.shiftBuf << (32 - bpf)) | 0; // sign-extend
+                    (inst as any).onI2SFrame(channel, sample, bpf);
+                }
+                state.wsLast   = isHigh;
+                state.shiftBuf = 0;
+                state.bitCount = 0;
+            }
+            return;
+        }
+
+        // BCLK edge
+        const rising = isHigh && !state.bclkLast;
+        state.bclkLast = isHigh;
+
+        if (rising) {
+            // Sample SDATA (accept several common pin names)
+            const sdPin = this.findI2SPinName(inst, ['sdata', 'sdin', 'din', 'sd', 'dout', 'data']);
+            const bit   = sdPin !== null ? (inst.getPinVoltage(sdPin) > 0.5 ? 1 : 0) : 0;
+
+            const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
+            state.shiftBuf = ((state.shiftBuf << 1) | bit) >>> 0;
+            state.bitCount++;
+
+            if (state.bitCount >= bpf) {
+                const channel = state.wsLast ? 1 : 0;
+                const sample  = (state.shiftBuf << (32 - bpf)) | 0;
+                (inst as any).onI2SFrame(channel, sample, bpf);
+                state.shiftBuf = 0;
+                state.bitCount = 0;
+            }
+        }
+    }
+
     private dispatchOptionalPwm(gpPin: string, isHigh: boolean, cycles: number, functionSelect: number) {
         const key = this.normalizeToGpPin(gpPin);
         let state = this.pwmState.get(key);
@@ -2422,6 +2485,7 @@ export class RP2040Runner implements BoardRunner {
             if (this.cpu) {
                 inst.onPinStateChange(compPin, voltage > 1.8, this.cpu.cycles);
             }
+            this.tickI2S(inst, compId, compPin, voltage > 1.8);
 
             this.traversePassive(inst, compId, compPin, voltage, (forwardNode) => {
                 visitNode(forwardNode);
@@ -2888,6 +2952,7 @@ export class RP2040Runner implements BoardRunner {
         this.spiDeviceCache.clear();
         this.peripheralDeviceCacheReady = false;
         this.pwmState.clear();
+        this.i2sState.clear();
         this.oneWireState.clear();
         this.componentSyncMeta.clear();
         this.setSoftSerialRxLevel(true);
