@@ -1,4 +1,5 @@
 import { RP2040, GPIOPinState, ConsoleLogger, LogLevel, USBCDC, GDBServer, GDBConnection } from 'rp2040js';
+import { bootromB1 } from '../rp2040-bootrom.ts';
 import { BaseComponent } from '@openhw/emulator';
 import {
     getComponentStateSyncPolicy,
@@ -13,8 +14,11 @@ import {
     readComponentStateForTelemetry,
     collectConnectedComponentPins,
     getInternalBridgesForComponent,
+    normalizeRp2040FlashPartitions,
+    normalizeRp2040ExecutableRanges,
     LOGIC_REGISTRY,
     COMPONENT_PINS,
+    isSoftSerialSourceLabel,
 } from '../registries/component-registry.ts';
 import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions } from '../registries/component-registry.ts';
 

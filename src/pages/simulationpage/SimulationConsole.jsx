@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, startTransition } from 'react';
 
 const MAX_CONSOLE_ENTRIES = 1500;
 const CONSOLE_OPEN_KEY = 'sim.console.open';
@@ -120,12 +120,18 @@ export function useSimulationConsole() {
       const pending = pendingEntriesRef.current;
       if (pending.length === 0) return;
       pendingEntriesRef.current = [];
-      setConsoleEntries((prev) => {
-        const next = [...prev, ...pending];
-        if (next.length > MAX_CONSOLE_ENTRIES) {
-          return next.slice(next.length - MAX_CONSOLE_ENTRIES);
-        }
-        return next;
+      
+      // Limit batch size to avoid dropping frames on heavy logs
+      const batch = pending.length > 500 ? pending.slice(-500) : pending;
+      
+      startTransition(() => {
+        setConsoleEntries((prev) => {
+          const next = [...prev, ...batch];
+          if (next.length > MAX_CONSOLE_ENTRIES) {
+            return next.slice(next.length - MAX_CONSOLE_ENTRIES);
+          }
+          return next;
+        });
       });
     }, 100);
   }, [isConsoleOpen]);
@@ -403,7 +409,7 @@ export function SimulationConsolePanel({
             ].map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => onTabChange?.(tab.key)}
+                onClick={() => startTransition(() => onTabChange?.(tab.key))}
                 style={{
                   padding: '4px 10px',
                   borderRadius: 6,
