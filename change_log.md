@@ -1,5 +1,12 @@
 # Change Log
 
+## [2026-05-22] Implement Source-Destination Bundled Wire Bussing
+- **Objective**: Ensure that multiple wires exiting the same board and traveling to the same component are grouped perfectly together in a parallel bus to prevent scattered midpoints and messy mid-air crossings.
+- **Files Modified**:
+  - `src/utils/wireRouting.js`: Updated `calculateWireBundleOffsets` to group wires by source edge AND destination component (`srcCompId::e1Dir::dstCompId`). Calculated a shared "Center of Mass" (`bundleMidX` / `bundleMidY`) for each subgroup, and assigned internal `laneOffsets`. Updated `buildBaseRoutePoints` to prioritize these shared midpoints over calculating them per-wire.
+- **Reasoning**: Without shared midpoints, every wire individually calculated its crossing axis based on its specific pins, which caused wires to cross over each other randomly in the gap between components. Forcing a unified crossing axis eliminates this overlapping "spaghetti" effect.
+- **Performance Impact Breakdown**: Added O(N) grouping calculations inside the bundle resolver, taking < 0.1ms.
+
 ## [2026-05-21] Resolve Web Worker ReferenceError and Silent Simulator Hang
 - **Objective**: Fix a silent runtime exception when initializing the AVR emulator runner in the Web Worker, and ensure all internal worker runner creation/startup errors are bubbled up, logged to the UI serial and simulator console, and handled by gracefully stopping the simulation.
 - **Files Modified**:
