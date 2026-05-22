@@ -2681,6 +2681,12 @@ export default function SimulatorPage() {
 
       worker.onmessage = (event) => {
         const msg = event.data;
+        if (msg.type === 'error') {
+          appendConsoleEntry('error', `[SIM] ${msg.message || 'Runner error'}`, 'simulator');
+          logSerial(`Runner error: ${msg.message || 'Unknown error'}`, 'var(--red)');
+          handleStop();
+          return;
+        }
         if (msg.type === 'state' && msg.pins) {
           setPinStates(msg.pins);
           // Push to plotData history
