@@ -35,7 +35,7 @@ import ProjectsGallery from './pages/ProjectsGallery.jsx';
 import ComponentsPage from './pages/ComponentsPage.jsx';
 import ComponentEditorPage from './pages/ComponentEditorPage.jsx';
 
-const GamificationSimulatorPage = React.lazy(() => import('./pages/GamificationSimulatorPage.jsx'));
+//const GamificationSimulatorPage = React.lazy(() => import('./pages/GamificationSimulatorPage.jsx'));
 import AdventureMapPage from './pages/AdventureMapPage.jsx';
 import ProjectGuidePage from './pages/ProjectGuidePage.jsx';
 //import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage.jsx';
