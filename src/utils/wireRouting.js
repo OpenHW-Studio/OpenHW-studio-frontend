@@ -57,121 +57,111 @@ function buildBaseRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
   const e1StubHoriz = Math.abs(e1.x - p1.x) >= Math.abs(e1.y - p1.y);
   const e2StubHoriz = Math.abs(e2.x - p2.x) >= Math.abs(e2.y - p2.y);
 
-  let route;
+  let route = [];
+
+  // Helper to ensure we don't overlap the stub if forced to double back
+  const getShiftX = (x, targetX) => {
+      if (Math.abs(targetX - x) > 5) return targetX;
+      return x + (stagger ? stagger : 15 * (Math.sign(dx) || 1));
+  };
+  const getShiftY = (y, targetY) => {
+      if (Math.abs(targetY - y) > 5) return targetY;
+      return y + (stagger ? stagger : 15 * (Math.sign(dy) || 1));
+  };
 
   if (horizontalFirst) {
-    // ── Horizontal trunk ──────────────────────────────────────────────────────
-    // Opposite-exit optimization: if one pin exits UP and the other DOWN,
-    // put the trunk at the exit that goes AWAY from the board (farther out),
-    // so both stubs travel naturally in their exit direction with no backtrack.
-    let trunkY;
-    const e1ExitsUp = e1.y < p1.y;
-    const e2ExitsUp = e2.y < p2.y;
-    if (e1ExitsUp !== e2ExitsUp) {
-      // One up, one down → use the "outer" (farther from midpoint) exit level
-      trunkY = Math.min(e1.y, e2.y);
-    } else {
-      trunkY = Math.round(((e1.y + e2.y) / 2) / 15) * 15;
-    }
-    trunkY += laneOffset;
+    let midX = typeof offset.bundleMidX === 'number'
+        ? offset.bundleMidX + laneOffset
+        : Math.round(((e1.x + e2.x) / 2) / 15) * 15 + laneOffset;
 
-    // ── Source side (p1 → trunk) ──────────────────────────────────────────────
-    let p1Points;
+    let p1Points = [];
+    let currentY1;
     if (e1StubHoriz) {
-      // Horizontal exit stub → stagger the x where we turn vertical
       const dirX1 = Math.sign(e1.x - p1.x) || 1;
-      const staggerX1 = dirX1 * Math.abs(stagger);
-      const turnX1 = e1.x + staggerX1;
-      p1Points = [p1, { x: turnX1, y: p1.y }, { x: turnX1, y: trunkY }];
-    } else {
-      // Vertical exit stub → stagger the y where we turn horizontal
-      // Direction of exit: -1 = up, +1 = down
-      const exitDirY1 = e1.y < p1.y ? -1 : 1;
-      const turnY1 = e1.y + exitDirY1 * Math.abs(stagger);
-      const hasUTurn = Math.sign(trunkY - turnY1) === Math.sign(p1.y - turnY1);
-      if (hasUTurn) {
-        // Staggered turn-height is still inside the component; shift one grid sideways
-        const shiftX1 = p1.x + 15 * (Math.sign(p2.x - p1.x) || 1);
-        p1Points = [p1, { x: p1.x, y: turnY1 }, { x: shiftX1, y: turnY1 }, { x: shiftX1, y: trunkY }];
+      const turnX1 = e1.x + dirX1 * Math.abs(stagger);
+      if (Math.sign(midX - turnX1) === -dirX1) {
+          currentY1 = getShiftY(p1.y, e2.y);
+          p1Points = [p1, { x: turnX1, y: p1.y }, { x: turnX1, y: currentY1 }];
       } else {
-        p1Points = [p1, { x: p1.x, y: turnY1 }, { x: e1.x, y: trunkY }];
+          currentY1 = p1.y;
+          p1Points = [p1, { x: turnX1, y: p1.y }];
       }
+    } else {
+      const dirY1 = e1.y < p1.y ? -1 : 1;
+      const turnY1 = e1.y + dirY1 * Math.abs(stagger);
+      currentY1 = turnY1;
+      p1Points = [p1, { x: p1.x, y: turnY1 }];
+      midX = getShiftX(p1.x, midX);
     }
 
-    // ── Destination side (trunk → p2) ─────────────────────────────────────────
-    let p2Points;
+    let p2Points = [];
+    let currentY2;
     if (e2StubHoriz) {
       const dirX2 = Math.sign(e2.x - p2.x) || 1;
-      const staggerX2 = dirX2 * Math.abs(stagger);
-      const turnX2 = e2.x + staggerX2;
-      p2Points = [{ x: turnX2, y: trunkY }, { x: turnX2, y: p2.y }, p2];
-    } else {
-      const exitDirY2 = e2.y < p2.y ? -1 : 1;
-      const turnY2 = e2.y + exitDirY2 * Math.abs(stagger);
-      const hasUTurn = Math.sign(trunkY - turnY2) === Math.sign(p2.y - turnY2);
-      if (hasUTurn) {
-        const shiftX2 = p2.x + 15 * (Math.sign(p1.x - p2.x) || 1);
-        p2Points = [{ x: shiftX2, y: trunkY }, { x: shiftX2, y: turnY2 }, { x: p2.x, y: turnY2 }, p2];
+      const turnX2 = e2.x + dirX2 * Math.abs(stagger);
+      if (Math.sign(midX - turnX2) === -dirX2) {
+          currentY2 = getShiftY(p2.y, currentY1);
+          p2Points = [{ x: turnX2, y: currentY2 }, { x: turnX2, y: p2.y }, p2];
       } else {
-        p2Points = [{ x: e2.x, y: trunkY }, { x: p2.x, y: turnY2 }, p2];
+          currentY2 = p2.y;
+          p2Points = [{ x: turnX2, y: p2.y }, p2];
       }
+    } else {
+      const dirY2 = e2.y < p2.y ? -1 : 1;
+      const turnY2 = e2.y + dirY2 * Math.abs(stagger);
+      currentY2 = turnY2;
+      p2Points = [{ x: p2.x, y: turnY2 }, p2];
+      midX = getShiftX(p2.x, midX);
     }
 
-    route = [...p1Points, ...p2Points];
-
+    route = [...p1Points, { x: midX, y: currentY1 }, { x: midX, y: currentY2 }, ...p2Points];
   } else {
-    // ── Vertical trunk ────────────────────────────────────────────────────────
-    let trunkX;
-    const e1ExitsLeft = e1.x < p1.x;
-    const e2ExitsLeft = e2.x < p2.x;
-    if (e1ExitsLeft !== e2ExitsLeft) {
-      trunkX = Math.min(e1.x, e2.x);
-    } else {
-      trunkX = Math.round(((e1.x + e2.x) / 2) / 15) * 15;
-    }
-    trunkX += laneOffset;
+    // verticalFirst
+    let midY = typeof offset.bundleMidY === 'number'
+        ? offset.bundleMidY + laneOffset
+        : Math.round(((e1.y + e2.y) / 2) / 15) * 15 + laneOffset;
 
-    // ── Source side (p1 → trunk) ──────────────────────────────────────────────
-    let p1Points;
-    if (!e1StubHoriz) {
-      // Vertical exit stub → stagger the y where we turn horizontal
+    let p1Points = [];
+    let currentX1;
+    if (!e1StubHoriz) { 
       const dirY1 = Math.sign(e1.y - p1.y) || 1;
-      const staggerY1 = dirY1 * Math.abs(stagger);
-      const turnY1 = e1.y + staggerY1;
-      p1Points = [p1, { x: p1.x, y: turnY1 }, { x: trunkX, y: turnY1 }];
-    } else {
-      // Horizontal exit stub → stagger the x where we turn vertical
-      const exitDirX1 = e1.x < p1.x ? -1 : 1;
-      const turnX1 = e1.x + exitDirX1 * Math.abs(stagger);
-      const hasUTurn = Math.sign(trunkX - turnX1) === Math.sign(p1.x - turnX1);
-      if (hasUTurn) {
-        const shiftY1 = p1.y + 15 * (Math.sign(p2.y - p1.y) || 1);
-        p1Points = [p1, { x: turnX1, y: p1.y }, { x: turnX1, y: shiftY1 }, { x: trunkX, y: shiftY1 }];
+      const turnY1 = e1.y + dirY1 * Math.abs(stagger);
+      if (Math.sign(midY - turnY1) === -dirY1) {
+          currentX1 = getShiftX(p1.x, e2.x);
+          p1Points = [p1, { x: p1.x, y: turnY1 }, { x: currentX1, y: turnY1 }];
       } else {
-        p1Points = [p1, { x: turnX1, y: p1.y }, { x: trunkX, y: e1.y }];
+          currentX1 = p1.x;
+          p1Points = [p1, { x: p1.x, y: turnY1 }];
       }
+    } else {
+      const dirX1 = Math.sign(e1.x - p1.x) || 1;
+      const turnX1 = e1.x + dirX1 * Math.abs(stagger);
+      currentX1 = turnX1;
+      p1Points = [p1, { x: turnX1, y: p1.y }];
+      midY = getShiftY(p1.y, midY);
     }
 
-    // ── Destination side (trunk → p2) ─────────────────────────────────────────
-    let p2Points;
+    let p2Points = [];
+    let currentX2;
     if (!e2StubHoriz) {
       const dirY2 = Math.sign(e2.y - p2.y) || 1;
-      const staggerY2 = dirY2 * Math.abs(stagger);
-      const turnY2 = e2.y + staggerY2;
-      p2Points = [{ x: trunkX, y: turnY2 }, { x: p2.x, y: turnY2 }, p2];
-    } else {
-      const exitDirX2 = e2.x < p2.x ? -1 : 1;
-      const turnX2 = e2.x + exitDirX2 * Math.abs(stagger);
-      const hasUTurn = Math.sign(trunkX - turnX2) === Math.sign(p2.x - turnX2);
-      if (hasUTurn) {
-        const shiftY2 = p2.y + 15 * (Math.sign(p1.y - p2.y) || 1);
-        p2Points = [{ x: trunkX, y: shiftY2 }, { x: turnX2, y: shiftY2 }, { x: turnX2, y: p2.y }, p2];
+      const turnY2 = e2.y + dirY2 * Math.abs(stagger);
+      if (Math.sign(midY - turnY2) === -dirY2) {
+          currentX2 = getShiftX(p2.x, currentX1);
+          p2Points = [{ x: currentX2, y: turnY2 }, { x: p2.x, y: turnY2 }, p2];
       } else {
-        p2Points = [{ x: trunkX, y: e2.y }, { x: turnX2, y: p2.y }, p2];
+          currentX2 = p2.x;
+          p2Points = [{ x: p2.x, y: turnY2 }, p2];
       }
+    } else {
+      const dirX2 = Math.sign(e2.x - p2.x) || 1;
+      const turnX2 = e2.x + dirX2 * Math.abs(stagger);
+      currentX2 = turnX2;
+      p2Points = [{ x: turnX2, y: p2.y }, p2];
+      midY = getShiftY(p2.y, midY);
     }
 
-    route = [...p1Points, ...p2Points];
+    route = [...p1Points, { x: currentX1, y: midY }, { x: currentX2, y: midY }, ...p2Points];
   }
 
   return dedupePoints(route);
@@ -257,10 +247,10 @@ export function calculateWireBundleOffsets(wires, resolveWirePoints) {
     });
   }
 
-  // Group by exit edge (component + direction)
+  // Group by exit edge (component + direction) AND destination component
   const srcGroups = new Map();
   for (const r of allResolved) {
-    const key = `${r.srcCompId}::${r.e1Dir}`;
+    const key = `${r.srcCompId}::${r.e1Dir}::${r.dstCompId}`;
     if (!srcGroups.has(key)) srcGroups.set(key, []);
     srcGroups.get(key).push(r);
   }
@@ -280,15 +270,35 @@ export function calculateWireBundleOffsets(wires, resolveWirePoints) {
       group.sort((a, b) => a.p1.y - b.p1.y);
     }
 
-    // Assign incremental stagger values: 15px, 30px, 45px...
+    // Calculate shared midpoints for the bundle
+    let sumE1X = 0, sumE2X = 0, sumE1Y = 0, sumE2Y = 0;
+    group.forEach(r => {
+        sumE1X += r.e1.x; sumE2X += r.e2.x;
+        sumE1Y += r.e1.y; sumE2Y += r.e2.y;
+    });
+    const avgE1X = sumE1X / group.length;
+    const avgE2X = sumE2X / group.length;
+    const avgE1Y = sumE1Y / group.length;
+    const avgE2Y = sumE2Y / group.length;
+    
+    const bundleMidX = Math.round(((avgE1X + avgE2X) / 2) / 15) * 15;
+    const bundleMidY = Math.round(((avgE1Y + avgE2Y) / 2) / 15) * 15;
+
+    const count = group.length;
     group.forEach((r, index) => {
       const cur = offsets.get(r.wire.id) || { offset: 0, stagger: 0 };
       cur.stagger = (index + 1) * STAGGER_STEP;
+      cur.offset = (index - Math.floor(count / 2)) * WIRE_SPACING;
+      cur.bundleMidX = bundleMidX;
+      cur.bundleMidY = bundleMidY;
       offsets.set(r.wire.id, cur);
     });
   }
 
-  // Group by destination edge (component + direction)
+  // The dstGroups laneOffset assignment is no longer needed since we
+  // assign laneOffset at the source group level to maintain bundle parallelism.
+  // We can just keep it for cases where wires from different sources arrive at the same destination,
+  // but to avoid overwriting our beautiful source bundling, we will NOT overwrite `offset`.
   const dstGroups = new Map();
   for (const r of allResolved) {
     const key = `${r.dstCompId}::${r.e2Dir}`;
@@ -299,7 +309,6 @@ export function calculateWireBundleOffsets(wires, resolveWirePoints) {
   for (const group of dstGroups.values()) {
     if (group.length === 0) continue;
 
-    // Sort based on pin position along the destination edge
     const first = group[0];
     const isHorizontalEdge = first.e2Dir === 'top' || first.e2Dir === 'bottom';
 
@@ -309,13 +318,9 @@ export function calculateWireBundleOffsets(wires, resolveWirePoints) {
       group.sort((a, b) => a.p2.y - b.p2.y);
     }
 
-    const count = group.length;
-    // Assign symmetric laneOffset values
-    group.forEach((r, index) => {
-      const cur = offsets.get(r.wire.id) || { offset: 0, stagger: 0 };
-      cur.offset = (index - Math.floor(count / 2)) * WIRE_SPACING;
-      offsets.set(r.wire.id, cur);
-    });
+    // Assign stagger for the destination if we want it to be independent,
+    // but right now stagger is shared (assigned in srcGroup).
+    // So we don't need to do anything here anymore for basic routing!
   }
 
   return offsets;
