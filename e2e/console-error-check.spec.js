@@ -71,13 +71,15 @@ test.describe('Console Error Detection Suite', () => {
           });
         });
 
-        // Mock maintenance status to avoid connection refused errors in CI
-        await page.route('**/api/public/maintenance-status', async (route) => {
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({ maintenance: false, message: "OK" })
-          });
+        // Mock all backend API requests to avoid connection refused errors in CI
+        await page.route('**/api/**', async (route) => {
+          if (route.request().url().includes('maintenance-status')) {
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ maintenance: false, message: "OK" }) });
+          } else if (route.request().url().includes('version')) {
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ version: "1.0.0" }) });
+          } else {
+            await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+          }
         });
 
         // Navigate to page
