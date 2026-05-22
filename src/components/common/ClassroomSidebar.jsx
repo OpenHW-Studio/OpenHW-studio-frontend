@@ -22,7 +22,7 @@ export default function ClassroomSidebar({ links, user, onLogout, onProfileClick
   return (
     <aside className="teacher-sidebar teacher-sidebar--fixed">
       <div className="teacher-sidebar__brand">
-        <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--sidebar" />
+        <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="brand-logo brand-logo--sidebar" />
       </div>
 
       <nav className="teacher-sidebar__nav" aria-label="Navigation">
