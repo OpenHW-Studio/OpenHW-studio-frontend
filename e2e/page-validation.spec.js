@@ -41,6 +41,15 @@ test.describe('Page Validation Suite', () => {
         // Setup console capture
         logger = await setupConsoleCapture(page);
 
+        // Mock maintenance status to avoid connection refused errors in CI
+        await page.route('**/api/public/maintenance-status', async (route) => {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ maintenance: false, message: "OK" })
+          });
+        });
+
         // Navigate to page
         test.step(`Navigate to ${route.path}`, async () => {
           await page.goto(route.path, { waitUntil: 'domcontentloaded', timeout: testConfig.timeout });
