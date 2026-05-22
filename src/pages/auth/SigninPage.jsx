@@ -109,7 +109,7 @@ export default function SigninPage() {
           <Link to="/login" className="auth-panel__back">Back to User Login</Link>
 
           <div className="auth-panel__brand">
-            <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
+            <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
           </div>
 
           <header className="auth-panel__header">
