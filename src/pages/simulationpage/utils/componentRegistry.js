@@ -142,7 +142,7 @@ export function buildCatalog(registry, groupMapping) {
     const manifest = module.manifest;
     if (!manifest || manifest.hiddenAlias) return;
 
-    const groupName = normalizeGroupName(manifest.group, groupMapping);
+    const groupName = normalizeGroupName(manifest.group || 'Misc', groupMapping);
     let group = catalog.find(g => g.group === groupName);
     if (!group) {
       group = { group: groupName, items: [] };
