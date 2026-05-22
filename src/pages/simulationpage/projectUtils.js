@@ -624,19 +624,25 @@ export function buildProjectPayload({
         snap: isSnapped || undefined,
       };
     }),
-    connections: (Array.isArray(wires) ? wires : []).map((wire) => ({
-      id: String(wire?.id || ''),
-      from: String(wire?.from || ''),
-      to: String(wire?.to || ''),
-      color: String(wire?.color || ''),
-      waypoints: Array.isArray(wire?.waypoints) ? wire.waypoints : [],
-      isBelow: wire?.isBelow === true,
-      isSocket: wire?.isSocket === true,
-      isHidden: wire?.isHidden === true,
-      isHelp: wire?.isHelp === true,
-      fromLabel: String(wire?.fromLabel || ''),
-      toLabel: String(wire?.toLabel || ''),
-    })),
+    connections: (Array.isArray(wires) ? wires : []).map((wire) => {
+      const conn = {
+        id: String(wire?.id || ''),
+        from: String(wire?.from || ''),
+        to: String(wire?.to || ''),
+        color: String(wire?.color || ''),
+        waypoints: Array.isArray(wire?.waypoints) ? wire.waypoints : [],
+        isBelow: wire?.isBelow === true,
+        isSocket: wire?.isSocket === true,
+        isHidden: wire?.isHidden === true,
+        isHelp: wire?.isHelp === true,
+        fromLabel: String(wire?.fromLabel || ''),
+        toLabel: String(wire?.toLabel || ''),
+      };
+      if (Array.isArray(wire?.routingInstructions) && wire.routingInstructions.length > 0) {
+        conn.routingInstructions = wire.routingInstructions;
+      }
+      return conn;
+    }),
     blocklyXml: String(blocklyXml || ''),
     blocklyGeneratedCode: String(blocklyGeneratedCode || ''),
     useBlocklyCode: !!useBlocklyCode,
@@ -740,6 +746,9 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (type === 'wokwi-servo') type = 'openhw-servo';
       if (type === 'wokwi-ssd1306-oled') type = 'openhw-ssd1306-oled';
       if (type === 'wokwi-stepper-motor') type = 'openhw-stepper-motor';
+      if (type === 'wokwi-ds18b20') type = 'openhw-ds18b20';
+      if (type === 'wokwi-ir-receiver') type = 'openhw-ir-receiver';
+      if (type === 'wokwi-mfrc522') type = 'openhw-mfrc522';
 
       const regManifest = COMPONENT_REGISTRY[type]?.manifest || {};
 
@@ -990,6 +999,9 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
         from,
         to,
         color: typeof wire.color === 'string' && wire.color.trim() ? wire.color : wireColor(),
+        routingInstructions: Array.isArray(wire.routingInstructions) 
+          ? wire.routingInstructions.filter(i => typeof i === 'string')
+          : [],
         waypoints: Array.isArray(wire.waypoints)
           ? wire.waypoints.map(normalizeWaypoint).filter(Boolean)
           : [],
@@ -1031,18 +1043,26 @@ export function parseWokwiDiagramJson(wokwiJson) {
   const wires = connections.map((c, idx) => {
     if (!c) return null;
     if (Array.isArray(c)) {
-      const [from = '', to = '', color = 'green', waypoints = []] = c;
-      const scaledWaypoints = Array.isArray(waypoints) ? waypoints.map(wp => {
-        if (Array.isArray(wp)) return { x: Number(wp[0]) * 1.5, y: Number(wp[1]) * 1.5 };
-        if (wp && typeof wp === 'object') return { ...wp, x: Number(wp.x) * 1.5, y: Number(wp.y) * 1.5 };
-        return wp;
-      }) : [];
+      const [from = '', to = '', color = 'green', rawInstructions = []] = c;
+      const instructions = Array.isArray(rawInstructions) ? rawInstructions : [];
+      
+      // Parse precise instruction waypoints into simple x/y relative diffs:
+      // Note: "v10" means deltaY=10. "h-5" means deltaX=-5.
+      // "*" usually denotes "auto-route here" or dynamic routing. We preserve as strings for exact parser.
+      const waypoints = [];
+      const extractedInstructions = [];
+      for (const inst of instructions) {
+        if (typeof inst !== 'string') continue;
+        extractedInstructions.push(inst);
+      }
+      
       return {
         id: `w_wokwi_${idx}`,
         from: String(from).replace(/:(\d)\.([lr])$/i, ':$1$2'),
         to: String(to).replace(/:(\d)\.([lr])$/i, ':$1$2'),
         color: String(color),
-        waypoints: scaledWaypoints,
+        routingInstructions: extractedInstructions,
+        waypoints: [], // Rely on instructions instead of precalculated absolute waypoints
         isBelow: false,
         isSocket: false,
         isHidden: false,
