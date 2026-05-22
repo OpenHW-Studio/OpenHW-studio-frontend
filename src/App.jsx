@@ -9,7 +9,7 @@ import { GamificationToasts } from './services/gamification/Gamificationpanel.js
 // Pages
 import LandingPage from './pages/LandingPage.jsx'
 import UserLoginPage from './pages/auth/UserLoginPage.jsx'
-import RoleSelectPage from './pages/RoleSelectPage.jsx
+import RoleSelectPage from './pages/RoleSelectPage.jsx'
 import ProjectTheoryPage from './pages/ProjectTheoryPage.jsx'
 import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
 import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
