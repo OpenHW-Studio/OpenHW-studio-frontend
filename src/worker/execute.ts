@@ -15,6 +15,7 @@ import { MotorLogic } from '@openhw/emulator/src/components/openhw-motor/logic.t
 import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic.ts';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic.ts';
 import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic.ts';
+import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic.ts';
 import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
 import {
@@ -60,6 +61,10 @@ import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/log
 import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic.ts';
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic.ts';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic.ts';
+import { HX711Logic } from '@openhw/emulator/src/components/openhw-hx711_5/logic.ts';
+import { HX711Logic_50 } from '@openhw/emulator/src/components/openhw-hx711_50/logic.ts';
+import { IRRemoteLogic } from '@openhw/emulator/src/components/openhw-ir-remote/logic.ts';
+import { HC165Logic } from '@openhw/emulator/src/components/openhw-74hc165/logic.ts';
 
 function gateVoltage(isHigh: boolean): number {
     return isHigh ? 5.0 : 0.0;
@@ -1970,6 +1975,125 @@ class Lcd1602ParallelLogic extends BaseComponent {
     }
 }
 
+class Lcd2004ParallelLogic extends BaseComponent {
+    private backlight = true;
+    private mode4bit = true;
+    private cursorX = 0;
+    private cursorY = 0;
+    private linesData: string[] = [
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+    ];
+    private halfByte = 0;
+    private isNibble = false;
+    private pinStates: Record<string, boolean> = {
+        rs: false, rw: false, e: false,
+        d0: false, d1: false, d2: false, d3: false,
+        d4: false, d5: false, d6: false, d7: false,
+        a: true, k: false
+    };
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { lines: [...this.linesData], illuminated: this.backlight };
+    }
+
+    onPinStateChange(pinId: string, isHigh: boolean, _cpuCycles: number): void {
+        const pin = pinId.toLowerCase();
+        const wasHigh = this.pinStates[pin];
+        this.pinStates[pin] = isHigh;
+
+        if (pin === 'a') {
+            if (this.backlight !== isHigh) {
+                this.backlight = isHigh;
+                this.stateChanged = true;
+                this.updateState();
+            }
+            return;
+        }
+
+        if (pin === 'e' && wasHigh && !isHigh) {
+            const d4 = this.pinStates.d4 ? 1 : 0;
+            const d5 = this.pinStates.d5 ? 1 : 0;
+            const d6 = this.pinStates.d6 ? 1 : 0;
+            const d7 = this.pinStates.d7 ? 1 : 0;
+            const dataNibble = (d7 << 7) | (d6 << 6) | (d5 << 5) | (d4 << 4);
+
+            const rs = this.pinStates.rs;
+
+            if (!this.isNibble) {
+                this.halfByte = dataNibble;
+                this.isNibble = true;
+            } else {
+                const fullByte = this.halfByte | (dataNibble >> 4);
+                this.isNibble = false;
+                this.processLCDCommand(rs, fullByte);
+            }
+            this.updateState();
+        }
+    }
+
+    private processLCDCommand(rs: boolean, data: number) {
+        if (!rs) {
+            if (data === 0x01) {
+                this.linesData = ['                    ', '                    ', '                    ', '                    '];
+                this.cursorX = 0;
+                this.cursorY = 0;
+            } else if (data === 0x02 || data === 0x03) {
+                this.cursorX = 0;
+                this.cursorY = 0;
+            } else if ((data & 0xf0) === 0x20) {
+                this.mode4bit = true;
+            } else if ((data & 0xf0) === 0x30) {
+                this.mode4bit = false;
+                this.isNibble = false;
+            } else if ((data & 0x80) === 0x80) {
+                const addr = data & 0x7f;
+                if (addr >= 0x00 && addr < 0x14) {
+                    this.cursorY = 0;
+                    this.cursorX = addr;
+                } else if (addr >= 0x40 && addr < 0x54) {
+                    this.cursorY = 1;
+                    this.cursorX = addr - 0x40;
+                } else if (addr >= 0x14 && addr < 0x28) {
+                    this.cursorY = 2;
+                    this.cursorX = addr - 0x14;
+                } else if (addr >= 0x54 && addr < 0x68) {
+                    this.cursorY = 3;
+                    this.cursorX = addr - 0x54;
+                }
+            }
+        } else if (this.cursorY < 4 && this.cursorX < 20) {
+            const lineArray = this.linesData[this.cursorY].split('');
+            lineArray[this.cursorX] = String.fromCharCode(data & 0xff);
+            this.linesData[this.cursorY] = lineArray.join('');
+            this.cursorX += 1;
+        }
+        this.stateChanged = true;
+    }
+
+    private updateState() {
+        this.state.lines = [...this.linesData];
+        this.state.illuminated = this.backlight;
+    }
+
+    onCustomTelemetry() {
+        const textContent = this.linesData.map(l => l.trimEnd()).join('\n').trimEnd();
+        this.setCustomTelemetry({
+            textContent: textContent || '<empty>',
+            backlight: this.backlight,
+            lineCount: 4,
+            charsPerLine: 20,
+        });
+    }
+
+    getSyncState() {
+        return { ...this.state };
+    }
+}
+
 class Lcd2004I2CFallbackLogic extends BaseComponent {
     private readonly i2cAddress: number;
     private backlight = true;
@@ -2359,6 +2483,167 @@ class SimulationMonitorLogic extends BaseComponent {
     }
 }
 
+export class BiaxialStepperLogic extends BaseComponent {
+    private outerAngle = 0;
+    private innerAngle = 0;
+    private stepAngle = 1.8;
+    
+    private currentPhaseOuter = -1;
+    private stepCountOuter = 0;
+    
+    private currentPhaseInner = -1;
+    private stepCountInner = 0;
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        if (manifest.attrs && manifest.attrs.step_angle) {
+            this.stepAngle = parseFloat(manifest.attrs.step_angle);
+        }
+        this.state = { 
+            outerAngle: this.outerAngle,
+            innerAngle: this.innerAngle
+        };
+    }
+
+    private processStepper(
+        aPlus: boolean, aMinus: boolean, bPlus: boolean, bMinus: boolean,
+        currentPhase: number, stepCount: number, currentAngle: number
+    ): { newPhase: number, newStepCount: number, newAngle: number, changed: boolean } {
+        let phaseA = 0;
+        if (aPlus && !aMinus) phaseA = 1;
+        else if (!aPlus && aMinus) phaseA = -1;
+
+        let phaseB = 0;
+        if (bPlus && !bMinus) phaseB = 1;
+        else if (!bPlus && bMinus) phaseB = -1;
+
+        let newPhaseVal = -1;
+        if (phaseA === 1 && phaseB === 1) newPhaseVal = 0;
+        else if (phaseA === -1 && phaseB === 1) newPhaseVal = 1;
+        else if (phaseA === -1 && phaseB === -1) newPhaseVal = 2;
+        else if (phaseA === 1 && phaseB === -1) newPhaseVal = 3;
+
+        let changed = false;
+        let newAngle = currentAngle;
+        let newCount = stepCount;
+
+        if (newPhaseVal !== -1) {
+            if (currentPhase === -1) {
+                currentPhase = newPhaseVal;
+            } else if (newPhaseVal !== currentPhase) {
+                const diff = (newPhaseVal - currentPhase + 4) % 4;
+                if (diff === 1) {
+                    newAngle += this.stepAngle;
+                    newCount++;
+                } else if (diff === 3) {
+                    newAngle -= this.stepAngle;
+                    newCount--;
+                }
+                currentPhase = newPhaseVal;
+                changed = true;
+            }
+        } else {
+            currentPhase = -1;
+        }
+
+        return { newPhase: currentPhase, newStepCount: newCount, newAngle, changed };
+    }
+
+    onPinStateChange(pinId: string, isHigh: boolean, cpuCycles: number) {
+        // Evaluate Outer Stepper (Pins 1)
+        const a1Plus = this.getPinVoltage('A1+') > 2.5;
+        const a1Minus = this.getPinVoltage('A1-') > 2.5;
+        const b1Plus = this.getPinVoltage('B1+') > 2.5;
+        const b1Minus = this.getPinVoltage('B1-') > 2.5;
+
+        const outerResult = this.processStepper(
+            a1Plus, a1Minus, b1Plus, b1Minus,
+            this.currentPhaseOuter, this.stepCountOuter, this.outerAngle
+        );
+        this.currentPhaseOuter = outerResult.newPhase;
+        
+        if (outerResult.changed) {
+            this.outerAngle = outerResult.newAngle;
+            this.stepCountOuter = outerResult.newStepCount;
+            this.state.outerAngle = this.outerAngle;
+            this.stateChanged = true;
+        }
+
+        // Evaluate Inner Stepper (Pins 2)
+        const a2Plus = this.getPinVoltage('A2+') > 2.5;
+        const a2Minus = this.getPinVoltage('A2-') > 2.5;
+        const b2Plus = this.getPinVoltage('B2+') > 2.5;
+        const b2Minus = this.getPinVoltage('B2-') > 2.5;
+
+        const innerResult = this.processStepper(
+            a2Plus, a2Minus, b2Plus, b2Minus,
+            this.currentPhaseInner, this.stepCountInner, this.innerAngle
+        );
+        this.currentPhaseInner = innerResult.newPhase;
+        
+        if (innerResult.changed) {
+            this.innerAngle = innerResult.newAngle;
+            this.stepCountInner = innerResult.newStepCount;
+            this.state.innerAngle = this.innerAngle;
+            this.stateChanged = true;
+        }
+    }
+
+    onCustomTelemetry() {
+        this.setCustomTelemetry({
+            outerAngle: Number(this.outerAngle.toFixed(1)),
+            outerStepCount: this.stepCountOuter,
+            innerAngle: Number(this.innerAngle.toFixed(1)),
+            innerStepCount: this.stepCountInner,
+            stepsPerRevolution: Number((360 / this.stepAngle).toFixed(0)),
+        });
+    }
+}
+
+export class Ks2eLogic extends BaseComponent {
+    private energised: boolean = false;
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { energised: false };
+    }
+
+    getMnaPins() {
+        return ['COIL1', 'COIL2', 'P1', 'NC1', 'NO1', 'P2', 'NC2', 'NO2'];
+    }
+
+    getMnaStamps() {
+        const shortCond = 1000;
+        const openCond = 1e-9;
+        const coilCond = 1 / 150;
+
+        return [
+            { pins: ['COIL1', 'COIL2'], g: coilCond },
+            { pins: ['P1', 'NC1'], g: this.energised ? openCond : shortCond },
+            { pins: ['P1', 'NO1'], g: this.energised ? shortCond : openCond },
+            { pins: ['P2', 'NC2'], g: this.energised ? openCond : shortCond },
+            { pins: ['P2', 'NO2'], g: this.energised ? shortCond : openCond },
+        ];
+    }
+
+    update(cpuCycles: number, currentWires: any[], allComponentsInstances: BaseComponent[]) {
+        const v1 = this.getPinVoltage('COIL1');
+        const v2 = this.getPinVoltage('COIL2');
+        const voltageDifference = Math.abs(v1 - v2);
+        const nextEnergised = voltageDifference > 3.5;
+
+        if (nextEnergised !== this.energised) {
+            this.energised = nextEnergised;
+            this.setState({ energised: this.energised });
+            this.stateChanged = true;
+        }
+    }
+
+    getSyncState() {
+        return { energised: this.energised };
+    }
+}
+
 export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-led': LEDLogic,
     'openhw-led': LEDLogic,
@@ -2372,6 +2657,9 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-resistor': ResistorLogic,
     'wokwi-pushbutton': PushbuttonLogic,
     'openhw-pushbutton': PushbuttonLogic,
+    'openhw-pushbutton-6mm': PushbuttonLogic,
+    'wokwi-ir-remote': IRRemoteLogic,
+    'openhw-ir-remote': IRRemoteLogic,
     'wokwi-power-supply': PowerSupplyLogic,
     'openhw-power-supply': PowerSupplyLogic,
     'wokwi-neopixel-matrix': NeopixelLogic,
@@ -2390,16 +2678,22 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-motor-driver': MotorDriverLogic,
     'wokwi-slide-potentiometer': SlidePotLogic,
     'openhw-slide-potentiometer': SlidePotLogic,
+    'openhw-slide-switch': SlideSwitchLogic,
+    'openhw-hx711_5': HX711Logic,
+    'openhw-hx711_50': HX711Logic_50,
+    'openhw-74hc165': HC165Logic,
     'wokwi-potentiometer': PotentiometerLogic,
     'openhw-potentiometer': PotentiometerLogic,
     'wokwi-lcd2004-i2c': Lcd2004I2CFallbackLogic,
     'openhw-lcd2004-i2c': Lcd2004I2CFallbackLogic,
     'wokwi-lcd1602': Lcd1602ParallelLogic,
     'openhw-lcd1602': Lcd1602ParallelLogic,
+    'openhw-lcd2004': Lcd2004ParallelLogic,
     'wokwi-lcd1602-i2c': Lcd2004I2CFallbackLogic,
     'openhw-lcd1602-i2c': Lcd2004I2CFallbackLogic,
     'wokwi-ssd1306-oled': SSD1306FallbackLogic,
     'openhw-ssd1306-oled': SSD1306FallbackLogic,
+    'openhw-oled-display': SSD1306FallbackLogic,
     max30102: GenericI2CDeviceLogic,
     'wokwi-max7219': GenericSPIDeviceLogic,
     'openhw-max7219': GenericSPIDeviceLogic,
@@ -2478,8 +2772,11 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-nlsf595': BaseComponent,
     'wokwi-relay-module': BaseComponent,
     'openhw-relay-module': BaseComponent,
+    'wokwi-ks2e-m-dc5': Ks2eLogic,
+    'openhw-ks2e-m-dc5': Ks2eLogic,
     'wokwi-stepper-motor': BaseComponent,
     'openhw-stepper-motor': BaseComponent,
+    'openhw-biaxial-stepper': BiaxialStepperLogic,
     'wokwi-arduino-mega': MegaLogic,
     'openhw-arduino-mega': MegaLogic,
     'wokwi-attiny85': BaseComponent,
@@ -2529,14 +2826,17 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
     'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
     'openhw-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+    'openhw-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
     'wokwi-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'openhw-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'wokwi-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
     'openhw-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
+    'openhw-lcd2004': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
     'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'openhw-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
     'openhw-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-oled-display': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
     max30102: [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }, { id: 'NC' }],
     'wokwi-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
     'openhw-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
@@ -2614,8 +2914,11 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'SRCLK' }, { id: 'RCLK' }, { id: 'OE' }, { id: 'SRCLR' }, { id: 'Q0' }, { id: 'Q1' }, { id: 'Q2' }, { id: 'Q3' }, { id: 'Q4' }, { id: 'Q5' }, { id: 'Q6' }, { id: 'Q7' }, { id: 'Q7S' }],
     'wokwi-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }],
     'openhw-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }],
+    'wokwi-ks2e-m-dc5': [{ id: 'COIL1' }, { id: 'COIL2' }, { id: 'P1' }, { id: 'NC1' }, { id: 'NO1' }, { id: 'P2' }, { id: 'NC2' }, { id: 'NO2' }],
+    'openhw-ks2e-m-dc5': [{ id: 'COIL1' }, { id: 'COIL2' }, { id: 'P1' }, { id: 'NC1' }, { id: 'NO1' }, { id: 'P2' }, { id: 'NC2' }, { id: 'NO2' }],
     'wokwi-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
     'openhw-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
+    'openhw-biaxial-stepper': [{ id: 'A1+' }, { id: 'A1-' }, { id: 'B1+' }, { id: 'B1-' }, { id: 'A2+' }, { id: 'A2-' }, { id: 'B2+' }, { id: 'B2-' }],
     'wokwi-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }],
     'openhw-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }],
     'wokwi-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],

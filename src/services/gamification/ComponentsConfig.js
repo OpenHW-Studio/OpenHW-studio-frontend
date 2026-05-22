@@ -320,6 +320,74 @@ Or with external pull-down (10kΩ to GND):
     },
   },
   {
+    id: 'openhw-hx711_5',
+    name: 'HX711 Load Cell (5kg)',
+    fullName: 'HX711 Load Cell Amplifier with 5kg Load Cell',
+    icon: '⚖️',
+    color: '#10b981',
+    category: 'Input',
+    levelRequired: 3,
+    xpReward: 60,
+    coinReward: 12,
+    description: 'Precision 24-bit analog-to-digital converter (ADC) designed for weigh scales.',
+    usedInProjects: ['digital-scale'],
+    theory: {
+      readTime: '2 min',
+      sections: [
+        {
+          title: 'What is it?',
+          content: 'The HX711 is a precision 24-bit analog-to-digital converter (ADC) designed for weigh scales and industrial control applications to interface directly with a bridge sensor.'
+        }
+      ]
+    },
+    quiz: {
+      passingScore: 100,
+      questions: [
+        {
+          id: 'hx711_q1',
+          question: 'What is the HX711 used for?',
+          options: ['Measuring light', 'Measuring weight', 'Measuring speed', 'Measuring temperature'],
+          correct: 1,
+          explanation: 'The HX711 is used for weigh scales to measure weight.'
+        }
+      ]
+    }
+  },
+  {
+    id: 'openhw-hx711_50',
+    name: 'HX711 Load Cell (50kg)',
+    fullName: 'HX711 Load Cell Amplifier with 50kg Load Cell',
+    icon: '⚖️',
+    color: '#10b981',
+    category: 'Input',
+    levelRequired: 3,
+    xpReward: 60,
+    coinReward: 12,
+    description: 'Precision 24-bit analog-to-digital converter (ADC) designed for heavy duty weigh scales.',
+    usedInProjects: ['digital-scale'],
+    theory: {
+      readTime: '2 min',
+      sections: [
+        {
+          title: 'What is it?',
+          content: 'The HX711 is a precision 24-bit analog-to-digital converter (ADC) designed for weigh scales and industrial control applications to interface directly with a bridge sensor.'
+        }
+      ]
+    },
+    quiz: {
+      passingScore: 100,
+      questions: [
+        {
+          id: 'hx711_50_q1',
+          question: 'What is the HX711 used for?',
+          options: ['Measuring light', 'Measuring weight', 'Measuring speed', 'Measuring temperature'],
+          correct: 1,
+          explanation: 'The HX711 is used for weigh scales to measure weight.'
+        }
+      ]
+    }
+  },
+  {
     id: 'analog-joystick',
     name: 'Analog Joystick',
     fullName: '2-Axis Analog Joystick',

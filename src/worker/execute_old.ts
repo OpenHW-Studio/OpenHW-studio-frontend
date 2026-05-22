@@ -14,7 +14,8 @@ import { BuzzerLogic } from '@openhw/emulator/src/components/wokwi-buzzer/logic.
 import { MotorLogic } from '@openhw/emulator/src/components/wokwi-motor/logic.ts';
 import { ServoLogic } from '@openhw/emulator/src/components/wokwi-servo/logic.ts';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-driver/logic.ts';
-import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.ts';
+import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic.ts';
+import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
 import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
 import {
@@ -25,6 +26,7 @@ import {
 } from './board-profiles.ts';
 import { JoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
 import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic.ts';
+import { HC165Logic } from '@openhw/emulator/src/components/openhw-74hc165/logic.ts';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
 import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
@@ -1920,14 +1922,18 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-motor-driver': MotorDriverLogic,
     'wokwi-slide-potentiometer': SlidePotLogic,
     'openhw-slide-potentiometer': SlidePotLogic,
+    'openhw-slide-switch': SlideSwitchLogic,
     'wokwi-potentiometer': PotentiometerLogic,
     'openhw-potentiometer': PotentiometerLogic,
     'wokwi-lcd2004-i2c': Lcd2004I2CFallbackLogic,
     'openhw-lcd2004-i2c': Lcd2004I2CFallbackLogic,
     'wokwi-lcd1602-i2c': Lcd2004I2CFallbackLogic,
+    'openhw-lcd1602': Lcd1602ParallelLogic,
+    'openhw-lcd2004': Lcd1602ParallelLogic,
     'openhw-lcd1602-i2c': Lcd2004I2CFallbackLogic,
     'wokwi-ssd1306-oled': SSD1306FallbackLogic,
     'openhw-ssd1306-oled': SSD1306FallbackLogic,
+    'openhw-oled-display': SSD1306FallbackLogic,
     max30102: GenericI2CDeviceLogic,
     'wokwi-max7219': GenericSPIDeviceLogic,
     'openhw-max7219': GenericSPIDeviceLogic,
@@ -1947,6 +1953,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-rotary-encoder': RotaryEncoderLogic,
     'wokwi-rotary-encoder': RotaryEncoderLogic,
     'logic-ic-74xx': LogicIC74xxLogic,
+    'openhw-74hc165': HC165Logic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
     'logic-d-flipflop-r': DFlipFlopRLogic,
@@ -2027,12 +2034,14 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
     'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
     'openhw-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+    'openhw-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
     'wokwi-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'openhw-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'openhw-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
     'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
     'openhw-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-oled-display': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
     max30102: [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }, { id: 'NC' }],
     'wokwi-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
     'openhw-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
@@ -2054,6 +2063,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
+    'openhw-74hc165': [{ id: 'vcc' }, { id: 'ce' }, { id: 'd3' }, { id: 'd2' }, { id: 'd1' }, { id: 'd0' }, { id: 'ds' }, { id: 'q7' }, { id: 'pl' }, { id: 'cp' }, { id: 'd4' }, { id: 'd5' }, { id: 'd6' }, { id: 'd7' }, { id: 'q7n' }, { id: 'gnd' }],
     'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
     'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
     'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],

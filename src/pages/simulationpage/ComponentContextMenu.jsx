@@ -188,7 +188,7 @@ export const ComponentContextMenu = ({
       });
     }
 
-    if (comp.type === 'wokwi-pushbutton' || comp.type === 'openhw-pushbutton' || comp.type === 'button') {
+    if (comp.type === 'wokwi-pushbutton' || comp.type === 'openhw-pushbutton' || comp.type==='openhw-pushbutton-6mm' || comp.type === 'button') {
       const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'green');
       const btnColors = [
         { label: 'Green', value: 'green', hex: '#22c55e' },
@@ -322,6 +322,8 @@ export const ComponentContextMenu = ({
 
     const isI2CDevice = [
       'openhw-ssd1306-oled',
+      'openhw-lcd1602',
+      'openhw-lcd2004',
       'openhw-lcd1602-i2c',
       'openhw-lcd2004-i2c',
       'openhw-pca9685',
@@ -341,6 +343,11 @@ export const ComponentContextMenu = ({
           { label: '0x3C (60)', value: '0x3C', active: currentAddr === '0x3C' || currentAddr === 60 || currentAddr === '60' },
           { label: '0x3D (61)', value: '0x3D', active: currentAddr === '0x3D' || currentAddr === 61 || currentAddr === '61' },
         ];
+      } else if (comp.type === 'openhw-lcd1602' || comp.type === 'openhw-lcd2004') {
+        const hasI2CVersion = true; // both have I2C versions available in the studio
+        if (hasI2CVersion) {
+          options.push({ label: 'Change to I2C', action: 'toI2c', icon: 'pi pi-arrow-right-arrow-left' });
+        }
       } else if (comp.type === 'openhw-lcd1602-i2c' || comp.type === 'openhw-lcd2004-i2c') {
         if (!currentAddr) currentAddr = '0x27';
         options = [

@@ -211,7 +211,8 @@ export const LEVELS = [
     icon: '⚙️',
     unlockedComponents: [
       'wokwi-lcd1602',
-      'wokwi-lcd1602-i2c',
+      'openhw-lcd1602',
+      'openhw-lcd2004',
       'openhw-lcd1602-i2c',
       'wokwi-lcd2004-i2c',
       'openhw-lcd2004-i2c',

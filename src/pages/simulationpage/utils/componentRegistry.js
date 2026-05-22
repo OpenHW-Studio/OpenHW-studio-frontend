@@ -123,13 +123,45 @@ export const LOCAL_CATALOG = buildCatalog(COMPONENT_REGISTRY, GROUP_MAPPING);
 export function sortCatalog(catalog) {
   const GROUP_ORDER = ['Boards', 'Basic', 'Display', 'Input', 'Sensor', 'Output', 'Actuators', 'Misc', 'Logic'];
   catalog.sort((a, b) => {
-    const idxA = GROUP_ORDER.indexOf(a.group);
-    const idxB = GROUP_ORDER.indexOf(b.group);
-    if (idxA === -1 && idxB === -1) return a.group.localeCompare(b.group);
+    const groupA = String(a?.group ?? 'Misc');
+    const groupB = String(b?.group ?? 'Misc');
+    const idxA = GROUP_ORDER.indexOf(groupA);
+    const idxB = GROUP_ORDER.indexOf(groupB);
+    if (idxA === -1 && idxB === -1) return groupA.localeCompare(groupB);
     if (idxA === -1) return 1;
     if (idxB === -1) return -1;
     return idxA - idxB;
   });
+}
+
+function createComponentRequire(exportsLogic, manifest) {
+  const logicModule = exportsLogic || {};
+  return (mod) => {
+    const path = String(mod || '');
+    if (path === 'react') return React;
+    if (path.endsWith('manifest.json')) return manifest;
+    if (path.includes('BaseComponent')) {
+      return { BaseComponent: EmulatorComponents.BaseComponent };
+    }
+    if (path.includes('logic') || path === './logic') return logicModule;
+    return logicModule;
+  };
+}
+
+export function evalTranspiledComponentModules(transpiledUI, transpiledLogic, manifest) {
+  const exportsLogic = {};
+  if (transpiledLogic) {
+    const evalLogic = new Function('exports', 'require', transpiledLogic);
+    evalLogic(exportsLogic, createComponentRequire(exportsLogic, manifest));
+  }
+
+  const exportsUI = {};
+  if (transpiledUI) {
+    const evalUI = new Function('exports', 'require', 'React', transpiledUI);
+    evalUI(exportsUI, createComponentRequire(exportsLogic, manifest), React);
+  }
+
+  return { exportsUI, exportsLogic };
 }
 
 function normalizeGroupName(name, groupMapping) {
@@ -169,14 +201,7 @@ export function injectComponentsIntoRegistry(comps) {
 
     if (builtinTypes.has(manifest.type)) continue;
     try {
-      const exportsUI = {};
-      const evalUI = new Function('exports', 'require', 'React', transpiledUI);
-      evalUI(exportsUI, (mod) => {
-        if (mod === 'react') return React;
-        if (mod.endsWith('manifest.json')) return manifest;
-        return null;
-      }, React);
-
+      const { exportsUI } = evalTranspiledComponentModules(transpiledUI, transpiledLogic, manifest);
       const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) continue;
 
@@ -197,7 +222,7 @@ export function injectComponentsIntoRegistry(comps) {
 
       if (manifest.pins) pinDefs[manifest.type] = manifest.pins;
 
-      const groupName = normalizeGroupName(manifest.group, groupMapping);
+      const groupName = normalizeGroupName(manifest.group, groupMapping) || 'Misc';
       let group = catalog.find(g => g.group === groupName);
       if (!group) { group = { group: groupName, items: [] }; catalog.push(group); }
       group.items = group.items.filter(i => i.type !== manifest.type);
