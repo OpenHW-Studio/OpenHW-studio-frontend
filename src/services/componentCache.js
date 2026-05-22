@@ -13,7 +13,7 @@
  */
 
 const DB_NAME = 'openhw-components';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bumped to evict stale transpiled code with broken imports
 const COMPONENTS_STORE = 'componentCache';
 const META_STORE = 'cacheMetadata';
 
