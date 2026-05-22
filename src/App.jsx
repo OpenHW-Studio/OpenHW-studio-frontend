@@ -7,6 +7,9 @@ import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import { GamificationProvider } from './context/GamificationContext.jsx'
 import { GamificationToasts } from './services/gamification/Gamificationpanel.jsx'
 // Pages
+import LandingPage from './pages/LandingPage.jsx'
+import UserLoginPage from './pages/auth/UserLoginPage.jsx'
+import RoleSelectPage from './pages/RoleSelectPage.jsx
 import ProjectTheoryPage from './pages/ProjectTheoryPage.jsx'
 import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
 import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
