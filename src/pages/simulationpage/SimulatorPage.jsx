@@ -1127,6 +1127,14 @@ export function SimulatorPage({ gamificationMode = false }) {
     localStorage.setItem('openhw.deepSiliconDebugging', deepSiliconDebuggingEnabled ? 'true' : 'false');
   }, [deepSiliconDebuggingEnabled]);
 
+  const [respectExitSide, setRespectExitSide] = useState(() => {
+    const val = localStorage.getItem('openhw.respectExitSide');
+    return val !== 'false'; // Defaults to true
+  });
+  useEffect(() => {
+    localStorage.setItem('openhw.respectExitSide', respectExitSide ? 'true' : 'false');
+  }, [respectExitSide]);
+
   const [telemetryMode, setTelemetryMode] = useState('detail');
   const [telemetrySampleInterval, setTelemetrySampleInterval] = useState(250);
   const [selectedTelemetryComponentIds, setSelectedTelemetryComponentIds] = useState([]);
@@ -8558,6 +8566,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           setDeepSiliconDebuggingEnabled={setDeepSiliconDebuggingEnabled}
           telemetryMode={telemetryMode}
           setTelemetryMode={setTelemetryMode}
+          respectExitSide={respectExitSide}
+          setRespectExitSide={setRespectExitSide}
           onOpenTelemetryModal={() => setShowTelemetrySelectModal(true)}
           setShowSpeedDialog={setShowSpeedDialog}
           simulationSpeed={simulationSpeed}
@@ -8656,7 +8666,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             {/* Zoom Wrapper — scales all circuit content */}
             {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
                React state (canvasOffset) is only committed once on mouseup. */}
-            <CanvasSceneLayer
+              <CanvasSceneLayer
               innerCanvasRef={innerCanvasRef}
               canvasOffset={canvasOffset}
               canvasZoom={canvasZoom}
@@ -8668,6 +8678,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               getPinPos={getPinPos}
               getPinExitPoint={getPinExitPoint}
               wirepointsEnabled={wirepointsEnabled}
+              respectExitSide={respectExitSide}
               theme={theme}
               setSelected={setSelected}
               canvasRef={canvasRef}

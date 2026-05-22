@@ -94,11 +94,9 @@ function CanvasSceneLayerBase({
   hasCategoryIntersection,
   onPinClick,
   setWireStart,
+  respectExitSide = true,
 }) {
-  const [showExitOverlay, setShowExitOverlay] = useState(() => {
-    try { return localStorage.getItem('showExitOverlay') !== '0'; } catch (e) { return true; }
-  });
-  useEffect(() => { try { localStorage.setItem('showExitOverlay', showExitOverlay ? '1' : '0'); } catch (e) {} }, [showExitOverlay]);
+
   const wireOffsetMap = useMemo(() => calculateWireBundleOffsets(wires, (wire) => {
     const fromParts = wire.from.split(':');
     const toParts = wire.to.split(':');
@@ -108,7 +106,7 @@ function CanvasSceneLayerBase({
     const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), 0, p2) || p1;
     const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), 0, p1) || p2;
     return { p1, p2, e1, e2, waypoints: wire.waypoints || [] };
-  }), [wires, getPinPos, getPinExitPoint]);
+  }, respectExitSide), [wires, getPinPos, getPinExitPoint, respectExitSide]);
 
   const backgroundGridRef = useRef(null);
 
@@ -260,20 +258,7 @@ function CanvasSceneLayerBase({
         })}
       </svg>
 
-      {/* Overlay toggle button */}
-      <div style={{ position: 'absolute', left: 8, top: 8, zIndex: 220, pointerEvents: 'all' }}>
-        <button
-          onClick={() => setShowExitOverlay(s => !s)}
-          title={showExitOverlay ? 'Hide exit overlay' : 'Show exit overlay'}
-          style={{
-            background: showExitOverlay ? 'rgba(255,204,0,0.95)' : 'rgba(0,0,0,0.6)',
-            color: showExitOverlay ? '#000' : '#fff',
-            border: 'none', padding: '6px 8px', borderRadius: 8, cursor: 'pointer', fontSize: 12
-          }}
-        >
-          {showExitOverlay ? 'Exit overlay: ON' : 'Exit overlay: OFF'}
-        </button>
-      </div>
+
 
       {/* TOP SVG layer for wires (Above Components) & Context Menu */}
       <svg
@@ -337,75 +322,7 @@ function CanvasSceneLayerBase({
           />
         )}
 
-        {/* Exit-point overlay for debugging/resolution (UNO, A4988, Stepper) */}
-        {(() => {
-          if (!showExitOverlay) return null;
-          const interesting = new Set(['openhw-arduino-uno', 'wokwi-arduino-uno', 'openhw-a4988', 'openhw-stepper-motor', 'wokwi-stepper-motor']);
-          const markers = [];
-          for (const comp of components) {
-            if (!interesting.has(comp.type)) continue;
-            const pins = PIN_DEFS[comp.type] || [];
-            for (const pin of pins) {
-              const p = getPinPos(comp.id, pin.id);
-              const e = getPinExitPoint(comp.id, pin.id, 0, null) || p;
-              if (!p || !e) continue;
-              markers.push({ compId: comp.id, pinId: pin.id, p, e, dir: e.dir || null });
-            }
-          }
 
-          // Group markers by component + side to avoid label overlap
-          const groups = new Map();
-          for (const m of markers) {
-            const key = `${m.compId}::${m.dir || 'none'}`;
-            if (!groups.has(key)) groups.set(key, []);
-            groups.get(key).push(m);
-          }
-
-          const out = [];
-          for (const [key, arr] of groups.entries()) {
-            // sort depending on side to keep label order stable
-            const side = key.split('::')[1];
-            if (side === 'top' || side === 'bottom') {
-              arr.sort((a, b) => a.e.x - b.e.x);
-            } else {
-              arr.sort((a, b) => a.e.y - b.e.y);
-            }
-
-            for (let i = 0; i < arr.length; i++) {
-              const m = arr[i];
-              // compute label position with stacking offsets to prevent overlap
-              let lx = m.e.x + 6, ly = m.e.y - 6;
-              const label = `${m.pinId} (${m.dir || ''})`;
-              if (m.dir === 'top') {
-                ly = m.e.y - 8 - (i * 14);
-                lx = m.e.x;
-              } else if (m.dir === 'bottom') {
-                ly = m.e.y + 12 + (i * 14);
-                lx = m.e.x;
-              } else if (m.dir === 'left') {
-                lx = m.e.x - 10 - (i * 60);
-                ly = m.e.y + 4;
-              } else if (m.dir === 'right') {
-                lx = m.e.x + 10 + (i * 60);
-                ly = m.e.y + 4;
-              } else {
-                lx = m.e.x + 6; ly = m.e.y - 6;
-              }
-
-              const approxWidth = Math.max(28, label.length * 6);
-              out.push(
-                <g key={`exit-${m.compId}-${m.pinId}`} pointerEvents="none" opacity={0.95}>
-                  <line x1={m.p.x} y1={m.p.y} x2={m.e.x} y2={m.e.y} stroke="#ffcc00" strokeWidth={1} strokeDasharray="2 2" />
-                  <circle cx={m.e.x} cy={m.e.y} r={3} fill="#ffcc00" stroke="#333" strokeWidth={0.8} />
-                  <line x1={m.e.x} y1={m.e.y} x2={lx} y2={ly} stroke="#ffcc00" strokeWidth={0.8} />
-                  <rect x={lx - approxWidth / 2} y={ly - 10} rx={4} ry={4} width={approxWidth} height={14} fill="#111" opacity={0.7} />
-                  <text x={lx - approxWidth / 2 + 6} y={ly + 2} fontSize={10} fill="#ffcc00" style={{ fontFamily: 'JetBrains Mono, monospace' }}>{label}</text>
-                </g>
-              );
-            }
-          }
-          return out;
-        })()}
       </svg>
 
       {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
@@ -653,8 +570,8 @@ function CanvasSceneLayerBase({
                   const isBreadboard = comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard');
                   const isFloating = !isBreadboard && isCompSeated && !isSocket;
 
-                  const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
-                  const pinBorder = isSnapping ? '#fff' : (isSocket ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
+                  const pinColor = isSnapping ? '#2ecc71' : ((isSocket || connectedWire) ? 'none' : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)'));
+                  const pinBorder = isSnapping ? '#fff' : ((isSocket || connectedWire) ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
 
                   return (
                     <div
