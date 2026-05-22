@@ -1,5 +1,14 @@
 # Change Log
 
+## [2026-05-22] Implement Global Collision Detection for Mid-Air Buses
+- **Objective**: Prevent mid-air bus trunks (the `midX` and `midY` parallel jumps) from perfectly overlapping when two different wire bundles happen to calculate the exact same mathematical midpoint.
+- **Files Modified**:
+  - `src/utils/wireRouting.js`: Extended the global `usedX` and `usedY` collision registry into Phase 3. 
+- **Reasoning**: While Phase 1 & 2 guaranteed that the vertical and horizontal clearance tracks leaving the components were completely unique, Phase 3 independently calculated `bundleMidX` by taking the average of the two endpoints. If an Uno->Driver bundle and a Stepper->Driver bundle calculated the exact same `bundleMidX`, their vertical trunks would perfectly merge mid-air.
+- **Implementation**: The router now treats every `laneX` and `laneY` within a proposed bus trunk as a required resource. If any line in the proposed mid-air bus intersects with a previously registered `turnX`/`turnY` clearance track, or another previously registered `midX`/`midY` trunk, the entire bus is automatically bumped outward incrementally (+15, -15, +30, -30) until it finds a completely unreserved vertical/horizontal slice of the canvas. This formally extends the "100% mathematically overlap-free" guarantee to every single orthogonal segment on the board.
+
+## [2026-05-22] Fix Routing Direction For Rotated Components
+
 ## [2026-05-22] Implement Source-Destination Bundled Wire Bussing
 - **Objective**: Ensure that multiple wires exiting the same board and traveling to the same component are grouped perfectly together in a parallel bus to prevent scattered midpoints and messy mid-air crossings.
 - **Files Modified**:

@@ -1803,6 +1803,14 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   // Incremented whenever backend components are injected/updated so catalog consumers re-render
   const [customCatalogVersion, setCustomCatalogVersion] = useState(0);
 
+  const [respectExitSide, setRespectExitSide] = useState(() => {
+    const val = localStorage.getItem('openhw.respectExitSide');
+    return val !== 'false';
+  });
+  useEffect(() => {
+    localStorage.setItem('openhw.respectExitSide', respectExitSide ? 'true' : 'false');
+  }, [respectExitSide]);
+
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(() => {
     const t = document.documentElement.getAttribute('data-theme') || 'light';
@@ -4247,7 +4255,7 @@ useEffect(() => {
     const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), 0) || p1;
     const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), 0) || p2;
     return { p1, p2, e1, e2, waypoints: wire.waypoints || [] };
-  }), [wires, getPinPos, getPinExitPoint]);
+  }, respectExitSide), [wires, getPinPos, getPinExitPoint, respectExitSide]);
 
   // Keep reactive refs current so async effects always use latest values
   getPinPosRef.current = getPinPos;
