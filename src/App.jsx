@@ -7,36 +7,11 @@ import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 import { GamificationProvider } from './context/GamificationContext.jsx'
 import { GamificationToasts } from './services/gamification/Gamificationpanel.jsx'
 // Pages
-import LandingPage from './pages/LandingPage.jsx'
-import UserLoginPage from './pages/auth/UserLoginPage.jsx'
-import RoleSelectPage from './pages/RoleSelectPage.jsx'
-import UserDashboard from './pages/user/UserDashboard.jsx'
-import StudentDashboard from './pages/student/StudentDashboard.jsx'
-import StudentProfilePage from './pages/student/StudentProfilePage.jsx'
-import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx'
-import TeacherProfilePage from './pages/teacher/TeacherProfilePage.jsx'
-import TeacherClassDetailPage from './pages/teacher/TeacherClassDetailPage.jsx'
-import StudentClassDetailPage from './pages/student/StudentClassDetailPage.jsx'
-import SimulatorPage from "./pages/simulationpage/SimulatorPage.jsx";
-import AdminPage from './pages/admin/AdminPage.jsx'
-import AdminLoginPage from './pages/admin/AdminLoginPage.jsx'
-import AdminLandingPage from './pages/admin/AdminLandingPage.jsx'
-import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx'
-import ProjectsGallery from './pages/ProjectsGallery.jsx'
-import ComponentsPage from './pages/ComponentsPage.jsx'
-import ComponentEditorPage from './pages/ComponentEditorPage.jsx'
-import AdventureMapPage from './pages/AdventureMapPage.jsx'
 import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
 import ProjectTheoryPage from './pages/ProjectTheoryPage.jsx'
 import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
 import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
-import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
 import TeacherProjectContentEditor from './pages/teacher/TeacherProjectContentEditor.jsx'
-import MobileSimulatorPage from './pages/mobileui/SimulatorPage.jsx'
-import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
-import GradingPage from './pages/GradingPage.jsx';
-import MaintenancePage from './pages/MaintenancePage.jsx';
-import AboutUs from './pages/AboutUsPage.jsx'
 // Lazy-loaded routes to drastically improve LCP
 const SigninPage = React.lazy(() => import('./pages/auth/SigninPage.jsx'));
 const SignupPage = React.lazy(() => import('./pages/auth/SignupPage.jsx'));
@@ -57,8 +32,7 @@ const ProjectAssessmentPage = React.lazy(() => import('./pages/ProjectAssessment
 const ProjectsGallery = React.lazy(() => import('./pages/ProjectsGallery.jsx'));
 const ComponentsPage = React.lazy(() => import('./pages/ComponentsPage.jsx'));
 const ComponentEditorPage = React.lazy(() => import('./pages/ComponentEditorPage.jsx'));
-const TheoryPage = React.lazy(() => import('./pages/TheoryPage.jsx'));
-const QuizPage = React.lazy(() => import('./pages/QuizPage.jsx'));
+
 const GamificationSimulatorPage = React.lazy(() => import('./pages/GamificationSimulatorPage.jsx'));
 const AdventureMapPage = React.lazy(() => import('./pages/AdventureMapPage.jsx'));
 const ProjectGuidePage = React.lazy(() => import('./pages/ProjectGuidePage.jsx'));
@@ -72,7 +46,6 @@ import AboutUs from './pages/AboutUsPage.jsx';
 
 import { fetchMaintenanceStatus } from './services/simulatorService.js';
 import axios from 'axios';
-
 
 
 const ResponsiveSimulatorRoute = ({ desktopElement, mobileElement }) => {
