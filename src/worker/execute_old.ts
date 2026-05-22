@@ -17,7 +17,7 @@ import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-dr
 import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic.ts';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
-import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
+import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic.ts';
 import {
     PICO_BOARD_PINS,
     UNO_ANALOG_PINS,

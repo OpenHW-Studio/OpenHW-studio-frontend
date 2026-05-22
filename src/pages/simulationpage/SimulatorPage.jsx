@@ -116,6 +116,7 @@ import {
   BUILTIN_COMPONENT_TYPES,
   LOCAL_CATALOG,
   injectComponentsIntoRegistry,
+  evalTranspiledComponentModules,
   buildCatalog,
   buildUiSourceFromRegistry,
   buildLogicSourceFromRegistry,
@@ -246,10 +247,14 @@ export function SimulatorPage({ gamificationMode = false }) {
     'openhw-resistor': 'resistor',
     'wokwi-pushbutton': 'button',
     'openhw-pushbutton': 'button',
+    'openhw-pushbutton-6mm': 'button',
+    'wokwi-ir-remote': 'ir-remote',
+    'openhw-ir-remote': 'ir-remote',
     'wokwi-potentiometer': 'potentiometer',
     'openhw-potentiometer': 'potentiometer',
     'wokwi-slide-potentiometer': 'potentiometer',
     'openhw-slide-potentiometer': 'potentiometer',
+    'openhw-slide-switch': 'toggle-off',
     'wokwi-buzzer': 'buzzer',
     'openhw-buzzer': 'buzzer',
     'wokwi-rgb-led': 'rgb-led',
@@ -261,6 +266,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     'wokwi-servo': 'servo',
     'openhw-servo': 'servo',
     'wokwi-lcd1602': 'lcd',
+    'openhw-lcd1602': 'lcd',
+    'openhw-lcd2004': 'lcd',
     'wokwi-lcd1602-i2c': 'lcd',
     'openhw-lcd1602-i2c': 'lcd',
     'wokwi-lcd2004-i2c': 'lcd',
@@ -1259,14 +1266,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       assertSafeDynamicModule(transpileUI, 'ui.tsx');
       assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
-      const exportsUI = {};
-      const evalUI = new Function('exports', 'require', 'React', transpileUI);
-      evalUI(exportsUI, (mod) => {
-        if (mod === 'react') return React;
-        if (mod.endsWith('manifest.json')) return manifest;
-        return null;
-      }, React);
-
+      const { exportsUI } = evalTranspiledComponentModules(transpileUI, transpileLogic, manifest);
       const uiComponent = resolveUiExport(exportsUI);
       const contextMenu = exportsUI[Object.keys(exportsUI).find(k => k.toLowerCase().includes('contextmenu'))];
 
@@ -2231,14 +2231,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             assertSafeDynamicModule(transpileUI, 'ui.tsx');
             assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
-            const exportsUI = {};
-            const evalUI = new Function('exports', 'require', 'React', transpileUI);
-            evalUI(exportsUI, (mod) => {
-              if (mod === 'react') return React;
-              if (mod.endsWith('manifest.json')) return manifest;
-              return null;
-            }, React);
-
+            const { exportsUI } = evalTranspiledComponentModules(transpileUI, transpileLogic, manifest);
             const uiComponent = resolveUiExport(exportsUI);
             if (!uiComponent) continue;
 
@@ -2318,14 +2311,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         assertSafeDynamicModule(transpileUI, 'ui.tsx');
         assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
-        const exportsUI = {};
-        const evalUI = new Function('exports', 'require', 'React', transpileUI);
-        evalUI(exportsUI, (mod) => {
-          if (mod === 'react') return React;
-          if (mod.endsWith('manifest.json')) return manifest;
-          return null;
-        }, React);
-
+        const { exportsUI } = evalTranspiledComponentModules(transpileUI, transpileLogic, manifest);
         const uiComponent = resolveUiExport(exportsUI);
         if (!uiComponent) {
           console.warn('[SimulatorPage] Preview: UI component could not be evaluated.');
@@ -2406,14 +2392,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             assertSafeDynamicModule(transpileUI, 'ui.tsx');
             assertSafeDynamicModule(transpileLogic, 'logic.ts');
 
-            const exportsUI = {};
-            const evalUI = new Function('exports', 'require', 'React', transpileUI);
-            evalUI(exportsUI, (mod) => {
-              if (mod === 'react') return React;
-              if (mod.endsWith('manifest.json')) return manifest;
-              return null;
-            }, React);
-
+            const { exportsUI } = evalTranspiledComponentModules(transpileUI, transpileLogic, manifest);
             const uiComponent = resolveUiExport(exportsUI);
             if (!uiComponent) continue;
 
@@ -2705,6 +2684,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     'openhw-resistor': 'Passive two-terminal component. Limits current flow. Configurable resistance value.',
     'wokwi-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
     'openhw-pushbutton': 'Momentary tactile push button. Connects circuit while pressed, opens when released.',
+    'wokwi-ir-remote': '38KHz infrared remote with 21 function keys.',
+    'openhw-ir-remote': '38KHz infrared remote with 21 function keys.',
     'wokwi-power-supply': 'Provides stable DC power to the circuit. Configurable voltage output.',
     'openhw-power-supply': 'Provides stable DC power to the circuit. Configurable voltage output.',
     'wokwi-neopixel-matrix': 'Addressable RGB LED matrix. Individually controllable pixels via single data line.',
@@ -2719,6 +2700,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     'openhw-motor-driver': 'Dual H-bridge motor driver (L293D). Controls speed and direction of two DC motors.',
     'wokwi-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
     'openhw-slide-potentiometer': 'Linear slide potentiometer. Provides variable analog voltage via sliding knob.',
+    'openhw-slide-switch': 'Standard Single Pole Double Throw (SPDT) slide switch.',
     'wokwi-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
     'openhw-potentiometer': 'Rotary potentiometer. Variable resistor providing analog voltage proportional to rotation.',
     'wokwi-analog-joystick': '2-axis analog joystick. Provides X and Y axis voltage limits along with a push button.',
