@@ -32,6 +32,7 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'openhw-neopixel-ring': ['pixels', 'brightness', 'count'],
   'openhw-ws2812b': ['pixels', 'brightness', 'count'],
   'openhw-mpu6050': ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'temp'],
+  'openhw-adxl345': ['accelX', 'accelY', 'accelZ', 'powered', 'i2cAddress'],
   'openhw-ds1307-rtc': ['running', 'time'],
   'openhw-bmp180': ['temp', 'pressure', 'altitude'],
   'openhw-dht22': ['temperature', 'humidity', 'lastReadMs', 'error'],
