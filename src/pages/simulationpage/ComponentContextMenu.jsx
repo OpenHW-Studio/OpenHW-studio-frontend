@@ -145,6 +145,28 @@ export const ComponentContextMenu = ({
       });
     }
 
+    if (comp.type === 'wokwi-neopixel-ring' || comp.type === 'openhw-neopixel-ring') {
+      const pixels = resolveComponentAttrString(comp?.attrs, 'pixels', '16');
+      menus.push({
+        label: 'Config',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>,
+        options: [
+          {
+            label: 'Pixels',
+            valueDisplay: pixels,
+            submenu: true,
+            customContent: (
+              <ComponentCyclePicker
+                value={pixels}
+                onChange={(v) => updateComponentAttr?.(comp.id, 'pixels', v)}
+                theme={theme}
+              />
+            )
+          }
+        ]
+      });
+    }
+
     if (comp.type === 'wokwi-resistor' || comp.type === 'openhw-resistor') {
       const val = resolveComponentAttrString(comp?.attrs, 'value', '1000');
       menus.push({

@@ -437,6 +437,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const segDragRef = useRef(null)
   const [hoveredPin, setHoveredPin] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
+  const [restoreProjectPrompt, setRestoreProjectPrompt] = useState(null)
   const [codeTab, setCodeTab] = useState('code')
   const { code, setCode } = useEditorStore();
   const [solverMode, setSolverMode] = useState('logic')
@@ -1653,30 +1654,17 @@ export function SimulatorPage({ gamificationMode = false }) {
     listProjects(owner).then((projects) => {
       if (projects.length === 0) return;
       const latest = projects[0]; // already sorted newest-first
-      const normalizedCircuit = normalizeImportedCircuitData(latest.components, latest.connections);
-      const normalizedFiles = normalizeProjectFiles(latest.projectFiles);
-      const normalizedTabs = normalizeOpenCodeTabs(latest.openCodeTabs, normalizedFiles);
-      const preferredActive = String(latest.activeCodeFileId || '').trim();
-      const activeId = normalizedFiles.some((f) => f.id === preferredActive)
-        ? preferredActive
-        : (normalizedTabs[0] || '');
-      setBoard(latest.board || 'arduino_uno');
-      setCode(latest.code || '');
-      setBlocklyXml(latest.blocklyXml || '');
-      setBlocklyGeneratedCode(latest.blocklyGeneratedCode || '');
-      setUseBlocklyCode(!!latest.useBlocklyCode);
-      setComponents(normalizedCircuit.components);
-      setWires(normalizedCircuit.wires);
-      setProjectFiles(normalizedFiles);
-      setOpenCodeTabs(normalizedTabs);
-      setActiveCodeFileId(activeId);
-      syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
-      setCurrentProjectId(latest.id);
-      currentProjectIdRef.current = latest.id;
-      setCurrentProjectName(latest.name || 'Untitled');
+      
+      const isSessionActive = sessionStorage.getItem('ohw_session_active');
+      if (isSessionActive) {
+        handleLoadProject(latest);
+      } else {
+        sessionStorage.setItem('ohw_session_active', '1');
+        setRestoreProjectPrompt(latest);
+      }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   useEffect(() => {
     if (!shareId || shareId === 'new') return;
@@ -2071,11 +2059,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
-    // Don't trigger auto-save if disabled
-    if (!autoSaveEnabled) return;
+    // Don't trigger auto-save if disabled or if waiting on toaster
+    if (!autoSaveEnabled || restoreProjectPrompt) return;
 
     // Don't trigger an empty-project save on initial render
-    if (components.length === 0 && wires.length === 0 && code.trim() === '') return;
+    const isCodeEmptyOrDefault = code.trim() === '' || 
+      code.trim() === 'void setup() {\\n  // put your setup code here, to run once:\\n\\n}\\n\\nvoid loop() {\\n  // put your main code here, to run repeatedly:\\n\\n}';
+    if (!currentProjectIdRef.current && components.length === 0 && wires.length === 0 && isCodeEmptyOrDefault) return;
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -8477,6 +8467,76 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
+
+        {/* Restore Session Toaster */}
+        {restoreProjectPrompt && (
+          <div style={{
+            position: 'fixed',
+            top: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--card)',
+            border: '1px solid var(--accent)',
+            boxShadow: '0 8px 32px rgba(0, 212, 255, 0.15), 0 0 0 1px rgba(0, 212, 255, 0.3)',
+            borderRadius: '12px',
+            padding: '16px 24px',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '20px',
+            color: 'var(--text)',
+            animation: 'panelContentIn 0.3s ease-out'
+          }}>
+            <div style={{ flex: 1 }}>
+              <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 'bold', color: 'var(--text)' }}>Restore previous session?</h4>
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text2)' }}>
+                We found your project <strong>"{restoreProjectPrompt.name || 'Untitled'}"</strong> from your last visit.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={() => setRestoreProjectPrompt(null)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text2)',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--card2)'}
+                onMouseLeave={(e) => e.target.style.background = 'transparent'}
+              >
+                Start Fresh
+              </button>
+              <button 
+                onClick={() => {
+                  handleLoadProject(restoreProjectPrompt);
+                  setRestoreProjectPrompt(null);
+                }}
+                style={{
+                  background: 'var(--accent)',
+                  border: 'none',
+                  color: '#000',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  boxShadow: '0 4px 12px rgba(0, 212, 255, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => { e.target.style.transform = 'translateY(-1px)'; e.target.style.boxShadow = '0 6px 16px rgba(0, 212, 255, 0.4)'; }}
+                onMouseLeave={(e) => { e.target.style.transform = 'none'; e.target.style.boxShadow = '0 4px 12px rgba(0, 212, 255, 0.3)'; }}
+              >
+                Restore Project
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* TOP BAR */}
         <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => { localStorage.removeItem('openhw-tour-completed'); setShowTour(true); }} />
