@@ -925,12 +925,14 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
             if (pinId === 'LED+') pinId = 'A';
             else if (pinId === 'LED-') pinId = 'K';
           } else if (type === 'openhw-neopixel-ring') {
-            if (pinId === 'VCC') pinId = 'VDD';
-            else if (pinId === 'GND') pinId = 'VSS';
+            if (pinId === 'VDD') pinId = 'VCC';
+            else if (pinId === 'VSS') pinId = 'GND';
             else if (pinId === 'IN') pinId = 'DIN';
             else if (pinId === 'OUT') pinId = 'DOUT';
           } else if (type === 'openhw-neopixel-matrix') {
-            if (pinId === 'DI') pinId = 'DIN';
+            if (pinId === 'VDD') pinId = 'VCC';
+            else if (pinId === 'VSS') pinId = 'GND';
+            else if (pinId === 'DI') pinId = 'DIN';
             else if (pinId === 'DO') pinId = 'DOUT';
           } else if (type === 'openhw-attiny85') {
             if (pinId === 'PB5') pinId = 'P5';
