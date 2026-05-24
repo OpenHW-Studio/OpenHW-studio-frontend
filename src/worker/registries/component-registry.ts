@@ -917,7 +917,7 @@ export function buildFallbackTelemetry(inst: any): { telemetrySummary: string; t
     }
 
     const elapsedSec = Math.max(0.001, (now - runtime.createdAtMs) / 1000);
-    const updateFreqHz = Number((runtime.sampleCount / elapsedSec).toFixed(3));
+    const updateFreqHz = Number((runtime.sampleCount / elapsedSec).toFixed(2));
     const idleMs = Math.max(0, now - runtime.lastStateChangeAtMs);
     const summary = findings.length > 0
         ? `${status.toUpperCase()}: ${findings[0]}`
@@ -953,6 +953,14 @@ export function buildFallbackTelemetry(inst: any): { telemetrySummary: string; t
     };
 }
 
+let realCanvasFps = 60;
+let realUiBlockedMs = 0;
+
+export function setRealMetrics(fps: number, blockedMs: number) {
+    realCanvasFps = fps;
+    realUiBlockedMs = blockedMs;
+}
+
 export function getUnifiedComponentSyncState(inst: BaseComponent): any {
     const subclassSyncState = inst.getSyncState() || {};
     const baseSyncState = BaseComponent.prototype.getSyncState.call(inst) || {};
@@ -964,7 +972,7 @@ export function getUnifiedComponentSyncState(inst: BaseComponent): any {
 
 export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?: any): any {
     if (inst?.type === 'openhw-simulation-monitor' && typeof inst.updateMetrics === 'function') {
-        inst.updateMetrics(cpu?.cycles || 0, cpu?.freq || 16000000, inst.telemetryEnabled, inst.telemetryWatchedParams || ['all']);
+        inst.updateMetrics(cpu?.cycles || 0, cpu?.freq || 16000000, inst.telemetryEnabled, inst.telemetryWatchedParams || ['all'], realCanvasFps, realUiBlockedMs);
     }
 
     if (!inst.telemetryEnabled) {

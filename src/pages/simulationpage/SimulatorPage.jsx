@@ -49,6 +49,7 @@ import {
 } from './projectUtils';
 import { importWokwiProjectZip } from './wokwiImportUtils';
 import { snapToGrid, resolveAllWiresWaypoints } from './utils/snappingUtils';
+import { resolveUiExport } from './utils/simulatorUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
@@ -2132,6 +2133,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         worstFrameMs = frameDeltaMs;
       }
 
+      if (workerRef.current) {
+        workerRef.current.postMessage({ type: 'FLUSH_VISUALS' });
+      }
+
+
       const windowMs = now - frameStart;
       if (windowMs >= 1000) {
         const fps = (frameCount * 1000) / windowMs;
@@ -2161,6 +2167,10 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           appendConsoleEntry(fps < 45 || worstFrameMs > 24 ? 'warn' : 'info', line, 'debug');
           runFpsTelemetryLastLogRef.current.set('browser', signature);
+        }
+
+        if (workerRef.current) {
+          workerRef.current.postMessage({ type: 'REAL_METRICS', canvasFps: fps, uiMainThreadBlockedTimeMs: worstFrameMs });
         }
 
         frameStart = now;
