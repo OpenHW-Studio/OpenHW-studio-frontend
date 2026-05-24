@@ -19,7 +19,9 @@ export function useEsp32Engine({
   code,
   useBlocklyCode,
   blocklyGeneratedCode,
-  isRunning
+  isRunning,
+  getLiveOopStateSnapshot,
+  updateLiveOopStates
 }) {
   const esp32BuildIdRef = useRef(null);
   const serialFlushBufRef = useRef([]);
@@ -94,54 +96,114 @@ export function useEsp32Engine({
     onSerialLine: (text) => { serialFlushBufRef.current.push(text); },
     onGpioSync: (pin, value) => {
       const pinId = String(pin);
+      // [DEBUG_TELEMETRY] Log interpretation in the engine
+      console.log(`[DEBUG_TELEMETRY] [useEsp32Engine] Applying pin state ${pinId} = ${value}, triggering OOP update...`);
       const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
       if (esp32Board) {
-        // Collect targets matching the exact pin, or GPIO/D aliases used by autowire
-        const exactTargets = pinToComponentsRef.current[`${esp32Board.id}:${pinId}`] || [];
-        const gpioTargets = pinToComponentsRef.current[`${esp32Board.id}:GPIO${pinId}`] || [];
-        const dTargets = pinToComponentsRef.current[`${esp32Board.id}:D${pinId}`] || [];
-        
-        // Deduplicate targets by compId+pinId
-        const targetMap = new Map();
-        [...exactTargets, ...gpioTargets, ...dTargets].forEach(t => targetMap.set(`${t.compId}:${t.pinId}`, t));
-        const targets = Array.from(targetMap.values());
+        const boardState = getLiveOopStateSnapshot(esp32Board.id);
+        const nextPins = { ...(boardState.pins || {}), [pinId]: value };
+        const updates = [{ id: esp32Board.id, state: { ...boardState, pins: nextPins } }];
 
-        if (targets.length > 0) {
-          setOopStates(prev => {
-            const next = { ...prev };
-            targets.forEach(t => {
-              const comp = componentsRef.current.find(c => c.id === t.compId);
-              const newPinStates = { ...(next[t.compId]?.pinStates || {}), [t.pinId]: value };
-              const extra = {};
-              // wokwi-led lights up when anode pin A is HIGH
-              if (comp?.type === 'wokwi-led' && t.pinId === 'A') {
-                extra.illuminated = value === 1;
-              }
-              // Membrane Keypad Matrix scanning bridging
-              if (comp?.type === 'wokwi-membrane-keypad' && t.pinId.startsWith('R')) {
-                const pressedKey = next[t.compId]?.pressedKey;
-                if (pressedKey) {
-                  const matrix = {
-                    '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
-                    '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
-                    '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
-                    '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
-                  };
-                  const pair = matrix[pressedKey];
-                  if (pair && pair[0] === t.pinId) {
-                    const colPin = pair[1];
-                    const colEspPin = traceConnectedEsp32Pin(t.compId, colPin);
-                    if (colEspPin !== null) {
-                      esp32Socket.sendGpio(colEspPin, value); // column pin mirrors row state!
-                    }
+        // Breadth-First Search to find all transitively connected targets (handles vias & breadboards)
+        const visited = new Set();
+        const targetsMap = new Map();
+        const queue = [
+          `${esp32Board.id}:${pinId}`,
+          `${esp32Board.id}:GPIO${pinId}`,
+          `${esp32Board.id}:D${pinId}`
+        ];
+
+        queue.forEach(q => visited.add(q));
+
+        while (queue.length > 0) {
+          const current = queue.shift();
+          const neighbors = pinToComponentsRef.current[current] || [];
+          
+          for (const neighbor of neighbors) {
+            const nextKey = `${neighbor.compId}:${neighbor.pinId}`;
+            if (!visited.has(nextKey)) {
+              visited.add(nextKey);
+              queue.push(nextKey);
+              targetsMap.set(nextKey, neighbor);
+
+              // Trace ACROSS pass-through components (resistors, vias, diodes)
+              const comp = componentsRef.current?.find(c => c.id === neighbor.compId);
+              const compType = comp?.type || '';
+              if (comp && (compType.includes('resistor') || compType === 'via' || compType.includes('diode'))) {
+                let otherPin = null;
+                if (neighbor.pinId.endsWith('1')) otherPin = neighbor.pinId.replace(/1$/, '2');
+                else if (neighbor.pinId.endsWith('2')) otherPin = neighbor.pinId.replace(/2$/, '1');
+                else if (neighbor.pinId === 'A') otherPin = 'K';
+                else if (neighbor.pinId === 'K') otherPin = 'A';
+                
+                if (otherPin) {
+                  const crossKey = `${neighbor.compId}:${otherPin}`;
+                  if (!visited.has(crossKey)) {
+                    visited.add(crossKey);
+                    queue.push(crossKey);
                   }
                 }
               }
-              next[t.compId] = { ...(next[t.compId] || {}), pinStates: newPinStates, ...extra };
-            });
-            return next;
+              
+              // Breadboard internal routing heuristic (rows a-e, f-j)
+              if (comp && compType.includes('breadboard')) {
+                const rowMatch = neighbor.pinId.match(/^(\d+)([a-j])$/);
+                if (rowMatch) {
+                  const row = rowMatch[1];
+                  const col = rowMatch[2];
+                  const isTopHalf = 'abcde'.includes(col);
+                  const group = isTopHalf ? ['a','b','c','d','e'] : ['f','g','h','i','j'];
+                  group.forEach(c => {
+                    if (c !== col) {
+                      const crossKey = `${neighbor.compId}:${row}${c}`;
+                      if (!visited.has(crossKey)) {
+                        visited.add(crossKey);
+                        queue.push(crossKey);
+                      }
+                    }
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        const targets = Array.from(targetsMap.values());
+
+        if (targets.length > 0) {
+          targets.forEach(t => {
+            const comp = componentsRef.current.find(c => c.id === t.compId);
+            const currentState = getLiveOopStateSnapshot(t.compId);
+            const newPinStates = { ...(currentState.pinStates || {}), [t.pinId]: value };
+            const extra = {};
+            // wokwi-led lights up when anode pin A is HIGH
+            if (comp?.type === 'wokwi-led' && t.pinId === 'A') {
+              extra.illuminated = value === 1;
+            }
+            // Membrane Keypad Matrix scanning bridging
+            if (comp?.type === 'wokwi-membrane-keypad' && t.pinId.startsWith('R')) {
+              const pressedKey = currentState.pressedKey;
+              if (pressedKey) {
+                const matrix = {
+                  '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
+                  '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
+                  '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
+                  '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
+                };
+                const pair = matrix[pressedKey];
+                if (pair && pair[0] === t.pinId) {
+                  const colPin = pair[1];
+                  const colEspPin = traceConnectedEsp32Pin(t.compId, colPin);
+                  if (colEspPin !== null) {
+                    esp32Socket.sendGpio(colEspPin, value); // column pin mirrors row state!
+                  }
+                }
+              }
+            }
+            updates.push({ id: t.compId, state: { ...currentState, pinStates: newPinStates, ...extra } });
           });
         }
+        updateLiveOopStates(updates);
       }
       setPinStates(prev => ({ ...prev, [pinId]: value === 1 }));
     },
@@ -188,10 +250,9 @@ export function useEsp32Engine({
     if (comp.type === 'wokwi-membrane-keypad') {
       if (event && event.startsWith && event.startsWith('press:')) {
         const key = event.split(':')[1];
-        setOopStates(prev => ({
-          ...prev,
-          [comp.id]: { ...(prev[comp.id] || {}), pressedKey: key }
-        }));
+        const currentState = getLiveOopStateSnapshot(comp.id);
+        updateLiveOopStates([{ id: comp.id, state: { ...currentState, pressedKey: key } }]);
+        
         const matrix = {
           '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
           '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
@@ -209,10 +270,9 @@ export function useEsp32Engine({
           }
         }
       } else if (event === 'release') {
-        setOopStates(prev => ({
-          ...prev,
-          [comp.id]: { ...(prev[comp.id] || {}), pressedKey: null }
-        }));
+        const currentState = getLiveOopStateSnapshot(comp.id);
+        updateLiveOopStates([{ id: comp.id, state: { ...currentState, pressedKey: null } }]);
+        
         ['C1', 'C2', 'C3', 'C4'].forEach(colPin => {
           const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
           if (colEspPin !== null) {
@@ -279,13 +339,14 @@ export function useEsp32Engine({
     if (esp32Board) {
       logSerial('⚙️  Sending ESP32 firmware to QEMU server...');
       const compileUnit = getBoardCompileFiles(esp32Board.id, '');
-      const compileSource = useBlocklyCode ? blocklyGeneratedCode : (compileUnit.mainCode || getBoardMainCode(esp32Board.id) || code);
+      let compileSource = useBlocklyCode ? blocklyGeneratedCode : (compileUnit.mainCode || getBoardMainCode(esp32Board.id) || code);
+      if (compileSource === '{}') compileSource = code;
 
       if (serialFlushTimer.current) clearInterval(serialFlushTimer.current);
       serialFlushTimer.current = setInterval(flushESP32Serial, 120);
 
       try {
-        const buildId = await esp32Socket.run(compileSource);
+        const buildId = await console.log('ESPSRC', JSON.stringify(compileSource)); esp32Socket.run(compileSource);
         esp32BuildIdRef.current = buildId;
         setIsCompiling(false);
       } catch (esp32Err) {
