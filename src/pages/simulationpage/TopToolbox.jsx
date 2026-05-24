@@ -337,18 +337,7 @@ function TopToolboxInternal(props) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border)' }}>
-           <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Board:</span>
-           <select 
-              value={board} 
-              onChange={(e) => setBoard(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', outline: 'none', fontWeight: '500', cursor: 'pointer' }}
-           >
-              <option value="arduino_uno">Arduino Uno</option>
-              <option value="pico">Raspberry Pi Pico</option>
-              <option value="esp32">ESP32</option>
-           </select>
-        </div>
+
       </div>
 
       <div className="flex items-center gap-2 flex-1 flex-wrap">
