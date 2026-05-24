@@ -1,68 +1,83 @@
 import { BaseComponent } from '@openhw/emulator';
-import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic.ts';
-import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic.ts';
-import { PicoLogic } from '../pico-logic.ts';
-import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic.ts';
-import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic.ts';
-import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-supply/logic.ts';
-import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic.ts';
-import { NeopixelLogic } from '../../components/openhw-neopixel-matrix/logic.ts';
-import { BuzzerLogic } from '@openhw/emulator/src/components/openhw-buzzer/logic.ts';
-import { MotorLogic } from '@openhw/emulator/src/components/openhw-motor/logic.ts';
-import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic.ts';
-import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic.ts';
-import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic.ts';
-import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic.ts';
-import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
-import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic.ts';
-import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic.ts';
-import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
-import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
-import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
-import { DFlipFlopDsrLogic } from '@openhw/emulator/src/components/logic-d-flipflop-dsr/logic.ts';
-import { ClockGeneratorLogic } from '@openhw/emulator/src/components/logic-clock-generator/logic.ts';
-import { WokwiTM1637Logic } from '@openhw/emulator/src/components/openhw-tm1637-7segment/logic.ts';
-import { RGBLEDLogic } from '@openhw/emulator/src/components/openhw-rgb-led/logic.ts';
-import { RotaryEncoderLogic } from '@openhw/emulator/src/components/openhw-rotary-encoder/logic.ts';
-import { Nokia5110Logic } from '@openhw/emulator/src/components/openhw-nokia-5110/logic.ts';
-import { L293DLogic } from '@openhw/emulator/src/components/openhw-l293d/logic.ts';
-import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-i2c/logic.ts';
-import { Lcd1602Logic } from '@openhw/emulator/src/components/openhw-lcd1602/logic.ts';
-import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic.ts';
-import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic.ts';
-import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic.ts';
-import { LdrModuleLogic } from '@openhw/emulator/src/components/openhw-ldr-module/logic.ts';
-import { SoilMoistureSensorLogic } from '@openhw/emulator/src/components/openhw-soil-moisture-sensor/logic.ts';
-import { PhotodiodeLogic } from '@openhw/emulator/src/components/openhw-photodiode/logic.ts';
-import { DiodeLogic } from '@openhw/emulator/src/components/openhw-diode/logic.ts';
-import { NPNTransistorLogic } from '@openhw/emulator/src/components/openhw-npn-transistor/logic.ts';
-import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/logic.ts';
-import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic.ts';
-import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic.ts';
-import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic.ts';
-import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic.ts';
-import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic.ts';
-import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic.ts';
-import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic.ts';
-import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic.ts';
-import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic.ts';
+import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
+import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
+import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
+import { PicoLogic } from '../pico-logic';
+import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
+import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
+import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-supply/logic';
+import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic';
+import { NeopixelLogic } from '@openhw/emulator/src/components/openhw-neopixel-matrix/logic';
+import { BuzzerLogic } from '@openhw/emulator/src/components/openhw-buzzer/logic';
+import { MotorLogic } from '@openhw/emulator/src/components/openhw-motor/logic';
+import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic';
+import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic';
+import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic';
+import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic';
+import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic';
+import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic';
+import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic';
+import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic';
+import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic';
+import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic';
+import { DFlipFlopDsrLogic } from '@openhw/emulator/src/components/logic-d-flipflop-dsr/logic';
+import { ClockGeneratorLogic } from '@openhw/emulator/src/components/logic-clock-generator/logic';
+import { WokwiTM1637Logic } from '@openhw/emulator/src/components/openhw-tm1637-7segment/logic';
+import { RGBLEDLogic } from '@openhw/emulator/src/components/openhw-rgb-led/logic';
+import { RotaryEncoderLogic } from '@openhw/emulator/src/components/openhw-rotary-encoder/logic';
+import { Nokia5110Logic } from '@openhw/emulator/src/components/openhw-nokia-5110/logic';
+import { L293DLogic } from '@openhw/emulator/src/components/openhw-l293d/logic';
+import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-i2c/logic';
+// import { Lcd1602Logic } from '@openhw/emulator/src/components/openhw-lcd1602/logic';
+import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic';
+import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic';
+import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic';
+import { DHT22Logic } from '@openhw/emulator/src/components/DHT-22/logic';
+import { GasSensorLogic } from '@openhw/emulator/src/components/MQ2-gas-sensor/logic';
+import { PIRLogic } from '@openhw/emulator/src/components/PIR-Motion-Sensor/logic';
+import { RaindropModuleLogic } from '@openhw/emulator/src/components/Raindrop-module/logic';
+import { RaindropPadLogic } from '@openhw/emulator/src/components/Raindrop-pad/logic';
+import { LdrModuleLogic } from '@openhw/emulator/src/components/openhw-ldr-module/logic';
+import { SoilMoistureSensorLogic } from '@openhw/emulator/src/components/openhw-soil-moisture-sensor/logic';
+import { PhotodiodeLogic } from '@openhw/emulator/src/components/openhw-photodiode/logic';
+import { DiodeLogic } from '@openhw/emulator/src/components/openhw-diode/logic';
+import { NPNTransistorLogic } from '@openhw/emulator/src/components/openhw-npn-transistor/logic';
+import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/logic';
+import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
+import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
+import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
+import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic';
+import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
+import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
+// import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
+// import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
+// import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 
-import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles.ts';
+import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
-import { 
-    NotGateLogic, TwoInputGateLogic, AndGateLogic, NandGateLogic, NorGateLogic, XorGateLogic,
-    KeypadLogic, SDCardLogic, SimulationMonitorLogic,
-    I2CProtocol, SPIProtocol, PWMProtocol, 
-    DigitalProtocol, AnalogProtocol,    UARTProtocol,
-    OneWireProtocol,
-    I2SProtocol,
-} from '@openhw/emulator';
+import {
+    NotGateLogic, TwoInputGateLogic, AndGateLogic, NandGateLogic, NorGateLogic, XorGateLogic
+} from '../protocol-handlers/gates';
+import { KeypadLogic } from '../protocol-handlers/keypad';
+import { SDCardLogic } from '../protocol-handlers/sd-card';
+import { SimulationMonitorLogic } from '../protocol-handlers/simulation-monitor';
+
+// Provide fallback protocols since base protocols are now integrated directly into BaseComponent
+const I2CProtocol = BaseComponent;
+const SPIProtocol = BaseComponent;
+const PWMProtocol = BaseComponent;
+const DigitalProtocol = BaseComponent;
+const AnalogProtocol = BaseComponent;
+const UARTProtocol = BaseComponent;
+const OneWireProtocol = BaseComponent;
+const I2SProtocol = BaseComponent;
 
 export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-led': LEDLogic,
     'openhw-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
     'openhw-arduino-uno': UnoLogic,
+    'openhw-esp32': Esp32Logic,
     'wokwi-raspberry-pi-pico': PicoLogic,
     'openhw-raspberry-pi-pico': PicoLogic,
     'wokwi-raspberry-pi-pico-w': PicoLogic,
@@ -95,15 +110,15 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-potentiometer': PotentiometerLogic,
     'wokwi-lcd2004-i2c': Lcd2004I2CLogic,
     'openhw-lcd2004-i2c': Lcd2004I2CLogic,
-    'wokwi-lcd1602': Lcd1602Logic,
-    'openhw-lcd1602': Lcd1602Logic,
+    // 'wokwi-lcd1602': Lcd1602Logic,
+    // 'openhw-lcd1602': Lcd1602Logic,
     'wokwi-lcd1602-i2c': Lcd2004I2CLogic,
     'openhw-lcd1602-i2c': Lcd2004I2CLogic,
     'wokwi-ssd1306-oled': SSD1306Logic,
     'openhw-ssd1306-oled': SSD1306Logic,
-    max30102: I2CProtocol,
-    'wokwi-max7219': SPIProtocol,
-    'openhw-max7219': SPIProtocol,
+    max30102: MAX30102Logic,
+    'wokwi-max7219': MAX7219Logic,
+    'openhw-max7219': MAX7219Logic,
     'wokwi-ldr-module': BaseComponent,
     'openhw-ldr-module': BaseComponent,
     'wokwi-7segment': BaseComponent,
@@ -153,12 +168,19 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-cd74hc4067': CD74HC4067Logic,
     'wokwi-logic-analyzer': SimulationMonitorLogic,
     'openhw-logic-analyzer': SimulationMonitorLogic,
-    
+
     // I2S Audio Components
-    'openhw-pcm5102':  I2SProtocol,
+    'openhw-pcm5102': I2SProtocol,
     'openhw-max98357': I2SProtocol,
-    'openhw-inmp441':  I2SProtocol,
-    'openhw-sph0645':  I2SProtocol,
+    'openhw-inmp441': I2SProtocol,
+    'openhw-sph0645': I2SProtocol,
+
+    // Sensors — custom components
+    'DHT-22': DHT22Logic,
+    'MQ-2 Gas Sensor': GasSensorLogic,
+    'wokwi-pir-motion-sensor': PIRLogic,
+    'wokwi-raindrop-module': RaindropModuleLogic,
+    'wokwi-raindrop-pad': RaindropPadLogic,
 
     'wokwi-breadboard': BaseComponent,
     'openhw-breadboard': BaseComponent,
@@ -194,12 +216,12 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-neopixel-ring': NeopixelLogic,
     'openhw-arduino-sensor-shield': BaseComponent,
     'openhw-simulation-monitor': SimulationMonitorLogic,
-    'wokwi-ds18b20': DS18B20Logic,
-    'openhw-ds18b20': DS18B20Logic,
-    'wokwi-ir-receiver': IRReceiverLogic,
-    'openhw-ir-receiver': IRReceiverLogic,
-    'wokwi-mfrc522': MFRC522Logic,
-    'openhw-mfrc522': MFRC522Logic,
+    // 'wokwi-ds18b20': DS18B20Logic,
+    // 'openhw-ds18b20': DS18B20Logic,
+    // 'wokwi-ir-receiver': IRReceiverLogic,
+    // 'openhw-ir-receiver': IRReceiverLogic,
+    // 'wokwi-mfrc522': MFRC522Logic,
+    // 'openhw-mfrc522': MFRC522Logic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -208,6 +230,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-led': [{ id: 'A' }, { id: 'K' }],
     'wokwi-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-esp32': [{ id: 'EN' }, { id: 'VP' }, { id: 'VN' }, { id: '34' }, { id: '35' }, { id: '32' }, { id: '33' }, { id: '25' }, { id: '26' }, { id: '27' }, { id: '14' }, { id: '12' }, { id: '13' }, { id: 'GND.2' }, { id: 'VIN' }, { id: '23' }, { id: '22' }, { id: '1' }, { id: '3' }, { id: '21' }, { id: '19' }, { id: '18' }, { id: '5' }, { id: '17' }, { id: '16' }, { id: '4' }, { id: '2' }, { id: '15' }, { id: 'GND.1' }, { id: '3V3' }],
     'wokwi-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
@@ -280,10 +303,10 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
     'openhw-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
     'openhw-dip-switch-8': [{ id: '1a' }, { id: '1b' }, { id: '2a' }, { id: '2b' }, { id: '3a' }, { id: '3b' }, { id: '4a' }, { id: '4b' }, { id: '5a' }, { id: '5b' }, { id: '6a' }, { id: '6b' }, { id: '7a' }, { id: '7b' }, { id: '8a' }, { id: '8b' }],
-    'openhw-pcm5102':  [{ id:'VCC' },{ id:'GND' },{ id:'BCK' },{ id:'LRCK' },{ id:'DIN' },{ id:'SCK' },{ id:'FMT' },{ id:'DEMP' },{ id:'XSMT' }],
-    'openhw-max98357': [{ id:'VDD' },{ id:'GND' },{ id:'BCLK' },{ id:'LRC' },{ id:'DIN' },{ id:'GAIN' },{ id:'SD' }],
-    'openhw-inmp441':  [{ id:'VDD' },{ id:'GND' },{ id:'WS' },{ id:'SCK' },{ id:'SD' },{ id:'LR' }],
-    'openhw-sph0645':  [{ id:'3V' },{ id:'GND' },{ id:'BCLK' },{ id:'LRCLK' },{ id:'DOUT' },{ id:'SEL' }],
+    'openhw-pcm5102': [{ id: 'VCC' }, { id: 'GND' }, { id: 'BCK' }, { id: 'LRCK' }, { id: 'DIN' }, { id: 'SCK' }, { id: 'FMT' }, { id: 'DEMP' }, { id: 'XSMT' }],
+    'openhw-max98357': [{ id: 'VDD' }, { id: 'GND' }, { id: 'BCLK' }, { id: 'LRC' }, { id: 'DIN' }, { id: 'GAIN' }, { id: 'SD' }],
+    'openhw-inmp441': [{ id: 'VDD' }, { id: 'GND' }, { id: 'WS' }, { id: 'SCK' }, { id: 'SD' }, { id: 'LR' }],
+    'openhw-sph0645': [{ id: '3V' }, { id: 'GND' }, { id: 'BCLK' }, { id: 'LRCLK' }, { id: 'DOUT' }, { id: 'SEL' }],
     'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
     'openhw-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
     'wokwi-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
@@ -340,6 +363,13 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
     'wokwi-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
     'openhw-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
+
+    // Custom sensors
+    'DHT-22':                [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
+    'MQ-2 Gas Sensor':       [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
+    'wokwi-raindrop-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }, { id: 'PAD+' }, { id: 'PAD-' }],
+    'wokwi-raindrop-pad':    [{ id: 'AOUT' }, { id: 'GND' }],
 };
 
 export type RP2040ExecutableRangeInput =
@@ -727,21 +757,21 @@ export function invokeOptional(inst: any, names: string[], args: any[]): any {
 
 export function resolveLogicClass(type: string): any {
     if (LOGIC_REGISTRY[type]) return LOGIC_REGISTRY[type];
-    
+
     const pins = (COMPONENT_PINS[type] || []).map((p: any) => String(p.id).toUpperCase());
-    
+
     // I2S: BCLK + WS/LRCK + data pin
-    const hasI2S = pins.some((p: string) => ['BCK','BCLK'].includes(p))
-                && pins.some((p: string) => ['LRCK','WS','LRC','LRCLK'].includes(p));
+    const hasI2S = pins.some((p: string) => ['BCK', 'BCLK'].includes(p))
+        && pins.some((p: string) => ['LRCK', 'WS', 'LRC', 'LRCLK'].includes(p));
     if (hasI2S) return I2SProtocol;
-    
+
     if (pins.includes('SDA') && pins.includes('SCL')) return I2CProtocol;
-    if (pins.some((p: string) => ['MOSI','DIN','SDI','MISO'].includes(p))) return SPIProtocol;
-    if (pins.some((p: string) => ['PWM','SIG'].includes(p))) return PWMProtocol;
-    if (pins.some((p: string) => ['TX','TXD','RX','RXD'].includes(p))) return UARTProtocol;
-    if (pins.some((p: string) => ['DQ','DATA'].includes(p))) return OneWireProtocol;
-    if (pins.some((p: string) => ['AO','AOUT'].includes(p))) return AnalogProtocol;
-    
+    if (pins.some((p: string) => ['MOSI', 'DIN', 'SDI', 'MISO'].includes(p))) return SPIProtocol;
+    if (pins.some((p: string) => ['PWM', 'SIG'].includes(p))) return PWMProtocol;
+    if (pins.some((p: string) => ['TX', 'TXD', 'RX', 'RXD'].includes(p))) return UARTProtocol;
+    if (pins.some((p: string) => ['DQ', 'DATA'].includes(p))) return OneWireProtocol;
+    if (pins.some((p: string) => ['AO', 'AOUT'].includes(p))) return AnalogProtocol;
+
     return BaseComponent;
 }
 
