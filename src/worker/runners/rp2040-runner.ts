@@ -2841,7 +2841,7 @@ export class RP2040Runner implements BoardRunner {
         this.lastComponentUpdateMs = componentMs;
         this.lastRunLoopMs = performance.now() - loopStart;
 
-        this.emitStateIfDue();
+        // this.emitStateIfDue(); // Disabled. Handled by FLUSH_VISUALS from UI thread.
 
         if (this.running) {
             this.emitDebugSnapshot('tick', now);
@@ -3076,8 +3076,16 @@ export class RP2040Runner implements BoardRunner {
         
         const compStates: Array<{ id: string; state: any }> = [];
         for (const inst of this.instances.values()) {
+            const pendingEmit = (inst as any).pendingVisualStateEmit;
+            if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
+
             const syncState = getUnifiedComponentSyncState(inst);
+            
+            if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+
             inst.stateChanged = false;
+            (inst as any).pendingVisualStateEmit = false;
+            
             compStates.push({
                 id: inst.id,
                 type: inst.type,
