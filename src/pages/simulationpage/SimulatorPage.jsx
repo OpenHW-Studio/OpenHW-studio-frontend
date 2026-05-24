@@ -974,33 +974,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     console.log(`[SIM]`, msg);
   };
 
-  const workerRef = useRef(null)
-  const pushSerialRxChunkRef = useRef(null);
-  const runStartGuardRef = useRef(false)
-  const {
-    handleEsp32Interaction,
-    startEsp32Session,
-    stopEsp32Session,
-    esp32Socket
-  } = useEsp32Engine({
-    components,
-    wires,
-    setOopStates,
-    pinStates,
-    setPinStates,
-    pushSerialRxChunkRef,
-    logSerial,
-    setIsRunning,
-    setIsCompiling,
-    runStartGuardRef,
-    appendConsoleEntry,
-    getBoardCompileFiles,
-    getBoardMainCode,
-    code,
-    useBlocklyCode,
-    blocklyGeneratedCode,
-    isRunning
-  });
+
   const lastCompiledRef = useRef(null)
   const micropythonUf2PayloadRef = useRef(null)
   const circuitPythonUf2PayloadRef = useRef(null)
@@ -1157,6 +1131,36 @@ export function SimulatorPage({ gamificationMode = false }) {
     liveOopStatesRef.current = {};
     prevIds.forEach(notifyLiveOopStateListeners);
   }, [notifyLiveOopStateListeners]);
+
+  const workerRef = useRef(null)
+  const pushSerialRxChunkRef = useRef(null);
+  const runStartGuardRef = useRef(false)
+  const {
+    handleEsp32Interaction,
+    startEsp32Session,
+    stopEsp32Session,
+    esp32Socket
+  } = useEsp32Engine({
+    components,
+    wires,
+    setOopStates,
+    pinStates,
+    setPinStates,
+    pushSerialRxChunkRef,
+    logSerial,
+    setIsRunning,
+    setIsCompiling,
+    runStartGuardRef,
+    appendConsoleEntry,
+    getBoardCompileFiles,
+    getBoardMainCode,
+    code,
+    useBlocklyCode,
+    blocklyGeneratedCode,
+    isRunning,
+    getLiveOopStateSnapshot,
+    updateLiveOopStates
+  });
   const applyLiveNeopixelData = useCallback((neopixelState) => {
     liveNeopixelDataRef.current = neopixelState || {};
     if (!liveNeopixelDataRef.current || Object.keys(liveNeopixelDataRef.current).length === 0) return;

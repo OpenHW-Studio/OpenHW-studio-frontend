@@ -44,6 +44,17 @@ export async function compileCode(input) {
     }
 }
 
+export async function stopSession(buildId) {
+    const config = getUserAuthConfig();
+    try {
+        const response = await axios.post(`${COMPILER_URL}/compile/esp32/stop/${buildId}`, {}, config);
+        return response.data;
+    } catch (error) {
+        console.error(`[SimulatorService] Failed to stop session ${buildId}:`, error.message);
+        throw error;
+    }
+}
+
 /**
  * Flash firmware to a physical board.
  */

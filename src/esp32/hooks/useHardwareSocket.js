@@ -33,8 +33,8 @@
  *   if the backend becomes unresponsive.
  */
 
-import { useRef, useCallback, useEffect } from 'react';
-import { compileCode } from '../../services/simulatorService.js';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
+import { compileCode, stopSession } from '../../services/simulatorService.js';
 
 // ─── Configuration ─────────────────────────────────────────────────────────────
 
@@ -182,6 +182,12 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
             wsRef.current = null;
         }
 
+        if (buildIdRef.current) {
+            stopSession(buildIdRef.current).catch(err => {
+                console.warn('[useHardwareSocket] Failed to stop session on backend:', err);
+            });
+        }
+
         buildIdRef.current      = null;
         serialBatchRef.current  = [];
         reconnectCountRef.current = 0;
@@ -268,6 +274,8 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
                     break;
 
                 case 'GPIO_SYNC':
+                    // [DEBUG_TELEMETRY] Log incoming GPIO_SYNC on WebSocket
+                    console.log(`[DEBUG_TELEMETRY] [useHardwareSocket] Received GPIO_SYNC { pin: ${msg.pin}, value: ${msg.value} }`);
                     cbRef.current.onGpioSync?.(String(msg.pin), msg.value);
                     break;
 
@@ -390,6 +398,14 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
         const ws = new WebSocket(getWsBaseUrl());
         wsRef.current = ws;
 
+        // If WS fails instantly before compileCode returns, we must catch it
+        ws.onclose = () => {
+            if (!buildIdRef.current) {
+                // compileCode hasn't returned yet, but WS died
+                stop();
+            }
+        };
+
         let result;
         try {
             result = await compileCode({ code, target: 'esp32' });
@@ -416,7 +432,7 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
 
         if (ws.readyState === WebSocket.OPEN) {
             doRegister();
-        } else {
+        } else if (ws.readyState === WebSocket.CONNECTING) {
             ws.onopen = doRegister;
         }
 
@@ -445,6 +461,10 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
         const ws = new WebSocket(getWsBaseUrl());
         wsRef.current = ws;
 
+        ws.onclose = () => {
+            if (!buildIdRef.current) stop();
+        };
+
         let result;
         try {
             // result = await directBootCode();
@@ -469,7 +489,7 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
 
         if (ws.readyState === WebSocket.OPEN) {
             doRegister();
-        } else {
+        } else if (ws.readyState === WebSocket.CONNECTING) {
             ws.onopen = doRegister;
         }
 
@@ -502,9 +522,9 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
 
     useEffect(() => () => stop(), [stop]);
 
-    // ── Public API ────────────────────────────────────────────────────────────
+    // ─── Public API ─────────────────────────────────────────────────────────────────
 
-    return {
+    return useMemo(() => ({
         /** Compile code and start a QEMU session. Returns a Promise<buildId>. */
         run,
         /** Boot from a pre-compiled binary. Returns a Promise<buildId>. */
@@ -517,5 +537,5 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
         buildIdRef,
         /** Read-only ref to the live WebSocket (null when idle). */
         wsRef,
-    };
+    }), [run, directBoot, sendGpio, stop]);
 }
