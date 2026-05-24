@@ -62,7 +62,7 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'openhw-npn-transistor': [],
   'openhw-relay-module': ['active'],
   'openhw-ds18b20': ['temperature', 'powered', 'resolution'],
-  'openhw-ir-receiver': ['protocol', 'lastCode', 'demodulatedSignal', 'powered'],
+  'openhw-ir-receiver': ['powered', 'transmitting', 'lastButton', 'lastValue'],
   'openhw-mfrc522': ['powered', 'cardPresent', 'cardUID'],
   'openhw-nrf24l01': ['power', 'mode', 'frequency', 'rxQueueSize', 'txQueueSize', 'statusReg'],
   'openhw-cc1101': ['state', 'frequency', 'modulation', 'rxQueueSize', 'txFifoSize', 'interruptPin'],
@@ -146,7 +146,7 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'wokwi-pi-pico-w': ['led', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts'],
   'wokwi-attiny85': ['pins', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts'],
   'wokwi-ds18b20': ['temperature', 'powered', 'resolution'],
-  'wokwi-ir-receiver': ['protocol', 'lastCode', 'demodulatedSignal', 'powered'],
+  'wokwi-ir-receiver': ['powered', 'transmitting', 'lastButton', 'lastValue'],
   'wokwi-mfrc522': ['powered', 'cardPresent', 'cardUID'],
   'openhw-simulation-monitor': [
     'simulationSpeed', 'timeDriftMs', 'executionJitterMs', 'frameSkips', 'workerBufferLatency',
