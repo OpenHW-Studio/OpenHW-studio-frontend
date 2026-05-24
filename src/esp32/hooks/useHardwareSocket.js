@@ -274,8 +274,6 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
                     break;
 
                 case 'GPIO_SYNC':
-                    // [DEBUG_TELEMETRY] Log incoming GPIO_SYNC on WebSocket
-                    console.log(`[DEBUG_TELEMETRY] [useHardwareSocket] Received GPIO_SYNC { pin: ${msg.pin}, value: ${msg.value} }`);
                     cbRef.current.onGpioSync?.(String(msg.pin), msg.value);
                     break;
 

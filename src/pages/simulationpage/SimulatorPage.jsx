@@ -702,6 +702,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => document.head.removeChild(style);
   }, []);
   const [isCompiling, setIsCompiling] = useState(false)
+  const [isBooting, setIsBooting] = useState(false) // TODO: Declare booting state tracking
   const [isPaused, setIsPaused] = useState(false)
   const [protocolLogs, setProtocolLogs] = useState([])
   const [activeConsoleTab, setActiveConsoleTab] = useState('console')
@@ -1141,6 +1142,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     stopEsp32Session,
     esp32Socket
   } = useEsp32Engine({
+    workerRef,
     components,
     wires,
     setOopStates,
@@ -1150,6 +1152,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     logSerial,
     setIsRunning,
     setIsCompiling,
+    setIsBooting, // TODO: Pass booting state setter to ESP32 engine
     runStartGuardRef,
     appendConsoleEntry,
     getBoardCompileFiles,
@@ -6424,7 +6427,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       runFpsTelemetryLastLogRef.current.clear();
       runLastBoardPinsRef.current = new Map();
 
-      setIsRunning(true);
       setIsCompiling(true);
       setRunStartedAtMs(Date.now());
       setRunDurationSec(0);
@@ -6442,12 +6444,18 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardBaudMap = {};
       const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
 
-      if (await startEsp32Session(programmableBoards)) return;
+      const isBackendProxy = await startEsp32Session(programmableBoards);
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
       const boardsWithoutCompilableSketch = [];
       let result = null;
 
-      if (programmableBoards.length > 0) {
+      if (isBackendProxy) {
+        result = {
+          hex: '',
+          components: components,
+          connections: wires,
+        };
+      } else if (programmableBoards.length > 0) {
         for (const boardComp of programmableBoards) {
           const kind = normalizeBoardKind(boardComp.type);
           const targetFqbn = resolveBoardFqbnForComponent(boardComp, kind);
@@ -6726,7 +6734,10 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       lastCompiledRef.current = { code, board, result };
       setIsCompiling(false);
-      logSerial('Compiled! Connecting to emulator...');
+      if (!isBackendProxy) {
+        setIsRunning(true);
+      }
+      logSerial(isBackendProxy ? 'Backend connected! Starting physics worker...' : 'Compiled! Connecting to emulator...');
 
       // Load Web Worker
       const worker = new Worker(new URL('../../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
@@ -7175,6 +7186,14 @@ export function SimulatorPage({ gamificationMode = false }) {
             runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs });
           }
         }
+        if (msg.type === 'backendGpioSync') {
+          if (esp32Socket && typeof esp32Socket.sendGpio === 'function') {
+            esp32Socket.sendGpio(msg.pin, msg.value ? 1 : 0);
+          }
+        }
+        if (msg.type === 'debug_telemetry') {
+          appendConsoleEntry('info', msg.message, 'simulator');
+        }
         if (msg.type === 'serial') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
@@ -7276,6 +7295,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       rp2040UartSilentWarnedBoardsRef.current.clear();
       setIsRunning(false);
       setIsCompiling(false);
+      setIsBooting(false); // TODO: Reset booting state on error
       setRunStartedAtMs(null);
       setRunDurationSec(0);
       appendConsoleEntry('error', `Run failed: ${err?.message || 'Unknown error'}`, 'simulator');
@@ -7356,6 +7376,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
     setIsRunning(false);
     setIsCompiling(false);
+    setIsBooting(false); // TODO: Reset booting state on stop
     setIsPaused(false);
     setRunStartedAtMs(null);
     setRunDurationSec(0);
@@ -7376,8 +7397,15 @@ export function SimulatorPage({ gamificationMode = false }) {
     appendConsoleEntry('info', 'Simulation stopped.', 'simulator');
   };
 
+  // Reset run start time when simulation actually starts running
   useEffect(() => {
-    if (!isRunning || !runStartedAtMs) return;
+    if (isRunning && !isCompiling && !isBooting) {
+      setRunStartedAtMs(Date.now());
+    }
+  }, [isRunning, isCompiling, isBooting]);
+
+  useEffect(() => {
+    if (!isRunning || !runStartedAtMs || isCompiling || isBooting) return;
 
     const updateElapsed = () => {
       setRunDurationSec(Math.max(0, (Date.now() - runStartedAtMs) / 1000));
@@ -7386,7 +7414,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     updateElapsed();
     const timer = setInterval(updateElapsed, 250);
     return () => clearInterval(timer);
-  }, [isRunning, runStartedAtMs]);
+  }, [isRunning, runStartedAtMs, isCompiling, isBooting]);
 
   useEffect(() => {
     if (!hardwareStatus) return;
@@ -8600,7 +8628,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         )}
 
         {/* TOP BAR */}
-        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => { localStorage.removeItem('openhw-tour-completed'); setShowTour(true); }} />
+        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} isBooting={isBooting} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => { localStorage.removeItem('openhw-tour-completed'); setShowTour(true); }} />
 
         <SimulatorStatusBanners
           studentAssignmentMode={studentAssignmentMode}

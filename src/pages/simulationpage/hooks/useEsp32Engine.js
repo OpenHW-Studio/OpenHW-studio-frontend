@@ -3,6 +3,7 @@ import { useHardwareSocket } from '../../../esp32/hooks/useHardwareSocket.js';
 import { normalizeBoardKind } from '../utils/hardwareUtils.js';
 
 export function useEsp32Engine({
+  workerRef,
   components,
   wires,
   setOopStates,
@@ -12,6 +13,7 @@ export function useEsp32Engine({
   logSerial,
   setIsRunning,
   setIsCompiling,
+  setIsBooting, // TODO: Added parameter for booting state tracking
   runStartGuardRef,
   appendConsoleEntry,
   getBoardCompileFiles,
@@ -96,114 +98,14 @@ export function useEsp32Engine({
     onSerialLine: (text) => { serialFlushBufRef.current.push(text); },
     onGpioSync: (pin, value) => {
       const pinId = String(pin);
-      // [DEBUG_TELEMETRY] Log interpretation in the engine
-      console.log(`[DEBUG_TELEMETRY] [useEsp32Engine] Applying pin state ${pinId} = ${value}, triggering OOP update...`);
       const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
-      if (esp32Board) {
-        const boardState = getLiveOopStateSnapshot(esp32Board.id);
-        const nextPins = { ...(boardState.pins || {}), [pinId]: value };
-        const updates = [{ id: esp32Board.id, state: { ...boardState, pins: nextPins } }];
-
-        // Breadth-First Search to find all transitively connected targets (handles vias & breadboards)
-        const visited = new Set();
-        const targetsMap = new Map();
-        const queue = [
-          `${esp32Board.id}:${pinId}`,
-          `${esp32Board.id}:GPIO${pinId}`,
-          `${esp32Board.id}:D${pinId}`
-        ];
-
-        queue.forEach(q => visited.add(q));
-
-        while (queue.length > 0) {
-          const current = queue.shift();
-          const neighbors = pinToComponentsRef.current[current] || [];
-          
-          for (const neighbor of neighbors) {
-            const nextKey = `${neighbor.compId}:${neighbor.pinId}`;
-            if (!visited.has(nextKey)) {
-              visited.add(nextKey);
-              queue.push(nextKey);
-              targetsMap.set(nextKey, neighbor);
-
-              // Trace ACROSS pass-through components (resistors, vias, diodes)
-              const comp = componentsRef.current?.find(c => c.id === neighbor.compId);
-              const compType = comp?.type || '';
-              if (comp && (compType.includes('resistor') || compType === 'via' || compType.includes('diode'))) {
-                let otherPin = null;
-                if (neighbor.pinId.endsWith('1')) otherPin = neighbor.pinId.replace(/1$/, '2');
-                else if (neighbor.pinId.endsWith('2')) otherPin = neighbor.pinId.replace(/2$/, '1');
-                else if (neighbor.pinId === 'A') otherPin = 'K';
-                else if (neighbor.pinId === 'K') otherPin = 'A';
-                
-                if (otherPin) {
-                  const crossKey = `${neighbor.compId}:${otherPin}`;
-                  if (!visited.has(crossKey)) {
-                    visited.add(crossKey);
-                    queue.push(crossKey);
-                  }
-                }
-              }
-              
-              // Breadboard internal routing heuristic (rows a-e, f-j)
-              if (comp && compType.includes('breadboard')) {
-                const rowMatch = neighbor.pinId.match(/^(\d+)([a-j])$/);
-                if (rowMatch) {
-                  const row = rowMatch[1];
-                  const col = rowMatch[2];
-                  const isTopHalf = 'abcde'.includes(col);
-                  const group = isTopHalf ? ['a','b','c','d','e'] : ['f','g','h','i','j'];
-                  group.forEach(c => {
-                    if (c !== col) {
-                      const crossKey = `${neighbor.compId}:${row}${c}`;
-                      if (!visited.has(crossKey)) {
-                        visited.add(crossKey);
-                        queue.push(crossKey);
-                      }
-                    }
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        const targets = Array.from(targetsMap.values());
-
-        if (targets.length > 0) {
-          targets.forEach(t => {
-            const comp = componentsRef.current.find(c => c.id === t.compId);
-            const currentState = getLiveOopStateSnapshot(t.compId);
-            const newPinStates = { ...(currentState.pinStates || {}), [t.pinId]: value };
-            const extra = {};
-            // wokwi-led lights up when anode pin A is HIGH
-            if (comp?.type === 'wokwi-led' && t.pinId === 'A') {
-              extra.illuminated = value === 1;
-            }
-            // Membrane Keypad Matrix scanning bridging
-            if (comp?.type === 'wokwi-membrane-keypad' && t.pinId.startsWith('R')) {
-              const pressedKey = currentState.pressedKey;
-              if (pressedKey) {
-                const matrix = {
-                  '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
-                  '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
-                  '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
-                  '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
-                };
-                const pair = matrix[pressedKey];
-                if (pair && pair[0] === t.pinId) {
-                  const colPin = pair[1];
-                  const colEspPin = traceConnectedEsp32Pin(t.compId, colPin);
-                  if (colEspPin !== null) {
-                    esp32Socket.sendGpio(colEspPin, value); // column pin mirrors row state!
-                  }
-                }
-              }
-            }
-            updates.push({ id: t.compId, state: { ...currentState, pinStates: newPinStates, ...extra } });
-          });
-        }
-        updateLiveOopStates(updates);
+      if (esp32Board && workerRef?.current) {
+        workerRef.current.postMessage({
+          type: 'GPIO_SYNC',
+          boardId: esp32Board.id,
+          pin: pinId,
+          value: value
+        });
       }
       setPinStates(prev => ({ ...prev, [pinId]: value === 1 }));
     },
@@ -214,125 +116,33 @@ export function useEsp32Engine({
       esp32BuildIdRef.current = null;
       setIsRunning(false);
       setIsCompiling(false);
+      setIsBooting(false); // TODO: Reset booting state on stop
       if (runStartGuardRef && runStartGuardRef.current !== undefined) {
           runStartGuardRef.current = false;
+      }
+    },
+    onPhaseChange: (phase) => {
+      // TODO: Handle simulator booting / compiling / running phase transitions for ESP32
+      if (phase === 'booting') {
+        setIsBooting(true);
+        setIsCompiling(false);
+      } else if (phase === 'running') {
+        setIsBooting(false);
+        setIsCompiling(false);
+        setIsRunning(true); // Establishes running state now that QEMU is live
+      } else if (phase === 'stopped' || phase === 'stalled') {
+        setIsBooting(false);
       }
     },
   });
 
   const getEsp32Connections = useCallback((componentId) => {
-    const connections = [];
-    const compPins = new Set();
-    for (const wire of wires || []) {
-      if (wire.from.startsWith(`${componentId}:`)) {
-        compPins.add(wire.from.split(':')[1]);
-      }
-      if (wire.to.startsWith(`${componentId}:`)) {
-        compPins.add(wire.to.split(':')[1]);
-      }
-    }
-    for (const pinName of compPins) {
-      const espPin = traceConnectedEsp32Pin(componentId, pinName);
-      if (espPin !== null) {
-        connections.push({ compPin: pinName, esp32Pin: espPin });
-      }
-    }
-    return connections;
-  }, [wires, traceConnectedEsp32Pin]);
+    return [];
+  }, []);
 
   const handleEsp32Interaction = useCallback((comp, event) => {
-    if (!isRunning) return false;
-
-    // Fast check: is there an esp32 in the project?
-    const hasEsp32 = componentsRef.current.some(c => /esp32/i.test(c.type));
-    if (!hasEsp32) return false;
-
-    if (comp.type === 'wokwi-membrane-keypad') {
-      if (event && event.startsWith && event.startsWith('press:')) {
-        const key = event.split(':')[1];
-        const currentState = getLiveOopStateSnapshot(comp.id);
-        updateLiveOopStates([{ id: comp.id, state: { ...currentState, pressedKey: key } }]);
-        
-        const matrix = {
-          '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
-          '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
-          '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
-          '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
-        };
-        const pair = matrix[key];
-        if (pair) {
-          const [rowPin, colPin] = pair;
-          const rowEspPin = traceConnectedEsp32Pin(comp.id, rowPin);
-          const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
-          if (colEspPin !== null) {
-            const isRowLow = rowEspPin !== null && pinStates[rowEspPin] === false;
-            esp32Socket.sendGpio(colEspPin, isRowLow ? 0 : 1);
-          }
-        }
-      } else if (event === 'release') {
-        const currentState = getLiveOopStateSnapshot(comp.id);
-        updateLiveOopStates([{ id: comp.id, state: { ...currentState, pressedKey: null } }]);
-        
-        ['C1', 'C2', 'C3', 'C4'].forEach(colPin => {
-          const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
-          if (colEspPin !== null) {
-            esp32Socket.sendGpio(colEspPin, 1);
-          }
-        });
-      }
-      return true;
-    }
-    else if (comp.type === 'wokwi-pushbutton') {
-      const conns = getEsp32Connections(comp.id);
-      if (conns.length === 0) return false;
-      const val = (event === 'press') ? 0 : 1;
-      for (const conn of conns) {
-        esp32Socket.sendGpio(conn.esp32Pin, val);
-      }
-      return true;
-    }
-    else if (comp.type === 'PIR-Motion-Sensor') {
-      const conns = getEsp32Connections(comp.id);
-      if (conns.length === 0) return false;
-      const val = (event === 'motion_start') ? 1 : 0;
-      for (const conn of conns) {
-        esp32Socket.sendGpio(conn.esp32Pin, val);
-      }
-      return true;
-    }
-    else {
-      const conns = getEsp32Connections(comp.id);
-      if (conns.length > 0) {
-        let digitalVal = null;
-        if (typeof event === 'string') {
-          const evt = event.toLowerCase();
-          if (evt === 'press' || evt === 'motion_start' || evt === 'high' || evt === 'true' || evt.startsWith('press:')) {
-            digitalVal = 1;
-          } else if (evt === 'release' || evt === 'motion_stop' || evt === 'low' || evt === 'false') {
-            digitalVal = 0;
-          }
-        } else if (event && typeof event === 'object') {
-          if (event.value !== undefined) {
-            if (typeof event.value === 'boolean') {
-              digitalVal = event.value ? 1 : 0;
-            } else {
-              const num = Number(event.value);
-              if (!isNaN(num)) {
-                digitalVal = num > 50 ? 1 : 0;
-              }
-            }
-          }
-        }
-        if (digitalVal !== null) {
-          for (const conn of conns) {
-            esp32Socket.sendGpio(conn.esp32Pin, digitalVal);
-          }
-          return true; // We handled it
-        }
-      }
-    }
-    return false; // Did not handle
-  }, [isRunning, componentsRef, traceConnectedEsp32Pin, setOopStates, pinStates, esp32Socket, getEsp32Connections]);
+    return false; // Natively handled by Web Worker
+  }, []);
 
   const startEsp32Session = useCallback(async (programmableBoards) => {
     const esp32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'esp32');
@@ -346,13 +156,16 @@ export function useEsp32Engine({
       serialFlushTimer.current = setInterval(flushESP32Serial, 120);
 
       try {
-        const buildId = await console.log('ESPSRC', JSON.stringify(compileSource)); esp32Socket.run(compileSource);
+        const buildId = await esp32Socket.run(compileSource);
         esp32BuildIdRef.current = buildId;
+        setIsBooting(true); // Transition immediately to booting status once compile finishes
         setIsCompiling(false);
+        // TODO: Do not set isCompiling to false here; let the onPhaseChange WebSocket handler set isCompiling / isBooting appropriately as the backend boots up.
       } catch (esp32Err) {
         if (serialFlushTimer.current) { clearInterval(serialFlushTimer.current); serialFlushTimer.current = null; }
         setIsRunning(false);
         setIsCompiling(false);
+        setIsBooting(false); // TODO: Reset booting state on error
         if (runStartGuardRef && runStartGuardRef.current !== undefined) {
             runStartGuardRef.current = false;
         }

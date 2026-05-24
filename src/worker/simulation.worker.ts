@@ -975,6 +975,10 @@ self.onmessage = async (e) => {
                     }
                 );
                 console.log(`[Worker] Runner created OK. running=${(runner as any)?.running}`);
+                // TODO: Remove this temporary execute call if runners start automatically in the future
+                if (runner && typeof (runner as any).execute === 'function') {
+                    (runner as any).execute();
+                }
             } catch (runnerErr: any) {
                 console.error('[Worker] FATAL: createRunnerForBoard threw:', runnerErr);
                 postMessage({ type: 'error', message: `Runner init failed: ${runnerErr?.message || runnerErr}` });
@@ -1081,6 +1085,10 @@ self.onmessage = async (e) => {
             boardRunners.set(boardComp.id, boardRunner);
             boardTypes.set(boardComp.id, String(boardComp.type || ''));
             boardSerialOutput.set(boardComp.id, '');
+            // TODO: Remove this temporary execute call if runners start automatically in the future
+            if (typeof (boardRunner as any).execute === 'function') {
+                (boardRunner as any).execute();
+            }
         }
 
         for (const [boardId, pyScript] of uartInjectionScripts.entries()) {
@@ -1322,6 +1330,29 @@ self.onmessage = async (e) => {
             clearInjectSession('default');
         } else {
             boardRunners.forEach((_, boardId) => clearInjectSession(boardId));
+        }
+    } else if (data.type === 'GPIO_SYNC') {
+        const pin = String(data.pin);
+        const value = Boolean(data.value);
+        
+        if (mode === 'single' && runner) {
+            if (typeof (runner as any).syncGpio === 'function') {
+                (runner as any).syncGpio(pin, value);
+            }
+        } else {
+            const targetBoardId = data.boardId;
+            if (targetBoardId) {
+                const target = boardRunners.get(targetBoardId);
+                if (target && typeof (target as any).syncGpio === 'function') {
+                    (target as any).syncGpio(pin, value);
+                }
+            } else {
+                boardRunners.forEach(br => {
+                    if (typeof (br as any).syncGpio === 'function') {
+                        (br as any).syncGpio(pin, value);
+                    }
+                });
+            }
         }
     }
 };

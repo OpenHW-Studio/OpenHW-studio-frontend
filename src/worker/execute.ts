@@ -1,5 +1,6 @@
 import { AVRRunner } from './runners/avr-runner.ts';
 import { RP2040Runner } from './runners/rp2040-runner.ts';
+import { BackendProxyRunner } from './runners/backend-proxy-runner.ts';
 import { BoardRunner, AVRRunnerOptions } from './registries/component-registry.ts';
 
 export function createRunnerForBoard(
@@ -10,6 +11,9 @@ export function createRunnerForBoard(
     onStateUpdate: (state: any) => void,
     options: AVRRunnerOptions & { pyScript?: string } = {}
 ): BoardRunner {
+    if (/(esp32|stm32)/i.test(String(boardType || ''))) {
+        return new BackendProxyRunner(hexData, componentsDef, wiresDef, onStateUpdate, options);
+    }
     if (/pico|rp2040/i.test(String(boardType || ''))) {
         // RP2040 path: emulate firmware in rp2040js with optional flash partitions.
         return new RP2040Runner(hexData, componentsDef, wiresDef, onStateUpdate, options);
