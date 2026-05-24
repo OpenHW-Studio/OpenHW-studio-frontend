@@ -49,9 +49,9 @@ import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/log
 import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic';
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
-// import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
-// import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
-// import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
+import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
+import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
+import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -216,12 +216,12 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-neopixel-ring': NeopixelLogic,
     'openhw-arduino-sensor-shield': BaseComponent,
     'openhw-simulation-monitor': SimulationMonitorLogic,
-    // 'wokwi-ds18b20': DS18B20Logic,
-    // 'openhw-ds18b20': DS18B20Logic,
-    // 'wokwi-ir-receiver': IRReceiverLogic,
-    // 'openhw-ir-receiver': IRReceiverLogic,
-    // 'wokwi-mfrc522': MFRC522Logic,
-    // 'openhw-mfrc522': MFRC522Logic,
+    'wokwi-ds18b20': DS18B20Logic,
+    'openhw-ds18b20': DS18B20Logic,
+    'wokwi-ir-receiver': IRReceiverLogic,
+    'openhw-ir-receiver': IRReceiverLogic,
+    'wokwi-mfrc522': MFRC522Logic,
+    'openhw-mfrc522': MFRC522Logic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly

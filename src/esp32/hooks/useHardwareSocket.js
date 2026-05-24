@@ -395,7 +395,8 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
             result = await compileCode({ code, target: 'esp32' });
         } catch (err) {
             stop();
-            cbRef.current.onLog?.('❌ Could not reach the compile server.', 'sys');
+            const serverMsg = err.response?.data?.error || err.message;
+            cbRef.current.onLog?.(`❌ Compile failed: ${serverMsg}`, 'sys');
             throw err;
         }
 
