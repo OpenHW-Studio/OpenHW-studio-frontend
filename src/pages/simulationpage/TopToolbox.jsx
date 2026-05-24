@@ -185,7 +185,7 @@ function TopToolboxInternal(props) {
   const TITLE_WIDTH = '180px'; // Adjust this to change the project title area width
   // -----------------
 
-  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, wokwiImportInputRef, handleImportWokwiZip, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], autofixPlan, autofixStatus, autofixLog, onApplyPlan, onRefresh, autoWiringEnabled, setAutoWiringEnabled, autoBreadboardEnabled, setAutoBreadboardEnabled, autoCodingEnabled, setAutoCodingEnabled, showAutofix, setShowAutofix, showShortcuts, setShowShortcuts, onStartTour } = props;
+  const { board, setBoard, isRunning, isPaused, handleRun, handlePause, handleResume, handleStop, isCompiling, isBooting, assessmentMode, assessmentProjectName, isSubmittingAssessment, handleAssessmentSubmit, undo, redo, selected, rotateComponent, theme, toggleTheme, showViewPanel, setShowViewPanel, viewPanelSection, setViewPanelSection, schematicDataUrl, setSchematicDataUrl, schematicLoading, setSchematicLoading, downloadSchematicPng, downloadSchematicPdf, generateSchematic, downloadCompCsv, importFileRef, downloadPng, importPng, downloadSimulationJson, handleSave, isExporting, handleShareSimulation, isSharingSimulation, refreshProjectList, showProjectsDropdown, setShowProjectsDropdown, handleNewProject, handleStartRename, handleConfirmRename, renamingProjectId, setRenamingProjectId, renameValue, setRenameValue, handleLoadProject, handleDeleteProject, handleBackupWorkflow, backupRestoreInputRef, wokwiImportInputRef, handleImportWokwiZip, handleRestoreWorkflow, handleSyncToCloud, user, isAuthenticated, myProjects, currentProjectId, projectName: projectNameProp, formatProjectDate, saveHistory, setWires, setComponents, setSelected, history, components, wires, webSerialSupported, hardwareBoards, hardwareBoardId, setHardwareBoardId, hardwarePortPath, setHardwarePortPath, resolvedHardwarePort, hardwareAvailablePorts, showAllHardwarePorts, setShowAllHardwarePorts, refreshHardwarePorts, isLoadingHardwarePorts, hardwareBaudRate, setHardwareBaudRate, hardwareResetMethod, setHardwareResetMethod, connectHardwareSerial, disconnectHardwareSerial, uploadToHardware, hardwareConnected, hardwareConnecting, isUploadingHardware, hardwareStatus, setShowProjectsSidebar, setProjectsSidebarTab, editingDisabled = false, validationErrors = [], autofixPlan, autofixStatus, autofixLog, onApplyPlan, onRefresh, autoWiringEnabled, setAutoWiringEnabled, autoBreadboardEnabled, setAutoBreadboardEnabled, autoCodingEnabled, setAutoCodingEnabled, showAutofix, setShowAutofix, showShortcuts, setShowShortcuts, onStartTour } = props;
   const navigate = useNavigate();
 
 
@@ -344,18 +344,25 @@ function TopToolboxInternal(props) {
 
         {/* RUN button */}
         <Btn
-          color={isRunning ? (isPaused ? 'var(--orange)' : 'var(--green)') : 'var(--green)'}
-          disabled={isRunning || editingDisabled}
-          onClick={!isRunning && !editingDisabled ? handleRun : undefined}
-          title={isRunning ? (isCompiling ? 'Compiling…' : isPaused ? 'Paused' : 'Running') : 'Run'}
+          color={(isRunning || isCompiling || isBooting) ? (isPaused ? 'var(--orange)' : 'var(--green)') : 'var(--green)'}
+          disabled={(isRunning || isCompiling || isBooting) || editingDisabled}
+          onClick={!(isRunning || isCompiling || isBooting) && !editingDisabled ? handleRun : undefined}
+          title={(isRunning || isCompiling || isBooting) ? (isCompiling ? 'Compiling…' : isBooting ? 'Booting…' : isPaused ? 'Paused' : 'Running') : 'Run'}
         >
-          {isRunning ? (
+          {(isRunning || isCompiling || isBooting) ? (
             isCompiling ? (
               <>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', flexShrink: 0 }}>
                   <path d="M21 12a9 9 0 1 1-4.5-7.8" />
                 </svg>
                 Compiling…
+              </>
+            ) : isBooting ? (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', flexShrink: 0 }}>
+                  <path d="M21 12a9 9 0 1 1-4.5-7.8" />
+                </svg>
+                Booting…
               </>
             ) : isPaused ? 'Paused' : 'Running…'
           ) : (
@@ -367,12 +374,12 @@ function TopToolboxInternal(props) {
         </Btn>
 
         {/* STOP button — SVG icon only */}
-        <Btn color={isRunning ? 'var(--red)' : undefined} disabled={!isRunning} onClick={isRunning ? handleStop : undefined} title="Stop" iconOnly>
+        <Btn color={(isRunning || isCompiling || isBooting) ? 'var(--red)' : undefined} disabled={!(isRunning || isCompiling || isBooting)} onClick={(isRunning || isCompiling || isBooting) ? handleStop : undefined} title="Stop" iconOnly>
           <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor"><rect width="13" height="13" rx="2" /></svg>
         </Btn>
 
-        {/* PAUSE / RESUME button — visible only when running and not still compiling */}
-        {isRunning && !isCompiling && (
+        {/* PAUSE / RESUME button — visible only when running and not still compiling or booting */}
+        {isRunning && !isCompiling && !isBooting && (
           <Btn
             color={isPaused ? 'var(--green)' : 'var(--orange)'}
             onClick={isPaused ? handleResume : handlePause}

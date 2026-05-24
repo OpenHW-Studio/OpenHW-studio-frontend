@@ -83,6 +83,8 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'openhw-pico': ['led', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts'],
   'openhw-pico-w': ['led', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts'],
   'openhw-attiny85': ['pins', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts'],
+  // TODO: Support ESP32 board telemetry parameters
+  'openhw-esp32': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
   'openhw-arduino-sensor-shield': [],
   'logic-mux-2to1': ['d0High', 'd1High', 'selHigh', 'outputHigh'],
   'logic-d-flipflop': ['d', 'clk', 'q', 'qbar'],
@@ -145,6 +147,8 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'wokwi-pi-pico': ['led', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts'],
   'wokwi-pi-pico-w': ['led', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts'],
   'wokwi-attiny85': ['pins', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts'],
+  // TODO: Support Wokwi ESP32 board telemetry parameters
+  'wokwi-esp32': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
   'wokwi-ds18b20': ['temperature', 'powered', 'resolution'],
   'wokwi-ir-receiver': ['protocol', 'lastCode', 'demodulatedSignal', 'powered'],
   'wokwi-mfrc522': ['powered', 'cardPresent', 'cardUID'],
@@ -167,7 +171,8 @@ export function getTelemetryParamsForComponent(compType) {
   const universalParams = ['pins', 'pinToggles'];
 
   // Categorize components to prevent modal clutter
-  const isBoard = safeCompType.includes('arduino') || safeCompType.includes('pico') || safeCompType.includes('attiny');
+  // TODO: Add esp32 and stm32 to board classifications
+  const isBoard = safeCompType.includes('arduino') || safeCompType.includes('pico') || safeCompType.includes('attiny') || safeCompType.includes('esp32') || safeCompType.includes('stm32');
   const isI2C = safeCompType.includes('ssd1306') || safeCompType.includes('lcd1602-i2c') || safeCompType.includes('lcd2004-i2c') || safeCompType.includes('mpu6050') || safeCompType.includes('ds1307') || safeCompType.includes('bmp180') || safeCompType.includes('max30102');
   const isSPI = safeCompType.includes('max7219') || safeCompType.includes('ili9341') || safeCompType.includes('nokia-5110') || safeCompType.includes('sd-card');
   const isOneWire = safeCompType.includes('dht22');
