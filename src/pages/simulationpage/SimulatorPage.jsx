@@ -705,7 +705,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [isBooting, setIsBooting] = useState(false) // TODO: Declare booting state tracking
   const [isPaused, setIsPaused] = useState(false)
   const [protocolLogs, setProtocolLogs] = useState([])
-  const [activeConsoleTab, setActiveConsoleTab] = useState('console')
   const [healthScore, setHealthScore] = useState(100)
   const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
   const pendingProtocolLogsRef = useRef([]);
@@ -1223,6 +1222,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     telemetrySampleInterval,
     selectedTelemetryComponentIds,
     setSelectedTelemetryComponentIds,
+    isBooting,
+    isCompiling,
   });
 
   const handleTelemetryStateMessageRef = useRef(handleTelemetryStateMessage);
@@ -7280,7 +7281,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         debugRp2040: rp2040DebugTelemetryEnabled,
         debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
         speed: simulationSpeed,
-        telemetryEnabled: componentTelemetryEnabled,
+        telemetryEnabled: componentTelemetryEnabled && !isBooting && !isCompiling,
         telemetryMode: telemetryMode,
         watchedParamsMap: telemetryWatchedParamsMap,
         deepSilicon: deepSiliconDebuggingEnabled,
@@ -8908,8 +8909,6 @@ export function SimulatorPage({ gamificationMode = false }) {
               setIsConsoleOpen={setIsConsoleOpen}
               consoleHeight={consoleHeight}
               consoleEntries={consoleEntries}
-              activeConsoleTab={activeConsoleTab}
-              setActiveConsoleTab={setActiveConsoleTab}
               protocolLogs={protocolLogs}
               setProtocolLogs={setProtocolLogs}
               components={components}

@@ -44,6 +44,21 @@ export async function compileCode(input) {
     }
 }
 
+/**
+ * Boots the ESP32 emulator using a precompiled base64 binary.
+ */
+export async function runBinaryCode(firmware_b64) {
+    try {
+        const response = await axios.post(`${COMPILER_URL}/compile/esp32/run-binary`, { firmware_b64, target: 'esp32' }, getUserAuthConfig());
+        if (response.data && response.data.buildId) {
+            return response.data;
+        }
+        throw new Error('No buildId returned from runBinaryCode');
+    } catch (error) {
+        throw error;
+    }
+}
+
 export async function stopSession(buildId) {
     const config = getUserAuthConfig();
     try {
