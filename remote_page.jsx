@@ -143,7 +143,7 @@ function syncNextIds(comps, ws) {
   }
 }
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/examples' : '/examples');
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
 const GROUP_ICON_SVG = {
@@ -2681,12 +2681,6 @@ export default function SimulatorPage() {
 
       worker.onmessage = (event) => {
         const msg = event.data;
-        if (msg.type === 'error') {
-          appendConsoleEntry('error', `[SIM] ${msg.message || 'Runner error'}`, 'simulator');
-          logSerial(`Runner error: ${msg.message || 'Unknown error'}`, 'var(--red)');
-          handleStop();
-          return;
-        }
         if (msg.type === 'state' && msg.pins) {
           setPinStates(msg.pins);
           // Push to plotData history

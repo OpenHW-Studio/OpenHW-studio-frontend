@@ -59,7 +59,6 @@ function TopToolboxInternal(props) {
 
   const toolMenuItems = [
     { label: 'Schematic View', onClick: () => { setShowSchematic(true); generateSchematic(); } },
-    { label: 'Component List', onClick: () => setShowComponentList(true) },
   ];
 
   const assistMenuItems = [
@@ -140,7 +139,19 @@ function TopToolboxInternal(props) {
         />
 
         <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 2px' }} />
-        
+
+        <button
+          type="button"
+          onClick={() => {
+            setActiveMenu(null);
+            setShowComponentList((v) => !v);
+          }}
+          className={`px-2.5 py-1.5 rounded-xl text-[12px] font-bold transition-colors ${showComponentList ? 'bg-[var(--accent)] text-white shadow-lg shadow-[var(--accent)]/30' : 'hover:bg-[var(--bg3)] text-[var(--text2)]'}`}
+          title="Component list on canvas"
+        >
+          Components
+        </button>
+
         <button 
           onClick={handleSave}
           className="p-2 rounded-xl hover:bg-[var(--bg3)] text-[var(--text2)] transition-colors"

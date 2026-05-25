@@ -27,8 +27,8 @@ function makeOrthogonal(pts) {
   for (let i = 1; i < pts.length; i++) {
     const prev = result[result.length - 1];
     const curr = pts[i];
-    if (Math.abs(prev.x - curr.x) > 0.1 && Math.abs(prev.y - curr.y) > 0.1) {
-      const lastSegWasVert = result.length > 1 && Math.abs(result[result.length - 2].x - prev.x) < 0.1;
+    if (Math.abs(prev.x - curr.x) > 2 && Math.abs(prev.y - curr.y) > 2) {
+      const lastSegWasVert = result.length > 1 && Math.abs(result[result.length - 2].x - prev.x) < 2;
       if (lastSegWasVert) {
         result.push({ x: curr.x, y: prev.y });
       } else {
@@ -37,7 +37,24 @@ function makeOrthogonal(pts) {
     }
     result.push(curr);
   }
-  return result.filter((pt, i, arr) => i === 0 || (Math.abs(pt.x - arr[i - 1].x) > 0.1 || Math.abs(pt.y - arr[i - 1].y) > 0.1));
+
+  // Collinear and duplicate simplification
+  const simplified = [result[0]];
+  for (let i = 1; i < result.length - 1; i++) {
+    const prev = simplified[simplified.length - 1];
+    const curr = result[i];
+    const next = result[i + 1];
+    const isCollinearX = Math.abs(prev.x - curr.x) < 2 && Math.abs(curr.x - next.x) < 2;
+    const isCollinearY = Math.abs(prev.y - curr.y) < 2 && Math.abs(curr.y - next.y) < 2;
+    const isDuplicate  = Math.abs(prev.x - curr.x) < 2 && Math.abs(prev.y - curr.y) < 2;
+    if (!isCollinearX && !isCollinearY && !isDuplicate) {
+      simplified.push(curr);
+    }
+  }
+  if (result.length > 1) {
+    simplified.push(result[result.length - 1]);
+  }
+  return simplified.filter((pt, i, arr) => i === 0 || (Math.abs(pt.x - arr[i - 1].x) > 2 || Math.abs(pt.y - arr[i - 1].y) > 2));
 }
 
 // ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
@@ -46,71 +63,46 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
     // If manual waypoints (canvas clicks) or interactive corners exist, 
     // we follow them strictly and skip the automatic Manhattan routing logic.
     const pts = [p1, e1, ...waypoints, e2, p2].filter((pt, i, arr) => 
-      i === 0 || Math.abs(pt.x - arr[i - 1].x) > 0.1 || Math.abs(pt.y - arr[i - 1].y) > 0.1
+      i === 0 || Math.abs(pt.x - arr[i - 1].x) > 2 || Math.abs(pt.y - arr[i - 1].y) > 2
     );
     return makeOrthogonal(pts);
   }
 
-  // offset is now a laneIndex (0-6). trunkShift centres the bundle symmetrically.
-  // 7px inter-wire spacing with a 10px "Safety Offset" to prevent overlaps with pin centers.
-  const laneIndex = offset;
-  const trunkShift = (laneIndex - 3) * 7 + (laneIndex < 3 ? -10 : 10); 
+  const laneIndex = typeof offset === 'number' ? offset % 7 : 0;
+  const trunkShift = (laneIndex - 3) * 5;
 
-  const se1 = { ...e1 }, se2 = { ...e2 };
-  const sdx1 = se1.x - p1.x, sdy1 = se1.y - p1.y;
-  const sdx2 = se2.x - p2.x, sdy2 = se2.y - p2.y;
+  const aimStub = (pin, stub, target) => {
+    const dx = stub.x - pin.x;
+    const dy = stub.y - pin.y;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      if (dx !== 0 && (target.x - pin.x) * dx < 0) return { x: pin.x - dx, y: pin.y };
+    } else if (dy !== 0 && (target.y - pin.y) * dy < 0) {
+      return { x: pin.x, y: pin.y - dy };
+    }
+    return stub;
+  };
+
+  let se1 = aimStub(p1, { ...e1 }, p2);
+  let se2 = aimStub(p2, { ...e2 }, p1);
+
+  let midPts = [];
+  const sdx1 = se1.x - p1.x;
+  const sdy1 = se1.y - p1.y;
+  const sdx2 = se2.x - p2.x;
+  const sdy2 = se2.y - p2.y;
   const e1Horiz = Math.abs(sdx1) >= Math.abs(sdy1);
   const e2Horiz = Math.abs(sdx2) >= Math.abs(sdy2);
 
-  let midPts = [];
-
   if (e1Horiz && e2Horiz) {
-    const dir1 = Math.sign(sdx1) || 1;
-    const dir2 = Math.sign(sdx2) || 1;
-    let midX;
-    if (dir1 !== dir2) {
-      midX = (se1.x + se2.x) / 2 + trunkShift;
-    } else {
-      const base = dir1 > 0 ? Math.max(se1.x, se2.x) : Math.min(se1.x, se2.x);
-      midX = base + dir1 * (25 + Math.abs(trunkShift));
-    }
-    // We add extra points to ensure the "trunk" is staggered away from the pin X
-    midPts = [
-      { x: se1.x, y: se1.y },
-      { x: midX, y: se1.y },
-      { x: midX, y: se2.y },
-      { x: se2.x, y: se2.y }
-    ];
-
+    const midX = (se1.x + se2.x) / 2 + trunkShift;
+    midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
   } else if (!e1Horiz && !e2Horiz) {
-    const dir1 = Math.sign(sdy1) || 1;
-    const dir2 = Math.sign(sdy2) || 1;
-    let midY;
-    if (dir1 !== dir2) {
-      midY = (se1.y + se2.y) / 2 + trunkShift;
-    } else {
-      const base = dir1 > 0 ? Math.max(se1.y, se2.y) : Math.min(se1.y, se2.y);
-      midY = base + dir1 * (25 + Math.abs(trunkShift));
-    }
-    // We add extra points to ensure the "trunk" is staggered away from the pin Y
-    midPts = [
-      { x: se1.x, y: se1.y },
-      { x: se1.x, y: midY },
-      { x: se2.x, y: midY },
-      { x: se2.x, y: se2.y }
-    ];
-
+    const midY = (se1.y + se2.y) / 2 + trunkShift;
+    midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
   } else if (e1Horiz && !e2Horiz) {
-    // Mixed: E1 Horiz, E2 Vert. 
-    const midX = se2.x + trunkShift;
-    const midY = se1.y + trunkShift;
-    midPts = [{ x: midX, y: se1.y }, { x: midX, y: midY }];
-
+    midPts = [{ x: se2.x, y: se1.y }];
   } else {
-    // Mixed: E1 Vert, E2 Horiz.
-    const midX = se1.x + trunkShift;
-    const midY = se2.y + trunkShift;
-    midPts = [{ x: se1.x, y: midY }, { x: midX, y: midY }];
+    midPts = [{ x: se1.x, y: se2.y }];
   }
 
   return makeOrthogonal([p1, se1, ...midPts, se2, p2]);
@@ -118,31 +110,75 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
 
 // ─── BUILD FULL WIRE PATH STRING ───────────────────────────────────────────
 export function buildWirePath(p1, e1, e2, p2, waypoints = [], pathOverride = null, offset = 0) {
-  // If we have a pathOverride (from Autowiring), we still want to apply staggering 
-  // to prevent overlapping. We do this by passing it through our computeWireOrthoPoints
-  // unless it's a completely freeform custom path.
+  if (pathOverride && pathOverride.length >= 2) {
+    const pts = pathOverride.map((pt, i) => {
+      if (i === 0) return p1;
+      if (i === pathOverride.length - 1) return p2;
+      return offset === 0 ? pt : { x: pt.x + offset, y: pt.y + offset };
+    });
+    return renderRoundedPath(makeOrthogonal(pts));
+  }
   const pts = computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
   return renderRoundedPath(pts);
 }
 
 // ─── GET WIRE POINTS FOR DRAGGING ──────────────────────────────────────────
-export function getWirePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
+export function getWirePoints(p1, e1, e2, p2, waypoints = [], offset = 0, pathOverride = null) {
+  if (pathOverride && pathOverride.length >= 2) {
+    return pathOverride.map((pt, i) => {
+      if (i === 0) return p1;
+      if (i === pathOverride.length - 1) return p2;
+      return offset === 0 ? pt : { x: pt.x + offset, y: pt.y + offset };
+    });
+  }
   return computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
 }
 
 // ─── PREVIEW WIRE ROUTER (Drawing mode) ───────────────────────────────────
+// Produces a stable orthogonal preview path from a pin (with known exit direction)
+// to the current mouse cursor. The exit direction is locked to the pin's edge so
+// the first segment never flips while the mouse moves.
 export function multiRoutePath(p1, p2, waypoints = []) {
   if (!p1 || !p2) return '';
-  const hints = [p1, ...waypoints, p2];
-  const pts = [];
-  for (let i = 0; i < hints.length - 1; i++) {
-    const a = hints[i], b = hints[i + 1];
-    if (i === 0) pts.push(a);
-    const midX = (a.x + b.x) / 2;
-    pts.push({ x: midX, y: a.y });
-    pts.push({ x: midX, y: b.y });
-    pts.push(b);
+
+  const exitDir = p1.exitDir || null;
+  const EXIT_LEN = 24;
+
+  let e1 = p1;
+  if (exitDir) {
+    const offsets = { top: { x: 0, y: -EXIT_LEN }, bottom: { x: 0, y: EXIT_LEN }, left: { x: -EXIT_LEN, y: 0 }, right: { x: EXIT_LEN, y: 0 } };
+    const off = offsets[exitDir] || { x: 0, y: 0 };
+    e1 = { x: p1.x + off.x, y: p1.y + off.y };
   }
+
+  if (waypoints && waypoints.length > 0) {
+    const hints = [p1, e1, ...waypoints, p2];
+    const pts = [];
+    for (let i = 0; i < hints.length - 1; i++) {
+      const a = hints[i], b = hints[i + 1];
+      if (i === 0) pts.push(a);
+      pts.push({ x: b.x, y: a.y });
+      pts.push(b);
+    }
+    return renderRoundedPath(makeOrthogonal(pts));
+  }
+
+  const dx = p2.x - e1.x;
+  const dy = p2.y - e1.y;
+
+  let pts;
+  if (exitDir === 'left' || exitDir === 'right') {
+    pts = [p1, e1, { x: p2.x, y: e1.y }, p2];
+  } else if (exitDir === 'top' || exitDir === 'bottom') {
+    pts = [p1, e1, { x: e1.x, y: p2.y }, p2];
+  } else {
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      pts = [p1, { x: p2.x, y: p1.y }, p2];
+    } else {
+      pts = [p1, { x: p1.x, y: p2.y }, p2];
+    }
+  }
+
   return renderRoundedPath(makeOrthogonal(pts));
 }
 

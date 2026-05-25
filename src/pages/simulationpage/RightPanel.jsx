@@ -4,9 +4,6 @@ import { PlotterManager } from './components/PlotterManager';
 import { SerialTabBar, SerialOutputPane, SerialSendRow } from './components/SerialMonitor';
 import { Btn } from './Btn';
 import { getBoardColors } from './projectUtils';
-
-
-
 // Lazy-load the heavy Blockly editor to improve initial LCP metrics
 const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.jsx'));
 
@@ -398,12 +395,14 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
         />
       )}
 
-      {/* Toggle Button */}
       <button
+        type="button"
         onClick={() => setIsPanelOpen(!isPanelOpen)}
+        title={isPanelOpen ? 'Hide panel' : 'Show panel'}
+        aria-label={isPanelOpen ? 'Hide panel' : 'Show panel'}
         style={{
           position: 'absolute',
-          left: isPanelOpen ? 0 : 0,
+          left: 0,
           top: '50%',
           transform: 'translateY(-50%)',
           height: 48,
@@ -418,15 +417,15 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.2)'
+          boxShadow: '2px 0 8px rgba(0,0,0,0.2)',
         }}
       >
         {isPanelOpen ? (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M9 18l6-6-6-6" />
           </svg>
         ) : (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M15 18l-6-6 6-6" />
           </svg>
         )}
@@ -637,7 +636,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                   <button
                     key={id}
                     data-tour-id={`tab-${id}`}
-                    onClick={() => React.startTransition(() => setCodeTab(id))}
+                    onClick={() => setCodeTab(id)}
                     className="group"
                     style={{
                       flex: 1,
@@ -1367,7 +1366,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                     onXmlChange={(nextXml) => { if (!editingDisabled) setBlocklyXml(nextXml); }}
                     useBlocklyCode={useBlocklyCode}
                     onToggleUseBlocklyCode={() => { if (!editingDisabled) setUseBlocklyCode(!useBlocklyCode); }}
-                    visible={codeTab === 'block'}
+                    visible={isPanelOpen && codeTab === 'block'}
                     boardKind={(serialBoardFilter && serialBoardFilter !== 'all') ? (serialBoardKinds?.[serialBoardFilter] || 'arduino_uno') : (Object.values(serialBoardKinds || {})[0] || 'arduino_uno')}
                     isMobile={false}
                   />

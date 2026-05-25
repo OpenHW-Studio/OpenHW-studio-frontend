@@ -9,40 +9,38 @@ import { GamificationToasts } from './services/gamification/Gamificationpanel.js
 // Pages
 import LandingPage from './pages/LandingPage.jsx'
 import UserLoginPage from './pages/auth/UserLoginPage.jsx'
+import SigninPage from './pages/auth/SigninPage.jsx'
+import SignupPage from './pages/auth/SignupPage.jsx'
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx'
+import ResetPasswordPage from './pages/auth/ResetPasswordPage.jsx'
 import RoleSelectPage from './pages/RoleSelectPage.jsx'
-// Lazy-loaded routes to drastically improve LCP
-import SigninPage from './pages/auth/SigninPage.jsx';
-import SignupPage from './pages/auth/SignupPage.jsx';
-import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx';
-import ResetPasswordPage from './pages/auth/ResetPasswordPage.jsx';
-import UserDashboard from './pages/user/UserDashboard.jsx';
-import StudentDashboard from './pages/student/StudentDashboard.jsx';
-import StudentProfilePage from './pages/student/StudentProfilePage.jsx';
-import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx';
-import TeacherProfilePage from './pages/teacher/TeacherProfilePage.jsx';
-import TeacherClassDetailPage from './pages/teacher/TeacherClassDetailPage.jsx';
-import StudentClassDetailPage from './pages/student/StudentClassDetailPage.jsx';
-const SimulatorPage = React.lazy(() => import('./pages/simulationpage/SimulatorPage.jsx'));
-import AdminPage from './pages/admin/AdminPage.jsx';
-import AdminLoginPage from './pages/admin/AdminLoginPage.jsx';
-import AdminLandingPage from './pages/admin/AdminLandingPage.jsx';
-import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx';
-import ProjectsGallery from './pages/ProjectsGallery.jsx';
-import ComponentsPage from './pages/ComponentsPage.jsx';
-import ComponentEditorPage from './pages/ComponentEditorPage.jsx';
-import TheoryPage from './pages/TheoryPage.jsx';
-import QuizPage from './pages/QuizPage.jsx';
-const GamificationSimulatorPage = React.lazy(() => import('./pages/GamificationSimulatorPage.jsx'));
-import AdventureMapPage from './pages/AdventureMapPage.jsx';
-import ProjectGuidePage from './pages/ProjectGuidePage.jsx';
-import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage.jsx';
-const GuidedSimulatorPage = React.lazy(() => import('./pages/GuidedSimulatorPage.jsx'));
-const MobileSimulatorPage = React.lazy(() => import('./pages/mobileui/SimulatorPage.jsx'));
-import ComponentLab from './pages/simulationpage/ComponentLab.jsx';
-const GradingPage = React.lazy(() => import('./pages/GradingPage.jsx'));
+import UserDashboard from './pages/user/UserDashboard.jsx'
+import StudentDashboard from './pages/student/StudentDashboard.jsx'
+import StudentProfilePage from './pages/student/StudentProfilePage.jsx'
+import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx'
+import TeacherProfilePage from './pages/teacher/TeacherProfilePage.jsx'
+import TeacherClassDetailPage from './pages/teacher/TeacherClassDetailPage.jsx'
+import StudentClassDetailPage from './pages/student/StudentClassDetailPage.jsx'
+import SimulatorPage from "./pages/simulationpage/SimulatorPage.jsx";
+import AdminPage from './pages/admin/AdminPage.jsx'
+import AdminLoginPage from './pages/admin/AdminLoginPage.jsx'
+import AdminLandingPage from './pages/admin/AdminLandingPage.jsx'
+import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx'
+import ProjectsGallery from './pages/ProjectsGallery.jsx'
+import ComponentsPage from './pages/ComponentsPage.jsx'
+import ComponentEditorPage from './pages/ComponentEditorPage.jsx'
+import TheoryPage from './pages/TheoryPage.jsx'
+import QuizPage from './pages/QuizPage.jsx'
+import GamificationSimulatorPage from './pages/GamificationSimulatorPage.jsx'
+import AdventureMapPage from './pages/AdventureMapPage.jsx'
+import ProjectGuidePage from './pages/ProjectGuidePage.jsx'
+import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage.jsx'
+import GuidedSimulatorPage from './pages/GuidedSimulatorPage.jsx'
+import MobileSimulatorPage from './pages/mobileui/SimulatorPage.jsx'
+import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
+import GradingPage from './pages/GradingPage.jsx';
 import MaintenancePage from './pages/MaintenancePage.jsx';
-import AboutUs from './pages/AboutUsPage.jsx';
-
+import AboutUs from './pages/AboutUsPage.jsx'
 import { fetchMaintenanceStatus } from './services/simulatorService.js';
 import axios from 'axios';
 
@@ -127,8 +125,9 @@ const MaintenanceGuard = ({ children }) => {
     };
   }, []);
 
-  // Do not block initial render for maintenance check to fix LCP issues.
-  // We'll optimistically render the app and overlay MaintenancePage if needed.
+  if (checking && !isAdminPath) return null; // Wait for initial check unless admin
+
+  // Admins are never blocked from admin paths
   if (maintenance && !isAdminPath) {
     return <MaintenancePage />;
   }
@@ -147,8 +146,7 @@ export default function App() {
           {/* Global toast notifications (level-up, badge earned, XP) */}
           <GamificationToasts />
 
-          <React.Suspense fallback={<div style={{height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><div className="loader"></div></div>}>
-            <Routes>
+          <Routes>
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />
             <Route path="/about" element={<AboutUs />} />
@@ -270,8 +268,7 @@ export default function App() {
 
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </React.Suspense>
+          </Routes>
 
           </MaintenanceGuard>
         </GamificationProvider>

@@ -20,12 +20,11 @@ const areCanvasWirePropsEqual = (prev, next) => (
   prev.isSelected === next.isSelected &&
   prev.wirepointsEnabled === next.wirepointsEnabled &&
   prev.offset === next.offset &&
-  prev.wiresAlwaysOnTop === next.wiresAlwaysOnTop &&
-  prev.isDragging === next.isDragging
+  prev.wiresAlwaysOnTop === next.wiresAlwaysOnTop
 );
 
-export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false, isDragging = false }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions), [p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions]);
+export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false }) => {
+  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset), [p1, e1, e2, p2, wire.waypoints, wire.path, offset]);
   const isOrphaned = p1.isFallback || p2.isFallback;
 
   // Logic:
@@ -47,7 +46,7 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
       />
       <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
       <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, pt, i, arr) => {
+      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset, wire.path).reduce((acc, pt, i, arr) => {
         // Waypoint Handles (Corners)
         if (i > 0 && i < arr.length - 1) {
           const isCorner = i > 1 && i < arr.length - 2; // Simple heuristic for now

@@ -4,16 +4,19 @@
 export function simplifyOrthogonalPath(points) {
   if (points.length <= 2) return points;
 
+  // Use a 2px tolerance — grid-snapped segments that are nearly collinear
+  // should be merged so dragging produces clean right-angle bends, not dents.
+  const TOL = 2;
+
   const result = [points[0]];
   for (let i = 1; i < points.length - 1; i++) {
     const prev = result[result.length - 1];
     const curr = points[i];
     const next = points[i + 1];
 
-    // Check if points are collinear (on the same vertical or horizontal line)
-    const isHorizontal = Math.abs(prev.y - curr.y) < 0.1 && Math.abs(curr.y - next.y) < 0.1;
-    const isVertical = Math.abs(prev.x - curr.x) < 0.1 && Math.abs(curr.x - next.x) < 0.1;
-    const isDuplicate = Math.abs(prev.x - curr.x) < 0.1 && Math.abs(prev.y - curr.y) < 0.1;
+    const isHorizontal = Math.abs(prev.y - curr.y) < TOL && Math.abs(curr.y - next.y) < TOL;
+    const isVertical   = Math.abs(prev.x - curr.x) < TOL && Math.abs(curr.x - next.x) < TOL;
+    const isDuplicate  = Math.abs(prev.x - curr.x) < TOL && Math.abs(prev.y - curr.y) < TOL;
 
     if (!isHorizontal && !isVertical && !isDuplicate) {
       result.push(curr);

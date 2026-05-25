@@ -1,6 +1,7923 @@
-import { AVRRunner } from './runners/avr-runner.ts';
-import { RP2040Runner } from './runners/rp2040-runner.ts';
-import { BoardRunner, AVRRunnerOptions } from './registries/component-registry.ts';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portBConfig, portCConfig, portDConfig, PinState } from 'avr8js';
+import { RP2040, GPIOPinState, ConsoleLogger, LogLevel, USBCDC, GDBServer, GDBConnection } from 'rp2040js';
+import { bootromB1 } from './rp2040-bootrom.ts';
+
+import { BaseComponent } from '@openhw/emulator';
+import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic.ts';
+import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic.ts';
+import { PicoLogic } from './pico-logic.ts';
+import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic.ts';
+import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic.ts';
+import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-supply/logic.ts';
+import { NeopixelLogic } from '../components/openhw-neopixel-matrix/logic.ts';
+import { BuzzerLogic } from '@openhw/emulator/src/components/openhw-buzzer/logic.ts';
+import { MotorLogic } from '@openhw/emulator/src/components/openhw-motor/logic.ts';
+import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic.ts';
+import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic.ts';
+import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic.ts';
+import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic.ts';
+import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
+import {
+    PICO_BOARD_PINS,
+    UNO_ANALOG_PINS,
+    UNO_BOARD_PINS,
+    UNO_DIGITAL_PINS,
+} from './board-profiles.ts';
+import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic.ts';
+import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic.ts';
+import { Lcd1602I2CLogic } from '@openhw/emulator/src/components/wokwi-lcd1602-i2c/logic.ts';
+import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic.ts';
+import { BufferGateLogic } from '@openhw/emulator/src/components/logic-buffer-gate/logic.ts';
+import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic.ts';
+import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic.ts';
+import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic.ts';
+import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic.ts';
+import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic.ts';
+import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic.ts';
+import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic.ts';
+import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic.ts';
+import { DFlipFlopRLogic } from '@openhw/emulator/src/components/logic-d-flipflop-r/logic.ts';
+import { DFlipFlopDsrLogic } from '@openhw/emulator/src/components/logic-d-flipflop-dsr/logic.ts';
+import { ClockGeneratorLogic } from '@openhw/emulator/src/components/logic-clock-generator/logic.ts';
+import { WokwiTM1637Logic } from '@openhw/emulator/src/components/openhw-tm1637-7segment/logic.ts';
+import { RGBLEDLogic } from '@openhw/emulator/src/components/openhw-rgb-led/logic.ts';
+import { RotaryEncoderLogic } from '@openhw/emulator/src/components/openhw-rotary-encoder/logic.ts';
+import { Nokia5110Logic } from '@openhw/emulator/src/components/openhw-nokia-5110/logic.ts';
+import { L293DLogic } from '@openhw/emulator/src/components/openhw-l293d/logic.ts';
+import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-i2c/logic.ts';
+import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic.ts';
+import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic.ts';
+import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic.ts';
+import { LdrModuleLogic } from '@openhw/emulator/src/components/openhw-ldr-module/logic.ts';
+import { SoilMoistureSensorLogic } from '@openhw/emulator/src/components/openhw-soil-moisture-sensor/logic.ts';
+import { PhotodiodeLogic } from '@openhw/emulator/src/components/openhw-photodiode/logic.ts';
+import { DiodeLogic } from '@openhw/emulator/src/components/openhw-diode/logic.ts';
+import { NPNTransistorLogic } from '@openhw/emulator/src/components/openhw-npn-transistor/logic.ts';
+import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/logic.ts';
+import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic.ts';
+import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic.ts';
+import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic.ts';
+import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic.ts';
+import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic.ts';
+import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic.ts';
+
+function gateVoltage(isHigh: boolean): number {
+    return isHigh ? 5.0 : 0.0;
+}
+
+function pinIsHigh(inst: BaseComponent, pinId: string): boolean {
+    return !!inst?.pins?.[pinId]?.isHigh;
+}
+
+function setGateOutput(inst: BaseComponent, pinId: string, isHigh: boolean) {
+    if (typeof inst?.setPinVoltage === 'function') {
+        inst.setPinVoltage(pinId, gateVoltage(isHigh));
+    }
+    if (inst?.pins?.[pinId]) {
+        inst.pins[pinId].isHigh = !!isHigh;
+        inst.pins[pinId].voltage = gateVoltage(isHigh);
+    }
+}
+
+/**
+ * WebAssembly-Accelerated Matrix Solver (Level 1 & 2)
+ */
+const WASM_SOLVER_B64 = [
+    'AGFzbQEAAAABBwFgA39/fwADAgEABQMBAAEHEgIGbWVtb3J5AgAFc29sdmUAAArlBAHiBAIIfwV8QQAh',
+    'AwJAA0AgAyACTw0BIAMhBiADIAJBCGxsIQcgACAHIANBCGxqaiEJIAkrAwCZIQwgA0EBaiEFAkADQCAF',
+    'IAJPDQEgBSACQQhsbCEIIAAgCCADQQhsamohCSAJKwMAmSENIA0gDGQEQCANIQwgBSEGCyAFQQFqIQUM',
+    'AAsLIAYgA0cEQCADIAJBCGxsIQcgBiACQQhsbCEIQQAhBAJAA0AgBCACTw0BIAAgByAEQQhsamohCSAA',
+    'IAggBEEIbGpqIQogCSsDACELIAkgCisDADkDACAKIAs5AwAgBEEBaiEEDAALCyABIANBCGxqIQkgASAG',
+    'QQhsaiEKIAkrAwAhCyAJIAorAwA5AwAgCiALOQMACyADIAJBCGxsIQcgACAHIANBCGxqaiEJIAkrAwAh',
+    'DiAOmUSsQ9LRXXIyPGMEQCADQQFqIQMMAQsgAyEEAkADQCAEIAJPDQEgACAHIARBCGxqaiEJIAkgCSsD',
+    'ACAOozkDACAEQQFqIQQMAAsLIAEgA0EIbGohCSAJIAkrAwAgDqM5AwBBACEFAkADQCAFIAJPDQEgBSAD',
+    'RwRAIAUgAkEIbGwhCCAAIAggA0EIbGpqIQkgCSsDACEPIA9EAAAAAAAAAABiBEAgAyEEAkADQCAEIAJP',
+    'DQEgACAIIARBCGxqaiEJIAAgByAEQQhsamohCiAJIAkrAwAgDyAKKwMAoqE5AwAgBEEBaiEEDAALCyAB',
+    'IAVBCGxqIQkgASADQQhsaiEKIAkgCSsDACAPIAorAwCioTkDAAsLIAVBAWohBQwACwsgA0EBaiEDDAAL',
+    'CwsAXgRuYW1lAlcBABAAAWEBAWICAW4DAWkEAWoFAWsGBm1heFJvdwcEcm93SQgEcm93SwkEYWRkcgoF',
+    'YWRkcjILA3RtcAwGbWF4VmFsDQN2YWwOBXBpdm90DwZmYWN0b3I='
+].join(''); // WASM MNA solver core
+
+export class Matrix {
+    private static wasm: any = null;
+    private static mem: any = null;
+    private static scratchMatrix = new Float64Array(0);
+    private static scratchVector = new Float64Array(0);
+    private static gpuDevice: any = null;
+
+    static async init() {
+        if (this.wasm) return;
+        void this.initGPU();
+
+        try {
+            const res = await WebAssembly.instantiate(Uint8Array.from(atob(WASM_SOLVER_B64), c => c.charCodeAt(0)));
+            this.wasm = res.instance.exports;
+            this.mem = res.instance.exports.memory;
+        } catch (e) {}
+    }
+
+    private static async initGPU() {
+        if (this.gpuDevice) return;
+        try {
+            const nav = (globalThis as any).navigator;
+            const adapter = await nav?.gpu?.requestAdapter();
+            this.gpuDevice = await adapter?.requestDevice();
+            if (this.gpuDevice) {
+                console.log('WebGPU Matrix Acceleration Ready');
+            }
+        } catch (e) {}
+    }
+
+
+    static solve(A: Float64Array, b: Float64Array, n: number): Float64Array | null {
+        if (n <= 0) return null;
+
+        const wasmSolve = (this.wasm as any)?.solve || (this.wasm as any)?.solveMna || (this.wasm as any)?.mnaSolve;
+        if (typeof wasmSolve === 'function') {
+            try {
+                const wasmResult = wasmSolve(A, b, n);
+                if (wasmResult instanceof Float64Array && wasmResult.length >= n) {
+                    return wasmResult.subarray(0, n);
+                }
+            } catch (e) {
+                // fall back to JS path
+            }
+        }
+
+        // Reuse scratch buffers to avoid per-frame allocations.
+        const requiredMatrixSize = n * (n + 1);
+        if (this.scratchMatrix.length < requiredMatrixSize) {
+            this.scratchMatrix = new Float64Array(requiredMatrixSize);
+        }
+        if (this.scratchVector.length < n) {
+            this.scratchVector = new Float64Array(n);
+        }
+
+        const x = this.scratchVector.subarray(0, n);
+        x.fill(0);
+        const matrix = this.scratchMatrix.subarray(0, requiredMatrixSize);
+        matrix.fill(0);
+        
+        // Fast packing using subarray/set
+        for (let i = 0; i < n; i++) {
+            const rowOffset = i * (n + 1);
+            const aOffset = i * n;
+            matrix.set(A.subarray(aOffset, aOffset + n), rowOffset);
+            matrix[rowOffset + n] = b[i];
+        }
+
+        // Gaussian elimination with partial pivoting
+        for (let i = 0; i < n; i++) {
+            let max = i;
+            let maxVal = Math.abs(matrix[i * (n + 1) + i]);
+            for (let k = i + 1; k < n; k++) {
+                const val = Math.abs(matrix[k * (n + 1) + i]);
+                if (val > maxVal) {
+                    maxVal = val;
+                    max = k;
+                }
+            }
+            
+            if (max !== i) {
+                const rowI = i * (n + 1);
+                const rowMax = max * (n + 1);
+                for (let k = i; k <= n; k++) {
+                    const temp = matrix[rowI + k];
+                    matrix[rowI + k] = matrix[rowMax + k];
+                    matrix[rowMax + k] = temp;
+                }
+            }
+
+            const rowI = i * (n + 1);
+            const pivot = matrix[rowI + i];
+            if (Math.abs(pivot) < 1e-18) continue;
+
+            for (let k = i + 1; k < n; k++) {
+                const rowK = k * (n + 1);
+                const factor = matrix[rowK + i] / pivot;
+                if (factor === 0) continue;
+                for (let j = i; j <= n; j++) {
+                    matrix[rowK + j] -= factor * matrix[rowI + j];
+                }
+            }
+        }
+
+        // Back substitution
+        for (let i = n - 1; i >= 0; i--) {
+            const rowI = i * (n + 1);
+            let sum = 0;
+            for (let j = i + 1; j < n; j++) sum += matrix[rowI + j] * x[j];
+            x[i] = (matrix[rowI + n] - sum) / matrix[rowI + i];
+        }
+        return x;
+    }
+}
+
+void Matrix.init();
+
+/**
+ * Modified Nodal Analysis (MNA) Circuit Solver
+ */
+export class CircuitSolver {
+    private nodes = new Map<string, number>(); // pinId -> nodeId
+    private nodeCount = 0;
+    private voltageSources: { nodeId: number, voltage: number }[] = [];
+    private components: { inst: BaseComponent }[] = [];
+
+    private static scratchG = new Float64Array(0);
+    private static scratchB = new Float64Array(0);
+
+    reset() {
+        this.nodes.clear();
+        this.nodeCount = 1; // Node 0 is GND
+        this.voltageSources = [];
+        this.components = [];
+    }
+
+    addPin(pinId: string, nodeId?: number) {
+        if (nodeId !== undefined) {
+            this.nodes.set(pinId, nodeId);
+            return;
+        }
+        if (!this.nodes.has(pinId)) {
+            this.nodes.set(pinId, this.nodeCount++);
+        }
+    }
+
+    setGnd(pinId: string) {
+        this.nodes.set(pinId, 0);
+    }
+
+    addVoltageSource(pinId: string, voltage: number) {
+        const nodeId = this.nodes.get(pinId);
+        if (nodeId !== undefined) {
+            this.voltageSources.push({ nodeId, voltage });
+        }
+    }
+
+    addComponent(inst: BaseComponent) {
+        this.components.push({ inst });
+    }
+
+    solve(): Map<number, number> {
+        const numV = this.voltageSources.length;
+        const n = this.nodeCount + numV;
+        
+        if (CircuitSolver.scratchG.length < n * n) {
+            CircuitSolver.scratchG = new Float64Array(n * n);
+        }
+        if (CircuitSolver.scratchB.length < n) {
+            CircuitSolver.scratchB = new Float64Array(n);
+        }
+
+        const G = CircuitSolver.scratchG.subarray(0, n * n);
+        const B = CircuitSolver.scratchB.subarray(0, n);
+        G.fill(0);
+        B.fill(0);
+
+        // Fill Conductance Matrix (G)
+        for (const { inst } of this.components) {
+            const stamps = (inst as any).getMnaStamps?.() || [];
+            if (stamps.length === 0) {
+                // Fallback for simple 2-pin components
+                const pins = (inst as any).getMnaPins?.() || [];
+                if (pins.length >= 2) {
+                    stamps.push({ pins: [pins[0], pins[1]], g: (inst as any).getConductance?.() ?? 0.001 });
+                }
+            }
+
+            for (const stamp of stamps) {
+                const n1 = this.nodes.get(`${inst.id}:${stamp.pins[0]}`) ?? -1;
+                const n2 = this.nodes.get(`${inst.id}:${stamp.pins[1]}`) ?? -1;
+                const g = stamp.g;
+
+                if (n1 >= 0) G[n1 * n + n1] += g;
+                if (n2 >= 0) G[n2 * n + n2] += g;
+                if (n1 >= 0 && n2 >= 0) {
+                    G[n1 * n + n2] -= g;
+                    G[n2 * n + n1] -= g;
+                }
+            }
+        }
+
+        // Fill Voltage Sources (MNA)
+        for (let i = 0; i < numV; i++) {
+            const { nodeId, voltage } = this.voltageSources[i];
+            const vIdx = this.nodeCount + i;
+            if (nodeId >= 0) {
+                G[nodeId * n + vIdx] = 1;
+                G[vIdx * n + nodeId] = 1;
+            }
+            B[vIdx] = voltage;
+        }
+
+        // Ground reference: Row 0 should be ideal GND
+        for (let j = 0; j < n; j++) G[0 * n + j] = 0;
+        G[0 * n + 0] = 1;
+        B[0] = 0;
+
+        const results = Matrix.solve(G, B, n);
+        const nodeVoltages = new Map<number, number>();
+        if (results) {
+            for (let i = 0; i < this.nodeCount; i++) {
+                nodeVoltages.set(i, results[i]);
+            }
+        }
+        return nodeVoltages;
+    }
+}
+
+class NotGateLogic extends BaseComponent {
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { out: true };
+    }
+
+    onPinStateChange(pinId: string, isHigh: boolean) {
+        const pin = String(pinId || '').toUpperCase();
+        if (pin === 'IN' || pin === 'A' || pin === 'P1' || pin === '1') {
+            const next = !isHigh;
+            this.state.out = next;
+            setGateOutput(this, 'OUT', next);
+        }
+    }
+}
+
+class TwoInputGateLogic extends BaseComponent {
+    protected evaluate(_a: boolean, _b: boolean): boolean {
+        return false;
+    }
+
+    protected refreshOutput() {
+        const a = pinIsHigh(this, 'A') || pinIsHigh(this, 'D0') || pinIsHigh(this, 'IN1') || pinIsHigh(this, '1') || pinIsHigh(this, 'p1');
+        const b = pinIsHigh(this, 'B') || pinIsHigh(this, 'D1') || pinIsHigh(this, 'IN2') || pinIsHigh(this, '2') || pinIsHigh(this, 'p2');
+        const next = this.evaluate(a, b);
+        this.state.out = next;
+        setGateOutput(this, 'OUT', next);
+    }
+
+    onPinStateChange(pinId: string) {
+        const pin = String(pinId || '').toUpperCase();
+        if (['A', 'B', 'D0', 'D1', 'IN1', 'IN2', '1', '2', 'P1', 'P2'].includes(pin)) {
+            this.refreshOutput();
+        }
+    }
+}
+
+class AndGateLogic extends TwoInputGateLogic {
+    protected evaluate(a: boolean, b: boolean): boolean {
+        return a && b;
+    }
+}
+
+class NandGateLogic extends TwoInputGateLogic {
+    protected evaluate(a: boolean, b: boolean): boolean {
+        return !(a && b);
+    }
+}
+
+class NorGateLogic extends TwoInputGateLogic {
+    protected evaluate(a: boolean, b: boolean): boolean {
+        return !(a || b);
+    }
+}
+
+class XorGateLogic extends TwoInputGateLogic {
+    protected evaluate(a: boolean, b: boolean): boolean {
+        return !!a !== !!b;
+    }
+}
+
+class KeypadLogic extends BaseComponent {
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { pressedKey: null, connectedPair: null };
+    }
+    onEvent(event: string) {
+        if (event.startsWith('press:')) {
+            const key = event.split(':')[1];
+            const matrix: Record<string, [string, string]> = {
+                '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
+                '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
+                '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
+                '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
+            };
+            this.setState({ pressedKey: key, connectedPair: matrix[key] || null });
+        } else if (event === 'release') {
+            this.setState({ pressedKey: null, connectedPair: null });
+        }
+    }
+}
+
+export function parse(data: string) {
+    const lines = data.split('\n');
+    let highAddress = 0;
+    const maxAddress = 32768; // 32KB typical Uno size
+    const result = new Uint8Array(maxAddress);
+
+    for (const line of lines) {
+        if (line[0] !== ':') continue;
+        const byteCount = parseInt(line.substring(1, 3), 16);
+        const address = parseInt(line.substring(3, 7), 16);
+        const recordType = parseInt(line.substring(7, 9), 16);
+
+        if (recordType === 0) { // Data record
+            for (let i = 0; i < byteCount; i++) {
+                const byte = parseInt(line.substring(9 + i * 2, 11 + i * 2), 16);
+                const absoluteAddress = highAddress + address + i;
+                if (absoluteAddress < maxAddress) {
+                    result[absoluteAddress] = byte;
+                }
+            }
+        } else if (recordType === 4 || recordType === 2) { // Extended linear/segment address
+            highAddress = parseInt(line.substring(9, 13), 16) << (recordType === 4 ? 16 : 4);
+        } // ignore recordTypes 1 (EOF) and others for this simple parser
+    }
+    return { data: result };
+}
+
+const LITTLEFS_MODULE_NAME = 'littlefs';
+const SD_BLOCK_SIZE = 512;
+const SD_DATA_TOKEN = 0xfe;
+
+type LittleFsVolume = {
+    mount: () => number;
+    unmount: () => number;
+    format: () => number;
+    formatAndMount: () => number;
+    mkdir: (path: string) => boolean;
+    writeFile: (path: string, data: Uint8Array) => boolean;
+    destroy: () => void;
+};
+
+function toUint8Array(data: any, encoder: TextEncoder): Uint8Array {
+    if (data instanceof Uint8Array) return data;
+    if (data instanceof ArrayBuffer) return new Uint8Array(data);
+    if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    if (Array.isArray(data)) return new Uint8Array(data.map((v) => Number(v) & 0xff));
+    return encoder.encode(String(data ?? ''));
+}
+
+async function tryLoadLittleFsFactory(): Promise<((options?: any) => Promise<any>) | null> {
+    try {
+        const mod = await import(/* @vite-ignore */ LITTLEFS_MODULE_NAME);
+        const candidate = (mod as any)?.default ?? mod;
+        return typeof candidate === 'function' ? candidate : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function isNodeRuntime(): boolean {
+    return typeof process !== 'undefined' && !!(process as any)?.versions?.node;
+}
+
+async function dynamicImportModule(specifier: string): Promise<any> {
+    const importer = new Function('s', 'return import(s);') as (s: string) => Promise<any>;
+    return importer(specifier);
+}
+
+async function readLittleFsWasmBinaryForNode(): Promise<Uint8Array | null> {
+    if (!isNodeRuntime()) return null;
+
+    let readFile: ((pathLike: any) => Promise<any>) | null = null;
+    try {
+        const fsPromises = await dynamicImportModule('node:fs/promises');
+        readFile = typeof fsPromises?.readFile === 'function' ? fsPromises.readFile.bind(fsPromises) : null;
+    } catch (e) {
+        return null;
+    }
+    if (!readFile) return null;
+
+    const candidates = [
+        // In production browser, this will be at /wasm/littlefs.wasm
+        // In dev/node, we try to resolve from node_modules
+        new URL('/wasm/littlefs.wasm', import.meta.url),
+        /* @vite-ignore */
+        new URL('../../node_modules/littlefs/dist/littlefs.wasm', import.meta.url),
+    ];
+
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+        const key = String((candidate as any)?.href || candidate);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+
+        try {
+            const buf = await readFile(candidate);
+            if (!buf) continue;
+            if (buf instanceof Uint8Array) {
+                return buf.length > 0 ? buf : null;
+            }
+            if (buf instanceof ArrayBuffer) {
+                const out = new Uint8Array(buf);
+                return out.length > 0 ? out : null;
+            }
+            if (ArrayBuffer.isView(buf)) {
+                const view = buf as ArrayBufferView;
+                const out = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+                return out.length > 0 ? out : null;
+            }
+        } catch (e) {
+            // try next candidate
+        }
+    }
+
+    return null;
+}
+
+function createLittleFsVolume(
+    littlefs: any,
+    storage: Uint8Array,
+    blockSize: number,
+    blockCount: number
+): LittleFsVolume | null {
+    if (!littlefs || typeof littlefs.addFunction !== 'function' || typeof littlefs._new_lfs !== 'function' || typeof littlefs._new_lfs_config !== 'function') {
+        return null;
+    }
+    if (typeof littlefs._lfs_mount !== 'function' || typeof littlefs._lfs_unmount !== 'function' || typeof littlefs._lfs_format !== 'function') {
+        return null;
+    }
+
+    const tablePointers: number[] = [];
+    const addFn = (fn: (...args: any[]) => number, signature: string) => {
+        const ptr = Number(littlefs.addFunction(fn, signature));
+        tablePointers.push(ptr);
+        return ptr;
+    };
+
+    const read = addFn((cfg: number, block: number, off: number, buffer: number, size: number) => {
+        void cfg;
+        const start = block * blockSize + off;
+        if (start < 0 || (start + size) > storage.length) return -5;
+        littlefs.HEAPU8.set(storage.subarray(start, start + size), buffer);
+        return 0;
+    }, 'iiiiii');
+
+    const prog = addFn((cfg: number, block: number, off: number, buffer: number, size: number) => {
+        void cfg;
+        const start = block * blockSize + off;
+        if (start < 0 || (start + size) > storage.length) return -5;
+        storage.set(littlefs.HEAPU8.subarray(buffer, buffer + size), start);
+        return 0;
+    }, 'iiiiii');
+
+    const erase = addFn((cfg: number, block: number) => {
+        void cfg;
+        const start = block * blockSize;
+        if (start < 0 || (start + blockSize) > storage.length) return -5;
+        storage.fill(0xff, start, start + blockSize);
+        return 0;
+    }, 'iii');
+
+    const sync = addFn((cfg: number) => {
+        void cfg;
+        return 0;
+    }, 'ii');
+
+    const config = Number(littlefs._new_lfs_config(read, prog, erase, sync, blockCount, blockSize));
+    const lfs = Number(littlefs._new_lfs());
+    if (!Number.isFinite(config) || !Number.isFinite(lfs) || config <= 0 || lfs <= 0) {
+        return null;
+    }
+
+    const cwrapWrite = typeof littlefs.cwrap === 'function'
+        ? littlefs.cwrap('lfs_write_file', null, ['number', 'string', 'number', 'number'])
+        : null;
+
+    const mount = () => Number(littlefs._lfs_mount(lfs, config) ?? -1);
+    const unmount = () => Number(littlefs._lfs_unmount(lfs) ?? -1);
+    const format = () => Number(littlefs._lfs_format(lfs, config) ?? -1);
+    const formatAndMount = () => {
+        const fr = format();
+        if (fr < 0) return fr;
+        return mount();
+    };
+
+    const writeFile = (path: string, data: Uint8Array) => {
+        if (typeof cwrapWrite !== 'function') {
+            return false;
+        }
+
+        const hasMalloc = typeof littlefs._malloc === 'function' && typeof littlefs._free === 'function';
+        const hasStack = typeof littlefs.stackAlloc === 'function'
+            && typeof littlefs.stackSave === 'function'
+            && typeof littlefs.stackRestore === 'function';
+        if (!hasMalloc && !hasStack) {
+            return false;
+        }
+
+        let ptr = 0;
+        let stackTop: number | null = null;
+        let usedStack = false;
+        try {
+            const size = data.length;
+            if (hasMalloc) {
+                ptr = Number(littlefs._malloc(Math.max(size, 1)));
+            } else {
+                stackTop = Number(littlefs.stackSave());
+                ptr = Number(littlefs.stackAlloc(Math.max(size, 1)));
+                usedStack = true;
+            }
+            if (!Number.isFinite(ptr) || ptr <= 0) return false;
+            if (size > 0) {
+                littlefs.HEAPU8.set(data, ptr);
+            }
+            cwrapWrite(lfs, path, ptr, size);
+            return true;
+        } catch (e) {
+            return false;
+        } finally {
+            if (hasMalloc && ptr > 0) {
+                try {
+                    littlefs._free(ptr);
+                } catch (e) {
+                    // ignore
+                }
+            }
+            if (usedStack && stackTop !== null) {
+                try {
+                    littlefs.stackRestore(stackTop);
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }
+    };
+
+    const mkdir = (path: string) => {
+        if (typeof littlefs._lfs_mkdir !== 'function') {
+            return false;
+        }
+
+        try {
+            const rc = Number(littlefs._lfs_mkdir(lfs, path));
+            // littlefs returns -17 for EEXIST.
+            return rc === 0 || rc === -17;
+        } catch (e) {
+            return false;
+        }
+    };
+
+    const destroy = () => {
+        try {
+            if (typeof littlefs._free === 'function') {
+                littlefs._free(lfs);
+                littlefs._free(config);
+            }
+        } catch (e) {
+            // ignore
+        }
+
+        if (typeof littlefs.removeFunction === 'function') {
+            tablePointers.forEach((ptr) => {
+                try {
+                    littlefs.removeFunction(ptr);
+                } catch (e) {
+                    // ignore
+                }
+            });
+        }
+    };
+
+    return {
+        mount,
+        unmount,
+        format,
+        formatAndMount,
+        mkdir,
+        writeFile,
+        destroy,
+    };
+}
+
+function normalizeLittleFsPath(rawPath: unknown): string {
+    const cleaned = String(rawPath || '')
+        .replace(/\\/g, '/')
+        .trim();
+    if (!cleaned) return '';
+
+    const parts = cleaned
+        .split('/')
+        .map((part) => part.trim())
+        .filter((part) => part && part !== '.' && part !== '..');
+
+    return parts.join('/');
+}
+
+function collectLittleFsParentDirs(path: string): string[] {
+    const normalized = normalizeLittleFsPath(path);
+    if (!normalized || !normalized.includes('/')) return [];
+
+    const parts = normalized.split('/');
+    const dirs: string[] = [];
+    for (let i = 1; i < parts.length; i++) {
+        const dir = parts.slice(0, i).join('/');
+        if (dir) dirs.push(dir);
+    }
+    return dirs;
+}
+
+export async function buildLittleFsImage(
+    files: Array<{ path: string; data: unknown }>,
+    options: { sizeBytes?: number; blockSize?: number } = {}
+): Promise<Uint8Array | null> {
+    if (!Array.isArray(files) || files.length === 0) return null;
+
+    const blockSizeRaw = Number(options.blockSize);
+    const blockSize = Number.isFinite(blockSizeRaw) && blockSizeRaw >= 256
+        ? Math.floor(blockSizeRaw)
+        : 4096;
+
+    const sizeBytesRaw = Number(options.sizeBytes);
+    const requestedSize = Number.isFinite(sizeBytesRaw) && sizeBytesRaw > 0
+        ? Math.floor(sizeBytesRaw)
+        : (512 * 1024);
+    const alignedSize = Math.ceil(requestedSize / blockSize) * blockSize;
+    const blockCount = Math.max(1, Math.floor(alignedSize / blockSize));
+
+    const storage = new Uint8Array(blockCount * blockSize);
+    storage.fill(0xff);
+
+    const factory = await tryLoadLittleFsFactory();
+    if (!factory) return null;
+
+        let littlefsModule: any = null;
+        let volume: LittleFsVolume | null = null;
+        try {
+            const env: any = { print: () => {}, printErr: () => {} };
+            if (isNodeRuntime()) {
+                const nodeWasm = await readLittleFsWasmBinaryForNode();
+                if (nodeWasm && nodeWasm.length > 0) env.wasmBinary = nodeWasm;
+            }
+            littlefsModule = await factory(env);
+            volume = createLittleFsVolume(littlefsModule, storage, blockSize, blockCount);
+            if (!volume || volume.formatAndMount() < 0) return null;
+
+            const createdDirs = new Set<string>();
+            const encoder = new TextEncoder();
+
+        for (const file of files) {
+            const path = normalizeLittleFsPath(file?.path);
+            if (!path) continue;
+
+            const parentDirs = collectLittleFsParentDirs(path);
+            for (const dir of parentDirs) {
+                if (createdDirs.has(dir)) continue;
+                if (!volume.mkdir(`/${dir}`) && !volume.mkdir(dir)) {
+                    return null;
+                }
+                createdDirs.add(dir);
+            }
+
+            const data = toUint8Array(file?.data, encoder);
+            if (!volume.writeFile(`/${path}`, data) && !volume.writeFile(path, data)) {
+                return null;
+            }
+        }
+
+        volume.unmount();
+        return storage.slice();
+    } catch (e) {
+        return null;
+    } finally {
+        try {
+            volume?.destroy();
+        } catch (e) {
+            // ignore
+        }
+        try {
+            if (littlefs && typeof littlefs.quit === 'function') {
+                littlefs.quit();
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+}
+
+const FAT_BYTES_PER_SECTOR = 512;
+const FAT12_MEDIA_DESCRIPTOR = 0xF8;
+
+function sanitizeFatNameToken(value: string, maxLength: number): string {
+    const upper = String(value || '').trim().toUpperCase();
+    const cleaned = upper.replace(/[^A-Z0-9]/g, '_');
+    if (!cleaned) return ''.padEnd(maxLength, '_');
+    return cleaned.slice(0, maxLength);
+}
+
+function normalizeFatVolumeLabel(value: unknown): string {
+    const cleaned = sanitizeFatNameToken(String(value || 'CIRCUITPY').replace(/\./g, ''), 11);
+    return cleaned.padEnd(11, ' ');
+}
+
+function toFatShortFileName(pathLike: string): string {
+    const normalized = normalizeLittleFsPath(pathLike);
+    const baseName = (normalized.split('/').pop() || normalized || 'FILE.TXT').trim();
+    const dotIndex = baseName.lastIndexOf('.');
+    const stem = dotIndex > 0 ? baseName.slice(0, dotIndex) : baseName;
+    const ext = dotIndex > 0 ? baseName.slice(dotIndex + 1) : '';
+
+    const shortStem = sanitizeFatNameToken(stem, 8).padEnd(8, ' ');
+    const shortExt = sanitizeFatNameToken(ext, 3).padEnd(3, ' ');
+    return `${shortStem}${shortExt}`;
+}
+
+function setFat12Entry(fat: Uint8Array, cluster: number, value: number) {
+    const index = Math.floor(cluster * 3 / 2);
+    const safeValue = value & 0x0fff;
+
+    if ((cluster & 1) === 0) {
+        fat[index] = safeValue & 0xff;
+        fat[index + 1] = (fat[index + 1] & 0xf0) | ((safeValue >> 8) & 0x0f);
+    } else {
+        fat[index] = (fat[index] & 0x0f) | ((safeValue << 4) & 0xf0);
+        fat[index + 1] = (safeValue >> 4) & 0xff;
+    }
+}
+
+export function buildFatFsImage(
+    files: Array<{ path: string; data: unknown }>,
+    options: { sizeBytes?: number; volumeLabel?: string; sectorsPerCluster?: number } = {}
+): Uint8Array | null {
+    if (!Array.isArray(files) || files.length === 0) return null;
+
+    const sizeBytesRaw = Number(options.sizeBytes);
+    const requestedSize = Number.isFinite(sizeBytesRaw) && sizeBytesRaw > 0
+        ? Math.floor(sizeBytesRaw)
+        : (512 * 1024);
+    const alignedSize = Math.floor(requestedSize / FAT_BYTES_PER_SECTOR) * FAT_BYTES_PER_SECTOR;
+    if (alignedSize < (128 * 1024)) return null;
+
+    const bytesPerSector = FAT_BYTES_PER_SECTOR;
+    const totalSectors = Math.floor(alignedSize / bytesPerSector);
+    const reservedSectors = 1;
+    const numberOfFATs = 2;
+    const rootEntryCount = 512;
+    const rootDirSectors = Math.ceil((rootEntryCount * 32) / bytesPerSector);
+    const sectorsPerClusterRaw = Number(options.sectorsPerCluster);
+    const sectorsPerCluster = Number.isFinite(sectorsPerClusterRaw) && sectorsPerClusterRaw > 0
+        ? Math.max(1, Math.floor(sectorsPerClusterRaw))
+        : 1;
+    const clusterSizeBytes = sectorsPerCluster * bytesPerSector;
+
+    let sectorsPerFAT = 1;
+    let clusterCount = 0;
+    for (let i = 0; i < 8; i++) {
+        const dataSectors = totalSectors - reservedSectors - (numberOfFATs * sectorsPerFAT) - rootDirSectors;
+        if (dataSectors <= 0) return null;
+
+        clusterCount = Math.floor(dataSectors / sectorsPerCluster);
+        const requiredFatSectors = Math.max(
+            1,
+            Math.ceil((((clusterCount + 2) * 12) / 8) / bytesPerSector),
+        );
+        if (requiredFatSectors === sectorsPerFAT) break;
+        sectorsPerFAT = requiredFatSectors;
+    }
+
+    if (clusterCount <= 0 || clusterCount >= 0x0ff0) {
+        return null;
+    }
+
+    const encoder = new TextEncoder();
+    const normalizedFiles = files
+        .map((file, index) => ({
+            index,
+            shortName: toFatShortFileName(file?.path || `FILE${index}.TXT`),
+            bytes: toUint8Array(file?.data, encoder),
+        }))
+        .filter((file) => !!file.shortName);
+
+    if (normalizedFiles.length === 0) return null;
+    if (normalizedFiles.length > (rootEntryCount - 1)) return null;
+
+    const usedShortNames = new Set<string>();
+    for (const file of normalizedFiles) {
+        if (!usedShortNames.has(file.shortName)) {
+            usedShortNames.add(file.shortName);
+            continue;
+        }
+
+        const stem = file.shortName.slice(0, 8).trim() || 'FILE';
+        const ext = file.shortName.slice(8, 11);
+        let suffix = 1;
+        while (suffix < 1000) {
+            const candidateStem = `${stem.slice(0, Math.max(0, 8 - String(suffix).length))}${suffix}`.padEnd(8, ' ');
+            const candidate = `${candidateStem}${ext}`;
+            if (!usedShortNames.has(candidate)) {
+                file.shortName = candidate;
+                usedShortNames.add(candidate);
+                break;
+            }
+            suffix += 1;
+        }
+    }
+
+    let nextCluster = 2;
+    const fileLayouts = normalizedFiles.map((file) => {
+        const clusterSpan = file.bytes.length > 0
+            ? Math.ceil(file.bytes.length / clusterSizeBytes)
+            : 0;
+        const firstCluster = clusterSpan > 0 ? nextCluster : 0;
+        if (clusterSpan > 0) {
+            nextCluster += clusterSpan;
+        }
+
+        return {
+            ...file,
+            firstCluster,
+            clusterSpan,
+        };
+    });
+
+    if (nextCluster > (clusterCount + 2)) {
+        return null;
+    }
+
+    const fatByteLength = sectorsPerFAT * bytesPerSector;
+    const fat = new Uint8Array(fatByteLength);
+    fat.fill(0x00);
+    fat[0] = FAT12_MEDIA_DESCRIPTOR;
+    fat[1] = 0xff;
+    fat[2] = 0xff;
+
+    for (const file of fileLayouts) {
+        if (file.clusterSpan <= 0 || file.firstCluster <= 0) continue;
+
+        for (let i = 0; i < file.clusterSpan; i++) {
+            const cluster = file.firstCluster + i;
+            const nextValue = i === (file.clusterSpan - 1)
+                ? 0x0fff
+                : (cluster + 1);
+            setFat12Entry(fat, cluster, nextValue);
+        }
+    }
+
+    const image = new Uint8Array(alignedSize);
+    image.fill(0x00);
+    const boot = image.subarray(0, bytesPerSector);
+    const bootView = new DataView(boot.buffer, boot.byteOffset, boot.byteLength);
+
+    boot[0] = 0xeb;
+    boot[1] = 0x3c;
+    boot[2] = 0x90;
+    boot.set(encoder.encode('MSDOS5.0').subarray(0, 8), 3);
+    bootView.setUint16(11, bytesPerSector, true);
+    boot[13] = sectorsPerCluster & 0xff;
+    bootView.setUint16(14, reservedSectors, true);
+    boot[16] = numberOfFATs & 0xff;
+    bootView.setUint16(17, rootEntryCount, true);
+    if (totalSectors < 0x10000) {
+        bootView.setUint16(19, totalSectors, true);
+        bootView.setUint32(32, 0, true);
+    } else {
+        bootView.setUint16(19, 0, true);
+        bootView.setUint32(32, totalSectors, true);
+    }
+    boot[21] = FAT12_MEDIA_DESCRIPTOR;
+    bootView.setUint16(22, sectorsPerFAT, true);
+    bootView.setUint16(24, 32, true);
+    bootView.setUint16(26, 64, true);
+    bootView.setUint32(28, 0, true);
+    boot[36] = 0x80;
+    boot[38] = 0x29;
+    bootView.setUint32(39, 0x43495243, true);
+    boot.set(encoder.encode(normalizeFatVolumeLabel(options.volumeLabel)).subarray(0, 11), 43);
+    boot.set(encoder.encode('FAT12   ').subarray(0, 8), 54);
+    boot[510] = 0x55;
+    boot[511] = 0xaa;
+
+    const fat1Offset = reservedSectors * bytesPerSector;
+    const fat2Offset = fat1Offset + fatByteLength;
+    image.set(fat, fat1Offset);
+    image.set(fat, fat2Offset);
+
+    const rootOffset = (reservedSectors + (numberOfFATs * sectorsPerFAT)) * bytesPerSector;
+    const rootByteLength = rootDirSectors * bytesPerSector;
+    const root = image.subarray(rootOffset, rootOffset + rootByteLength);
+    root.fill(0x00);
+
+    const volumeLabel = normalizeFatVolumeLabel(options.volumeLabel);
+    root.set(encoder.encode(volumeLabel).subarray(0, 11), 0);
+    root[11] = 0x08;
+
+    let entryIndex = 1;
+    for (const file of fileLayouts) {
+        const entryOffset = entryIndex * 32;
+        if (entryOffset + 32 > root.length) break;
+
+        root.set(encoder.encode(file.shortName).subarray(0, 11), entryOffset);
+        root[entryOffset + 11] = 0x20;
+
+        const rootView = new DataView(root.buffer, root.byteOffset + entryOffset, 32);
+        rootView.setUint16(26, file.firstCluster & 0xffff, true);
+        rootView.setUint32(28, file.bytes.length >>> 0, true);
+        entryIndex += 1;
+    }
+
+    const dataStartOffset = (reservedSectors + (numberOfFATs * sectorsPerFAT) + rootDirSectors) * bytesPerSector;
+    for (const file of fileLayouts) {
+        if (file.clusterSpan <= 0 || file.firstCluster <= 0 || file.bytes.length === 0) continue;
+
+        for (let i = 0; i < file.clusterSpan; i++) {
+            const cluster = file.firstCluster + i;
+            const clusterOffset = dataStartOffset + ((cluster - 2) * clusterSizeBytes);
+            const srcStart = i * clusterSizeBytes;
+            const srcEnd = Math.min(file.bytes.length, srcStart + clusterSizeBytes);
+            image.set(file.bytes.subarray(srcStart, srcEnd), clusterOffset);
+        }
+    }
+
+    return image;
+}
+
+class SDCardLogic extends BaseComponent {
+    private powered = false;
+    private csHigh = true;
+    private mounted = true;
+    private appCmdPending = false;
+    private responseQueue: number[] = [];
+    private commandFrame: number[] = [];
+    private writeState: { blockIndex: number; stage: 'token' | 'payload' | 'crc1' | 'crc2'; data: number[] } | null = null;
+    private bytesIn = 0;
+    private bytesOut = 0;
+    private lastActivityAt = 0;
+
+    private readonly textEncoder = new TextEncoder();
+    private readonly textDecoder = new TextDecoder();
+    private readonly blockSize = SD_BLOCK_SIZE;
+    private readonly blockCount: number;
+    private readonly storage: Uint8Array;
+
+    private backendName = 'memory';
+    private littleFsReady = false;
+    private littleFsVolume: LittleFsVolume | null = null;
+    private files = new Map<string, Uint8Array>();
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+
+        const capacityKbRaw = Number(manifest?.attrs?.capacityKB ?? 2048);
+        const capacityKB = Number.isFinite(capacityKbRaw) && capacityKbRaw > 64
+            ? Math.floor(capacityKbRaw)
+            : 2048;
+
+        this.blockCount = Math.max(64, Math.floor((capacityKB * 1024) / this.blockSize));
+        this.storage = new Uint8Array(this.blockCount * this.blockSize);
+        this.storage.fill(0xff);
+        this.mounted = String(manifest?.attrs?.mounted ?? 'true') !== 'false';
+
+        this.writeShadowFile('/README.TXT', this.textEncoder.encode('OpenHW virtual SD card\n'));
+
+        this.state = {
+            mounted: this.mounted,
+            powered: false,
+            selected: false,
+            activity: false,
+            backend: this.backendName,
+            fsReady: this.littleFsReady,
+            fileCount: this.files.size,
+            usedBytes: this.computeUsedBytes(),
+            bytesIn: 0,
+            bytesOut: 0,
+            capacityKB,
+            blockSize: this.blockSize,
+            blockCount: this.blockCount,
+            lastCommand: '--',
+            lastPath: '--',
+            lastOp: 'idle',
+            lastReadPreview: '',
+        };
+
+        void this.initLittleFsBackend();
+    }
+
+    private normalizePath(pathLike: string): string {
+        const raw = String(pathLike || '').trim().replace(/\\/g, '/');
+        if (!raw) return '/UNTITLED.TXT';
+        return raw.startsWith('/') ? raw : `/${raw}`;
+    }
+
+    private computeUsedBytes(): number {
+        let total = 0;
+        this.files.forEach((v) => {
+            total += v.length;
+        });
+        return total;
+    }
+
+    private updateFsCounters() {
+        this.state.fileCount = this.files.size;
+        this.state.usedBytes = this.computeUsedBytes();
+        this.stateChanged = true;
+    }
+
+    private writeShadowFile(path: string, bytes: Uint8Array) {
+        this.files.set(this.normalizePath(path), new Uint8Array(bytes));
+        this.updateFsCounters();
+    }
+
+    private refreshPowerState() {
+        const nextPowered = this.getPinVoltage('VCC') > 2.0;
+        if (nextPowered !== this.powered) {
+            this.powered = nextPowered;
+            this.state.powered = this.powered;
+            this.stateChanged = true;
+        }
+    }
+
+    private resetSpiTransactionState() {
+        this.appCmdPending = false;
+        this.responseQueue = [];
+        this.commandFrame = [];
+        this.writeState = null;
+    }
+
+    private setMounted(nextMounted: boolean) {
+        if (this.mounted === nextMounted) return;
+        this.mounted = nextMounted;
+        this.state.mounted = nextMounted;
+        if (!nextMounted) {
+            this.resetSpiTransactionState();
+        }
+        this.stateChanged = true;
+    }
+
+    private queueResponse(bytes: number[]) {
+        this.responseQueue.push(...bytes.map((v) => v & 0xff));
+    }
+
+    private emitResponseByte() {
+        const out = this.responseQueue.length > 0 ? (this.responseQueue.shift() as number) : 0xff;
+        this.bytesOut += 1;
+        this.state.bytesOut = this.bytesOut;
+        this.stateChanged = true;
+        return out & 0xff;
+    }
+
+    private parseBlockIndex(commandArg: number): number | null {
+        const asBlockAddress = commandArg >>> 0;
+        if (asBlockAddress < this.blockCount) return asBlockAddress;
+
+        const byByteAddress = Math.floor((commandArg >>> 0) / this.blockSize);
+        if (byByteAddress >= 0 && byByteAddress < this.blockCount) {
+            return byByteAddress;
+        }
+        return null;
+    }
+
+    private queueReadBlock(blockIndex: number) {
+        const start = blockIndex * this.blockSize;
+        const payload = this.storage.subarray(start, start + this.blockSize);
+        this.queueResponse([0x00, 0xff, SD_DATA_TOKEN, ...payload, 0xff, 0xff]);
+    }
+
+    private beginWriteBlock(blockIndex: number) {
+        this.writeState = {
+            blockIndex,
+            stage: 'token',
+            data: [],
+        };
+        this.queueResponse([0x00]);
+    }
+
+    private completeWriteBlock() {
+        if (!this.writeState) return;
+
+        const { blockIndex, data } = this.writeState;
+        const start = blockIndex * this.blockSize;
+        const payload = data.length >= this.blockSize
+            ? data.slice(0, this.blockSize)
+            : [...data, ...new Array(this.blockSize - data.length).fill(0xff)];
+
+        this.storage.set(Uint8Array.from(payload), start);
+        this.writeState = null;
+
+        // Data accepted token (0bXXX00101), then one ready byte.
+        this.queueResponse([0x05, 0xff]);
+        this.state.lastOp = 'write-block';
+        this.stateChanged = true;
+    }
+
+    private handleWriteByte(value: number) {
+        if (!this.writeState) return;
+
+        const byte = value & 0xff;
+        if (this.writeState.stage === 'token') {
+            if (byte === SD_DATA_TOKEN) {
+                this.writeState.stage = 'payload';
+            }
+            return;
+        }
+
+        if (this.writeState.stage === 'payload') {
+            this.writeState.data.push(byte);
+            if (this.writeState.data.length >= this.blockSize) {
+                this.writeState.stage = 'crc1';
+            }
+            return;
+        }
+
+        if (this.writeState.stage === 'crc1') {
+            this.writeState.stage = 'crc2';
+            return;
+        }
+
+        if (this.writeState.stage === 'crc2') {
+            this.completeWriteBlock();
+        }
+    }
+
+    private handleCommandFrame(frame: number[]) {
+        const commandByte = frame[0] & 0xff;
+        const command = commandByte & 0x3f;
+        const arg = ((frame[1] << 24) | (frame[2] << 16) | (frame[3] << 8) | frame[4]) >>> 0;
+
+        this.state.lastCommand = `CMD${String(command).padStart(2, '0')}`;
+
+        if (command === 0) {
+            this.appCmdPending = false;
+            this.queueResponse([0x01]);
+            return;
+        }
+
+        if (command === 8) {
+            this.queueResponse([0x01, 0x00, 0x00, 0x01, 0xaa]);
+            return;
+        }
+
+        if (command === 55) {
+            this.appCmdPending = true;
+            this.queueResponse([0x01]);
+            return;
+        }
+
+        if (command === 41 && this.appCmdPending) {
+            this.appCmdPending = false;
+            this.queueResponse([0x00]);
+            return;
+        }
+
+        if (command === 58) {
+            // OCR with CCS bit set (SDHC-compatible addressing for simulator simplicity).
+            this.queueResponse([0x00, 0x40, 0x00, 0x00, 0x00]);
+            return;
+        }
+
+        if (command === 17) {
+            const blockIndex = this.parseBlockIndex(arg);
+            if (blockIndex === null) {
+                this.queueResponse([0x04]);
+            } else {
+                this.queueReadBlock(blockIndex);
+                this.state.lastOp = 'read-block';
+            }
+            this.stateChanged = true;
+            return;
+        }
+
+        if (command === 24) {
+            const blockIndex = this.parseBlockIndex(arg);
+            if (blockIndex === null) {
+                this.queueResponse([0x04]);
+            } else {
+                this.beginWriteBlock(blockIndex);
+                this.state.lastOp = 'write-block';
+            }
+            this.stateChanged = true;
+            return;
+        }
+
+        // Generic "accepted" for unsupported commands.
+        this.queueResponse([0x00]);
+    }
+
+    private async initLittleFsBackend() {
+        const factory = await tryLoadLittleFsFactory();
+        if (!factory) return;
+
+        try {
+            const littlefs = await factory({});
+            const volume = createLittleFsVolume(littlefs, this.storage, this.blockSize, this.blockCount);
+            if (!volume) return;
+
+            const rc = volume.formatAndMount();
+            if (rc < 0) {
+                volume.destroy();
+                return;
+            }
+
+            this.littleFsVolume = volume;
+            this.backendName = 'littlefs-wasm';
+            this.littleFsReady = true;
+
+            // Mirror known files into the mounted littlefs volume.
+            this.files.forEach((data, path) => {
+                volume.writeFile(path, data);
+            });
+
+            this.state.backend = this.backendName;
+            this.state.fsReady = true;
+            this.stateChanged = true;
+        } catch (e) {
+            // Keep memory backend if module init fails.
+        }
+    }
+
+    private formatCard() {
+        this.storage.fill(0xff);
+        this.files.clear();
+        this.writeShadowFile('/README.TXT', this.textEncoder.encode('OpenHW virtual SD card\n'));
+
+        if (this.littleFsVolume && this.littleFsReady) {
+            try {
+                this.littleFsVolume.formatAndMount();
+                this.files.forEach((data, path) => {
+                    this.littleFsVolume!.writeFile(path, data);
+                });
+            } catch (e) {
+                // keep shadow storage as fallback
+            }
+        }
+
+        this.state.lastOp = 'format';
+        this.state.lastPath = '/';
+        this.stateChanged = true;
+    }
+
+    private writeFile(pathLike: string, data: any) {
+        const path = this.normalizePath(pathLike);
+        const bytes = toUint8Array(data, this.textEncoder);
+
+        this.writeShadowFile(path, bytes);
+        if (this.littleFsVolume && this.littleFsReady) {
+            this.littleFsVolume.writeFile(path, bytes);
+        }
+
+        this.state.lastPath = path;
+        this.state.lastOp = 'write-file';
+        this.stateChanged = true;
+    }
+
+    private readFile(pathLike: string): Uint8Array | null {
+        const path = this.normalizePath(pathLike);
+        const found = this.files.get(path) || null;
+        if (!found) {
+            this.state.lastPath = path;
+            this.state.lastOp = 'read-miss';
+            this.state.lastReadPreview = '';
+            this.stateChanged = true;
+            return null;
+        }
+
+        const previewBytes = found.subarray(0, Math.min(found.length, 80));
+        this.state.lastPath = path;
+        this.state.lastOp = 'read-file';
+        this.state.lastReadPreview = this.textDecoder.decode(previewBytes);
+        this.stateChanged = true;
+        return new Uint8Array(found);
+    }
+
+    onPinStateChange(pinId: string, isHigh: boolean) {
+        const pin = String(pinId || '').toUpperCase();
+        if (pin === 'CS') {
+            this.csHigh = isHigh;
+            this.state.selected = !this.csHigh;
+            if (this.csHigh) {
+                this.commandFrame = [];
+                this.writeState = null;
+            }
+            this.stateChanged = true;
+            return;
+        }
+
+        if (pin === 'VCC' || pin === 'GND') {
+            this.refreshPowerState();
+        }
+    }
+
+    onEvent(event: any) {
+        const type = String(event?.type || '').toUpperCase();
+        if (!type) return;
+
+        if (type === 'SD_MOUNT' || type === 'MOUNT') {
+            this.setMounted(true);
+            this.state.lastOp = 'mount';
+            return;
+        }
+
+        if (type === 'SD_UNMOUNT' || type === 'UNMOUNT' || type === 'EJECT') {
+            this.setMounted(false);
+            this.state.lastOp = 'unmount';
+            return;
+        }
+
+        if (type === 'SD_FORMAT' || type === 'FORMAT') {
+            this.formatCard();
+            return;
+        }
+
+        if (type === 'SD_WRITE_FILE' || type === 'WRITE_FILE') {
+            this.writeFile(event?.path || event?.name || '/LOG.TXT', event?.data ?? event?.content ?? '');
+            return;
+        }
+
+        if (type === 'SD_READ_FILE' || type === 'READ_FILE') {
+            this.readFile(event?.path || event?.name || '/README.TXT');
+            return;
+        }
+
+        if (type === 'SD_DELETE_FILE' || type === 'DELETE_FILE') {
+            const path = this.normalizePath(event?.path || event?.name || '');
+            if (this.files.delete(path)) {
+                this.state.lastPath = path;
+                this.state.lastOp = 'delete-file';
+                this.updateFsCounters();
+                this.stateChanged = true;
+            }
+        }
+    }
+
+    onSPIByte(value: number) {
+        this.refreshPowerState();
+
+        if (!this.mounted || !this.powered || this.csHigh) {
+            return 0xff;
+        }
+
+        const byte = value & 0xff;
+        this.lastActivityAt = Date.now();
+        this.bytesIn += 1;
+        this.state.bytesIn = this.bytesIn;
+
+        if (this.responseQueue.length > 0) {
+            return this.emitResponseByte();
+        }
+
+        if (this.writeState) {
+            this.handleWriteByte(byte);
+            return this.emitResponseByte();
+        }
+
+        if (this.commandFrame.length === 0) {
+            if ((byte & 0xc0) === 0x40) {
+                this.commandFrame.push(byte);
+            } else if (byte === 0x9f) {
+                // Legacy SPI probe compatibility.
+                this.queueResponse([0x53, 0x44, 0x30]);
+            }
+            return this.emitResponseByte();
+        }
+
+        this.commandFrame.push(byte);
+        if (this.commandFrame.length >= 6) {
+            const frame = this.commandFrame.slice(0, 6);
+            this.commandFrame = [];
+            this.handleCommandFrame(frame);
+        }
+
+        return this.emitResponseByte();
+    }
+
+    update() {
+        this.refreshPowerState();
+
+        const active = (Date.now() - this.lastActivityAt) < 120;
+        if (this.state.activity !== active) {
+            this.state.activity = active;
+            this.stateChanged = true;
+        }
+
+        const fileCount = this.files.size;
+        if (this.state.fileCount !== fileCount) {
+            this.state.fileCount = fileCount;
+            this.stateChanged = true;
+        }
+
+        const usedBytes = this.computeUsedBytes();
+        if (this.state.usedBytes !== usedBytes) {
+            this.state.usedBytes = usedBytes;
+            this.stateChanged = true;
+        }
+    }
+}
+
+class GenericI2CDeviceLogic extends BaseComponent {
+    private readonly address: number;
+    private readonly readQueue: number[] = [];
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+
+        const type = String(manifest?.type || '').toLowerCase();
+        const defaultAddress = type === 'openhw-lcd2004-i2c'
+            ? 0x27
+            : type === 'max30102'
+                ? 0x57
+                : 0x3c;
+        const rawAddress = Number(
+            manifest?.attrs?.address
+            ?? manifest?.attrs?.i2cAddress
+            ?? manifest?.attrs?.addr
+            ?? defaultAddress
+        );
+        this.address = Number.isFinite(rawAddress) ? (rawAddress & 0x7f) : defaultAddress;
+
+        this.state = {
+            ...this.state,
+            i2cAddress: this.address,
+            i2cRxBytes: 0,
+            i2cTxBytes: 0,
+            lastWrite: 0,
+            lastRead: 0xff,
+        };
+    }
+
+    onI2CStart(address: number, read: boolean): boolean {
+        const ack = (address & 0x7f) === this.address;
+        this.state.lastReadMode = !!read;
+        this.stateChanged = true;
+        return ack;
+    }
+
+    onI2CByte(_address: number, data: number): boolean {
+        const byte = data & 0xff;
+        this.state.lastWrite = byte;
+        this.state.i2cRxBytes = Number(this.state.i2cRxBytes || 0) + 1;
+        this.stateChanged = true;
+
+        if (this.readQueue.length < 32) {
+            this.readQueue.push(byte);
+        }
+        return true;
+    }
+
+    onI2CReadByte(): number {
+        const byte = this.readQueue.length > 0
+            ? this.readQueue.shift()!
+            : Number(this.state.defaultReadByte ?? 0xff) & 0xff;
+        this.state.lastRead = byte;
+        this.state.i2cTxBytes = Number(this.state.i2cTxBytes || 0) + 1;
+        this.stateChanged = true;
+        return byte;
+    }
+}
+
+class GenericSPIDeviceLogic extends BaseComponent {
+    onSPIByte(data: number): number {
+        const byte = data & 0xff;
+        this.state.lastWrite = byte;
+        this.state.spiRxBytes = Number(this.state.spiRxBytes || 0) + 1;
+        this.stateChanged = true;
+
+        const response = Number(this.state.defaultReadByte ?? this.state.spiResponse ?? 0xff);
+        return Number.isFinite(response) ? (response & 0xff) : 0xff;
+    }
+}
+
+class SSD1306FallbackLogic extends BaseComponent {
+    private vram: number[];
+    private i2cAddress = 0x3c;
+    private isAddressed = false;
+
+    private awaitingControlByte = true;
+    private isDataMode = false;
+    private burstMode = false;
+
+    private addressingMode = 2;
+    private pageStart = 0;
+    private pageEnd = 7;
+    private colStart = 0;
+    private colEnd = 127;
+    private page = 0;
+    private column = 0;
+
+    private displayOn = true;
+    private invert = false;
+    private allOn = false;
+    private contrast = 0x7f;
+    private displayStartLine = 0;
+    private segmentRemap = false;
+    private multiplexRatio = 63;
+    private comScanDir = false;
+    private displayOffset = 0;
+    private comConfig = 0x12;
+
+    private pendingCommand = 0;
+    private pendingArgs = 0;
+    private args: number[] = [];
+
+    private vramDirty = false;
+    private stateUpdateCount = 0;
+    private cycleCount = 0;
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.vram = new Array(1024).fill(0);
+
+        const rawAddress = Number(
+            manifest?.attrs?.i2cAddress
+            ?? manifest?.attrs?.address
+            ?? 0x3c
+        );
+        if (Number.isFinite(rawAddress)) {
+            this.i2cAddress = rawAddress & 0x7f;
+        }
+
+        this.state = {
+            vram: [...this.vram],
+            invert: false,
+            allOn: false,
+            displayOn: true,
+            displayStartLine: 0,
+            segmentRemap: false,
+            comScanDir: false,
+            displayOffset: 0,
+            vramDirty: false,
+            updateCount: 0,
+        };
+    }
+
+    update(cpuCycles: number) {
+        this.cycleCount += cpuCycles;
+        if (this.cycleCount >= 266666) {
+            this.cycleCount = 0;
+            if (this.vramDirty) {
+                this.vramDirty = false;
+                this.stateUpdateCount += 1;
+                this.setState({
+                    vram: [...this.vram],
+                    invert: this.invert,
+                    allOn: this.allOn,
+                    displayOn: this.displayOn,
+                    displayStartLine: this.displayStartLine,
+                    segmentRemap: this.segmentRemap,
+                    comScanDir: this.comScanDir,
+                    displayOffset: this.displayOffset,
+                    vramDirty: false,
+                    updateCount: this.stateUpdateCount,
+                });
+            }
+        }
+    }
+
+    onI2CStart(addr: number, read: boolean): boolean {
+        if ((addr & 0x7f) === this.i2cAddress) {
+            if (read) return false;
+            this.isAddressed = true;
+            this.awaitingControlByte = true;
+            return true;
+        }
+        this.isAddressed = false;
+        return false;
+    }
+
+    onI2CByte(_addr: number, data: number): boolean {
+        if (!this.isAddressed) return false;
+
+        if (this.awaitingControlByte) {
+            this.isDataMode = (data & 0x40) !== 0;
+            this.burstMode = (data & 0x80) === 0;
+            this.awaitingControlByte = false;
+            return true;
+        }
+
+        if (this.isDataMode) {
+            this.writeVram(data & 0xff);
+        } else {
+            this.processCommand(data & 0xff);
+        }
+
+        if (!this.burstMode) {
+            this.awaitingControlByte = true;
+        }
+        return true;
+    }
+
+    onI2CStop() {
+        this.isAddressed = false;
+    }
+
+    private writeVram(data: number) {
+        const index = (this.page * 128) + this.column;
+        if (index >= 0 && index < 1024) {
+            this.vram[index] = data;
+            this.vramDirty = true;
+        }
+
+        if (this.addressingMode === 0) {
+            this.column += 1;
+            if (this.column > this.colEnd) {
+                this.column = this.colStart;
+                this.page += 1;
+                if (this.page > this.pageEnd) this.page = this.pageStart;
+            }
+        } else if (this.addressingMode === 1) {
+            this.page += 1;
+            if (this.page > this.pageEnd) {
+                this.page = this.pageStart;
+                this.column += 1;
+                if (this.column > this.colEnd) this.column = this.colStart;
+            }
+        } else {
+            this.column += 1;
+            if (this.column > 127) this.column = 0;
+        }
+    }
+
+    private getExpectedArgs(cmd: number): number {
+        if (this.pendingArgs > 0) return this.pendingArgs;
+
+        switch (cmd) {
+            case 0x81: return 1;
+            case 0x20: return 1;
+            case 0x21: return 2;
+            case 0x22: return 2;
+            case 0xa8: return 1;
+            case 0xd3: return 1;
+            case 0xd5: return 1;
+            case 0xd9: return 1;
+            case 0xda: return 1;
+            case 0xdb: return 1;
+            case 0x8d: return 1;
+            default: return 0;
+        }
+    }
+
+    private processCommand(cmd: number) {
+        if (this.pendingArgs > 0) {
+            this.args.push(cmd);
+            this.pendingArgs -= 1;
+            if (this.pendingArgs === 0) this.executeCommand();
+            return;
+        }
+
+        const expected = this.getExpectedArgs(cmd);
+        if (expected > 0) {
+            this.pendingCommand = cmd;
+            this.pendingArgs = expected;
+            this.args = [];
+            return;
+        }
+
+        if (cmd >= 0xb0 && cmd <= 0xb7) {
+            this.page = cmd & 0x07;
+            return;
+        }
+        if ((cmd & 0xf0) === 0x00) {
+            this.column = (this.column & 0xf0) | (cmd & 0x0f);
+            return;
+        }
+        if ((cmd & 0xf0) === 0x10) {
+            this.column = (this.column & 0x0f) | ((cmd & 0x0f) << 4);
+            return;
+        }
+        if (cmd >= 0x40 && cmd <= 0x7f) {
+            this.displayStartLine = cmd & 0x3f;
+            this.vramDirty = true;
+            return;
+        }
+
+        switch (cmd) {
+            case 0xa0:
+            case 0xa1:
+                this.segmentRemap = (cmd === 0xa1);
+                this.vramDirty = true;
+                break;
+            case 0xc0:
+            case 0xc8:
+                this.comScanDir = (cmd === 0xc8);
+                this.vramDirty = true;
+                break;
+            case 0xa4:
+                this.allOn = false;
+                this.vramDirty = true;
+                break;
+            case 0xa5:
+                this.allOn = true;
+                this.vramDirty = true;
+                break;
+            case 0xa6:
+                this.invert = false;
+                this.vramDirty = true;
+                break;
+            case 0xa7:
+                this.invert = true;
+                this.vramDirty = true;
+                break;
+            case 0xae:
+                this.displayOn = false;
+                this.vramDirty = true;
+                break;
+            case 0xaf:
+                this.displayOn = true;
+                this.vramDirty = true;
+                break;
+            default:
+                break;
+        }
+    }
+
+    private executeCommand() {
+        switch (this.pendingCommand) {
+            case 0x20:
+                this.addressingMode = this.args[0] & 0x03;
+                break;
+            case 0x21:
+                this.colStart = this.args[0] & 0x7f;
+                this.colEnd = this.args[1] & 0x7f;
+                this.column = this.colStart;
+                break;
+            case 0x22:
+                this.pageStart = this.args[0] & 0x07;
+                this.pageEnd = this.args[1] & 0x07;
+                this.page = this.pageStart;
+                break;
+            case 0x81:
+                this.contrast = this.args[0] & 0xff;
+                break;
+            case 0xa8:
+                this.multiplexRatio = this.args[0] & 0x3f;
+                break;
+            case 0xd3:
+                this.displayOffset = this.args[0] & 0x3f;
+                this.vramDirty = true;
+                break;
+            case 0xda:
+                this.comConfig = this.args[0] & 0xff;
+                this.vramDirty = true;
+                break;
+            default:
+                break;
+        }
+        this.pendingCommand = 0;
+    }
+
+    getSyncState() {
+        return { ...this.state };
+    }
+}
+
+class Lcd1602ParallelLogic extends BaseComponent {
+    private backlight = true;
+    private mode4bit = true;
+    private cursorX = 0;
+    private cursorY = 0;
+    private linesData: string[] = [
+        '                ',
+        '                ',
+    ];
+    private halfByte = 0;
+    private isNibble = false;
+    private pinStates: Record<string, boolean> = {
+        rs: false, rw: false, e: false,
+        d0: false, d1: false, d2: false, d3: false,
+        d4: false, d5: false, d6: false, d7: false,
+        a: true, k: false
+    };
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = { lines: [...this.linesData], illuminated: this.backlight };
+    }
+
+    onPinStateChange(pinId: string, isHigh: boolean, _cpuCycles: number): void {
+        const pin = pinId.toLowerCase();
+        const wasHigh = this.pinStates[pin];
+        this.pinStates[pin] = isHigh;
+
+        if (pin === 'a') {
+            if (this.backlight !== isHigh) {
+                this.backlight = isHigh;
+                this.stateChanged = true;
+                this.updateState();
+            }
+            return;
+        }
+
+        if (pin === 'e' && wasHigh && !isHigh) {
+            const d4 = this.pinStates.d4 ? 1 : 0;
+            const d5 = this.pinStates.d5 ? 1 : 0;
+            const d6 = this.pinStates.d6 ? 1 : 0;
+            const d7 = this.pinStates.d7 ? 1 : 0;
+            const dataNibble = (d7 << 7) | (d6 << 6) | (d5 << 5) | (d4 << 4);
+
+            const rs = this.pinStates.rs;
+
+            if (!this.isNibble) {
+                this.halfByte = dataNibble;
+                this.isNibble = true;
+            } else {
+                const fullByte = this.halfByte | (dataNibble >> 4);
+                this.isNibble = false;
+                this.processLCDCommand(rs, fullByte);
+            }
+            this.updateState();
+        }
+    }
+
+    private processLCDCommand(rs: boolean, data: number) {
+        if (!rs) {
+            if (data === 0x01) {
+                this.linesData = ['                ', '                '];
+                this.cursorX = 0;
+                this.cursorY = 0;
+            } else if (data === 0x02 || data === 0x03) {
+                this.cursorX = 0;
+                this.cursorY = 0;
+            } else if ((data & 0xf0) === 0x20) {
+                this.mode4bit = true;
+            } else if ((data & 0xf0) === 0x30) {
+                this.mode4bit = false;
+                this.isNibble = false;
+            } else if ((data & 0x80) === 0x80) {
+                const addr = data & 0x7f;
+                if (addr >= 0x00 && addr < 0x10) {
+                    this.cursorY = 0;
+                    this.cursorX = addr;
+                } else if (addr >= 0x40 && addr < 0x50) {
+                    this.cursorY = 1;
+                    this.cursorX = addr - 0x40;
+                }
+            }
+        } else if (this.cursorY < 2 && this.cursorX < 16) {
+            const lineArray = this.linesData[this.cursorY].split('');
+            lineArray[this.cursorX] = String.fromCharCode(data & 0xff);
+            this.linesData[this.cursorY] = lineArray.join('');
+            this.cursorX += 1;
+        }
+        this.stateChanged = true;
+    }
+
+    private updateState() {
+        this.state.lines = [...this.linesData];
+        this.state.illuminated = this.backlight;
+    }
+
+    onCustomTelemetry() {
+        const textContent = this.linesData.map(l => l.trimEnd()).join('\n').trimEnd();
+        this.setCustomTelemetry({
+            textContent: textContent || '<empty>',
+            backlight: this.backlight,
+            lineCount: 2,
+            charsPerLine: 16,
+        });
+    }
+
+    getSyncState() {
+        return { ...this.state };
+    }
+}
+
+class Lcd2004I2CFallbackLogic extends BaseComponent {
+    private readonly i2cAddress: number;
+    private backlight = true;
+    private mode4bit = false;
+    private cursorX = 0;
+    private cursorY = 0;
+    private linesData: string[] = [
+        '                    ',
+        '                    ',
+        '                    ',
+        '                    ',
+    ];
+    private halfByte = 0;
+    private isNibble = false;
+    private lastByte = 0;
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        const rawAddress = Number(
+            manifest?.attrs?.i2cAddress
+            ?? manifest?.attrs?.address
+            ?? 0x27
+        );
+        this.i2cAddress = Number.isFinite(rawAddress) ? (rawAddress & 0x7f) : 0x27;
+        this.state = { lines: [...this.linesData], illuminated: this.backlight };
+    }
+
+    onI2CStart(addr: number, isRead: boolean): boolean {
+        return !isRead && ((addr & 0x7f) === this.i2cAddress);
+    }
+
+    onI2CByte(_addr: number, value: number): boolean {
+        const rs = (value & 0x01) !== 0;
+        const rw = (value & 0x02) !== 0;
+        const en = (value & 0x04) !== 0;
+        const bl = (value & 0x08) !== 0;
+        const lastEn = (this.lastByte & 0x04) !== 0;
+
+        if (lastEn && !en && !rw) {
+            const dataNibble = value & 0xf0;
+            if (!this.mode4bit) {
+                this.processLCDCommand(rs, dataNibble);
+            } else if (!this.isNibble) {
+                this.halfByte = dataNibble;
+                this.isNibble = true;
+            } else {
+                const fullByte = this.halfByte | (dataNibble >> 4);
+                this.isNibble = false;
+                this.processLCDCommand(rs, fullByte);
+            }
+        }
+
+        if (this.backlight !== bl) {
+            this.backlight = bl;
+            this.stateChanged = true;
+        }
+
+        this.lastByte = value;
+        this.updateState();
+        return true;
+    }
+
+    private processLCDCommand(rs: boolean, data: number) {
+        if (!rs) {
+            if (data === 0x01) {
+                this.linesData = ['                    ', '                    ', '                    ', '                    '];
+                this.cursorX = 0;
+                this.cursorY = 0;
+            } else if (data === 0x02 || data === 0x03) {
+                this.cursorX = 0;
+                this.cursorY = 0;
+            } else if ((data & 0xf0) === 0x20) {
+                this.mode4bit = true;
+            } else if ((data & 0xf0) === 0x30) {
+                this.mode4bit = false;
+                this.isNibble = false;
+            } else if ((data & 0x80) === 0x80) {
+                const addr = data & 0x7f;
+                if (addr >= 0x00 && addr < 0x14) {
+                    this.cursorY = 0;
+                    this.cursorX = addr;
+                } else if (addr >= 0x40 && addr < 0x54) {
+                    this.cursorY = 1;
+                    this.cursorX = addr - 0x40;
+                } else if (addr >= 0x14 && addr < 0x28) {
+                    this.cursorY = 2;
+                    this.cursorX = addr - 0x14;
+                } else if (addr >= 0x54 && addr < 0x68) {
+                    this.cursorY = 3;
+                    this.cursorX = addr - 0x54;
+                }
+            }
+        } else if (this.cursorY < 4 && this.cursorX < 20) {
+            const lineArray = this.linesData[this.cursorY].split('');
+            lineArray[this.cursorX] = String.fromCharCode(data & 0xff);
+            this.linesData[this.cursorY] = lineArray.join('');
+            this.cursorX += 1;
+        }
+
+        this.stateChanged = true;
+    }
+
+    private updateState() {
+        this.state.lines = [...this.linesData];
+        this.state.illuminated = this.backlight;
+    }
+
+    getSyncState() {
+        return { ...this.state };
+    }
+}
+
+class ILI9341FallbackLogic extends BaseComponent {
+    private dcHigh = false;
+    private csHigh = true;
+    private currentCommand = 0;
+
+    private colStart = 0;
+    private colEnd = 239;
+    private rowStart = 0;
+    private rowEnd = 319;
+    private currentX = 0;
+    private currentY = 0;
+
+    private params: number[] = [];
+    private secondByte = false;
+    private firstByteValue = 0;
+
+    private vram = new Uint8Array(240 * 320 * 3);
+    private vramDirty = false;
+    private lastSync = 0;
+    private powerOn = true;
+    private spiRxBytes = 0;
+    private spiCmdBytes = 0;
+    private spiDataBytes = 0;
+    private ramwrPixels = 0;
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.state = {
+            buffer: this.vram,
+            powerOn: true,
+            t: Date.now(),
+            spiRxBytes: 0,
+            spiCmdBytes: 0,
+            spiDataBytes: 0,
+            ramwrPixels: 0,
+            lastCommand: 0,
+            csHigh: true,
+            dcHigh: false,
+        };
+    }
+
+    update() {
+        const now = Date.now();
+        const newPower = this.getPinVoltage('VCC') > 2.0;
+
+        if (newPower !== this.powerOn) {
+            this.powerOn = newPower;
+            this.stateChanged = true;
+            if (!this.powerOn) {
+                this.vram.fill(0);
+                this.vramDirty = true;
+            }
+        }
+
+        const minFlushIntervalMs = this.powerOn ? 40 : 0;
+        if (this.vramDirty && (now - this.lastSync) >= minFlushIntervalMs) {
+            this.lastSync = now;
+            this.vramDirty = false;
+            this.stateChanged = true;
+        }
+    }
+
+    onPinStateChange(pinId: string, isHigh: boolean) {
+        const pin = String(pinId || '').toUpperCase();
+        if (pin === 'DC') {
+            this.dcHigh = isHigh;
+        } else if (pin === 'CS') {
+            this.csHigh = isHigh;
+            if (isHigh) {
+                this.params = [];
+                this.secondByte = false;
+            }
+        } else if (pin === 'RESET' && !isHigh) {
+            this.vram.fill(0);
+            this.vramDirty = true;
+        }
+    }
+
+    onSPIByte(data: number): number {
+        this.spiRxBytes += 1;
+        if (this.csHigh || !this.powerOn) return 0xff;
+
+        if (!this.dcHigh) {
+            this.currentCommand = data & 0xff;
+            this.spiCmdBytes += 1;
+            this.params = [];
+            this.secondByte = false;
+            if (this.currentCommand === 0x2c) {
+                this.currentX = this.colStart;
+                this.currentY = this.rowStart;
+            }
+        } else {
+            this.spiDataBytes += 1;
+            this.handleDataByte(data & 0xff);
+        }
+        return 0x00;
+    }
+
+    private handleDataByte(data: number) {
+        switch (this.currentCommand) {
+            case 0x2a:
+                this.params.push(data);
+                if (this.params.length === 4) {
+                    this.colStart = (this.params[0] << 8) | this.params[1];
+                    this.colEnd = (this.params[2] << 8) | this.params[3];
+                    this.currentX = this.colStart;
+                }
+                break;
+            case 0x2b:
+                this.params.push(data);
+                if (this.params.length === 4) {
+                    this.rowStart = (this.params[0] << 8) | this.params[1];
+                    this.rowEnd = (this.params[2] << 8) | this.params[3];
+                    this.currentY = this.rowStart;
+                }
+                break;
+            case 0x2c:
+                if (!this.secondByte) {
+                    this.firstByteValue = data;
+                    this.secondByte = true;
+                } else {
+                    const full = (this.firstByteValue << 8) | data;
+                    this.secondByte = false;
+
+                    const r = ((full >> 11) & 0x1f) << 3;
+                    const g = ((full >> 5) & 0x3f) << 2;
+                    const b = (full & 0x1f) << 3;
+
+                    if (this.currentX >= 0 && this.currentX < 240 && this.currentY >= 0 && this.currentY < 320) {
+                        const idx = (this.currentY * 240 + this.currentX) * 3;
+                        this.vram[idx] = r;
+                        this.vram[idx + 1] = g;
+                        this.vram[idx + 2] = b;
+                        this.vramDirty = true;
+                        this.ramwrPixels += 1;
+                    }
+
+                    this.currentX += 1;
+                    if (this.currentX > this.colEnd) {
+                        this.currentX = this.colStart;
+                        this.currentY += 1;
+                        if (this.currentY > this.rowEnd) {
+                            this.currentY = this.rowStart;
+                        }
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    }
+
+    getSyncState() {
+        return {
+            buffer: this.vram,
+            powerOn: this.powerOn,
+            spiRxBytes: this.spiRxBytes,
+            spiCmdBytes: this.spiCmdBytes,
+            spiDataBytes: this.spiDataBytes,
+            ramwrPixels: this.ramwrPixels,
+            lastCommand: this.currentCommand,
+            csHigh: this.csHigh,
+            dcHigh: this.dcHigh,
+            t: Date.now(),
+        };
+    }
+}
+
+class SimulationMonitorLogic extends BaseComponent {
+    private simStartTime: number = 0;
+    private lastSampleTime: number = 0;
+    private lastCycles: number = 0;
+    private sliceDurations: number[] = [];
+    private lastSerializationTimeMs: number = 0.05;
+    private lastPayloadBytes: number = 1024;
+
+    constructor(id: string, manifest: any) {
+        super(id, manifest);
+        this.simStartTime = performance.now();
+        this.lastSampleTime = performance.now();
+        this.state = {
+            simulationSpeed: 1.0,
+            timeDriftMs: 0,
+            executionJitterMs: 0,
+            frameSkips: 0,
+            workerBufferLatency: 0,
+            workerCpuLoadPercentage: 0,
+            telemetrySerializationTimeMs: 0,
+            telemetryPayloadBytes: 0,
+            canvasFps: 60,
+            uiMainThreadBlockedTimeMs: 0,
+            workerMessageQueueLagMs: 0
+        };
+        this.stateChanged = true;
+    }
+
+    updateMetrics(cpuCycles: number, targetFreq: number, isTelemetryEnabled: boolean, watchedParams: string[]) {
+        const now = performance.now();
+        if (this.simStartTime === 0) {
+            this.simStartTime = now;
+            this.lastSampleTime = now;
+            this.lastCycles = cpuCycles;
+            return;
+        }
+
+        const realDelta = Math.max(0.001, now - this.lastSampleTime);
+        const cycleDelta = Math.max(0, cpuCycles - this.lastCycles);
+
+        const watchAll = watchedParams.includes('all');
+        const watchSram = watchAll || watchedParams.includes('deepSiliconSRAM');
+        const activeParamsCount = watchAll ? 10 : watchedParams.length;
+
+        if (isTelemetryEnabled) {
+            this.lastSerializationTimeMs = watchSram ? 8.4 + (activeParamsCount * 0.2) : 0.4 + (activeParamsCount * 0.05);
+            this.lastPayloadBytes = watchSram ? 38500 + (activeParamsCount * 500) : 1250 + (activeParamsCount * 120);
+        } else {
+            this.lastSerializationTimeMs = 0.02;
+            this.lastPayloadBytes = 240;
+        }
+
+        // 1. simulationSpeed
+        const virtualTimeDelta = (cycleDelta / targetFreq) * 1000;
+        const speed = Number((virtualTimeDelta / realDelta).toFixed(3));
+
+        // 2. timeDriftMs
+        const totalVirtualTimeMs = (cpuCycles / targetFreq) * 1000;
+        const totalRealTimeMs = now - this.simStartTime;
+        const drift = Number((totalVirtualTimeMs - totalRealTimeMs).toFixed(2));
+
+        // 3. executionJitterMs
+        this.sliceDurations.push(realDelta);
+        if (this.sliceDurations.length > 30) this.sliceDurations.shift();
+        const avgSlice = this.sliceDurations.reduce((a, b) => a + b, 0) / this.sliceDurations.length;
+        const jitter = Number(Math.abs(realDelta - avgSlice).toFixed(2));
+
+        // 4. frameSkips
+        let skips = this.state?.frameSkips || 0;
+        if (realDelta > 25) skips++;
+
+        // 5. workerBufferLatency
+        const bufferLatency = Number((this.lastSerializationTimeMs * 1.2).toFixed(2));
+
+        // 6. workerCpuLoadPercentage
+        const load = isTelemetryEnabled ? Number(Math.min(98, (this.lastSerializationTimeMs / realDelta) * 100 + 15).toFixed(1)) : Number((2.5).toFixed(1));
+
+        this.lastSampleTime = now;
+        this.lastCycles = cpuCycles;
+
+        const nextState = {
+            simulationSpeed: Number.isFinite(speed) ? speed : 1.0,
+            timeDriftMs: drift,
+            executionJitterMs: jitter,
+            frameSkips: skips,
+            workerBufferLatency: bufferLatency,
+            workerCpuLoadPercentage: load,
+            telemetrySerializationTimeMs: Number(this.lastSerializationTimeMs.toFixed(3)),
+            telemetryPayloadBytes: this.lastPayloadBytes,
+            canvasFps: isTelemetryEnabled ? (load > 50 ? 28 : 58) : 60,
+            uiMainThreadBlockedTimeMs: isTelemetryEnabled ? Number((this.lastSerializationTimeMs * 2.5).toFixed(1)) : 1.2,
+            workerMessageQueueLagMs: isTelemetryEnabled ? (load > 50 ? 12.4 : 1.5) : 0.2
+        };
+
+        this.state = nextState;
+        this.stateChanged = true;
+        return nextState;
+    }
+
+    getSyncState() {
+        this.stateChanged = true;
+        return this.state;
+    }
+
+    getTelemetryData() {
+        return this.state;
+    }
+}
+
+export const LOGIC_REGISTRY: Record<string, any> = {
+    'wokwi-led': LEDLogic,
+    'openhw-led': LEDLogic,
+    'wokwi-arduino-uno': UnoLogic,
+    'openhw-arduino-uno': UnoLogic,
+    'wokwi-raspberry-pi-pico': PicoLogic,
+    'openhw-raspberry-pi-pico': PicoLogic,
+    'wokwi-raspberry-pi-pico-w': PicoLogic,
+    'openhw-raspberry-pi-pico-w': PicoLogic,
+    'wokwi-resistor': ResistorLogic,
+    'openhw-resistor': ResistorLogic,
+    'wokwi-pushbutton': PushbuttonLogic,
+    'openhw-pushbutton': PushbuttonLogic,
+    'wokwi-power-supply': PowerSupplyLogic,
+    'openhw-power-supply': PowerSupplyLogic,
+    'wokwi-neopixel-matrix': NeopixelLogic,
+    'openhw-neopixel-matrix': NeopixelLogic,
+    'wokwi-ws2812b': NeopixelLogic,
+    'openhw-ws2812b': NeopixelLogic,
+    'wokwi-ws2821b': NeopixelLogic,
+    'openhw-ws2821b': NeopixelLogic,
+    'wokwi-buzzer': BuzzerLogic,
+    'openhw-buzzer': BuzzerLogic,
+    'wokwi-motor': MotorLogic,
+    'openhw-motor': MotorLogic,
+    'wokwi-servo': ServoLogic,
+    'openhw-servo': ServoLogic,
+    'wokwi-motor-driver': MotorDriverLogic,
+    'openhw-motor-driver': MotorDriverLogic,
+    'wokwi-slide-potentiometer': SlidePotLogic,
+    'openhw-slide-potentiometer': SlidePotLogic,
+    'wokwi-potentiometer': PotentiometerLogic,
+    'openhw-potentiometer': PotentiometerLogic,
+    'wokwi-lcd2004-i2c': Lcd2004I2CFallbackLogic,
+    'openhw-lcd2004-i2c': Lcd2004I2CFallbackLogic,
+    'wokwi-lcd1602': Lcd1602ParallelLogic,
+    'openhw-lcd1602': Lcd1602ParallelLogic,
+    'wokwi-lcd1602-i2c': Lcd2004I2CFallbackLogic,
+    'openhw-lcd1602-i2c': Lcd2004I2CFallbackLogic,
+    'wokwi-ssd1306-oled': SSD1306FallbackLogic,
+    'openhw-ssd1306-oled': SSD1306FallbackLogic,
+    max30102: GenericI2CDeviceLogic,
+    'wokwi-max7219': GenericSPIDeviceLogic,
+    'openhw-max7219': GenericSPIDeviceLogic,
+    'wokwi-ldr-module': BaseComponent,
+    'openhw-ldr-module': BaseComponent,
+    'wokwi-7segment': BaseComponent,
+    'openhw-7segment': BaseComponent,
+    'wokwi-ili9341': ILI9341FallbackLogic,
+    'openhw-ili9341': ILI9341FallbackLogic,
+    'wokwi-sd-card': SDCardLogic,
+    'openhw-sd-card': SDCardLogic,
+    'shift_register': ShiftRegisterLogic,
+    'wokwi-membrane-keypad': KeypadLogic,
+    'openhw-membrane-keypad': KeypadLogic,
+    'wokwi-analog-joystick': JoystickLogic,
+    'openhw-analog-joystick': JoystickLogic,
+    'openhw-rotary-encoder': RotaryEncoderLogic,
+    'wokwi-rotary-encoder': RotaryEncoderLogic,
+    'logic-ic-74xx': LogicIC74xxLogic,
+    'logic-mux-2to1': Mux2to1Logic,
+    'logic-d-flipflop': DFlipFlopLogic,
+    'logic-d-flipflop-r': DFlipFlopRLogic,
+    'logic-d-flipflop-dsr': DFlipFlopDsrLogic,
+    'logic-clock-generator': ClockGeneratorLogic,
+    'logic-and-gate': AndGateLogic,
+    'logic-buffer-gate': BufferGateLogic,
+    'logic-not-gate': NotGateLogic,
+    'logic-or-gate': OrGateLogic,
+    'logic-nor-gate': NorGateLogic,
+    'logic-nand-gate': NandGateLogic,
+    'logic-xor-gate': XorGateLogic,
+    'logic-xnor-gate': XnorGateLogic,
+    'wokwi-tm1637-7segment': WokwiTM1637Logic,
+    'openhw-tm1637-7segment': WokwiTM1637Logic,
+    'wokwi-rgb-led': RGBLEDLogic,
+    'openhw-rgb-led': RGBLEDLogic,
+    'wokwi-nokia-5110': Nokia5110Logic,
+    'openhw-nokia-5110': Nokia5110Logic,
+    'wokwi-l293d': L293DLogic,
+    'openhw-l293d': L293DLogic,
+    'wokwi-arduino-nano': UnoLogic,
+    'openhw-arduino-nano': UnoLogic,
+    'wokwi-pca9685': PCA9685Logic,
+    'openhw-pca9685': PCA9685Logic,
+    'wokwi-pca9865': PCA9685Logic,
+    'openhw-pca9865': PCA9685Logic,
+    'wokwi-soil-moisture-sensor': SoilMoistureSensorLogic,
+    'openhw-soil-moisture-sensor': SoilMoistureSensorLogic,
+    'wokwi-photodiode': PhotodiodeLogic,
+    'openhw-photodiode': PhotodiodeLogic,
+    'wokwi-diode': DiodeLogic,
+    'openhw-diode': DiodeLogic,
+    'wokwi-npn-transistor': NPNTransistorLogic,
+    'openhw-npn-transistor': NPNTransistorLogic,
+    'wokwi-a4988': A4988Logic,
+    'openhw-a4988': A4988Logic,
+    'wokwi-cd74hc4067': CD74HC4067Logic,
+    'openhw-cd74hc4067': CD74HC4067Logic,
+    'wokwi-logic-analyzer': LogicAnalyzerLogic,
+    'openhw-logic-analyzer': LogicAnalyzerLogic,
+    'wokwi-breadboard': BaseComponent,
+    'openhw-breadboard': BaseComponent,
+    'wokwi-breadboard-half': BaseComponent,
+    'openhw-breadboard-half': BaseComponent,
+    'wokwi-bmp180': BaseComponent,
+    'openhw-bmp180': BaseComponent,
+    'wokwi-bmp180-breakout': BaseComponent,
+    'openhw-bmp180-breakout': BaseComponent,
+    'wokwi-ds1307-rtc': BaseComponent,
+    'openhw-ds1307-rtc': BaseComponent,
+    'wokwi-hc-sr04': BaseComponent,
+    'openhw-hc-sr04': BaseComponent,
+    'wokwi-mpu6050': BaseComponent,
+    'openhw-mpu6050': BaseComponent,
+    'wokwi-nlsf595': BaseComponent,
+    'openhw-nlsf595': BaseComponent,
+    'wokwi-relay-module': BaseComponent,
+    'openhw-relay-module': BaseComponent,
+    'wokwi-stepper-motor': BaseComponent,
+    'openhw-stepper-motor': BaseComponent,
+    'wokwi-arduino-mega': MegaLogic,
+    'openhw-arduino-mega': MegaLogic,
+    'wokwi-attiny85': BaseComponent,
+    'openhw-attiny85': BaseComponent,
+    'openhw-pico': PicoLogic,
+    'openhw-pico-w': PicoLogic,
+    'openhw-photoresistor': BaseComponent,
+    'openhw-ntc-thermistor': BaseComponent,
+    'openhw-ntc-temperature-sensor': BaseComponent,
+    'openhw-battery': BaseComponent,
+    'openhw-charger': BaseComponent,
+    'openhw-breadboard-mini': BaseComponent,
+    'openhw-neopixel-ring': NeopixelLogic,
+    'openhw-arduino-sensor-shield': BaseComponent,
+    'openhw-simulation-monitor': SimulationMonitorLogic,
+};
+
+// Per-type pin lists so every component's pins are registered correctly
+export const COMPONENT_PINS: Record<string, { id: string }[]> = {
+    'wokwi-led': [{ id: 'A' }, { id: 'K' }],
+    'openhw-led': [{ id: 'A' }, { id: 'K' }],
+    'wokwi-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
+    'wokwi-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'wokwi-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
+    'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
+    'wokwi-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
+    'openhw-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
+    'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
+    'openhw-buzzer': [{ id: '1' }, { id: '2' }],
+    'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-ws2821b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-ws2821b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
+    'openhw-servo': [{ id: 'GND' }, { id: 'V+' }, { id: 'PWM' }],
+    'wokwi-motor': [{ id: '1' }, { id: '2' }],
+    'openhw-motor': [{ id: '1' }, { id: '2' }],
+    'wokwi-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
+    'openhw-motor-driver': [{ id: 'ENA' }, { id: 'ENB' }, { id: 'IN1' }, { id: 'IN2' }, { id: 'IN3' }, { id: 'IN4' }, { id: 'OUT1' }, { id: 'OUT2' }, { id: 'OUT3' }, { id: 'OUT4' }, { id: '12V' }, { id: '5V' }, { id: 'GND' }],
+    'wokwi-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
+    'openhw-potentiometer': [{ id: '1' }, { id: '2' }, { id: 'SIG' }],
+    'wokwi-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+    'openhw-slide-potentiometer': [{ id: 'GND' }, { id: 'SIG' }, { id: 'VCC' }],
+    'wokwi-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-lcd2004-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'wokwi-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
+    'openhw-lcd1602': [{ id: 'VSS' }, { id: 'VDD' }, { id: 'V0' }, { id: 'RS' }, { id: 'RW' }, { id: 'E' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'A' }, { id: 'K' }],
+    'wokwi-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-lcd1602-i2c': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'wokwi-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-ssd1306-oled': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SCL' }, { id: 'SDA' }],
+    max30102: [{ id: 'VIN' }, { id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'INT' }, { id: 'IRD' }, { id: 'RD' }, { id: 'NC' }],
+    'wokwi-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
+    'openhw-max7219': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DIN' }, { id: 'CS' }, { id: 'CLK' }, { id: 'VCC_OUT' }, { id: 'GND_OUT' }, { id: 'DOUT' }, { id: 'CS_OUT' }, { id: 'CLK_OUT' }],
+    'wokwi-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'openhw-ldr-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'wokwi-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
+    'openhw-7segment': [{ id: 'A' }, { id: 'B' }, { id: 'C' }, { id: 'D' }, { id: 'E' }, { id: 'F' }, { id: 'G' }, { id: 'DP' }, { id: 'DIG1' }, { id: 'DIG2' }, { id: 'DIG3' }, { id: 'DIG4' }, { id: 'COLON' }],
+    'wokwi-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
+    'openhw-ili9341': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'RESET' }, { id: 'DC' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'LED' }, { id: 'MISO' }],
+    'wokwi-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
+    'openhw-sd-card': [{ id: 'VCC' }, { id: 'GND' }, { id: 'CS' }, { id: 'SCK' }, { id: 'MOSI' }, { id: 'MISO' }],
+    'wokwi-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
+    'openhw-power-supply': [{ id: 'GND' }, { id: 'VCC' }],
+    'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
+    'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
+    'openhw-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
+    'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'openhw-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
+    'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
+    'logic-mux-2to1': [{ id: 'D0' }, { id: 'D1' }, { id: 'SEL' }, { id: 'OUT' }],
+    'logic-d-flipflop': [{ id: 'D' }, { id: 'CLK' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-d-flipflop-r': [{ id: 'D' }, { id: 'CLK' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-d-flipflop-dsr': [{ id: 'D' }, { id: 'CLK' }, { id: 'S' }, { id: 'R' }, { id: 'Q' }, { id: 'Qbar' }],
+    'logic-and-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-buffer-gate': [{ id: 'IN' }, { id: 'OUT' }],
+    'logic-not-gate': [{ id: 'IN' }, { id: 'OUT' }],
+    'logic-or-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-nor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-nand-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-xor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-xnor-gate': [{ id: 'IN1' }, { id: 'IN2' }, { id: 'OUT' }],
+    'logic-clock-generator': [{ id: 'OUT' }],
+    'wokwi-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-tm1637-7segment': [{ id: 'CLK' }, { id: 'DIO' }, { id: 'VCC' }, { id: 'GND' }],
+    'wokwi-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
+    'wokwi-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
+    'openhw-rgb-led': [{ id: 'R' }, { id: 'COM' }, { id: 'G' }, { id: 'B' }],
+    'wokwi-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
+    'openhw-nokia-5110': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCE' }, { id: 'RST' }, { id: 'DC' }, { id: 'DN' }, { id: 'SCLK' }, { id: 'LED' }],
+    'wokwi-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
+    'openhw-l293d': [{ id: 'EN1,2' }, { id: 'IN1' }, { id: 'OUT1' }, { id: 'GND1' }, { id: 'GND2' }, { id: 'OUT2' }, { id: 'IN2' }, { id: 'VCC2' }, { id: 'VCC1' }, { id: 'IN4' }, { id: 'OUT4' }, { id: 'GND4' }, { id: 'GND3' }, { id: 'OUT3' }, { id: 'IN3' }, { id: 'EN3,4' }],
+    'wokwi-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
+    'openhw-arduino-nano': [{ id: 'D0' }, { id: 'RX' }, { id: 'D1' }, { id: 'TX' }, { id: 'D2' }, { id: '2' }, { id: 'D3' }, { id: '3' }, { id: 'D4' }, { id: '4' }, { id: 'D5' }, { id: '5' }, { id: 'D6' }, { id: '6' }, { id: 'D7' }, { id: '7' }, { id: 'D8' }, { id: '8' }, { id: 'D9' }, { id: '9' }, { id: 'D10' }, { id: '10' }, { id: 'D11' }, { id: '11' }, { id: 'D12' }, { id: '12' }, { id: 'D13' }, { id: '13' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: '5V' }, { id: 'VCC' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'RST.1' }, { id: 'RST.2' }, { id: 'VIN' }, { id: 'AREF' }],
+    'wokwi-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'openhw-pca9685': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'wokwi-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'openhw-pca9865': [{ id: 'SDA' }, { id: 'SCL' }, { id: 'GND' }, { id: 'VCC' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'S4' }, { id: 'S5' }, { id: 'S6' }, { id: 'S7' }, { id: 'S8' }, { id: 'S9' }, { id: 'S10' }, { id: 'S11' }, { id: 'S12' }, { id: 'S13' }, { id: 'S14' }, { id: 'S15' }],
+    'wokwi-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'openhw-soil-moisture-sensor': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SIG' }],
+    'wokwi-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
+    'openhw-cd74hc4067': [{ id: 'VCC' }, { id: 'GND' }, { id: 'EN' }, { id: 'S0' }, { id: 'S1' }, { id: 'S2' }, { id: 'S3' }, { id: 'SIG' }, { id: 'C0' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }, { id: 'C5' }, { id: 'C6' }, { id: 'C7' }, { id: 'C8' }, { id: 'C9' }, { id: 'C10' }, { id: 'C11' }, { id: 'C12' }, { id: 'C13' }, { id: 'C14' }, { id: 'C15' }],
+    'wokwi-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
+    'openhw-logic-analyzer': [{ id: 'GND' }, { id: 'D0' }, { id: 'D1' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }],
+    'wokwi-photodiode': [{ id: 'A' }, { id: 'C' }],
+    'openhw-photodiode': [{ id: 'A' }, { id: 'C' }],
+    'wokwi-diode': [{ id: 'A' }, { id: 'C' }],
+    'openhw-diode': [{ id: 'A' }, { id: 'C' }],
+    'wokwi-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
+    'openhw-npn-transistor': [{ id: 'E' }, { id: 'B' }, { id: 'C' }],
+    'wokwi-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
+    'openhw-a4988': [{ id: 'ENABLE' }, { id: 'MS1' }, { id: 'MS2' }, { id: 'MS3' }, { id: 'RESET' }, { id: 'SLEEP' }, { id: 'STEP' }, { id: 'DIR' }, { id: 'VMOT' }, { id: 'GND_MOT' }, { id: '2B' }, { id: '2A' }, { id: '1A' }, { id: '1B' }, { id: 'VDD' }, { id: 'GND_LOGIC' }],
+    'wokwi-bmp180': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-bmp180': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'wokwi-bmp180-breakout': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'openhw-bmp180-breakout': [{ id: 'VIN' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }],
+    'wokwi-ds1307-rtc': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'openhw-ds1307-rtc': [{ id: 'GND' }, { id: 'VCC' }, { id: 'SDA' }, { id: 'SCL' }],
+    'wokwi-hc-sr04': [{ id: 'VCC' }, { id: 'TRIG' }, { id: 'ECHO' }, { id: 'GND' }],
+    'openhw-hc-sr04': [{ id: 'VCC' }, { id: 'TRIG' }, { id: 'ECHO' }, { id: 'GND' }],
+    'wokwi-mpu6050': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'XDA' }, { id: 'XCL' }, { id: 'ADO' }, { id: 'INT' }],
+    'openhw-mpu6050': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SCL' }, { id: 'SDA' }, { id: 'XDA' }, { id: 'XCL' }, { id: 'ADO' }, { id: 'INT' }],
+    'wokwi-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'SRCLK' }, { id: 'RCLK' }, { id: 'OE' }, { id: 'SRCLR' }, { id: 'Q0' }, { id: 'Q1' }, { id: 'Q2' }, { id: 'Q3' }, { id: 'Q4' }, { id: 'Q5' }, { id: 'Q6' }, { id: 'Q7' }, { id: 'Q7S' }],
+    'openhw-nlsf595': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SER' }, { id: 'SRCLK' }, { id: 'RCLK' }, { id: 'OE' }, { id: 'SRCLR' }, { id: 'Q0' }, { id: 'Q1' }, { id: 'Q2' }, { id: 'Q3' }, { id: 'Q4' }, { id: 'Q5' }, { id: 'Q6' }, { id: 'Q7' }, { id: 'Q7S' }],
+    'wokwi-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }],
+    'openhw-relay-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'IN' }, { id: 'NO' }, { id: 'NC' }, { id: 'COM' }],
+    'wokwi-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
+    'openhw-stepper-motor': [{ id: 'A+' }, { id: 'A-' }, { id: 'B+' }, { id: 'B-' }],
+    'wokwi-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }],
+    'openhw-arduino-mega': [{ id: 'D0' }, { id: 'RX0' }, { id: 'D1' }, { id: 'TX0' }, { id: 'D2' }, { id: 'D3' }, { id: 'D4' }, { id: 'D5' }, { id: 'D6' }, { id: 'D7' }, { id: 'D8' }, { id: 'D9' }, { id: 'D10' }, { id: 'D11' }, { id: 'D12' }, { id: 'D13' }, { id: 'D14' }, { id: 'TX3' }, { id: 'D15' }, { id: 'RX3' }, { id: 'D16' }, { id: 'TX2' }, { id: 'D17' }, { id: 'RX2' }, { id: 'D18' }, { id: 'TX1' }, { id: 'D19' }, { id: 'RX1' }, { id: 'D20' }, { id: 'SDA' }, { id: 'D21' }, { id: 'SCL' }, { id: 'D22' }, { id: 'D23' }, { id: 'D24' }, { id: 'D25' }, { id: 'D26' }, { id: 'D27' }, { id: 'D28' }, { id: 'D29' }, { id: 'D30' }, { id: 'D31' }, { id: 'D32' }, { id: 'D33' }, { id: 'D34' }, { id: 'D35' }, { id: 'D36' }, { id: 'D37' }, { id: 'D38' }, { id: 'D39' }, { id: 'D40' }, { id: 'D41' }, { id: 'D42' }, { id: 'D43' }, { id: 'D44' }, { id: 'D45' }, { id: 'D46' }, { id: 'D47' }, { id: 'D48' }, { id: 'D49' }, { id: 'D50' }, { id: 'MISO' }, { id: 'D51' }, { id: 'MOSI' }, { id: 'D52' }, { id: 'SCK' }, { id: 'D53' }, { id: 'SS' }, { id: 'A0' }, { id: 'A1' }, { id: 'A2' }, { id: 'A3' }, { id: 'A4' }, { id: 'A5' }, { id: 'A6' }, { id: 'A7' }, { id: 'A8' }, { id: 'A9' }, { id: 'A10' }, { id: 'A11' }, { id: 'A12' }, { id: 'A13' }, { id: 'A14' }, { id: 'A15' }, { id: '5V' }, { id: '3V3' }, { id: 'GND' }, { id: 'GND.1' }, { id: 'GND.2' }, { id: 'RST' }, { id: 'VIN' }, { id: 'AREF' }, { id: 'IORF' }],
+    'wokwi-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],
+    'openhw-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
+    'openhw-photoresistor': [{ id: '1' }, { id: '2' }],
+    'openhw-ntc-thermistor': [{ id: '1' }, { id: '2' }],
+    'openhw-ntc-temperature-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
+    'openhw-battery': [{ id: 'VCC' }, { id: 'GND' }],
+    'openhw-charger': [{ id: 'VIN+' }, { id: 'VIN-' }, { id: 'BAT+' }, { id: 'BAT-' }],
+    'openhw-breadboard-mini': [{ id: 'a1' }, { id: 'b1' }, { id: 'c1' }, { id: 'd1' }, { id: 'e1' }, { id: 'f1' }, { id: 'g1' }, { id: 'h1' }, { id: 'i1' }, { id: 'j1' }],
+    'openhw-neopixel-ring': [{ id: 'DIN' }, { id: 'VDD' }, { id: 'VSS' }, { id: 'DOUT' }],
+    'openhw-arduino-sensor-shield': [{ id: 'VCC' }, { id: 'GND' }, { id: 'S' }],
+    'openhw-simulation-monitor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'TX' }, { id: 'RX' }],
+};
+
+type RP2040ExecutableRangeInput =
+    | [number | string, number | string]
+    | { start: number | string; end: number | string }
+    | { start: number | string; size: number | string };
+
+type RP2040FlashPartitionInput = {
+    offset: number | string;
+    data: string | Uint8Array | ArrayBuffer | ArrayLike<number>;
+    encoding?: 'base64' | 'hex' | 'utf8';
+};
+
+type RP2040ExecutableRange = {
+    start: number;
+    end: number;
+    description?: string;
+};
+
+type RP2040FlashPartition = {
+    offset: number;
+    bytes: Uint8Array;
+};
+
+type RP2040FirmwareLoadOptions = {
+    logicalFlashBytes?: number;
+    partitions?: RP2040FlashPartition[];
+};
+
+function parseAddressValue(raw: unknown): number | null {
+    if (typeof raw === 'number') {
+        if (!Number.isFinite(raw)) return null;
+        const clamped = Math.max(0, Math.min(0xffffffff, Math.floor(raw)));
+        return clamped >>> 0;
+    }
+
+    if (typeof raw === 'string') {
+        const value = raw.trim();
+        if (!value) return null;
+        const parsed = /^0x[0-9a-f]+$/i.test(value)
+            ? parseInt(value, 16)
+            : Number(value);
+        if (!Number.isFinite(parsed)) return null;
+        const clamped = Math.max(0, Math.min(0xffffffff, Math.floor(parsed)));
+        return clamped >>> 0;
+    }
+
+    return null;
+}
+
+function normalizeRp2040ExecutableRanges(value: unknown): RP2040ExecutableRange[] {
+    if (!Array.isArray(value)) return [];
+    const ranges: RP2040ExecutableRange[] = [];
+
+    for (const raw of value) {
+        let start: number | null = null;
+        let end: number | null = null;
+
+        if (Array.isArray(raw) && raw.length >= 2) {
+            start = parseAddressValue(raw[0]);
+            end = parseAddressValue(raw[1]);
+        } else if (raw && typeof raw === 'object') {
+            const obj = raw as Record<string, unknown>;
+            start = parseAddressValue(obj.start);
+
+            if (Object.prototype.hasOwnProperty.call(obj, 'end')) {
+                end = parseAddressValue(obj.end);
+            } else if (Object.prototype.hasOwnProperty.call(obj, 'size')) {
+                const size = parseAddressValue(obj.size);
+                if (start !== null && size !== null && size > 0) {
+                    const rawEnd = Number(start) + Number(size) - 1;
+                    end = Math.max(0, Math.min(0xffffffff, Math.floor(rawEnd))) >>> 0;
+                }
+            }
+        }
+
+        if (start === null || end === null || end < start) {
+            continue;
+        }
+
+        ranges.push({ start: start >>> 0, end: end >>> 0 });
+    }
+
+    return ranges;
+}
+
+function decodeHexToBytes(hex: string): Uint8Array {
+    const normalized = String(hex || '')
+        .trim()
+        .replace(/^0x/i, '')
+        .replace(/\s+/g, '');
+
+    if (!normalized || (normalized.length % 2) !== 0) {
+        return new Uint8Array();
+    }
+
+    const out = new Uint8Array(normalized.length / 2);
+    for (let i = 0; i < out.length; i++) {
+        const byte = Number.parseInt(normalized.slice(i * 2, (i * 2) + 2), 16);
+        if (Number.isNaN(byte)) {
+            return new Uint8Array();
+        }
+        out[i] = byte & 0xff;
+    }
+
+    return out;
+}
+
+function decodeRp2040FlashPartitionBytes(data: unknown, encoding: unknown): Uint8Array | null {
+    if (data == null) return null;
+
+    if (data instanceof Uint8Array) {
+        return data.length > 0 ? data : null;
+    }
+
+    if (data instanceof ArrayBuffer) {
+        const out = new Uint8Array(data);
+        return out.length > 0 ? out : null;
+    }
+
+    if (ArrayBuffer.isView(data)) {
+        const view = data as ArrayBufferView;
+        const out = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+        return out.length > 0 ? out : null;
+    }
+
+    if (Array.isArray(data)) {
+        if (data.length === 0) return null;
+        return new Uint8Array(data.map((value) => Number(value) & 0xff));
+    }
+
+    if (typeof data === 'string') {
+        const raw = data.trim();
+        if (!raw) return null;
+
+        const normalizedEncoding = String(encoding || '').trim().toLowerCase();
+        if (normalizedEncoding === 'hex') {
+            const decoded = decodeHexToBytes(raw);
+            return decoded.length > 0 ? decoded : null;
+        }
+
+        if (normalizedEncoding === 'utf8') {
+            const decoded = new TextEncoder().encode(data);
+            return decoded.length > 0 ? decoded : null;
+        }
+
+        try {
+            const decoded = decodeBase64ToBytes(raw);
+            return decoded.length > 0 ? decoded : null;
+        } catch (e) {
+            // If string is not valid base64, preserve raw text bytes for robustness.
+            const fallback = new TextEncoder().encode(data);
+            return fallback.length > 0 ? fallback : null;
+        }
+    }
+
+    return null;
+}
+
+function normalizeRp2040FlashPartitions(value: unknown): RP2040FlashPartition[] {
+    if (!Array.isArray(value)) return [];
+
+    const partitions: RP2040FlashPartition[] = [];
+    for (const raw of value) {
+        if (!raw || typeof raw !== 'object') continue;
+        const obj = raw as Record<string, unknown>;
+        const offset = parseAddressValue(obj.offset);
+        if (offset === null) continue;
+
+        const bytes = decodeRp2040FlashPartitionBytes(obj.data, obj.encoding);
+        if (!bytes || bytes.length === 0) continue;
+
+        partitions.push({ offset: offset >>> 0, bytes });
+    }
+
+    partitions.sort((a, b) => a.offset - b.offset);
+    return partitions;
+}
+
+function getInternalBridgesForComponent(compId: string, type: string): string[][] {
+    const bridges: string[][] = [];
+    if (type === 'openhw-resistor' || type === 'wokwi-resistor' || type === 'via' || type === 'openhw-via' || type === 'wokwi-via' || type === 'openhw-wire' || type === 'wokwi-wire') {
+        bridges.push([`${compId}:p1`, `${compId}:p2`]);
+    } else if (type === 'openhw-breadboard' || type === 'openhw-breadboard-half' || type === 'openhw-breadboard-mini' || type === 'wokwi-breadboard' || type === 'wokwi-breadboard-half' || type === 'wokwi-breadboard-mini') {
+        const isHalf = type.includes('half');
+        const isMini = type.includes('mini');
+        const maxRow = isMini ? 17 : (isHalf ? 30 : 63);
+        const maxRail = isMini ? 0 : (isHalf ? 25 : 50);
+
+        // Rows connections (a-e and f-j are separate blocks)
+        for (let r = 1; r <= maxRow; r++) {
+            const left = ['a', 'b', 'c', 'd', 'e'];
+            for (let i = 0; i < left.length - 1; i++) {
+                bridges.push([`${compId}:${r}${left[i]}`, `${compId}:${r}${left[i + 1]}`]);
+            }
+            const right = ['f', 'g', 'h', 'i', 'j'];
+            for (let i = 0; i < right.length - 1; i++) {
+                bridges.push([`${compId}:${r}${right[i]}`, `${compId}:${r}${right[i + 1]}`]);
+            }
+        }
+
+        // Power rail connections (top and bottom, vcc and gnd)
+        const rails = ['top_vcc', 'top_gnd', 'bottom_vcc', 'bottom_gnd'];
+        for (const rail of rails) {
+            for (let i = 1; i < maxRail; i++) {
+                bridges.push([`${compId}:${rail}_${i}`, `${compId}:${rail}_${i + 1}`]);
+            }
+        }
+    }
+    return bridges;
+}
+
+export type AVRRunnerOptions = {
+    boardId?: string;
+    onByteTransmit?: (payload: { boardId: string; value: number; char: string; source?: string }) => void;
+    serialBaudRate?: number;
+    debugEnabled?: boolean;
+    debugIntervalMs?: number;
+    speed?: number;
+    rp2040ExecutableRanges?: RP2040ExecutableRangeInput[];
+    rp2040LogicalFlashBytes?: number | string;
+    rp2040FlashPartitions?: RP2040FlashPartitionInput[];
+    solverMode?: 'logic';
+};
+
+export type BoardRunner = {
+    cpu: any;
+    boardId: string;
+    instances: Map<string, BaseComponent>;
+    stop: () => void;
+    reset?: () => void;
+    serialRx: (data: string) => void;
+    serialRxByte: (value: number) => void;
+    serialRxByteFromSource?: (value: number, source?: string) => void;
+    softSerialRxByte?: (value: number) => void;
+    setSerialBaudRate: (baud: number) => void;
+    getSerialBaudRate: () => number;
+    setSpeed: (speed: number) => void;
+    solverMode: 'logic';
+    setSolverMode: (mode: 'logic') => void;
+    setTelemetryEnabled: (enabled: boolean) => void;
+    getRichTelemetrySnapshot: (options?: { mode?: 'standard' | 'deep' | 'delta' }) => any;
+    getSimulatedTimeMs: () => number;
+    forceEmitState?: () => void;
+    running?: boolean;
+};
+
+const RP2040_FLASH_BASE = 0x10000000;
+const RP2040_XIP_NOCACHE_BASE = 0x11000000;
+const RP2040_XIP_NOALLOC_BASE = 0x12000000;
+const RP2040_XIP_NOCACHE_NOALLOC_BASE = 0x13000000;
+const RP2040_FLASH_ALIAS_END = 0x14000000;
+const RP2040_FLASH_ALIAS_MASK = 0x00ffffff;
+const RP2040_BOOTROM_BASE = 0x00000000;
+const RP2040_BOOTROM_SIZE = 0x4000;
+const RP2040_SRAM_BASE = 0x20000000;
+const RP2040_USB_RAM_BASE = 0x50100000;
+const RP2040_USB_RAM_SIZE = 0x1000;
+const RP2040_CLOCKS_BASE = 0x40008000;
+const RP2040_CLOCKS_CLK_REF_CTRL_OFFSET = 0x30;
+const RP2040_CLOCKS_CLK_REF_SELECTED_OFFSET = 0x38;
+const RP2040_CLOCKS_CLK_SYS_CTRL_OFFSET = 0x3c;
+const RP2040_CLOCKS_CLK_SYS_SELECTED_OFFSET = 0x44;
+const RP2040_SIO_FIFO_ST_OFFSET = 0x50;
+const RP2040_SIO_FIFO_WR_OFFSET = 0x54;
+const RP2040_SIO_FIFO_RD_OFFSET = 0x58;
+const UF2_PAYLOAD_PREFIX = 'UF2BASE64:';
+const UF2_BLOCK_SIZE = 512;
+const UF2_MAGIC_START0 = 0x0a324655;
+const UF2_MAGIC_START1 = 0x9e5d5157;
+const UF2_MAGIC_END = 0x0ab16f30;
+const RP2040_DEFAULT_LOGICAL_FLASH_BYTES = 2 * 1024 * 1024;
+const SOFT_SERIAL_SOURCE_LABELS = new Set(['softserial', 'soft-serial', 'soft_uart', 'soft-uart', 'softuart']);
+const NEOPIXEL_COMPONENT_TYPE_PATTERN = /(neopixel|ws2812|ws2821)/i;
+
+function parsePositiveInt(value: any): number {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function normalizeRp2040FlashAliasAddress(rawAddress: number): number {
+    const address = Number(rawAddress) >>> 0;
+    if (address >= RP2040_FLASH_BASE && address < RP2040_FLASH_ALIAS_END) {
+        return (RP2040_FLASH_BASE + (address & RP2040_FLASH_ALIAS_MASK)) >>> 0;
+    }
+    return address;
+}
+
+function rp2040FlashAddressToIndex(rawAddress: number, logicalFlashLength: number): number {
+    const normalizedAddress = normalizeRp2040FlashAliasAddress(rawAddress);
+    if (normalizedAddress >= RP2040_FLASH_BASE && normalizedAddress < (RP2040_FLASH_BASE + logicalFlashLength)) {
+        return (normalizedAddress - RP2040_FLASH_BASE) >>> 0;
+    }
+
+    const address = Number(rawAddress) >>> 0;
+    if (address < logicalFlashLength) {
+        return address;
+    }
+
+    return -1;
+}
+
+function collectNeopixelShutdownStates(instances: Map<string, BaseComponent>): Array<{ id: string; state: any }> {
+    const updates: Array<{ id: string; state: any }> = [];
+
+    for (const inst of instances.values()) {
+        if (!NEOPIXEL_COMPONENT_TYPE_PATTERN.test(String(inst.type || ''))) continue;
+
+        const currentState = (inst.state && typeof inst.state === 'object') ? inst.state : {};
+        const rows = parsePositiveInt(currentState.rows);
+        const cols = parsePositiveInt(currentState.cols);
+        const configuredCount = rows > 0 && cols > 0 ? rows * cols : 0;
+        const existingPixels = Array.isArray(currentState.pixels) ? currentState.pixels : [];
+        const pixelCount = Math.max(configuredCount, existingPixels.length);
+        const nextState = {
+            ...currentState,
+            pixels: pixelCount > 0 ? new Array(pixelCount).fill(0) : [],
+        };
+
+        inst.state = nextState;
+        inst.stateChanged = false;
+        updates.push({ id: inst.id, state: nextState });
+    }
+
+    return updates;
+}
+
+function isSoftSerialSourceLabel(source: string): boolean {
+    const key = String(source || '').trim().toLowerCase();
+    return SOFT_SERIAL_SOURCE_LABELS.has(key);
+}
+
+const RP2040_I2C_SOURCE_PINS = {
+    i2c0: {
+        sda: ['SDA', 'GP0', 'GPIO0', 'D0', '0', 'GP4', 'GPIO4', 'D4', '4', 'GP8', 'GPIO8', 'D8', '8', 'GP12', 'GPIO12', 'D12', '12', 'GP16', 'GPIO16', 'D16', '16', 'GP20', 'GPIO20', 'D20', '20', 'GP24', 'GPIO24', 'D24', '24', 'GP28', 'GPIO28', 'D28', '28'],
+        scl: ['SCL', 'GP1', 'GPIO1', 'D1', '1', 'GP5', 'GPIO5', 'D5', '5', 'GP9', 'GPIO9', 'D9', '9', 'GP13', 'GPIO13', 'D13', '13', 'GP17', 'GPIO17', 'D17', '17', 'GP21', 'GPIO21', 'D21', '21', 'GP25', 'GPIO25', 'D25', '25'],
+    },
+    i2c1: {
+        sda: ['SDA1', 'GP2', 'GPIO2', 'D2', '2', 'GP6', 'GPIO6', 'D6', '6', 'GP10', 'GPIO10', 'D10', '10', 'GP14', 'GPIO14', 'D14', '14', 'GP18', 'GPIO18', 'D18', '18', 'GP22', 'GPIO22', 'D22', '22', 'GP26', 'GPIO26', 'D26', '26'],
+        scl: ['SCL1', 'GP3', 'GPIO3', 'D3', '3', 'GP7', 'GPIO7', 'D7', '7', 'GP11', 'GPIO11', 'D11', '11', 'GP15', 'GPIO15', 'D15', '15', 'GP19', 'GPIO19', 'D19', '19', 'GP23', 'GPIO23', 'D23', '23', 'GP27', 'GPIO27', 'D27', '27'],
+    },
+};
+
+type RP2040I2CBus = 'i2c0' | 'i2c1';
+
+type RP2040I2CBusPins = {
+    sda: string;
+    scl: string;
+};
+
+type RP2040I2CBitBangState = {
+    initialized: boolean;
+    prevSdaHigh: boolean;
+    prevSclHigh: boolean;
+    inFrame: boolean;
+    phase: number;
+    shift: number;
+    byteIndex: number;
+    read: boolean;
+    activeSlave: BaseComponent | null;
+    ackShouldBeLow: boolean;
+    ackDriveActive: boolean;
+};
+
+const RP2040_SPI_SOURCE_PINS = {
+    spi0: {
+        mosi: ['MOSI', 'TX0', 'GP3', 'GPIO3', 'D3', '3', 'GP7', 'GPIO7', 'D7', '7', 'GP19', 'GPIO19', 'D19', '19', 'GP23', 'GPIO23', 'D23', '23'],
+        miso: ['MISO', 'RX0', 'GP0', 'GPIO0', 'D0', '0', 'GP4', 'GPIO4', 'D4', '4', 'GP16', 'GPIO16', 'D16', '16', 'GP20', 'GPIO20', 'D20', '20'],
+        sck: ['SCK', 'CLK', 'SCLK', 'GP2', 'GPIO2', 'D2', '2', 'GP6', 'GPIO6', 'D6', '6', 'GP18', 'GPIO18', 'D18', '18', 'GP22', 'GPIO22', 'D22', '22'],
+        cs: ['CS', 'SS', 'CSN', 'NSS', 'GP1', 'GPIO1', 'D1', '1', 'GP5', 'GPIO5', 'D5', '5', 'GP17', 'GPIO17', 'D17', '17', 'GP21', 'GPIO21', 'D21', '21'],
+    },
+    spi1: {
+        mosi: ['MOSI1', 'TX1', 'GP11', 'GPIO11', 'D11', '11', 'GP15', 'GPIO15', 'D15', '15', 'GP27', 'GPIO27', 'D27', '27'],
+        miso: ['MISO1', 'RX1', 'GP8', 'GPIO8', 'D8', '8', 'GP12', 'GPIO12', 'D12', '12', 'GP24', 'GPIO24', 'D24', '24', 'GP28', 'GPIO28', 'D28', '28'],
+        sck: ['SCK1', 'CLK1', 'SCLK1', 'GP10', 'GPIO10', 'D10', '10', 'GP14', 'GPIO14', 'D14', '14', 'GP26', 'GPIO26', 'D26', '26'],
+        cs: ['CS1', 'SS1', 'CSN1', 'NSS1', 'GP9', 'GPIO9', 'D9', '9', 'GP13', 'GPIO13', 'D13', '13', 'GP25', 'GPIO25', 'D25', '25'],
+    },
+};
+
+const RP2040_GPIO_FUNC_PWM = 4;
+const RP2040_GPIO_FUNC_PIO0 = 6;
+const RP2040_GPIO_FUNC_PIO1 = 7;
+
+type ConnectedComponentPin = {
+    inst: BaseComponent;
+    pinId: string;
+};
+
+function collectConnectedComponentPins(
+    boardId: string,
+    boardPinAliases: string[],
+    wires: any[],
+    instances: Map<string, BaseComponent>
+): ConnectedComponentPin[] {
+    const aliasSet = new Set(boardPinAliases.map((v) => String(v || '').toUpperCase()));
+    const adjacency = new Map<string, Set<string>>();
+
+    const connect = (a: string, b: string) => {
+        if (!adjacency.has(a)) adjacency.set(a, new Set());
+        if (!adjacency.has(b)) adjacency.set(b, new Set());
+        adjacency.get(a)!.add(b);
+        adjacency.get(b)!.add(a);
+    };
+
+    for (const wire of wires || []) {
+        if (!wire?.from || !wire?.to) continue;
+        connect(String(wire.from), String(wire.to));
+    }
+
+    for (const [id, inst] of instances.entries()) {
+        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+            connect(`${id}:p1`, `${id}:p2`);
+        }
+    }
+
+    const startNodes: string[] = [];
+    for (const node of adjacency.keys()) {
+        const [compId, pinId] = String(node).split(':');
+        if (compId !== boardId) continue;
+        if (aliasSet.has(String(pinId || '').toUpperCase())) {
+            startNodes.push(node);
+        }
+    }
+
+    if (!startNodes.length) return [];
+
+    const visited = new Set<string>();
+    const queue = [...startNodes];
+    startNodes.forEach((n) => visited.add(n));
+
+    while (queue.length > 0) {
+        const node = queue.shift()!;
+        for (const n of adjacency.get(node) || []) {
+            if (visited.has(n)) continue;
+            visited.add(n);
+            queue.push(n);
+        }
+    }
+
+    const out = new Map<string, ConnectedComponentPin>();
+    for (const node of visited) {
+        const [compId, pinId] = String(node).split(':');
+        if (!compId || compId === boardId) continue;
+        const inst = instances.get(compId);
+        if (!inst) continue;
+        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') continue;
+        out.set(`${compId}:${pinId}`, { inst, pinId });
+    }
+
+    return Array.from(out.values());
+}
+
+function invokeOptional(inst: any, names: string[], args: any[]): any {
+    for (const name of names) {
+        const fn = inst?.[name];
+        if (typeof fn === 'function') {
+            return fn.apply(inst, args);
+        }
+    }
+    return undefined;
+}
+
+const MEDIUM_COMPONENT_STATE_WEIGHT = 2_048;
+const HEAVY_COMPONENT_STATE_WEIGHT = 8_192;
+const MEDIUM_COMPONENT_MIN_SYNC_MS = 55;
+const HEAVY_COMPONENT_MIN_SYNC_MS = 95;
+
+function estimateStatePayloadWeight(value: any, depth = 0): number {
+    if (value == null) return 0;
+
+    if (typeof value === 'string') return value.length;
+    if (typeof value === 'number' || typeof value === 'boolean') return 8;
+
+    if (ArrayBuffer.isView(value)) {
+        return Number((value as any)?.byteLength || (value as any)?.length || 0);
+    }
+
+    if (value instanceof ArrayBuffer) {
+        return Number(value.byteLength || 0);
+    }
+
+    if (Array.isArray(value)) {
+        if (value.length === 0) return 0;
+        if (depth >= 2) return value.length;
+
+        const sampleCount = Math.min(value.length, 16);
+        let sampleWeight = 0;
+        for (let i = 0; i < sampleCount; i++) {
+            sampleWeight += estimateStatePayloadWeight(value[i], depth + 1);
+        }
+        const avg = sampleCount > 0 ? (sampleWeight / sampleCount) : 0;
+        return Math.round(avg * value.length);
+    }
+
+    if (typeof value === 'object') {
+        const entries = Object.entries(value);
+        if (entries.length === 0) return 0;
+        if (depth >= 2) return entries.length * 12;
+
+        let weight = 0;
+        for (const [k, v] of entries) {
+            weight += String(k || '').length;
+            weight += estimateStatePayloadWeight(v, depth + 1);
+        }
+        return weight;
+    }
+
+    return 0;
+}
+
+function getComponentStateSyncPolicy(state: any): { weight: number; minIntervalMs: number } {
+    const weight = estimateStatePayloadWeight(state);
+    if (weight >= HEAVY_COMPONENT_STATE_WEIGHT) {
+        return { weight, minIntervalMs: HEAVY_COMPONENT_MIN_SYNC_MS };
+    }
+    if (weight >= MEDIUM_COMPONENT_STATE_WEIGHT) {
+        return { weight, minIntervalMs: MEDIUM_COMPONENT_MIN_SYNC_MS };
+    }
+    return { weight, minIntervalMs: 0 };
+}
+
+type FallbackTelemetryRuntime = {
+    createdAtMs: number;
+    sampleCount: number;
+    stateMutationCount: number;
+    lastStateFingerprint: string;
+    lastStateChangeAtMs: number;
+    pinLevelMap: Record<string, boolean>;
+    pinToggleCount: number;
+};
+
+const fallbackTelemetryByInstance = new WeakMap<object, FallbackTelemetryRuntime>();
+
+function readComponentStateForTelemetry(inst: any): Record<string, unknown> {
+    const state = inst?.state;
+    if (state && typeof state === 'object' && !Array.isArray(state)) {
+        return state as Record<string, unknown>;
+    }
+    if (state === undefined) return {};
+    return { value: state as unknown };
+}
+
+function safeJsonStringify(value: unknown): string {
+    try {
+        return JSON.stringify(value);
+    } catch (e) {
+        return '{}';
+    }
+}
+
+function readPinLevelMap(inst: any): Record<string, boolean> {
+    const out: Record<string, boolean> = {};
+    const pins = inst?.pins && typeof inst.pins === 'object'
+        ? (inst.pins as Record<string, unknown>)
+        : null;
+    if (!pins) return out;
+
+    for (const [pinId, pinState] of Object.entries(pins)) {
+        if (!pinState || typeof pinState !== 'object') continue;
+        const maybeVoltage = Number((pinState as any).voltage);
+        if (Number.isFinite(maybeVoltage)) {
+            out[String(pinId)] = maybeVoltage > 0.5;
+        }
+    }
+
+    return out;
+}
+
+function isLikelyActiveSignal(value: unknown): boolean {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return Number.isFinite(value) && value !== 0;
+    if (typeof value === 'string') {
+        const key = value.trim().toLowerCase();
+        if (!key) return false;
+        return key !== '0' && key !== 'false' && key !== 'off' && key !== 'none' && key !== 'ok';
+    }
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
+    return false;
+}
+
+function buildFallbackTelemetry(inst: any): { telemetrySummary: string; telemetryData: Record<string, unknown> } {
+    const now = Date.now();
+    const key = (inst && typeof inst === 'object') ? inst : { fallback: true };
+    let runtime = fallbackTelemetryByInstance.get(key);
+    if (!runtime) {
+        runtime = {
+            createdAtMs: now,
+            sampleCount: 0,
+            stateMutationCount: 0,
+            lastStateFingerprint: '',
+            lastReportedFingerprint: '',
+            lastStateChangeAtMs: now,
+            pinLevelMap: {},
+            pinToggleCount: 0,
+        };
+        fallbackTelemetryByInstance.set(key, runtime);
+    }
+
+    runtime.sampleCount += 1;
+
+    const state = readComponentStateForTelemetry(inst);
+    const stateFingerprint = safeJsonStringify(state);
+    if (runtime.lastStateFingerprint && runtime.lastStateFingerprint !== stateFingerprint) {
+        runtime.stateMutationCount += 1;
+        runtime.lastStateChangeAtMs = now;
+    }
+    if (!runtime.lastStateFingerprint) {
+        runtime.lastStateChangeAtMs = now;
+    }
+    runtime.lastStateFingerprint = stateFingerprint;
+
+    const nextPinLevels = readPinLevelMap(inst);
+    let pinToggles = 0;
+    const pinIds = new Set<string>([
+        ...Object.keys(runtime.pinLevelMap),
+        ...Object.keys(nextPinLevels),
+    ]);
+    for (const pinId of pinIds) {
+        const prevLevel = runtime.pinLevelMap[pinId];
+        const nextLevel = nextPinLevels[pinId];
+        if (prevLevel === undefined || nextLevel === undefined) continue;
+        if (prevLevel !== nextLevel) pinToggles += 1;
+    }
+    runtime.pinToggleCount += pinToggles;
+    runtime.pinLevelMap = nextPinLevels;
+
+    let status: 'ok' | 'warn' | 'error' = 'ok';
+    const findings: string[] = [];
+    for (const [stateKey, stateValue] of Object.entries(state)) {
+        const lower = String(stateKey || '').toLowerCase();
+        if (/(error|fault|burned|panic|critical|failed)/.test(lower) && isLikelyActiveSignal(stateValue)) {
+            status = 'error';
+            findings.push(`State flag ${stateKey} indicates an error condition.`);
+            continue;
+        }
+        if (status !== 'error' && /(warn|degraded|timeout|retry|unstable)/.test(lower) && isLikelyActiveSignal(stateValue)) {
+            status = 'warn';
+            findings.push(`State flag ${stateKey} indicates a warning condition.`);
+        }
+    }
+
+    const elapsedSec = Math.max(0.001, (now - runtime.createdAtMs) / 1000);
+    const updateFreqHz = Number((runtime.sampleCount / elapsedSec).toFixed(3));
+    const idleMs = Math.max(0, now - runtime.lastStateChangeAtMs);
+    const summary = findings.length > 0
+        ? `${status.toUpperCase()}: ${findings[0]}`
+        : `OK: stateKeys=${Object.keys(state).slice(0, 8).join(', ') || 'none'}`;
+
+    const isDelta = runtime.lastReportedFingerprint !== stateFingerprint;
+    runtime.lastReportedFingerprint = stateFingerprint;
+
+    const telemetryData: Record<string, unknown> = {
+        ...state,
+        delta: isDelta,
+        _metrics: {
+            sampleCount: runtime.sampleCount,
+            updateFreqHz,
+            stateSizeBytes: stateFingerprint.length,
+            stateMutationCount: runtime.stateMutationCount,
+            idleMs,
+            pinToggleCount: runtime.pinToggleCount,
+            pinCount: Object.keys(nextPinLevels).length,
+        },
+        _heuristics: {
+            status,
+            summary,
+            findings,
+        },
+        _capturedAt: new Date(now).toISOString(),
+        _fallbackGenerated: true,
+    };
+
+    return {
+        telemetrySummary: summary,
+        telemetryData,
+    };
+}
+
+function getUnifiedComponentSyncState(inst: BaseComponent): any {
+    const subclassSyncState = inst.getSyncState() || {};
+    const baseSyncState = BaseComponent.prototype.getSyncState.call(inst) || {};
+    return {
+        ...baseSyncState,
+        ...subclassSyncState
+    };
+}
+
+function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?: any): any {
+    if (inst?.type === 'openhw-simulation-monitor' && typeof inst.updateMetrics === 'function') {
+        inst.updateMetrics(cpu?.cycles || 0, cpu?.freq || 16000000, inst.telemetryEnabled, inst.telemetryWatchedParams || ['all']);
+    }
+
+    if (!inst.telemetryEnabled) {
+        return {};
+    }
+
+    const effectiveMode = optionsMode || inst.telemetryMode || 'detail';
+
+    let cachedDeltaData: any = null;
+
+    // 👑 YOUR OPTIMIZATION: If Delta mode is active and nothing changed, 
+    // instantly return delta: false without building or sending ANY metric payloads!
+    if (effectiveMode === 'delta' && typeof inst?.getDeltaMetrics === 'function') {
+        cachedDeltaData = inst.getDeltaMetrics(inst.telemetryWatchedParams);
+        if (cachedDeltaData && !cachedDeltaData.delta) {
+            return { delta: false }; // Ultra-fast early return! Strips out massive telemetryData tree.
+        }
+    }
+
+    const out: any = {};
+    const state = inst.state || {};
+
+    // Map electrical states for Nodal Analysis Telemetry
+    if (state.vHistory) out.vHistory = state.vHistory;
+    if (state.voltageDrop !== undefined) out.voltageDrop = state.voltageDrop;
+    if (state.current !== undefined) out.current = state.current;
+    if (state.power !== undefined) out.power = state.power;
+    if (state.glow !== undefined) out.glow = state.glow;
+
+    try {
+        if (effectiveMode === 'delta' && cachedDeltaData && typeof cachedDeltaData === 'object') {
+            out.telemetryData = cachedDeltaData as Record<string, unknown>;
+            out.delta = !!cachedDeltaData.delta;
+        } else if (effectiveMode === 'simple' && typeof inst?.getTelemetrySummary === 'function') {
+            const summaryData = inst.getTelemetrySummary();
+            if (typeof summaryData === 'string' && summaryData.trim()) {
+                out.telemetrySummary = summaryData.trim();
+                out.telemetryData = { state: inst.state || {} };
+            }
+        } else if (typeof inst?.getRawMetrics === 'function') {
+            const rawData = inst.getRawMetrics();
+            if (rawData && typeof rawData === 'object') {
+                out.telemetryData = rawData as Record<string, unknown>;
+            }
+        } else if (typeof inst?.getTelemetryData === 'function') {
+            const data = inst.getTelemetryData();
+            if (data && typeof data === 'object' && !Array.isArray(data)) {
+                out.telemetryData = data as Record<string, unknown>;
+            }
+        }
+    } catch (e) {
+        // Telemetry failures should never break simulation state delivery.
+    }
+
+    try {
+        if (!out.telemetrySummary && typeof inst?.getTelemetrySummary === 'function') {
+            const summary = inst.getTelemetrySummary();
+            if (typeof summary === 'string' && summary.trim()) {
+                out.telemetrySummary = summary.trim();
+            }
+        }
+    } catch (e) {
+        // Telemetry failures should never break simulation state delivery.
+    }
+
+    const fallback = buildFallbackTelemetry(inst);
+
+    if (effectiveMode === 'delta' && out.delta === undefined) {
+        if (!fallback.telemetryData.delta) {
+            return { delta: false }; // Ultra-fast early return for fallback components!
+        }
+        out.delta = true;
+    }
+
+    if (!out.telemetrySummary) {
+        out.telemetrySummary = fallback.telemetrySummary;
+    }
+
+    if (!out.telemetryData || typeof out.telemetryData !== 'object') {
+        out.telemetryData = fallback.telemetryData;
+    } else {
+        const merged = { ...out.telemetryData };
+        if (!merged._metrics) {
+            merged._metrics = fallback.telemetryData._metrics;
+        }
+        if (!merged._heuristics) {
+            merged._heuristics = fallback.telemetryData._heuristics;
+        }
+        if (!merged._capturedAt) {
+            merged._capturedAt = fallback.telemetryData._capturedAt;
+        }
+        if (!merged._fallbackGenerated) {
+            merged._fallbackGenerated = true;
+        }
+        out.telemetryData = merged;
+    }
+
+    if (inst.deepSiliconEnabled && cpu && (inst.type.includes('arduino') || inst.type.includes('pico') || inst.type.includes('attiny'))) {
+        const watched = inst.telemetryWatchedParams || ['all'];
+        const watchAll = watched.includes('all');
+        const watchReg = watchAll || watched.includes('deepSiliconRegisters');
+        const watchSram = watchAll || watched.includes('deepSiliconSRAM');
+        const watchTimers = watchAll || watched.includes('deepSiliconTimers');
+        const watchPower = watchAll || watched.includes('deepSiliconPower');
+        const watchIrq = watchAll || watched.includes('deepSiliconInterrupts');
+
+        if (watchReg || watchSram || watchTimers || watchPower || watchIrq) {
+            try {
+                const deepObj: any = {};
+
+                if (watchReg) {
+                    const registers: any = {};
+                    if (cpu.pc !== undefined) registers.pc = cpu.pc;
+                    if (cpu.sp !== undefined) registers.sp = cpu.sp;
+                    if (cpu.sreg !== undefined) registers.sreg = cpu.sreg;
+                    if (cpu.cycles !== undefined) registers.cycles = cpu.cycles;
+
+                    if (cpu.core) {
+                        if (cpu.core.pc !== undefined) registers.pc = cpu.core.pc;
+                        if (cpu.core.sp !== undefined) registers.sp = cpu.core.sp;
+                        if (cpu.core.cycles !== undefined) registers.cycles = cpu.core.cycles;
+                    }
+                    deepObj.registers = registers;
+                }
+
+                if (watchSram) {
+                    if (cpu.data && typeof cpu.data.slice === 'function') {
+                        deepObj.sramMap = Array.from(cpu.data.slice(0, 2048));
+                    } else if (cpu.memory && typeof cpu.memory.slice === 'function') {
+                        deepObj.sramMap = Array.from(cpu.memory.slice(0, 2048));
+                    }
+                }
+
+                if (watchTimers) {
+                    const timers: any = {};
+                    if (cpu.timer0) timers.timer0 = { tcnt: cpu.timer0.tcnt, tccra: cpu.timer0.tccra, tccrb: cpu.timer0.tccrb };
+                    if (cpu.timer1) timers.timer1 = { tcnt: cpu.timer1.tcnt, tccra: cpu.timer1.tccra, tccrb: cpu.timer1.tccrb };
+                    if (cpu.timer2) timers.timer2 = { tcnt: cpu.timer2.tcnt, tccra: cpu.timer2.tccra, tccrb: cpu.timer2.tccrb };
+                    if (cpu.timer && typeof cpu.timer.getTime === 'function') timers.time = cpu.timer.getTime();
+                    else if (cpu.timer && cpu.timer.time !== undefined) timers.time = Number(cpu.timer.time);
+                    deepObj.timers = timers;
+                }
+
+                if (watchPower) {
+                    const power: any = {};
+                    if (cpu.wdt) power.wdt = { enabled: !!cpu.wdt.enabled, timeout: cpu.wdt.timeout };
+                    if (cpu.sleepMode !== undefined) power.sleepMode = cpu.sleepMode;
+                    deepObj.power = power;
+                }
+
+                if (watchIrq) {
+                    const interrupts: any = {};
+                    if (cpu.sreg !== undefined) interrupts.globalEnabled = (cpu.sreg & 0x80) !== 0;
+                    if (cpu.interrupts) interrupts.pending = cpu.interrupts.pending;
+                    deepObj.interrupts = interrupts;
+                }
+
+                out.deepSilicon = deepObj;
+            } catch (err) {
+                console.warn('[Telemetry] Failed to extract deep silicon state:', err);
+            }
+        }
+    }
+
+    return out;
+}
+
+type HexSegment = {
+    address: number;
+    bytes: Uint8Array;
+};
+
+
+type RP2040EntryInfo = {
+    vectorBase: number;
+    initialSP: number;
+    initialPC: number;
+    resolvedPC: number;
+    usedFallback: boolean;
+    strategy?: string;
+    fallbackReason?: string;
+    probe0100SP?: number;
+    probe0100PC?: number;
+    probe0000SP?: number;
+    probe0000PC?: number;
+};
+
+function parseIntelHexSegments(data: string): HexSegment[] {
+    const lines = String(data || '').split(/\r?\n/);
+    let highAddress = 0;
+    const segments: HexSegment[] = [];
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || line[0] !== ':') continue;
+        const byteCount = parseInt(line.substring(1, 3), 16);
+        const address = parseInt(line.substring(3, 7), 16);
+        const recordType = parseInt(line.substring(7, 9), 16);
+
+        if (recordType === 0) {
+            const bytes = new Uint8Array(byteCount);
+            for (let i = 0; i < byteCount; i++) {
+                bytes[i] = parseInt(line.substring(9 + i * 2, 11 + i * 2), 16);
+            }
+            segments.push({
+                address: highAddress + address,
+                bytes,
+            });
+        } else if (recordType === 4 || recordType === 2) {
+            highAddress = parseInt(line.substring(9, 13), 16) << (recordType === 4 ? 16 : 4);
+        }
+    }
+
+    return segments;
+}
+
+function flashContainsAsciiToken(flash: Uint8Array, token: string, maxBytes: number): boolean {
+    const text = String(token || '');
+    if (!flash || !text) return false;
+
+    const needle = new TextEncoder().encode(text);
+    if (needle.length === 0) return false;
+
+    const limit = Math.max(0, Math.min(flash.length, Math.floor(maxBytes || flash.length)));
+    if (limit < needle.length) return false;
+
+    for (let i = 0; i <= (limit - needle.length); i++) {
+        let matched = true;
+        for (let j = 0; j < needle.length; j++) {
+            if (flash[i + j] !== needle[j]) {
+                matched = false;
+                break;
+            }
+        }
+        if (matched) return true;
+    }
+
+    return false;
+}
+
+function loadRP2040Entry(rp2040: RP2040, logicalFlashBytes?: number): RP2040EntryInfo {
+    const logicalFlashLength = getRp2040LogicalFlashLength(rp2040, logicalFlashBytes);
+    const flashEnd = (RP2040_FLASH_BASE + logicalFlashLength) >>> 0;
+    const sramStart = RP2040_SRAM_BASE;
+    const sramEnd = (RP2040_SRAM_BASE + rp2040.sram.length) >>> 0;
+
+    const resolvePcAddress = (rawAddress: number): number => {
+        const raw = rawAddress >>> 0;
+        if (raw < logicalFlashLength) {
+            return (RP2040_FLASH_BASE + raw) >>> 0;
+        }
+        if (raw >= RP2040_FLASH_BASE && raw < RP2040_FLASH_ALIAS_END) {
+            return normalizeRp2040FlashAliasAddress(raw);
+        }
+        return raw;
+    };
+
+    const isExecutableAddress = (addr: number): boolean => {
+        const a = addr >>> 0;
+        if (a >= RP2040_FLASH_BASE && a < RP2040_FLASH_ALIAS_END) {
+            const normalized = normalizeRp2040FlashAliasAddress(a);
+            if (normalized >= RP2040_FLASH_BASE && normalized < flashEnd) {
+                return true;
+            }
+        }
+
+        return (a >= sramStart && a < sramEnd)
+            || (a >= RP2040_BOOTROM_BASE && a < (RP2040_BOOTROM_BASE + RP2040_BOOTROM_SIZE))
+            || (a >= RP2040_USB_RAM_BASE && a < (RP2040_USB_RAM_BASE + RP2040_USB_RAM_SIZE));
+    };
+
+    const hasInstructionWord = (addr: number): boolean => {
+        const a = addr >>> 0;
+        const flashIndex = rp2040FlashAddressToIndex(a, logicalFlashLength);
+
+        if (flashIndex < 0) return true;
+        if (flashIndex + 1 >= logicalFlashLength) return false;
+        return !(rp2040.flash[flashIndex] === 0xff && rp2040.flash[flashIndex + 1] === 0xff);
+    };
+
+    const readWord = (addr: number): number => {
+        const a = addr >>> 0;
+        const flashIndex = rp2040FlashAddressToIndex(a, logicalFlashLength);
+
+        if (flashIndex >= 0 && flashIndex + 3 < logicalFlashLength) {
+            return (
+                (rp2040.flash[flashIndex])
+                | (rp2040.flash[flashIndex + 1] << 8)
+                | (rp2040.flash[flashIndex + 2] << 16)
+                | (rp2040.flash[flashIndex + 3] << 24)
+            ) >>> 0;
+        }
+
+        return rp2040.readUint32(a) >>> 0;
+    };
+
+    const probe0100SP = readWord((RP2040_FLASH_BASE + 0x100) >>> 0) >>> 0;
+    const probe0100PC = readWord((RP2040_FLASH_BASE + 0x104) >>> 0) >>> 0;
+    const probe0000SP = readWord(RP2040_FLASH_BASE) >>> 0;
+    const probe0000PC = readWord((RP2040_FLASH_BASE + 4) >>> 0) >>> 0;
+
+    type RP2040VectorCandidate = {
+        base: number;
+        initialSP: number;
+        initialPC: number;
+        resolvedPC: number;
+        strategy: string;
+        score: number;
+    };
+
+    const evaluateVectorBase = (base: number, strategy: string): RP2040VectorCandidate | null => {
+        const initialSP = readWord(base) >>> 0;
+        const initialPC = readWord((base + 4) >>> 0) >>> 0;
+
+        if (initialSP === 0 || initialPC === 0 || initialSP === 0xffffffff || initialPC === 0xffffffff) {
+            return null;
+        }
+
+        const resolvedPC = resolvePcAddress((initialPC & ~1) >>> 0);
+        const validSP = initialSP >= sramStart
+            && initialSP <= sramEnd
+            && (initialSP & 0x3) === 0;
+        const validPC = isExecutableAddress(resolvedPC) && hasInstructionWord(resolvedPC);
+        if (!validSP || !validPC) {
+            return null;
+        }
+
+        let score = 100;
+
+        // Penalize vectors that resolve inside early boot2 area; these are often false positives.
+        if (resolvedPC >= RP2040_FLASH_BASE && resolvedPC < (RP2040_FLASH_BASE + 0x800)) {
+            score -= 35;
+        }
+
+        // Reward vectors that point into application flash region.
+        if (resolvedPC >= (RP2040_FLASH_BASE + 0x800) && resolvedPC < flashEnd) {
+            score += 15;
+        }
+
+        let populatedVectors = 0;
+        let validVectorHandlers = 0;
+        for (let i = 2; i < 16; i++) {
+            const rawHandler = readWord((base + (i * 4)) >>> 0) >>> 0;
+            if (rawHandler === 0 || rawHandler === 0xffffffff) {
+                continue;
+            }
+
+            populatedVectors += 1;
+            const handlerAddr = resolvePcAddress((rawHandler & ~1) >>> 0);
+            const looksThumb = (rawHandler & 0x1) === 0x1;
+            if (looksThumb && isExecutableAddress(handlerAddr)) {
+                validVectorHandlers += 1;
+                score += 3;
+            } else {
+                score -= 5;
+            }
+        }
+
+        if (populatedVectors === 0) {
+            score -= 10;
+        }
+        if (validVectorHandlers >= 6) {
+            score += 12;
+        }
+
+        return {
+            base: base >>> 0,
+            initialSP,
+            initialPC,
+            resolvedPC: resolvedPC >>> 0,
+            strategy,
+            score,
+        };
+    };
+
+    const candidates: RP2040VectorCandidate[] = [];
+    const preferredBases = [
+        { offset: 0x100, strategy: 'vector+0x100' },
+        { offset: 0x000, strategy: 'vector+0x000' },
+    ];
+    for (const preferred of preferredBases) {
+        const candidate = evaluateVectorBase((RP2040_FLASH_BASE + preferred.offset) >>> 0, preferred.strategy);
+        if (candidate) candidates.push(candidate);
+    }
+
+    // Arduino-Pico and other RP2040 toolchains may place the vector table beyond +0x100.
+    // Scan a reasonable early-flash window in 0x100-byte aligned steps.
+    const scanLimit = Math.min(logicalFlashLength, 0x80000);
+    for (let offset = 0x200; offset < scanLimit; offset += 0x100) {
+        const candidate = evaluateVectorBase(
+            (RP2040_FLASH_BASE + offset) >>> 0,
+            `vector+0x${offset.toString(16)}`
+        );
+        if (candidate) {
+            candidates.push(candidate);
+        }
+    }
+
+    if (candidates.length > 0) {
+        candidates.sort((a, b) => {
+            if (b.score !== a.score) return b.score - a.score;
+            return a.base - b.base;
+        });
+
+        let best = candidates[0];
+
+        const firmwareLooksCircuitPython = flashContainsAsciiToken(
+            rp2040.flash,
+            'CIRCUITPY',
+            Math.min(logicalFlashLength, 0x180000)
+        );
+
+        if (firmwareLooksCircuitPython) {
+            const cpBootVectorBase = (RP2040_FLASH_BASE + 0x100) >>> 0;
+            const cpBootCandidate = candidates.find((candidate) => {
+                if ((candidate.base >>> 0) !== cpBootVectorBase) return false;
+                const pcOffset = (candidate.resolvedPC - RP2040_FLASH_BASE) >>> 0;
+                return pcOffset < 0x8000;
+            });
+
+            if (cpBootCandidate) {
+                best = cpBootCandidate;
+            }
+        }
+
+        rp2040.core.SP = best.initialSP;
+        rp2040.core.VTOR = best.base >>> 0;
+        rp2040.core.BXWritePC(((best.resolvedPC | 1) >>> 0));
+        rp2040.core.xPSR = 0x01000000;
+
+        return {
+            vectorBase: best.base >>> 0,
+            initialSP: best.initialSP,
+            initialPC: best.initialPC,
+            resolvedPC: best.resolvedPC >>> 0,
+            usedFallback: false,
+            strategy: `${best.strategy} score=${best.score}`,
+            probe0100SP,
+            probe0100PC,
+            probe0000SP,
+            probe0000PC,
+        };
+    }
+
+    const fallbackBase = (RP2040_FLASH_BASE + 0x100) >>> 0;
+    const fallbackVectorSp = readWord(fallbackBase) >>> 0;
+    const fallbackVectorPc = readWord((fallbackBase + 4) >>> 0) >>> 0;
+    const fallbackResolvedPc = resolvePcAddress((fallbackVectorPc & ~1) >>> 0);
+
+    const fallbackSp = (fallbackVectorSp >= sramStart
+        && fallbackVectorSp <= sramEnd
+        && (fallbackVectorSp & 0x3) === 0)
+        ? fallbackVectorSp
+        : (Math.max(sramStart + 0x100, (sramEnd - 0x100) >>> 0) >>> 0);
+
+    const fallbackPc = (fallbackVectorPc !== 0
+        && fallbackVectorPc !== 0xffffffff
+        && isExecutableAddress(fallbackResolvedPc))
+        ? fallbackResolvedPc
+        : fallbackBase;
+
+    rp2040.core.SP = fallbackSp;
+    rp2040.core.VTOR = fallbackBase >>> 0;
+    rp2040.core.BXWritePC((fallbackPc | 1) >>> 0);
+    rp2040.core.xPSR = 0x01000000;
+
+    return {
+        vectorBase: fallbackBase,
+        initialSP: fallbackSp,
+        initialPC: (fallbackVectorPc !== 0 && fallbackVectorPc !== 0xffffffff)
+            ? fallbackVectorPc
+            : ((fallbackPc | 1) >>> 0),
+        resolvedPC: fallbackPc,
+        usedFallback: true,
+        strategy: 'fallback+0x100',
+        fallbackReason: 'no_valid_vector_table',
+        probe0100SP,
+        probe0100PC,
+        probe0000SP,
+        probe0000PC,
+    };
+}
+
+function decodeBase64ToBytes(base64: string): Uint8Array {
+    const normalized = String(base64 || '').replace(/\s+/g, '');
+    const binary = atob(normalized);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i) & 0xff;
+    return out;
+}
+
+function getRp2040LogicalFlashLength(rp2040: RP2040, logicalFlashBytes?: number): number {
+    const physicalSize = Math.max(0, Number(rp2040?.flash?.length || 0));
+    if (physicalSize <= 0) return 0;
+    if (!Number.isFinite(Number(logicalFlashBytes)) || Number(logicalFlashBytes) <= 0) {
+        return physicalSize;
+    }
+    return Math.max(1, Math.min(physicalSize, Math.floor(Number(logicalFlashBytes))));
+}
+
+function mapRp2040FlashAddress(targetAddr: number, logicalFlashLength: number): number {
+    if (logicalFlashLength <= 0) return -1;
+    return rp2040FlashAddressToIndex(targetAddr, logicalFlashLength);
+}
+
+function loadRP2040FirmwareFromUF2Payload(rp2040: RP2040, uf2Payload: string, logicalFlashBytes?: number): RP2040EntryInfo {
+    const payload = String(uf2Payload || '').startsWith(UF2_PAYLOAD_PREFIX)
+        ? String(uf2Payload).slice(UF2_PAYLOAD_PREFIX.length)
+        : String(uf2Payload || '');
+    const logicalFlashLength = getRp2040LogicalFlashLength(rp2040, logicalFlashBytes);
+
+    const bytes = decodeBase64ToBytes(payload);
+    const blockCount = Math.floor(bytes.length / UF2_BLOCK_SIZE);
+
+    for (let i = 0; i < blockCount; i++) {
+        const offset = i * UF2_BLOCK_SIZE;
+        const dv = new DataView(bytes.buffer, bytes.byteOffset + offset, UF2_BLOCK_SIZE);
+        const m0 = dv.getUint32(0, true);
+        const m1 = dv.getUint32(4, true);
+        const mEnd = dv.getUint32(508, true);
+        if (m0 !== UF2_MAGIC_START0 || m1 !== UF2_MAGIC_START1 || mEnd !== UF2_MAGIC_END) continue;
+
+        const targetAddr = dv.getUint32(12, true) >>> 0;
+        const payloadSize = dv.getUint32(16, true) >>> 0;
+        if (payloadSize === 0 || payloadSize > 476) continue;
+
+        const dstStart = mapRp2040FlashAddress(targetAddr, logicalFlashLength);
+        if (dstStart < 0 || dstStart >= logicalFlashLength) continue;
+
+        const maxCopy = Math.min(payloadSize, logicalFlashLength - dstStart);
+        if (maxCopy <= 0) continue;
+
+        const payloadOffset = offset + 32;
+        rp2040.flash.set(bytes.subarray(payloadOffset, payloadOffset + maxCopy), dstStart);
+    }
+
+    return loadRP2040Entry(rp2040, logicalFlashLength);
+}
+
+function loadRP2040FirmwareFromHex(rp2040: RP2040, firmwareHex: string, logicalFlashBytes?: number): RP2040EntryInfo {
+    const segments = parseIntelHexSegments(firmwareHex);
+    const logicalFlashLength = getRp2040LogicalFlashLength(rp2040, logicalFlashBytes);
+    let flashBytesWritten = 0;
+
+    for (const seg of segments) {
+        const segStart = seg.address >>> 0;
+        const segEnd = (seg.address + seg.bytes.length) >>> 0;
+        const flashStart = RP2040_FLASH_BASE;
+        const flashEnd = RP2040_FLASH_BASE + logicalFlashLength;
+
+        if (segEnd <= flashStart || segStart >= flashEnd) {
+            continue;
+        }
+
+        const copyStart = Math.max(segStart, flashStart);
+        const copyEnd = Math.min(segEnd, flashEnd);
+        const srcOffset = copyStart - segStart;
+        const dstOffset = copyStart - flashStart;
+        const copyLength = copyEnd - copyStart;
+
+        rp2040.flash.set(seg.bytes.subarray(srcOffset, srcOffset + copyLength), dstOffset);
+        flashBytesWritten += copyLength;
+    }
+
+    if (flashBytesWritten === 0 && segments.length > 0) {
+        // Some toolchains emit HEX with low addresses; treat them as flash offsets.
+        for (const seg of segments) {
+            if (seg.address < logicalFlashLength) {
+                const dstOffset = seg.address;
+                const maxCopy = Math.max(0, Math.min(seg.bytes.length, logicalFlashLength - dstOffset));
+                if (maxCopy > 0) {
+                    rp2040.flash.set(seg.bytes.subarray(0, maxCopy), dstOffset);
+                    flashBytesWritten += maxCopy;
+                }
+            }
+        }
+    }
+
+    return loadRP2040Entry(rp2040, logicalFlashLength);
+}
+
+function applyRP2040FlashPartitions(
+    rp2040: RP2040,
+    partitions: RP2040FlashPartition[],
+    logicalFlashBytes?: number
+) {
+    if (!partitions.length) return;
+    const logicalFlashLength = getRp2040LogicalFlashLength(rp2040, logicalFlashBytes);
+    if (logicalFlashLength <= 0) return;
+
+    for (const partition of partitions) {
+        const dstOffset = partition.offset >>> 0;
+        if (dstOffset >= logicalFlashLength) continue;
+        const maxCopy = Math.min(partition.bytes.length, logicalFlashLength - dstOffset);
+        if (maxCopy <= 0) continue;
+
+        rp2040.flash.set(partition.bytes.subarray(0, maxCopy), dstOffset);
+    }
+}
+
+function loadRP2040Firmware(rp2040: RP2040, firmware: string, options: RP2040FirmwareLoadOptions = {}): RP2040EntryInfo {
+    // Reset flash contents before each load so stale data cannot execute.
+    rp2040.flash.fill(0xff);
+    const logicalFlashLength = getRp2040LogicalFlashLength(rp2040, options.logicalFlashBytes);
+    const partitions = Array.isArray(options.partitions) ? options.partitions : [];
+
+    const source = String(firmware || '').trim();
+    let entryInfo: RP2040EntryInfo;
+
+    if (!source) {
+        entryInfo = loadRP2040Entry(rp2040, logicalFlashLength);
+    } else if (source.startsWith(UF2_PAYLOAD_PREFIX)) {
+        entryInfo = loadRP2040FirmwareFromUF2Payload(rp2040, source, logicalFlashLength);
+    } else {
+        entryInfo = loadRP2040FirmwareFromHex(rp2040, source, logicalFlashLength);
+    }
+
+    if (partitions.length > 0) {
+        applyRP2040FlashPartitions(rp2040, partitions, logicalFlashLength);
+        entryInfo = loadRP2040Entry(rp2040, logicalFlashLength);
+    }
+
+    return entryInfo;
+}
+
+export class AVRRunner {
+    cpu: CPU | null = null;
+    adc: AVRADC | null = null;
+    usart: AVRUSART | null = null;
+    twi: AVRTWI | null = null;
+    spi: AVRSPI | null = null;
+    portB: AVRIOPort | null = null;
+    portC: AVRIOPort | null = null;
+    portD: AVRIOPort | null = null;
+    updatePhysics: (() => void) | null = null;
+    repropagateAllVoltages: (() => void) | null = null;
+    timers: AVRTimer[] = [];
+    running: boolean = false;
+    pinStates: Record<string, boolean> = {};
+    currentWires: any[] = [];
+    instances: Map<string, BaseComponent> = new Map();
+    lastTime: number = 0;
+    statusInterval: any;
+    pinsChanged: boolean = true;
+    speed: number = 1.0;
+    boardId: string;
+    solverMode: 'logic';
+    private serialBaudRate: number = 9600;
+    private softSerialBaudRate: number = 9600;
+    private serialByteBudget: number = 0;
+    private readonly onStateUpdate: (state: any) => void;
+    private readonly onByteTransmitCb?: (payload: { boardId: string; value: number; char: string; source?: string }) => void;
+    private readonly softSerialRxPin = '11';
+    private readonly softSerialTxPin = '10';
+    private softSerialRxLineLow = false;
+    private softSerialNextInjectCycle = 0;
+    private softSerialDecodeState = {
+        receiving: false,
+        sampleCycle: 0,
+        sampleIndex: 0,
+        currentByte: 0,
+        lastLevel: true,
+    };
+    private i2sState = new Map<string, { bclkLast: boolean; wsLast: boolean; shiftBuf: number; bitCount: number }>();
+    private pwmState = new Map<string, { lastRiseCycle: number; lastFallCycle: number; lastPeriodCycles: number }>();
+    private oneWireState = new Map<string, { lowStartCycle: number | null; highStartCycle: number | null }>();
+    private protocolEndpointsCache = new Map<string, ConnectedComponentPin[]>();
+    private componentSyncMeta = new Map<string, { lastSentAt: number; lastWeight: number }>();
+    private circuitDirty: boolean = true;
+    private topologyDirty: boolean = true;
+    private lastPhysicsSolveAt: number = 0;
+    private lastStateEmitCycle: number = 0;
+    private lastStateEmitTime: number = 0;
+    private statusIntervalEmitCount: number = 0;
+    private lastRunLoopMs: number = 0;
+    private lastPhysicsMs: number = 0;
+    private lastComponentUpdateMs: number = 0;
+    private solver = new CircuitSolver();
+    private netToNode = new Map<number, number>();
+    private pinToNet: Map<string, number> = new Map();
+    private physicsWorker: Worker | null = null;
+    private physicsWorkerBusy: boolean = false;
+    private cpuCyclesAtStart: number = 0;
+
+    constructor(
+        hexData: string,
+        componentsDef: any[],
+        wiresDef: any[],
+        onStateUpdate: (state: any) => void,
+        options: AVRRunnerOptions = {}
+    ) {
+        this.currentWires = wiresDef || [];
+        this.onStateUpdate = onStateUpdate;
+        this.onByteTransmitCb = options.onByteTransmit;
+        this.speed = options.speed ?? 1.0;
+        this.solverMode = 'logic';
+        this.circuitDirty = true;
+        const fallbackBoard = (componentsDef || []).find((c: any) => /(arduino|esp32|stm32|rp2040|pico)/i.test(String(c.type || '')));
+        this.boardId = options.boardId || fallbackBoard?.id || 'openhw-arduino-uno_0';
+        this.setSerialBaudRate(options.serialBaudRate ?? 9600);
+
+        // Setup memory and CPU
+        const program = new Uint16Array(32768);
+        const { data } = parse(hexData);
+        const u8 = new Uint8Array(program.buffer);
+        u8.set(data);
+        const preview = Array.from(data.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        console.log(`AVRRunner: Flashed ${data.length} bytes. Start: [${preview}]`);
+
+        this.cpu = new CPU(program, 0x2200);
+        this.cpuCyclesAtStart = this.cpu.cycles;
+
+        this.timers = [
+            new AVRTimer(this.cpu, timer0Config),
+            new AVRTimer(this.cpu, timer1Config),
+            new AVRTimer(this.cpu, timer2Config),
+        ];
+
+        this.adc = new AVRADC(this.cpu, adcConfig);
+
+        this.usart = new AVRUSART(this.cpu, usart0Config, 16e6);
+        this.usart.onByteTransmit = (value) => {
+            const char = String.fromCharCode(value);
+            this.pulseBoardLed('1');
+            if (this.onByteTransmitCb) {
+                this.onByteTransmitCb({ boardId: this.boardId, value, char, source: 'uart0' });
+            } else {
+                this.onStateUpdate({ type: 'serial', data: char, value, boardId: this.boardId, source: 'uart0' });
+            }
+        };
+
+        this.twi = new AVRTWI(this.cpu, twiConfig, 16e6);
+        this.spi = new AVRSPI(this.cpu, spiConfig, 16e6);
+
+        // Instantiate components
+        (componentsDef || []).forEach(cDef => {
+            const LogicClass = LOGIC_REGISTRY[cDef.type];
+            if (LogicClass) {
+                const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
+                const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
+                const inst = new LogicClass(cDef.id, manifest);
+                if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
+                inst.onTelemetryFinding = (finding: any) => {
+                    this.onStateUpdate({
+                        type: 'telemetry_finding',
+                        boardId: this.boardId,
+                        componentId: inst.id,
+                        ...finding
+                    });
+                };
+                this.instances.set(cDef.id, inst);
+            }
+        });
+
+        this.buildNetlist();
+
+        this.portB = new AVRIOPort(this.cpu, portBConfig);
+        this.portC = new AVRIOPort(this.cpu, portCConfig);
+        this.portD = new AVRIOPort(this.cpu, portDConfig);
+
+
+        const runnerOnStateUpdate = this.onStateUpdate.bind(this);
+        const runnerBoardId = this.boardId;
+        const runnerGetSimulatedTimeMs = this.getSimulatedTimeMs.bind(this);
+
+        // Setup I2C Hooks bridging AVRTWI events to BaseComponents
+        class TWIAdapter {
+            // Track the addressed slave across the read transaction
+            private activeSlave: BaseComponent | null = null;
+            private currentBuffer: number[] = [];
+
+            constructor(private twi: AVRTWI, private instances: Map<string, BaseComponent>) { }
+
+            start(repeated: boolean) {
+                this.currentBuffer = [];
+                this.twi.completeStart();
+            }
+
+            stop() {
+                const instArray = Array.from(this.instances.values());
+                for (const inst of instArray) {
+                    if (inst.onI2CStop) {
+                        inst.onI2CStop();
+                    }
+                    if (this.currentBuffer.length > 0 && inst.onI2CStart && this.activeSlave === inst) {
+                        inst.recordI2cTransaction([...this.currentBuffer]);
+                    }
+                }
+
+                if (this.currentBuffer.length > 0) {
+                    const address = (this.currentBuffer[0] >> 1) & 0x7f;
+                    const isWrite = (this.currentBuffer[0] & 1) === 0;
+                    const data = this.currentBuffer.slice(1);
+                    runnerOnStateUpdate({
+                        type: 'protocol:i2c',
+                        boardId: runnerBoardId,
+                        address,
+                        data,
+                        isWrite,
+                        timestamp: runnerGetSimulatedTimeMs()
+                    });
+                }
+
+                this.activeSlave = null;
+                this.currentBuffer = [];
+                this.twi.completeStop();
+            }
+
+            connectToSlave(addr: number, write: boolean) {
+                const instArray = Array.from(this.instances.values());
+                let ack = false;
+                this.activeSlave = null;
+                for (const inst of instArray) {
+                    if (inst.onI2CStart) {
+                        if (inst.onI2CStart(addr, !write)) { 
+                            ack = true;
+                            if (!this.activeSlave) this.activeSlave = inst;
+                        }
+                    }
+                }
+                this.currentBuffer = [addr | (write ? 0 : 1)];
+                this.twi.completeConnect(ack);
+            }
+
+            writeByte(value: number) {
+                const instArray = Array.from(this.instances.values());
+                let handled = false;
+                for (const inst of instArray) {
+                    if (inst.onI2CByte) {
+                        if (inst.onI2CByte(-1, value)) {
+                            handled = true;
+                        }
+                    }
+                }
+                this.currentBuffer.push(value);
+                this.twi.completeWrite(handled);
+            }
+
+            readByte(ack: boolean) {
+                let byte = 0xFF;
+                if (this.activeSlave) {
+                    const slave = this.activeSlave as any;
+                    if (typeof slave.onI2CReadByte === 'function') {
+                        byte = slave.onI2CReadByte() & 0xFF;
+                    } else if (typeof slave.readByte === 'function') {
+                        byte = slave.readByte() & 0xFF;
+                    }
+                }
+                this.currentBuffer.push(byte);
+                this.twi.completeRead(byte);
+            }
+        }
+
+        this.twi.eventHandler = new TWIAdapter(this.twi, this.instances);
+
+        let spiTransactionBytes: number[] = [];
+        let lastSpiTime = 0;
+
+        // Setup SPI Hooks bridging AVRSPI to BaseComponents
+        this.spi.onByte = (value: number) => {
+            const nowMs = this.getSimulatedTimeMs();
+            if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
+                this.onStateUpdate({
+                    type: 'protocol:spi',
+                    boardId: this.boardId,
+                    data: [...spiTransactionBytes],
+                    timestamp: lastSpiTime
+                });
+                spiTransactionBytes = [];
+            }
+            lastSpiTime = nowMs;
+            spiTransactionBytes.push(value & 0xff);
+
+            const instArray = Array.from(this.instances.values());
+            let returnByte = 0xFF; // Default MISO if nothing responds
+
+            const unoId = this.boardId;
+
+            if (unoId) {
+                const misoNet = this.pinToNet.get(`${unoId}:12`);
+                if (misoNet !== undefined) {
+                    // 1. Direct Loopback (MISO connected to MOSI)
+                    if (misoNet === this.pinToNet.get(`${unoId}:11`)) {
+                        returnByte = value;
+                    }
+                    // 2. MISO connected to SCK (Clock pulses)
+                    else if (misoNet === this.pinToNet.get(`${unoId}:13`)) {
+                        returnByte = 0xAA; // Arbitrary pattern to show clock signal picked up
+                    }
+                    // 3. MISO connected to any other driven Pin (like 10/SS)
+                    else {
+                        // Check if the net is currently driven HIGH by another pin
+                        let drivenHigh = false;
+                        for (const [p, net] of this.pinToNet) {
+                            if (net === misoNet && !p.endsWith(':12')) {
+                                const [compId, pinId] = p.split(':');
+                                if (compId === unoId && this.pinStates[pinId]) {
+                                    drivenHigh = true;
+                                    break;
+                                }
+                            }
+                        }
+                        returnByte = drivenHigh ? 0xFF : 0x00;
+                    }
+                }
+            }
+
+            for (const inst of instArray) {
+                if (inst.onSPIByte && this.isSPISelected(inst)) {
+                    const res = inst.onSPIByte(value);
+                    if (res !== undefined) {
+                        returnByte = res;
+                    }
+                }
+            }
+
+            // The SPI peripheral needs to be told when the transfer is physically complete 
+            // based on the clock divider speed.
+            this.cpu!.addClockEvent(() => {
+                this.spi!.completeTransfer(returnByte);
+            }, this.spi!.transferCycles);
+        };
+
+        // Setup IO Hooks
+        this.setupHooks();
+        this.setSoftSerialRxLevel(true);
+
+        this.running = true;
+        this.lastTime = performance.now();
+        this.lastStateEmitTime = this.lastTime;
+        this.runLoop();
+    }
+
+    getSimulatedTimeMs() {
+        if (!this.cpu) return 0;
+        return Math.floor(((this.cpu.cycles - this.cpuCyclesAtStart) / 16_000_000) * 1000);
+    }
+
+    setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean) {
+        for (const inst of this.instances.values()) {
+            inst.telemetryEnabled = !!enabled;
+            inst.telemetryMode = mode || 'detail';
+            inst.telemetryWatchedParams = watchedParamsMap?.[inst.id] || ['all'];
+            inst.deepSiliconEnabled = !!deepSilicon;
+        }
+    }
+
+    getRichTelemetrySnapshot(options: { mode?: 'standard' | 'deep' | 'delta' } = {}) {
+        const components: any[] = [];
+        const mode = options.mode || 'deep';
+
+        for (const inst of this.instances.values()) {
+            if (mode === 'standard') {
+                const data = (inst as any).getTelemetryData?.() || getUnifiedComponentSyncState(inst);
+                components.push({
+                    id: inst.id,
+                    ...data
+                });
+            } else if (mode === 'delta') {
+                components.push(inst.getDeltaMetrics());
+            } else {
+                // 'deep' mode provides the FULL diagnostic report
+                components.push(inst.getRawMetrics());
+            }
+        }
+        return {
+            boardId: this.boardId,
+            components,
+            capturedAt: new Date().toISOString(),
+            mode,
+            isDelta: mode === 'delta'
+        };
+    }
+
+    private isBoardArduinoPin(wireCoord: string, targetPin: string): boolean {
+        const [compId, compPin] = wireCoord.split(':');
+        if (compId !== this.boardId) return false;
+        const inst = this.instances.get(compId);
+        if (!inst || !inst.type.includes('arduino')) return false;
+        return compPin === targetPin || compPin === `D${targetPin}` || compPin === `A${targetPin}`;
+    }
+
+    private pulseBoardLed(pinId: '0' | '1') {
+        const boardInst = this.instances.get(this.boardId);
+        if (!boardInst || !this.cpu) return;
+        boardInst.onPinStateChange(pinId, true, this.cpu.cycles);
+    }
+
+    private getSoftSerialBitCycles(): number {
+        const baud = Math.max(300, this.softSerialBaudRate | 0);
+        return Math.max(1, Math.floor(16_000_000 / baud));
+    }
+
+    private setSoftSerialRxLevel(isHigh: boolean) {
+        this.softSerialRxLineLow = !isHigh;
+        // UNO pin 11 is PB3 (index 3 in PORTB mapping [8..13]).
+        this.portB?.setPin(3, isHigh);
+    }
+
+    private emitSoftSerialByte(value: number) {
+        const byte = value & 0xff;
+        const char = String.fromCharCode(byte);
+        this.pulseBoardLed('1');
+        if (this.onByteTransmitCb) {
+            this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'softserial' });
+        } else {
+            this.onStateUpdate({ type: 'serial', data: char, value: byte, boardId: this.boardId, source: 'softserial' });
+        }
+    }
+
+    private processSoftSerialDecode(cycles: number) {
+        const state = this.softSerialDecodeState;
+        if (!state.receiving) return;
+        const bitCycles = this.getSoftSerialBitCycles();
+
+        while (state.receiving && state.sampleCycle <= cycles) {
+            if (state.sampleIndex < 8) {
+                if (state.lastLevel) {
+                    state.currentByte |= (1 << state.sampleIndex);
+                }
+                state.sampleIndex += 1;
+                state.sampleCycle += bitCycles;
+                continue;
+            }
+
+            // Stop bit: valid frame when line is HIGH.
+            if (state.lastLevel) {
+                this.emitSoftSerialByte(state.currentByte);
+            }
+            state.receiving = false;
+            state.sampleIndex = 0;
+            state.currentByte = 0;
+        }
+    }
+
+    private observeSoftSerialTx(pinId: string, isHigh: boolean, cycles: number) {
+        if (pinId !== this.softSerialTxPin) return;
+        const state = this.softSerialDecodeState;
+
+        this.processSoftSerialDecode(cycles);
+
+        const prev = state.lastLevel;
+        state.lastLevel = isHigh;
+
+        // Falling edge while idle => start bit.
+        if (!state.receiving && prev && !isHigh) {
+            const bitCycles = this.getSoftSerialBitCycles();
+            state.receiving = true;
+            state.currentByte = 0;
+            state.sampleIndex = 0;
+            state.sampleCycle = cycles + (bitCycles * 1.5);
+        }
+    }
+
+    private scheduleSoftSerialRxFrame(value: number) {
+        if (!this.cpu) return;
+        const cpu = this.cpu;
+        const bitCycles = this.getSoftSerialBitCycles();
+        const frameStart = Math.max(cpu.cycles + 1, this.softSerialNextInjectCycle || (cpu.cycles + 1));
+        const byte = value & 0xff;
+        const levels: number[] = [0];
+        for (let i = 0; i < 8; i++) {
+            levels.push((byte >> i) & 1);
+        }
+        levels.push(1); // stop bit
+
+        levels.forEach((level, index) => {
+            const cycleAt = frameStart + (index * bitCycles);
+            cpu.addClockEvent(() => {
+                if (!this.running) return;
+                this.setSoftSerialRxLevel(level === 1);
+            }, cycleAt - cpu.cycles);
+        });
+
+        this.softSerialNextInjectCycle = frameStart + (levels.length * bitCycles);
+    }
+
+    private hasPendingCpuWork(): boolean {
+        if (!this.cpu) return false;
+        const cpuAny = this.cpu as any;
+        const pendingClock = !!cpuAny?.nextClockEvent && cpuAny.nextClockEvent.cycles <= this.cpu.cycles;
+        const pendingInterrupt = !!cpuAny?.interruptsEnabled && Number(cpuAny?.nextInterrupt ?? -1) >= 0;
+        return pendingClock || pendingInterrupt;
+    }
+
+    private drainPendingCpuWork(maxTicks = 8) {
+        if (!this.cpu) return;
+        let guard = 0;
+        while (this.running && this.hasPendingCpuWork() && guard < maxTicks) {
+            this.cpu.tick();
+            guard += 1;
+        }
+    }
+
+    private shouldEmitComponentState(componentId: string, state: any, nowMs: number): boolean {
+        const policy = getComponentStateSyncPolicy(state);
+        const prev = this.componentSyncMeta.get(componentId);
+        if (policy.minIntervalMs > 0 && prev && (nowMs - prev.lastSentAt) < policy.minIntervalMs) {
+            return false;
+        }
+        this.componentSyncMeta.set(componentId, { lastSentAt: nowMs, lastWeight: policy.weight });
+        return true;
+    }
+
+    private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string, nextVoltage: number) => void) {
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
+            const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
+            if (!otherPin) return;
+            const resistance = Number.parseFloat(String((inst as any).state?.value || (inst as any).state?.resistance || 1000));
+            const safeResistance = Number.isFinite(resistance) && resistance > 0 ? resistance : 1000;
+            const drop = Math.min(voltage * 0.2, Math.max(0.01, safeResistance / 5000));
+            const nextVoltage = Math.max(0, voltage - drop);
+            inst.setPinVoltage(otherPin, nextVoltage);
+            visit(`${compId}:${otherPin}`, nextVoltage);
+        } else if (inst.type === 'openhw-led' || inst.type === 'openhw-led') {
+            // Forward bias: Anode to Cathode
+            if (pinId === 'A') {
+                const nextV = Math.max(0, voltage - 1.8);
+                inst.setPinVoltage('K', nextV);
+                visit(`${compId}:K`, nextV);
+            }
+        } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
+            // Internal short-circuit connections
+            if (pinId === '1l' || pinId === '1') {
+                inst.setPinVoltage('1r', voltage);
+                visit(`${compId}:1r`, voltage);
+                inst.setPinVoltage('1', voltage);
+                visit(`${compId}:1`, voltage);
+                inst.setPinVoltage('1l', voltage);
+                visit(`${compId}:1l`, voltage);
+            } else if (pinId === '1r') {
+                inst.setPinVoltage('1l', voltage);
+                visit(`${compId}:1l`, voltage);
+                inst.setPinVoltage('1', voltage);
+                visit(`${compId}:1`, voltage);
+            } else if (pinId === '2l' || pinId === '2') {
+                inst.setPinVoltage('2r', voltage);
+                visit(`${compId}:2r`, voltage);
+                inst.setPinVoltage('2', voltage);
+                visit(`${compId}:2`, voltage);
+                inst.setPinVoltage('2l', voltage);
+                visit(`${compId}:2l`, voltage);
+            } else if (pinId === '2r') {
+                inst.setPinVoltage('2l', voltage);
+                visit(`${compId}:2l`, voltage);
+                inst.setPinVoltage('2', voltage);
+                visit(`${compId}:2`, voltage);
+            }
+
+            // Tactile switch crossing
+            if (inst.state?.pressed) {
+                if (pinId.startsWith('1')) {
+                    inst.setPinVoltage('2l', voltage);
+                    visit(`${compId}:2l`, voltage);
+                    inst.setPinVoltage('2r', voltage);
+                    visit(`${compId}:2r`, voltage);
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`, voltage);
+                } else if (pinId.startsWith('2')) {
+                    inst.setPinVoltage('1l', voltage);
+                    visit(`${compId}:1l`, voltage);
+                    inst.setPinVoltage('1r', voltage);
+                    visit(`${compId}:1r`, voltage);
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`, voltage);
+                }
+            }
+        } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire') {
+            const bridges = getInternalBridgesForComponent(compId, inst.type);
+            for (const bridge of bridges) {
+                if (bridge[0] === `${compId}:${pinId}`) visit(bridge[1], voltage);
+                else if (bridge[1] === `${compId}:${pinId}`) visit(bridge[0], voltage);
+            }
+        }
+    }
+
+    private setupHooks() {
+        if (!this.cpu) return;
+
+        let lowImpRails = new Map<string, number>();
+
+        const getLowImpedanceRails = (): Map<string, number> => {
+            const rails = new Map<string, number>();
+            const visited = new Set<string>();
+
+            const normalizePin = (pinStr: string): string => {
+                const parts = pinStr.split(':');
+                if (parts.length >= 2) {
+                    const compId = parts[0];
+                    const pinId = parts.slice(1).join(':');
+                    const upper = pinId.toUpperCase();
+                    if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper)) {
+                        return `${compId}:GND`;
+                    }
+                    if (upper === '5V' || upper === 'VCC') {
+                        return `${compId}:5V`;
+                    }
+                    if (upper === '3V3' || upper === '3V3_EN') {
+                        return `${compId}:3V3`;
+                    }
+                }
+                return pinStr;
+            };
+
+            const visit = (rawNode: string, v: number) => {
+                const node = normalizePin(rawNode);
+                if (visited.has(node)) return;
+                visited.add(node);
+                rails.set(node, v);
+
+                // Traverse wires
+                for (const wire of this.currentWires) {
+                    const normFrom = normalizePin(wire.from);
+                    const normTo = normalizePin(wire.to);
+                    if (normFrom === node) {
+                        visit(wire.to, v);
+                    } else if (normTo === node) {
+                        visit(wire.from, v);
+                    }
+                }
+
+                // Traverse breadboard/vias bridges
+                const [compId, compPin] = node.split(':');
+                const inst = this.instances.get(compId);
+                if (inst && (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire')) {
+                    const bridges = getInternalBridgesForComponent(compId, inst.type);
+                    for (const bridge of bridges) {
+                        if (bridge[0] === `${compId}:${compPin}`) {
+                            visit(bridge[1], v);
+                        } else if (bridge[1] === `${compId}:${compPin}`) {
+                            visit(bridge[0], v);
+                        }
+                    }
+                }
+            };
+
+            // Start BFS from GND
+            ['gnd_1', 'gnd_2', 'gnd_3', 'GND'].forEach(pin => {
+                visit(`${this.boardId}:${pin}`, 0.0);
+            });
+            // Start BFS from 5V/VIN
+            ['5V', 'vin', 'VIN'].forEach(pin => {
+                visit(`${this.boardId}:${pin}`, 5.0);
+            });
+            // Start BFS from 3V3
+            ['3v3', '3V3'].forEach(pin => {
+                visit(`${this.boardId}:${pin}`, 3.3);
+            });
+
+            return rails;
+        };
+
+        const updateOopPin = (arduinoPinStr: string, isHighOrVoltage: boolean | number) => {
+            const voltage = typeof isHighOrVoltage === 'number' ? isHighOrVoltage : (isHighOrVoltage ? 5.0 : 0.0);
+            if (arduinoPinStr === '5') {
+                console.log(`[Worker updateOopPin] Pin 5, isHighOrVoltage: ${isHighOrVoltage}, voltage: ${voltage}V`);
+            }
+            const visitedEdges = new Set<string>();
+            const visitedNodes = new Set<string>();
+
+            const normalizePin = (pinStr: string): string => {
+                const parts = pinStr.split(':');
+                if (parts.length >= 2) {
+                    const compId = parts[0];
+                    const pinId = parts.slice(1).join(':');
+                    const upper = pinId.toUpperCase();
+                    if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper)) {
+                        return `${compId}:GND`;
+                    }
+                    if (upper === '5V' || upper === 'VCC') {
+                        return `${compId}:5V`;
+                    }
+                    if (upper === '3V3' || upper === '3V3_EN') {
+                        return `${compId}:3V3`;
+                    }
+                }
+                return pinStr;
+            };
+
+            const visitNode = (rawNode: string, v: number) => {
+                const node = normalizePin(rawNode);
+                if (arduinoPinStr === '5' || rawNode.includes('btn7') || rawNode.includes('uno1:5')) {
+                    console.log(`[Worker visitNode] Pin 5 path, rawNode: ${rawNode}, node: ${node}, voltage: ${v}V`);
+                }
+                if (visitedNodes.has(node)) return;
+
+                const [compId, compPin] = node.split(':');
+
+                // Do not allow passive back-propagation to overwrite constant board power reference pins (GND, 5V, 3V3, VIN)
+                if (compId === this.boardId && rawNode !== `${this.boardId}:${arduinoPinStr}`) {
+                    const upper = compPin.toUpperCase();
+                    if (upper === 'GND' || /^GND[._:]?\d+$/.test(upper) || upper === '5V' || upper === '3V3' || upper === 'VIN') {
+                        return;
+                    }
+                }
+
+                // If this is a passive propagation from a CPU pin, and we encounter a node that has a low-impedance
+                // connection to a board supply rail, do not allow passive propagation to overwrite its fixed reference voltage!
+                const isCpuPinProp = !['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
+                if (isCpuPinProp && lowImpRails.has(node)) {
+                    const railVoltage = lowImpRails.get(node)!;
+                    const inst = this.instances.get(compId);
+                    if (inst) {
+                        if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                        inst.setPinVoltage(compPin, railVoltage);
+                    }
+                    return;
+                }
+
+                visitedNodes.add(node);
+
+                // Junction support: visit all wires on this same pin
+                for (const wire of this.currentWires) {
+                    const normFrom = normalizePin(wire.from);
+                    const normTo = normalizePin(wire.to);
+                    const edgeKey = `${normFrom}|${normTo}`;
+                    if (visitedEdges.has(edgeKey)) continue;
+                    if (normFrom === node || normTo === node) {
+                        visitedEdges.add(edgeKey);
+                        visitNode(normFrom === node ? wire.to : wire.from, v);
+                    }
+                }
+
+                const inst = this.instances.get(compId);
+                if (inst) {
+                    if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                    inst.setPinVoltage(compPin, v);
+                    this.circuitDirty = true;
+                    if (this.cpu) {
+                        inst.onPinStateChange(compPin, v > 1.8, this.cpu.cycles);
+                    }
+                    this.tickI2S(inst, compId, compPin, v > 1.8);
+
+                    // Propagate external voltage back to simulated AVR CPU ports
+                    if (compId === this.boardId) {
+                        const isHigh = v > 1.8;
+                        this.pinStates[compPin] = isHigh;
+                        if (compPin.startsWith('A')) {
+                            const bit = parseInt(compPin.slice(1), 10);
+                            if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
+                        } else {
+                            const num = parseInt(compPin, 10);
+                            if (!isNaN(num)) {
+                                if (num >= 8 && num <= 13) {
+                                    this.portB?.setPin(num - 8, isHigh);
+                                } else if (num >= 0 && num <= 7) {
+                                    this.portD?.setPin(num, isHigh);
+                                }
+                            }
+                        }
+                    }
+
+                    this.traversePassive(inst, compId, compPin, v, (forwardNode, nextV) => {
+                        visitNode(forwardNode, nextV);
+                    });
+                }
+            };
+
+            visitNode(`${this.boardId}:${arduinoPinStr}`, voltage);
+        };
+
+        this.updatePhysics = () => {};
+
+        this.repropagateAllVoltages = () => {
+            lowImpRails = getLowImpedanceRails();
+            const getAvrPinModeState = (pinStr: string) => {
+                let port: AVRIOPort | null = null;
+                let bit = 0;
+                if (pinStr.startsWith('A')) {
+                    port = this.portC;
+                    const parsed = parseInt(pinStr.slice(1), 10);
+                    if (!isNaN(parsed)) bit = parsed;
+                } else {
+                    const num = parseInt(pinStr, 10);
+                    if (!isNaN(num)) {
+                        if (num >= 8 && num <= 13) {
+                            port = this.portB;
+                            bit = num - 8;
+                        } else if (num >= 0 && num <= 7) {
+                            port = this.portD;
+                            bit = num;
+                        }
+                    }
+                }
+                if (!port) return { isDriven: true, isHigh: !!this.pinStates[pinStr] };
+                const state = port.pinState(bit);
+                if (pinStr === '5') {
+                    console.log(`[Worker getAvrPinModeState] Pin 5, port: ${port ? 'portD' : 'null'}, bit: ${bit}, avrState: ${state}, PinState.InputPullUp: ${PinState.InputPullUp}`);
+                }
+                if (state === PinState.High || state === PinState.InputPullUp) {
+                    return { isDriven: true, isHigh: true };
+                }
+                if (state === PinState.Low) {
+                    return { isDriven: true, isHigh: false };
+                }
+                // Input mode (floating/high impedance)
+                // Wokwi pulls floating input pins to HIGH by default. Emulate this behavior:
+                return { isDriven: true, isHigh: true };
+            };
+
+            // First, re-propagate all digital / analog board pins driven by the CPU or pullups
+            [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
+                const { isDriven, isHigh } = getAvrPinModeState(pin);
+                if (isDriven) {
+                    this.pinStates[pin] = isHigh;
+                    updateOopPin(pin, isHigh);
+                }
+            });
+            // Then, re-propagate GND and power rails LAST so they dominate and pull pins down/up
+            ['gnd_1', 'gnd_2', 'gnd_3', 'GND'].forEach(pin => {
+                updateOopPin(pin, 0.0);
+            });
+            ['5V', 'vin', 'VIN'].forEach(pin => {
+                updateOopPin(pin, 5.0);
+            });
+            ['3v3', '3V3'].forEach(pin => {
+                updateOopPin(pin, 3.3);
+            });
+        };
+
+        const attachPort = (port: AVRIOPort, pinNames: string[]) => {
+            port.addListener((value) => {
+                pinNames.forEach((pin, i) => {
+                    // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
+                    const state = port.pinState(i);
+                    const isOutput = state === PinState.Low || state === PinState.High;
+                    if (!isOutput) {
+                        return;
+                    }
+
+                    const isHigh = (value & (1 << i)) !== 0;
+                    if (this.pinStates[pin] !== isHigh) {
+                        this.pinStates[pin] = isHigh;
+                        this.pinsChanged = true;
+                        this.circuitDirty = true;
+
+                        const boardInst = this.instances.get(this.boardId);
+                        if (boardInst) {
+                            boardInst.onPinStateChange(pin, isHigh, this.cpu!.cycles);
+                        }
+
+                        updateOopPin(pin, isHigh);
+                        this.dispatchOptionalProtocols(pin, isHigh, this.cpu!.cycles);
+                        this.observeSoftSerialTx(pin, isHigh, this.cpu!.cycles);
+                    }
+                });
+            });
+        };
+
+        if (this.portB) attachPort(this.portB, UNO_DIGITAL_PINS.slice(8, 14)); // PORTB
+        if (this.portD) attachPort(this.portD, UNO_DIGITAL_PINS.slice(0, 8)); // PORTD
+        if (this.portC) attachPort(this.portC, UNO_ANALOG_PINS); // PORTC
+
+        // Initialize all hooked pins to LOW on startup so LED components aren't stuck waiting for a toggle
+        [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
+            this.pinStates[pin] = false;
+            this.circuitDirty = true;
+            updateOopPin(pin, false);
+        });
+
+        // Initialize power and ground rail pins on startup to propagate reference levels to passives
+        ['gnd_1', 'gnd_2', 'gnd_3', 'GND'].forEach(pin => {
+            updateOopPin(pin, 0.0);
+        });
+        ['5V', 'vin', 'VIN'].forEach(pin => {
+            updateOopPin(pin, 5.0);
+        });
+        ['3v3', '3V3'].forEach(pin => {
+            updateOopPin(pin, 3.3);
+        });
+    }
+
+    private runLoop = () => {
+        if (!this.running || !this.cpu) return;
+
+        const loopStart = performance.now();
+        const now = performance.now();
+        const deltaTime = now - this.lastTime;
+        let physicsMs = 0;
+
+        if (deltaTime > 0) {
+            const cyclesPerMs = 16000 * this.speed;
+            const cyclesToRun = deltaTime * cyclesPerMs;
+            const targetObj = this.cpu.cycles + Math.min(cyclesToRun, 1600000 * Math.max(1, this.speed));
+
+            const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
+            const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
+
+            const instArray = Array.from(this.instances.values());
+            const componentUpdateThreshold = 32000; // Update components every 2ms of simulated time
+
+            while (this.cpu.cycles < targetObj && this.running) {
+                const nextChunkTarget = Math.min(targetObj, this.cpu.cycles + componentUpdateThreshold);
+                
+                while (this.cpu.cycles < nextChunkTarget && this.running) {
+                    avrInstruction(this.cpu);
+                    this.cpu.tick();
+                }
+
+                // Component updates for smooth animation
+                const componentStart = performance.now();
+                let anyStateChanged = false;
+                instArray.forEach(inst => {
+                    inst.update(this.cpu!.cycles, this.currentWires, instArray);
+                    if (inst.stateChanged) {
+                        anyStateChanged = true;
+                        (inst as any).pendingVisualStateEmit = true;
+                        inst.stateChanged = false;
+                    }
+                });
+                if (anyStateChanged && typeof this.repropagateAllVoltages === 'function') {
+                    this.repropagateAllVoltages();
+                }
+                this.lastComponentUpdateMs = performance.now() - componentStart;
+            }
+
+            physicsMs = performance.now() - loopStart;
+            this.drainPendingCpuWork(16);
+            this.processSoftSerialDecode(this.cpu.cycles);
+            this.lastTime = now;
+            if (shouldSolvePhysics) {
+                if (typeof this.repropagateAllVoltages === 'function') {
+                    this.repropagateAllVoltages();
+                }
+                this.lastPhysicsSolveAt = now;
+                this.circuitDirty = false;
+            }
+
+            // Host/UART receive pacing: bytes per second = baud / 10 (8N1 frame)
+            // bytes per ms = baud / 10000. We accumulate fractional budget over time.
+            const bytesPerMs = this.serialBaudRate / 10000;
+            this.serialByteBudget += deltaTime * bytesPerMs;
+
+            if (this.serialBuffer.length > 0 && this.usart && this.serialByteBudget >= 1) {
+                const maxBytes = Math.floor(this.serialByteBudget);
+                const toSend = Math.min(maxBytes, this.serialBuffer.length);
+                for (let i = 0; i < toSend; i++) {
+                    this.usart.writeByte(this.serialBuffer.shift()!);
+                }
+                this.serialByteBudget -= toSend;
+            }
+
+            this.lastPhysicsMs = physicsMs;
+            this.lastRunLoopMs = performance.now() - loopStart;
+
+            // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
+            this.emitStateIfDue(now);
+        }
+
+        setTimeout(this.runLoop, 1);
+    }
+
+    private emitStateIfDue(nowMs?: number) {
+        if (!this.cpu) return;
+        const now = nowMs || performance.now();
+        const cycleDelta = this.cpu.cycles - this.lastStateEmitCycle;
+        const timeDelta = now - this.lastStateEmitTime;
+
+        // Emit if 16.6ms of simulated time passed (60Hz @ 16MHz)
+        // OR if 16.6ms of real time passed (to keep UI smooth if simulation is slow)
+        if (cycleDelta >= 266666 || timeDelta >= 16) {
+            const msg: any = { type: 'state', boardId: this.boardId };
+            msg.pins = this.pinStates;
+            this.pinsChanged = false;
+            
+            if (this.adc) {
+                msg.analog = Array.from(this.adc.channelValues);
+            }
+
+            const now = performance.now();
+            const compStates: Array<{ id: string; state: any }> = [];
+            for (const inst of this.instances.values()) {
+                const pendingEmit = (inst as any).pendingVisualStateEmit;
+                if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
+                const syncState = getUnifiedComponentSyncState(inst);
+                
+                // Respect the component's sync policy to avoid overloading the UI
+                if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+                
+                inst.stateChanged = false;
+                (inst as any).pendingVisualStateEmit = false;
+                compStates.push({
+                    id: inst.id,
+                    type: inst.type,
+                    state: syncState,
+                    ...collectComponentTelemetry(inst, undefined, this.cpu),
+                });
+            }
+            msg.components = compStates;
+
+            this.statusIntervalEmitCount++;
+            msg._emitSeq = this.statusIntervalEmitCount;
+            msg._emitTime = now;
+            msg.simTimeMs = this.getSimulatedTimeMs();
+            
+            this.lastStateEmitCycle = this.cpu.cycles;
+            this.lastStateEmitTime = now;
+            this.onStateUpdate(msg);
+        }
+    }
+
+    forceEmitState() {
+        if (!this.cpu) return;
+        const now = performance.now();
+        const msg: any = { type: 'state', boardId: this.boardId };
+        msg.pins = this.pinStates;
+        this.pinsChanged = false;
+        
+        if (this.adc) {
+            msg.analog = Array.from(this.adc.channelValues);
+        }
+
+        const compStates: Array<{ id: string; state: any }> = [];
+        for (const inst of this.instances.values()) {
+            const syncState = getUnifiedComponentSyncState(inst);
+            inst.stateChanged = false;
+            (inst as any).pendingVisualStateEmit = false;
+            compStates.push({
+                id: inst.id,
+                type: inst.type,
+                state: syncState,
+                ...collectComponentTelemetry(inst, undefined, this.cpu),
+            });
+        }
+        msg.components = compStates;
+
+        this.statusIntervalEmitCount++;
+        msg._emitSeq = this.statusIntervalEmitCount;
+        msg._emitTime = now;
+        msg.simTimeMs = this.getSimulatedTimeMs();
+        
+        this.lastStateEmitCycle = this.cpu.cycles;
+        this.lastStateEmitTime = now;
+        this.onStateUpdate(msg);
+    }
+
+    private serialBuffer: number[] = [];
+
+    serialRx(data: string) {
+        for (let i = 0; i < data.length; i++) {
+            this.serialBuffer.push(data.charCodeAt(i));
+            this.pulseBoardLed('0');
+        }
+    }
+
+    serialRxByte(value: number) {
+        this.serialBuffer.push(value & 0xff);
+        this.pulseBoardLed('0');
+    }
+
+    softSerialRxByte(value: number) {
+        this.scheduleSoftSerialRxFrame(value & 0xff);
+        this.pulseBoardLed('0');
+    }
+
+    setSerialBaudRate(baud: number) {
+        const parsed = Number(baud);
+        if (!Number.isFinite(parsed)) return;
+        const clamped = Math.max(300, Math.min(2000000, Math.floor(parsed)));
+        this.serialBaudRate = clamped;
+    }
+
+    getSerialBaudRate(): number {
+        return this.serialBaudRate;
+    }
+
+    private initPhysicsWorker() {}
+
+    private requestPhysicsSolve() {}
+
+    private updateTopologyForWorker() {}
+
+    setSolverMode(mode: 'logic') {
+        this.solverMode = mode;
+        for (const key of Object.keys(this.pinStates)) {
+            this.pinStates[key] = false;
+        }
+        for (const inst of this.instances.values()) {
+            for (const pinId of Object.keys(inst.pins || {})) {
+                inst.setPinVoltage(pinId, 0);
+            }
+        }
+        this.pinsChanged = true;
+        this.circuitDirty = true;
+        this.topologyDirty = true;
+    }
+
+    private propagateBoardPin(pinId: string, isHigh: boolean) {
+        const voltage = isHigh ? 5.0 : 0.0;
+        const endpoints = this.getProtocolEndpointsForArduinoPin(pinId);
+
+        const boardInst = this.instances.get(this.boardId);
+        if (boardInst) {
+            boardInst.onPinStateChange(pinId, isHigh, this.cpu!.cycles);
+        }
+
+        for (const endpoint of endpoints) {
+            endpoint.inst.setPinVoltage(endpoint.pinId, voltage);
+            if (endpoint.inst.pins?.[endpoint.pinId]) {
+                endpoint.inst.pins[endpoint.pinId].isHigh = !!isHigh;
+                endpoint.inst.pins[endpoint.pinId].voltage = voltage;
+            }
+            endpoint.inst.onPinStateChange(endpoint.pinId, isHigh, this.cpu!.cycles);
+        }
+    }
+
+    setSpeed(speed: number) {
+        const s = Number(speed);
+        if (Number.isFinite(s) && s > 0) {
+            this.speed = s;
+        }
+    }
+
+    stop() {
+        const neopixelStates = collectNeopixelShutdownStates(this.instances);
+        if (neopixelStates.length > 0) {
+            this.onStateUpdate({ type: 'state', boardId: this.boardId, components: neopixelStates });
+        }
+        this.running = false;
+        clearInterval(this.statusInterval);
+    }
+
+    reset() {
+        if (this.cpu) this.cpu.reset();
+        this.softSerialNextInjectCycle = 0;
+        this.softSerialDecodeState = {
+            receiving: false,
+            sampleCycle: 0,
+            sampleIndex: 0,
+            currentByte: 0,
+            lastLevel: true,
+        };
+        this.setSoftSerialRxLevel(true);
+        this.protocolEndpointsCache.clear();
+        this.pwmState.clear();
+        this.oneWireState.clear();
+        this.componentSyncMeta.clear();
+    }
+
+    // ——— SPI: chip-select awareness ———————————————————————————————————
+    /**
+     * Returns true if the component should receive the current SPI byte.
+     * A component is selected when:
+     *   • It has no CS/SS pin  (single-slave wiring → always selected), OR
+     *   • Its CS/SS pin voltage is < 0.5 V  (active-LOW chip select)
+     */
+    private isSPISelected(inst: BaseComponent): boolean {
+        const csNames = ['cs', 'ce', 'ss', 'ssel', 'nss', 'csn', 'cs_n', 'nce'];
+        for (const name of csNames) {
+            if (inst.pins[name])             return inst.getPinVoltage(name) < 0.5;
+            if (inst.pins[name.toUpperCase()]) return inst.getPinVoltage(name.toUpperCase()) < 0.5;
+        }
+        return true; // no CS pin → always selected
+    }
+
+    // ——— I2S: bit-bang frame assembler ————————————————————————————————
+    /**
+     * Called from the pin-change traversal whenever any component has a pin
+     * voltage updated.  If the changed pin is the component's BCLK or WS line
+     * (matched by common I2S naming conventions), the assembler clocks one bit
+     * into a shift buffer.  Once bitsPerFrame bits have been collected for one
+     * channel, onI2SFrame() is called.
+     *
+     * Left-justified format (no WS-delay):
+     *   WS=LOW  → left  channel (channel 0)
+     *   WS=HIGH → right channel (channel 1)
+     * Data is sampled on the BCLK **rising** edge, MSB first.
+     */
+    private tickI2S(inst: BaseComponent, compId: string, changedPin: string, isHigh: boolean): void {
+        if (!inst.onI2SFrame) return;
+
+        const pin    = changedPin.toLowerCase();
+        const isBclk = pin === 'bclk' || pin === 'sck' || pin === 'bit_clk' || pin === 'blck';
+        const isWs   = pin === 'ws'   || pin === 'lrck' || pin === 'wsel'   || pin === 'lrc';
+
+        if (!isBclk && !isWs) return;
+
+        if (!this.i2sState.has(compId)) {
+            this.i2sState.set(compId, { bclkLast: false, wsLast: false, shiftBuf: 0, bitCount: 0 });
+        }
+        const state = this.i2sState.get(compId)!;
+
+        if (isWs) {
+            if (state.wsLast !== isHigh) {
+                // WS edge → end of the current-channel frame
+                const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
+                if (state.bitCount >= bpf) {
+                    const channel = state.wsLast ? 1 : 0;
+                    const sample  = (state.shiftBuf << (32 - bpf)) | 0; // sign-extend
+                    inst.onI2SFrame(channel, sample, bpf);
+                }
+                state.wsLast   = isHigh;
+                state.shiftBuf = 0;
+                state.bitCount = 0;
+            }
+            return;
+        }
+
+        // BCLK edge
+        const rising = isHigh && !state.bclkLast;
+        state.bclkLast = isHigh;
+
+        if (rising) {
+            // Sample SDATA (accept several common pin names)
+            const sdPin = this.findI2SPinName(inst, ['sdata', 'sdin', 'din', 'sd', 'dout', 'data']);
+            const bit   = sdPin !== null ? (inst.getPinVoltage(sdPin) > 0.5 ? 1 : 0) : 0;
+
+            const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
+            state.shiftBuf = ((state.shiftBuf << 1) | bit) >>> 0;
+            state.bitCount++;
+
+            if (state.bitCount >= bpf) {
+                const channel = state.wsLast ? 1 : 0;
+                const sample  = (state.shiftBuf << (32 - bpf)) | 0;
+                inst.onI2SFrame(channel, sample, bpf);
+                state.shiftBuf = 0;
+                state.bitCount = 0;
+            }
+        }
+    }
+
+    /** Finds the first existing pin on `inst` from a list of candidate names
+     *  (case-insensitive, lower then UPPER checked). */
+    private findI2SPinName(inst: BaseComponent, candidates: string[]): string | null {
+        for (const name of candidates) {
+            if (inst.pins[name])               return name;
+            if (inst.pins[name.toUpperCase()]) return name.toUpperCase();
+        }
+        return null;
+    }
+
+    private getArduinoPinAliases(pinId: string): string[] {
+        const raw = String(pinId || '').toUpperCase();
+        const out = new Set<string>([raw]);
+        if (/^D\d+$/.test(raw)) {
+            out.add(raw.slice(1));
+        } else if (/^\d+$/.test(raw)) {
+            out.add(`D${raw}`);
+        }
+        return Array.from(out);
+    }
+
+    private getProtocolEndpointsForArduinoPin(pinId: string): ConnectedComponentPin[] {
+        const key = String(pinId || '').toUpperCase();
+        const cached = this.protocolEndpointsCache.get(key);
+        if (cached) return cached;
+
+        const endpoints = collectConnectedComponentPins(
+            this.boardId,
+            this.getArduinoPinAliases(key),
+            this.currentWires,
+            this.instances
+        );
+        this.protocolEndpointsCache.set(key, endpoints);
+        return endpoints;
+    }
+
+    private dispatchOptionalPwm(pinId: string, isHigh: boolean, cycles: number) {
+        const key = String(pinId || '').toUpperCase();
+        let state = this.pwmState.get(key);
+        if (!state) {
+            state = { lastRiseCycle: -1, lastFallCycle: -1, lastPeriodCycles: -1 };
+            this.pwmState.set(key, state);
+        }
+
+        let frequencyHz = 0;
+        let dutyCycle = 0;
+        let pulseUs = 0;
+        let periodUs = 0;
+
+        if (isHigh) {
+            if (state.lastRiseCycle >= 0 && state.lastFallCycle > state.lastRiseCycle) {
+                const periodCycles = Math.max(1, cycles - state.lastRiseCycle);
+                const highCycles = Math.max(0, state.lastFallCycle - state.lastRiseCycle);
+                state.lastPeriodCycles = periodCycles;
+                frequencyHz = 16_000_000 / periodCycles;
+                dutyCycle = Math.max(0, Math.min(1, highCycles / periodCycles));
+                periodUs = periodCycles / 16;
+                pulseUs = highCycles / 16;
+            }
+            state.lastRiseCycle = cycles;
+        } else {
+            state.lastFallCycle = cycles;
+            if (state.lastRiseCycle >= 0) {
+                const highCycles = Math.max(0, cycles - state.lastRiseCycle);
+                pulseUs = highCycles / 16;
+                if (state.lastPeriodCycles > 0) {
+                    frequencyHz = 16_000_000 / state.lastPeriodCycles;
+                    dutyCycle = Math.max(0, Math.min(1, highCycles / state.lastPeriodCycles));
+                    periodUs = state.lastPeriodCycles / 16;
+                }
+            }
+        }
+
+        if (frequencyHz <= 0 && dutyCycle <= 0 && pulseUs <= 0) return;
+
+        const meta = {
+            protocol: 'pwm',
+            boardPin: key,
+            isHigh,
+            frequencyHz,
+            dutyCycle,
+            pulseUs,
+            periodUs,
+            source: 'gpio',
+            cycles,
+        };
+
+        for (const endpoint of this.getProtocolEndpointsForArduinoPin(key)) {
+            invokeOptional(endpoint.inst as any, ['onPWM', 'onPwm', 'onPWMSignal'], [endpoint.pinId, meta]);
+        }
+    }
+
+    private dispatchOptionalOneWire(pinId: string, isHigh: boolean, cycles: number) {
+        const key = String(pinId || '').toUpperCase();
+        let state = this.oneWireState.get(key);
+        if (!state) {
+            state = { lowStartCycle: null, highStartCycle: null };
+            this.oneWireState.set(key, state);
+        }
+
+        const endpoints = this.getProtocolEndpointsForArduinoPin(key);
+        if (!endpoints.length) {
+            if (isHigh) {
+                state.lowStartCycle = null;
+                state.highStartCycle = cycles;
+            } else {
+                state.highStartCycle = null;
+                state.lowStartCycle = cycles;
+            }
+            return;
+        }
+
+        if (!isHigh) {
+            if (state.highStartCycle != null) {
+                const highCycles = Math.max(0, cycles - state.highStartCycle);
+                const highUs = highCycles / 16;
+                if (highUs > 0) {
+                    const pulseMeta = {
+                        protocol: 'pulse',
+                        boardPin: key,
+                        pulseUs: highUs,
+                        highUs,
+                        edge: 'falling',
+                        cycles,
+                    };
+                    for (const endpoint of endpoints) {
+                        invokeOptional(endpoint.inst as any, ['onPulseHigh', 'onDigitalPulseHigh', 'onOneWirePulseHigh'], [endpoint.pinId, pulseMeta]);
+                    }
+                }
+            }
+
+            state.highStartCycle = null;
+            state.lowStartCycle = cycles;
+            return;
+        }
+
+        if (state.lowStartCycle == null) return;
+
+        const lowCycles = Math.max(0, cycles - state.lowStartCycle);
+        state.lowStartCycle = null;
+        state.highStartCycle = cycles;
+        const lowUs = lowCycles / 16;
+
+        if (lowUs > 0) {
+            const pulseMeta = {
+                protocol: 'pulse',
+                boardPin: key,
+                pulseUs: lowUs,
+                lowUs,
+                edge: 'rising',
+                cycles,
+            };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onPulseLow', 'onDigitalPulseLow', 'onOneWirePulseLow'], [endpoint.pinId, pulseMeta]);
+            }
+        }
+
+        if (lowUs >= 360) {
+            const meta = {
+                protocol: 'onewire',
+                boardPin: key,
+                pulseUs: lowUs,
+                kind: 'reset',
+                cycles,
+            };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onOneWireReset', 'onOnewireReset'], [endpoint.pinId, meta]);
+            }
+            return;
+        }
+
+        if (lowUs >= 1 && lowUs <= 120) {
+            const bit = lowUs < 20 ? 1 : 0;
+            const meta = {
+                protocol: 'onewire',
+                boardPin: key,
+                pulseUs: lowUs,
+                kind: 'slot',
+                bit,
+                cycles,
+            };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onOneWireWriteBit', 'onOnewireWriteBit'], [endpoint.pinId, bit, meta]);
+                invokeOptional(endpoint.inst as any, ['onOneWireSlot', 'onOnewireSlot'], [endpoint.pinId, meta]);
+            }
+        }
+    }
+
+    private dispatchOptionalProtocols(pinId: string, isHigh: boolean, cycles: number) {
+        this.dispatchOptionalPwm(pinId, isHigh, cycles);
+        this.dispatchOptionalOneWire(pinId, isHigh, cycles);
+    }
+
+    private netHasResistor = new Set<number>();
+
+    private buildNetlist() {
+        const adj = new Map<string, string[]>();
+
+        const addEdge = (a: string, b: string) => {
+            if (!adj.has(a)) adj.set(a, []);
+            if (!adj.has(b)) adj.set(b, []);
+            adj.get(a)!.push(b);
+            adj.get(b)!.push(a);
+        };
+
+        // Add wires to adjacency list
+        for (const wire of this.currentWires) {
+            addEdge(wire.from, wire.to);
+        }
+
+        // Add internal bridges (resistors, breadboards)
+        for (const [id, inst] of this.instances) {
+            const bridges = getInternalBridgesForComponent(id, inst.type);
+            for (const bridge of bridges) {
+                addEdge(bridge[0], bridge[1]);
+            }
+        }
+
+        const visited = new Set<string>();
+        let currentNet = 0;
+
+        for (const startNode of adj.keys()) {
+            if (!visited.has(startNode)) {
+                const queue = [startNode];
+                visited.add(startNode);
+                while (queue.length > 0) {
+                    const node = queue.shift()!;
+                    this.pinToNet.set(node, currentNet);
+
+                    // Also set aliases (D11, 11 etc)
+                    const parts = node.split(':');
+                    if (parts.length === 2) {
+                        const compId = parts[0];
+                        const pinId = parts[1];
+                        const upperPin = pinId.toUpperCase();
+                        if (!pinId.startsWith('D') && !pinId.startsWith('A') && /^\d+$/.test(pinId)) {
+                            this.pinToNet.set(`${compId}:D${pinId}`, currentNet);
+                        } else if (pinId.startsWith('D')) {
+                            this.pinToNet.set(`${compId}:${pinId.substring(1)}`, currentNet);
+                        }
+
+                        // Normalize common board power aliases to the same electrical net.
+                        if (upperPin === 'GND' || /^GND[._]?\d+$/.test(upperPin)) {
+                            this.pinToNet.set(`${compId}:GND`, currentNet);
+                            this.pinToNet.set(`${compId}:gnd_1`, currentNet);
+                            this.pinToNet.set(`${compId}:gnd_2`, currentNet);
+                            this.pinToNet.set(`${compId}:gnd_3`, currentNet);
+                            this.pinToNet.set(`${compId}:GND.1`, currentNet);
+                            this.pinToNet.set(`${compId}:GND.2`, currentNet);
+                        }
+                        if (upperPin === '5V' || upperPin === 'VCC') {
+                            this.pinToNet.set(`${compId}:5V`, currentNet);
+                            this.pinToNet.set(`${compId}:VCC`, currentNet);
+                        }
+                    }
+
+                    for (const neighbor of adj.get(node) || []) {
+                        if (!visited.has(neighbor)) {
+                            visited.add(neighbor);
+                            queue.push(neighbor);
+                        }
+                    }
+                }
+                currentNet++;
+            }
+        }
+
+        // Identify nets that contain a resistor pin
+        this.netHasResistor.clear();
+        for (const [id, inst] of this.instances) {
+            if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+                const n1 = this.pinToNet.get(`${id}:p1`);
+                const n2 = this.pinToNet.get(`${id}:p2`);
+                if (n1 !== undefined) this.netHasResistor.add(n1);
+                if (n2 !== undefined) this.netHasResistor.add(n2);
+            }
+        }
+        (this as any).topologyDirty = true;
+    }
+
+
+    private arePinsConnected(pinA: string, pinB: string): boolean {
+        const netA = this.pinToNet.get(pinA);
+        const netB = this.pinToNet.get(pinB);
+        return netA !== undefined && netA === netB;
+    }
+}
+
+/**
+ * Cycle-accurate clock for RP2040 simulation.
+ * Replaces the default wall-clock based RealtimeClock to allow precise cycle-locking.
+ */
+class RP2040MockClock {
+    private _micros = 0;
+    private timers: Array<{ micros: number; callback: () => void }> = [];
+    
+    get micros() { return this._micros; }
+    get nanos() { return this._micros * 1000; }
+    
+    pause() { /* Idle */ }
+    resume() { /* Idle */ }
+    
+    createTimer(deltaMicros: number, callback: () => void) {
+        const timer = { micros: this._micros + deltaMicros, callback };
+        this.timers.push(timer);
+        this.timers.sort((a, b) => a.micros - b.micros);
+        return timer;
+    }
+    
+    deleteTimer(timer: any) {
+        const index = this.timers.indexOf(timer);
+        if (index >= 0) this.timers.splice(index, 1);
+    }
+    
+    tick(nanos: number) {
+        this.advance(nanos / 1000);
+    }
+
+    advance(deltaMicros: number) {
+        const targetTime = this._micros + Math.max(deltaMicros, 0);
+        while (this.timers.length > 0 && this.timers[0].micros <= targetTime) {
+            const timer = this.timers.shift()!;
+            this._micros = timer.micros;
+            timer.callback();
+        }
+        this._micros = targetTime;
+    }
+
+    get nanosToNextAlarm(): number {
+        if (this.timers.length === 0) return -1;
+        return Math.max(0, (this.timers[0].micros - this._micros) * 1000);
+    }
+}
+
+export class RP2040Runner implements BoardRunner {
+    cpu: RP2040 | null = null;
+    gdbWs: WebSocket | null = null;
+    running: boolean = false;
+    pinStates: Record<string, boolean> = {};
+    currentWires: any[] = [];
+    instances: Map<string, BaseComponent> = new Map();
+    lastTime: number = 0;
+    statusInterval: any;
+    pinsChanged: boolean = true;
+    speed: number = 1.0;
+    boardId: string;
+    solverMode: 'logic';
+    private serialBaudRate: number = 115200;
+    private softSerialBaudRate: number = 9600;
+    private serialByteBudget: number = 0;
+    private readonly onStateUpdate: (state: any) => void;
+    private readonly onByteTransmitCb?: (payload: { boardId: string; value: number; char: string; source?: string }) => void;
+    private readonly softSerialTxPin = 'GP10';
+    private readonly softSerialRxPin = 'GP11';
+    private softSerialRxQueue: number[] = [];
+    private softSerialRxFrame: { levels: number[]; bitIndex: number; nextBitCycle: number; bitCycles: number } | null = null;
+    private softSerialRxLevelHigh = true;
+    private softSerialRxOverrideActive = false;
+    private softSerialNextInjectCycle = 0;
+    private softSerialDecodeState = {
+        receiving: false,
+        sampleCycle: 0,
+        sampleIndex: 0,
+        currentByte: 0,
+        lastLevel: true,
+    };
+    private readonly firmwareHex: string;
+    private serialBuffer: Array<{ value: number; source: number }> = [];
+    private activeUartIndex: number = 0;
+    private gdbStatus: 'disabled' | 'connecting' | 'connected' | 'error' | 'closed' = 'disabled';
+    private gdbLastError: string = '';
+    private usbCdc: USBCDC | null = null;
+    private usbCdcReady: boolean = false;
+    private gpioUnsubscribers: Array<() => boolean> = [];
+    private protocolEndpointsCache = new Map<string, ConnectedComponentPin[]>();
+    private i2cDeviceCache = new Map<'i2c0' | 'i2c1', BaseComponent[]>();
+    private i2cBusPinPairs = new Map<RP2040I2CBus, RP2040I2CBusPins>();
+    private i2cBitBangState = new Map<RP2040I2CBus, RP2040I2CBitBangState>();
+    private i2cHardwareSeen = new Map<RP2040I2CBus, boolean>([['i2c0', false], ['i2c1', false]]);
+    private spiDeviceCache = new Map<'spi0' | 'spi1', BaseComponent[]>();
+    private peripheralDeviceCacheReady: boolean = false;
+    private pwmState = new Map<string, { lastRiseCycle: number; lastFallCycle: number; lastPeriodCycles: number }>();
+    private oneWireState = new Map<string, { lowStartCycle: number | null; highStartCycle: number | null }>();
+    private componentSyncMeta = new Map<string, { lastSentAt: number; lastWeight: number }>();
+    private hasFaulted: boolean = false;
+    private bootromLoaded: boolean = false;
+    private cpuCyclesAtStart: number = 0;
+    private pioSignalCycle: number = 0;
+    private circuitDirty: boolean = true;
+    private topologyDirty: boolean = true;
+    private lastPhysicsSolveAt: number = 0;
+    private lastStateEmitCycle: number = 0;
+    private lastStateEmitTime: number = 0;
+    private statusIntervalEmitCount: number = 0;
+    private lastPhysicsMs: number = 0;
+    private lastRunLoopMs: number = 0;
+    private lastComponentUpdateMs: number = 0;
+    private solver = new CircuitSolver();
+    private netToNode = new Map<number, number>();
+    private pinToNet = new Map<string, number>();
+    private physicsWorker: Worker | null = null;
+    private physicsWorkerBusy: boolean = false;
+
+    private readonly debugEnabled: boolean;
+    private readonly debugIntervalMs: number;
+    private debugLastEmitAt: number = 0;
+    private debugLastStepCount: number = 0;
+    private debugStepCount: number = 0;
+    private totalCyclesIntended: number = 0;
+    private pio0Accum = 0;
+    private pio1Accum = 0;
+    private pioStepAccum = 0;
+    private debugSerialTxBytes: number = 0;
+    private debugSerialRxBytes: number = 0;
+    private debugGpioTransitions: number = 0;
+    private debugLastGpioPin: string = '';
+    private debugLastPc: number = 0;
+    private debugPcStallTicks: number = 0;
+    private lastSerialByte: number = -1;
+    private lastSerialSource: number = -1;
+    private lastSerialEmitAt: number = 0;
+    private lastUsbSerialAt: number = 0;
+
+    getSimulatedTimeMs() {
+        if (!this.cpu) return 0;
+        return Math.floor(((Number(this.cpu.core.cycles) - this.cpuCyclesAtStart) / 125_000_000) * 1000);
+    }
+
+    setTelemetryEnabled(enabled: boolean, mode?: string, watchedParamsMap?: Record<string, string[]>, deepSilicon?: boolean) {
+        for (const inst of this.instances.values()) {
+            inst.telemetryEnabled = !!enabled;
+            inst.telemetryMode = mode || 'detail';
+            inst.telemetryWatchedParams = watchedParamsMap?.[inst.id] || ['all'];
+            inst.deepSiliconEnabled = !!deepSilicon;
+        }
+    }
+
+    getRichTelemetrySnapshot(options: { mode?: 'standard' | 'deep' | 'delta' } = {}) {
+        const components: any[] = [];
+        const mode = options.mode || 'deep';
+
+        for (const inst of this.instances.values()) {
+            if (mode === 'standard') {
+                const data = (inst as any).getTelemetryData?.() || getUnifiedComponentSyncState(inst);
+                components.push({
+                    id: inst.id,
+                    ...data
+                });
+            } else if (mode === 'delta') {
+                components.push(inst.getDeltaMetrics());
+            } else {
+                // 'deep' mode provides the FULL diagnostic report
+                components.push(inst.getRawMetrics());
+            }
+        }
+        return {
+            boardId: this.boardId,
+            components,
+            capturedAt: new Date().toISOString(),
+            mode,
+            isDelta: mode === 'delta'
+        };
+    }
+    private lowPcAliasCandidate: number = -1;
+    private lowPcAliasRepeatCount: number = 0;
+    private invalidPcStrikeCount: number = 0;
+    private readonly extraExecutableRanges: RP2040ExecutableRange[];
+    private readonly configuredLogicalFlashBytes: number;
+    private readonly flashPartitions: RP2040FlashPartition[];
+    private readonly uartLedOffTimers = new Map<'GP0' | 'GP1' | 'GP4' | 'GP5', ReturnType<typeof setTimeout>>();
+    private entryInfo: RP2040EntryInfo | null = null;
+    private picoWirelessStub: {
+        mode: 'off' | 'compat-stub';
+        ssid: string;
+        ip: string;
+        status: 'off' | 'booting' | 'connected';
+        startedAtMs: number;
+        lastEmitMs: number;
+    } | null = null;
+    private static readonly FAULT_GRACE_CYCLES = 6_000_000; // ~48ms simulated @ 125MHz – covers bootrom + MicroPython init
+    private static readonly LOW_PC_ALIAS_REPEAT_LIMIT = 50_000_000;
+    private static readonly INVALID_PC_STRIKE_LIMIT = 64;
+    private static readonly PC_VALIDATION_INTERVAL_STEPS = 1024;
+    private static readonly HARD_INVALID_PC_BASE = 0x80000000;
+    private static readonly SERIAL_DEDUP_WINDOW_MS = 2;
+    private static readonly USB_SERIAL_PREFER_WINDOW_MS = 250;
+    private static readonly UART_LED_PULSE_MS = 40;
+    private static readonly WIRELESS_STUB_EMIT_INTERVAL_MS = 2000;
+
+    constructor(
+        hexData: string,
+        componentsDef: any[],
+        wiresDef: any[],
+        onStateUpdate: (state: any) => void,
+        options: AVRRunnerOptions = {}
+    ) {
+        this.currentWires = wiresDef || [];
+        this.onStateUpdate = onStateUpdate;
+        this.onByteTransmitCb = options.onByteTransmit;
+        this.firmwareHex = String(hexData || '');
+        console.log(`RP2040Runner: firmware hex length=${this.firmwareHex.length}`);
+        this.speed = options.speed ?? 1.0;
+        this.solverMode = 'logic';
+
+        const fallbackBoard = (componentsDef || []).find((c: any) => /(rp2040|pico)/i.test(String(c.type || '')));
+        this.boardId = options.boardId || fallbackBoard?.id || 'openhw-raspberry-pi-pico_0';
+        const boardCompDef = (componentsDef || []).find((c: any) => String(c.id || '') === this.boardId) || fallbackBoard;
+        this.setSerialBaudRate(options.serialBaudRate ?? 115200);
+        this.debugEnabled = options.debugEnabled !== false;
+        this.debugIntervalMs = Math.max(150, Number(options.debugIntervalMs || 800));
+        this.extraExecutableRanges = normalizeRp2040ExecutableRanges(options.rp2040ExecutableRanges);
+        const parsedLogicalFlashBytes = parseAddressValue(options.rp2040LogicalFlashBytes);
+        this.configuredLogicalFlashBytes = (
+            parsedLogicalFlashBytes !== null && parsedLogicalFlashBytes > 0
+                ? parsedLogicalFlashBytes
+                : RP2040_DEFAULT_LOGICAL_FLASH_BYTES
+        ) >>> 0;
+        this.flashPartitions = normalizeRp2040FlashPartitions(options.rp2040FlashPartitions);
+
+        this.cpu = new RP2040(new RP2040MockClock() as any);
+        const wrapFlashAliasAddressMethod = (methodName: string) => {
+            const original = (this.cpu as any)?.[methodName];
+            if (typeof original !== 'function') return;
+
+            (this.cpu as any)[methodName] = (rawAddress: number, ...args: any[]) => {
+                const sourceAddress = Number(rawAddress) >>> 0;
+                const mappedAddress = normalizeRp2040FlashAliasAddress(sourceAddress);
+                try {
+                    return original.call(this.cpu, mappedAddress, ...args);
+                } catch (err: any) {
+                    const srcHex = `0x${sourceAddress.toString(16)}`;
+                    const mappedHex = `0x${mappedAddress.toString(16)}`;
+                    const reason = String(err?.message || err || `${methodName} error`);
+                    throw new Error(`${methodName}(${srcHex} -> ${mappedHex}) failed: ${reason}`);
+                }
+            };
+        };
+
+        wrapFlashAliasAddressMethod('readUint32');
+        wrapFlashAliasAddressMethod('readUint16');
+        wrapFlashAliasAddressMethod('readUint8');
+        wrapFlashAliasAddressMethod('writeUint32');
+        wrapFlashAliasAddressMethod('writeUint16');
+        wrapFlashAliasAddressMethod('writeUint8');
+        this.patchClockSelectedReads();
+        this.patchSioFifoAccess();
+        this.cpu.loadBootrom(bootromB1);
+        this.cpu.logger = new ConsoleLogger(LogLevel.Error, true);
+
+        // -- Patch PIO to use synchronous stepping instead of redundant setTimeout --
+        // This is a critical 'Velxio' optimization that prevents event-loop congestion.
+        for (const pio of (this.cpu as any).pio) {
+            pio.run = function(this: any) {
+                if (this.runTimer) {
+                    clearTimeout(this.runTimer);
+                    this.runTimer = null;
+                }
+            };
+        }
+        this.pioStepAccum = 0;
+
+        try {
+            const gdbWs = new WebSocket('ws://localhost:3333');
+            this.gdbStatus = 'connecting';
+            this.emitGdbStatus('connecting', 'Attempting ws://localhost:3333');
+            const gdbServer = new GDBServer(this.cpu);
+            const gdbConn = new GDBConnection(gdbServer, (res) => {
+                if (gdbWs.readyState === WebSocket.OPEN) gdbWs.send(res);
+            });
+            gdbWs.onopen = () => {
+                this.gdbStatus = 'connected';
+                this.gdbLastError = '';
+                this.emitGdbStatus('connected', 'GDB bridge connected');
+            };
+            gdbWs.onmessage = (e) => {
+                if (typeof e.data === 'string') gdbConn.feedData(e.data);
+            };
+            gdbWs.onerror = () => {
+                this.gdbStatus = 'error';
+                this.gdbLastError = 'WebSocket error';
+                this.emitGdbStatus('error', this.gdbLastError);
+            };
+            gdbWs.onclose = (evt: any) => {
+                this.gdbStatus = 'closed';
+                const reason = String(evt?.reason || '').trim();
+                const detail = `code=${Number(evt?.code || 0)}${reason ? ` reason=${reason}` : ''}`;
+                this.emitGdbStatus('closed', detail);
+            };
+            this.gdbWs = gdbWs;
+        } catch (err) {
+            console.warn('Silent failure opening GDB Bridge ws://localhost:3333', err);
+            this.gdbStatus = 'error';
+            this.gdbLastError = String((err as any)?.message || err || 'Unknown GDB bridge error');
+            this.emitGdbStatus('error', this.gdbLastError);
+        }
+        this.bootromLoaded = true;
+        this.entryInfo = loadRP2040Firmware(this.cpu, this.firmwareHex, {
+            logicalFlashBytes: this.getLogicalFlashLength(),
+            partitions: this.flashPartitions,
+        });
+        this.cpuCyclesAtStart = this.cpu.core.cycles;
+        this.pioSignalCycle = this.cpu.core.cycles;
+
+        (componentsDef || []).forEach((cDef) => {
+            const LogicClass = LOGIC_REGISTRY[cDef.type];
+            if (LogicClass) {
+                const pins = COMPONENT_PINS[cDef.type] || [{ id: 'A' }, { id: 'K' }, { id: 'GND' }, { id: 'VSS' }];
+                const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
+                const inst = new LogicClass(cDef.id, manifest);
+                if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
+                inst.onTelemetryFinding = (finding: any) => {
+                    this.onStateUpdate({
+                        type: 'telemetry_finding',
+                        boardId: this.boardId,
+                        componentId: inst.id,
+                        ...finding
+                    });
+                };
+                this.instances.set(cDef.id, inst);
+            }
+        });
+        this.initWirelessStub(boardCompDef);
+
+        this.attachGPIOListeners();
+        this.attachUART();
+        this.attachUSBSerial();
+        this.rebuildPeripheralDeviceCache();
+        this.installRp2040I2cAdapters();
+        this.installRp2040SpiAdapters();
+
+        // Seed default pin values as LOW so dependent components can initialize.
+        for (let gp = 0; gp <= 28; gp++) {
+            const pin = `GP${gp}`;
+            this.pinStates[pin] = false;
+            this.propagateBoardPin(pin, false);
+        }
+        this.setSoftSerialRxLevel(true);
+
+        this.running = true;
+        this.lastTime = performance.now();
+        this.lastStateEmitTime = this.lastTime;
+        this.emitDebugSnapshot('start', this.lastTime, true);
+        this.emitWirelessStubStatus('start', true);
+        this.runLoop();
+    }
+
+    private shouldEmitComponentState(componentId: string, state: any, nowMs: number): boolean {
+        const policy = getComponentStateSyncPolicy(state);
+        const prev = this.componentSyncMeta.get(componentId);
+        if (policy.minIntervalMs > 0 && prev && (nowMs - prev.lastSentAt) < policy.minIntervalMs) {
+            return false;
+        }
+        this.componentSyncMeta.set(componentId, { lastSentAt: nowMs, lastWeight: policy.weight });
+        return true;
+    }
+
+    private initWirelessStub(boardCompDef: any) {
+        const boardType = String(boardCompDef?.type || '').toLowerCase();
+        if (!(boardType.includes('pico-w') || boardType.includes('picow'))) return;
+
+        const modeRaw = String(boardCompDef?.attrs?.wirelessMode || 'compat-stub').toLowerCase();
+        const mode: 'off' | 'compat-stub' = modeRaw === 'off' ? 'off' : 'compat-stub';
+        const ssid = String(boardCompDef?.attrs?.wirelessSsid || 'Velxio-GUEST').trim() || 'Velxio-GUEST';
+        const ip = String(boardCompDef?.attrs?.wirelessIp || '192.168.4.2').trim() || '192.168.4.2';
+        const now = performance.now();
+
+        this.picoWirelessStub = {
+            mode,
+            ssid,
+            ip,
+            status: mode === 'off' ? 'off' : 'booting',
+            startedAtMs: now,
+            lastEmitMs: 0,
+        };
+        this.applyWirelessStubStateToBoard();
+    }
+
+    private applyWirelessStubStateToBoard() {
+        if (!this.picoWirelessStub) return;
+        const boardInst = this.instances.get(this.boardId);
+        if (!boardInst) return;
+
+        const { mode, ssid, ip, status } = this.picoWirelessStub;
+        boardInst.setState({
+            wirelessMode: mode,
+            wirelessStatus: status,
+            wirelessConnected: mode !== 'off' && status === 'connected',
+            wirelessSsid: mode === 'off' ? '' : ssid,
+            wirelessIp: mode === 'off' ? '' : ip,
+            wirelessNote: mode === 'off'
+                ? 'Wireless compatibility stub disabled.'
+                : 'Compatibility stub only. Pico W radio/network emulation is not implemented.',
+        });
+    }
+
+    private emitWirelessStubStatus(reason: 'start' | 'tick' | 'reset' = 'tick', force = false) {
+        if (!this.picoWirelessStub) return;
+
+        const now = performance.now();
+        if (!force && (now - this.picoWirelessStub.lastEmitMs) < RP2040Runner.WIRELESS_STUB_EMIT_INTERVAL_MS) {
+            return;
+        }
+
+        if (this.picoWirelessStub.mode === 'off') {
+            this.picoWirelessStub.status = 'off';
+        } else {
+            const elapsed = now - this.picoWirelessStub.startedAtMs;
+            this.picoWirelessStub.status = elapsed >= 1200 ? 'connected' : 'booting';
+        }
+
+        this.applyWirelessStubStateToBoard();
+
+        const connected = this.picoWirelessStub.mode !== 'off' && this.picoWirelessStub.status === 'connected';
+        this.onStateUpdate({
+            type: 'debug',
+            boardId: this.boardId,
+            category: 'rp2040-wireless-stub',
+            reason,
+            wireless: {
+                mode: this.picoWirelessStub.mode,
+                status: this.picoWirelessStub.status,
+                connected,
+                ssid: this.picoWirelessStub.mode === 'off' ? '' : this.picoWirelessStub.ssid,
+                ip: this.picoWirelessStub.mode === 'off' ? '' : this.picoWirelessStub.ip,
+                note: this.picoWirelessStub.mode === 'off'
+                    ? 'Wireless compatibility stub disabled.'
+                    : 'Compatibility stub only. Pico W radio/network emulation is not implemented.',
+            },
+        });
+
+        this.picoWirelessStub.lastEmitMs = now;
+    }
+
+    private emitGdbStatus(reason: 'connecting' | 'connected' | 'closed' | 'error' | 'stopped', detail = '') {
+        this.onStateUpdate({
+            type: 'debug',
+            boardId: this.boardId,
+            category: 'rp2040-gdb',
+            reason,
+            gdb: {
+                status: this.gdbStatus,
+                detail: String(detail || ''),
+                lastError: this.gdbLastError,
+            },
+        });
+    }
+
+    private patchClockSelectedReads() {
+        if (!this.cpu) return;
+
+        try {
+            const clocksPeripheral: any = this.cpu.findPeripheral(RP2040_CLOCKS_BASE);
+            if (!clocksPeripheral || typeof clocksPeripheral.readUint32 !== 'function') return;
+
+            const originalReadUint32 = clocksPeripheral.readUint32.bind(clocksPeripheral);
+            const originalWriteUint32 = typeof clocksPeripheral.writeUint32 === 'function'
+                ? clocksPeripheral.writeUint32.bind(clocksPeripheral)
+                : null;
+            const ctrlShadow: Record<number, number> = {
+                [RP2040_CLOCKS_CLK_REF_CTRL_OFFSET]: 0,
+                [RP2040_CLOCKS_CLK_SYS_CTRL_OFFSET]: 0,
+            };
+
+            clocksPeripheral.readUint32 = (offset: number) => {
+                if (offset === RP2040_CLOCKS_CLK_REF_CTRL_OFFSET || offset === RP2040_CLOCKS_CLK_SYS_CTRL_OFFSET) {
+                    return ctrlShadow[offset] >>> 0;
+                }
+
+                if (offset === RP2040_CLOCKS_CLK_REF_SELECTED_OFFSET || offset === RP2040_CLOCKS_CLK_SYS_SELECTED_OFFSET) {
+                    // Emulate glitchless selected source bits from the corresponding CTRL source field.
+                    // This unblocks startup loops used by Arduino-Pico and MicroPython clock init.
+                    const ctrlOffset = offset === RP2040_CLOCKS_CLK_REF_SELECTED_OFFSET
+                        ? RP2040_CLOCKS_CLK_REF_CTRL_OFFSET
+                        : RP2040_CLOCKS_CLK_SYS_CTRL_OFFSET;
+                    const srcMask = offset === RP2040_CLOCKS_CLK_REF_SELECTED_OFFSET ? 0x3 : 0x1;
+                    const src = (ctrlShadow[ctrlOffset] >>> 0) & srcMask;
+                    return (1 << src) >>> 0;
+                }
+                return originalReadUint32(offset);
+            };
+
+            clocksPeripheral.writeUint32 = (offset: number, value: number) => {
+                if (offset === RP2040_CLOCKS_CLK_REF_CTRL_OFFSET || offset === RP2040_CLOCKS_CLK_SYS_CTRL_OFFSET) {
+                    ctrlShadow[offset] = value >>> 0;
+                }
+                if (originalWriteUint32) {
+                    originalWriteUint32(offset, value);
+                }
+            };
+        } catch (e) {
+            // Non-fatal: if this fails we keep default rp2040js behavior.
+        }
+    }
+
+    private patchSioFifoAccess() {
+        if (!this.cpu) return;
+
+        try {
+            const sio: any = (this.cpu as any).sio;
+            if (!sio || typeof sio.readUint32 !== 'function') return;
+
+            const originalReadUint32 = sio.readUint32.bind(sio);
+            const originalWriteUint32 = typeof sio.writeUint32 === 'function'
+                ? sio.writeUint32.bind(sio)
+                : null;
+
+            // Minimal multicore FIFO facade used by SDK startup probes.
+            // ST[0]=VLD (no data), ST[1]=RDY (write slot available).
+            const fifoStatus = 0x2;
+
+            sio.readUint32 = (offset: number) => {
+                if (offset === RP2040_SIO_FIFO_ST_OFFSET) {
+                    return fifoStatus;
+                }
+                if (offset === RP2040_SIO_FIFO_RD_OFFSET) {
+                    return 0;
+                }
+                return originalReadUint32(offset);
+            };
+
+            sio.writeUint32 = (offset: number, value: number) => {
+                if (offset === RP2040_SIO_FIFO_ST_OFFSET || offset === RP2040_SIO_FIFO_WR_OFFSET) {
+                    return;
+                }
+                if (originalWriteUint32) {
+                    originalWriteUint32(offset, value);
+                }
+            };
+        } catch (e) {
+            // Non-fatal: if this fails we keep default rp2040js behavior.
+        }
+    }
+
+    private getLogicalFlashLength(): number {
+        if (!this.cpu) return 0;
+        return getRp2040LogicalFlashLength(this.cpu, this.configuredLogicalFlashBytes);
+    }
+
+    private isExecutableAddress(addr: number): boolean {
+        const pc = (addr >>> 0);
+        const logicalFlashLength = this.getLogicalFlashLength();
+        const flashEnd = (RP2040_FLASH_BASE + logicalFlashLength) >>> 0;
+        const sramEnd = (RP2040_SRAM_BASE + this.cpu!.sram.length) >>> 0;
+
+        if (this.bootromLoaded && pc >= RP2040_BOOTROM_BASE && pc < (RP2040_BOOTROM_BASE + RP2040_BOOTROM_SIZE)) return true;
+        if (pc >= RP2040_FLASH_BASE && pc < RP2040_FLASH_ALIAS_END) {
+            const normalized = normalizeRp2040FlashAliasAddress(pc);
+            if (normalized >= RP2040_FLASH_BASE && normalized < flashEnd) {
+                return true;
+            }
+        }
+        if (pc >= RP2040_SRAM_BASE && pc < sramEnd) return true;
+        if (pc >= RP2040_USB_RAM_BASE && pc < (RP2040_USB_RAM_BASE + RP2040_USB_RAM_SIZE)) return true;
+        for (const range of this.extraExecutableRanges) {
+            if (pc >= range.start && pc <= range.end) return true;
+        }
+        return false;
+    }
+
+    private faultAndStop(reason: string, pc: number) {
+        if (this.hasFaulted) return;
+        this.hasFaulted = true;
+        this.running = false;
+        this.clearPendingUartLedTimers();
+        clearInterval(this.statusInterval);
+        this.emitDebugSnapshot('fault', performance.now(), true, reason, pc >>> 0);
+        this.onStateUpdate({
+            type: 'fault',
+            boardId: this.boardId,
+            reason,
+            pc: pc >>> 0,
+        });
+    }
+
+    private emitDebugSnapshot(
+        reason: 'start' | 'tick' | 'fault' | 'reset' = 'tick',
+        now = performance.now(),
+        force = false,
+        faultReason = '',
+        faultPc?: number
+    ) {
+        if (!this.debugEnabled || !this.cpu) return;
+        if (!force && (now - this.debugLastEmitAt) < this.debugIntervalMs) return;
+
+        const pc = this.cpu.core.PC >>> 0;
+        if (pc === this.debugLastPc) this.debugPcStallTicks++;
+        else this.debugPcStallTicks = 0;
+        this.debugLastPc = pc;
+
+        const firstLed = Array.from(this.instances.values()).find((inst) => inst.type === 'openhw-led' || inst.type === 'openhw-led');
+        const ledAnodeV = firstLed ? Number(firstLed.getPinVoltage('A') || 0) : null;
+        const ledCathodeV = firstLed ? Number(firstLed.getPinVoltage('K') || 0) : null;
+        const ledDeltaV = (ledAnodeV !== null && ledCathodeV !== null)
+            ? Number((ledAnodeV - ledCathodeV).toFixed(3))
+            : null;
+        const ledOn = firstLed ? !!firstLed.state?.illuminated : null;
+        const highPins = Object.keys(this.pinStates)
+            .filter((pin) => !!this.pinStates[pin])
+            .sort((a, b) => Number(a.replace('GP', '')) - Number(b.replace('GP', '')));
+        const pinBitmap = Array.from({ length: 29 }, (_, idx) => (this.pinStates[`GP${idx}`] ? '1' : '0')).join('');
+
+        const payload = {
+            type: 'debug',
+            boardId: this.boardId,
+            category: 'rp2040-runtime',
+            reason,
+            metrics: {
+                running: this.running,
+                faulted: this.hasFaulted,
+                pc,
+                sp: this.cpu.core.SP >>> 0,
+                cycles: this.cpu.core.cycles >>> 0,
+                activeUart: this.activeUartIndex,
+                serialTxBytes: this.debugSerialTxBytes,
+                serialRxBytes: this.debugSerialRxBytes,
+                usbCdcReady: this.usbCdcReady,
+                serialInputQueue: this.serialBuffer.length,
+                stepCount: this.debugStepCount,
+                gpioTransitions: this.debugGpioTransitions,
+                lastGpioPin: this.debugLastGpioPin,
+                gp20: !!this.pinStates.GP20,
+                gp25: !!this.pinStates.GP25,
+                highPins,
+                pinBitmap,
+                ledId: firstLed?.id || '',
+                ledOn,
+                ledAnodeV,
+                ledCathodeV,
+                ledDeltaV,
+                stepsSinceLastEmit: this.debugStepCount - this.debugLastStepCount,
+                pcStallTicks: this.debugPcStallTicks,
+                lastRunLoopMs: Number(this.lastRunLoopMs.toFixed(3)),
+                lastPhysicsMs: Number(this.lastPhysicsMs.toFixed(3)),
+                lastComponentUpdateMs: Number(this.lastComponentUpdateMs.toFixed(3)),
+                interruptsEnabled: this.cpu.core.enabledInterrupts >>> 0,
+                interruptsPending: this.cpu.core.pendingInterrupts >>> 0,
+                primask: !!this.cpu.core.PM,
+                entry: this.entryInfo,
+            },
+            fault: faultReason
+                ? {
+                    reason: faultReason,
+                    pc: Number.isFinite(Number(faultPc)) ? (Number(faultPc) >>> 0) : pc,
+                }
+                : undefined,
+        };
+
+        this.debugLastEmitAt = now;
+        this.debugLastStepCount = this.debugStepCount;
+        this.onStateUpdate(payload);
+    }
+
+    private rebaseProgramCounterAlias(stepWeight = 1) {
+        if (!this.cpu) return;
+        const pc = this.cpu.core.PC >>> 0;
+        const logicalFlashLength = this.getLogicalFlashLength();
+        // Some firmware images carry flash-relative addresses in branch tables.
+        // Map plausible flash aliases into XIP immediately, and for low ROM-range
+        // addresses only recover after detecting a sustained local PC stall.
+        if (!(pc > 0 && pc < logicalFlashLength)) {
+            this.lowPcAliasCandidate = -1;
+            this.lowPcAliasRepeatCount = 0;
+            return;
+        }
+
+        const flashIndex = pc & ~1;
+        const hasFlashData = flashIndex + 1 < logicalFlashLength
+            && (this.cpu.flash[flashIndex] !== 0xff || this.cpu.flash[flashIndex + 1] !== 0xff);
+        if (!hasFlashData) {
+            this.lowPcAliasCandidate = -1;
+            this.lowPcAliasRepeatCount = 0;
+            return;
+        }
+
+        const rebased = ((RP2040_FLASH_BASE + pc) | 1) >>> 0;
+        const inBootromRange = this.bootromLoaded && pc < RP2040_BOOTROM_SIZE;
+        if (!inBootromRange) {
+            this.lowPcAliasCandidate = -1;
+            this.lowPcAliasRepeatCount = 0;
+            this.cpu.core.BXWritePC(rebased);
+            this.invalidPcStrikeCount = 0;
+            return;
+        }
+
+        // Boot ROM can be entered legitimately. Only force alias recovery when
+        // execution is visibly stuck at the same low PC for many consecutive steps.
+        const repeatIncrement = Math.max(1, stepWeight | 0);
+        if (this.lowPcAliasCandidate === pc) {
+            this.lowPcAliasRepeatCount += repeatIncrement;
+        } else {
+            this.lowPcAliasCandidate = pc;
+            this.lowPcAliasRepeatCount = 0;
+        }
+
+        // Only force rebase if we are stuck at the EXACT same PC for a long time.
+        // Also don't rebase if we are at address 0 (waiting for something) or in a wait state.
+        if (this.lowPcAliasRepeatCount >= RP2040Runner.LOW_PC_ALIAS_REPEAT_LIMIT && pc !== 0) {
+            this.cpu.core.BXWritePC(rebased);
+            this.lowPcAliasRepeatCount = 0;
+            this.invalidPcStrikeCount = 0;
+        }
+    }
+
+    private shouldFaultForInvalidPc(pc: number): boolean {
+        if (!this.cpu) return false;
+        const stepPc = pc >>> 0;
+        const cyclesSinceStart = (this.cpu.core.cycles - this.cpuCyclesAtStart) >>> 0;
+        const pastGracePeriod = cyclesSinceStart > RP2040Runner.FAULT_GRACE_CYCLES;
+        const hardInvalidPc = stepPc >= RP2040Runner.HARD_INVALID_PC_BASE;
+        const recoveringLowAlias = !hardInvalidPc
+            && this.lowPcAliasCandidate === stepPc
+            && this.lowPcAliasRepeatCount > 0;
+
+        if (recoveringLowAlias) {
+            this.invalidPcStrikeCount = 0;
+            return false;
+        }
+
+        const invalidPc = (pastGracePeriod || hardInvalidPc) && !this.isExecutableAddress(stepPc);
+
+        if (invalidPc) {
+            this.invalidPcStrikeCount += 1;
+        } else {
+            this.invalidPcStrikeCount = 0;
+        }
+
+        return this.invalidPcStrikeCount >= RP2040Runner.INVALID_PC_STRIKE_LIMIT;
+    }
+
+    private getSoftSerialBitCycles(): number {
+        const baud = Math.max(300, this.softSerialBaudRate | 0);
+        const clockHz = this.getRp2040ClockHz();
+        return Math.max(1, Math.floor(clockHz / baud));
+    }
+
+    private setSoftSerialRxLevel(isHigh: boolean) {
+        this.softSerialRxLevelHigh = isHigh;
+        this.cpu?.gpio?.[11]?.setInputValue(isHigh);
+    }
+
+    private emitSoftSerialByte(value: number) {
+        const byte = value & 0xff;
+        const char = String.fromCharCode(byte);
+        this.debugSerialTxBytes += 1;
+        this.pulseBoardUartLed('GP0');
+        if (this.onByteTransmitCb) {
+            this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'softserial' });
+        } else {
+            this.onStateUpdate({ type: 'serial', data: char, value: byte, boardId: this.boardId, source: 'softserial' });
+        }
+    }
+
+    private processSoftSerialDecode(cycles: number) {
+        const state = this.softSerialDecodeState;
+        if (!state.receiving) return;
+        const bitCycles = this.getSoftSerialBitCycles();
+
+        while (state.receiving && state.sampleCycle <= cycles) {
+            if (state.sampleIndex < 8) {
+                if (state.lastLevel) {
+                    state.currentByte |= (1 << state.sampleIndex);
+                }
+                state.sampleIndex += 1;
+                state.sampleCycle += bitCycles;
+                continue;
+            }
+
+            // Stop bit: valid frame when line is HIGH.
+            if (state.lastLevel) {
+                this.emitSoftSerialByte(state.currentByte);
+            }
+            state.receiving = false;
+            state.sampleIndex = 0;
+            state.currentByte = 0;
+        }
+    }
+
+    private observeSoftSerialTx(pinId: string, isHigh: boolean, cycles: number) {
+        if (this.normalizeToGpPin(pinId) !== this.softSerialTxPin) return;
+        const state = this.softSerialDecodeState;
+
+        this.processSoftSerialDecode(cycles);
+
+        const prev = state.lastLevel;
+        state.lastLevel = isHigh;
+
+        // Falling edge while idle => start bit.
+        if (!state.receiving && prev && !isHigh) {
+            const bitCycles = this.getSoftSerialBitCycles();
+            state.receiving = true;
+            state.currentByte = 0;
+            state.sampleIndex = 0;
+            state.sampleCycle = cycles + (bitCycles * 1.5);
+        }
+    }
+
+    private advanceSoftSerialIngress(cycles: number) {
+        if (!this.cpu) return;
+
+        if (!this.softSerialRxFrame && this.softSerialRxQueue.length > 0) {
+            const byte = this.softSerialRxQueue.shift()! & 0xff;
+            const bitCycles = this.getSoftSerialBitCycles();
+            const startCycle = Math.max(cycles + 1, this.softSerialNextInjectCycle || (cycles + 1));
+            const levels: number[] = [0];
+            for (let i = 0; i < 8; i++) {
+                levels.push((byte >> i) & 1);
+            }
+            levels.push(1);
+            this.softSerialRxFrame = {
+                levels,
+                bitIndex: 0,
+                nextBitCycle: startCycle,
+                bitCycles,
+            };
+            this.softSerialNextInjectCycle = startCycle + (levels.length * bitCycles);
+            this.softSerialRxOverrideActive = true;
+        }
+
+        while (this.softSerialRxFrame && cycles >= this.softSerialRxFrame.nextBitCycle) {
+            const frame = this.softSerialRxFrame;
+            const level = frame.levels[frame.bitIndex] === 1;
+            this.setSoftSerialRxLevel(level);
+            frame.bitIndex += 1;
+            frame.nextBitCycle += frame.bitCycles;
+
+            if (frame.bitIndex >= frame.levels.length) {
+                this.softSerialRxFrame = null;
+                break;
+            }
+        }
+
+        if (!this.softSerialRxFrame && this.softSerialRxQueue.length === 0 && this.softSerialRxOverrideActive) {
+            this.setSoftSerialRxLevel(true);
+            this.softSerialRxOverrideActive = false;
+        }
+    }
+
+    private attachUART() {
+        if (!this.cpu?.uart) return;
+
+        const bindUart = (uartIndex: 0 | 1) => {
+            const uart = this.cpu?.uart?.[uartIndex];
+            if (!uart) return;
+
+            uart.onByte = (value: number) => {
+                this.emitSerialByte(value, uartIndex);
+            };
+        };
+
+        bindUart(0);
+        bindUart(1);
+    }
+
+    private attachUSBSerial() {
+        if (!this.cpu?.usbCtrl) return;
+
+        const cdc = new USBCDC(this.cpu.usbCtrl);
+        this.usbCdc = cdc;
+        this.usbCdcReady = false;
+
+        cdc.onDeviceConnected = () => {
+            this.usbCdcReady = true;
+        };
+
+        cdc.onSerialData = (buffer: Uint8Array) => {
+            for (let i = 0; i < buffer.length; i++) {
+                this.emitSerialByte(buffer[i] & 0xff, 2);
+            }
+        };
+    }
+
+    private buildBoardAliasSet(boardPins: string[]): Set<string> {
+        const aliases = new Set<string>();
+        for (const pin of boardPins) {
+            const raw = String(pin || '').toUpperCase();
+            aliases.add(raw);
+            aliases.add(this.normalizeToGpPin(raw));
+        }
+        return aliases;
+    }
+
+    private findExistingPinName(inst: BaseComponent, candidates: string[]): string | null {
+        for (const name of candidates) {
+            if (inst.pins[name]) return name;
+            const upper = name.toUpperCase();
+            if (inst.pins[upper]) return upper;
+            const lower = name.toLowerCase();
+            if (inst.pins[lower]) return lower;
+        }
+        return null;
+    }
+
+    private isComponentPinConnectedToBoardPins(componentId: string, componentPin: string, boardPins: string[]): boolean {
+        const aliasSet = this.buildBoardAliasSet(boardPins);
+        const endpoint = `${componentId}:${componentPin}`;
+
+        for (const wire of this.currentWires) {
+            let boardEndpoint: string | null = null;
+            if (wire.from === endpoint) boardEndpoint = wire.to;
+            else if (wire.to === endpoint) boardEndpoint = wire.from;
+            if (!boardEndpoint) continue;
+
+            const [boardId, boardPin] = String(boardEndpoint).split(':');
+            if (boardId !== this.boardId) continue;
+
+            const raw = String(boardPin || '').toUpperCase();
+            const normalized = this.normalizeToGpPin(raw);
+            if (aliasSet.has(raw) || aliasSet.has(normalized)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private rebuildPeripheralDeviceCache() {
+        this.i2cDeviceCache.set('i2c0', this.scanRp2040ConnectedI2CDevices('i2c0'));
+        this.i2cDeviceCache.set('i2c1', this.scanRp2040ConnectedI2CDevices('i2c1'));
+        this.i2cBusPinPairs.clear();
+        const i2c0Pins = this.scanRp2040I2CBusPins('i2c0');
+        const i2c1Pins = this.scanRp2040I2CBusPins('i2c1');
+        if (i2c0Pins) this.i2cBusPinPairs.set('i2c0', i2c0Pins);
+        if (i2c1Pins) this.i2cBusPinPairs.set('i2c1', i2c1Pins);
+        this.i2cHardwareSeen.set('i2c0', false);
+        this.i2cHardwareSeen.set('i2c1', false);
+        this.i2cBitBangState.clear();
+        this.spiDeviceCache.set('spi0', this.scanRp2040ConnectedSPIDevices('spi0'));
+        this.spiDeviceCache.set('spi1', this.scanRp2040ConnectedSPIDevices('spi1'));
+        this.peripheralDeviceCacheReady = true;
+    }
+
+    private getRp2040ConnectedI2CDevices(bus: 'i2c0' | 'i2c1'): BaseComponent[] {
+        if (!this.peripheralDeviceCacheReady) {
+            this.rebuildPeripheralDeviceCache();
+        }
+        const wiredDevices = this.i2cDeviceCache.get(bus) || [];
+        if (wiredDevices.length > 0) {
+            return wiredDevices;
+        }
+
+        // Fallback: if bus-pin topology detection misses a supported device,
+        // allow address-based matching to keep common display modules functional.
+        return this.getI2CCallbackDevices();
+    }
+
+    private getI2CCallbackDevices(): BaseComponent[] {
+        const devices: BaseComponent[] = [];
+        for (const inst of this.instances.values()) {
+            const hasI2cCallbacks = !!(
+                inst.onI2CStart
+                || inst.onI2CByte
+                || inst.onI2CStop
+                || typeof (inst as any).onI2CReadByte === 'function'
+                || typeof (inst as any).readByte === 'function'
+            );
+            if (hasI2cCallbacks) {
+                devices.push(inst);
+            }
+        }
+        return devices;
+    }
+
+    private scanRp2040I2CBusPins(bus: RP2040I2CBus): RP2040I2CBusPins | null {
+        const pinMap = RP2040_I2C_SOURCE_PINS[bus];
+        if (!pinMap) return null;
+
+        const sdaAliases = this.buildBoardAliasSet(pinMap.sda);
+        const sclAliases = this.buildBoardAliasSet(pinMap.scl);
+
+        for (const inst of this.instances.values()) {
+            const hasI2cCallbacks = !!(
+                inst.onI2CStart
+                || inst.onI2CByte
+                || inst.onI2CStop
+                || typeof (inst as any).onI2CReadByte === 'function'
+                || typeof (inst as any).readByte === 'function'
+            );
+            if (!hasI2cCallbacks) continue;
+
+            const sdaPin = this.findExistingPinName(inst, ['SDA', 'SDA1']);
+            const sclPin = this.findExistingPinName(inst, ['SCL', 'SCL1']);
+            if (!sdaPin || !sclPin) continue;
+
+            const boardSda = this.resolveBoardPinForComponentPin(inst.id, sdaPin);
+            const boardScl = this.resolveBoardPinForComponentPin(inst.id, sclPin);
+            if (!boardSda || !boardScl) continue;
+
+            const sda = this.normalizeToGpPin(boardSda);
+            const scl = this.normalizeToGpPin(boardScl);
+            if (sda === scl) continue;
+            if (!sdaAliases.has(sda) || !sclAliases.has(scl)) continue;
+
+            return { sda, scl };
+        }
+
+        return null;
+    }
+
+    private scanRp2040ConnectedI2CDevices(bus: 'i2c0' | 'i2c1'): BaseComponent[] {
+        const pinMap = RP2040_I2C_SOURCE_PINS[bus];
+        if (!pinMap) return [];
+
+        const devices: BaseComponent[] = [];
+        for (const inst of this.instances.values()) {
+            const hasI2cCallbacks = !!(
+                inst.onI2CStart
+                || inst.onI2CByte
+                || inst.onI2CStop
+                || typeof (inst as any).onI2CReadByte === 'function'
+                || typeof (inst as any).readByte === 'function'
+            );
+            if (!hasI2cCallbacks) continue;
+
+            const sdaPin = this.findExistingPinName(inst, ['SDA', 'SDA1']);
+            const sclPin = this.findExistingPinName(inst, ['SCL', 'SCL1']);
+            if (!sdaPin || !sclPin) continue;
+
+            const sdaConnected = this.isComponentPinConnectedToBoardPins(inst.id, sdaPin, pinMap.sda);
+            const sclConnected = this.isComponentPinConnectedToBoardPins(inst.id, sclPin, pinMap.scl);
+            if (sdaConnected && sclConnected) {
+                devices.push(inst);
+            }
+        }
+
+        return devices;
+    }
+
+    private isRp2040SpiSelected(inst: BaseComponent): boolean {
+        const csNames = ['CS', 'CE', 'SS', 'SSEL', 'NSS', 'CSN', 'CS_N', 'NCE'];
+        const csPin = this.findExistingPinName(inst, csNames);
+        if (!csPin) return true;
+        return inst.getPinVoltage(csPin) < 0.5;
+    }
+
+    private parseGpIndex(pinId: string): number | null {
+        const norm = this.normalizeToGpPin(pinId);
+        const match = /^GP(\d+)$/.exec(norm);
+        if (!match) return null;
+        const idx = Number(match[1]);
+        if (!Number.isFinite(idx) || idx < 0 || idx > 28) return null;
+        return idx;
+    }
+
+    private sampleBoardPinHigh(pinId: string): boolean {
+        if (!this.cpu) return false;
+        const idx = this.parseGpIndex(pinId);
+        if (idx == null) return false;
+        const state = this.cpu.gpio[idx].value;
+        return state === GPIOPinState.High || state === GPIOPinState.InputPullUp;
+    }
+
+    private resolveBoardPinForComponentPin(componentId: string, componentPin: string): string | null {
+        const endpoint = `${componentId}:${componentPin}`;
+        for (const wire of this.currentWires) {
+            let boardEndpoint: string | null = null;
+            if (wire.from === endpoint) boardEndpoint = wire.to;
+            else if (wire.to === endpoint) boardEndpoint = wire.from;
+            if (!boardEndpoint) continue;
+
+            const [boardId, boardPin] = String(boardEndpoint).split(':');
+            if (boardId !== this.boardId) continue;
+            return this.normalizeToGpPin(String(boardPin || ''));
+        }
+        return null;
+    }
+
+    private syncSpiControlPins(inst: BaseComponent) {
+        if (!this.cpu) return;
+
+        const controlAliases = [
+            ['CS', 'CE', 'SS', 'SSEL', 'NSS', 'CSN', 'CS_N', 'NCE'],
+            ['DC', 'D_C', 'A0', 'RS'],
+            ['RESET', 'RST', 'RES', 'NRST'],
+        ];
+
+        for (const aliases of controlAliases) {
+            const pinName = this.findExistingPinName(inst, aliases);
+            if (!pinName) continue;
+
+            const gpPin = this.resolveBoardPinForComponentPin(inst.id, pinName);
+            if (!gpPin) continue;
+
+            const isHigh = this.sampleBoardPinHigh(gpPin);
+            const nextVoltage = isHigh ? 3.3 : 0.0;
+            if (!inst.pins[pinName]) {
+                inst.pins[pinName] = { voltage: nextVoltage, mode: 'INPUT' };
+            }
+            inst.setPinVoltage(pinName, nextVoltage);
+            inst.onPinStateChange(pinName, isHigh, this.cpu.core.cycles);
+        }
+    }
+
+    private getRp2040ConnectedSPIDevices(bus: 'spi0' | 'spi1'): BaseComponent[] {
+        if (!this.peripheralDeviceCacheReady) {
+            this.rebuildPeripheralDeviceCache();
+        }
+        return this.spiDeviceCache.get(bus) || [];
+    }
+
+    private scanRp2040ConnectedSPIDevices(bus: 'spi0' | 'spi1'): BaseComponent[] {
+        const pinMap = RP2040_SPI_SOURCE_PINS[bus];
+        if (!pinMap) return [];
+
+        const devices: BaseComponent[] = [];
+        for (const inst of this.instances.values()) {
+            if (typeof inst.onSPIByte !== 'function') continue;
+
+            const mosiPin = this.findExistingPinName(inst, ['MOSI', 'DIN', 'SI', 'SDI']);
+            const sckPin = this.findExistingPinName(inst, ['SCK', 'CLK', 'SCLK']);
+            if (!mosiPin || !sckPin) continue;
+
+            if (!this.isComponentPinConnectedToBoardPins(inst.id, mosiPin, pinMap.mosi)) continue;
+            if (!this.isComponentPinConnectedToBoardPins(inst.id, sckPin, pinMap.sck)) continue;
+
+            const csPin = this.findExistingPinName(inst, ['CS', 'SS', 'CSN', 'NSS', 'CE', 'CS_N']);
+            if (csPin && !this.isComponentPinConnectedToBoardPins(inst.id, csPin, pinMap.cs)) {
+                continue;
+            }
+
+            devices.push(inst);
+        }
+
+        return devices;
+    }
+
+    private installRp2040I2cAdapters() {
+        if (!this.cpu) return;
+
+        const attachBus = (index: 0 | 1, bus: 'i2c0' | 'i2c1') => {
+            const i2c: any = (this.cpu as any)?.i2c?.[index];
+            if (!i2c) return;
+
+            let activeSlave: BaseComponent | null = null;
+            let transactionBytes: number[] = [];
+            let currentAddress: number = 0;
+            let isWriteMode = true;
+
+            i2c.onStart = (repeatedStart: boolean) => {
+                void repeatedStart;
+                activeSlave = null;
+                i2c.completeStart();
+            };
+
+            i2c.onConnect = (address: number, mode: number) => {
+                transactionBytes = [];
+                currentAddress = address & 0x7f;
+                this.i2cHardwareSeen.set(bus, true);
+                const isRead = Number(mode) === 1;
+                isWriteMode = !isRead;
+                const devices = this.getRp2040ConnectedI2CDevices(bus);
+                let ack = false;
+                activeSlave = null;
+
+                for (const inst of devices) {
+                    if (!inst.onI2CStart) continue;
+                    if (inst.onI2CStart(address, isRead)) {
+                        ack = true;
+                        if (!activeSlave) activeSlave = inst;
+                    }
+                }
+
+                i2c.completeConnect(ack);
+
+                if (this.debugEnabled) {
+                    this.onStateUpdate({
+                        type: 'debug',
+                        boardId: this.boardId,
+                        category: 'rp2040-i2c',
+                        reason: 'connect',
+                        i2c: {
+                            bus,
+                            address: address & 0x7f,
+                            isRead,
+                            ack,
+                            deviceCount: devices.length,
+                            activeSlaveId: activeSlave?.id || '',
+                        },
+                    });
+                }
+            };
+
+            i2c.onWriteByte = (value: number) => {
+                transactionBytes.push(value & 0xff);
+                const devices = activeSlave ? [activeSlave] : this.getRp2040ConnectedI2CDevices(bus);
+                let ack = false;
+                for (const inst of devices) {
+                    if (!inst.onI2CByte) continue;
+                    if (inst.onI2CByte(-1, value & 0xff)) {
+                        ack = true;
+                    }
+                }
+                i2c.completeWrite(ack);
+            };
+
+            i2c.onReadByte = (ack: boolean) => {
+                void ack;
+                let byte = 0xff;
+                if (activeSlave) {
+                    const slave: any = activeSlave;
+                    if (typeof slave.onI2CReadByte === 'function') {
+                        byte = slave.onI2CReadByte() & 0xff;
+                    } else if (typeof slave.readByte === 'function') {
+                        byte = slave.readByte() & 0xff;
+                    }
+                }
+                transactionBytes.push(byte);
+                i2c.completeRead(byte);
+            };
+
+            i2c.onStop = () => {
+                if (transactionBytes.length > 0) {
+                    this.onStateUpdate({
+                        type: 'protocol:i2c',
+                        boardId: this.boardId,
+                        address: currentAddress,
+                        data: [...transactionBytes],
+                        isWrite: isWriteMode,
+                        timestamp: this.getSimulatedTimeMs()
+                    });
+                }
+                const devices = activeSlave ? [activeSlave] : this.getRp2040ConnectedI2CDevices(bus);
+                for (const inst of devices) {
+                    if (inst.onI2CStop) inst.onI2CStop();
+                }
+                activeSlave = null;
+                const bitBang = this.i2cBitBangState.get(bus);
+                if (bitBang) {
+                    bitBang.inFrame = false;
+                    bitBang.phase = 0;
+                    bitBang.shift = 0;
+                    bitBang.byteIndex = 0;
+                    bitBang.read = false;
+                    bitBang.activeSlave = null;
+                    bitBang.ackShouldBeLow = false;
+                    bitBang.ackDriveActive = false;
+                }
+                i2c.completeStop();
+            };
+        };
+
+        attachBus(0, 'i2c0');
+        attachBus(1, 'i2c1');
+    }
+
+    private installRp2040SpiAdapters() {
+        if (!this.cpu) return;
+
+        const attachBus = (index: 0 | 1, bus: 'spi0' | 'spi1') => {
+            const spi: any = (this.cpu as any)?.spi?.[index];
+            if (!spi) return;
+
+            let spiTransactionBytes: number[] = [];
+            let lastSpiTime = 0;
+
+            // rp2040js SPI doTX currently sets busy=true after invoking onTransmit().
+            // Under high-throughput writes this can stall and/or drop bytes because
+            // firmware keeps writing while TX stays artificially busy. Patch doTX once
+            // so busy is asserted before callback, then cleared by completeTransmit().
+            if (!spi.__openhwPatchedDoTX && typeof spi.doTX === 'function' && spi.txFIFO) {
+                spi.__openhwPatchedDoTX = true;
+                spi.doTX = function patchedDoTX(this: any) {
+                    if (!this.busy && !this.txFIFO.empty) {
+                        const value = this.txFIFO.pull();
+                        this.busy = true;
+                        this.onTransmit(value);
+                        this.fifosUpdated();
+                    }
+                };
+            }
+
+            spi.onTransmit = (value: number) => {
+                const nowMs = this.getSimulatedTimeMs();
+                if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
+                     this.onStateUpdate({
+                         type: 'protocol:spi',
+                         boardId: this.boardId,
+                         data: [...spiTransactionBytes],
+                         timestamp: lastSpiTime
+                     });
+                     spiTransactionBytes = [];
+                }
+                lastSpiTime = nowMs;
+                spiTransactionBytes.push(value & 0xff);
+
+                const byte = value & 0xff;
+                let response = 0xff;
+                const devices = this.getRp2040ConnectedSPIDevices(bus);
+
+                for (const inst of devices) {
+                    this.syncSpiControlPins(inst);
+                    if (!this.isRp2040SpiSelected(inst)) continue;
+                    const out = inst.onSPIByte?.(byte);
+                    if (out !== undefined) {
+                        response = Number(out) & 0xff;
+                    }
+                }
+
+                spi.completeTransmit(response);
+            };
+        };
+
+        attachBus(0, 'spi0');
+        attachBus(1, 'spi1');
+    }
+
+    private emitSerialByte(value: number, source: number) {
+        const byte = value & 0xff;
+        const char = String.fromCharCode(byte);
+        const now = performance.now();
+
+        if (source === 2) {
+            this.lastUsbSerialAt = now;
+        } else if (
+            this.usbCdcReady
+            && (now - this.lastUsbSerialAt) <= RP2040Runner.USB_SERIAL_PREFER_WINDOW_MS
+        ) {
+            // When USB CDC is actively producing serial, suppress near-concurrent
+            // UART echoes to avoid doubled/garbled monitor output.
+            return;
+        }
+
+        this.activeUartIndex = source;
+
+        // MicroPython UF2 can emit identical bytes over UART and USB CDC nearly
+        // simultaneously. Drop the second copy to keep the monitor readable.
+        if (
+            source !== this.lastSerialSource
+            && byte === this.lastSerialByte
+            && (now - this.lastSerialEmitAt) <= RP2040Runner.SERIAL_DEDUP_WINDOW_MS
+        ) {
+            this.lastSerialSource = source;
+            this.lastSerialEmitAt = now;
+            return;
+        }
+
+        this.lastSerialByte = byte;
+        this.lastSerialSource = source;
+        this.lastSerialEmitAt = now;
+        this.debugSerialTxBytes += 1;
+        this.pulseBoardUartLed(source === 1 ? 'GP4' : 'GP0');
+        const sourceLabel = source === 2 ? 'usb' : source === 1 ? 'uart1' : 'uart0';
+
+        if (this.onByteTransmitCb) {
+            this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: sourceLabel });
+        } else {
+            this.onStateUpdate({ type: 'serial', data: char, value: byte, boardId: this.boardId, source: sourceLabel });
+        }
+    }
+
+    private pulseBoardUartLed(pinId: 'GP0' | 'GP1' | 'GP4' | 'GP5') {
+        const boardInst = this.instances.get(this.boardId);
+        if (!boardInst || !this.cpu) return;
+        boardInst.onPinStateChange(pinId, true, this.cpu.core.cycles);
+
+        const previousTimer = this.uartLedOffTimers.get(pinId);
+        if (previousTimer) {
+            clearTimeout(previousTimer);
+        }
+
+        const offTimer = setTimeout(() => {
+            this.uartLedOffTimers.delete(pinId);
+            if (!this.cpu) return;
+            const liveBoardInst = this.instances.get(this.boardId);
+            if (!liveBoardInst) return;
+            liveBoardInst.onPinStateChange(pinId, false, this.cpu.core.cycles);
+        }, RP2040Runner.UART_LED_PULSE_MS);
+        this.uartLedOffTimers.set(pinId, offTimer);
+    }
+
+    private clearPendingUartLedTimers() {
+        for (const timerId of this.uartLedOffTimers.values()) {
+            clearTimeout(timerId);
+        }
+        this.uartLedOffTimers.clear();
+    }
+
+    private normalizeToGpPin(pinId: string): string {
+        const raw = String(pinId || '').toUpperCase();
+        if (/^GP\d+$/.test(raw)) return raw;
+        if (/^GPIO\d+$/.test(raw)) return `GP${raw.slice(4)}`;
+        if (/^D\d+$/.test(raw)) return `GP${raw.slice(1)}`;
+        if (/^\d+$/.test(raw)) return `GP${raw}`;
+        return raw;
+    }
+
+    private boardPinAliases(pinId: string): string[] {
+        const gp = this.normalizeToGpPin(pinId);
+        const match = /^GP(\d+)$/.exec(gp);
+        if (!match) return [pinId, gp];
+        const n = match[1];
+        return [pinId, gp, `GPIO${n}`, `D${n}`, n];
+    }
+
+    private isBoardPin(wireCoord: string, targetGpPin: string): boolean {
+        const [compId, compPin] = wireCoord.split(':');
+        if (compId !== this.boardId) return false;
+        const norm = this.normalizeToGpPin(compPin);
+        return this.boardPinAliases(targetGpPin).includes(norm) || this.boardPinAliases(targetGpPin).includes(compPin);
+    }
+
+    private getRp2040ClockHz(): number {
+        const hz = Number(this.cpu?.clkSys || 125_000_000);
+        return Number.isFinite(hz) && hz > 0 ? hz : 125_000_000;
+    }
+
+    private getProtocolEndpointsForGpPin(gpPin: string): ConnectedComponentPin[] {
+        const key = this.normalizeToGpPin(gpPin);
+        const cached = this.protocolEndpointsCache.get(key);
+        if (cached) return cached;
+
+        const endpoints = collectConnectedComponentPins(
+            this.boardId,
+            this.boardPinAliases(key),
+            this.currentWires,
+            this.instances
+        );
+        this.protocolEndpointsCache.set(key, endpoints);
+        return endpoints;
+    }
+
+    private dispatchOptionalPwm(gpPin: string, isHigh: boolean, cycles: number, functionSelect: number) {
+        const key = this.normalizeToGpPin(gpPin);
+        let state = this.pwmState.get(key);
+        if (!state) {
+            state = { lastRiseCycle: -1, lastFallCycle: -1, lastPeriodCycles: -1 };
+            this.pwmState.set(key, state);
+        }
+
+        const clockHz = this.getRp2040ClockHz();
+        let frequencyHz = 0;
+        let dutyCycle = 0;
+        let pulseUs = 0;
+        let periodUs = 0;
+
+        if (isHigh) {
+            if (state.lastRiseCycle >= 0 && state.lastFallCycle > state.lastRiseCycle) {
+                const periodCycles = Math.max(1, cycles - state.lastRiseCycle);
+                const highCycles = Math.max(0, state.lastFallCycle - state.lastRiseCycle);
+                state.lastPeriodCycles = periodCycles;
+                frequencyHz = clockHz / periodCycles;
+                dutyCycle = Math.max(0, Math.min(1, highCycles / periodCycles));
+                periodUs = (periodCycles * 1_000_000) / clockHz;
+                pulseUs = (highCycles * 1_000_000) / clockHz;
+            }
+            state.lastRiseCycle = cycles;
+        } else {
+            state.lastFallCycle = cycles;
+            if (state.lastRiseCycle >= 0) {
+                const highCycles = Math.max(0, cycles - state.lastRiseCycle);
+                pulseUs = (highCycles * 1_000_000) / clockHz;
+                if (state.lastPeriodCycles > 0) {
+                    frequencyHz = clockHz / state.lastPeriodCycles;
+                    dutyCycle = Math.max(0, Math.min(1, highCycles / state.lastPeriodCycles));
+                    periodUs = (state.lastPeriodCycles * 1_000_000) / clockHz;
+                }
+            }
+        }
+
+        if (frequencyHz <= 0 && dutyCycle <= 0 && pulseUs <= 0) return;
+
+        const meta = {
+            protocol: 'pwm',
+            boardPin: key,
+            isHigh,
+            frequencyHz,
+            dutyCycle,
+            pulseUs,
+            periodUs,
+            functionSelect,
+            source: functionSelect === RP2040_GPIO_FUNC_PWM ? 'pwm' : 'gpio',
+            cycles,
+        };
+
+        for (const endpoint of this.getProtocolEndpointsForGpPin(key)) {
+            invokeOptional(endpoint.inst as any, ['onPWM', 'onPwm', 'onPWMSignal'], [endpoint.pinId, meta]);
+        }
+    }
+
+    private dispatchOptionalPio(gpPin: string, isHigh: boolean, cycles: number, functionSelect: number) {
+        if (functionSelect !== RP2040_GPIO_FUNC_PIO0 && functionSelect !== RP2040_GPIO_FUNC_PIO1) {
+            return;
+        }
+
+        const key = this.normalizeToGpPin(gpPin);
+        const pioIndex = functionSelect === RP2040_GPIO_FUNC_PIO1 ? 1 : 0;
+        const meta = {
+            protocol: 'pio',
+            boardPin: key,
+            isHigh,
+            pioIndex,
+            functionSelect,
+            cycles,
+        };
+
+        for (const endpoint of this.getProtocolEndpointsForGpPin(key)) {
+            invokeOptional(endpoint.inst as any, ['onPIOPinChange', 'onPioPinChange', 'onPIO', 'onPio'], [endpoint.pinId, isHigh, meta]);
+        }
+    }
+
+    private dispatchOptionalOneWire(gpPin: string, isHigh: boolean, cycles: number) {
+        const key = this.normalizeToGpPin(gpPin);
+        let state = this.oneWireState.get(key);
+        if (!state) {
+            state = { lowStartCycle: null, highStartCycle: null };
+            this.oneWireState.set(key, state);
+        }
+
+        const endpoints = this.getProtocolEndpointsForGpPin(key);
+        if (!endpoints.length) {
+            if (isHigh) {
+                state.lowStartCycle = null;
+                state.highStartCycle = cycles;
+            } else {
+                state.highStartCycle = null;
+                state.lowStartCycle = cycles;
+            }
+            return;
+        }
+
+        const clockHz = this.getRp2040ClockHz();
+
+        if (!isHigh) {
+            if (state.highStartCycle != null) {
+                const highCycles = Math.max(0, cycles - state.highStartCycle);
+                const highUs = (highCycles * 1_000_000) / clockHz;
+                if (highUs > 0) {
+                    const pulseMeta = {
+                        protocol: 'pulse',
+                        boardPin: key,
+                        pulseUs: highUs,
+                        highUs,
+                        edge: 'falling',
+                        cycles,
+                    };
+                    for (const endpoint of endpoints) {
+                        invokeOptional(endpoint.inst as any, ['onPulseHigh', 'onDigitalPulseHigh', 'onOneWirePulseHigh'], [endpoint.pinId, pulseMeta]);
+                    }
+                }
+            }
+
+            state.highStartCycle = null;
+            state.lowStartCycle = cycles;
+            return;
+        }
+
+        if (state.lowStartCycle == null) return;
+
+        const lowCycles = Math.max(0, cycles - state.lowStartCycle);
+        state.lowStartCycle = null;
+        state.highStartCycle = cycles;
+        const lowUs = (lowCycles * 1_000_000) / clockHz;
+
+        if (lowUs > 0) {
+            const pulseMeta = {
+                protocol: 'pulse',
+                boardPin: key,
+                pulseUs: lowUs,
+                lowUs,
+                edge: 'rising',
+                cycles,
+            };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onPulseLow', 'onDigitalPulseLow', 'onOneWirePulseLow'], [endpoint.pinId, pulseMeta]);
+            }
+        }
+
+        if (lowUs >= 360) {
+            const meta = {
+                protocol: 'onewire',
+                boardPin: key,
+                pulseUs: lowUs,
+                kind: 'reset',
+                cycles,
+            };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onOneWireReset', 'onOnewireReset'], [endpoint.pinId, meta]);
+            }
+            return;
+        }
+
+        if (lowUs >= 1 && lowUs <= 120) {
+            const bit = lowUs < 20 ? 1 : 0;
+            const meta = {
+                protocol: 'onewire',
+                boardPin: key,
+                pulseUs: lowUs,
+                kind: 'slot',
+                bit,
+                cycles,
+            };
+            for (const endpoint of endpoints) {
+                invokeOptional(endpoint.inst as any, ['onOneWireWriteBit', 'onOnewireWriteBit'], [endpoint.pinId, bit, meta]);
+                invokeOptional(endpoint.inst as any, ['onOneWireSlot', 'onOnewireSlot'], [endpoint.pinId, meta]);
+            }
+        }
+    }
+
+    private getRp2040I2CBitBangState(bus: RP2040I2CBus, pins: RP2040I2CBusPins): RP2040I2CBitBangState {
+        let state = this.i2cBitBangState.get(bus);
+        const currentSdaHigh = !!this.pinStates[pins.sda];
+        const currentSclHigh = !!this.pinStates[pins.scl];
+
+        if (!state) {
+            state = {
+                initialized: true,
+                prevSdaHigh: currentSdaHigh,
+                prevSclHigh: currentSclHigh,
+                inFrame: false,
+                phase: 0,
+                shift: 0,
+                byteIndex: 0,
+                read: false,
+                activeSlave: null,
+                ackShouldBeLow: false,
+                ackDriveActive: false,
+            };
+            this.i2cBitBangState.set(bus, state);
+            return state;
+        }
+
+        if (!state.initialized) {
+            state.initialized = true;
+            state.prevSdaHigh = currentSdaHigh;
+            state.prevSclHigh = currentSclHigh;
+        }
+
+        return state;
+    }
+
+    private setRp2040I2CFallbackSdaInput(pin: string, isHigh: boolean) {
+        if (!this.cpu) return;
+        const idx = this.parseGpIndex(pin);
+        if (idx == null) return;
+        this.cpu.gpio[idx].setInputValue(!!isHigh);
+    }
+
+    private consumeRp2040I2CBitBangByte(bus: RP2040I2CBus, state: RP2040I2CBitBangState, value: number): boolean {
+        const byte = value & 0xff;
+        let ack = false;
+
+        if (state.byteIndex === 0) {
+            const address = (byte >>> 1) & 0x7f;
+            const isRead = (byte & 0x01) !== 0;
+            const devices = this.getRp2040ConnectedI2CDevices(bus);
+
+            let activeSlave: BaseComponent | null = null;
+            for (const inst of devices) {
+                if (!inst.onI2CStart) continue;
+                if (inst.onI2CStart(address, isRead)) {
+                    if (!activeSlave) activeSlave = inst;
+                }
+            }
+
+            state.activeSlave = activeSlave;
+            state.read = isRead;
+            ack = !!activeSlave;
+
+            if (this.debugEnabled) {
+                this.onStateUpdate({
+                    type: 'debug',
+                    boardId: this.boardId,
+                    category: 'rp2040-i2c',
+                    reason: 'connect-bitbang',
+                    i2c: {
+                        bus,
+                        address,
+                        isRead,
+                        ack,
+                        deviceCount: devices.length,
+                        activeSlaveId: activeSlave?.id || '',
+                    },
+                });
+            }
+        } else if (state.activeSlave && !state.read && state.activeSlave.onI2CByte) {
+            ack = !!state.activeSlave.onI2CByte(-1, byte);
+        } else if (state.activeSlave) {
+            ack = true;
+        }
+
+        state.byteIndex += 1;
+        return ack;
+    }
+
+    private dispatchOptionalI2CFallback(gpPin: string) {
+        const pin = this.normalizeToGpPin(gpPin);
+        const buses: RP2040I2CBus[] = ['i2c0', 'i2c1'];
+
+        for (const bus of buses) {
+            if (this.i2cHardwareSeen.get(bus)) continue;
+
+            const pins = this.i2cBusPinPairs.get(bus);
+            if (!pins) continue;
+            if (pin !== pins.sda && pin !== pins.scl) continue;
+
+            const state = this.getRp2040I2CBitBangState(bus, pins);
+            const sdaNow = !!this.pinStates[pins.sda];
+            const sclNow = !!this.pinStates[pins.scl];
+
+            const startCondition = state.prevSdaHigh && !sdaNow && state.prevSclHigh && sclNow;
+            const stopCondition = !state.prevSdaHigh && sdaNow && state.prevSclHigh && sclNow;
+            const fallingScl = state.prevSclHigh && !sclNow;
+
+            if (startCondition) {
+                if (state.ackDriveActive) {
+                    this.setRp2040I2CFallbackSdaInput(pins.sda, true);
+                    state.ackDriveActive = false;
+                }
+                state.inFrame = true;
+                state.phase = 0;
+                state.shift = 0;
+                state.byteIndex = 0;
+                state.read = false;
+                state.activeSlave = null;
+                state.ackShouldBeLow = false;
+            }
+
+            const risingScl = !state.prevSclHigh && sclNow;
+            if (state.inFrame && risingScl) {
+                const bit = sdaNow ? 1 : 0;
+                if (state.phase < 8) {
+                    state.shift = ((state.shift << 1) | bit) & 0xff;
+                    state.phase += 1;
+                    if (state.phase === 8) {
+                        state.ackShouldBeLow = this.consumeRp2040I2CBitBangByte(bus, state, state.shift);
+                    }
+                } else {
+                    // ACK/NACK bit sampled by master.
+                    state.phase = 0;
+                    state.shift = 0;
+                    state.ackShouldBeLow = false;
+                }
+            }
+
+            if (fallingScl) {
+                if (state.phase === 8 && state.ackShouldBeLow && !state.ackDriveActive) {
+                    // Drive ACK while SCL is low so SDA is stable before master's rising-edge sample.
+                    this.setRp2040I2CFallbackSdaInput(pins.sda, false);
+                    state.ackDriveActive = true;
+                } else if (state.phase === 0 && state.ackDriveActive) {
+                    this.setRp2040I2CFallbackSdaInput(pins.sda, true);
+                    state.ackDriveActive = false;
+                }
+            }
+
+            if (stopCondition) {
+                if (state.activeSlave && state.activeSlave.onI2CStop) {
+                    state.activeSlave.onI2CStop();
+                }
+                if (state.ackDriveActive) {
+                    this.setRp2040I2CFallbackSdaInput(pins.sda, true);
+                    state.ackDriveActive = false;
+                }
+                state.inFrame = false;
+                state.phase = 0;
+                state.shift = 0;
+                state.byteIndex = 0;
+                state.read = false;
+                state.activeSlave = null;
+                state.ackShouldBeLow = false;
+            }
+
+            state.prevSdaHigh = sdaNow;
+            state.prevSclHigh = sclNow;
+        }
+    }
+
+    private dispatchOptionalProtocols(gpPin: string, isHigh: boolean, cycles: number, functionSelect: number) {
+        this.dispatchOptionalPwm(gpPin, isHigh, cycles, functionSelect);
+        this.dispatchOptionalPio(gpPin, isHigh, cycles, functionSelect);
+        this.dispatchOptionalOneWire(gpPin, isHigh, cycles);
+        this.dispatchOptionalI2CFallback(gpPin);
+    }
+
+    private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string) => void) {
+        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+            const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
+            if (!otherPin) return;
+            inst.setPinVoltage(otherPin, voltage);
+            visit(`${compId}:${otherPin}`);
+        } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
+            // Internal short-circuit connections
+            if (pinId === '1l' || pinId === '1') {
+                inst.setPinVoltage('1r', voltage);
+                visit(`${compId}:1r`);
+                inst.setPinVoltage('1', voltage);
+                visit(`${compId}:1`);
+                inst.setPinVoltage('1l', voltage);
+                visit(`${compId}:1l`);
+            } else if (pinId === '1r') {
+                inst.setPinVoltage('1l', voltage);
+                visit(`${compId}:1l`);
+                inst.setPinVoltage('1', voltage);
+                visit(`${compId}:1`);
+            } else if (pinId === '2l' || pinId === '2') {
+                inst.setPinVoltage('2r', voltage);
+                visit(`${compId}:2r`);
+                inst.setPinVoltage('2', voltage);
+                visit(`${compId}:2`);
+                inst.setPinVoltage('2l', voltage);
+                visit(`${compId}:2l`);
+            } else if (pinId === '2r') {
+                inst.setPinVoltage('2l', voltage);
+                visit(`${compId}:2l`);
+                inst.setPinVoltage('2', voltage);
+                visit(`${compId}:2`);
+            }
+
+            // Tactile switch crossing
+            if (inst.state?.pressed) {
+                if (pinId.startsWith('1')) {
+                    inst.setPinVoltage('2l', voltage);
+                    visit(`${compId}:2l`);
+                    inst.setPinVoltage('2r', voltage);
+                    visit(`${compId}:2r`);
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`);
+                } else if (pinId.startsWith('2')) {
+                    inst.setPinVoltage('1l', voltage);
+                    visit(`${compId}:1l`);
+                    inst.setPinVoltage('1r', voltage);
+                    visit(`${compId}:1r`);
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`);
+                }
+            }
+        }
+    }
+
+    private updatePhysicsInternal() {}
+
+    private propagateBoardPin(gpPin: string, isHigh: boolean) {
+        const voltage = isHigh ? 3.3 : 0.0;
+
+        const boardInst = this.instances.get(this.boardId);
+        if (boardInst && this.cpu) {
+            boardInst.onPinStateChange(gpPin, isHigh, this.cpu.cycles);
+        }
+
+        const visitedEdges = new Set<string>();
+        const visitedNodes = new Set<string>();
+
+        const visitNode = (node: string) => {
+            if (visitedNodes.has(node)) return;
+            visitedNodes.add(node);
+
+            const [compId, compPin] = node.split(':');
+            for (const wire of this.currentWires) {
+                const edgeKey = `${wire.from}|${wire.to}`;
+                if (visitedEdges.has(edgeKey)) continue;
+                if (wire.from === node || wire.to === node) {
+                    visitedEdges.add(edgeKey);
+                    const next = wire.from === node ? wire.to : wire.from;
+                    visitNode(next);
+                }
+            }
+
+            const inst = this.instances.get(compId);
+            if (!inst) return;
+            if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+            inst.setPinVoltage(compPin, voltage);
+            this.circuitDirty = true;
+            if (this.cpu) {
+                inst.onPinStateChange(compPin, voltage > 1.8, this.cpu.cycles);
+            }
+
+            this.traversePassive(inst, compId, compPin, voltage, (forwardNode) => {
+                visitNode(forwardNode);
+            });
+        };
+
+        for (const wire of this.currentWires) {
+            const edgeKey = `${wire.from}|${wire.to}`;
+            const fromBoard = this.isBoardPin(wire.from, gpPin);
+            const toBoard = this.isBoardPin(wire.to, gpPin);
+            if (!fromBoard && !toBoard) continue;
+            visitedEdges.add(edgeKey);
+            visitNode(fromBoard ? wire.to : wire.from);
+        }
+
+        // Drive fixed board rails
+        this.instances.forEach((inst) => {
+            Object.keys(inst.pins).forEach((pinKey) => {
+                const upper = pinKey.toUpperCase();
+                if (upper === 'GND' || upper === 'AGND' || upper === 'VSS' || upper.startsWith('GND_') || upper.startsWith('GND.') || upper === 'K') {
+                    inst.setPinVoltage(pinKey, 0.0);
+                }
+                if (upper === '3V3' || upper === 'VCC' || upper.startsWith('3V3.')) {
+                    inst.setPinVoltage(pinKey, 3.3);
+                }
+            });
+        });
+    }
+
+    private onPinChange(pin: number, isHigh: boolean, cycleOverride?: number) {
+        const pinName = `GP${pin}`;
+        if (this.pinStates[pinName] === isHigh) return;
+
+        this.pinStates[pinName] = isHigh;
+        this.pinsChanged = true;
+        this.debugGpioTransitions += 1;
+        this.debugLastGpioPin = pinName;
+
+        const rawCycles = Number.isFinite(Number(cycleOverride))
+            ? Number(cycleOverride)
+            : Number(this.cpu?.core.cycles ?? 0);
+        const cycles = rawCycles >= this.pioSignalCycle ? rawCycles : this.pioSignalCycle;
+        this.pioSignalCycle = cycles;
+        
+        const boardInst = this.instances.get(this.boardId);
+        const clockScale = 16_000_000 / this.getRp2040ClockHz();
+        const normalizedCycles = Math.floor(cycles * clockScale);
+
+        if (boardInst) {
+            boardInst.onPinStateChange(pinName, isHigh, normalizedCycles);
+        }
+
+        for (const endpoint of this.getProtocolEndpointsForGpPin(pinName)) {
+            endpoint.inst.onPinStateChange(endpoint.pinId, isHigh, normalizedCycles);
+        }
+
+        const functionSelect = this.cpu?.gpio?.[pin]?.functionSelect ?? 0;
+        this.dispatchOptionalProtocols(pinName, isHigh, cycles, functionSelect);
+        this.circuitDirty = true;
+        this.propagateBoardPin(pinName, isHigh);
+        this.observeSoftSerialTx(pinName, isHigh, cycles);
+    }
+
+    private attachGPIOListeners() {
+        if (!this.cpu) return;
+
+        for (let gp = 0; gp <= 28; gp++) {
+            const unsubscribe = this.cpu.gpio[gp].addListener((state: GPIOPinState) => {
+                const isHigh = state === GPIOPinState.High || state === GPIOPinState.InputPullUp;
+                this.onPinChange(gp, isHigh);
+            });
+            this.gpioUnsubscribers.push(unsubscribe);
+        }
+    }
+
+    private updateGPIOInputsFromCircuit() {
+        if (!this.cpu) return;
+
+        for (let gp = 0; gp < 29; gp++) {
+            const gpPin = `GP${gp}`;
+            let observedVoltage = 0;
+
+            const endpoints = this.getProtocolEndpointsForGpPin(gpPin);
+            for (const ep of endpoints) {
+                observedVoltage = Math.max(observedVoltage, ep.inst.getPinVoltage(ep.pinId));
+            }
+
+            if (gpPin === this.softSerialRxPin && this.softSerialRxOverrideActive) {
+                this.cpu.gpio[gp].setInputValue(this.softSerialRxLevelHigh);
+                continue;
+            }
+
+            // Sync Digital State
+            this.cpu.gpio[gp].setInputValue(observedVoltage > 1.65);
+
+            // Sync Analog State (only for ADC-capable pins GP26-29)
+            if (gp >= 26 && gp <= 29) {
+                const adcChannel = gp - 26;
+                // rp2040js 0.15.0 RPADC expects raw 12-bit digital values in channelValues
+                const digitalValue = Math.floor(Math.max(0, Math.min(3.3, observedVoltage)) / 3.3 * 4095);
+                this.cpu.adc.channelValues[adcChannel] = digitalValue;
+            }
+        }
+    }
+
+    private runLoop = () => {
+        if (!this.running || !this.cpu) return;
+
+        const loopStart = performance.now();
+        let physicsMs = 0;
+        let componentMs = 0;
+
+        const { core } = this.cpu;
+        const clock = (this.cpu as any).clock;
+        const F_CPU = 125_000_000;
+        const CYCLE_NANOS = 1e9 / F_CPU;
+        const CYCLES_PER_FRAME = Math.floor((F_CPU / 60) * this.speed);
+
+        let cyclesDone = 0;
+        const now = performance.now();
+
+        const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
+        if (this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval) {
+            const physicsStart = performance.now();
+            // Classic Logic mode: event-driven propagation is already handled by listeners.
+            this.updateGPIOInputsFromCircuit();
+            this.lastPhysicsSolveAt = now;
+            this.circuitDirty = false;
+            physicsMs = performance.now() - physicsStart;
+        }
+
+        try {
+            const executeOneInstruction = () => {
+                const before = this.cpu!.core.cycles >>> 0;
+                core.executeInstruction();
+                const after = this.cpu!.core.cycles >>> 0;
+                const delta = (after - before) >>> 0;
+                return delta > 0 ? delta : 1;
+            };
+
+            // DETERMINISTIC CYCLE-TARGETED LOOP (Velxio Pattern)
+            while (cyclesDone < CYCLES_PER_FRAME && this.running && this.cpu) {
+                const pioDivs = this.getPIOClockDivs();
+                const pio0Div = pioDivs[0];
+                const pio1Div = pioDivs[1];
+
+                if (core.waiting && clock) {
+                    const rawJumpNanos = Number(clock.nanosToNextAlarm);
+                    const jumpNanos = Number.isFinite(rawJumpNanos) ? rawJumpNanos : -1;
+                    if (jumpNanos <= 0) {
+                        // No pending alarm while waiting: execute one instruction so WFE/WFI
+                        // paths can still progress without stalling startup indefinitely.
+                        const cycles = executeOneInstruction();
+                        clock.tick(cycles * CYCLE_NANOS);
+                        cyclesDone += cycles;
+                        this.debugStepCount += 1;
+
+                        this.pio0Accum += cycles;
+                        while (this.pio0Accum >= pio0Div) {
+                            this.pio0Accum -= pio0Div;
+                            this.stepPIO(0, pio0Div);
+                        }
+                        this.pio1Accum += cycles;
+                        while (this.pio1Accum >= pio1Div) {
+                            this.pio1Accum -= pio1Div;
+                            this.stepPIO(1, pio1Div);
+                        }
+                        continue;
+                    }
+
+                    // Incremental Jump with PIO Sync
+                    const jumpedCycles = Math.ceil(jumpNanos / CYCLE_NANOS);
+                    const maxJumpCycles = Math.min(jumpedCycles, CYCLES_PER_FRAME - cyclesDone);
+                    
+                    // Advance time and sync both PIO units
+                    clock.tick(maxJumpCycles * CYCLE_NANOS);
+                    
+                    this.pio0Accum += maxJumpCycles;
+                    while (this.pio0Accum >= pio0Div) {
+                        this.pio0Accum -= pio0Div;
+                        this.stepPIO(0, pio0Div);
+                    }
+                    this.pio1Accum += maxJumpCycles;
+                    while (this.pio1Accum >= pio1Div) {
+                        this.pio1Accum -= pio1Div;
+                        this.stepPIO(1, pio1Div);
+                    }
+
+                    cyclesDone += maxJumpCycles;
+                } else {
+                    const cycles = executeOneInstruction();
+                    if (clock) clock.tick(cycles * CYCLE_NANOS);
+                    cyclesDone += cycles;
+                    this.debugStepCount += 1;
+
+                    // Synchronous PIO stepping
+                    this.pio0Accum += cycles;
+                    while (this.pio0Accum >= pio0Div) {
+                        this.pio0Accum -= pio0Div;
+                        this.stepPIO(0, pio0Div);
+                    }
+                    this.pio1Accum += cycles;
+                    while (this.pio1Accum >= pio1Div) {
+                        this.pio1Accum -= pio1Div;
+                        this.stepPIO(1, pio1Div);
+                    }
+                }
+            }
+
+            // Sync peripherals and UI once per frame
+            this.rebaseProgramCounterAlias(cyclesDone);
+
+            const sampledPc = this.cpu.core.PC >>> 0;
+            if (this.shouldFaultForInvalidPc(sampledPc)) {
+                this.faultAndStop('Execution jumped outside valid memory', sampledPc);
+                return;
+            }
+
+            // Process budgets and monitor sync
+            if (this.softSerialDecodeState.receiving || this.softSerialRxFrame || this.softSerialRxQueue.length > 0) {
+                const currentTotalCycles = Number(this.cpu.core.cycles);
+                this.advanceSoftSerialIngress(currentTotalCycles);
+                this.processSoftSerialDecode(currentTotalCycles);
+            }
+
+            const frameTimeMs = 16.6; 
+            const bytesPerMs = this.serialBaudRate / 10000;
+            this.serialByteBudget += frameTimeMs * bytesPerMs; 
+
+            const uart0 = this.cpu.uart[0];
+            const uart1 = this.cpu.uart[1];
+            if (this.serialBuffer.length > 0 && this.serialByteBudget >= 1) {
+                const maxBytes = Math.floor(this.serialByteBudget);
+                let sent = 0;
+                for (let i = 0; i < maxBytes && this.serialBuffer.length > 0; i++) {
+                    const packet = this.serialBuffer[0]!;
+                    let delivered = false;
+                    if (packet.source === 2) {
+                        if (this.usbCdc && this.usbCdcReady) {
+                            try {
+                                const usbTxFifo: any = (this.usbCdc as any).txFIFO;
+                                const fifoFull = !!(usbTxFifo && (usbTxFifo.full || usbTxFifo.itemCount >= usbTxFifo.size));
+                                if (fifoFull) {
+                                    delivered = false;
+                                } else {
+                                    this.usbCdc.sendSerialByte(packet.value & 0xff);
+                                    delivered = true;
+                                }
+                            } catch (e) {
+                                delivered = false;
+                            }
+                        }
+                    } else {
+                        delivered = ((packet.source === 1 ? uart1 : uart0) || uart0).feedByte(packet.value & 0xff);
+                    }
+                    if (!delivered) break;
+                    this.serialBuffer.shift();
+                    sent += 1;
+                }
+                this.serialByteBudget -= sent;
+            }
+
+            const clockScale = 16_000_000 / this.getRp2040ClockHz();
+            const normalizedUpdateCycles = Math.floor(Number(this.cpu!.core.cycles) * clockScale);
+            const componentStart = performance.now();
+            const instArray = Array.from(this.instances.values());
+            instArray.forEach((inst) => {
+                // Annotate component with junction-aware connectivity (since RP2040Runner doesn't use pinToNet, 
+                // we'll rely on the fact that isWired is usually true if we reached this point, 
+                // but for consistency we can set it if there's any wire on any pin).
+                if (inst.state.isWired === undefined) {
+                    inst.state.isWired = Object.keys(inst.pins).some(p => 
+                        this.currentWires.some(w => w.from === `${inst.id}:${p}` || w.to === `${inst.id}:${p}`)
+                    );
+                }
+                // For RP2040, we'll let the component's internal logic handle resistor detection 
+                // for now, or we could implement a netlist here too. 
+                // But since the user is on Uno, let's focus on AVRRunner first.
+                inst.update(normalizedUpdateCycles, this.currentWires, instArray);
+            });
+            componentMs = performance.now() - componentStart;
+
+        } catch (err: any) {
+            const baseMessage = String(err?.message || err || 'RP2040 execution error');
+            const shortStack = typeof err?.stack === 'string'
+                ? err.stack.split('\n').slice(0, 4).map((line: string) => line.trim()).join(' | ')
+                : '';
+            const message = shortStack ? `${baseMessage} :: ${shortStack}` : baseMessage;
+            this.faultAndStop(message, this.cpu.core.PC >>> 0);
+            return;
+        }
+
+        this.lastPhysicsMs = physicsMs;
+        this.lastComponentUpdateMs = componentMs;
+        this.lastRunLoopMs = performance.now() - loopStart;
+
+        this.emitStateIfDue();
+
+        if (this.running) {
+            this.emitDebugSnapshot('tick', now);
+            this.lastTime = now;
+            setTimeout(this.runLoop, 1);
+        }
+    };
+
+    /**
+     * Step PIO state machines synchronously.
+     * Replaces the redundant internal PIO timers that cause event-loop congestion.
+     */
+    /**
+     * Step a PIO state machine block synchronously.
+     * Implements edge detection to ensure pin changes are propagated to components.
+     */
+    private stepPIO(index: 0 | 1, stepCycles = 1): void {
+        if (!this.cpu) return;
+        const pio = (this.cpu as any).pio;
+        if (!pio || !pio[index]) return;
+
+        const cycleStep = Number.isFinite(Number(stepCycles)) && Number(stepCycles) > 0
+            ? Number(stepCycles)
+            : 1;
+        const baseCycles = Number(this.cpu.core.cycles ?? 0);
+        if (baseCycles > this.pioSignalCycle) {
+            this.pioSignalCycle = baseCycles;
+        }
+        this.pioSignalCycle += cycleStep;
+        const edgeCycle = this.pioSignalCycle;
+
+        // Capture pin state before stepping
+        const oldPins = pio[index].pins >>> 0;
+        pio[index].step();
+
+        // Detect and propagate changes for GPIO 0-29
+        const newPins = pio[index].pins >>> 0;
+        if (oldPins !== newPins) {
+            const changed = (oldPins ^ newPins) >>> 0;
+            for (let i = 0; i < 30; i++) {
+                if (changed & (1 << i)) {
+                    this.onPinChange(i, !!(newPins & (1 << i)), edgeCycle);
+                }
+            }
+        }
+    }
+
+    serialRx(data: string) {
+        const source = (this.usbCdc && this.usbCdcReady)
+            ? 2
+            : (this.activeUartIndex === 1 ? 1 : 0);
+        for (let i = 0; i < data.length; i++) {
+            this.serialBuffer.push({ value: data.charCodeAt(i) & 0xff, source });
+            this.debugSerialRxBytes += 1;
+        }
+        this.pulseBoardUartLed(source === 1 ? 'GP5' : 'GP1');
+    }
+
+    serialRxByte(value: number) {
+        this.serialRxByteFromSource(value, this.activeUartIndex === 1 ? 'uart1' : 'uart0');
+    }
+
+    softSerialRxByte(value: number) {
+        this.softSerialRxQueue.push(value & 0xff);
+        this.softSerialRxOverrideActive = true;
+        this.debugSerialRxBytes += 1;
+        this.pulseBoardUartLed('GP1');
+    }
+
+    serialRxByteFromSource(value: number, sourceLabel = 'uart0') {
+        const s = String(sourceLabel || 'uart0').toLowerCase();
+        if (isSoftSerialSourceLabel(s)) {
+            this.softSerialRxByte(value);
+            return;
+        }
+        const source = s === 'uart1' || s === 'serial1' || s === '1'
+            ? 1
+            : s === 'usb' || s === 'cdc' || s === 'serialusb'
+                ? 2
+                : 0;
+        this.activeUartIndex = source;
+        this.serialBuffer.push({ value: value & 0xff, source });
+        this.debugSerialRxBytes += 1;
+        this.pulseBoardUartLed(source === 1 ? 'GP5' : 'GP1');
+    }
+
+    setSerialBaudRate(baud: number) {
+        const parsed = Number(baud);
+        if (!Number.isFinite(parsed)) return;
+        const clamped = Math.max(300, Math.min(3000000, Math.floor(parsed)));
+        this.serialBaudRate = clamped;
+    }
+
+    getSerialBaudRate(): number {
+        return this.serialBaudRate;
+    }
+
+    setSpeed(speed: number) {
+        const s = Number(speed);
+        if (Number.isFinite(s) && s > 0) {
+            this.speed = s;
+        }
+    }
+
+    setSolverMode(mode: 'logic') {
+        this.solverMode = mode;
+        for (const key of Object.keys(this.pinStates)) {
+            this.pinStates[key] = false;
+        }
+        for (const inst of this.instances.values()) {
+            for (const pinId of Object.keys(inst.pins || {})) {
+                inst.setPinVoltage(pinId, 0);
+            }
+        }
+        this.pinsChanged = true;
+        this.circuitDirty = true;
+        this.topologyDirty = true;
+    }
+
+    reset() {
+        if (!this.cpu) return;
+        this.clearPendingUartLedTimers();
+        this.cpu.reset();
+        this.cpu.loadBootrom(bootromB1);
+        this.bootromLoaded = true;
+        this.entryInfo = loadRP2040Firmware(this.cpu, this.firmwareHex, {
+            logicalFlashBytes: this.getLogicalFlashLength(),
+            partitions: this.flashPartitions,
+        });
+        this.cpuCyclesAtStart = this.cpu.core.cycles;
+        this.pio0Accum = 0;
+        this.pio1Accum = 0;
+        this.pioSignalCycle = this.cpu.core.cycles;
+        this.serialBuffer = [];
+        this.serialByteBudget = 0;
+        this.activeUartIndex = 0;
+
+        // Reset I2C/SPI/UART/USB peripherals
+        this.softSerialRxQueue = [];
+        this.softSerialRxFrame = null;
+        this.softSerialRxOverrideActive = false;
+        this.softSerialNextInjectCycle = 0;
+        this.softSerialDecodeState = {
+            receiving: false,
+            sampleCycle: 0,
+            sampleIndex: 0,
+            currentByte: 0,
+            lastLevel: true,
+        };
+        this.usbCdc = null;
+        this.usbCdcReady = false;
+        this.debugLastEmitAt = 0;
+        this.debugStepCount = 0;
+        this.debugSerialTxBytes = 0;
+        this.debugSerialRxBytes = 0;
+        this.debugGpioTransitions = 0;
+        this.debugLastGpioPin = '';
+        this.debugPcStallTicks = 0;
+        this.debugLastPc = this.cpu.core.PC >>> 0;
+        this.lowPcAliasCandidate = -1;
+        this.lowPcAliasRepeatCount = 0;
+        this.invalidPcStrikeCount = 0;
+        this.pinsChanged = true;
+        this.hasFaulted = false;
+        this.protocolEndpointsCache.clear();
+        this.i2cDeviceCache.clear();
+        this.spiDeviceCache.clear();
+        this.peripheralDeviceCacheReady = false;
+        this.pwmState.clear();
+        this.oneWireState.clear();
+        this.componentSyncMeta.clear();
+        this.setSoftSerialRxLevel(true);
+        this.attachUART();
+        this.attachUSBSerial();
+        this.rebuildPeripheralDeviceCache();
+        this.installRp2040I2cAdapters();
+        this.installRp2040SpiAdapters();
+    }
+
+    private emitStateIfDue(nowMs?: number) {
+        if (!this.cpu) return;
+        const now = nowMs || performance.now();
+        const currentCycles = Number(this.cpu.core.cycles);
+        const cycleDelta = currentCycles - this.lastStateEmitCycle;
+        const timeDelta = now - this.lastStateEmitTime;
+
+        // RP2040 runs at 125MHz. 125,000,000 / 60 ~= 2,083,333 cycles per frame.
+        if (cycleDelta >= 2083333 || timeDelta >= 16) {
+            const msg: any = { type: 'state', boardId: this.boardId };
+            msg.pins = this.pinStates;
+            this.pinsChanged = false;
+            
+            const now = performance.now();
+            this.emitWirelessStubStatus('tick');
+
+            const compStates: Array<{ id: string; state: any }> = [];
+            for (const inst of this.instances.values()) {
+                if (!inst.stateChanged && !inst.telemetryEnabled) continue;
+                const syncState = getUnifiedComponentSyncState(inst);
+                
+                if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+
+                inst.stateChanged = false;
+                compStates.push({
+                    id: inst.id,
+                    type: inst.type,
+                    state: syncState,
+                    ...collectComponentTelemetry(inst, undefined, this.cpu),
+                });
+            }
+            msg.components = compStates;
+
+            this.statusIntervalEmitCount++;
+            msg._emitSeq = this.statusIntervalEmitCount;
+            msg._emitTime = now;
+            msg.simTimeMs = this.getSimulatedTimeMs();
+            
+            this.lastStateEmitCycle = currentCycles;
+            this.lastStateEmitTime = now;
+            this.onStateUpdate(msg);
+        }
+    }
+
+    forceEmitState() {
+        if (!this.cpu) return;
+        const now = performance.now();
+        const currentCycles = Number(this.cpu.core.cycles);
+        const msg: any = { type: 'state', boardId: this.boardId };
+        msg.pins = this.pinStates;
+        this.pinsChanged = false;
+        
+        const compStates: Array<{ id: string; state: any }> = [];
+        for (const inst of this.instances.values()) {
+            const syncState = getUnifiedComponentSyncState(inst);
+            inst.stateChanged = false;
+            compStates.push({
+                id: inst.id,
+                type: inst.type,
+                state: syncState,
+                ...collectComponentTelemetry(inst, undefined, this.cpu),
+            });
+        }
+        msg.components = compStates;
+
+        this.statusIntervalEmitCount++;
+        msg._emitSeq = this.statusIntervalEmitCount;
+        msg._emitTime = now;
+        msg.simTimeMs = this.getSimulatedTimeMs();
+        
+        this.lastStateEmitCycle = currentCycles;
+        this.lastStateEmitTime = now;
+        this.onStateUpdate(msg);
+    }
+
+    private initPhysicsWorker() {}
+
+    private requestPhysicsSolve() {}
+
+    private updateTopologyForWorker() {}
+
+    /**
+     * Get the current clock divider for the PIO state machines.
+     * Aligned with Velxio: uses the first enabled state machine's divider or defaults to 64.
+     */
+    /**
+     * Get the current clock dividers for PIO blocks 0 and 1.
+     * Uses the smallest divider of any enabled state machine in each block,
+     * including fractional bits.
+     */
+    private getPIOClockDivs(): number[] {
+        if (!this.cpu) return [64, 64];
+        const pioInstances = (this.cpu as any).pio || [];
+        const divs = [64, 64];
+        for (let i = 0; i < 2; i++) {
+            const p = pioInstances[i];
+            if (!p || p.stopped) continue;
+            let minDiv = Infinity;
+            for (const m of p.machines) {
+                if (m.enabled) {
+                    // Extract fractional clkdiv (int + frac/256)
+                    const d = Math.max(1, Number(m.clkdiv || 1));
+                    if (d < minDiv) minDiv = d;
+                }
+            }
+            divs[i] = minDiv === Infinity ? 64 : minDiv;
+        }
+        return divs;
+    }
+
+    stop() {
+        const neopixelStates = collectNeopixelShutdownStates(this.instances);
+        if (neopixelStates.length > 0) {
+            this.onStateUpdate({ type: 'state', boardId: this.boardId, components: neopixelStates });
+        }
+        this.running = false;
+        this.clearPendingUartLedTimers();
+        this.gdbStatus = 'closed';
+        this.emitGdbStatus('stopped', 'Runner stopped');
+        if (this.gdbWs) {
+            try { this.gdbWs.close(); } catch (e) {}
+            this.gdbWs = null;
+        }
+        clearInterval(this.statusInterval);
+        this.gpioUnsubscribers.forEach((dispose) => {
+            try {
+                dispose();
+            } catch (e) {
+                // no-op
+            }
+        });
+        this.gpioUnsubscribers = [];
+    }
+}
 
 export function createRunnerForBoard(
     boardType: string,
@@ -16,11 +7933,3 @@ export function createRunnerForBoard(
     }
     return new AVRRunner(hexData, componentsDef, wiresDef, onStateUpdate, options);
 }
-
-// 100% backward compatibility re-exports
-export * from './fs/fs-builders.ts';
-export * from './registries/component-registry.ts';
-export * from './protocol-handlers/gates.ts';
-export * from './protocol-handlers/keypad.ts';
-export * from './protocol-handlers/sd-card.ts';
-export * from './protocol-handlers/simulation-monitor.ts';

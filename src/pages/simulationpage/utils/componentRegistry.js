@@ -132,7 +132,7 @@ export function sortCatalog(catalog) {
   });
 }
 
-export function normalizeGroupName(name, groupMapping = GROUP_MAPPING) {
+function normalizeGroupName(name, groupMapping) {
   return groupMapping[name] || name;
 }
 
@@ -142,7 +142,7 @@ export function buildCatalog(registry, groupMapping) {
     const manifest = module.manifest;
     if (!manifest || manifest.hiddenAlias) return;
 
-    const groupName = normalizeGroupName(manifest.group || 'Misc', groupMapping);
+    const groupName = normalizeGroupName(manifest.group, groupMapping);
     let group = catalog.find(g => g.group === groupName);
     if (!group) {
       group = { group: groupName, items: [] };
@@ -179,24 +179,6 @@ export function injectComponentsIntoRegistry(comps) {
 
       const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) continue;
-
-      // ── Render-probe: catch stale/broken cached transpiled code before it ──
-      // reaches React's render tree. If the component throws synchronously
-      // (e.g. "can't access property BOUNDS, _constants is null"), we skip
-      // this entry. The IDB DB_VERSION bump will evict the stale cache so the
-      // next load fetches fresh, correct transpiled code automatically.
-      try {
-        const probeEl = React.createElement(uiComponent, {
-          state: {}, attrs: {}, isRunning: false,
-        });
-        // Only call the function component directly — do NOT render into DOM
-        if (typeof uiComponent === 'function') {
-          uiComponent({ state: {}, attrs: {}, isRunning: false });
-        }
-      } catch (probeErr) {
-        console.warn(`[ComponentCache] Skipping stale/broken cached component "${id}" (probe failed: ${probeErr.message}). Will re-fetch on next load.`);
-        continue;
-      }
 
       registry[manifest.type] = {
         manifest,

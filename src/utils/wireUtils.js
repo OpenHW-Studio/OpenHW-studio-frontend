@@ -1,7 +1,7 @@
 // ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
 export function renderRoundedPath(pts) {
   if (!pts || pts.length < 2) return '';
-  const r = 6;
+  const r = 10;
   let d = `M ${pts[0].x} ${pts[0].y}`;
   for (let i = 1; i < pts.length - 1; i++) {
     const prev = pts[i - 1], curr = pts[i], next = pts[i + 1];
@@ -21,7 +21,7 @@ export function renderRoundedPath(pts) {
 }
 
 // ─── INTERNAL: ENSURE STRICT ORTHOGONALITY ────────────────────────────────
-export function makeOrthogonal(pts) {
+function makeOrthogonal(pts) {
   if (pts.length < 2) return pts;
   const result = [pts[0]];
   for (let i = 1; i < pts.length; i++) {
@@ -37,7 +37,24 @@ export function makeOrthogonal(pts) {
     }
     result.push(curr);
   }
-  return result.filter((pt, i, arr) => i === 0 || (Math.abs(pt.x - arr[i - 1].x) > 0.1 || Math.abs(pt.y - arr[i - 1].y) > 0.1));
+
+  // Collinear and duplicate simplification
+  const simplified = [result[0]];
+  for (let i = 1; i < result.length - 1; i++) {
+    const prev = simplified[simplified.length - 1];
+    const curr = result[i];
+    const next = result[i + 1];
+    const isCollinearX = Math.abs(prev.x - curr.x) < 0.1 && Math.abs(curr.x - next.x) < 0.1;
+    const isCollinearY = Math.abs(prev.y - curr.y) < 0.1 && Math.abs(curr.y - next.y) < 0.1;
+    const isDuplicate  = Math.abs(prev.x - curr.x) < 0.1 && Math.abs(prev.y - curr.y) < 0.1;
+    if (!isCollinearX && !isCollinearY && !isDuplicate) {
+      simplified.push(curr);
+    }
+  }
+  if (result.length > 1) {
+    simplified.push(result[result.length - 1]);
+  }
+  return simplified.filter((pt, i, arr) => i === 0 || (Math.abs(pt.x - arr[i - 1].x) > 0.1 || Math.abs(pt.y - arr[i - 1].y) > 0.1));
 }
 
 // ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
@@ -64,26 +81,99 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
   const e2Horiz = Math.abs(sdx2) >= Math.abs(sdy2);
 
   let midPts = [];
-  if (e1Horiz && e2Horiz) {
-    const midX = (se1.x + se2.x) / 2 + (offset * 2);
-    if (Math.abs(se1.y - se2.y) < 20) {
-      const bypassY = se1.y + (offset >= 0 ? 35 + offset : -35 + offset);
-      midPts = [{ x: se1.x, y: bypassY }, { x: se2.x, y: bypassY }];
-    } else {
-      midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
+
+  // Obstacle avoidance (Bypass start or end component's own body to prevent wires from being hidden)
+  const c1 = se1.compBox;
+  const c2 = se2.compBox;
+  const margin = 20;
+  const offsetMargin = offset * 4;
+
+  if (c1 && se1.rotatedDir) {
+    if (se1.rotatedDir === 'left' && p2.x > c1.x + 15) {
+      if (se1.y >= c1.y && se1.y <= c1.y + c1.h) {
+        const goBelow = p2.y > c1.y + c1.h / 2;
+        const bypassY = goBelow ? (c1.y + c1.h + margin + offsetMargin) : (c1.y - margin - offsetMargin);
+        const bypassX = Math.max(c1.x + c1.w + margin + offsetMargin, p2.x);
+        midPts = [{ x: se1.x, y: bypassY }, { x: bypassX, y: bypassY }];
+      }
+    } else if (se1.rotatedDir === 'right' && p2.x < c1.x + c1.w - 15) {
+      if (se1.y >= c1.y && se1.y <= c1.y + c1.h) {
+        const goBelow = p2.y > c1.y + c1.h / 2;
+        const bypassY = goBelow ? (c1.y + c1.h + margin + offsetMargin) : (c1.y - margin - offsetMargin);
+        const bypassX = Math.min(c1.x - margin - offsetMargin, p2.x);
+        midPts = [{ x: se1.x, y: bypassY }, { x: bypassX, y: bypassY }];
+      }
+    } else if (se1.rotatedDir === 'top' && p2.y > c1.y + 15) {
+      if (se1.x >= c1.x && se1.x <= c1.x + c1.w) {
+        const goRight = p2.x > c1.x + c1.w / 2;
+        const bypassX = goRight ? (c1.x + c1.w + margin + offsetMargin) : (c1.x - margin - offsetMargin);
+        const bypassY = Math.max(c1.y + c1.h + margin + offsetMargin, p2.y);
+        midPts = [{ x: bypassX, y: se1.y }, { x: bypassX, y: bypassY }];
+      }
+    } else if (se1.rotatedDir === 'bottom' && p2.y < c1.y + c1.h - 15) {
+      if (se1.x >= c1.x && se1.x <= c1.x + c1.w) {
+        const goRight = p2.x > c1.x + c1.w / 2;
+        const bypassX = goRight ? (c1.x + c1.w + margin + offsetMargin) : (c1.x - margin - offsetMargin);
+        const bypassY = Math.min(c1.y - margin - offsetMargin, p2.y);
+        midPts = [{ x: bypassX, y: se1.y }, { x: bypassX, y: bypassY }];
+      }
     }
-  } else if (!e1Horiz && !e2Horiz) {
-    const midY = (se1.y + se2.y) / 2 + (offset * 2);
-    if (Math.abs(se1.x - se2.x) < 20) {
-      const bypassX = se1.x + (offset >= 0 ? 35 + offset : -35 + offset);
-      midPts = [{ x: bypassX, y: se1.y }, { x: bypassX, y: se2.y }];
-    } else {
-      midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
+  }
+
+  if (midPts.length === 0 && c2 && se2.rotatedDir) {
+    if (se2.rotatedDir === 'left' && p1.x > c2.x + 15) {
+      if (se2.y >= c2.y && se2.y <= c2.y + c2.h) {
+        const goBelow = p1.y > c2.y + c2.h / 2;
+        const bypassY = goBelow ? (c2.y + c2.h + margin + offsetMargin) : (c2.y - margin - offsetMargin);
+        const bypassX = Math.max(c2.x + c2.w + margin + offsetMargin, p1.x);
+        midPts = [{ x: bypassX, y: bypassY }, { x: se2.x, y: bypassY }];
+      }
+    } else if (se2.rotatedDir === 'right' && p1.x < c2.x + c2.w - 15) {
+      if (se2.y >= c2.y && se2.y <= c2.y + c2.h) {
+        const goBelow = p1.y > c2.y + c2.h / 2;
+        const bypassY = goBelow ? (c2.y + c2.h + margin + offsetMargin) : (c2.y - margin - offsetMargin);
+        const bypassX = Math.min(c2.x - margin - offsetMargin, p1.x);
+        midPts = [{ x: bypassX, y: bypassY }, { x: se2.x, y: bypassY }];
+      }
+    } else if (se2.rotatedDir === 'top' && p1.y > c2.y + 15) {
+      if (se2.x >= c2.x && se2.x <= c2.x + c2.w) {
+        const goRight = p1.x > c2.x + c2.w / 2;
+        const bypassX = goRight ? (c2.x + c2.w + margin + offsetMargin) : (c2.x - margin - offsetMargin);
+        const bypassY = Math.max(c2.y + c2.h + margin + offsetMargin, p1.y);
+        midPts = [{ x: bypassX, y: bypassY }, { x: bypassX, y: se2.y }];
+      }
+    } else if (se2.rotatedDir === 'bottom' && p1.y < c2.y + c2.h - 15) {
+      if (se2.x >= c2.x && se2.x <= c2.x + c2.w) {
+        const goRight = p1.x > c2.x + c2.w / 2;
+        const bypassX = goRight ? (c2.x + c2.w + margin + offsetMargin) : (c2.x - margin - offsetMargin);
+        const bypassY = Math.min(c2.y - margin - offsetMargin, p1.y);
+        midPts = [{ x: bypassX, y: bypassY }, { x: bypassX, y: se2.y }];
+      }
     }
-  } else if (e1Horiz && !e2Horiz) {
-    midPts = [{ x: se2.x + offset, y: se1.y + offset }];
-  } else {
-    midPts = [{ x: se1.x + offset, y: se2.y + offset }];
+  }
+
+  if (midPts.length === 0) {
+    if (e1Horiz && e2Horiz) {
+      const midX = (se1.x + se2.x) / 2 + (offset * 2);
+      if (Math.abs(se1.y - se2.y) < 20) {
+        const bypassY = se1.y + (offset >= 0 ? 35 + offset : -35 + offset);
+        midPts = [{ x: se1.x, y: bypassY }, { x: se2.x, y: bypassY }];
+      } else {
+        midPts = [{ x: midX, y: se1.y }, { x: midX, y: se2.y }];
+      }
+    } else if (!e1Horiz && !e2Horiz) {
+      const midY = (se1.y + se2.y) / 2 + (offset * 2);
+      if (Math.abs(se1.x - se2.x) < 20) {
+        const bypassX = se1.x + (offset >= 0 ? 35 + offset : -35 + offset);
+        midPts = [{ x: bypassX, y: se1.y }, { x: bypassX, y: se2.y }];
+      } else {
+        midPts = [{ x: se1.x, y: midY }, { x: se2.x, y: midY }];
+      }
+    } else if (e1Horiz && !e2Horiz) {
+      midPts = [{ x: se2.x, y: se1.y }];
+    } else {
+      midPts = [{ x: se1.x, y: se2.y }];
+    }
   }
 
   let rawPts = [p1, se1, ...midPts, se2, p2];
@@ -115,7 +205,14 @@ export function buildWirePath(p1, e1, e2, p2, waypoints = [], pathOverride = nul
 }
 
 // ─── GET WIRE POINTS FOR DRAGGING ──────────────────────────────────────────
-export function getWirePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
+export function getWirePoints(p1, e1, e2, p2, waypoints = [], offset = 0, pathOverride = null) {
+  if (pathOverride && pathOverride.length >= 2) {
+    return pathOverride.map((pt, i) => {
+      if (i === 0) return p1;
+      if (i === pathOverride.length - 1) return p2;
+      return offset === 0 ? pt : { x: pt.x + offset, y: pt.y + offset };
+    });
+  }
   return computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
 }
 

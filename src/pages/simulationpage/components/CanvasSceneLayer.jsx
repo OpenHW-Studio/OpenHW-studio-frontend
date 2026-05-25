@@ -1,6 +1,6 @@
-import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect, useRef } from 'react';
+import React, { useSyncExternalStore, useCallback, useMemo } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
-import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
+import { computeWireLaneOffsets } from '../wireUtils';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
   const liveState = useSyncExternalStore(
@@ -46,7 +46,6 @@ function CanvasSceneLayerBase({
   innerCanvasRef,
   canvasOffset,
   canvasZoom,
-  showGrid,
   wires,
   wiresAlwaysOnTop,
   selected,
@@ -69,7 +68,6 @@ function CanvasSceneLayerBase({
   multiRoutePath,
   svgRef,
   isRunning,
-  isComponentDragging,
   COMPONENT_REGISTRY,
   getComponentStateAttrs,
   updateComponentAttr,
@@ -94,85 +92,24 @@ function CanvasSceneLayerBase({
   hasCategoryIntersection,
   onPinClick,
   setWireStart,
-  respectExitSide = true,
 }) {
-
-  const wireOffsetMap = useMemo(() => calculateWireBundleOffsets(wires, (wire) => {
-    const fromParts = wire.from.split(':');
-    const toParts = wire.to.split(':');
-    const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
-    const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
-    if (!p1 || !p2) return null;
-    const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), 0, p2) || p1;
-    const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), 0, p1) || p2;
-    return { p1, p2, e1, e2, waypoints: wire.waypoints || [] };
-  }, respectExitSide), [wires, getPinPos, getPinExitPoint, respectExitSide]);
-
-  const backgroundGridRef = useRef(null);
-
-  useEffect(() => {
-    const target = innerCanvasRef.current;
-    if (!target) return;
-
-    const syncGrid = () => {
-      if (!backgroundGridRef.current) return;
-      const transform = target.style.transform || '';
-      const translateMatch = transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
-      const scaleMatch = transform.match(/scale\(([-\d.]+)\)/);
-
-      const x = translateMatch ? parseFloat(translateMatch[1]) : canvasOffset.x;
-      const y = translateMatch ? parseFloat(translateMatch[2]) : canvasOffset.y;
-      const scale = scaleMatch ? parseFloat(scaleMatch[1]) : canvasZoom;
-
-      backgroundGridRef.current.style.backgroundPosition = `${x}px ${y}px`;
-      backgroundGridRef.current.style.backgroundSize = `${15 * scale}px ${15 * scale}px`;
-    };
-
-    syncGrid();
-
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        if (mutation.attributeName === 'style') {
-          syncGrid();
-          break;
-        }
-      }
-    });
-
-    observer.observe(target, { attributes: true, attributeFilter: ['style'] });
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [innerCanvasRef, canvasOffset, canvasZoom, showGrid]);
+  const wireLaneOffsets = useMemo(
+    () => computeWireLaneOffsets(wires, getPinPos, getPinExitPoint),
+    [wires, getPinPos, getPinExitPoint]
+  );
 
   return (
-    <>
-      {showGrid && (
-        <div
-          ref={backgroundGridRef}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            pointerEvents: 'none',
-            zIndex: 0,
-            backgroundImage: 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)',
-            backgroundSize: `${15 * canvasZoom}px ${15 * canvasZoom}px`,
-            backgroundPosition: `${canvasOffset.x}px ${canvasOffset.y}px`,
-          }}
-        />
-      )}
-      <div ref={innerCanvasRef} style={{
-        position: 'absolute', top: 0, left: 0,
-        width: '10000px', height: '8000px',
-        transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
-      }}>
+    <div ref={innerCanvasRef} style={{
+      position: 'absolute', top: 0, left: 0,
+      width: '10000px', height: '8000px',
+      transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasZoom})`, transformOrigin: '0 0',
+    }}>
       {/* BOTTOM SVG layer for wires (Below Components) */}
       <svg
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
       >
         {/* Placed wires (Bottom layer) - All non-selected wires when alwaysOnTop is disabled */}
-        {wires.filter(w => !wiresAlwaysOnTop && selected !== w.id).map((w, index) => {
+        {wires.filter(w => w.isBelow || (!wiresAlwaysOnTop && selected !== w.id)).map((w, index) => {
           const fromParts = w.from.split(':');
           const toParts = w.to.split(':');
           let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
@@ -181,7 +118,7 @@ function CanvasSceneLayerBase({
             if (!p1) p1 = { x: 0, y: 0, isFallback: true };
             if (!p2) p2 = { x: 0, y: 0, isFallback: true };
           }
-          const offset = wireOffsetMap.get(w.id) || 0;
+          const offset = wireLaneOffsets.get(w.id) ?? (index % 7);
           const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
           const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
 
@@ -195,7 +132,6 @@ function CanvasSceneLayerBase({
               wirepointsEnabled={wirepointsEnabled}
               theme={theme}
               wiresAlwaysOnTop={wiresAlwaysOnTop}
-              isDragging={isComponentDragging}
               onSelect={(e) => {
                 e.stopPropagation();
                 setSelected(w.id);
@@ -256,73 +192,6 @@ function CanvasSceneLayerBase({
             />
           );
         })}
-      </svg>
-
-
-
-      {/* TOP SVG layer for wires (Above Components) & Context Menu */}
-      <svg
-        ref={svgRef}
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
-      >
-        {/* Placed wires (Top layer) - Selected wire OR all wires if enabled */}
-        {wires.filter(w => wiresAlwaysOnTop || selected === w.id).map((w, index) => {
-          const fromParts = w.from.split(':');
-          const toParts = w.to.split(':');
-          let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
-          let p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
-          if (!p1 || !p2) {
-            if (!p1) p1 = { x: 0, y: 0, isFallback: true };
-            if (!p2) p2 = { x: 0, y: 0, isFallback: true };
-          }
-          const offset = wireOffsetMap.get(w.id) || 0;
-          const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
-          const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
-
-          return (
-            <CanvasWire
-              key={w.id}
-              wire={w}
-              p1={p1} p2={p2} e1={e1} e2={e2}
-              isSelected={selected === w.id}
-              offset={offset}
-              wirepointsEnabled={wirepointsEnabled}
-              theme={theme}
-              wiresAlwaysOnTop={wiresAlwaysOnTop}
-              isDragging={isComponentDragging}
-              onSelect={(e) => {
-                e.stopPropagation();
-                setSelected(w.id);
-                const rect = canvasRef.current.getBoundingClientRect();
-                setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-              }}
-              onMouseDownSegment={(ev, wire, i, isHoriz, arr, mode) => {
-                if (selected !== wire.id) { setSelected(wire.id); return; }
-                const rect = canvasRef.current.getBoundingClientRect();
-                const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false, mode };
-                segDragRef.current = dragData;
-                setSegDrag(dragData);
-              }}
-            />
-          );
-        })}
-
-        {/* Preview wire while drawing */}
-        {wireStart && (
-          <path
-            d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
-            stroke="var(--orange)"
-            strokeWidth={2}
-            strokeDasharray="6 4"
-            fill="none"
-            strokeLinecap="round"
-            opacity={0.8}
-          />
-        )}
-
-
       </svg>
 
       {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
@@ -455,7 +324,7 @@ function CanvasSceneLayerBase({
                 left: comp.x, top: comp.y,
                 zIndex: (comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard'))
                   ? (isSelected ? 4 : 2)
-                  : (isSelected ? 10 : 5),
+                  : (isSelected ? 8 : 5),
                 opacity: comp.isGhost ? 0.4 : 1,
                 filter: comp.isGhost ? 'grayscale(0.5) blur(0.5px)' : 'none',
                 pointerEvents: comp.isGhost ? 'none' : 'auto',
@@ -570,8 +439,8 @@ function CanvasSceneLayerBase({
                   const isBreadboard = comp.type.startsWith('wokwi-breadboard') || comp.type.startsWith('openhw-breadboard');
                   const isFloating = !isBreadboard && isCompSeated && !isSocket;
 
-                  const pinColor = isSnapping ? '#2ecc71' : ((isSocket || connectedWire) ? 'none' : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)'));
-                  const pinBorder = isSnapping ? '#fff' : ((isSocket || connectedWire) ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
+                  const pinColor = isSnapping ? '#2ecc71' : (isSocket ? 'none' : (connectedWire ? connectedWire.color : (isHighlight ? '#f1c40f' : 'rgba(255,255,255,0.2)')));
+                  const pinBorder = isSnapping ? '#fff' : (isSocket ? 'none' : (isFloating ? '#e67e22' : (isHighlight ? '#fff' : 'rgba(255,255,255,0.8)')));
 
                   return (
                     <div
@@ -581,21 +450,35 @@ function CanvasSceneLayerBase({
                       style={{
                         position: 'absolute',
                         left: pin.x, top: pin.y,
-                        width: 5, height: 5,
+                        width: isHovered || isSuggested || isWireStartPin ? 12 : 8,
+                        height: isHovered || isSuggested || isWireStartPin ? 12 : 8,
                         background: pinColor === 'none' ? 'none' : pinColor,
-                        border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
-                        borderRadius: '0%',
+                        border: pinBorder === 'none' ? 'none' : `1.5px solid ${pinBorder}`,
+                        borderRadius: '50%',
                         cursor: 'crosshair',
-                        zIndex: isHovered || isSuggested || isSnapping ? 30 : 20,
-                        transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`,
-                        transition: '0.2s',
+                        zIndex: isHovered || isSuggested || isSnapping || isWireStartPin ? 30 : 20,
+                        transform: 'translate(-50%, -50%)',
+                        transition: 'width 0.12s, height 0.12s, box-shadow 0.12s',
                         pointerEvents: 'all',
-                        boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
+                        boxShadow: isWireStartPin
+                          ? '0 0 0 3px var(--orange), 0 0 12px var(--orange)'
+                          : isSnapping ? '0 0 10px #2ecc71'
+                          : isSuggested ? '0 0 8px #f1c40f'
+                          : isHovered ? '0 0 6px rgba(255,255,255,0.6)'
+                          : 'none',
                       }}
                       onMouseEnter={() => setHoveredPin(pinStrRef)}
                       onMouseLeave={() => setHoveredPin(null)}
                       onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
                     >
+                      {/* Invisible larger hit area */}
+                      <div style={{
+                        position: 'absolute',
+                        inset: -8,
+                        borderRadius: '50%',
+                        pointerEvents: 'all',
+                        cursor: 'crosshair',
+                      }} />
                       {isHovered && (
                         <div style={{
                           position: 'absolute', bottom: 18, left: '50%',
@@ -643,8 +526,75 @@ function CanvasSceneLayerBase({
           </>
         );
       })()}
+
+      {/* TOP SVG layer — rendered after components so wires stay visible on top */}
+      <svg
+        ref={svgRef}
+        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 15, overflow: 'visible' }}
+      >
+        {wires.filter(w => !w.isBelow && (wiresAlwaysOnTop || selected === w.id)).map((w, index) => {
+          const fromParts = w.from.split(':');
+          const toParts = w.to.split(':');
+          let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
+          let p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
+          if (!p1 || !p2) {
+            if (!p1) p1 = { x: 0, y: 0, isFallback: true };
+            if (!p2) p2 = { x: 0, y: 0, isFallback: true };
+          }
+          const offset = wireLaneOffsets.get(w.id) ?? (index % 7);
+          const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
+          const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
+
+          return (
+            <CanvasWire
+              key={w.id}
+              wire={w}
+              p1={p1} p2={p2} e1={e1} e2={e2}
+              isSelected={selected === w.id}
+              offset={offset}
+              wirepointsEnabled={wirepointsEnabled}
+              theme={theme}
+              wiresAlwaysOnTop={wiresAlwaysOnTop}
+              onSelect={(e) => {
+                e.stopPropagation();
+                setSelected(w.id);
+                const rect = canvasRef.current.getBoundingClientRect();
+                setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+              }}
+              onMouseDownSegment={(ev, wire, i, isHoriz, arr, mode) => {
+                if (selected !== wire.id) { setSelected(wire.id); return; }
+                const rect = canvasRef.current.getBoundingClientRect();
+                const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false, mode };
+                segDragRef.current = dragData;
+                setSegDrag(dragData);
+              }}
+            />
+          );
+        })}
+
+        {wireStart && (
+          <>
+            <path
+              d={multiRoutePath(
+                { x: wireStart.x, y: wireStart.y, exitDir: wireStart.exitDir },
+                mousePos,
+                wireStart.waypoints
+              )}
+              stroke="var(--orange)"
+              strokeWidth={2.5}
+              strokeDasharray="7 4"
+              fill="none"
+              strokeLinecap="round"
+              opacity={0.9}
+            />
+            <circle cx={mousePos.x} cy={mousePos.y} r={4} fill="var(--orange)" opacity={0.7} />
+            <circle cx={wireStart.x} cy={wireStart.y} r={4} fill="var(--orange)" opacity={0.9} />
+          </>
+        )}
+      </svg>
     </div>
-    </>
   );
 }
 

@@ -48,20 +48,16 @@ import {
   normalizeImportedCircuitData
 } from './projectUtils';
 import { importWokwiProjectZip } from './wokwiImportUtils';
-import { snapToGrid, resolveAllWiresWaypoints } from './utils/snappingUtils';
-import { resolveUiExport } from './utils/simulatorUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
 import { ProjectsSidebarChrome } from './components/ProjectsSidebar';
 import { multiRoutePath, wireColor } from './wireUtils';
-import { getResolvedPinExitSide } from '../../utils/pinExit.js';
 import { useSimulatorShortcuts } from './hooks/useSimulatorShortcuts';
 import { simplifyOrthogonalPath } from './utils/wireHitDetection';
 import { useEditorStore } from './store/useEditorStore';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
-import { useHardwareSocket } from '../../esp32/hooks/useHardwareSocket.js';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
 import QuickAddPortal from './QuickAddPortal';
 import TourGuide from './components/TourGuide';
@@ -122,9 +118,7 @@ import {
   buildUiSourceFromRegistry,
   buildLogicSourceFromRegistry,
   buildValidationSourceFromRegistry,
-  buildIndexSourceFromRegistry,
-  normalizeGroupName,
-  sortCatalog
+  buildIndexSourceFromRegistry
 } from './utils/componentRegistry';
 
 import {
@@ -187,7 +181,6 @@ import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
 import 'prismjs/themes/prism-tomorrow.css';
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/examples' : '/examples');
 const EDIT_COPY_KEY = 'openhw_edit_copy';
 const EDIT_COPY_PAYLOAD_PREFIX = 'openhw_edit_copy_payload_';
 const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
@@ -441,7 +434,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const segDragRef = useRef(null)
   const [hoveredPin, setHoveredPin] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
-  const [restoreProjectPrompt, setRestoreProjectPrompt] = useState(null)
   const [codeTab, setCodeTab] = useState('code')
   const { code, setCode } = useEditorStore();
   const [solverMode, setSolverMode] = useState('logic')
@@ -507,13 +499,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   useEffect(() => { isDraggingRef.current = isDragging; }, [isDragging]);
   useEffect(() => { isExplorerDraggingRef.current = isExplorerDragging; }, [isExplorerDragging]);
 
-  useEffect(() => {
-    if (!components || components.length === 0 || !wires || wires.length === 0) return;
-    const hasUnresolved = wires.some(w => Array.isArray(w.routingInstructions) && w.routingInstructions.length > 0);
-    if (!hasUnresolved) return;
-    setWires(prev => resolveAllWiresWaypoints(prev, components, LOCAL_PIN_DEFS));
-  }, [components, wires]);
-
   const {
     showTour,
     setShowTour,
@@ -548,7 +533,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [isPinMappingExpanded, setIsPinMappingExpanded] = useState(false)
   const [pendingPinColors, setPendingPinColors] = useState({}) // { [pinIdStr]: color }
   const [isFullscreen, setIsFullscreen] = useState(false)
-  const [wiresAlwaysOnTop, setWiresAlwaysOnTop] = useState(false)
+  const [wiresAlwaysOnTop, setWiresAlwaysOnTop] = useState(true)
 
   // Reset Pin Mapping expansion when a new component is selected
   useEffect(() => {
@@ -670,8 +655,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [showValidation, setShowValidation] = useState(true)
   const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
-  const [pinStates, setPinStates] = useState({})
-  const [oopStates, setOopStates] = useState({});
 
   // Inject safety pulse animation
   useEffect(() => {
@@ -706,9 +689,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [activeConsoleTab, setActiveConsoleTab] = useState('console')
   const [healthScore, setHealthScore] = useState(100)
   const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
-  const pendingProtocolLogsRef = useRef([]);
-  const protocolLogsTimerRef = useRef(null);
-  const lastRenderSyncCacheRef = useRef({}); // { [boardId]: { hash, timestamp, pins, analog, components, neopixels } }
   const [serialHistory, setSerialHistory] = useState([]);
   const [serialInput, setSerialInput] = useState('');
   const [serialPaused, setSerialPaused] = useState(false);
@@ -945,131 +925,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [showFirmwareUploadDialog, firmwareUploadTarget, firmwareBoardOptions]);
 
   const workerRef = useRef(null)
-  // ─── ESP32 QEMU session refs ──────────────────────────────────────────────
-  const esp32BuildIdRef = useRef(null);
-  const serialFlushBufRef = useRef([]);
-  const serialFlushTimer = useRef(null);
-  const compileTimeoutRef = useRef(null);
-  const pinToComponentsRef = useRef({});
-
-  // Rebuild pin→component connectivity map whenever wires change
-  useEffect(() => {
-    const map = {};
-    wires.forEach(w => {
-      const from = (w.from || '').split(':');
-      const to = (w.to || '').split(':');
-      if (from.length === 2 && to.length === 2) {
-        if (!map[`${from[0]}:${from[1]}`]) map[`${from[0]}:${from[1]}`] = [];
-        map[`${from[0]}:${from[1]}`].push({ compId: to[0], pinId: to[1] });
-        if (!map[`${to[0]}:${to[1]}`]) map[`${to[0]}:${to[1]}`] = [];
-        map[`${to[0]}:${to[1]}`].push({ compId: from[0], pinId: from[1] });
-      }
-    });
-    pinToComponentsRef.current = map;
-  }, [wires]);
-
-  // Ref to hold pushSerialRxChunk to avoid ReferenceError due to declaration order
-  const pushSerialRxChunkRef = useRef(null);
-
-  // Flush batched ESP32 serial text every 120 ms to avoid per-char setState
-  const flushESP32Serial = useCallback(() => {
-    const lines = serialFlushBufRef.current.splice(0);
-    if (!lines.length) return;
-    const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
-    const boardId = esp32Board ? esp32Board.id : 'esp32';
-    if (pushSerialRxChunkRef.current) {
-      lines.forEach(line => pushSerialRxChunkRef.current(line, boardId, 'sim'));
-    }
-  }, []);
-
-  // Helper to trace wires from a component pin to a connected ESP32 pin
-  const traceConnectedEsp32Pin = useCallback((componentId, componentPinName) => {
-    const visited = new Set();
-    const queue = [`${componentId}:${componentPinName}`];
-    visited.add(`${componentId}:${componentPinName}`);
-
-    while (queue.length > 0) {
-      const current = queue.shift();
-      const [currCompId, currPin] = current.split(':');
-
-      const currComp = (componentsRef.current || components).find(c => c.id === currCompId);
-      if (currComp && /esp32/i.test(currComp.type || '')) {
-        const pinNum = parseInt(currPin.replace(/\D/g, ''), 10);
-        if (!isNaN(pinNum)) {
-          return pinNum;
-        }
-      }
-
-      for (const wire of wires || []) {
-        if (wire.from === current && !visited.has(wire.to)) {
-          visited.add(wire.to);
-          queue.push(wire.to);
-        } else if (wire.to === current && !visited.has(wire.from)) {
-          visited.add(wire.from);
-          queue.push(wire.from);
-        }
-      }
-    }
-    return null;
-  }, [components, wires]);
-
-  const esp32Socket = useHardwareSocket({
-    onSerialLine: (text) => { serialFlushBufRef.current.push(text); },
-    onGpioSync: (pin, value) => {
-      const pinId = String(pin);
-      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
-      if (esp32Board) {
-        const targets = pinToComponentsRef.current[`${esp32Board.id}:${pinId}`] || [];
-        if (targets.length > 0) {
-          setOopStates(prev => {
-            const next = { ...prev };
-            targets.forEach(t => {
-              const comp = componentsRef.current.find(c => c.id === t.compId);
-              const newPinStates = { ...(next[t.compId]?.pinStates || {}), [t.pinId]: value };
-              const extra = {};
-              // wokwi-led lights up when anode pin A is HIGH
-              if (comp?.type === 'wokwi-led' && t.pinId === 'A') {
-                extra.illuminated = value === 1;
-              }
-              // Membrane Keypad Matrix scanning bridging
-              if (comp?.type === 'wokwi-membrane-keypad' && t.pinId.startsWith('R')) {
-                const pressedKey = next[t.compId]?.pressedKey;
-                if (pressedKey) {
-                  const matrix = {
-                    '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
-                    '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
-                    '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
-                    '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
-                  };
-                  const pair = matrix[pressedKey];
-                  if (pair && pair[0] === t.pinId) {
-                    const colPin = pair[1];
-                    const colEspPin = traceConnectedEsp32Pin(t.compId, colPin);
-                    if (colEspPin !== null) {
-                      esp32Socket.sendGpio(colEspPin, value); // column pin mirrors row state!
-                    }
-                  }
-                }
-              }
-              next[t.compId] = { ...(next[t.compId] || {}), pinStates: newPinStates, ...extra };
-            });
-            return next;
-          });
-        }
-      }
-      setPinStates(prev => ({ ...prev, [pinId]: value === 1 }));
-    },
-    onLog: (msg, dir) => logSerial(msg, dir === 'err' ? 'var(--red, #f87171)' : undefined),
-    onStop: () => {
-      if (serialFlushTimer.current) { clearInterval(serialFlushTimer.current); serialFlushTimer.current = null; }
-      if (compileTimeoutRef.current) { clearTimeout(compileTimeoutRef.current); compileTimeoutRef.current = null; }
-      esp32BuildIdRef.current = null;
-      setIsRunning(false);
-      setIsCompiling(false);
-      runStartGuardRef.current = false;
-    },
-  });
-
   const lastCompiledRef = useRef(null)
   const micropythonUf2PayloadRef = useRef(null)
   const circuitPythonUf2PayloadRef = useRef(null)
@@ -1196,111 +1051,6 @@ export function SimulatorPage({ gamificationMode = false }) {
           event: event
         });
       }
-
-      // Handle ESP32 direct component interactions via esp32Socket
-      if (isRunning) {
-        // Helper to trace connections to ESP32 pins
-        const getEsp32Connections = (componentId) => {
-          const connections = [];
-          const compPins = new Set();
-          for (const wire of wires || []) {
-            if (wire.from.startsWith(`${componentId}:`)) {
-              compPins.add(wire.from.split(':')[1]);
-            }
-            if (wire.to.startsWith(`${componentId}:`)) {
-              compPins.add(wire.to.split(':')[1]);
-            }
-          }
-          for (const pinName of compPins) {
-            const espPin = traceConnectedEsp32Pin(componentId, pinName);
-            if (espPin !== null) {
-              connections.push({ compPin: pinName, esp32Pin: espPin });
-            }
-          }
-          return connections;
-        };
-
-        if (comp.type === 'wokwi-membrane-keypad') {
-          if (event && event.startsWith && event.startsWith('press:')) {
-            const key = event.split(':')[1];
-            setOopStates(prev => ({
-              ...prev,
-              [comp.id]: { ...(prev[comp.id] || {}), pressedKey: key }
-            }));
-            const matrix = {
-              '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
-              '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
-              '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
-              '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
-            };
-            const pair = matrix[key];
-            if (pair) {
-              const [rowPin, colPin] = pair;
-              const rowEspPin = traceConnectedEsp32Pin(comp.id, rowPin);
-              const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
-              if (colEspPin !== null) {
-                const isRowLow = rowEspPin !== null && pinStates[rowEspPin] === false;
-                esp32Socket.sendGpio(colEspPin, isRowLow ? 0 : 1);
-              }
-            }
-          } else if (event === 'release') {
-            setOopStates(prev => ({
-              ...prev,
-              [comp.id]: { ...(prev[comp.id] || {}), pressedKey: null }
-            }));
-            ['C1', 'C2', 'C3', 'C4'].forEach(colPin => {
-              const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
-              if (colEspPin !== null) {
-                esp32Socket.sendGpio(colEspPin, 1);
-              }
-            });
-          }
-        }
-        else if (comp.type === 'wokwi-pushbutton') {
-          const conns = getEsp32Connections(comp.id);
-          const val = (event === 'press') ? 0 : 1;
-          for (const conn of conns) {
-            esp32Socket.sendGpio(conn.esp32Pin, val);
-          }
-        }
-        else if (comp.type === 'PIR-Motion-Sensor') {
-          const conns = getEsp32Connections(comp.id);
-          const val = (event === 'motion_start') ? 1 : 0;
-          for (const conn of conns) {
-            esp32Socket.sendGpio(conn.esp32Pin, val);
-          }
-        }
-        else {
-          const conns = getEsp32Connections(comp.id);
-          if (conns.length > 0) {
-            let digitalVal = null;
-            if (typeof event === 'string') {
-              const evt = event.toLowerCase();
-              if (evt === 'press' || evt === 'motion_start' || evt === 'high' || evt === 'true' || evt.startsWith('press:')) {
-                digitalVal = 1;
-              } else if (evt === 'release' || evt === 'motion_stop' || evt === 'low' || evt === 'false') {
-                digitalVal = 0;
-              }
-            } else if (event && typeof event === 'object') {
-              if (event.value !== undefined) {
-                if (typeof event.value === 'boolean') {
-                  digitalVal = event.value ? 1 : 0;
-                } else {
-                  const num = Number(event.value);
-                  if (!isNaN(num)) {
-                    digitalVal = num > 50 ? 1 : 0;
-                  }
-                }
-              }
-            }
-            if (digitalVal !== null) {
-              for (const conn of conns) {
-                esp32Socket.sendGpio(conn.esp32Pin, digitalVal);
-              }
-            }
-          }
-        }
-      }
     };
 
     return attrs;
@@ -1364,14 +1114,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   useEffect(() => {
     localStorage.setItem('openhw.deepSiliconDebugging', deepSiliconDebuggingEnabled ? 'true' : 'false');
   }, [deepSiliconDebuggingEnabled]);
-
-  const [respectExitSide, setRespectExitSide] = useState(() => {
-    const val = localStorage.getItem('openhw.respectExitSide');
-    return val !== 'false'; // Defaults to true
-  });
-  useEffect(() => {
-    localStorage.setItem('openhw.respectExitSide', respectExitSide ? 'true' : 'false');
-  }, [respectExitSide]);
 
   const [telemetryMode, setTelemetryMode] = useState('detail');
   const [telemetrySampleInterval, setTelemetrySampleInterval] = useState(250);
@@ -1521,7 +1263,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         delete newCatItem.pins;
         delete newCatItem.group;
 
-        const groupName = (GROUP_MAPPING[manifest.group] || manifest.group || 'Misc');
+        const groupName = normalizeGroupName(manifest.group);
         let group = LOCAL_CATALOG.find(g => g.group === groupName);
         if (!group) {
           group = { group: groupName, items: [] };
@@ -1890,17 +1632,30 @@ export function SimulatorPage({ gamificationMode = false }) {
     listProjects(owner).then((projects) => {
       if (projects.length === 0) return;
       const latest = projects[0]; // already sorted newest-first
-      
-      const isSessionActive = sessionStorage.getItem('ohw_session_active');
-      if (isSessionActive) {
-        handleLoadProject(latest);
-      } else {
-        sessionStorage.setItem('ohw_session_active', '1');
-        setRestoreProjectPrompt(latest);
-      }
+      const normalizedCircuit = normalizeImportedCircuitData(latest.components, latest.connections);
+      const normalizedFiles = normalizeProjectFiles(latest.projectFiles);
+      const normalizedTabs = normalizeOpenCodeTabs(latest.openCodeTabs, normalizedFiles);
+      const preferredActive = String(latest.activeCodeFileId || '').trim();
+      const activeId = normalizedFiles.some((f) => f.id === preferredActive)
+        ? preferredActive
+        : (normalizedTabs[0] || '');
+      setBoard(latest.board || 'arduino_uno');
+      setCode(latest.code || '');
+      setBlocklyXml(latest.blocklyXml || '');
+      setBlocklyGeneratedCode(latest.blocklyGeneratedCode || '');
+      setUseBlocklyCode(!!latest.useBlocklyCode);
+      setComponents(normalizedCircuit.components);
+      setWires(normalizedCircuit.wires);
+      setProjectFiles(normalizedFiles);
+      setOpenCodeTabs(normalizedTabs);
+      setActiveCodeFileId(activeId);
+      syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
+      setCurrentProjectId(latest.id);
+      currentProjectIdRef.current = latest.id;
+      setCurrentProjectName(latest.name || 'Untitled');
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!shareId || shareId === 'new') return;
@@ -2295,13 +2050,11 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
-    // Don't trigger auto-save if disabled or if waiting on toaster
-    if (!autoSaveEnabled || restoreProjectPrompt) return;
+    // Don't trigger auto-save if disabled
+    if (!autoSaveEnabled) return;
 
     // Don't trigger an empty-project save on initial render
-    const isCodeEmptyOrDefault = code.trim() === '' || 
-      code.trim() === 'void setup() {\\n  // put your setup code here, to run once:\\n\\n}\\n\\nvoid loop() {\\n  // put your main code here, to run repeatedly:\\n\\n}';
-    if (!currentProjectIdRef.current && components.length === 0 && wires.length === 0 && isCodeEmptyOrDefault) return;
+    if (components.length === 0 && wires.length === 0 && code.trim() === '') return;
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -2368,11 +2121,6 @@ export function SimulatorPage({ gamificationMode = false }) {
         worstFrameMs = frameDeltaMs;
       }
 
-      if (workerRef.current) {
-        workerRef.current.postMessage({ type: 'FLUSH_VISUALS' });
-      }
-
-
       const windowMs = now - frameStart;
       if (windowMs >= 1000) {
         const fps = (frameCount * 1000) / windowMs;
@@ -2402,10 +2150,6 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           appendConsoleEntry(fps < 45 || worstFrameMs > 24 ? 'warn' : 'info', line, 'debug');
           runFpsTelemetryLastLogRef.current.set('browser', signature);
-        }
-
-        if (workerRef.current) {
-          workerRef.current.postMessage({ type: 'REAL_METRICS', canvasFps: fps, uiMainThreadBlockedTimeMs: worstFrameMs });
         }
 
         frameStart = now;
@@ -2491,7 +2235,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             delete newCatItem.pins;
             delete newCatItem.group;
 
-            const groupName = (GROUP_MAPPING[manifest.group] || manifest.group || 'Misc');
+            const groupName = normalizeGroupName(manifest.group);
             let group = LOCAL_CATALOG.find(g => g.group === groupName);
             if (!group) {
               group = { group: groupName, items: [] };
@@ -2581,7 +2325,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         delete newCatItem.pins;
         delete newCatItem.group;
 
-        const groupName = (GROUP_MAPPING[manifest.group] || manifest.group || 'Misc');
+        const groupName = normalizeGroupName(manifest.group);
         let group = LOCAL_CATALOG.find(g => g.group === groupName);
         if (!group) {
           group = { group: groupName, items: [] };
@@ -2666,7 +2410,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             delete newCatItem.pins;
             delete newCatItem.group;
 
-            const groupName = (GROUP_MAPPING[manifest.group] || manifest.group || 'Misc');
+            const groupName = normalizeGroupName(manifest.group);
             let group = LOCAL_CATALOG.find(g => g.group === groupName);
             if (!group) {
               group = { group: groupName, items: [] };
@@ -3507,14 +3251,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     return getPinPosForComp(componentsMap.get(compId), pinId);
   }, [componentsMap, getPinPosForComp]);
 
-  const getComponentBounds = useCallback((comp) => {
-    if (!comp) return { x: 0, y: 0, w: 0, h: 0 };
-    const reg = COMPONENT_REGISTRY[comp.type];
-    if (!reg) return { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-    if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-    return reg.BOUNDS || { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-  }, [COMPONENT_REGISTRY, getComponentStateAttrs]);
-
   // -- Get the point a wire should exit/enter at 90 deg from a pin --
   const getPinExitPoint = useCallback((compId, pinId, offset = 0, targetPos = null) => {
     const comp = componentsMap.get(compId);
@@ -3553,89 +3289,90 @@ export function SimulatorPage({ gamificationMode = false }) {
     const pPos = getPinPosForComp(comp, pinId);
     if (!pPos) return null;
 
-    const bounds = getComponentBounds(comp);
-    const localX = (Number(pin.x) || 0) - (Number(bounds.x) || 0);
-    const localY = (Number(pin.y) || 0) - (Number(bounds.y) || 0);
-    const distLeft = localX;
-    const distRight = (Number(bounds.w) || comp.w || 0) - localX;
-    const distTop = localY;
-    const distBottom = (Number(bounds.h) || comp.h || 0) - localY;
-    const bodyEdgeGap = 3;
     const rotation = comp.rotation || 0;
-    // Spread grouped wires along the exit edge, then step outward.
-    const laneOffset = Number(offset) || 0; // preserved for logging, not used in the initial stub
+    // Monotonic stagger: laneIndex 0..6 → exitLen 9, 14, 19, 24, 29, 34, 39
+    // offset here is already the laneIndex (0-based)
+    const exitLen = 9 + offset * 5;
     let dx = 0, dy = 0;
 
-    const dir = getResolvedPinExitSide(comp, pin, pins, bounds);
-    if (!dir) return { x: pPos.x, y: pPos.y, dir: 'bottom' };
-    // Compute an exit stub that first moves strictly perpendicular to the component
-    // by at least `MIN_EXIT_STUB` pixels before any lateral offsets are applied.
-    // The lateral bundle offset is applied later by the router; we avoid adding
-    // it to the initial stub so the first segment stays axis-aligned.
-    const MIN_EXIT_STUB = 30; // pixels: minimum stub length outward from component
-    if (dir === 'left') {
-      dx = -(Math.max(distLeft + bodyEdgeGap, MIN_EXIT_STUB));
-      dy = 0;
-    } else if (dir === 'right') {
-      dx = Math.max(distRight + bodyEdgeGap, MIN_EXIT_STUB);
-      dy = 0;
-    } else if (dir === 'top') {
-      dx = 0;
-      dy = -(Math.max(distTop + bodyEdgeGap, MIN_EXIT_STUB));
-    } else if (dir === 'bottom') {
-      dx = 0;
-      dy = Math.max(distBottom + bodyEdgeGap, MIN_EXIT_STUB);
+    // Always exit from the nearest physical edge, ignoring manifest-defined 'dir'. 
+    // We use a 15px "Snap Zone" to ensure pins near a border always exit from it.
+    const cw = comp.w || 40;
+    const ch = comp.h || 40;
+    const px = pin.x;
+    const py = pin.y;
+
+    const dTop = py;
+    const dBottom = ch - py;
+    const dLeft = px;
+    const dRight = cw - px;
+    const SNAP = 15;
+
+    const edgeCandidates = [
+      { dir: 'top', dist: dTop },
+      { dir: 'bottom', dist: dBottom },
+      { dir: 'left', dist: dLeft },
+      { dir: 'right', dist: dRight },
+    ].sort((a, b) => a.dist - b.dist);
+
+    const snapEdges = edgeCandidates.filter(e => e.dist <= SNAP);
+    const candidates = snapEdges.length > 0 ? snapEdges : edgeCandidates.slice(0, 2);
+
+    const outward = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
+
+    let dir = candidates[0].dir;
+    if (targetPos && Number.isFinite(targetPos.x) && Number.isFinite(targetPos.y)) {
+      const radPre = (rotation * Math.PI) / 180;
+      const cosPre = Math.cos(radPre);
+      const sinPre = Math.sin(radPre);
+      let bestScore = Infinity;
+      for (const { dir: candidateDir } of candidates) {
+        const local = outward[candidateDir];
+        const worldDx = local.x * cosPre - local.y * sinPre;
+        const worldDy = local.x * sinPre + local.y * cosPre;
+        const exitX = pPos.x + worldDx * exitLen;
+        const exitY = pPos.y + worldDy * exitLen;
+        const score = Math.abs(targetPos.x - exitX) + Math.abs(targetPos.y - exitY);
+        if (score < bestScore) {
+          bestScore = score;
+          dir = candidateDir;
+        }
+      }
     }
+
+    if (dir === 'left') dx = -exitLen;
+    else if (dir === 'right') dx = exitLen;
+    else if (dir === 'top') dy = -exitLen;
+    else if (dir === 'bottom') dy = exitLen;
 
     const rad = (rotation * Math.PI) / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
 
-    const rawExitX = pPos.x + (dx * cos - dy * sin);
-    const rawExitY = pPos.y + (dx * sin + dy * cos);
+    const isRotated90 = rotation === 90 || rotation === 270;
+    const finalW = isRotated90 ? ch : cw;
+    const finalH = isRotated90 ? cw : ch;
+    const finalX = comp.x + (cw - finalW) / 2;
+    const finalY = comp.y + (ch - finalH) / 2;
 
-    let exitX = rawExitX;
-    let exitY = rawExitY;
-    if (Math.abs(rawExitX - pPos.x) < 0.1) {
-      exitX = pPos.x;
-      exitY = Math.round(rawExitY / 15) * 15;
-    } else {
-      exitX = Math.round(rawExitX / 15) * 15;
-      exitY = pPos.y;
+    const directions = ['top', 'right', 'bottom', 'left'];
+    let idx = directions.indexOf(dir);
+    let rotatedDir = dir;
+    if (idx !== -1) {
+      const offsetVal = Math.round((rotation || 0) / 90);
+      let newIdx = (idx + offsetVal) % 4;
+      if (newIdx < 0) newIdx += 4;
+      rotatedDir = directions[newIdx];
     }
 
-    try {
-      console.debug('[getPinExitPoint]', { compId: comp.id, pinId: pin.id, bounds, localX, localY, dir, laneOffset, exitX, exitY });
-    } catch (e) { }
     return {
-      x: exitX,
-      y: exitY,
-      dir
+      x: pPos.x + (dx * cos - dy * sin),
+      y: pPos.y + (dx * sin + dy * cos),
+      dir,
+      rotatedDir,
+      compBox: { x: finalX, y: finalY, w: finalW, h: finalH, type: comp.type }
     };
   }, [componentsMap, PIN_DEFS, getPinPosForComp]);
-
-  // Developer helper: call `window.debugPinExits()` in browser console to list exit edges
-  try {
-    // eslint-disable-next-line no-undef
-    window.debugPinExits = () => {
-      const interestingTypes = new Set(['openhw-arduino-uno', 'openhw-a4988', 'openhw-stepper-motor', 'wokwi-arduino-uno', 'wokwi-stepper-motor']);
-      (components || []).forEach(comp => {
-        if (!interestingTypes.has(comp.type)) return;
-        const pins = PIN_DEFS[comp.type] || [];
-        const bounds = getComponentBounds(comp);
-        console.groupCollapsed(`pin exits for ${comp.id} (${comp.type}) at ${comp.x},${comp.y}`);
-        console.log('bounds', bounds);
-        pins.forEach(pin => {
-          const exitSide = getResolvedPinExitSide(comp, pin, pins, getComponentBounds(comp));
-          const exitPt = getPinExitPoint(comp.id, pin.id, 0, null);
-          const localX = (Number(pin.x) || 0) - (Number(bounds.x) || 0);
-          const localY = (Number(pin.y) || 0) - (Number(bounds.y) || 0);
-          console.log(pin.id, '->', exitSide, exitPt, { localX, localY });
-        });
-        console.groupEnd();
-      });
-    };
-  } catch (e) { }
 
   const getPinPosWithGhosts = useCallback((compId, pinId) => {
     let comp = componentsMap.get(compId);
@@ -3796,29 +3533,10 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     const usedIds = new Set(components.map(c => String(c.id || '')));
     const id = allocateComponentId(item.type, usedIds);
-    const pins = LOCAL_PIN_DEFS[item.type] || [];
-    const anchorPin = pins[0];
-    let initialX = Math.max(8, x);
-    let initialY = Math.max(8, y);
-    if (anchorPin) {
-      const w = item.w || 60;
-      const h = item.h || 60;
-      const cx = initialX + w / 2;
-      const cy = initialY + h / 2;
-      const anchorWorld = getRotatedPoint(initialX + anchorPin.x, initialY + anchorPin.y, 0, cx, cy);
-      const snappedAnchorX = snapToGrid(anchorWorld.x);
-      const snappedAnchorY = snapToGrid(anchorWorld.y);
-      initialX += (snappedAnchorX - anchorWorld.x);
-      initialY += (snappedAnchorY - anchorWorld.y);
-    } else {
-      initialX = snapToGrid(initialX);
-      initialY = snapToGrid(initialY);
-    }
-
     const newCompBase = {
       id,
       type: item.type, label: item.label,
-      x: initialX, y: initialY,
+      x: Math.max(8, x), y: Math.max(8, y),
       w: item.w || 60, h: item.h || 60,
       attrs: item.attrs || {},
     };
@@ -4206,33 +3924,43 @@ export function SimulatorPage({ gamificationMode = false }) {
         const my = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
         const ddx = mx - sd.startMouseCanvas.x;
         const ddy = my - sd.startMouseCanvas.y;
+        
+        // Dead zone: ignore micro-movements under 6px to prevent accidental dents
+          const DEAD_ZONE = 6;
+          const GRID = 8; // snap to 8px grid for clean right-angle bends
+          const activeDdx = Math.abs(ddx) >= DEAD_ZONE ? ddx : 0;
+          const activeDdy = Math.abs(ddy) >= DEAD_ZONE ? ddy : 0;
 
-        if (Math.abs(ddx) >= 1 || Math.abs(ddy) >= 1) {
+          if (activeDdx !== 0 || activeDdy !== 0) {
           sd.hasMoved = true;
           const newPts = sd.startPts.map(pt => ({ ...pt }));
           const { segIdx, isHoriz, mode } = sd;
 
+          // Snap delta to grid for clean bends
+          const snapDdx = Math.round(activeDdx / GRID) * GRID;
+          const snapDdy = Math.round(activeDdy / GRID) * GRID;
+
           if (mode === 'waypoint') {
-            // Free move waypoint
-            newPts[segIdx].x = sd.startPts[segIdx].x + ddx;
-            newPts[segIdx].y = sd.startPts[segIdx].y + ddy;
+            // Free move waypoint — snap to grid
+            newPts[segIdx].x += snapDdx;
+            newPts[segIdx].y += snapDdy;
           } else {
-            // Orthogonal segment drag
+            // Orthogonal segment drag — only move along the constrained axis
             if (isHoriz) {
-              const newY = sd.startPts[segIdx].y + ddy;
-              newPts[segIdx] = { ...newPts[segIdx], y: newY };
-              newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: newY };
+              const snappedY = newPts[segIdx].y + snapDdy;
+              newPts[segIdx] = { ...newPts[segIdx], y: snappedY };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], y: snappedY };
             } else {
-              const newX = sd.startPts[segIdx].x + ddx;
-              newPts[segIdx] = { ...newPts[segIdx], x: newX };
-              newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newX };
+              const snappedX = newPts[segIdx].x + snapDdx;
+              newPts[segIdx] = { ...newPts[segIdx], x: snappedX };
+              newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: snappedX };
             }
           }
-          wireUpdate = {
-            wireId: sd.wireId,
-            cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true }))
+          wireUpdate = { 
+            wireId: sd.wireId, 
+            cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) 
           };
-        }
+          }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
         // Fix #4 ─ canvas panning via direct DOM transform (zero React renders mid-pan)
         const dx = e.clientX - panStartRef.current.x;
@@ -4252,8 +3980,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       } else if (wireStart && canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect();
-        const rawX = snapToGrid((e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current);
-        const rawY = snapToGrid((e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current);
+        const rawX = (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+        const rawY = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
         mousePosUpdate = { x: rawX, y: rawY };
       } else {
         // Fix #5 ─ mouse position and inspector hover tracking (throttled)
@@ -4509,61 +4237,19 @@ export function SimulatorPage({ gamificationMode = false }) {
         const movedId = movingComp.current.id;
         const childIds = movingComp.current.childIds;
 
-        // 1. Sync final positions from DOM to React State with grid snapping on release
+        // 1. Sync final positions from DOM to React State
         const masterElem = document.getElementById(`comp-master-${movedId}`);
         const finalX = masterElem ? parseFloat(masterElem.style.left) : 0;
         const finalY = masterElem ? parseFloat(masterElem.style.top) : 0;
 
-        let snappedX = finalX;
-        let snappedY = finalY;
-        if (!window._prevSnaps || window._prevSnaps.length === 0) {
-          const comp = componentsRef.current.find(c => c.id === movedId);
-          const pins = (comp && LOCAL_PIN_DEFS[comp.type]) || [];
-          const anchorPin = pins[0];
-          if (comp && anchorPin) {
-            const cx = finalX + (comp.w || 0) / 2;
-            const cy = finalY + (comp.h || 0) / 2;
-            const anchorWorld = getRotatedPoint(finalX + anchorPin.x, finalY + anchorPin.y, comp.rotation || 0, cx, cy);
-            const snappedAnchorX = snapToGrid(anchorWorld.x);
-            const snappedAnchorY = snapToGrid(anchorWorld.y);
-            snappedX = finalX + (snappedAnchorX - anchorWorld.x);
-            snappedY = finalY + (snappedAnchorY - anchorWorld.y);
-          } else {
-            snappedX = snapToGrid(finalX);
-            snappedY = snapToGrid(finalY);
-          }
-        }
-        const snapDiffX = snappedX - finalX;
-        const snapDiffY = snappedY - finalY;
-
-        if (masterElem) {
-          masterElem.style.left = `${snappedX}px`;
-          masterElem.style.top = `${snappedY}px`;
-        }
-        if (childIds) {
-          childIds.forEach(childId => {
-            const childMaster = document.getElementById(`comp-master-${childId}`);
-            if (childMaster) {
-              const cx = parseFloat(childMaster.style.left) + snapDiffX;
-              const cy = parseFloat(childMaster.style.top) + snapDiffY;
-              childMaster.style.left = `${cx}px`;
-              childMaster.style.top = `${cy}px`;
-            }
-          });
-        }
-
         setComponents(prev => {
-          let next = prev.map(c => c.id === movedId ? { ...c, x: snappedX, y: snappedY } : c);
+          let next = prev.map(c => c.id === movedId ? { ...c, x: finalX, y: finalY } : c);
           if (childIds) {
             next = next.map(c => {
               if (childIds.includes(c.id)) {
                 const childMaster = document.getElementById(`comp-master-${c.id}`);
                 if (childMaster) {
-                  return {
-                    ...c,
-                    x: parseFloat(childMaster.style.left) + snapDiffX,
-                    y: parseFloat(childMaster.style.top) + snapDiffY
-                  };
+                  return { ...c, x: parseFloat(childMaster.style.left), y: parseFloat(childMaster.style.top) };
                 }
               }
               return c;
@@ -4631,27 +4317,16 @@ export function SimulatorPage({ gamificationMode = false }) {
           const wireId = segDragRef.current.wireId;
           // Apply simplification to clean up redundant segments/waypoints
           setWires(prev => prev.map(w => {
-            if (w.id === wireId) {
-              let updatedWaypoints = w.waypoints;
-              if (w.waypoints?.length) {
-                const snappedWaypoints = w.waypoints.map(pt => ({
-                  ...pt,
-                  x: snapToGrid(pt.x),
-                  y: snapToGrid(pt.y)
-                }));
-                const fromParts = w.from.split(':');
-                const toParts = w.to.split(':');
-                const p1 = getPinPosRef.current(fromParts[0], fromParts.slice(1).join(':'));
-                const p2 = getPinPosRef.current(toParts[0], toParts.slice(1).join(':'));
-                if (p1 && p2) {
-                  const fullPath = [p1, ...snappedWaypoints, p2];
-                  const simplified = simplifyOrthogonalPath(fullPath);
-                  updatedWaypoints = simplified.slice(1, -1);
-                } else {
-                  updatedWaypoints = snappedWaypoints;
-                }
+            if (w.id === wireId && w.waypoints?.length) {
+              const fromParts = w.from.split(':');
+              const toParts = w.to.split(':');
+              const p1 = getPinPosRef.current(fromParts[0], fromParts.slice(1).join(':'));
+              const p2 = getPinPosRef.current(toParts[0], toParts.slice(1).join(':'));
+              if (p1 && p2) {
+                const fullPath = [p1, ...w.waypoints, p2];
+                const simplified = simplifyOrthogonalPath(fullPath);
+                return { ...w, waypoints: simplified.slice(1, -1) };
               }
-              return { ...w, waypoints: updatedWaypoints, routingInstructions: undefined };
             }
             return w;
           }));
@@ -4770,8 +4445,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (!pos) return
 
     if (!wireStart) {
-      // Start wire
-      setWireStart({ compId, pinId, pinLabel, ...pos })
+      // Start wire — capture exit direction so the preview router stays stable
+      const exitInfo = getPinExitPoint(compId, pinId, 0, null);
+      setWireStart({ compId, pinId, pinLabel, ...pos, exitDir: exitInfo?.dir || null })
     } else {
       // Complete wire — prevent self-loop
       if (wireStart.compId === compId && wireStart.pinId === pinId) {
@@ -4878,32 +4554,32 @@ export function SimulatorPage({ gamificationMode = false }) {
     const filename = getDefaultMainFileName(boardKind, comp.id, {
       rp2040Mode: comp.attrs?.env || 'native'
     });
-
+    
     // Try to find existing file by boardId or filename or just the first code file
     let targetFile = projectFiles.find(f => f.boardId === comp.id || f.id === filename || f.name === filename);
     if (!targetFile) {
-      // Fallback: if there's only one code file, just use it
-      const codeFiles = projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
-      if (codeFiles.length > 0) {
-        targetFile = codeFiles[0];
-        console.log('[handleOpenCode] Fallback to first code file:', targetFile.id);
-      } else {
-        console.log('[handleOpenCode] File not found, creating new file:', filename);
-        // Create the file
-        targetFile = {
-          id: filename,
-          path: filename,
-          name: filename,
-          kind: 'code',
-          boardId: comp.id,
-          boardKind: boardKind,
-          content: createDefaultMainCode(boardKind, comp.id, { rp2040Mode: comp.attrs?.env || 'native' }),
-          dirty: false
-        };
-        setProjectFiles(prev => [...prev, targetFile]);
-      }
+        // Fallback: if there's only one code file, just use it
+        const codeFiles = projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
+        if (codeFiles.length > 0) {
+            targetFile = codeFiles[0];
+            console.log('[handleOpenCode] Fallback to first code file:', targetFile.id);
+        } else {
+            console.log('[handleOpenCode] File not found, creating new file:', filename);
+            // Create the file
+            targetFile = {
+                id: filename,
+                path: filename,
+                name: filename,
+                kind: 'code',
+                boardId: comp.id,
+                boardKind: boardKind,
+                content: createDefaultMainCode(boardKind, comp.id, { rp2040Mode: comp.attrs?.env || 'native' }),
+                dirty: false
+            };
+            setProjectFiles(prev => [...prev, targetFile]);
+        }
     } else {
-      console.log('[handleOpenCode] Found existing file:', targetFile.id);
+        console.log('[handleOpenCode] Found existing file:', targetFile.id);
     }
 
     if (!openCodeTabs.includes(targetFile.id)) {
@@ -4919,8 +4595,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     console.log('[handleAutoCode] Triggered for component:', compId);
     const comp = components.find(c => c.id === compId);
     if (!comp) {
-      console.error('[handleAutoCode] Component not found in state:', compId);
-      return;
+        console.error('[handleAutoCode] Component not found in state:', compId);
+        return;
     }
 
     // Find the board it is connected to (Recursive Tracing)
@@ -4936,7 +4612,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       for (const w of wires) {
         const fromParts = w.from.split(':');
         const toParts = w.to.split(':');
-
+        
         let neighborId = null;
         if (fromParts[0] === currentId) neighborId = toParts[0];
         else if (toParts[0] === currentId) neighborId = fromParts[0];
@@ -4959,7 +4635,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     console.log('[handleAutoCode] Target board found:', targetBoardId);
     const manifest = COMPONENT_REGISTRY[comp.type]?.manifest || {};
-
+    
     // Call the worker
     console.log('[handleAutoCode] Sending request to worker...');
     const worker = new Worker(new URL('../../workers/autowiring.worker.ts', import.meta.url), { type: 'module' });
@@ -4989,23 +4665,23 @@ export function SimulatorPage({ gamificationMode = false }) {
           setProjectFiles(prev => {
             let targetFile = prev.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename);
             if (!targetFile) {
-              const codeFiles = prev.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
-              if (codeFiles.length > 0) {
-                targetFile = codeFiles[0];
-              } else {
-                console.log('[handleAutoCode] Creating new file for injection:', filename);
-                targetFile = {
-                  id: filename,
-                  path: filename,
-                  name: filename,
-                  kind: 'code',
-                  boardId: targetBoardId,
-                  boardKind: boardKind,
-                  content: createDefaultMainCode(boardKind, targetBoardId, { rp2040Mode: boardComp.attrs?.env || 'native' }),
-                  dirty: false
-                };
-                prev = [...prev, targetFile];
-              }
+                const codeFiles = prev.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
+                if (codeFiles.length > 0) {
+                    targetFile = codeFiles[0];
+                } else {
+                    console.log('[handleAutoCode] Creating new file for injection:', filename);
+                    targetFile = {
+                        id: filename,
+                        path: filename,
+                        name: filename,
+                        kind: 'code',
+                        boardId: targetBoardId,
+                        boardKind: boardKind,
+                        content: createDefaultMainCode(boardKind, targetBoardId, { rp2040Mode: boardComp.attrs?.env || 'native' }),
+                        dirty: false
+                    };
+                    prev = [...prev, targetFile];
+                }
             }
 
             console.log('[handleAutoCode] Injecting code into file:', targetFile.id);
@@ -5021,33 +4697,33 @@ export function SimulatorPage({ gamificationMode = false }) {
               return f;
             });
           });
-
+          
           setOpenCodeTabs(prevTabs => {
             // Re-find the target file ID since state update is asynchronous
-            const targetFile = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename)
-              || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
-              || { id: filename };
+            const targetFile = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
+                               || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                               || { id: filename };
             if (!prevTabs.includes(targetFile.id)) {
               return [...prevTabs, targetFile.id];
             }
             return prevTabs;
           });
-
+          
           // Re-find to set active
           setTimeout(() => {
-            const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
-            setActiveCodeFileId(prev => {
-              const file = (projectFiles || []).find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename)
-                || (projectFiles || []).filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
-                || { id: filename };
-              return file.id;
-            });
-            setCodeTab('code');
-            setIsPanelOpen(true);
-            setShowCodeExplorer(true);
+              const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
+              setActiveCodeFileId(prev => {
+                   const file = (projectFiles || []).find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
+                               || (projectFiles || []).filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                               || { id: filename };
+                   return file.id;
+              });
+              setCodeTab('code');
+              setIsPanelOpen(true);
+              setShowCodeExplorer(true);
           }, 0);
         } else {
-          console.warn('[handleAutoCode] Worker returned empty snippet.');
+            console.warn('[handleAutoCode] Worker returned empty snippet.');
         }
       }
       worker.terminate();
@@ -5987,7 +5663,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       const result = await importWokwiProjectZip(file, components, wires);
       if (!result) return;
-
+      
       const newId = generateProjectId();
       currentProjectIdRef.current = newId;
       setCurrentProjectId(newId);
@@ -6432,10 +6108,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [appendSerialRxChunk]);
 
   useEffect(() => {
-    pushSerialRxChunkRef.current = pushSerialRxChunk;
-  }, [pushSerialRxChunk]);
-
-  useEffect(() => {
     if (serialPaused) return;
     const queue = serialPausedQueueRef.current;
     if (!queue.length) return;
@@ -6632,34 +6304,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardRuntimeEnvMap = {};
       const boardBaudMap = {};
       const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
-
-      // ─── ESP32 QEMU server-side path ────────────────────────────────────────
-      const esp32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'esp32');
-      if (esp32Board) {
-        logSerial('⚙️  Sending ESP32 firmware to QEMU server...');
-        const compileUnit = getBoardCompileFiles(esp32Board.id, '');
-        const compileSource = useBlocklyCode ? blocklyGeneratedCode : (compileUnit.mainCode || getBoardMainCode(esp32Board.id) || code);
-
-        if (serialFlushTimer.current) clearInterval(serialFlushTimer.current);
-        serialFlushTimer.current = setInterval(flushESP32Serial, 120);
-
-        try {
-          const buildId = await esp32Socket.run(compileSource);
-          esp32BuildIdRef.current = buildId;
-          setIsCompiling(false);
-        } catch (esp32Err) {
-          if (serialFlushTimer.current) { clearInterval(serialFlushTimer.current); serialFlushTimer.current = null; }
-          setIsRunning(false);
-          setIsCompiling(false);
-          runStartGuardRef.current = false;
-          appendConsoleEntry('error', `ESP32 compile failed: ${esp32Err.message}`, 'simulator');
-          alert(esp32Err.message);
-        }
-        runStartGuardRef.current = false;
-        return; // ← ESP32 path complete — skip AVR/RP2040 web worker
-      }
-      // ────────────────────────────────────────────────────────────────────────
-
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
       const boardsWithoutCompilableSketch = [];
       let result = null;
@@ -6953,21 +6597,6 @@ export function SimulatorPage({ gamificationMode = false }) {
         const msg = event.data;
         const msgArrivalMs = performance.now();
 
-        if (msg.type === 'error') {
-          appendConsoleEntry('error', `[SIM] ${msg.message || 'Runner error'}`, 'simulator');
-          logSerial(`Runner error: ${msg.message || 'Unknown error'}`, 'var(--red)');
-          handleStop();
-          return;
-        }
-
-        if (msg.type === 'toast') {
-          setValidationToast({
-            level: msg.level || 'info',
-            message: msg.message
-          });
-          return;
-        }
-
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
@@ -7193,37 +6822,14 @@ export function SimulatorPage({ gamificationMode = false }) {
           const boardId = String(msg.boardId || 'default').trim() || 'default';
           const frameId = Number(msg.frameId || 0);
 
-          const pins = renderPinsByBoardRef.current[boardId] || {};
-          const analog = renderAnalogByBoardRef.current[boardId] || [];
-          const components = renderComponentsByBoardRef.current[boardId] || {};
-          const neopixels = renderNeopixelsByBoardRef.current[boardId] || {};
+          const renderPayload = {
+            pins: renderPinsByBoardRef.current[boardId] || {},
+            analog: renderAnalogByBoardRef.current[boardId] || [],
+            components: renderComponentsByBoardRef.current[boardId] || {},
+            neopixels: renderNeopixelsByBoardRef.current[boardId] || {},
+          };
 
-          const cache = lastRenderSyncCacheRef.current[boardId];
-          const now = Date.now();
-          let renderedHash;
-
-          if (
-            cache &&
-            now - cache.timestamp < 33 &&
-            cache.pins === pins &&
-            cache.analog === analog &&
-            cache.components === components &&
-            cache.neopixels === neopixels
-          ) {
-            renderedHash = cache.hash;
-          } else {
-            const renderPayload = { pins, analog, components, neopixels };
-            renderedHash = computeRenderSyncHash(renderPayload);
-            lastRenderSyncCacheRef.current[boardId] = {
-              hash: renderedHash,
-              timestamp: now,
-              pins,
-              analog,
-              components,
-              neopixels,
-            };
-          }
-
+          const renderedHash = computeRenderSyncHash(renderPayload);
           workerRef.current?.postMessage({
             type: 'RENDER_REPORT',
             boardId,
@@ -7405,29 +7011,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Handle Protocol Events
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
-          pendingProtocolLogsRef.current.push(log.message);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
-          pendingProtocolLogsRef.current.push(log.message);
-        }
-
-        if ((msg.type === 'protocol:i2c' || msg.type === 'protocol:spi') && !protocolLogsTimerRef.current) {
-          protocolLogsTimerRef.current = setTimeout(() => {
-            protocolLogsTimerRef.current = null;
-            const pending = pendingProtocolLogsRef.current;
-            if (pending.length === 0) return;
-            pendingProtocolLogsRef.current = [];
-
-            // Limit batch to prevent dropping frames
-            const batch = pending.length > 200 ? pending.slice(-200) : pending;
-
-            // Use standard state setting (startTransition might be undefined if not imported, React 18 auto-batches timeouts anyway)
-            setProtocolLogs(prev => {
-              const next = [...prev, ...batch];
-              return next.length > 200 ? next.slice(-200) : next;
-            });
-          }, 150);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
       };
 
@@ -7504,7 +7092,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const handleStop = () => {
     const wasRunning = isRunning;
     runStartGuardRef.current = false;
-    esp32Socket.stop();
     rp2040GdbLastLogRef.current.clear();
     rp2040WirelessLastLogRef.current.clear();
     rp2040UartMicroPythonBoardsRef.current.clear();
@@ -7763,7 +7350,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         if (tp) { minX = Math.min(minX, tp.x); minY = Math.min(minY, tp.y); maxX = Math.max(maxX, tp.x); maxY = Math.max(maxY, tp.y); }
       });
       if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
-
+      
       // DIAGNOSTIC LOG: See the calculated bounds
       console.log('[PNG Export] Raw Bounds:', { minX, minY, maxX, maxY });
 
@@ -7815,7 +7402,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       // 2. Capture the canvas
       const t_start = performance.now();
       console.log('[PNG Export] signature:', signature);
-
+      
       const MAX_EXPORT_DIM = 4000;
       const actualW = Math.min(bboxW, MAX_EXPORT_DIM);
       const actualH = Math.min(bboxH, MAX_EXPORT_DIM);
@@ -7837,7 +7424,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           if (el.shadowRoot) deepTag(el.shadowRoot);
         });
       };
-
+      
       deepTag(zoomWrapper);
       const shadowHostEls = Array.from(elementMap.values()).filter(el => !!el.shadowRoot);
       console.log(`[PNG Export] Mapped ${tagCount} elements in ${Math.round(performance.now() - t_tag_start)}ms`);
@@ -7880,10 +7467,10 @@ export function SimulatorPage({ gamificationMode = false }) {
         // 3. Clone and Inject
         const circuitClone = idoc.importNode(zoomWrapper, true);
         idoc.body.appendChild(circuitClone);
-
+        
         // 4. Filtered Style Teleportation (Live HTML Mode)
         console.log(`[PNG Export] Teleporting styles for ${tagCount} elements...`);
-
+        
         // 4a. Inline Shadow DOM Content as Live HTML
         let inlinedCount = 0;
         shadowHostEls.forEach((liveEl) => {
@@ -7900,7 +7487,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               clonedHost.appendChild(styleEl);
             });
           }
-
+          
           // Inline the actual graphics/nodes
           for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
             clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
@@ -7910,10 +7497,10 @@ export function SimulatorPage({ gamificationMode = false }) {
 
         // 4b. Total Parity Style Teleportation
         console.log(`[PNG Export] Teleporting styles for ${tagCount} nodes...`);
-
+        
         const propsToCopy = [
           'display', 'position', 'left', 'top', 'width', 'height', 'transform', 'transformOrigin',
-          'color', 'fontSize', 'fontWeight', 'fontFamily', 'textAlign',
+          'color', 'fontSize', 'fontWeight', 'fontFamily', 'textAlign', 
           'visibility', 'opacity', 'backgroundColor', 'zIndex',
           'border', 'borderWidth', 'borderStyle', 'borderColor', 'borderRadius',
           'padding', 'margin', 'lineHeight', 'overflow', 'boxSizing',
@@ -7922,7 +7509,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         ];
 
         const svgProps = [
-          'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+          'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 
           'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-opacity',
           'fill-opacity', 'fill-rule', 'marker-start', 'marker-mid', 'marker-end'
         ];
@@ -7930,11 +7517,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         const clonedNodes = [idoc.body, ...Array.from(idoc.body.querySelectorAll('*'))];
         let styleCount = 0;
         let wireCount = 0;
-
+        
         clonedNodes.forEach(cloned => {
           const dataId = cloned.getAttribute('data-h2c-id');
           if (!dataId) return;
-
+          
           const liveEl = elementMap.get(dataId);
           if (!liveEl) return;
 
@@ -7942,7 +7529,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           if (cloned.tagName === 'path' || cloned.tagName === 'line') wireCount++;
 
           const s = window.getComputedStyle(liveEl);
-
+          
           // Copy Layout and Visual Styles with FORCED priority
           propsToCopy.forEach(p => {
             // SAFETY: Prevent Giant Text bug
@@ -7963,7 +7550,7 @@ export function SimulatorPage({ gamificationMode = false }) {
                 }
               }
             });
-
+            
             // Hardcode width/height attributes to match computed logical size
             const w = s.getPropertyValue('width');
             const h = s.getPropertyValue('height');
@@ -7976,7 +7563,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               cloned.style.setProperty('height', h, 'important');
             }
           }
-
+          
           // Final Safety: Ensure nothing is accidentally hidden
           cloned.style.setProperty('visibility', 'visible', 'important');
           cloned.style.setProperty('opacity', s.opacity || '1', 'important');
@@ -7984,9 +7571,9 @@ export function SimulatorPage({ gamificationMode = false }) {
             cloned.style.setProperty('overflow', 'visible', 'important');
           }
         });
-
+        
         console.log(`[PNG Export] Successfully styled ${styleCount} elements, including ${wireCount} wires`);
-        elementMap.clear();
+        elementMap.clear(); 
 
 
         // Ensure all components are visible
@@ -8010,7 +7597,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           useCORS: true,
           allowTaint: false,
           logging: true,
-          imageTimeout: 10000,
+          imageTimeout: 10000, 
           skipFonts: true,
           width: actualW,
           height: actualH,
@@ -8028,7 +7615,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             });
           }
         });
-
+        
         // Memory Flush: Clear the iframe content immediately to free RAM
         idoc.body.innerHTML = '';
         idoc.head.innerHTML = '';
@@ -8746,78 +8333,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
 
-        {/* Restore Session Toaster */}
-        {restoreProjectPrompt && (
-          <div style={{
-            position: 'fixed',
-            top: '80px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: 'var(--card)',
-            border: '1px solid var(--accent)',
-            boxShadow: '0 8px 32px rgba(0, 212, 255, 0.15), 0 0 0 1px rgba(0, 212, 255, 0.3)',
-            borderRadius: '12px',
-            padding: '16px 24px',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '20px',
-            color: 'var(--text)',
-            animation: 'panelContentIn 0.3s ease-out'
-          }}>
-            <div style={{ flex: 1 }}>
-              <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 'bold', color: 'var(--text)' }}>Restore previous session?</h4>
-              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text2)' }}>
-                We found your project <strong>"{restoreProjectPrompt.name || 'Untitled'}"</strong> from your last visit.
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button 
-                onClick={() => setRestoreProjectPrompt(null)}
-                style={{
-                  background: 'transparent',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text2)',
-                  padding: '8px 14px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => e.target.style.background = 'var(--card2)'}
-                onMouseLeave={(e) => e.target.style.background = 'transparent'}
-              >
-                Start Fresh
-              </button>
-              <button 
-                onClick={() => {
-                  handleLoadProject(restoreProjectPrompt);
-                  setRestoreProjectPrompt(null);
-                }}
-                style={{
-                  background: 'var(--accent)',
-                  border: 'none',
-                  color: '#000',
-                  padding: '8px 16px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '13px',
-                  fontWeight: '700',
-                  boxShadow: '0 4px 12px rgba(0, 212, 255, 0.3)',
-                  transition: 'all 0.2s'
-                }}
-                onMouseEnter={(e) => { e.target.style.transform = 'translateY(-1px)'; e.target.style.boxShadow = '0 6px 16px rgba(0, 212, 255, 0.4)'; }}
-                onMouseLeave={(e) => { e.target.style.transform = 'none'; e.target.style.boxShadow = '0 4px 12px rgba(0, 212, 255, 0.3)'; }}
-              >
-                Restore Project
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* TOP BAR */}
-        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => { localStorage.removeItem('openhw-tour-completed'); setShowTour(true); }} />
+        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
 
         <SimulatorStatusBanners
           studentAssignmentMode={studentAssignmentMode}
@@ -8905,8 +8422,6 @@ export function SimulatorPage({ gamificationMode = false }) {
           setDeepSiliconDebuggingEnabled={setDeepSiliconDebuggingEnabled}
           telemetryMode={telemetryMode}
           setTelemetryMode={setTelemetryMode}
-          respectExitSide={respectExitSide}
-          setRespectExitSide={setRespectExitSide}
           onOpenTelemetryModal={() => setShowTelemetrySelectModal(true)}
           setShowSpeedDialog={setShowSpeedDialog}
           simulationSpeed={simulationSpeed}
@@ -8952,8 +8467,11 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           {/* CANVAS + SVG WIRE LAYER */}
           <main
-            className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)]" style={{
+            className="flex-1 relative overflow-hidden bg-[var(--canvas-bg)] bg-[length:24px_24px]" style={{
               cursor: showInspector ? 'url("data:image/svg+xml,%3Csvg width=\'24\' height=\'24\' viewBox=\'0 0 24 24\' fill=\'none\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'4\' fill=\'%2338bdf8\'/%3E%3Cpath d=\'M12 2v6M12 16v6M2 12h6M16 12h6\' stroke=\'%2338bdf8\' stroke-width=\'2\'/%3E%3C/svg%3E") 12 12, crosshair' : (segDrag ? (segDrag.isHoriz ? 'ns-resize' : 'ew-resize') : wireStart ? 'crosshair' : isCanvasLocked ? 'default' : 'grab'),
+              backgroundImage: showGrid
+                ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
+                : 'none',
               touchAction: 'none', // Block browser pinch-to-zoom
               pointerEvents: liveEditingDisabled ? 'none' : 'auto',
               opacity: liveEditingDisabled ? 0.8 : 1,
@@ -8970,6 +8488,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy' }}
             onMouseMove={() => { }}
             onMouseDown={e => {
+              if (e.button === 2) { if (wireStart) { e.preventDefault(); setWireStart(null); } return; }
               if (isCanvasLocked || wireStart || movingComp.current) return;
               if (e.button !== 0 && e.button !== 1) return;
               e.preventDefault();
@@ -8978,10 +8497,10 @@ export function SimulatorPage({ gamificationMode = false }) {
               panStartRef.current = { x: e.clientX, y: e.clientY, ox: canvasOffsetRef.current.x, oy: canvasOffsetRef.current.y };
             }}
             onClick={(e) => {
-              if (didPanRef.current) return;
+              if (didPanRef.current) { didPanRef.current = false; return; }
               if (wireStart) {
                 const r = canvasRef.current.getBoundingClientRect();
-                const newPt = { x: snapToGrid((e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom), y: snapToGrid((e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom) };
+                const newPt = { x: (e.clientX - r.left - canvasOffsetRef.current.x) / canvasZoom, y: (e.clientY - r.top - canvasOffsetRef.current.y) / canvasZoom };
                 setWireStart(prev => ({ ...prev, waypoints: [...(prev.waypoints || []), newPt] }));
               } else {
                 setSelected(null)
@@ -9005,11 +8524,10 @@ export function SimulatorPage({ gamificationMode = false }) {
             {/* Zoom Wrapper — scales all circuit content */}
             {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
                React state (canvasOffset) is only committed once on mouseup. */}
-              <CanvasSceneLayer
+            <CanvasSceneLayer
               innerCanvasRef={innerCanvasRef}
               canvasOffset={canvasOffset}
               canvasZoom={canvasZoom}
-              showGrid={showGrid}
               wires={wires}
               wiresAlwaysOnTop={wiresAlwaysOnTop}
               selected={selected}
@@ -9017,7 +8535,6 @@ export function SimulatorPage({ gamificationMode = false }) {
               getPinPos={getPinPos}
               getPinExitPoint={getPinExitPoint}
               wirepointsEnabled={wirepointsEnabled}
-              respectExitSide={respectExitSide}
               theme={theme}
               setSelected={setSelected}
               canvasRef={canvasRef}
@@ -9033,7 +8550,6 @@ export function SimulatorPage({ gamificationMode = false }) {
               multiRoutePath={multiRoutePath}
               svgRef={svgRef}
               isRunning={isRunning}
-              isComponentDragging={isComponentDragging}
               COMPONENT_REGISTRY={COMPONENT_REGISTRY}
               getComponentStateAttrs={getComponentStateAttrs}
               updateComponentAttr={updateComponentAttr}

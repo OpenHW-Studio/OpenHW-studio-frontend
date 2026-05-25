@@ -235,7 +235,6 @@ function TopToolboxInternal(props) {
 
   const toolMenuItems = [
     { label: 'Schematic View', onClick: () => { setShowSchematic(true); generateSchematic(); } },
-    { label: 'Component List', onClick: () => setShowComponentList(true) },
     { label: 'Alignment Lab', onClick: () => navigate('/alignment-lab') },
     { type: 'separator' },
     { 
@@ -332,22 +331,39 @@ function TopToolboxInternal(props) {
           </div>
           <div className="flex items-center gap-1 -ml-2" ref={menuRef} style={{ position: 'relative', zIndex: 1500 }}>
             <MenuButton label="File" menuKey="file" items={fileMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                setActiveMenu(null);
+                setShowComponentList((v) => !v);
+              }}
+              style={{
+                background: showComponentList ? 'rgba(255,255,255,0.05)' : 'none',
+                border: 'none',
+                color: showComponentList ? 'var(--text)' : 'var(--text3)',
+                fontSize: '14px',
+                fontWeight: '500',
+                padding: '2px 8px',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                transition: 'background 0.2s, color 0.2s',
+                pointerEvents: 'auto',
+              }}
+              onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = 'var(--text)'; }}
+              onMouseLeave={(e) => {
+                if (!showComponentList) {
+                  e.target.style.background = 'none';
+                  e.target.style.color = 'var(--text3)';
+                }
+              }}
+              title="Bill of materials for components on the canvas"
+            >
+              Components
+            </button>
             <MenuButton label="Tool" menuKey="tool" items={toolMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
             <MenuButton label="Help" menuKey="help" items={helpMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
           </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.03)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border)' }}>
-           <span style={{ fontSize: '11px', color: 'var(--text3)' }}>Board:</span>
-           <select 
-              value={board} 
-              onChange={(e) => setBoard(e.target.value)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text)', fontSize: '12px', outline: 'none', fontWeight: '500', cursor: 'pointer' }}
-           >
-              <option value="arduino_uno">Arduino Uno</option>
-              <option value="pico">Raspberry Pi Pico</option>
-              <option value="esp32">ESP32</option>
-           </select>
         </div>
       </div>
 

@@ -9,9 +9,8 @@ export const useTourLogic = ({
   setWires,
   setCodeTab,
   setIsPanelOpen,
-  setSerialViewMode,
-  setIsPaletteHovered, // closes the left components palette
-  windowSize
+  setSerialViewMode, // needed to switch between monitor/plotter view inside the serial tab
+  windowSize // Pass window size if needed for coordinate calcs
 }) => {
   const [showTour, setShowTour] = useState(false);
   const [tourActiveStep, setTourActiveStep] = useState(null);
@@ -31,22 +30,16 @@ export const useTourLogic = ({
     setTourActiveStep(null);
     localStorage.setItem('openhw_tour_completed', 'true');
     
-    // Always purge demo artifacts by their known IDs.
-    // Refs alone are unreliable — they may have been cleared mid-tour
-    // (e.g. remove-demo-wire sets demoWireIdRef to null) leaving orphans on canvas.
-    setComponents(prev => prev.filter(c => c.id !== 'demo-comp-tour' && !c.isDemo));
-    setWires(prev => prev.filter(w => w.id !== 'demo-wire-tour' && !w.isDemo));
-    demoComponentIdRef.current = null;
-    demoWireIdRef.current = null;
-  }, [setComponents, setWires]);
-
-  // Auto-close both panels whenever the tour opens
-  useEffect(() => {
-    if (showTour) {
-      setIsPanelOpen(false);
-      setIsPaletteHovered?.(false);
+    // Cleanup demo state
+    if (demoComponentIdRef.current) {
+      setComponents(prev => prev.filter(c => c.id !== demoComponentIdRef.current));
+      demoComponentIdRef.current = null;
     }
-  }, [showTour, setIsPanelOpen, setIsPaletteHovered]);
+    if (demoWireIdRef.current) {
+      setWires(prev => prev.filter(w => w.id !== demoWireIdRef.current));
+      demoWireIdRef.current = null;
+    }
+  }, [setComponents, setWires]);
 
   const handleTourDemoAction = useCallback((action) => {
     if (action === 'add-component') {
@@ -118,7 +111,7 @@ export const useTourLogic = ({
       setSerialViewMode?.('plotter');
       setIsPanelOpen(true);
     }
-  }, [setComponents, setWires, setCodeTab, setIsPanelOpen, setSerialViewMode, setIsPaletteHovered]);
+  }, [setComponents, setWires, setCodeTab, setIsPanelOpen, setSerialViewMode]);
 
   return {
     showTour,

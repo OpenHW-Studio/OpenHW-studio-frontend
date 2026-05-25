@@ -5,9 +5,7 @@ import CodeEditorView from './views/CodeEditorView';
 import BlockEditorView from './views/BlockEditorView';
 import SerialMonitorView from './views/SerialMonitorView';
 import MobileBottomNav from './MobileBottomNav';
-import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
-import { calculateWireBundleOffsets } from '../../utils/wireRouting.js';
-import { getResolvedPinExitSide } from '../../utils/pinExit.js';
+import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor, computeWireLaneOffsets } from './wireUtils';
 import { ProjectCard } from './ProjectCard';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
@@ -501,8 +499,8 @@ function syncNextIds(_comps, ws) {
   }
 }
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/examples' : '/examples');
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api')).replace(/\/$/, '');
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api').replace(/\/$/, '');
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
 const GROUP_ICON_SVG = {
@@ -1108,9 +1106,6 @@ function normalizeImportedCircuitData(rawComponents, rawConnections) {
         waypoints: Array.isArray(wire.waypoints)
           ? wire.waypoints.map(normalizeWaypoint).filter(Boolean)
           : [],
-        routingInstructions: Array.isArray(wire.routingInstructions)
-          ? wire.routingInstructions
-          : (Array.isArray(wire.waypoints) ? wire.waypoints : []),
         isBelow: wire.isBelow === true,
         fromLabel: String(wire.fromLabel || endpointLabel(from) || ''),
         toLabel: String(wire.toLabel || endpointLabel(to) || ''),
@@ -1479,7 +1474,7 @@ function getPinCategory(pId, pDesc, compType) {
 
 // ─── Memoized Wire Component ────────────────────────────────────────────────
 const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, onTouchStartSegment, wirepointsEnabled, theme, offset = 0 }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions), [p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions]);
+  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset), [p1, e1, e2, p2, wire.waypoints, wire.path, offset]);
 
   return (
     <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
@@ -1487,7 +1482,7 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
       <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
       <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
       <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, _, i, arr) => {
+      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints).reduce((acc, _, i, arr) => {
         if (i < 1 || i >= arr.length - 2) return acc;
         const a = arr[i], b = arr[i + 1];
         const segLen = Math.hypot(b.x - a.x, b.y - a.y);
@@ -1528,14 +1523,6 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
     return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
   };
   const b = getBounds();
-
-const getVisualBounds = (comp, COMPONENT_REGISTRY, getComponentStateAttrs) => {
-  if (!comp) return { x: 0, y: 0, w: 0, h: 0 };
-  const reg = COMPONENT_REGISTRY[comp.type];
-  if (!reg) return { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-  if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-  return reg.BOUNDS || { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-};
 
   return (
     <React.Fragment>
@@ -1802,14 +1789,6 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   // Incremented whenever backend components are injected/updated so catalog consumers re-render
   const [customCatalogVersion, setCustomCatalogVersion] = useState(0);
-
-  const [respectExitSide, setRespectExitSide] = useState(() => {
-    const val = localStorage.getItem('openhw.respectExitSide');
-    return val !== 'false';
-  });
-  useEffect(() => {
-    localStorage.setItem('openhw.respectExitSide', respectExitSide ? 'true' : 'false');
-  }, [respectExitSide]);
 
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(() => {
@@ -4196,66 +4175,93 @@ useEffect(() => {
   }, [componentsMap, PIN_DEFS])
 
   // ── Get the point a wire should exit/enter at 90° from a pin ───────────────
-  const getPinExitPoint = useCallback((compId, pinId, offset = 0) => {
+  const getPinExitPoint = useCallback((compId, pinId, offset = 0, targetPos = null) => {
     const comp = componentsMap.get(compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
     const pin = pins.find(p => String(p.id) === String(pinId))
     if (!pin) return null
-    const bounds = getVisualBounds(comp, COMPONENT_REGISTRY, getComponentStateAttrs)
-    const exitSide = getResolvedPinExitSide(comp, pin, pins, bounds)
-    if (!exitSide) return null
-    const laneOffset = Number(offset) || 0;
-    const bodyEdgeGap = 3;
-    const localX = (Number(pin.x) || 0) - (Number(bounds.x) || 0);
-    const localY = (Number(pin.y) || 0) - (Number(bounds.y) || 0);
-    const distLeft = localX;
-    const distRight = (Number(bounds.w) || comp.w || 0) - localX;
-    const distTop = localY;
-    const distBottom = (Number(bounds.h) || comp.h || 0) - localY;
-    let exitDx = 0, exitDy = 0;
-    const MIN_EXIT_STUB = 20;
-    if (exitSide === 'left') {
-      exitDx = -(Math.max(distLeft + bodyEdgeGap, MIN_EXIT_STUB));
-      exitDy = 0;
-    } else if (exitSide === 'right') {
-      exitDx = Math.max(distRight + bodyEdgeGap, MIN_EXIT_STUB);
-      exitDy = 0;
-    } else if (exitSide === 'top') {
-      exitDx = 0;
-      exitDy = -(Math.max(distTop + bodyEdgeGap, MIN_EXIT_STUB));
-    } else {
-      exitDx = 0;
-      exitDy = Math.max(distBottom + bodyEdgeGap, MIN_EXIT_STUB);
-    }
-    // Rotate exit direction with the component
+    const stub = 9 + (offset % 7) * 5;
+    const pinPos = getPinPos(compId, pinId);
+    if (!pinPos) return null;
+
+    const cw = comp.w || 40;
+    const ch = comp.h || 40;
+    const px = pin.x;
+    const py = pin.y;
+    const SNAP = 15;
+    const edgeCandidates = [
+      { dir: 'top', dist: py },
+      { dir: 'bottom', dist: ch - py },
+      { dir: 'left', dist: px },
+      { dir: 'right', dist: cw - px },
+    ].sort((a, b) => a.dist - b.dist);
+    const snapEdges = edgeCandidates.filter(e => e.dist <= SNAP);
+    const candidates = snapEdges.length > 0 ? snapEdges : edgeCandidates.slice(0, 2);
+    const outward = { top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } };
+
+    let dir = candidates[0].dir;
     const rotation = comp.rotation || 0;
+    if (targetPos && Number.isFinite(targetPos.x) && Number.isFinite(targetPos.y)) {
+      const radPre = (rotation * Math.PI) / 180;
+      const cosPre = Math.cos(radPre);
+      const sinPre = Math.sin(radPre);
+      let bestScore = Infinity;
+      for (const { dir: candidateDir } of candidates) {
+        const local = outward[candidateDir];
+        const worldDx = local.x * cosPre - local.y * sinPre;
+        const worldDy = local.x * sinPre + local.y * cosPre;
+        const exitX = pinPos.x + worldDx * stub;
+        const exitY = pinPos.y + worldDy * stub;
+        const score = Math.abs(targetPos.x - exitX) + Math.abs(targetPos.y - exitY);
+        if (score < bestScore) {
+          bestScore = score;
+          dir = candidateDir;
+        }
+      }
+    }
+
+    let exitDx = 0, exitDy = 0;
+    if (dir === 'left') exitDx = -stub;
+    else if (dir === 'right') exitDx = stub;
+    else if (dir === 'top') exitDy = -stub;
+    else if (dir === 'bottom') exitDy = stub;
     if (rotation !== 0) {
       const rad = rotation * Math.PI / 180;
       const rdx = exitDx * Math.cos(rad) - exitDy * Math.sin(rad);
       const rdy = exitDx * Math.sin(rad) + exitDy * Math.cos(rad);
       exitDx = rdx; exitDy = rdy;
     }
-    const pinPos = getPinPos(compId, pinId);
-    if (!pinPos) return null;
-    const exitX = pinPos.x + exitDx;
-    const exitY = pinPos.y + exitDy;
-    try {
-      console.debug('[mobile:getPinExitPoint]', { compId: comp.id, pinId: pin.id, bounds, localX, localY, dir: exitSide, laneOffset, exitX, exitY });
-    } catch (e) {}
-    return { x: exitX, y: exitY, dir: exitSide };
+
+    const isRotated90 = rotation === 90 || rotation === 270;
+    const finalW = isRotated90 ? ch : cw;
+    const finalH = isRotated90 ? cw : ch;
+    const finalX = comp.x + (cw - finalW) / 2;
+    const finalY = comp.y + (ch - finalH) / 2;
+
+    const directions = ['top', 'right', 'bottom', 'left'];
+    let idx = directions.indexOf(dir);
+    let rotatedDir = dir;
+    if (idx !== -1) {
+      const offsetVal = Math.round((rotation || 0) / 90);
+      let newIdx = (idx + offsetVal) % 4;
+      if (newIdx < 0) newIdx += 4;
+      rotatedDir = directions[newIdx];
+    }
+
+    return {
+      x: pinPos.x + exitDx,
+      y: pinPos.y + exitDy,
+      dir,
+      rotatedDir,
+      compBox: { x: finalX, y: finalY, w: finalW, h: finalH, type: comp.type }
+    };
   }, [componentsMap, PIN_DEFS, getPinPos])
 
-  const wireOffsetMap = useMemo(() => calculateWireBundleOffsets(wires, (wire) => {
-    const fromParts = String(wire.from || '').split(':');
-    const toParts = String(wire.to || '').split(':');
-    const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
-    const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
-    if (!p1 || !p2) return null;
-    const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), 0) || p1;
-    const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), 0) || p2;
-    return { p1, p2, e1, e2, waypoints: wire.waypoints || [] };
-  }, respectExitSide), [wires, getPinPos, getPinExitPoint, respectExitSide]);
+  const wireLaneOffsets = useMemo(
+    () => computeWireLaneOffsets(wires, getPinPos, getPinExitPoint),
+    [wires, getPinPos, getPinExitPoint]
+  );
 
   // Keep reactive refs current so async effects always use latest values
   getPinPosRef.current = getPinPos;
@@ -6957,12 +6963,6 @@ useEffect(() => {
 
       worker.onmessage = async (event) => {
         const msg = event.data;
-        if (msg.type === 'error') {
-          appendConsoleEntry('error', `[SIM] ${msg.message || 'Runner error'}`, 'simulator');
-          logSerial(`Runner error: ${msg.message || 'Unknown error'}`, 'var(--red)');
-          handleStop();
-          return;
-        }
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
@@ -9398,25 +9398,25 @@ useEffect(() => {
             <svg
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
             >
-              {wires.filter(w => w.isBelow === true).map(w => {
+              {wires.filter(w => w.isBelow === true).map((w, index) => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
                 const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
                 const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const offset = wireOffsetMap.get(w.id) || 0;
-                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset) || p2;
+                const offset = wireLaneOffsets.get(w.id) ?? (index % 7);
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
                 
                 return (
                   <CanvasWire
-                    key={w.id}
+                    key={`below-${w.id}`}
                     wire={w}
                     p1={p1} p2={p2} e1={e1} e2={e2}
+                    offset={offset}
                     isSelected={selected === w.id}
                     wirepointsEnabled={wirepointsEnabled}
                     theme={theme}
-                    offset={wireOffsetMap.get(w.id) || 0}
                     onSelect={(e) => {
                       e.stopPropagation();
                       setSelected(w.id);
@@ -9446,75 +9446,6 @@ useEffect(() => {
                   />
                 );
               })}
-            </svg>
-
-            {/* TOP SVG layer for wires (Above Components) & Context Menu */}
-            <svg
-              ref={svgRef}
-              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
-            >
-              {/* Placed wires (Top layer) */}
-              {wires.filter(w => w.isBelow !== true).map(w => {
-                const fromParts = w.from.split(':')
-                const toParts = w.to.split(':')
-                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
-                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
-                if (!p1 || !p2) return null
-                const offset = wireOffsetMap.get(w.id) || 0;
-                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset) || p2;
-                
-                return (
-                  <CanvasWire
-                    key={w.id}
-                    wire={w}
-                    p1={p1} p2={p2} e1={e1} e2={e2}
-                    isSelected={selected === w.id}
-                    wirepointsEnabled={wirepointsEnabled}
-                    theme={theme}
-                    offset={wireOffsetMap.get(w.id) || 0}
-                    onSelect={(e) => {
-                      e.stopPropagation();
-                      setSelected(w.id);
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
-                    }}
-                    onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
-                      if (selected !== wire.id) { setSelected(wire.id); return; }
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                      const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                      segDragRef.current = dragData;
-                      setSegDrag(dragData);
-                    }}
-                    onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
-                      if (ev.cancelable) ev.preventDefault();
-                      if (selected !== wire.id) { setSelected(wire.id); return; }
-                      const t = ev.touches[0];
-                      const rect = canvasRef.current.getBoundingClientRect();
-                      const mx = (t.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
-                      const my = (t.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
-                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
-                      segDragRef.current = dragData;
-                      setSegDrag(dragData);
-                    }}
-                  />
-                );
-              })}
-
-              {/* Preview wire while drawing */}
-              {wireStart && (
-                <path
-                  d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
-                  stroke="var(--orange)"
-                  strokeWidth={2}
-                  strokeDasharray="6 4"
-                  fill="none"
-                  strokeLinecap="round"
-                  opacity={0.8}
-                />
-              )}
             </svg>
 
             {/* Component Context Menu — rendered at canvas level to avoid overflow:hidden clipping */}
@@ -9657,7 +9588,7 @@ useEffect(() => {
                       left: comp.x, top: comp.y,
                       zIndex: isBreadboardType(comp.type) 
                         ? (isSelected ? 4 : 2) 
-                        : (isSelected ? 10 : 5),
+                        : (isSelected ? 8 : 5),
                     }}
                   >
                     <CanvasComponent
@@ -9854,6 +9785,73 @@ useEffect(() => {
                 </>
               );
             })()}
+
+            {/* TOP SVG layer — after components so wires render above boards/parts */}
+            <svg
+              ref={svgRef}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 15, overflow: 'visible' }}
+            >
+              {wires.filter(w => w.isBelow !== true).map((w, index) => {
+                const fromParts = w.from.split(':')
+                const toParts = w.to.split(':')
+                const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
+                const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
+                if (!p1 || !p2) return null
+                const offset = wireLaneOffsets.get(w.id) ?? (index % 7);
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset, p2) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset, p1) || p2;
+
+                return (
+                  <CanvasWire
+                    key={`top-${w.id}`}
+                    wire={w}
+                    p1={p1} p2={p2} e1={e1} e2={e2}
+                    offset={offset}
+                    isSelected={selected === w.id}
+                    wirepointsEnabled={wirepointsEnabled}
+                    theme={theme}
+                    onSelect={(e) => {
+                      e.stopPropagation();
+                      setSelected(w.id);
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
+                    }}
+                    onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                      if (selected !== wire.id) { setSelected(wire.id); return; }
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                      const my = (ev.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                      segDragRef.current = dragData;
+                      setSegDrag(dragData);
+                    }}
+                    onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
+                      if (ev.cancelable) ev.preventDefault();
+                      if (selected !== wire.id) { setSelected(wire.id); return; }
+                      const t = ev.touches[0];
+                      const rect = canvasRef.current.getBoundingClientRect();
+                      const mx = (t.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
+                      const my = (t.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
+                      const dragData = { wireId: wire.id, segIdx: i, isHoriz, startMouseCanvas: { x: mx, y: my }, startPts: arr.map(pt => ({ ...pt })), preWires: wires, hasMoved: false };
+                      segDragRef.current = dragData;
+                      setSegDrag(dragData);
+                    }}
+                  />
+                );
+              })}
+
+              {wireStart && (
+                <path
+                  d={multiRoutePath({ x: wireStart.x, y: wireStart.y }, mousePos, wireStart.waypoints)}
+                  stroke="var(--orange)"
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                  fill="none"
+                  strokeLinecap="round"
+                  opacity={0.8}
+                />
+              )}
+            </svg>
           </div>{/* end zoom wrapper */}
 
           {/* Minimalist Runtime panel (top-left) */}

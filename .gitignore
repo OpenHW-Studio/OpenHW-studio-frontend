@@ -1,4 +1,47 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
 node_modules
 frontend/node_modules
-.env
+
+# Build and Production
 dist
+dist-ssr
+build
+out
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.un~
+
+# E2E Testing
+playwright-report/
+test-results/
+
+# Temp and Scratch files
+temp/
+scratch/
+build_error.txt
+build_output.txt
+debug_chunks.txt
+.eslintcache

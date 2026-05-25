@@ -102,12 +102,12 @@ const STEPS = [
   },
   {
     id: 'library',
+    // Add data-tour-step="library" to the Libraries button at the bottom of the explorer panel
     target: '[data-tour-step="library"]',
     fallbackTarget: '[data-tour-id="btn-libraries"], button[class*="librari" i], [class*="library-btn"]',
     title: 'Library Manager',
     content: 'Click Libraries in code section to browse and install thousands of community-built libraries for sensors, displays, and communication protocols.',
-    position: 'top',
-    action: 'switch-library',  // ensures Code tab is active so the Libraries button is visible
+    position: 'top',     // tooltip appears above the button since it sits at the bottom of the panel
     spotlightPadding: 6,
     letMeTryHint: 'Click the Libraries button to continue →',
   },
@@ -390,9 +390,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       if (demoPhase === 1) onDemoAction('add-component');
       if (demoPhase === 4) onDemoAction('add-demo-wire');
     }
-    // Fire panel-switch actions immediately (phase 0 = step entry) so the correct
-    // tab is visible right away regardless of which tab the user was on before.
-    if (step.action?.startsWith('switch-') && demoPhase === 0) {
+    if (step.action?.startsWith('switch-') && demoPhase === 2) {
       onDemoAction(step.action);
     }
   }, [demoPhase, currentStep, isVisible, onDemoAction, mode]);
@@ -409,18 +407,6 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       onDemoAction?.('remove-demo-wire');
     };
   }, [currentStep, onDemoAction, mode]);
-
-  // ── Unconditional unmount cleanup ────────────────────────────────────────
-  // Covers Skip/Finish in let-me-try mode where the phase loop cleanup above
-  // never runs (mode !== 'show-me'). handleFinishTour in useTourLogic also
-  // purges by ID, giving us two layers of defence.
-  useEffect(() => {
-    return () => {
-      onDemoAction?.('remove-component');
-      onDemoAction?.('hide-quick-add');
-      onDemoAction?.('remove-demo-wire');
-    };
-  }, [onDemoAction]);
 
   // ── Let Me Try: no auto-advance ─────────────────────────────────────────
   // Advancement is intentionally manual — only the "Done ✓" button on the

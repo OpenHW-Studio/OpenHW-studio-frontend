@@ -1,26 +1,13 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getTelemetryParamsForComponent } from '../utils/telemetryRegistry.js';
 
-function extractParamValue(key, comp, telemetryData, state, activeMetrics, activeCustom) {
+function extractParamValue(key, comp, telemetryData, state, activeMetrics) {
   let val = comp[key];
   if (val === undefined) val = state?.[key];
   if (val === undefined) val = telemetryData?.[key];
   if (val === undefined) val = telemetryData?.state?.[key];
   if (val === undefined) val = activeMetrics?.[key];
   if (val === undefined) val = telemetryData?.metrics?.[key];
-  if (val === undefined) val = activeCustom?.[key];
-
-  if (val === undefined && String(key).startsWith('deepSilicon')) {
-    const deepObj = comp.deepSilicon || telemetryData?.deepSilicon;
-    if (deepObj) {
-      if (key === 'deepSiliconRegisters') val = deepObj.registers;
-      else if (key === 'deepSiliconSRAM') val = deepObj.sramMap;
-      else if (key === 'deepSiliconTimers') val = deepObj.timers;
-      else if (key === 'deepSiliconPower') val = deepObj.power;
-      else if (key === 'deepSiliconInterrupts') val = deepObj.interrupts;
-    }
-  }
-
   if (val === undefined) return 'N/A';
 
   if (typeof val === 'number') {
@@ -65,27 +52,23 @@ export function formatTelemetryEntry(comp, mode, watchedParamsMap = {}) {
   let paramStr = '';
   try {
     paramsToDisplay.forEach(p => {
-      paramStr += ` | ${p}: ${extractParamValue(p, comp, telemetryData, state, activeMetrics, activeCustom)}`;
+      paramStr += ` | ${p}: ${extractParamValue(p, comp, telemetryData, state, activeMetrics)}`;
     });
   } catch (paramErr) {
     console.error(`[Telemetry] Error building parameter string for ${id} (${type}):`, paramErr, { paramsToDisplay, comp });
     paramStr += ' | [Error formatting parameters]';
   }
 
-  const deepSilicon = comp.deepSilicon || telemetryData?.deepSilicon;
-
   if (mode === 'simple') {
     let baseSimple = telemetrySummary || 'State';
     if (baseSimple.includes('State:') || baseSimple.startsWith('OK:') || baseSimple.includes('No anomalies detected')) {
       baseSimple = 'State';
     }
-    const details = state ? { ...state } : {};
-    if (deepSilicon) details.deepSilicon = deepSilicon;
     return {
       id,
       type,
       summary: `${baseSimple}${paramStr}`,
-      details,
+      details: state || {},
       status: 'ok',
     };
   }
@@ -95,13 +78,11 @@ export function formatTelemetryEntry(comp, mode, watchedParamsMap = {}) {
     if (baseDelta.includes('State/Metrics updated') || baseDelta.startsWith('OK:') || baseDelta.includes('No anomalies detected')) {
       baseDelta = '[DELTA]';
     }
-    const details = telemetryData ? { ...telemetryData } : { state, metrics: activeMetrics, heuristics: activeHeuristics };
-    if (deepSilicon) details.deepSilicon = deepSilicon;
     return {
       id,
       type,
       summary: `${baseDelta}${paramStr}`,
-      details,
+      details: telemetryData || { state, metrics: activeMetrics, heuristics: activeHeuristics },
       status: activeHeuristics.status || 'ok',
     };
   }
@@ -122,19 +103,16 @@ export function formatTelemetryEntry(comp, mode, watchedParamsMap = {}) {
   }
   summaryStr += paramStr;
 
-  const details = telemetryData ? { ...telemetryData } : {
-    state,
-    metrics: activeMetrics,
-    heuristics: activeHeuristics,
-    custom: activeCustom,
-  };
-  if (deepSilicon) details.deepSilicon = deepSilicon;
-
   return {
     id,
     type,
     summary: summaryStr,
-    details,
+    details: telemetryData || {
+      state,
+      metrics: activeMetrics,
+      heuristics: activeHeuristics,
+      custom: activeCustom,
+    },
     status: activeHeuristics.status || 'ok',
   };
 }
@@ -210,26 +188,22 @@ export function useTelemetryManager({
     if (modeOverride && setTelemetryMode) setTelemetryMode(targetMode);
 
     if (workerRef?.current) {
-      const deepSilicon = typeof window !== 'undefined' ? localStorage.getItem('openhw.deepSiliconDebugging') === 'true' : false;
       workerRef.current.postMessage({
         type: 'SET_COMPONENT_TELEMETRY',
         enabled: !!enabled,
         mode: targetMode,
         watchedParamsMap: telemetryWatchedParamsMap,
-        deepSilicon,
       });
     }
   }, [workerRef, telemetryMode, setComponentTelemetryEnabled, setTelemetryMode, telemetryWatchedParamsMap]);
 
   useEffect(() => {
     if (workerRef?.current && componentTelemetryEnabled) {
-      const deepSilicon = typeof window !== 'undefined' ? localStorage.getItem('openhw.deepSiliconDebugging') === 'true' : false;
       workerRef.current.postMessage({
         type: 'SET_COMPONENT_TELEMETRY',
         enabled: true,
         mode: telemetryMode,
         watchedParamsMap: telemetryWatchedParamsMap,
-        deepSilicon,
       });
     }
   }, [workerRef, componentTelemetryEnabled, telemetryMode, telemetryWatchedParamsMap]);

@@ -69,12 +69,16 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
+      port: Number(env.VITE_DEV_PORT) || 5173,
       fs: {
         allow: [
           path.resolve(__dirname, '..'),
           ...(useAlias ? [resolvedEmulatorPath] : []),
         ],
       },
+    },
+    preview: {
+      port: Number(env.VITE_DEV_PORT) || 5173,
     },
   }
 })

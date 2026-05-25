@@ -1,4 +1,4 @@
-import { useState, startTransition } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx' 
 const DOCS_URL = import.meta.env.VITE_DOCS_URL || 'https://openhw-studio.fossee.in/docs/';
@@ -14,14 +14,10 @@ export default function LandingPage() {
     document.documentElement.setAttribute('data-theme', newTheme)
   }
 
-  const handleNavigate = (path) => {
-    navigate(path);
-  }
-
   const handleDashboard = () => {
-    if (role === 'teacher') handleNavigate('/teacher/dashboard')
-    else if (role === 'student') handleNavigate('/student/dashboard')
-    else handleNavigate('/user/dashboard')
+    if (role === 'teacher') navigate('/teacher/dashboard')
+    else if (role === 'student') navigate('/student/dashboard')
+    else navigate('/user/dashboard')
   }
 
   return (
@@ -42,8 +38,8 @@ export default function LandingPage() {
             <button className="btn btn-primary" onClick={handleDashboard}>Dashboard →</button>
           ) : (
             <>
-              <button className="btn btn-ghost" onClick={() => handleNavigate('/login')}>Sign In</button>
-              <button className="btn btn-primary" onClick={() => handleNavigate('/login')}>Get Started</button>
+              <button className="btn btn-ghost" onClick={() => navigate('/login')}>Sign In</button>
+              <button className="btn btn-primary" onClick={() => navigate('/login')}>Get Started</button>
             </>
           )}
         </div>
@@ -62,14 +58,10 @@ export default function LandingPage() {
         </p>
         <div className="hero-actions">
           
-          <button 
-            className="btn btn-primary btn-lg" 
-            onMouseEnter={() => import('./simulationpage/SimulatorPage.jsx')}
-            onClick={() => handleNavigate('/simulator')}
-          >
+          <button className="btn btn-primary btn-lg" onClick={() => navigate('/simulator')}>
             ▶ Try Simulator
           </button>
-          <button className="btn btn-outline btn-lg" onClick={() => handleNavigate('/classroom/signup')}>
+          <button className="btn btn-outline btn-lg" onClick={() => navigate('/classroom/signup')}>
             Join as Student / Teacher
           </button>
         </div>
@@ -124,7 +116,7 @@ export default function LandingPage() {
             <div
               className="feature-card"
               key={p.slug}
-              onClick={() => handleNavigate(`/${p.slug}/guide`)}
+              onClick={() => navigate(`/${p.slug}/guide`)}
               style={{ cursor: 'pointer', textAlign: 'left' }}
             >
               <div className="feature-icon">{p.icon}</div>
