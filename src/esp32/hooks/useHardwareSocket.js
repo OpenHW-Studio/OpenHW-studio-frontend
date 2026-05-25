@@ -67,6 +67,37 @@ function getWsBaseUrl() {
     return base.replace(/^https/, 'wss').replace(/^http/, 'ws');
 }
 
+// ── Frontend perf diagnostics ────────────────────────────────────────────
+
+/**
+ * Module-level message rate tracker.
+ * Logs to browser console every 1 second so we can correlate frontend
+ * message volume with Chrome CPU usage during simulation boot.
+ */
+const _diag = {
+    total:   0,
+    gpio:    0,
+    lastMs:  Date.now(),
+};
+
+function _diagTick(type) {
+    _diag.total++;
+    if (type === 'GPIO_SYNC') _diag.gpio++;
+    const now = Date.now();
+    const dt  = now - _diag.lastMs;
+    if (dt >= 1000) {
+        const rate = (_diag.total / (dt / 1000)).toFixed(0);
+        const gpio = (_diag.gpio  / (dt / 1000)).toFixed(0);
+        console.log(
+            `[WS-PERF] msgs/s=${rate} | GPIO_SYNC/s=${gpio}` +
+            ` | total-recv=${_diag.total}`
+        );
+        _diag.total  = 0;
+        _diag.gpio   = 0;
+        _diag.lastMs = now;
+    }
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -251,6 +282,9 @@ export function useHardwareSocket({
             let msg;
             try { msg = JSON.parse(event.data); } catch { return; }
 
+            // Perf diagnostic tick — logs msg/s & GPIO/s to browser console
+            _diagTick(msg.type);
+
             // Drop stale messages from a previous session
             if (msg.buildId && msg.buildId !== buildId) return;
 
@@ -302,8 +336,7 @@ export function useHardwareSocket({
                     // may get it twice — this guard prevents a phase downgrade).
                     clearWatchdog();
                     cbRef.current.onLog?.('🟡 Firmware running (no sim_ready() detected).', 'sys');
-                    // Only elevate to running if not already there
-                    cbRef.current.onPhaseChange?.(prev => prev === 'running' ? 'running' : 'running');
+                    cbRef.current.onPhaseChange?.('running');
                     break;
 
                 case 'FIRMWARE_STALLED':

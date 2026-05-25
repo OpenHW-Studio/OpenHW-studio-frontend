@@ -59,11 +59,36 @@ export function buildBaseRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0,
       const laneOffset = Number(offset.offset) || 0;
       if (overallHorizontalFirst) {
         // Side-by-side layout uses a Horizontal trunk. Wires drop vertically from pin to reach trunk.
-        const trunkY = typeof offset.bundleMidY === 'number' ? offset.bundleMidY + laneOffset : p1.y + laneOffset;
+        let trunkY = typeof offset.bundleMidY === 'number' ? offset.bundleMidY + laneOffset : p1.y + laneOffset;
+        
+        // Clamp trunkY away from the pin line using exit directions as boundary guides
+        const e1Dir = offset.e1Dir || '';
+        const e2Dir = offset.e2Dir || '';
+        if (e1Dir === 'bottom' || e2Dir === 'bottom') {
+          trunkY = Math.max(trunkY, p1.y + 15, p2.y + 15);
+        } else if (e1Dir === 'top' || e2Dir === 'top') {
+          trunkY = Math.min(trunkY, p1.y - 15, p2.y - 15);
+        } else {
+          // General fallback: if no vertical exit, just make sure we don't run exactly on the pin line
+          if (Math.abs(trunkY - p1.y) < 10) trunkY += 15;
+        }
+
         route = [p1, { x: p1.x, y: trunkY }, { x: p2.x, y: trunkY }, p2];
       } else {
         // Top-to-bottom layout uses a Vertical trunk. Wires go horizontally from pin to reach trunk.
-        const trunkX = typeof offset.bundleMidX === 'number' ? offset.bundleMidX + laneOffset : p1.x + laneOffset;
+        let trunkX = typeof offset.bundleMidX === 'number' ? offset.bundleMidX + laneOffset : p1.x + laneOffset;
+        
+        // Clamp trunkX away from the pin line using exit directions
+        const e1Dir = offset.e1Dir || '';
+        const e2Dir = offset.e2Dir || '';
+        if (e1Dir === 'right' || e2Dir === 'right') {
+          trunkX = Math.max(trunkX, p1.x + 15, p2.x + 15);
+        } else if (e1Dir === 'left' || e2Dir === 'left') {
+          trunkX = Math.min(trunkX, p1.x - 15, p2.x - 15);
+        } else {
+          if (Math.abs(trunkX - p1.x) < 10) trunkX += 15;
+        }
+
         route = [p1, { x: trunkX, y: p1.y }, { x: trunkX, y: p2.y }, p2];
       }
       route = dedupePoints(route);
@@ -360,50 +385,103 @@ export function calculateWireBundleOffsets(wires, resolveWirePoints, respectExit
     });
   }
 
-  // Phase 3: Bidirectional Bus Grouping
-  // Group wires by the two components (and edges) they connect.
-  // We sort CompA and CompB to ensure that Uno->Driver and Driver->Uno share the exact same bus!
-  const busGroups = new Map();
+  // Phase 3: Unified Bus Grouping by Congested Component Edge
+  // Count connections for each component edge
+  const edgeCounts = new Map();
   for (const r of allResolved) {
-    let compA, compB, edgeA, edgeB;
-    if (r.srcCompId < r.dstCompId) {
-      compA = r.srcCompId; edgeA = r.e1Dir;
-      compB = r.dstCompId; edgeB = r.e2Dir;
-    } else {
-      compA = r.dstCompId; edgeA = r.e2Dir;
-      compB = r.srcCompId; edgeB = r.e1Dir;
-    }
-    const key = `${compA}::${edgeA}::${compB}::${edgeB}`;
+    const k1 = `${r.srcCompId}::${r.e1Dir}`;
+    edgeCounts.set(k1, (edgeCounts.get(k1) || 0) + 1);
 
-    if (!busGroups.has(key)) busGroups.set(key, []);
-    busGroups.get(key).push(r);
+    const k2 = `${r.dstCompId}::${r.e2Dir}`;
+    edgeCounts.set(k2, (edgeCounts.get(k2) || 0) + 1);
   }
 
-  for (const [key, group] of busGroups.entries()) {
+  // Group wires by their primary (most congested) component edge
+  const busGroups = new Map();
+  for (const r of allResolved) {
+    const k1 = `${r.srcCompId}::${r.e1Dir}`;
+    const k2 = `${r.dstCompId}::${r.e2Dir}`;
+    const count1 = edgeCounts.get(k1) || 0;
+    const count2 = edgeCounts.get(k2) || 0;
+
+    let primaryKey;
+    if (count1 > count2) {
+      primaryKey = k1;
+    } else if (count2 > count1) {
+      primaryKey = k2;
+    } else {
+      primaryKey = k1 < k2 ? k1 : k2; // Deterministic tie-breaker
+    }
+
+    if (!busGroups.has(primaryKey)) busGroups.set(primaryKey, []);
+    busGroups.get(primaryKey).push(r);
+  }
+
+  for (const [primaryKey, group] of busGroups.entries()) {
+    const [compA, edgeA] = primaryKey.split('::');
+    const isHorizontalEdge = edgeA === 'top' || edgeA === 'bottom';
+    const count = group.length;
+
+    // Sort and determine flow direction relative to the primary edge on compA
+    if (isHorizontalEdge) {
+      // Sort wires horizontally by their pin X coordinate on compA
+      group.sort((a, b) => {
+        const pinA = a.srcCompId === compA ? a.p1.x : a.p2.x;
+        const pinB = b.srcCompId === compA ? b.p1.x : b.p2.x;
+        return pinA - pinB;
+      });
+
+      // Flow direction check: if other end is to the right of primary edge, reverse
+      const avgPrimaryX = group.reduce((sum, r) => sum + (r.srcCompId === compA ? r.p1.x : r.p2.x), 0) / count;
+      const avgOtherX = group.reduce((sum, r) => sum + (r.srcCompId === compA ? r.p2.x : r.p1.x), 0) / count;
+      if (avgPrimaryX < avgOtherX) {
+        group.reverse();
+      }
+    } else {
+      // Sort wires vertically by their pin Y coordinate on compA
+      group.sort((a, b) => {
+        const pinA = a.srcCompId === compA ? a.p1.y : a.p2.y;
+        const pinB = b.srcCompId === compA ? b.p1.y : b.p2.y;
+        return pinA - pinB;
+      });
+
+      // Flow direction check: if other end is below primary edge, reverse
+      const avgPrimaryY = group.reduce((sum, r) => sum + (r.srcCompId === compA ? r.p1.y : r.p2.y), 0) / count;
+      const avgOtherY = group.reduce((sum, r) => sum + (r.srcCompId === compA ? r.p2.y : r.p1.y), 0) / count;
+      if (avgPrimaryY < avgOtherY) {
+        group.reverse();
+      }
+    }
+
+    // Calculate proposed midpoints
     let sumE1X = 0, sumE1Y = 0, sumE2X = 0, sumE2Y = 0;
     group.forEach(r => {
       sumE1X += r.e1.x; sumE1Y += r.e1.y;
       sumE2X += r.e2.x; sumE2Y += r.e2.y;
     });
+    const avgE1X = sumE1X / count;
+    const avgE2X = sumE2X / count;
+    const proposedMidX = Math.round(((avgE1X + avgE2X) / 2) / 15) * 15;
 
-    const avgE1X = sumE1X / group.length;
-    const avgE2X = sumE2X / group.length;
-    const baseBundleMidX = Math.round(((avgE1X + avgE2X) / 2) / 15) * 15;
+    const avgE1Y = sumE1Y / count;
+    const avgE2Y = sumE2Y / count;
+    const proposedMidY = Math.round(((avgE1Y + avgE2Y) / 2) / 15) * 15;
 
-    const avgE1Y = sumE1Y / group.length;
-    const avgE2Y = sumE2Y / group.length;
-    const baseBundleMidY = Math.round(((avgE1Y + avgE2Y) / 2) / 15) * 15;
+    const avgPinX = group.reduce((sum, r) => sum + (r.srcCompId === compA ? r.p1.x : r.p2.x), 0) / count;
+    const avgPinY = group.reduce((sum, r) => sum + (r.srcCompId === compA ? r.p1.y : r.p2.y), 0) / count;
 
-    const count = group.length;
-
-    const proposedMidX = baseBundleMidX;
-    const proposedMidY = baseBundleMidY;
+    // Determine if the trunk is above/left or below/right of the pins to set offset multiplier sign
+    const sign = isHorizontalEdge
+      ? (Math.sign(proposedMidY - avgPinY) || 1)
+      : (Math.sign(proposedMidX - avgPinX) || 1);
 
     group.forEach((r, index) => {
       const cur = offsets.get(r.wire.id) || { offset: 0, stagger: 0, stagger2: 0 };
-      cur.offset = (index - Math.floor(count / 2)) * WIRE_SPACING;
+      cur.offset = (index - Math.floor(count / 2)) * WIRE_SPACING * sign;
       cur.bundleMidX = proposedMidX;
       cur.bundleMidY = proposedMidY;
+      cur.e1Dir = r.e1Dir;
+      cur.e2Dir = r.e2Dir;
       offsets.set(r.wire.id, cur);
     });
   }
@@ -633,9 +711,32 @@ function applyMicroShifts(allRoutes, respectExitSide = true) {
       newPts.push(currentPts[currentPts.length - 1]);
       currentPts = dedupePoints(newPts);
     }
-    finalRoutes.set(wireId, currentPts);
+    finalRoutes.set(wireId, simplifyCollinear(currentPts));
   }
   return finalRoutes;
+}
+
+function simplifyCollinear(points) {
+  const out = [];
+  for (let i = 0; i < points.length; i++) {
+    if (i < 2) {
+      out.push(points[i]);
+      continue;
+    }
+    const a = out[out.length - 2];
+    const b = out[out.length - 1];
+    const c = points[i];
+
+    const isCollinearX = Math.abs(a.x - b.x) < 0.1 && Math.abs(b.x - c.x) < 0.1;
+    const isCollinearY = Math.abs(a.y - b.y) < 0.1 && Math.abs(b.y - c.y) < 0.1;
+
+    if (isCollinearX || isCollinearY) {
+      out[out.length - 1] = c; // Merge collinear points
+    } else {
+      out.push(c);
+    }
+  }
+  return out;
 }
 
 export function buildWireRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
