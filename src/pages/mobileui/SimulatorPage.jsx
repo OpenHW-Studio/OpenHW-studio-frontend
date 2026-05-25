@@ -6,8 +6,6 @@ import BlockEditorView from './views/BlockEditorView';
 import SerialMonitorView from './views/SerialMonitorView';
 import MobileBottomNav from './MobileBottomNav';
 import { renderRoundedPath, computeWireOrthoPoints, getWirePoints, multiRoutePath, buildWirePath, wireColor } from './wireUtils';
-import { calculateWireBundleOffsets } from '../../utils/wireRouting.js';
-import { getResolvedPinExitSide } from '../../utils/pinExit.js';
 import { ProjectCard } from './ProjectCard';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
@@ -1108,9 +1106,6 @@ function normalizeImportedCircuitData(rawComponents, rawConnections) {
         waypoints: Array.isArray(wire.waypoints)
           ? wire.waypoints.map(normalizeWaypoint).filter(Boolean)
           : [],
-        routingInstructions: Array.isArray(wire.routingInstructions)
-          ? wire.routingInstructions
-          : (Array.isArray(wire.waypoints) ? wire.waypoints : []),
         isBelow: wire.isBelow === true,
         fromLabel: String(wire.fromLabel || endpointLabel(from) || ''),
         toLabel: String(wire.toLabel || endpointLabel(to) || ''),
@@ -1478,8 +1473,8 @@ function getPinCategory(pId, pDesc, compType) {
 
 
 // ─── Memoized Wire Component ────────────────────────────────────────────────
-const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, onTouchStartSegment, wirepointsEnabled, theme, offset = 0 }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions), [p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions]);
+const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, onTouchStartSegment, wirepointsEnabled, theme }) => {
+  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints), [p1, e1, e2, p2, wire.waypoints]);
 
   return (
     <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
@@ -1487,7 +1482,7 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
       <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
       <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
       <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, _, i, arr) => {
+      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints).reduce((acc, _, i, arr) => {
         if (i < 1 || i >= arr.length - 2) return acc;
         const a = arr[i], b = arr[i + 1];
         const segLen = Math.hypot(b.x - a.x, b.y - a.y);
@@ -1528,14 +1523,6 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
     return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
   };
   const b = getBounds();
-
-const getVisualBounds = (comp, COMPONENT_REGISTRY, getComponentStateAttrs) => {
-  if (!comp) return { x: 0, y: 0, w: 0, h: 0 };
-  const reg = COMPONENT_REGISTRY[comp.type];
-  if (!reg) return { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-  if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-  return reg.BOUNDS || { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-};
 
   return (
     <React.Fragment>
@@ -3614,6 +3601,7 @@ useEffect(() => {
     'openhw-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
     'openhw-lcd1602': '16x2 LCD display (Parallel).',
     'openhw-lcd2004': '20x4 LCD display (Parallel).',
+    'openhw-lcd1602-i2c': '16x2 LCD display with I2C backpack.',
     'wokwi-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
     'openhw-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
     'wokwi-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',
@@ -4190,37 +4178,21 @@ useEffect(() => {
   }, [componentsMap, PIN_DEFS])
 
   // ── Get the point a wire should exit/enter at 90° from a pin ───────────────
-  const getPinExitPoint = useCallback((compId, pinId, offset = 0) => {
+  const getPinExitPoint = useCallback((compId, pinId) => {
     const comp = componentsMap.get(compId)
     if (!comp) return null
     const pins = PIN_DEFS[comp.type] || []
     const pin = pins.find(p => String(p.id) === String(pinId))
     if (!pin) return null
-    const bounds = getVisualBounds(comp, COMPONENT_REGISTRY, getComponentStateAttrs)
-    const exitSide = getResolvedPinExitSide(comp, pin, pins, bounds)
-    if (!exitSide) return null
-    const laneOffset = Number(offset) || 0;
-    const bodyEdgeGap = 3;
-    const localX = (Number(pin.x) || 0) - (Number(bounds.x) || 0);
-    const localY = (Number(pin.y) || 0) - (Number(bounds.y) || 0);
-    const distLeft = localX;
-    const distRight = (Number(bounds.w) || comp.w || 0) - localX;
-    const distTop = localY;
-    const distBottom = (Number(bounds.h) || comp.h || 0) - localY;
+    const stub = 20;
+    // Determine dominant exit direction from unrotated pin position relative to component center
+    const cx = comp.w / 2, cy = comp.h / 2;
+    const dx = pin.x - cx, dy = pin.y - cy;
     let exitDx = 0, exitDy = 0;
-    const MIN_EXIT_STUB = 20;
-    if (exitSide === 'left') {
-      exitDx = -(Math.max(distLeft + bodyEdgeGap, MIN_EXIT_STUB));
-      exitDy = 0;
-    } else if (exitSide === 'right') {
-      exitDx = Math.max(distRight + bodyEdgeGap, MIN_EXIT_STUB);
-      exitDy = 0;
-    } else if (exitSide === 'top') {
-      exitDx = 0;
-      exitDy = -(Math.max(distTop + bodyEdgeGap, MIN_EXIT_STUB));
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      exitDx = dx >= 0 ? stub : -stub;
     } else {
-      exitDx = 0;
-      exitDy = Math.max(distBottom + bodyEdgeGap, MIN_EXIT_STUB);
+      exitDy = dy >= 0 ? stub : -stub;
     }
     // Rotate exit direction with the component
     const rotation = comp.rotation || 0;
@@ -4232,24 +4204,8 @@ useEffect(() => {
     }
     const pinPos = getPinPos(compId, pinId);
     if (!pinPos) return null;
-    const exitX = pinPos.x + exitDx;
-    const exitY = pinPos.y + exitDy;
-    try {
-      console.debug('[mobile:getPinExitPoint]', { compId: comp.id, pinId: pin.id, bounds, localX, localY, dir: exitSide, laneOffset, exitX, exitY });
-    } catch (e) {}
-    return { x: exitX, y: exitY, dir: exitSide };
+    return { x: pinPos.x + exitDx, y: pinPos.y + exitDy };
   }, [componentsMap, PIN_DEFS, getPinPos])
-
-  const wireOffsetMap = useMemo(() => calculateWireBundleOffsets(wires, (wire) => {
-    const fromParts = String(wire.from || '').split(':');
-    const toParts = String(wire.to || '').split(':');
-    const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
-    const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'));
-    if (!p1 || !p2) return null;
-    const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), 0) || p1;
-    const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), 0) || p2;
-    return { p1, p2, e1, e2, waypoints: wire.waypoints || [] };
-  }), [wires, getPinPos, getPinExitPoint]);
 
   // Keep reactive refs current so async effects always use latest values
   getPinPosRef.current = getPinPos;
@@ -6951,12 +6907,6 @@ useEffect(() => {
 
       worker.onmessage = async (event) => {
         const msg = event.data;
-        if (msg.type === 'error') {
-          appendConsoleEntry('error', `[SIM] ${msg.message || 'Runner error'}`, 'simulator');
-          logSerial(`Runner error: ${msg.message || 'Unknown error'}`, 'var(--red)');
-          handleStop();
-          return;
-        }
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
@@ -9398,9 +9348,8 @@ useEffect(() => {
                 const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
                 const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const offset = wireOffsetMap.get(w.id) || 0;
-                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset) || p2;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
                 
                 return (
                   <CanvasWire
@@ -9410,7 +9359,6 @@ useEffect(() => {
                     isSelected={selected === w.id}
                     wirepointsEnabled={wirepointsEnabled}
                     theme={theme}
-                    offset={wireOffsetMap.get(w.id) || 0}
                     onSelect={(e) => {
                       e.stopPropagation();
                       setSelected(w.id);
@@ -9454,9 +9402,8 @@ useEffect(() => {
                 const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
                 const p2 = getPinPos(toParts[0], toParts.slice(1).join(':'))
                 if (!p1 || !p2) return null
-                const offset = wireOffsetMap.get(w.id) || 0;
-                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), offset) || p1;
-                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), offset) || p2;
+                const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':')) || p1;
+                const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':')) || p2;
                 
                 return (
                   <CanvasWire
@@ -9466,7 +9413,6 @@ useEffect(() => {
                     isSelected={selected === w.id}
                     wirepointsEnabled={wirepointsEnabled}
                     theme={theme}
-                    offset={wireOffsetMap.get(w.id) || 0}
                     onSelect={(e) => {
                       e.stopPropagation();
                       setSelected(w.id);

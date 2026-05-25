@@ -113,7 +113,7 @@ const MaintenanceGuard = ({ children }) => {
             }
           }
         }
-        else if (!error.response || error.response.status === 503) {
+        else if (error.response?.status === 503 && error.config?.url?.includes('/public/maintenance-status')) {
           if (isMounted) setMaintenance(true);
         }
         return Promise.reject(error);
