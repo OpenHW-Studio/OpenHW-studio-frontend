@@ -48,6 +48,8 @@ import {
   normalizeImportedCircuitData
 } from './projectUtils';
 import { importWokwiProjectZip } from './wokwiImportUtils';
+import { snapToGrid, resolveAllWiresWaypoints } from './utils/snappingUtils';
+import { resolveUiExport } from './utils/simulatorUtils';
 import { useAutowiring } from '../../hooks/useAutowiring';
 import { Btn } from './Btn';
 import { RightPanel } from './RightPanel';
@@ -58,6 +60,7 @@ import { simplifyOrthogonalPath } from './utils/wireHitDetection';
 import { useEditorStore } from './store/useEditorStore';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
+import { useHardwareSocket } from '../../esp32/hooks/useHardwareSocket.js';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
 import QuickAddPortal from './QuickAddPortal';
 import TourGuide from './components/TourGuide';
@@ -119,7 +122,9 @@ import {
   buildUiSourceFromRegistry,
   buildLogicSourceFromRegistry,
   buildValidationSourceFromRegistry,
-  buildIndexSourceFromRegistry
+  buildIndexSourceFromRegistry,
+  normalizeGroupName,
+  sortCatalog
 } from './utils/componentRegistry';
 
 import {
@@ -182,6 +187,7 @@ import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-cpp';
 import 'prismjs/themes/prism-tomorrow.css';
 
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/examples' : '/examples');
 const EDIT_COPY_KEY = 'openhw_edit_copy';
 const EDIT_COPY_PAYLOAD_PREFIX = 'openhw_edit_copy_payload_';
 const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
@@ -439,6 +445,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const segDragRef = useRef(null)
   const [hoveredPin, setHoveredPin] = useState(null)
   const [board, setBoard] = useState('arduino_uno')
+  const [restoreProjectPrompt, setRestoreProjectPrompt] = useState(null)
   const [codeTab, setCodeTab] = useState('code')
   const { code, setCode } = useEditorStore();
   const [solverMode, setSolverMode] = useState('logic')
@@ -660,6 +667,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [showValidation, setShowValidation] = useState(true)
   const [validationToast, setValidationToast] = useState(null)
   const [isRunning, setIsRunning] = useState(false)
+  const [pinStates, setPinStates] = useState({})
+  const [oopStates, setOopStates] = useState({});
 
   // Inject safety pulse animation
   useEffect(() => {
@@ -930,6 +939,131 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [showFirmwareUploadDialog, firmwareUploadTarget, firmwareBoardOptions]);
 
   const workerRef = useRef(null)
+  // ─── ESP32 QEMU session refs ──────────────────────────────────────────────
+  const esp32BuildIdRef = useRef(null);
+  const serialFlushBufRef = useRef([]);
+  const serialFlushTimer = useRef(null);
+  const compileTimeoutRef = useRef(null);
+  const pinToComponentsRef = useRef({});
+
+  // Rebuild pin→component connectivity map whenever wires change
+  useEffect(() => {
+    const map = {};
+    wires.forEach(w => {
+      const from = (w.from || '').split(':');
+      const to = (w.to || '').split(':');
+      if (from.length === 2 && to.length === 2) {
+        if (!map[`${from[0]}:${from[1]}`]) map[`${from[0]}:${from[1]}`] = [];
+        map[`${from[0]}:${from[1]}`].push({ compId: to[0], pinId: to[1] });
+        if (!map[`${to[0]}:${to[1]}`]) map[`${to[0]}:${to[1]}`] = [];
+        map[`${to[0]}:${to[1]}`].push({ compId: from[0], pinId: from[1] });
+      }
+    });
+    pinToComponentsRef.current = map;
+  }, [wires]);
+
+  // Ref to hold pushSerialRxChunk to avoid ReferenceError due to declaration order
+  const pushSerialRxChunkRef = useRef(null);
+
+  // Flush batched ESP32 serial text every 120 ms to avoid per-char setState
+  const flushESP32Serial = useCallback(() => {
+    const lines = serialFlushBufRef.current.splice(0);
+    if (!lines.length) return;
+    const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+    const boardId = esp32Board ? esp32Board.id : 'esp32';
+    if (pushSerialRxChunkRef.current) {
+      lines.forEach(line => pushSerialRxChunkRef.current(line, boardId, 'sim'));
+    }
+  }, []);
+
+  // Helper to trace wires from a component pin to a connected ESP32 pin
+  const traceConnectedEsp32Pin = useCallback((componentId, componentPinName) => {
+    const visited = new Set();
+    const queue = [`${componentId}:${componentPinName}`];
+    visited.add(`${componentId}:${componentPinName}`);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const [currCompId, currPin] = current.split(':');
+
+      const currComp = (componentsRef.current || components).find(c => c.id === currCompId);
+      if (currComp && /esp32/i.test(currComp.type || '')) {
+        const pinNum = parseInt(currPin.replace(/\D/g, ''), 10);
+        if (!isNaN(pinNum)) {
+          return pinNum;
+        }
+      }
+
+      for (const wire of wires || []) {
+        if (wire.from === current && !visited.has(wire.to)) {
+          visited.add(wire.to);
+          queue.push(wire.to);
+        } else if (wire.to === current && !visited.has(wire.from)) {
+          visited.add(wire.from);
+          queue.push(wire.from);
+        }
+      }
+    }
+    return null;
+  }, [components, wires]);
+
+  const esp32Socket = useHardwareSocket({
+    onSerialLine: (text) => { serialFlushBufRef.current.push(text); },
+    onGpioSync: (pin, value) => {
+      const pinId = String(pin);
+      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+      if (esp32Board) {
+        const targets = pinToComponentsRef.current[`${esp32Board.id}:${pinId}`] || [];
+        if (targets.length > 0) {
+          setOopStates(prev => {
+            const next = { ...prev };
+            targets.forEach(t => {
+              const comp = componentsRef.current.find(c => c.id === t.compId);
+              const newPinStates = { ...(next[t.compId]?.pinStates || {}), [t.pinId]: value };
+              const extra = {};
+              // wokwi-led lights up when anode pin A is HIGH
+              if (comp?.type === 'wokwi-led' && t.pinId === 'A') {
+                extra.illuminated = value === 1;
+              }
+              // Membrane Keypad Matrix scanning bridging
+              if (comp?.type === 'wokwi-membrane-keypad' && t.pinId.startsWith('R')) {
+                const pressedKey = next[t.compId]?.pressedKey;
+                if (pressedKey) {
+                  const matrix = {
+                    '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
+                    '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
+                    '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
+                    '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
+                  };
+                  const pair = matrix[pressedKey];
+                  if (pair && pair[0] === t.pinId) {
+                    const colPin = pair[1];
+                    const colEspPin = traceConnectedEsp32Pin(t.compId, colPin);
+                    if (colEspPin !== null) {
+                      esp32Socket.sendGpio(colEspPin, value); // column pin mirrors row state!
+                    }
+                  }
+                }
+              }
+              next[t.compId] = { ...(next[t.compId] || {}), pinStates: newPinStates, ...extra };
+            });
+            return next;
+          });
+        }
+      }
+      setPinStates(prev => ({ ...prev, [pinId]: value === 1 }));
+    },
+    onLog: (msg, dir) => logSerial(msg, dir === 'err' ? 'var(--red, #f87171)' : undefined),
+    onStop: () => {
+      if (serialFlushTimer.current) { clearInterval(serialFlushTimer.current); serialFlushTimer.current = null; }
+      if (compileTimeoutRef.current) { clearTimeout(compileTimeoutRef.current); compileTimeoutRef.current = null; }
+      esp32BuildIdRef.current = null;
+      setIsRunning(false);
+      setIsCompiling(false);
+      runStartGuardRef.current = false;
+    },
+  });
+
   const lastCompiledRef = useRef(null)
   const micropythonUf2PayloadRef = useRef(null)
   const circuitPythonUf2PayloadRef = useRef(null)
@@ -1056,6 +1190,111 @@ export function SimulatorPage({ gamificationMode = false }) {
           event: event
         });
       }
+
+      // Handle ESP32 direct component interactions via esp32Socket
+      if (isRunning) {
+        // Helper to trace connections to ESP32 pins
+        const getEsp32Connections = (componentId) => {
+          const connections = [];
+          const compPins = new Set();
+          for (const wire of wires || []) {
+            if (wire.from.startsWith(`${componentId}:`)) {
+              compPins.add(wire.from.split(':')[1]);
+            }
+            if (wire.to.startsWith(`${componentId}:`)) {
+              compPins.add(wire.to.split(':')[1]);
+            }
+          }
+          for (const pinName of compPins) {
+            const espPin = traceConnectedEsp32Pin(componentId, pinName);
+            if (espPin !== null) {
+              connections.push({ compPin: pinName, esp32Pin: espPin });
+            }
+          }
+          return connections;
+        };
+
+        if (comp.type === 'wokwi-membrane-keypad') {
+          if (event && event.startsWith && event.startsWith('press:')) {
+            const key = event.split(':')[1];
+            setOopStates(prev => ({
+              ...prev,
+              [comp.id]: { ...(prev[comp.id] || {}), pressedKey: key }
+            }));
+            const matrix = {
+              '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
+              '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
+              '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
+              '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
+            };
+            const pair = matrix[key];
+            if (pair) {
+              const [rowPin, colPin] = pair;
+              const rowEspPin = traceConnectedEsp32Pin(comp.id, rowPin);
+              const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
+              if (colEspPin !== null) {
+                const isRowLow = rowEspPin !== null && pinStates[rowEspPin] === false;
+                esp32Socket.sendGpio(colEspPin, isRowLow ? 0 : 1);
+              }
+            }
+          } else if (event === 'release') {
+            setOopStates(prev => ({
+              ...prev,
+              [comp.id]: { ...(prev[comp.id] || {}), pressedKey: null }
+            }));
+            ['C1', 'C2', 'C3', 'C4'].forEach(colPin => {
+              const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
+              if (colEspPin !== null) {
+                esp32Socket.sendGpio(colEspPin, 1);
+              }
+            });
+          }
+        }
+        else if (comp.type === 'wokwi-pushbutton') {
+          const conns = getEsp32Connections(comp.id);
+          const val = (event === 'press') ? 0 : 1;
+          for (const conn of conns) {
+            esp32Socket.sendGpio(conn.esp32Pin, val);
+          }
+        }
+        else if (comp.type === 'PIR-Motion-Sensor') {
+          const conns = getEsp32Connections(comp.id);
+          const val = (event === 'motion_start') ? 1 : 0;
+          for (const conn of conns) {
+            esp32Socket.sendGpio(conn.esp32Pin, val);
+          }
+        }
+        else {
+          const conns = getEsp32Connections(comp.id);
+          if (conns.length > 0) {
+            let digitalVal = null;
+            if (typeof event === 'string') {
+              const evt = event.toLowerCase();
+              if (evt === 'press' || evt === 'motion_start' || evt === 'high' || evt === 'true' || evt.startsWith('press:')) {
+                digitalVal = 1;
+              } else if (evt === 'release' || evt === 'motion_stop' || evt === 'low' || evt === 'false') {
+                digitalVal = 0;
+              }
+            } else if (event && typeof event === 'object') {
+              if (event.value !== undefined) {
+                if (typeof event.value === 'boolean') {
+                  digitalVal = event.value ? 1 : 0;
+                } else {
+                  const num = Number(event.value);
+                  if (!isNaN(num)) {
+                    digitalVal = num > 50 ? 1 : 0;
+                  }
+                }
+              }
+            }
+            if (digitalVal !== null) {
+              for (const conn of conns) {
+                esp32Socket.sendGpio(conn.esp32Pin, digitalVal);
+              }
+            }
+          }
+        }
+      }
     };
 
     return attrs;
@@ -1119,6 +1358,14 @@ export function SimulatorPage({ gamificationMode = false }) {
   useEffect(() => {
     localStorage.setItem('openhw.deepSiliconDebugging', deepSiliconDebuggingEnabled ? 'true' : 'false');
   }, [deepSiliconDebuggingEnabled]);
+
+  const [respectExitSide, setRespectExitSide] = useState(() => {
+    const val = localStorage.getItem('openhw.respectExitSide');
+    return val !== 'false'; // Defaults to true
+  });
+  useEffect(() => {
+    localStorage.setItem('openhw.respectExitSide', respectExitSide ? 'true' : 'false');
+  }, [respectExitSide]);
 
   const [telemetryMode, setTelemetryMode] = useState('detail');
   const [telemetrySampleInterval, setTelemetrySampleInterval] = useState(250);
@@ -1261,7 +1508,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         delete newCatItem.pins;
         delete newCatItem.group;
 
-        const groupName = normalizeGroupName(manifest.group);
+        const groupName = (GROUP_MAPPING[manifest.group] || manifest.group || 'Misc');
         let group = LOCAL_CATALOG.find(g => g.group === groupName);
         if (!group) {
           group = { group: groupName, items: [] };
@@ -1630,30 +1877,17 @@ export function SimulatorPage({ gamificationMode = false }) {
     listProjects(owner).then((projects) => {
       if (projects.length === 0) return;
       const latest = projects[0]; // already sorted newest-first
-      const normalizedCircuit = normalizeImportedCircuitData(latest.components, latest.connections);
-      const normalizedFiles = normalizeProjectFiles(latest.projectFiles);
-      const normalizedTabs = normalizeOpenCodeTabs(latest.openCodeTabs, normalizedFiles);
-      const preferredActive = String(latest.activeCodeFileId || '').trim();
-      const activeId = normalizedFiles.some((f) => f.id === preferredActive)
-        ? preferredActive
-        : (normalizedTabs[0] || '');
-      setBoard(latest.board || 'arduino_uno');
-      setCode(latest.code || '');
-      setBlocklyXml(latest.blocklyXml || '');
-      setBlocklyGeneratedCode(latest.blocklyGeneratedCode || '');
-      setUseBlocklyCode(!!latest.useBlocklyCode);
-      setComponents(normalizedCircuit.components);
-      setWires(normalizedCircuit.wires);
-      setProjectFiles(normalizedFiles);
-      setOpenCodeTabs(normalizedTabs);
-      setActiveCodeFileId(activeId);
-      syncNextIds(normalizedCircuit.components, normalizedCircuit.wires);
-      setCurrentProjectId(latest.id);
-      currentProjectIdRef.current = latest.id;
-      setCurrentProjectName(latest.name || 'Untitled');
+      
+      const isSessionActive = sessionStorage.getItem('ohw_session_active');
+      if (isSessionActive) {
+        handleLoadProject(latest);
+      } else {
+        sessionStorage.setItem('ohw_session_active', '1');
+        setRestoreProjectPrompt(latest);
+      }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   useEffect(() => {
     if (!shareId || shareId === 'new') return;
@@ -2048,11 +2282,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // ── Project: debounced auto-save whenever circuit changes ─────────────────
   useEffect(() => {
-    // Don't trigger auto-save if disabled
-    if (!autoSaveEnabled) return;
+    // Don't trigger auto-save if disabled or if waiting on toaster
+    if (!autoSaveEnabled || restoreProjectPrompt) return;
 
     // Don't trigger an empty-project save on initial render
-    if (components.length === 0 && wires.length === 0 && code.trim() === '') return;
+    const isCodeEmptyOrDefault = code.trim() === '' || 
+      code.trim() === 'void setup() {\\n  // put your setup code here, to run once:\\n\\n}\\n\\nvoid loop() {\\n  // put your main code here, to run repeatedly:\\n\\n}';
+    if (!currentProjectIdRef.current && components.length === 0 && wires.length === 0 && isCodeEmptyOrDefault) return;
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -2119,6 +2355,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         worstFrameMs = frameDeltaMs;
       }
 
+      if (workerRef.current) {
+        workerRef.current.postMessage({ type: 'FLUSH_VISUALS' });
+      }
+
+
       const windowMs = now - frameStart;
       if (windowMs >= 1000) {
         const fps = (frameCount * 1000) / windowMs;
@@ -2148,6 +2389,10 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           appendConsoleEntry(fps < 45 || worstFrameMs > 24 ? 'warn' : 'info', line, 'debug');
           runFpsTelemetryLastLogRef.current.set('browser', signature);
+        }
+
+        if (workerRef.current) {
+          workerRef.current.postMessage({ type: 'REAL_METRICS', canvasFps: fps, uiMainThreadBlockedTimeMs: worstFrameMs });
         }
 
         frameStart = now;
@@ -2226,7 +2471,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             delete newCatItem.pins;
             delete newCatItem.group;
 
-            const groupName = normalizeGroupName(manifest.group);
+            const groupName = (GROUP_MAPPING[manifest.group] || manifest.group || 'Misc');
             let group = LOCAL_CATALOG.find(g => g.group === groupName);
             if (!group) {
               group = { group: groupName, items: [] };
@@ -2309,7 +2554,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         delete newCatItem.pins;
         delete newCatItem.group;
 
-        const groupName = normalizeGroupName(manifest.group);
+        const groupName = (GROUP_MAPPING[manifest.group] || manifest.group || 'Misc');
         let group = LOCAL_CATALOG.find(g => g.group === groupName);
         if (!group) {
           group = { group: groupName, items: [] };
@@ -2387,7 +2632,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             delete newCatItem.pins;
             delete newCatItem.group;
 
-            const groupName = normalizeGroupName(manifest.group);
+            const groupName = (GROUP_MAPPING[manifest.group] || manifest.group || 'Misc');
             let group = LOCAL_CATALOG.find(g => g.group === groupName);
             if (!group) {
               group = { group: groupName, items: [] };
@@ -3308,12 +3553,51 @@ export function SimulatorPage({ gamificationMode = false }) {
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
 
+    const rawExitX = pPos.x + (dx * cos - dy * sin);
+    const rawExitY = pPos.y + (dx * sin + dy * cos);
+
+    let exitX = rawExitX;
+    let exitY = rawExitY;
+    if (Math.abs(rawExitX - pPos.x) < 0.1) {
+      exitX = pPos.x;
+      exitY = Math.round(rawExitY / 15) * 15;
+    } else {
+      exitX = Math.round(rawExitX / 15) * 15;
+      exitY = pPos.y;
+    }
+
+    try {
+      console.debug('[getPinExitPoint]', { compId: comp.id, pinId: pin.id, bounds, localX, localY, dir, laneOffset, exitX, exitY });
+    } catch (e) { }
     return {
       x: pPos.x + (dx * cos - dy * sin),
       y: pPos.y + (dx * sin + dy * cos),
       dir
     };
   }, [componentsMap, PIN_DEFS, getPinPosForComp]);
+
+  // Developer helper: call `window.debugPinExits()` in browser console to list exit edges
+  try {
+    // eslint-disable-next-line no-undef
+    window.debugPinExits = () => {
+      const interestingTypes = new Set(['openhw-arduino-uno', 'openhw-a4988', 'openhw-stepper-motor', 'wokwi-arduino-uno', 'wokwi-stepper-motor']);
+      (components || []).forEach(comp => {
+        if (!interestingTypes.has(comp.type)) return;
+        const pins = PIN_DEFS[comp.type] || [];
+        const bounds = getComponentBounds(comp);
+        console.groupCollapsed(`pin exits for ${comp.id} (${comp.type}) at ${comp.x},${comp.y}`);
+        console.log('bounds', bounds);
+        pins.forEach(pin => {
+          const exitSide = getResolvedPinExitSide(comp, pin, pins, getComponentBounds(comp));
+          const exitPt = getPinExitPoint(comp.id, pin.id, 0, null);
+          const localX = (Number(pin.x) || 0) - (Number(bounds.x) || 0);
+          const localY = (Number(pin.y) || 0) - (Number(bounds.y) || 0);
+          console.log(pin.id, '->', exitSide, exitPt, { localX, localY });
+        });
+        console.groupEnd();
+      });
+    };
+  } catch (e) { }
 
   const getPinPosWithGhosts = useCallback((compId, pinId) => {
     let comp = componentsMap.get(compId);
@@ -3865,7 +4149,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const my = (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current;
         const ddx = mx - sd.startMouseCanvas.x;
         const ddy = my - sd.startMouseCanvas.y;
-        
+
         if (Math.abs(ddx) >= 1 || Math.abs(ddy) >= 1) {
           sd.hasMoved = true;
           const newPts = sd.startPts.map(pt => ({ ...pt }));
@@ -3885,9 +4169,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
             }
           }
-          wireUpdate = { 
-            wireId: sd.wireId, 
-            cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) 
+          wireUpdate = {
+            wireId: sd.wireId,
+            cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true }))
           };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
@@ -4482,32 +4766,32 @@ export function SimulatorPage({ gamificationMode = false }) {
     const filename = getDefaultMainFileName(boardKind, comp.id, {
       rp2040Mode: comp.attrs?.env || 'native'
     });
-    
+
     // Try to find existing file by boardId or filename or just the first code file
     let targetFile = projectFiles.find(f => f.boardId === comp.id || f.id === filename || f.name === filename);
     if (!targetFile) {
-        // Fallback: if there's only one code file, just use it
-        const codeFiles = projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
-        if (codeFiles.length > 0) {
-            targetFile = codeFiles[0];
-            console.log('[handleOpenCode] Fallback to first code file:', targetFile.id);
-        } else {
-            console.log('[handleOpenCode] File not found, creating new file:', filename);
-            // Create the file
-            targetFile = {
-                id: filename,
-                path: filename,
-                name: filename,
-                kind: 'code',
-                boardId: comp.id,
-                boardKind: boardKind,
-                content: createDefaultMainCode(boardKind, comp.id, { rp2040Mode: comp.attrs?.env || 'native' }),
-                dirty: false
-            };
-            setProjectFiles(prev => [...prev, targetFile]);
-        }
+      // Fallback: if there's only one code file, just use it
+      const codeFiles = projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
+      if (codeFiles.length > 0) {
+        targetFile = codeFiles[0];
+        console.log('[handleOpenCode] Fallback to first code file:', targetFile.id);
+      } else {
+        console.log('[handleOpenCode] File not found, creating new file:', filename);
+        // Create the file
+        targetFile = {
+          id: filename,
+          path: filename,
+          name: filename,
+          kind: 'code',
+          boardId: comp.id,
+          boardKind: boardKind,
+          content: createDefaultMainCode(boardKind, comp.id, { rp2040Mode: comp.attrs?.env || 'native' }),
+          dirty: false
+        };
+        setProjectFiles(prev => [...prev, targetFile]);
+      }
     } else {
-        console.log('[handleOpenCode] Found existing file:', targetFile.id);
+      console.log('[handleOpenCode] Found existing file:', targetFile.id);
     }
 
     if (!openCodeTabs.includes(targetFile.id)) {
@@ -4523,8 +4807,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     console.log('[handleAutoCode] Triggered for component:', compId);
     const comp = components.find(c => c.id === compId);
     if (!comp) {
-        console.error('[handleAutoCode] Component not found in state:', compId);
-        return;
+      console.error('[handleAutoCode] Component not found in state:', compId);
+      return;
     }
 
     // Find the board it is connected to (Recursive Tracing)
@@ -4540,7 +4824,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       for (const w of wires) {
         const fromParts = w.from.split(':');
         const toParts = w.to.split(':');
-        
+
         let neighborId = null;
         if (fromParts[0] === currentId) neighborId = toParts[0];
         else if (toParts[0] === currentId) neighborId = fromParts[0];
@@ -4563,7 +4847,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
     console.log('[handleAutoCode] Target board found:', targetBoardId);
     const manifest = COMPONENT_REGISTRY[comp.type]?.manifest || {};
-    
+
     // Call the worker
     console.log('[handleAutoCode] Sending request to worker...');
     const worker = new Worker(new URL('../../workers/autowiring.worker.ts', import.meta.url), { type: 'module' });
@@ -4593,23 +4877,23 @@ export function SimulatorPage({ gamificationMode = false }) {
           setProjectFiles(prev => {
             let targetFile = prev.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename);
             if (!targetFile) {
-                const codeFiles = prev.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
-                if (codeFiles.length > 0) {
-                    targetFile = codeFiles[0];
-                } else {
-                    console.log('[handleAutoCode] Creating new file for injection:', filename);
-                    targetFile = {
-                        id: filename,
-                        path: filename,
-                        name: filename,
-                        kind: 'code',
-                        boardId: targetBoardId,
-                        boardKind: boardKind,
-                        content: createDefaultMainCode(boardKind, targetBoardId, { rp2040Mode: boardComp.attrs?.env || 'native' }),
-                        dirty: false
-                    };
-                    prev = [...prev, targetFile];
-                }
+              const codeFiles = prev.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name));
+              if (codeFiles.length > 0) {
+                targetFile = codeFiles[0];
+              } else {
+                console.log('[handleAutoCode] Creating new file for injection:', filename);
+                targetFile = {
+                  id: filename,
+                  path: filename,
+                  name: filename,
+                  kind: 'code',
+                  boardId: targetBoardId,
+                  boardKind: boardKind,
+                  content: createDefaultMainCode(boardKind, targetBoardId, { rp2040Mode: boardComp.attrs?.env || 'native' }),
+                  dirty: false
+                };
+                prev = [...prev, targetFile];
+              }
             }
 
             console.log('[handleAutoCode] Injecting code into file:', targetFile.id);
@@ -4625,33 +4909,33 @@ export function SimulatorPage({ gamificationMode = false }) {
               return f;
             });
           });
-          
+
           setOpenCodeTabs(prevTabs => {
             // Re-find the target file ID since state update is asynchronous
-            const targetFile = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
-                               || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
-                               || { id: filename };
+            const targetFile = projectFiles.find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename)
+              || projectFiles.filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+              || { id: filename };
             if (!prevTabs.includes(targetFile.id)) {
               return [...prevTabs, targetFile.id];
             }
             return prevTabs;
           });
-          
+
           // Re-find to set active
           setTimeout(() => {
-              const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
-              setActiveCodeFileId(prev => {
-                   const file = (projectFiles || []).find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename) 
-                               || (projectFiles || []).filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
-                               || { id: filename };
-                   return file.id;
-              });
-              setCodeTab('code');
-              setIsPanelOpen(true);
-              setShowCodeExplorer(true);
+            const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
+            setActiveCodeFileId(prev => {
+              const file = (projectFiles || []).find(f => f.boardId === targetBoardId || f.id === filename || f.name === filename)
+                || (projectFiles || []).filter(f => f.kind === 'code' || /\.(ino|py|c|cpp)$/i.test(f.name))[0]
+                || { id: filename };
+              return file.id;
+            });
+            setCodeTab('code');
+            setIsPanelOpen(true);
+            setShowCodeExplorer(true);
           }, 0);
         } else {
-            console.warn('[handleAutoCode] Worker returned empty snippet.');
+          console.warn('[handleAutoCode] Worker returned empty snippet.');
         }
       }
       worker.terminate();
@@ -5591,7 +5875,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     try {
       const result = await importWokwiProjectZip(file, components, wires);
       if (!result) return;
-      
+
       const newId = generateProjectId();
       currentProjectIdRef.current = newId;
       setCurrentProjectId(newId);
@@ -6036,6 +6320,10 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [appendSerialRxChunk]);
 
   useEffect(() => {
+    pushSerialRxChunkRef.current = pushSerialRxChunk;
+  }, [pushSerialRxChunk]);
+
+  useEffect(() => {
     if (serialPaused) return;
     const queue = serialPausedQueueRef.current;
     if (!queue.length) return;
@@ -6232,6 +6520,34 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardRuntimeEnvMap = {};
       const boardBaudMap = {};
       const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+
+      // ─── ESP32 QEMU server-side path ────────────────────────────────────────
+      const esp32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'esp32');
+      if (esp32Board) {
+        logSerial('⚙️  Sending ESP32 firmware to QEMU server...');
+        const compileUnit = getBoardCompileFiles(esp32Board.id, '');
+        const compileSource = useBlocklyCode ? blocklyGeneratedCode : (compileUnit.mainCode || getBoardMainCode(esp32Board.id) || code);
+
+        if (serialFlushTimer.current) clearInterval(serialFlushTimer.current);
+        serialFlushTimer.current = setInterval(flushESP32Serial, 120);
+
+        try {
+          const buildId = await esp32Socket.run(compileSource);
+          esp32BuildIdRef.current = buildId;
+          setIsCompiling(false);
+        } catch (esp32Err) {
+          if (serialFlushTimer.current) { clearInterval(serialFlushTimer.current); serialFlushTimer.current = null; }
+          setIsRunning(false);
+          setIsCompiling(false);
+          runStartGuardRef.current = false;
+          appendConsoleEntry('error', `ESP32 compile failed: ${esp32Err.message}`, 'simulator');
+          alert(esp32Err.message);
+        }
+        runStartGuardRef.current = false;
+        return; // ← ESP32 path complete — skip AVR/RP2040 web worker
+      }
+      // ────────────────────────────────────────────────────────────────────────
+
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
       const boardsWithoutCompilableSketch = [];
       let result = null;
@@ -6757,7 +7073,32 @@ export function SimulatorPage({ gamificationMode = false }) {
             neopixels: renderNeopixelsByBoardRef.current[boardId] || {},
           };
 
-          const renderedHash = computeRenderSyncHash(renderPayload);
+          const cache = lastRenderSyncCacheRef.current[boardId];
+          const now = Date.now();
+          let renderedHash;
+
+          if (
+            cache &&
+            now - cache.timestamp < 33 &&
+            cache.pins === pins &&
+            cache.analog === analog &&
+            cache.components === components &&
+            cache.neopixels === neopixels
+          ) {
+            renderedHash = cache.hash;
+          } else {
+            const renderPayload = { pins, analog, components, neopixels };
+            renderedHash = computeRenderSyncHash(renderPayload);
+            lastRenderSyncCacheRef.current[boardId] = {
+              hash: renderedHash,
+              timestamp: now,
+              pins,
+              analog,
+              components,
+              neopixels,
+            };
+          }
+
           workerRef.current?.postMessage({
             type: 'RENDER_REPORT',
             boardId,
@@ -6943,7 +7284,25 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
-          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+
+        if ((msg.type === 'protocol:i2c' || msg.type === 'protocol:spi') && !protocolLogsTimerRef.current) {
+          protocolLogsTimerRef.current = setTimeout(() => {
+            protocolLogsTimerRef.current = null;
+            const pending = pendingProtocolLogsRef.current;
+            if (pending.length === 0) return;
+            pendingProtocolLogsRef.current = [];
+
+            // Limit batch to prevent dropping frames
+            const batch = pending.length > 200 ? pending.slice(-200) : pending;
+
+            // Use standard state setting (startTransition might be undefined if not imported, React 18 auto-batches timeouts anyway)
+            setProtocolLogs(prev => {
+              const next = [...prev, ...batch];
+              return next.length > 200 ? next.slice(-200) : next;
+            });
+          }, 150);
         }
       };
 
@@ -7020,6 +7379,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const handleStop = () => {
     const wasRunning = isRunning;
     runStartGuardRef.current = false;
+    esp32Socket.stop();
     rp2040GdbLastLogRef.current.clear();
     rp2040WirelessLastLogRef.current.clear();
     rp2040UartMicroPythonBoardsRef.current.clear();
@@ -7278,7 +7638,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         if (tp) { minX = Math.min(minX, tp.x); minY = Math.min(minY, tp.y); maxX = Math.max(maxX, tp.x); maxY = Math.max(maxY, tp.y); }
       });
       if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
-      
+
       // DIAGNOSTIC LOG: See the calculated bounds
       console.log('[PNG Export] Raw Bounds:', { minX, minY, maxX, maxY });
 
@@ -7330,7 +7690,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       // 2. Capture the canvas
       const t_start = performance.now();
       console.log('[PNG Export] signature:', signature);
-      
+
       const MAX_EXPORT_DIM = 4000;
       const actualW = Math.min(bboxW, MAX_EXPORT_DIM);
       const actualH = Math.min(bboxH, MAX_EXPORT_DIM);
@@ -7352,7 +7712,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           if (el.shadowRoot) deepTag(el.shadowRoot);
         });
       };
-      
+
       deepTag(zoomWrapper);
       const shadowHostEls = Array.from(elementMap.values()).filter(el => !!el.shadowRoot);
       console.log(`[PNG Export] Mapped ${tagCount} elements in ${Math.round(performance.now() - t_tag_start)}ms`);
@@ -7395,10 +7755,10 @@ export function SimulatorPage({ gamificationMode = false }) {
         // 3. Clone and Inject
         const circuitClone = idoc.importNode(zoomWrapper, true);
         idoc.body.appendChild(circuitClone);
-        
+
         // 4. Filtered Style Teleportation (Live HTML Mode)
         console.log(`[PNG Export] Teleporting styles for ${tagCount} elements...`);
-        
+
         // 4a. Inline Shadow DOM Content as Live HTML
         let inlinedCount = 0;
         shadowHostEls.forEach((liveEl) => {
@@ -7415,7 +7775,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               clonedHost.appendChild(styleEl);
             });
           }
-          
+
           // Inline the actual graphics/nodes
           for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
             clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
@@ -7425,10 +7785,10 @@ export function SimulatorPage({ gamificationMode = false }) {
 
         // 4b. Total Parity Style Teleportation
         console.log(`[PNG Export] Teleporting styles for ${tagCount} nodes...`);
-        
+
         const propsToCopy = [
           'display', 'position', 'left', 'top', 'width', 'height', 'transform', 'transformOrigin',
-          'color', 'fontSize', 'fontWeight', 'fontFamily', 'textAlign', 
+          'color', 'fontSize', 'fontWeight', 'fontFamily', 'textAlign',
           'visibility', 'opacity', 'backgroundColor', 'zIndex',
           'border', 'borderWidth', 'borderStyle', 'borderColor', 'borderRadius',
           'padding', 'margin', 'lineHeight', 'overflow', 'boxSizing',
@@ -7437,7 +7797,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         ];
 
         const svgProps = [
-          'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 
+          'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
           'stroke-miterlimit', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-opacity',
           'fill-opacity', 'fill-rule', 'marker-start', 'marker-mid', 'marker-end'
         ];
@@ -7445,11 +7805,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         const clonedNodes = [idoc.body, ...Array.from(idoc.body.querySelectorAll('*'))];
         let styleCount = 0;
         let wireCount = 0;
-        
+
         clonedNodes.forEach(cloned => {
           const dataId = cloned.getAttribute('data-h2c-id');
           if (!dataId) return;
-          
+
           const liveEl = elementMap.get(dataId);
           if (!liveEl) return;
 
@@ -7457,7 +7817,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           if (cloned.tagName === 'path' || cloned.tagName === 'line') wireCount++;
 
           const s = window.getComputedStyle(liveEl);
-          
+
           // Copy Layout and Visual Styles with FORCED priority
           propsToCopy.forEach(p => {
             // SAFETY: Prevent Giant Text bug
@@ -7478,7 +7838,7 @@ export function SimulatorPage({ gamificationMode = false }) {
                 }
               }
             });
-            
+
             // Hardcode width/height attributes to match computed logical size
             const w = s.getPropertyValue('width');
             const h = s.getPropertyValue('height');
@@ -7491,7 +7851,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               cloned.style.setProperty('height', h, 'important');
             }
           }
-          
+
           // Final Safety: Ensure nothing is accidentally hidden
           cloned.style.setProperty('visibility', 'visible', 'important');
           cloned.style.setProperty('opacity', s.opacity || '1', 'important');
@@ -7499,9 +7859,9 @@ export function SimulatorPage({ gamificationMode = false }) {
             cloned.style.setProperty('overflow', 'visible', 'important');
           }
         });
-        
+
         console.log(`[PNG Export] Successfully styled ${styleCount} elements, including ${wireCount} wires`);
-        elementMap.clear(); 
+        elementMap.clear();
 
 
         // Ensure all components are visible
@@ -7525,7 +7885,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           useCORS: true,
           allowTaint: false,
           logging: true,
-          imageTimeout: 10000, 
+          imageTimeout: 10000,
           skipFonts: true,
           width: actualW,
           height: actualH,
@@ -7543,7 +7903,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             });
           }
         });
-        
+
         // Memory Flush: Clear the iframe content immediately to free RAM
         idoc.body.innerHTML = '';
         idoc.head.innerHTML = '';
@@ -8261,6 +8621,76 @@ export function SimulatorPage({ gamificationMode = false }) {
     return (
       <div className="flex flex-col h-screen overflow-hidden bg-[var(--bg)] font-sans text-[var(--text)] min-h-screen" ref={pageRef} >
 
+        {/* Restore Session Toaster */}
+        {restoreProjectPrompt && (
+          <div style={{
+            position: 'fixed',
+            top: '80px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--card)',
+            border: '1px solid var(--accent)',
+            boxShadow: '0 8px 32px rgba(0, 212, 255, 0.15), 0 0 0 1px rgba(0, 212, 255, 0.3)',
+            borderRadius: '12px',
+            padding: '16px 24px',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '20px',
+            color: 'var(--text)',
+            animation: 'panelContentIn 0.3s ease-out'
+          }}>
+            <div style={{ flex: 1 }}>
+              <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 'bold', color: 'var(--text)' }}>Restore previous session?</h4>
+              <p style={{ margin: 0, fontSize: '13px', color: 'var(--text2)' }}>
+                We found your project <strong>"{restoreProjectPrompt.name || 'Untitled'}"</strong> from your last visit.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={() => setRestoreProjectPrompt(null)}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text2)',
+                  padding: '8px 14px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--card2)'}
+                onMouseLeave={(e) => e.target.style.background = 'transparent'}
+              >
+                Start Fresh
+              </button>
+              <button 
+                onClick={() => {
+                  handleLoadProject(restoreProjectPrompt);
+                  setRestoreProjectPrompt(null);
+                }}
+                style={{
+                  background: 'var(--accent)',
+                  border: 'none',
+                  color: '#000',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '13px',
+                  fontWeight: '700',
+                  boxShadow: '0 4px 12px rgba(0, 212, 255, 0.3)',
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => { e.target.style.transform = 'translateY(-1px)'; e.target.style.boxShadow = '0 6px 16px rgba(0, 212, 255, 0.4)'; }}
+                onMouseLeave={(e) => { e.target.style.transform = 'none'; e.target.style.boxShadow = '0 4px 12px rgba(0, 212, 255, 0.3)'; }}
+              >
+                Restore Project
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* TOP BAR */}
         <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => setShowTour(true)} />
 
@@ -8350,6 +8780,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           setDeepSiliconDebuggingEnabled={setDeepSiliconDebuggingEnabled}
           telemetryMode={telemetryMode}
           setTelemetryMode={setTelemetryMode}
+          respectExitSide={respectExitSide}
+          setRespectExitSide={setRespectExitSide}
           onOpenTelemetryModal={() => setShowTelemetrySelectModal(true)}
           setShowSpeedDialog={setShowSpeedDialog}
           simulationSpeed={simulationSpeed}
@@ -8451,7 +8883,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             {/* Zoom Wrapper — scales all circuit content */}
             {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
                React state (canvasOffset) is only committed once on mouseup. */}
-            <CanvasSceneLayer
+              <CanvasSceneLayer
               innerCanvasRef={innerCanvasRef}
               canvasOffset={canvasOffset}
               canvasZoom={canvasZoom}
@@ -8462,6 +8894,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               getPinPos={getPinPos}
               getPinExitPoint={getPinExitPoint}
               wirepointsEnabled={wirepointsEnabled}
+              respectExitSide={respectExitSide}
               theme={theme}
               setSelected={setSelected}
               canvasRef={canvasRef}

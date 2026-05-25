@@ -23,7 +23,7 @@ function orthogonalizePair(a, b, horizontalFirst) {
   return [a, { x: a.x, y: b.y }, b];
 }
 
-function buildBaseRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
+export function buildBaseRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0, respectExitSide = true) {
   if (!p1 || !e1 || !e2 || !p2) return [];
 
   const cleanedWaypoints = Array.isArray(waypoints) ? waypoints.filter(Boolean) : [];
@@ -43,135 +43,166 @@ function buildBaseRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
   const dy = e2.y - e1.y;
   const horizontalFirst = Math.abs(dx) >= Math.abs(dy);
 
-  let shift = 0, stagger = 0;
-  if (typeof offset === 'object' && offset !== null) {
-    shift = Number(offset.offset) || 0;
-    stagger = Number(offset.stagger) || 0;
+  let route = [];
+
+  if (!respectExitSide) {
+    // SHORTEST DISTANCE FALLBACK
+    let overallHorizontalFirst;
+    if (Math.abs(p2.x - p1.x) >= Math.abs(p2.y - p1.y)) {
+      // Side-by-side: always route horizontal out of the Left-most component
+      overallHorizontalFirst = (p1.x < p2.x);
+    } else {
+      // Top-to-bottom: always route vertical out of the Top-most component
+      overallHorizontalFirst = (p1.y > p2.y);
+    }
+    if (typeof offset === 'object' && offset !== null && (typeof offset.bundleMidX === 'number' || typeof offset.bundleMidY === 'number')) {
+      const laneOffset = Number(offset.offset) || 0;
+      if (overallHorizontalFirst) {
+        // Side-by-side layout uses a Horizontal trunk. Wires drop vertically from pin to reach trunk.
+        const trunkY = typeof offset.bundleMidY === 'number' ? offset.bundleMidY + laneOffset : p1.y + laneOffset;
+        route = [p1, { x: p1.x, y: trunkY }, { x: p2.x, y: trunkY }, p2];
+      } else {
+        // Top-to-bottom layout uses a Vertical trunk. Wires go horizontally from pin to reach trunk.
+        const trunkX = typeof offset.bundleMidX === 'number' ? offset.bundleMidX + laneOffset : p1.x + laneOffset;
+        route = [p1, { x: trunkX, y: p1.y }, { x: trunkX, y: p2.y }, p2];
+      }
+      route = dedupePoints(route);
+    } else {
+      route = orthogonalizePair(p1, p2, overallHorizontalFirst);
+    }
   } else {
-    shift = Number(offset) || 0;
-    stagger = (WIRE_SPACING !== 0) ? (shift / WIRE_SPACING) * STAGGER_STEP : 0;
-  }
-  const laneOffset = shift;
-
-  // Whether each exit stub goes horizontally or vertically from the pin
-  const e1StubHoriz = Math.abs(e1.x - p1.x) >= Math.abs(e1.y - p1.y);
-  const e2StubHoriz = Math.abs(e2.x - p2.x) >= Math.abs(e2.y - p2.y);
-
-  let route;
-
-  if (horizontalFirst) {
-    // ── Horizontal trunk ──────────────────────────────────────────────────────
-    // Opposite-exit optimization: if one pin exits UP and the other DOWN,
-    // put the trunk at the exit that goes AWAY from the board (farther out),
-    // so both stubs travel naturally in their exit direction with no backtrack.
-    let trunkY;
-    const e1ExitsUp = e1.y < p1.y;
-    const e2ExitsUp = e2.y < p2.y;
-    if (e1ExitsUp !== e2ExitsUp) {
-      // One up, one down → use the "outer" (farther from midpoint) exit level
-      trunkY = Math.min(e1.y, e2.y);
+    // === START: EXIT SIDE ROUTING ===
+    let shift = 0, stagger = 0, stagger2 = 0;
+    if (typeof offset === 'object' && offset !== null) {
+      shift = Number(offset.offset) || 0;
+      stagger = Number(offset.stagger) || 0;
+      stagger2 = Number(offset.stagger2) || stagger;
     } else {
-      trunkY = Math.round(((e1.y + e2.y) / 2) / 15) * 15;
+      shift = Number(offset) || 0;
+      stagger = (WIRE_SPACING !== 0) ? (shift / WIRE_SPACING) * STAGGER_STEP : 0;
+      stagger2 = stagger;
     }
-    trunkY += laneOffset;
+    const laneOffset = shift;
 
-    // ── Source side (p1 → trunk) ──────────────────────────────────────────────
-    let p1Points;
-    if (e1StubHoriz) {
-      // Horizontal exit stub → stagger the x where we turn vertical
-      const dirX1 = Math.sign(e1.x - p1.x) || 1;
-      const staggerX1 = dirX1 * Math.abs(stagger);
-      const turnX1 = e1.x + staggerX1;
-      p1Points = [p1, { x: turnX1, y: p1.y }, { x: turnX1, y: trunkY }];
-    } else {
-      // Vertical exit stub → stagger the y where we turn horizontal
-      // Direction of exit: -1 = up, +1 = down
-      const exitDirY1 = e1.y < p1.y ? -1 : 1;
-      const turnY1 = e1.y + exitDirY1 * Math.abs(stagger);
-      const hasUTurn = Math.sign(trunkY - turnY1) === Math.sign(p1.y - turnY1);
-      if (hasUTurn) {
-        // Staggered turn-height is still inside the component; shift one grid sideways
-        const shiftX1 = p1.x + 15 * (Math.sign(p2.x - p1.x) || 1);
-        p1Points = [p1, { x: p1.x, y: turnY1 }, { x: shiftX1, y: turnY1 }, { x: shiftX1, y: trunkY }];
+    // Whether each exit stub goes horizontally or vertically from the pin
+    const e1StubHoriz = Math.abs(e1.x - p1.x) >= Math.abs(e1.y - p1.y);
+    const e2StubHoriz = Math.abs(e2.x - p2.x) >= Math.abs(e2.y - p2.y);
+
+    // Helper to ensure we don't overlap the stub if forced to double back
+    const getShiftX = (x, targetX, stg) => {
+      if (Math.abs(targetX - x) > 5) return targetX;
+      return x + (stg ? stg : 15) * (Math.sign(dx) || 1);
+    };
+    const getShiftY = (y, targetY, stg) => {
+      if (Math.abs(targetY - y) > 5) return targetY;
+      return y + (stg ? stg : 15) * (Math.sign(dy) || 1);
+    };
+
+    if (horizontalFirst) {
+      let midX = typeof offset.bundleMidX === 'number'
+        ? offset.bundleMidX + laneOffset
+        : Math.round(((e1.x + e2.x) / 2) / 15) * 15 + laneOffset;
+
+      let p1Points = [];
+      let currentY1;
+      if (!e1StubHoriz) {
+        const dirY1 = e1.dir ? (e1.dir === 'top' ? -1 : 1) : (Math.sign(e1.y - p1.y) || 1);
+        const turnY1 = e1.y + dirY1 * Math.abs(stagger);
+        currentY1 = turnY1;
+        p1Points = [p1, { x: p1.x, y: turnY1 }];
+        midX = getShiftX(p1.x, midX, stagger);
       } else {
-        p1Points = [p1, { x: p1.x, y: turnY1 }, { x: e1.x, y: trunkY }];
+        const dirX1 = e1.dir ? (e1.dir === 'left' ? -1 : 1) : (Math.sign(e1.x - p1.x) || 1);
+        const turnX1 = e1.x + dirX1 * Math.abs(stagger);
+        if (Math.sign(midX - turnX1) === -dirX1) {
+          currentY1 = getShiftY(p1.y, e2.y, stagger);
+          p1Points = [p1, { x: turnX1, y: p1.y }, { x: turnX1, y: currentY1 }];
+        } else {
+          currentY1 = p1.y;
+          p1Points = [p1, { x: turnX1, y: p1.y }];
+        }
       }
-    }
 
-    // ── Destination side (trunk → p2) ─────────────────────────────────────────
-    let p2Points;
-    if (e2StubHoriz) {
-      const dirX2 = Math.sign(e2.x - p2.x) || 1;
-      const staggerX2 = dirX2 * Math.abs(stagger);
-      const turnX2 = e2.x + staggerX2;
-      p2Points = [{ x: turnX2, y: trunkY }, { x: turnX2, y: p2.y }, p2];
-    } else {
-      const exitDirY2 = e2.y < p2.y ? -1 : 1;
-      const turnY2 = e2.y + exitDirY2 * Math.abs(stagger);
-      const hasUTurn = Math.sign(trunkY - turnY2) === Math.sign(p2.y - turnY2);
-      if (hasUTurn) {
-        const shiftX2 = p2.x + 15 * (Math.sign(p1.x - p2.x) || 1);
-        p2Points = [{ x: shiftX2, y: trunkY }, { x: shiftX2, y: turnY2 }, { x: p2.x, y: turnY2 }, p2];
+      let p2Points = [];
+      let currentY2;
+      if (e2StubHoriz) {
+        const dirX2 = e2.dir ? (e2.dir === 'left' ? -1 : 1) : (Math.sign(e2.x - p2.x) || 1);
+        const turnX2 = e2.x + dirX2 * Math.abs(stagger2);
+        if (Math.sign(midX - turnX2) === -dirX2) {
+          currentY2 = getShiftY(p2.y, currentY1, stagger2);
+          p2Points = [{ x: turnX2, y: currentY2 }, { x: turnX2, y: p2.y }, p2];
+        } else {
+          currentY2 = p2.y;
+          p2Points = [{ x: turnX2, y: p2.y }, p2];
+        }
       } else {
-        p2Points = [{ x: e2.x, y: trunkY }, { x: p2.x, y: turnY2 }, p2];
+        const dirY2 = e2.dir ? (e2.dir === 'top' ? -1 : 1) : (e2.y < p2.y ? -1 : 1);
+        const turnY2 = e2.y + dirY2 * Math.abs(stagger2);
+
+        let canOptimize = false;
+        if (dirY2 === -1 && currentY1 <= e2.y) canOptimize = true;
+        if (dirY2 === 1 && currentY1 >= e2.y) canOptimize = true;
+
+        currentY2 = canOptimize ? currentY1 : turnY2;
+        p2Points = [{ x: p2.x, y: currentY2 }, p2];
+        midX = getShiftX(p2.x, midX, stagger2);
       }
-    }
 
-    route = [...p1Points, ...p2Points];
-
-  } else {
-    // ── Vertical trunk ────────────────────────────────────────────────────────
-    let trunkX;
-    const e1ExitsLeft = e1.x < p1.x;
-    const e2ExitsLeft = e2.x < p2.x;
-    if (e1ExitsLeft !== e2ExitsLeft) {
-      trunkX = Math.min(e1.x, e2.x);
+      route = [...p1Points, { x: midX, y: currentY1 }, { x: midX, y: currentY2 }, ...p2Points];
     } else {
-      trunkX = Math.round(((e1.x + e2.x) / 2) / 15) * 15;
-    }
-    trunkX += laneOffset;
+      // verticalFirst
+      let midY = typeof offset.bundleMidY === 'number'
+        ? offset.bundleMidY + laneOffset
+        : Math.round(((e1.y + e2.y) / 2) / 15) * 15 + laneOffset;
 
-    // ── Source side (p1 → trunk) ──────────────────────────────────────────────
-    let p1Points;
-    if (!e1StubHoriz) {
-      // Vertical exit stub → stagger the y where we turn horizontal
-      const dirY1 = Math.sign(e1.y - p1.y) || 1;
-      const staggerY1 = dirY1 * Math.abs(stagger);
-      const turnY1 = e1.y + staggerY1;
-      p1Points = [p1, { x: p1.x, y: turnY1 }, { x: trunkX, y: turnY1 }];
-    } else {
-      // Horizontal exit stub → stagger the x where we turn vertical
-      const exitDirX1 = e1.x < p1.x ? -1 : 1;
-      const turnX1 = e1.x + exitDirX1 * Math.abs(stagger);
-      const hasUTurn = Math.sign(trunkX - turnX1) === Math.sign(p1.x - turnX1);
-      if (hasUTurn) {
-        const shiftY1 = p1.y + 15 * (Math.sign(p2.y - p1.y) || 1);
-        p1Points = [p1, { x: turnX1, y: p1.y }, { x: turnX1, y: shiftY1 }, { x: trunkX, y: shiftY1 }];
+      let p1Points = [];
+      let currentX1;
+      if (!e1StubHoriz) {
+        const dirY1 = e1.dir ? (e1.dir === 'top' ? -1 : 1) : (Math.sign(e1.y - p1.y) || 1);
+        const turnY1 = e1.y + dirY1 * Math.abs(stagger);
+        if (Math.sign(midY - turnY1) === -dirY1) {
+          currentX1 = getShiftX(p1.x, e2.x, stagger);
+          p1Points = [p1, { x: p1.x, y: turnY1 }, { x: currentX1, y: turnY1 }];
+        } else {
+          currentX1 = p1.x;
+          p1Points = [p1, { x: p1.x, y: turnY1 }];
+        }
       } else {
-        p1Points = [p1, { x: turnX1, y: p1.y }, { x: trunkX, y: e1.y }];
+        const dirX1 = e1.dir ? (e1.dir === 'left' ? -1 : 1) : (Math.sign(e1.x - p1.x) || 1);
+        const turnX1 = e1.x + dirX1 * Math.abs(stagger);
+        currentX1 = turnX1;
+        p1Points = [p1, { x: turnX1, y: p1.y }];
+        midY = getShiftY(p1.y, midY, stagger);
       }
-    }
 
-    // ── Destination side (trunk → p2) ─────────────────────────────────────────
-    let p2Points;
-    if (!e2StubHoriz) {
-      const dirY2 = Math.sign(e2.y - p2.y) || 1;
-      const staggerY2 = dirY2 * Math.abs(stagger);
-      const turnY2 = e2.y + staggerY2;
-      p2Points = [{ x: trunkX, y: turnY2 }, { x: p2.x, y: turnY2 }, p2];
-    } else {
-      const exitDirX2 = e2.x < p2.x ? -1 : 1;
-      const turnX2 = e2.x + exitDirX2 * Math.abs(stagger);
-      const hasUTurn = Math.sign(trunkX - turnX2) === Math.sign(p2.x - turnX2);
-      if (hasUTurn) {
-        const shiftY2 = p2.y + 15 * (Math.sign(p1.y - p2.y) || 1);
-        p2Points = [{ x: trunkX, y: shiftY2 }, { x: turnX2, y: shiftY2 }, { x: turnX2, y: p2.y }, p2];
+      let p2Points = [];
+      let currentX2;
+      if (!e2StubHoriz) {
+        const dirY2 = e2.dir ? (e2.dir === 'top' ? -1 : 1) : (Math.sign(e2.y - p2.y) || 1);
+        const turnY2 = e2.y + dirY2 * Math.abs(stagger2);
+        if (Math.sign(midY - turnY2) === -dirY2) {
+          currentX2 = getShiftX(p2.x, currentX1, stagger2);
+          p2Points = [{ x: currentX2, y: turnY2 }, { x: p2.x, y: turnY2 }, p2];
+        } else {
+          currentX2 = p2.x;
+          p2Points = [{ x: p2.x, y: turnY2 }, p2];
+        }
       } else {
-        p2Points = [{ x: trunkX, y: e2.y }, { x: turnX2, y: p2.y }, p2];
-      }
-    }
+        const dirX2 = e2.dir ? (e2.dir === 'left' ? -1 : 1) : (e2.x < p2.x ? -1 : 1);
+        const turnX2 = e2.x + dirX2 * Math.abs(stagger2);
 
-    route = [...p1Points, ...p2Points];
+        let canOptimize = false;
+        if (dirX2 === -1 && currentX1 <= e2.x) canOptimize = true;
+        if (dirX2 === 1 && currentX1 >= e2.x) canOptimize = true;
+
+        currentX2 = canOptimize ? currentX1 : turnX2;
+        p2Points = [{ x: currentX2, y: p2.y }, p2];
+        midY = getShiftY(p2.y, midY, stagger2);
+      }
+
+      route = [...p1Points, { x: currentX1, y: midY }, { x: currentX2, y: midY }, ...p2Points];
+    }
+    // === END: EXIT SIDE ROUTING ===
   }
 
   return dedupePoints(route);
@@ -210,7 +241,7 @@ function segmentsOverlap(a, b) {
   return !(a1 < b0 || b1 < a0);
 }
 
-export function calculateWireBundleOffsets(wires, resolveWirePoints) {
+export function calculateWireBundleOffsets(wires, resolveWirePoints, respectExitSide = true) {
   const offsets = new Map();
   for (const wire of wires || []) {
     if (wire?.id != null) offsets.set(wire.id, { offset: 0, stagger: 0 });
@@ -220,7 +251,7 @@ export function calculateWireBundleOffsets(wires, resolveWirePoints) {
   for (const wire of wires || []) {
     const r = resolveWirePoints ? resolveWirePoints(wire) : null;
     if (!r || !r.p1 || !r.e1 || !r.e2 || !r.p2) continue;
-    
+
     // Determine exit direction for e1
     let e1Dir = r.e1.dir;
     if (!e1Dir) {
@@ -257,70 +288,357 @@ export function calculateWireBundleOffsets(wires, resolveWirePoints) {
     });
   }
 
-  // Group by exit edge (component + direction)
-  const srcGroups = new Map();
+  // Phase 1 & 2: Unified Component Edge Clearance with Global Collision Detection
+  // Collect ALL connection points (both e1 and e2) and group them purely by the physical component edge.
+  const edgeGroups = new Map();
   for (const r of allResolved) {
-    const key = `${r.srcCompId}::${r.e1Dir}`;
-    if (!srcGroups.has(key)) srcGroups.set(key, []);
-    srcGroups.get(key).push(r);
+    const k1 = `${r.srcCompId}::${r.e1Dir}`;
+    if (!edgeGroups.has(k1)) edgeGroups.set(k1, []);
+    edgeGroups.get(k1).push({ wireId: r.wire.id, p: r.p1, isSrc: true });
+
+    const k2 = `${r.dstCompId}::${r.e2Dir}`;
+    if (!edgeGroups.has(k2)) edgeGroups.set(k2, []);
+    edgeGroups.get(k2).push({ wireId: r.wire.id, p: r.p2, isSrc: false });
   }
 
-  for (const group of srcGroups.values()) {
+  const usedY = new Map();
+  const usedX = new Map();
+
+  for (const [key, group] of edgeGroups.entries()) {
     if (group.length === 0) continue;
-    
-    // Sort based on pin position along the exit edge
-    const first = group[0];
-    const isHorizontalEdge = first.e1Dir === 'top' || first.e1Dir === 'bottom';
-    
+
+    const [, dirStr] = key.split('::');
+    const isHorizontalEdge = dirStr === 'top' || dirStr === 'bottom';
+    const dirSign = (dirStr === 'top' || dirStr === 'left') ? -1 : 1;
+
     if (isHorizontalEdge) {
-      // Top/Bottom edge: pins are aligned horizontally, sort by x coordinate
-      group.sort((a, b) => a.p1.x - b.p1.x);
+      group.sort((a, b) => a.p.x - b.p.x);
     } else {
-      // Left/Right edge: pins are aligned vertically, sort by y coordinate
-      group.sort((a, b) => a.p1.y - b.p1.y);
+      group.sort((a, b) => a.p.y - b.p.y);
     }
 
-    // Assign incremental stagger values: 15px, 30px, 45px...
-    group.forEach((r, index) => {
-      const cur = offsets.get(r.wire.id) || { offset: 0, stagger: 0 };
-      cur.stagger = (index + 1) * STAGGER_STEP;
-      offsets.set(r.wire.id, cur);
+    let baseStaggerIndex = 1;
+    group.forEach((entry) => {
+      const cur = offsets.get(entry.wireId) || { offset: 0, stagger: 0, stagger2: 0 };
+
+      let proposedStagger;
+      if (isHorizontalEdge) {
+        let proposedY;
+        do {
+          proposedStagger = baseStaggerIndex * STAGGER_STEP;
+          proposedY = entry.p.y + dirSign * proposedStagger;
+          // Only bump if the line is taken by a DIFFERENT wire
+          if (usedY.has(proposedY) && usedY.get(proposedY) !== entry.wireId) {
+            baseStaggerIndex++;
+          } else {
+            break;
+          }
+        } while (true);
+        usedY.set(proposedY, entry.wireId);
+        baseStaggerIndex++; // Increment for the next pin in this group
+      } else {
+        let proposedX;
+        do {
+          proposedStagger = baseStaggerIndex * STAGGER_STEP;
+          proposedX = entry.p.x + dirSign * proposedStagger;
+          if (usedX.has(proposedX) && usedX.get(proposedX) !== entry.wireId) {
+            baseStaggerIndex++;
+          } else {
+            break;
+          }
+        } while (true);
+        usedX.set(proposedX, entry.wireId);
+        baseStaggerIndex++;
+      }
+
+      if (entry.isSrc) {
+        cur.stagger = proposedStagger;
+      } else {
+        cur.stagger2 = proposedStagger;
+      }
+      offsets.set(entry.wireId, cur);
     });
   }
 
-  // Group by destination edge (component + direction)
-  const dstGroups = new Map();
+  // Phase 3: Bidirectional Bus Grouping
+  // Group wires by the two components (and edges) they connect.
+  // We sort CompA and CompB to ensure that Uno->Driver and Driver->Uno share the exact same bus!
+  const busGroups = new Map();
   for (const r of allResolved) {
-    const key = `${r.dstCompId}::${r.e2Dir}`;
-    if (!dstGroups.has(key)) dstGroups.set(key, []);
-    dstGroups.get(key).push(r);
+    let compA, compB, edgeA, edgeB;
+    if (r.srcCompId < r.dstCompId) {
+      compA = r.srcCompId; edgeA = r.e1Dir;
+      compB = r.dstCompId; edgeB = r.e2Dir;
+    } else {
+      compA = r.dstCompId; edgeA = r.e2Dir;
+      compB = r.srcCompId; edgeB = r.e1Dir;
+    }
+    const key = `${compA}::${edgeA}::${compB}::${edgeB}`;
+
+    if (!busGroups.has(key)) busGroups.set(key, []);
+    busGroups.get(key).push(r);
   }
 
-  for (const group of dstGroups.values()) {
-    if (group.length === 0) continue;
+  for (const [key, group] of busGroups.entries()) {
+    let sumE1X = 0, sumE1Y = 0, sumE2X = 0, sumE2Y = 0;
+    group.forEach(r => {
+      sumE1X += r.e1.x; sumE1Y += r.e1.y;
+      sumE2X += r.e2.x; sumE2Y += r.e2.y;
+    });
 
-    // Sort based on pin position along the destination edge
-    const first = group[0];
-    const isHorizontalEdge = first.e2Dir === 'top' || first.e2Dir === 'bottom';
+    const avgE1X = sumE1X / group.length;
+    const avgE2X = sumE2X / group.length;
+    const baseBundleMidX = Math.round(((avgE1X + avgE2X) / 2) / 15) * 15;
 
-    if (isHorizontalEdge) {
-      group.sort((a, b) => a.p2.x - b.p2.x);
-    } else {
-      group.sort((a, b) => a.p2.y - b.p2.y);
-    }
+    const avgE1Y = sumE1Y / group.length;
+    const avgE2Y = sumE2Y / group.length;
+    const baseBundleMidY = Math.round(((avgE1Y + avgE2Y) / 2) / 15) * 15;
 
     const count = group.length;
-    // Assign symmetric laneOffset values
+
+    const proposedMidX = baseBundleMidX;
+    const proposedMidY = baseBundleMidY;
+
     group.forEach((r, index) => {
-      const cur = offsets.get(r.wire.id) || { offset: 0, stagger: 0 };
+      const cur = offsets.get(r.wire.id) || { offset: 0, stagger: 0, stagger2: 0 };
       cur.offset = (index - Math.floor(count / 2)) * WIRE_SPACING;
+      cur.bundleMidX = proposedMidX;
+      cur.bundleMidY = proposedMidY;
       offsets.set(r.wire.id, cur);
     });
+  }
+
+  // Calculate base routes for all wires
+  const allRoutes = new Map();
+  for (const r of allResolved) {
+    const cur = offsets.get(r.wire.id);
+    const pts = buildBaseRoutePoints(r.p1, r.e1, r.e2, r.p2, r.wire.waypoints, cur, respectExitSide);
+    allRoutes.set(r.wire.id, pts);
+  }
+
+  // Apply micro-shifts
+  const finalRoutes = applyMicroShifts(allRoutes, respectExitSide);
+
+  // Attach final points to offsets
+  for (const [wireId, cur] of offsets.entries()) {
+    if (finalRoutes.has(wireId)) {
+      cur.points = finalRoutes.get(wireId);
+    }
   }
 
   return offsets;
 }
 
+function applyMicroShifts(allRoutes, respectExitSide = true) {
+  const segments = [];
+  for (const [wireId, points] of allRoutes.entries()) {
+    segments.push(...segmentsFromPoints(points, wireId));
+  }
+
+  const linesX = new Map(); // centerLine -> array of vertical segments
+  const linesY = new Map(); // centerLine -> array of horizontal segments
+
+  for (const seg of segments) {
+    const map = seg.vertical ? linesX : linesY;
+    let foundKey = null;
+    for (const key of map.keys()) {
+      if (Math.abs(key - seg.centerLine) < 0.1) {
+        foundKey = key; break;
+      }
+    }
+    if (foundKey === null) {
+      foundKey = seg.centerLine;
+      map.set(foundKey, []);
+    }
+    map.get(foundKey).push(seg);
+  }
+
+  const occupiedLanes = [];
+  for (const seg of segments) {
+    const [s, e] = overlapRange(seg);
+    occupiedLanes.push({ wireId: seg.wireId, vertical: seg.vertical, centerLine: seg.centerLine, start: s, end: e });
+  }
+
+  const shiftMap = new Map(); // wireId -> array of shifts
+
+  const isLaneEmpty = (isVertical, centerLine, start, end, ignoreWireId) => {
+    for (const lane of occupiedLanes) {
+      if (lane.wireId === ignoreWireId) continue;
+      if (lane.vertical !== isVertical) continue;
+      if (Math.abs(lane.centerLine - centerLine) < 0.1) {
+        if (Math.max(start, lane.start) < Math.min(end, lane.end)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  const processLines = (map, isVertical) => {
+    for (const [centerLine, segs] of map.entries()) {
+      if (segs.length <= 1) continue;
+
+      const points = new Set();
+      for (const seg of segs) {
+        const [s, e] = overlapRange(seg);
+        points.add(s);
+        points.add(e);
+      }
+      const sortedPoints = Array.from(points).sort((a, b) => a - b);
+
+      for (let i = 0; i < sortedPoints.length - 1; i++) {
+        const start = sortedPoints[i];
+        const end = sortedPoints[i + 1];
+        if (Math.abs(end - start) < 0.1) continue;
+
+        const mid = (start + end) / 2;
+
+        const activeSegs = segs.filter(seg => {
+          const [s, e] = overlapRange(seg);
+          return s < mid && e > mid;
+        });
+
+        if (activeSegs.length > 1) {
+          // Sort active segments so the longest wires get processed first
+          activeSegs.sort((a, b) => {
+            const lenA = Math.abs(a.end.x - a.start.x) + Math.abs(a.end.y - a.start.y);
+            const lenB = Math.abs(b.end.x - b.start.x) + Math.abs(b.end.y - b.start.y);
+            return lenB - lenA;
+          });
+
+          activeSegs.forEach((seg, index) => {
+            if (index === 0) return; // The longest wire gets offset 0
+            
+            const step = respectExitSide ? 2.5 : 5;
+            
+            let offset = 0;
+            let iteration = 1;
+            while (true) {
+              const mag = Math.ceil(iteration / 2) * step;
+              const sign = iteration % 2 === 0 ? -1 : 1;
+              const testOffset = mag * sign;
+              
+              if (isLaneEmpty(isVertical, centerLine + testOffset, start, end, seg.wireId)) {
+                offset = testOffset;
+                break;
+              }
+              iteration++;
+              if (iteration > 20) { // Safety fallback
+                offset = Math.ceil(index / 2) * step * (index % 2 === 0 ? -1 : 1);
+                break;
+              }
+            }
+
+            occupiedLanes.push({ wireId: seg.wireId, vertical: isVertical, centerLine: centerLine + offset, start: start, end: end });
+
+            if (!shiftMap.has(seg.wireId)) shiftMap.set(seg.wireId, []);
+            shiftMap.get(seg.wireId).push({
+              vertical: isVertical,
+              centerLine: centerLine,
+              start: start,
+              end: end,
+              offset: offset
+            });
+          });
+        }
+      }
+    }
+  };
+
+  processLines(linesX, true);
+  processLines(linesY, false);
+
+  // Merge adjacent shifts with the same offset
+  for (const [wireId, shifts] of shiftMap.entries()) {
+    shifts.sort((a, b) => {
+      if (a.vertical !== b.vertical) return a.vertical ? 1 : -1;
+      if (Math.abs(a.centerLine - b.centerLine) > 0.1) return a.centerLine - b.centerLine;
+      return a.start - b.start;
+    });
+
+    const merged = [];
+    for (const s of shifts) {
+      if (merged.length === 0) {
+        merged.push(s);
+        continue;
+      }
+      const last = merged[merged.length - 1];
+      if (last.vertical === s.vertical &&
+        Math.abs(last.centerLine - s.centerLine) < 0.1 &&
+        Math.abs(last.offset - s.offset) < 0.1 &&
+        Math.abs(last.end - s.start) < 0.1) {
+        last.end = s.end; // Merge!
+      } else {
+        merged.push(s);
+      }
+    }
+    shiftMap.set(wireId, merged);
+  }
+
+  const finalRoutes = new Map();
+  for (const [wireId, points] of allRoutes.entries()) {
+    const shifts = shiftMap.get(wireId) || [];
+    if (shifts.length === 0) {
+      finalRoutes.set(wireId, points);
+      continue;
+    }
+
+    let currentPts = [...points];
+    for (const shift of shifts) {
+      let newPts = [];
+      for (let i = 0; i < currentPts.length - 1; i++) {
+        const a = currentPts[i];
+        const b = currentPts[i + 1];
+        newPts.push(a);
+
+        const isVert = Math.abs(a.x - b.x) < Math.abs(a.y - b.y);
+        if (isVert !== shift.vertical) continue;
+
+        const cl = isVert ? a.x : a.y;
+        if (Math.abs(cl - shift.centerLine) > 0.1) continue;
+
+        const [s, e] = isVert ? [Math.min(a.y, b.y), Math.max(a.y, b.y)] : [Math.min(a.x, b.x), Math.max(a.x, b.x)];
+
+        if (s <= shift.start + 0.1 && e >= shift.end - 0.1) {
+          let s1 = { x: a.x, y: a.y };
+          let s2 = { x: b.x, y: b.y };
+
+          if (isVert) {
+            s1.y = shift.start;
+            s2.y = shift.end;
+            if (a.y > b.y) {
+              s1.y = shift.end;
+              s2.y = shift.start;
+            }
+
+            if (Math.abs(a.y - s1.y) > 0.1) newPts.push({ x: a.x, y: s1.y });
+            newPts.push({ x: a.x + shift.offset, y: s1.y });
+            newPts.push({ x: a.x + shift.offset, y: s2.y });
+            if (Math.abs(b.y - s2.y) > 0.1) newPts.push({ x: a.x, y: s2.y });
+          } else {
+            s1.x = shift.start;
+            s2.x = shift.end;
+            if (a.x > b.x) {
+              s1.x = shift.end;
+              s2.x = shift.start;
+            }
+
+            if (Math.abs(a.x - s1.x) > 0.1) newPts.push({ x: s1.x, y: a.y });
+            newPts.push({ x: s1.x, y: a.y + shift.offset });
+            newPts.push({ x: s2.x, y: a.y + shift.offset });
+            if (Math.abs(b.x - s2.x) > 0.1) newPts.push({ x: s2.x, y: a.y });
+          }
+        }
+      }
+      newPts.push(currentPts[currentPts.length - 1]);
+      currentPts = dedupePoints(newPts);
+    }
+    finalRoutes.set(wireId, currentPts);
+  }
+  return finalRoutes;
+}
+
 export function buildWireRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
+  if (offset && offset.points) return offset.points;
   return buildBaseRoutePoints(p1, e1, e2, p2, waypoints, offset);
 }
