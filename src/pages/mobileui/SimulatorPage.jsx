@@ -3609,7 +3609,7 @@ useEffect(() => {
     'openhw-nokia-5110': 'Nokia 5110 LCD Screen. 84x48 monochrome graphic display.',
     'openhw-lcd1602': '16x2 LCD display (Parallel).',
     'openhw-lcd2004': '20x4 LCD display (Parallel).',
-    'openhw-lcd1602-i2c': '16x2 LCD display with I2C backpack.',
+
     'wokwi-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
     'openhw-soil-moisture-sensor': 'Soil moisture sensor module. Outputs analog/digital moisture level.',
     'wokwi-logic-analyzer': '8-channel logic analyzer for debugging digital signals.',

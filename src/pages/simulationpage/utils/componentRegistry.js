@@ -164,7 +164,6 @@ export function evalTranspiledComponentModules(transpiledUI, transpiledLogic, ma
   return { exportsUI, exportsLogic };
 }
 
-function normalizeGroupName(name, groupMapping) {
 export function normalizeGroupName(name, groupMapping = GROUP_MAPPING) {
   return groupMapping[name] || name;
 }
