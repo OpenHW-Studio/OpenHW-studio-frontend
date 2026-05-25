@@ -6578,7 +6578,9 @@ export function SimulatorPage({ gamificationMode = false }) {
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
-                if (isRp2040CoreMissingError(compileErr)) {
+                const errStr = String(compileErr?.message || compileErr || '').toLowerCase();
+                const isRpCoreMissing = errStr.includes("platform 'rp2040:rp2040' not found") || errStr.includes('platform rp2040:rp2040 is not found') || errStr.includes('platform not installed');
+                if (isRpCoreMissing) {
                   appendConsoleEntry('error', `RP2040 core is not installed for ${boardComp.id}. Native .ino mode cannot run without Arduino-Pico core.`, 'simulator');
                 }
                 throw compileErr;
