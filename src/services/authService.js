@@ -3,7 +3,7 @@
  * Handles API communication between the frontend and the Node.js backend.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
 
 // ─── Token & User Storage Helpers ───────────────────────────────────────────
 

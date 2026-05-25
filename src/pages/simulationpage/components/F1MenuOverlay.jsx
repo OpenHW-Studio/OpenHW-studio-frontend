@@ -15,6 +15,8 @@ function F1MenuOverlayBase({
   setDeepSiliconDebuggingEnabled,
   telemetryMode = 'detail',
   setTelemetryMode,
+  respectExitSide,
+  setRespectExitSide,
   onOpenTelemetryModal,
   setShowSpeedDialog,
   simulationSpeed,
@@ -166,6 +168,22 @@ function F1MenuOverlayBase({
           <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-wider mt-2 mb-1 px-1">
             System & Emulation Controls
           </div>
+
+          <Btn
+            onClick={() => {
+              setRespectExitSide?.((prev) => !prev);
+            }}
+            style={{ 
+              width: '100%', 
+              justifyContent: 'space-between', 
+              padding: '12px 16px', 
+              background: respectExitSide ? 'var(--card)' : 'var(--bg)'
+            }}
+            className={respectExitSide ? 'border-[var(--accent)] text-[var(--accent)]' : ''}
+          >
+            <span>Respect Pin Exit Sides</span>
+            <span className="text-xs font-bold font-mono">{respectExitSide ? 'ON' : 'OFF'}</span>
+          </Btn>
 
           <Btn
             onClick={() => {

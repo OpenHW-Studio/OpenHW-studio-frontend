@@ -165,6 +165,7 @@ export function evalTranspiledComponentModules(transpiledUI, transpiledLogic, ma
 }
 
 function normalizeGroupName(name, groupMapping) {
+export function normalizeGroupName(name, groupMapping = GROUP_MAPPING) {
   return groupMapping[name] || name;
 }
 
@@ -204,6 +205,24 @@ export function injectComponentsIntoRegistry(comps) {
       const { exportsUI } = evalTranspiledComponentModules(transpiledUI, transpiledLogic, manifest);
       const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) continue;
+
+      // ── Render-probe: catch stale/broken cached transpiled code before it ──
+      // reaches React's render tree. If the component throws synchronously
+      // (e.g. "can't access property BOUNDS, _constants is null"), we skip
+      // this entry. The IDB DB_VERSION bump will evict the stale cache so the
+      // next load fetches fresh, correct transpiled code automatically.
+      try {
+        const probeEl = React.createElement(uiComponent, {
+          state: {}, attrs: {}, isRunning: false,
+        });
+        // Only call the function component directly — do NOT render into DOM
+        if (typeof uiComponent === 'function') {
+          uiComponent({ state: {}, attrs: {}, isRunning: false });
+        }
+      } catch (probeErr) {
+        console.warn(`[ComponentCache] Skipping stale/broken cached component "${id}" (probe failed: ${probeErr.message}). Will re-fetch on next load.`);
+        continue;
+      }
 
       registry[manifest.type] = {
         manifest,

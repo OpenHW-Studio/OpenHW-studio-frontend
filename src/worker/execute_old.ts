@@ -2018,7 +2018,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],
     'openhw-pushbutton': [{ id: '1' }, { id: '2' }],
     'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
-    'openhw-buzzer': [{ id: '1' }, { id: '2' }],
+    'openhw-buzzer': [{ id: 'GND' }, { id: 'SIG' }],
     'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
     'openhw-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],

@@ -8,6 +8,48 @@
       "priority": "critical"
     },
     {
+      "path": "/about",
+      "name": "About Us",
+      "description": "About us page",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
+      "path": "/alignment-lab",
+      "name": "Alignment Lab",
+      "description": "Alignment lab page",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
+      "path": "/grade",
+      "name": "Grading Page",
+      "description": "Project grading page",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
+      "path": "/components/led/theory",
+      "name": "Component Theory (LED)",
+      "description": "Component theory page",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
+      "path": "/components/led/quiz",
+      "name": "Component Quiz (LED)",
+      "description": "Component quiz page",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
+      "path": "/led-blink/guide",
+      "name": "Project Guide (LED Blink)",
+      "description": "Project guide page",
+      "requiresAuth": false,
+      "priority": "medium"
+    },
+    {
       "path": "/login",
       "name": "Login",
       "description": "User login page",
