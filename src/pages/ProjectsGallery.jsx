@@ -10,6 +10,25 @@ import {
 } from '../services/gamification/ProjectsConfig'
 // Component unlock now handled by project rewards - no quiz-based unlock
 
+function getMissingComponents(project, unlockedComponents) {
+  if (unlockedComponents === '*') return [];
+  const unlocked = new Set(unlockedComponents || []);
+  const missingTypes = [];
+  
+  if (project.components) {
+    for (const c of project.components) {
+      if (!unlocked.has(c.type)) {
+        missingTypes.push({ id: c.type, name: c.label || c.type, icon: '🔧' });
+      }
+    }
+  }
+  return missingTypes;
+}
+
+function canStartProject(project, unlockedComponents) {
+  return getMissingComponents(project, unlockedComponents).length === 0;
+}
+
 const S = {
   page: {
     minHeight: '100vh',
@@ -105,7 +124,7 @@ export default function ProjectsGallery() {
   const [filter, setFilter] = useState('all')
   const {
     currentLevel, currentLevelData, nextLevel, xp, xpProgress,
-    earnedBadges, completeLevel, unlockedComponentTypes, coins, completedProjects = [],
+    earnedBadges, completeLevel, unlockedComponents, coins, completedProjects = [],
     isProjectUnlocked,
   } = useGamification()
 
@@ -348,7 +367,7 @@ function ProjectCard({ project, isLocked, isSeqLocked, isCompleted, missingCompo
           {project.tags.slice(0, 3).map(t => <span key={t} style={cardS.tag}>{t}</span>)}
         </div>
 
-        {!isLocked && project.requiredComponents?.length > 0 && (
+        {!isLocked && project.components?.length > 0 && (
           missingComponents.length > 0 ? (
             <div style={compReqStyles.reqSection} onClick={e => e.stopPropagation()}>
               <div style={compReqStyles.reqTitle}>
