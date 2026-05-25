@@ -274,6 +274,87 @@ export class BackendProxyRunner implements BoardRunner {
         }
     }
 
+    public syncI2cTransaction(addr: number, data: number[]) {
+        console.log(`[BackendProxyRunner] Routing I2C transaction for addr 0x${addr.toString(16)} with ${data.length} bytes`);
+        const i2cDevices = Array.from(this.instances.values()).filter(inst => 
+            (inst as any).onI2CStart || (inst as any).onI2CByte
+        );
+        for (const dev of i2cDevices) {
+            if (typeof (dev as any).onI2CStart === 'function') {
+                (dev as any).onI2CStart(addr, false);
+            }
+            if (typeof (dev as any).onI2CByte === 'function') {
+                for (const byte of data) {
+                    (dev as any).onI2CByte(-1, byte);
+                }
+            }
+            if (typeof (dev as any).onI2CStop === 'function') {
+                (dev as any).onI2CStop();
+            }
+        }
+    }
+
+    public syncPwm(channel: number, duty_pct: number) {
+        // Find connected components mapped to this PWM channel (duty is 0.0 to 1.0)
+        // Usually, PWM duty comes in as 0-100 or 0.0-1.0. Assuming 0.0-1.0
+        const pwmDuty = Math.max(0, Math.min(1.0, duty_pct));
+        for (const conn of this.connections) {
+            if (conn.fromComponent === this.boardId) {
+                // Determine if this pin maps to the PWM channel (requires pin mapping logic or broadcasting)
+                // For proxy simplicity, we broadcast PWM to devices that implement onPWM
+                const targetId = conn.toComponent;
+                const targetInst = this.instances.get(targetId);
+                if (targetInst && typeof (targetInst as any).onPWM === 'function') {
+                    // Normalize to whatever scale the component expects (e.g. 0-255 or 0-1.0)
+                    // If component expects 0-255:
+                    (targetInst as any).onPWM(pwmDuty * 255);
+                }
+            }
+        }
+    }
+
+    public syncSpiBatch(b64: string) {
+        try {
+            const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+            const spiDevices = Array.from(this.instances.values()).filter(inst => 
+                typeof (inst as any).onSPIByte === 'function'
+            );
+            for (const dev of spiDevices) {
+                for (let i = 0; i < bytes.length; i++) {
+                    (dev as any).onSPIByte(bytes[i]);
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to parse SPI batch in BackendProxyRunner', e);
+        }
+    }
+
+    public syncNeopixel(channel: number, pixels: any[]) {
+        const neopixelComps = Array.from(this.instances.values()).filter(inst => 
+            inst.type.toLowerCase().includes('neopixel') || inst.type.toLowerCase().includes('ws2812')
+        );
+        for (const comp of neopixelComps) {
+            if (typeof (comp as any).updatePixels === 'function') {
+                (comp as any).updatePixels(pixels);
+            } else if (typeof (comp as any).onWS2812BByte === 'function') {
+                // fallback to byte emulation if updatePixels isn't available
+                for (const p of pixels) {
+                    (comp as any).onWS2812BByte(p.g);
+                    (comp as any).onWS2812BByte(p.r);
+                    (comp as any).onWS2812BByte(p.b);
+                }
+            } else {
+                // Direct state injection for basic neopixel components
+                (comp as any).pixels = pixels;
+            }
+        }
+    }
+
+    public syncAdc(channel: number, val: number) {
+        // ADC values from backend are often injected directly to the pin
+        // But if needed we can broadcast
+    }
+
     private runLoop = () => {
         if (!this.running) return;
 

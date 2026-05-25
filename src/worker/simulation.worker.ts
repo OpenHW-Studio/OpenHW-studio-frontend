@@ -1354,5 +1354,45 @@ self.onmessage = async (e) => {
                 });
             }
         }
+    } else if (data.type === 'esp32:i2c:transaction') {
+        if (mode === 'single' && runner) {
+            if (typeof (runner as any).syncI2cTransaction === 'function') {
+                (runner as any).syncI2cTransaction(data.addr, data.data);
+            }
+        } else {
+            const targetBoardId = data.boardId;
+            if (targetBoardId) {
+                const target = boardRunners.get(targetBoardId);
+                if (target && typeof (target as any).syncI2cTransaction === 'function') {
+                    (target as any).syncI2cTransaction(data.addr, data.data);
+                }
+            } else {
+                boardRunners.forEach(br => {
+                    if (typeof (br as any).syncI2cTransaction === 'function') {
+                        (br as any).syncI2cTransaction(data.addr, data.data);
+                    }
+                });
+            }
+        }
+    } else if (data.type === 'esp32:pwm:sync') {
+        const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
+        if (target && typeof (target as any).syncPwm === 'function') {
+            (target as any).syncPwm(data.channel, data.duty_pct);
+        }
+    } else if (data.type === 'esp32:spi:batch') {
+        const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
+        if (target && typeof (target as any).syncSpiBatch === 'function') {
+            (target as any).syncSpiBatch(data.b64);
+        }
+    } else if (data.type === 'esp32:neopixel:sync') {
+        const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
+        if (target && typeof (target as any).syncNeopixel === 'function') {
+            (target as any).syncNeopixel(data.channel, data.pixels);
+        }
+    } else if (data.type === 'esp32:adc:sync') {
+        const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
+        if (target && typeof (target as any).syncAdc === 'function') {
+            (target as any).syncAdc(data.channel, data.val);
+        }
     }
 };
