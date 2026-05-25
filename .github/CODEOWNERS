@@ -1,0 +1,4 @@
+# CODEOWNERS for OpenHW Studio Frontend
+# Only @danish9661 can approve changes to workflows
+
+/.github/workflows/ @danish9661
