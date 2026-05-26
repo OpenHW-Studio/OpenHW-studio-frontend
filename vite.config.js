@@ -64,6 +64,7 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       environment: 'jsdom',
+      exclude: ['e2e/**', 'node_modules/**', 'dist/**', '.idea/**', '.git/**', '.cache/**', 'src/worker/**/*.test.mjs'],
       deps: {
         inline: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
       }
