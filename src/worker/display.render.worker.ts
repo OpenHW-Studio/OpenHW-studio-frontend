@@ -16,9 +16,9 @@
  *  - Register it in RENDERER_REGISTRY below.
  */
 
-import type { IDisplayRenderer, DisplayFrame } from '@openhw/emulator/src/display/IDisplayRenderer';
-import { ILI9341Renderer } from '@openhw/emulator/src/display/renderers/ILI9341Renderer';
-import { SSD1306Renderer } from '@openhw/emulator/src/display/renderers/SSD1306Renderer';
+import type { IDisplayRenderer, DisplayFrame } from '@openhw/emulator/src/display/IDisplayRenderer.ts';
+import { ILI9341Renderer } from '@openhw/emulator/src/display/renderers/ILI9341Renderer.ts';
+import { SSD1306Renderer } from '@openhw/emulator/src/display/renderers/SSD1306Renderer.ts';
 
 // ─── Registry ────────────────────────────────────────────────────────────────
 // To support a new display: add an entry here. No other infrastructure changes needed.
