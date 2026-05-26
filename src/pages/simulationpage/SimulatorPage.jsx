@@ -4766,7 +4766,8 @@ export function SimulatorPage({ gamificationMode = false }) {
             console.log('[handleAutoCode] Injecting code into file:', targetFile.id);
             return prev.map(f => {
               if (f.id === targetFile.id) {
-                const newContent = mergeCodeSnippet(f.content, snippet, compId);
+                const currentContent = (activeCodeFileId === f.id || activeCodeFileId === f.name) ? currentCodeRef.current : f.content;
+                const newContent = mergeCodeSnippet(currentContent, snippet, compId);
                 // Also update live code if it's the active file
                 if (activeCodeFileId === targetFile.id) {
                   setCode(newContent);
