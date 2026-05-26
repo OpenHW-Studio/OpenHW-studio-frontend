@@ -643,10 +643,12 @@ export class RP2040Runner implements BoardRunner {
     private i2cBitBangState = new Map<RP2040I2CBus, RP2040I2CBitBangState>();
     private i2cHardwareSeen = new Map<RP2040I2CBus, boolean>([['i2c0', false], ['i2c1', false]]);
     private spiDeviceCache = new Map<'spi0' | 'spi1', BaseComponent[]>();
+    private spiDeviceBusById = new Map<string, Set<'spi0' | 'spi1'>>();
     private peripheralDeviceCacheReady: boolean = false;
     private pwmState = new Map<string, { lastRiseCycle: number; lastFallCycle: number; lastPeriodCycles: number }>();
     private i2sState = new Map<string, { bclkLast: boolean; wsLast: boolean; shiftBuf: number; bitCount: number }>();
     private oneWireState = new Map<string, { lowStartCycle: number | null; highStartCycle: number | null }>();
+    private spiFrameState = new Map<'spi0' | 'spi1', { bytes: number[]; lastByteTime: number }>();
     private componentSyncMeta = new Map<string, { lastSentAt: number; lastWeight: number }>();
     private hasFaulted: boolean = false;
     private bootromLoaded: boolean = false;
@@ -677,6 +679,9 @@ export class RP2040Runner implements BoardRunner {
     private pioStepAccum = 0;
     private debugSerialTxBytes: number = 0;
     private debugSerialRxBytes: number = 0;
+    private debugSpiTxBytes: number = 0;
+    private debugSpiTxTransactions: number = 0;
+    private debugLastSpiLogAt: number = 0;
     private debugGpioTransitions: number = 0;
     private debugLastGpioPin: string = '';
     private debugLastPc: number = 0;
@@ -874,39 +879,46 @@ export class RP2040Runner implements BoardRunner {
         }
         this.pioStepAccum = 0;
 
-        try {
-            const gdbWs = new WebSocket('ws://localhost:3333');
-            this.gdbStatus = 'connecting';
-            this.emitGdbStatus('connecting', 'Attempting ws://localhost:3333');
-            const gdbServer = new GDBServer(this.cpu);
-            const gdbConn = new GDBConnection(gdbServer, (res) => {
-                if (gdbWs.readyState === WebSocket.OPEN) gdbWs.send(res);
-            });
-            gdbWs.onopen = () => {
-                this.gdbStatus = 'connected';
-                this.gdbLastError = '';
-                this.emitGdbStatus('connected', 'GDB bridge connected');
-            };
-            gdbWs.onmessage = (e) => {
-                if (typeof e.data === 'string') gdbConn.feedData(e.data);
-            };
-            gdbWs.onerror = () => {
-                this.gdbStatus = 'error';
-                this.gdbLastError = 'WebSocket error';
-                this.emitGdbStatus('error', this.gdbLastError);
-            };
-            gdbWs.onclose = (evt: any) => {
-                this.gdbStatus = 'closed';
-                const reason = String(evt?.reason || '').trim();
-                const detail = `code=${Number(evt?.code || 0)}${reason ? ` reason=${reason}` : ''}`;
-                this.emitGdbStatus('closed', detail);
-            };
-            this.gdbWs = gdbWs;
-        } catch (err) {
-            console.warn('Silent failure opening GDB Bridge ws://localhost:3333', err);
-            this.gdbStatus = 'error';
-            this.gdbLastError = String((err as any)?.message || err || 'Unknown GDB bridge error');
-            this.emitGdbStatus('error', this.gdbLastError);
+        const enableGdbBridge = (this as any).enableGdbBridge === true;
+        if (enableGdbBridge) {
+            try {
+                const gdbWs = new WebSocket('ws://localhost:3333');
+                this.gdbStatus = 'connecting';
+                this.emitGdbStatus('connecting', 'Attempting ws://localhost:3333');
+                const gdbServer = new GDBServer(this.cpu);
+                const gdbConn = new GDBConnection(gdbServer, (res) => {
+                    if (gdbWs.readyState === WebSocket.OPEN) gdbWs.send(res);
+                });
+                gdbWs.onopen = () => {
+                    this.gdbStatus = 'connected';
+                    this.gdbLastError = '';
+                    this.emitGdbStatus('connected', 'GDB bridge connected');
+                };
+                gdbWs.onmessage = (e) => {
+                    if (typeof e.data === 'string') gdbConn.feedData(e.data);
+                };
+                gdbWs.onerror = () => {
+                    this.gdbStatus = 'disabled';
+                    this.gdbLastError = 'GDB bridge unavailable';
+                    this.emitGdbStatus('stopped', this.gdbLastError);
+                };
+                gdbWs.onclose = (evt: any) => {
+                    this.gdbStatus = 'disabled';
+                    const reason = String(evt?.reason || '').trim();
+                    const detail = `code=${Number(evt?.code || 0)}${reason ? ` reason=${reason}` : ''}`;
+                    this.emitGdbStatus('stopped', detail);
+                };
+                this.gdbWs = gdbWs;
+            } catch (err) {
+                console.warn('Silent failure opening GDB Bridge ws://localhost:3333', err);
+                this.gdbStatus = 'disabled';
+                this.gdbLastError = String((err as any)?.message || err || 'Unknown GDB bridge error');
+                this.emitGdbStatus('stopped', this.gdbLastError);
+            }
+        } else {
+            this.gdbStatus = 'disabled';
+            this.gdbLastError = 'GDB bridge disabled';
+            this.emitGdbStatus('stopped', this.gdbLastError);
         }
         this.bootromLoaded = true;
         this.entryInfo = loadRP2040Firmware(this.cpu, this.firmwareHex, {
@@ -959,6 +971,11 @@ export class RP2040Runner implements BoardRunner {
         this.running = true;
         this.lastTime = performance.now();
         this.lastStateEmitTime = this.lastTime;
+        if (this.debugEnabled) {
+            const spi0Ids = this.spiDeviceCache.get('spi0')?.map((inst) => inst.id) || [];
+            const spi1Ids = this.spiDeviceCache.get('spi1')?.map((inst) => inst.id) || [];
+            console.log(`[RP2040 START] board=${this.boardId} gdb=${this.gdbStatus} spi0=[${spi0Ids.join(', ')}] spi1=[${spi1Ids.join(', ')}]`);
+        }
         this.emitDebugSnapshot('start', this.lastTime, true);
         this.emitWirelessStubStatus('start', true);
         this.runLoop();
@@ -1218,6 +1235,8 @@ export class RP2040Runner implements BoardRunner {
             .filter((pin) => !!this.pinStates[pin])
             .sort((a, b) => Number(a.replace('GP', '')) - Number(b.replace('GP', '')));
         const pinBitmap = Array.from({ length: 29 }, (_, idx) => (this.pinStates[`GP${idx}`] ? '1' : '0')).join('');
+        const spi0Devices = this.spiDeviceCache.get('spi0')?.map((inst) => inst.id) || [];
+        const spi1Devices = this.spiDeviceCache.get('spi1')?.map((inst) => inst.id) || [];
 
         const payload = {
             type: 'debug',
@@ -1227,12 +1246,20 @@ export class RP2040Runner implements BoardRunner {
             metrics: {
                 running: this.running,
                 faulted: this.hasFaulted,
+                gdbStatus: this.gdbStatus,
+                gdbLastError: this.gdbLastError,
                 pc,
                 sp: this.cpu.core.SP >>> 0,
                 cycles: this.cpu.core.cycles >>> 0,
                 activeUart: this.activeUartIndex,
                 serialTxBytes: this.debugSerialTxBytes,
                 serialRxBytes: this.debugSerialRxBytes,
+                spiTxBytes: this.debugSpiTxBytes,
+                spiTxTransactions: this.debugSpiTxTransactions,
+                spiDevices: {
+                    spi0: spi0Devices,
+                    spi1: spi1Devices,
+                },
                 usbCdcReady: this.usbCdcReady,
                 serialInputQueue: this.serialBuffer.length,
                 stepCount: this.debugStepCount,
@@ -1544,9 +1571,36 @@ export class RP2040Runner implements BoardRunner {
         this.i2cHardwareSeen.set('i2c0', false);
         this.i2cHardwareSeen.set('i2c1', false);
         this.i2cBitBangState.clear();
+        this.spiDeviceBusById.clear();
         this.spiDeviceCache.set('spi0', this.scanRp2040ConnectedSPIDevices('spi0'));
         this.spiDeviceCache.set('spi1', this.scanRp2040ConnectedSPIDevices('spi1'));
+        for (const [bus, devices] of this.spiDeviceCache.entries()) {
+            for (const inst of devices) {
+                let buses = this.spiDeviceBusById.get(inst.id);
+                if (!buses) {
+                    buses = new Set();
+                    this.spiDeviceBusById.set(inst.id, buses);
+                }
+                buses.add(bus);
+            }
+        }
         this.peripheralDeviceCacheReady = true;
+
+        if (this.debugEnabled) {
+            const spi0Ids = this.spiDeviceCache.get('spi0')?.map((inst) => inst.id) || [];
+            const spi1Ids = this.spiDeviceCache.get('spi1')?.map((inst) => inst.id) || [];
+            console.log(`[RP2040 SPI CACHE] spi0=[${spi0Ids.join(', ')}] spi1=[${spi1Ids.join(', ')}]`);
+            this.onStateUpdate({
+                type: 'debug',
+                boardId: this.boardId,
+                category: 'rp2040-spi',
+                reason: 'cache-rebuilt',
+                spi: {
+                    spi0: spi0Ids,
+                    spi1: spi1Ids,
+                },
+            });
+        }
     }
 
     private getRp2040ConnectedI2CDevices(bus: 'i2c0' | 'i2c1'): BaseComponent[] {
@@ -1561,6 +1615,13 @@ export class RP2040Runner implements BoardRunner {
         // Fallback: if bus-pin topology detection misses a supported device,
         // allow address-based matching to keep common display modules functional.
         return this.getI2CCallbackDevices();
+    }
+
+    private getRp2040ConnectedSPIBusesForDevice(componentId: string): Array<'spi0' | 'spi1'> {
+        if (!this.peripheralDeviceCacheReady) {
+            this.rebuildPeripheralDeviceCache();
+        }
+        return Array.from(this.spiDeviceBusById.get(componentId) || []);
     }
 
     private getI2CCallbackDevices(): BaseComponent[] {
@@ -1717,6 +1778,52 @@ export class RP2040Runner implements BoardRunner {
         return this.spiDeviceCache.get(bus) || [];
     }
 
+    private getSpiControlPinRole(pinId: string): 'CS' | 'DC' | 'RESET' | null {
+        const key = String(pinId || '').toUpperCase();
+        if (['CS', 'CE', 'SS', 'SSEL', 'NSS', 'CSN', 'CS_N', 'NCE'].includes(key)) return 'CS';
+        if (['DC', 'D_C', 'A0', 'RS'].includes(key)) return 'DC';
+        if (['RESET', 'RST', 'RES', 'NRST'].includes(key)) return 'RESET';
+        return null;
+    }
+
+    private flushRp2040SpiFrame(bus: 'spi0' | 'spi1', reason: string) {
+        const state = this.spiFrameState.get(bus);
+        if (!state || state.bytes.length === 0) return;
+
+        const devices = this.getRp2040ConnectedSPIDevices(bus);
+        this.onStateUpdate({
+            type: 'protocol:spi',
+            boardId: this.boardId,
+            data: [...state.bytes],
+            timestamp: state.lastByteTime,
+        });
+        this.debugSpiTxTransactions += 1;
+
+        this.onStateUpdate({
+            type: 'debug',
+            boardId: this.boardId,
+            category: 'rp2040-spi',
+            reason: 'frame',
+            spi: {
+                bus,
+                frameBytes: state.bytes.length,
+                txBytes: this.debugSpiTxBytes,
+                txTransactions: this.debugSpiTxTransactions,
+                deviceCount: devices.length,
+                deviceIds: devices.map((d) => d.id),
+                flushReason: reason,
+            },
+        });
+
+        if (this.debugEnabled) {
+            console.log(
+                `[RP2040 SPI] ${bus} frame=${state.bytes.length} reason=${reason} devices=${devices.length}`
+            );
+        }
+
+        state.bytes = [];
+    }
+
     private scanRp2040ConnectedSPIDevices(bus: 'spi0' | 'spi1'): BaseComponent[] {
         const pinMap = RP2040_SPI_SOURCE_PINS[bus];
         if (!pinMap) return [];
@@ -1733,9 +1840,7 @@ export class RP2040Runner implements BoardRunner {
             if (!this.isComponentPinConnectedToBoardPins(inst.id, sckPin, pinMap.sck)) continue;
 
             const csPin = this.findExistingPinName(inst, ['CS', 'SS', 'CSN', 'NSS', 'CE', 'CS_N']);
-            if (csPin && !this.isComponentPinConnectedToBoardPins(inst.id, csPin, pinMap.cs)) {
-                continue;
-            }
+            if (!csPin) continue;
 
             devices.push(inst);
         }
@@ -1867,10 +1972,26 @@ export class RP2040Runner implements BoardRunner {
 
         const attachBus = (index: 0 | 1, bus: 'spi0' | 'spi1') => {
             const spi: any = (this.cpu as any)?.spi?.[index];
-            if (!spi) return;
+            const frameState = this.spiFrameState.get(bus) || { bytes: [], lastByteTime: 0 };
+            this.spiFrameState.set(bus, frameState);
+            if (!spi) {
+                this.onStateUpdate({
+                    type: 'debug',
+                    boardId: this.boardId,
+                    category: 'rp2040-spi',
+                    reason: 'missing-bus',
+                    spi: { bus, attached: false, deviceCount: 0 },
+                });
+                return;
+            }
 
-            let spiTransactionBytes: number[] = [];
-            let lastSpiTime = 0;
+            this.onStateUpdate({
+                type: 'debug',
+                boardId: this.boardId,
+                category: 'rp2040-spi',
+                reason: 'attach-bus',
+                spi: { bus, attached: true, deviceCount: 0 },
+            });
 
             // rp2040js SPI doTX currently sets busy=true after invoking onTransmit().
             // Under high-throughput writes this can stall and/or drop bytes because
@@ -1890,21 +2011,46 @@ export class RP2040Runner implements BoardRunner {
 
             spi.onTransmit = (value: number) => {
                 const nowMs = this.getSimulatedTimeMs();
-                if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
-                     this.onStateUpdate({
-                         type: 'protocol:spi',
-                         boardId: this.boardId,
-                         data: [...spiTransactionBytes],
-                         timestamp: lastSpiTime
-                     });
-                     spiTransactionBytes = [];
+                if (nowMs - frameState.lastByteTime > 2.0 && frameState.bytes.length > 0) {
+                    this.flushRp2040SpiFrame(bus, 'idle-gap');
                 }
-                lastSpiTime = nowMs;
-                spiTransactionBytes.push(value & 0xff);
+                frameState.lastByteTime = nowMs;
+                frameState.bytes.push(value & 0xff);
+                this.debugSpiTxBytes += 1;
 
                 const byte = value & 0xff;
+                const byteIndex = frameState.bytes.length - 1;
                 let response = 0xff;
                 const devices = this.getRp2040ConnectedSPIDevices(bus);
+
+                if (frameState.bytes.length === 1 || frameState.bytes.length <= 8) {
+                    this.onStateUpdate({
+                        type: 'debug',
+                        boardId: this.boardId,
+                        category: 'rp2040-spi',
+                        reason: frameState.bytes.length === 1 ? 'first-byte' : 'byte',
+                        spi: {
+                            bus,
+                            byte: byte,
+                            byteIndex,
+                            frameBytes: frameState.bytes.length,
+                            txBytes: this.debugSpiTxBytes,
+                            txTransactions: this.debugSpiTxTransactions,
+                            deviceCount: devices.length,
+                            deviceIds: devices.map((d) => d.id),
+                            framePreview: frameState.bytes.slice(0, 8),
+                        },
+                    });
+                }
+
+                if (frameState.bytes.length === 1 || nowMs - this.debugLastSpiLogAt > 500) {
+                    this.debugLastSpiLogAt = nowMs;
+                    console.log(
+                        `[RP2040 SPI] ${bus} byte=0x${byte.toString(16).padStart(2, '0')} ` +
+                        `index=${byteIndex} frameBytes=${frameState.bytes.length} ` +
+                        `txBytes=${this.debugSpiTxBytes} txFrames=${this.debugSpiTxTransactions} devices=${devices.length}`
+                    );
+                }
 
                 for (const inst of devices) {
                     this.syncSpiControlPins(inst);
@@ -1915,7 +2061,9 @@ export class RP2040Runner implements BoardRunner {
                     }
                 }
 
-                spi.completeTransmit(response);
+                setTimeout(() => {
+                    spi.completeTransmit(response);
+                }, 0);
             };
         };
 
@@ -2599,6 +2747,38 @@ export class RP2040Runner implements BoardRunner {
 
         for (const endpoint of this.getProtocolEndpointsForGpPin(pinName)) {
             endpoint.inst.onPinStateChange(endpoint.pinId, isHigh, normalizedCycles);
+            if (typeof endpoint.inst.onSPIByte === 'function') {
+                const role = this.getSpiControlPinRole(String(endpoint.pinId || ''));
+                if (role) {
+                    const buses = this.getRp2040ConnectedSPIBusesForDevice(endpoint.inst.id);
+                    this.onStateUpdate({
+                        type: 'debug',
+                        boardId: this.boardId,
+                        category: 'rp2040-spi',
+                        reason: 'control-pin',
+                        spi: {
+                            role,
+                            bus: buses[0] || 'spi?',
+                            buses,
+                            componentId: endpoint.inst.id,
+                            componentPin: endpoint.pinId,
+                            boardPin: pinName,
+                            isHigh,
+                            voltage: isHigh ? 3.3 : 0.0,
+                        },
+                    });
+                }
+            }
+            if (isHigh) {
+                const pinNameUpper = String(endpoint.pinId || '').toUpperCase();
+                if (['CS', 'SS', 'CSN', 'NSS', 'CE', 'CS_N'].includes(pinNameUpper)) {
+                    if (endpoint.inst.state?.csActive === false) {
+                        for (const bus of this.getRp2040ConnectedSPIBusesForDevice(endpoint.inst.id)) {
+                            this.flushRp2040SpiFrame(bus, `cs-deassert:${pinName}`);
+                        }
+                    }
+                }
+            }
         }
 
         const functionSelect = this.cpu?.gpio?.[pin]?.functionSelect ?? 0;
