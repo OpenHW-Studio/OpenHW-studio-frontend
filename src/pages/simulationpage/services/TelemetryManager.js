@@ -160,12 +160,15 @@ export function useTelemetryManager({
   telemetrySampleInterval = 250,
   selectedTelemetryComponentIds,
   setSelectedTelemetryComponentIds,
+  isBooting = false,
+  isCompiling = false,
 }) {
   const lastLogTimeRef = useRef(Date.now());
   const latestTelemetryCacheRef = useRef([]);
   const [telemetryWatchedParamsMap, setTelemetryWatchedParamsMap] = useState({});
 
   const handleTelemetryStateMessage = useCallback((msg) => {
+    if (isBooting) return;
     if (!componentTelemetryEnabled || !msg || !Array.isArray(msg.components)) return;
 
     const safeSpeed = Number.isFinite(Number(simulationSpeed)) && Number(simulationSpeed) > 0 ? Number(simulationSpeed) : 1.0;
@@ -202,7 +205,7 @@ export function useTelemetryManager({
     });
 
     latestTelemetryCacheRef.current = processed;
-  }, [componentTelemetryEnabled, simulationSpeed, telemetrySampleInterval, selectedTelemetryComponentIds, telemetryMode, appendConsoleEntry, telemetryWatchedParamsMap]);
+  }, [componentTelemetryEnabled, simulationSpeed, telemetrySampleInterval, selectedTelemetryComponentIds, telemetryMode, appendConsoleEntry, telemetryWatchedParamsMap, isBooting]);
 
   const setTelemetryEnabledCb = useCallback((enabled, modeOverride) => {
     const targetMode = modeOverride || telemetryMode || 'detail';
@@ -211,28 +214,32 @@ export function useTelemetryManager({
 
     if (workerRef?.current) {
       const deepSilicon = typeof window !== 'undefined' ? localStorage.getItem('openhw.deepSiliconDebugging') === 'true' : false;
+      const effectiveTelemetryEnabled = !!enabled && !isBooting && !isCompiling;
+      
       workerRef.current.postMessage({
         type: 'SET_COMPONENT_TELEMETRY',
-        enabled: !!enabled,
+        enabled: effectiveTelemetryEnabled,
         mode: targetMode,
         watchedParamsMap: telemetryWatchedParamsMap,
         deepSilicon,
       });
     }
-  }, [workerRef, telemetryMode, setComponentTelemetryEnabled, setTelemetryMode, telemetryWatchedParamsMap]);
+  }, [workerRef, telemetryMode, setComponentTelemetryEnabled, setTelemetryMode, telemetryWatchedParamsMap, isBooting, isCompiling]);
 
   useEffect(() => {
-    if (workerRef?.current && componentTelemetryEnabled) {
+    if (workerRef?.current) {
       const deepSilicon = typeof window !== 'undefined' ? localStorage.getItem('openhw.deepSiliconDebugging') === 'true' : false;
+      const effectiveTelemetryEnabled = componentTelemetryEnabled && !isBooting && !isCompiling;
+      
       workerRef.current.postMessage({
         type: 'SET_COMPONENT_TELEMETRY',
-        enabled: true,
+        enabled: effectiveTelemetryEnabled,
         mode: telemetryMode,
         watchedParamsMap: telemetryWatchedParamsMap,
         deepSilicon,
       });
     }
-  }, [workerRef, componentTelemetryEnabled, telemetryMode, telemetryWatchedParamsMap]);
+  }, [workerRef, componentTelemetryEnabled, telemetryMode, telemetryWatchedParamsMap, isBooting, isCompiling]);
 
   const prevModeRef = useRef(telemetryMode);
   useEffect(() => {

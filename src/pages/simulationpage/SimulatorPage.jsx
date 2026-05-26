@@ -61,7 +61,7 @@ import { simplifyOrthogonalPath } from './utils/wireHitDetection';
 import { useEditorStore } from './store/useEditorStore';
 import { useWebSerialHardware } from './webSerialHardware';
 import { useHardwareFlashing } from './useHardwareFlashing';
-import { useHardwareSocket } from '../../esp32/hooks/useHardwareSocket.js';
+import { useEsp32Engine } from './hooks/useEsp32Engine.js';
 import { SimulationConsolePanel, TerminalIcon, useSimulationConsole } from './SimulationConsole';
 import QuickAddPortal from './QuickAddPortal';
 import TourGuide from './components/TourGuide';
@@ -73,6 +73,7 @@ import { ComponentTelemetrySelectModal } from './components/ComponentTelemetrySe
 
 import { ComponentContextMenu, ComponentRenamePanel, ComponentValuePanel } from './ComponentContextMenu';
 import { CanvasSceneLayer } from './components/CanvasSceneLayer';
+import { DisplayRenderProvider } from './context/DisplayRenderContext';
 import { CreateComponentModal } from './components/CreateComponentModal';
 import { ComponentInspectorPanel } from './components/ComponentInspectorPanel';
 import { GamificationGuidePanel } from './components/GamificationGuidePanel';
@@ -85,6 +86,7 @@ import { F1MenuOverlay } from './components/F1MenuOverlay';
 import AutofixPreviewPanel from '../../components/AutofixPreviewPanel.jsx';
 
 import * as EmulatorComponents from "@openhw/emulator";
+
 const {
   FullCircuitValidator,
   analyzeCodeHardwareSync,
@@ -197,6 +199,13 @@ function assertSafeDynamicModule(code, label) {
   if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
     throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
   }
+}
+
+function isRp2040CoreMissingError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes("platform 'rp2040:rp2040' not found")
+    || msg.includes('platform rp2040:rp2040 is not found')
+    || msg.includes('platform not installed');
 }
 
 // Tracks component types that were dynamically injected from the backend (not built-in).
@@ -701,9 +710,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => document.head.removeChild(style);
   }, []);
   const [isCompiling, setIsCompiling] = useState(false)
+  const [isBooting, setIsBooting] = useState(false) // TODO: Declare booting state tracking
   const [isPaused, setIsPaused] = useState(false)
   const [protocolLogs, setProtocolLogs] = useState([])
-  const [activeConsoleTab, setActiveConsoleTab] = useState('console')
   const [healthScore, setHealthScore] = useState(100)
   const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
   const pendingProtocolLogsRef = useRef([]);
@@ -749,6 +758,10 @@ export function SimulatorPage({ gamificationMode = false }) {
   const renderAnalogByBoardRef = useRef({});
   const renderComponentsByBoardRef = useRef({});
   const renderNeopixelsByBoardRef = useRef({});
+  /** Dedicated OffscreenCanvas Render Worker — owns all display canvas contexts. */
+  const renderWorkerRef = useRef(null);
+  /** State mirror of renderWorkerRef so Provider re-renders when worker starts/stops. */
+  const [renderWorker, setRenderWorker] = useState(null);
 
   const {
     consoleEntries,
@@ -944,131 +957,35 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   }, [showFirmwareUploadDialog, firmwareUploadTarget, firmwareBoardOptions]);
 
-  const workerRef = useRef(null)
-  // ─── ESP32 QEMU session refs ──────────────────────────────────────────────
-  const esp32BuildIdRef = useRef(null);
-  const serialFlushBufRef = useRef([]);
-  const serialFlushTimer = useRef(null);
-  const compileTimeoutRef = useRef(null);
-  const pinToComponentsRef = useRef({});
+  const getBoardMainCode = useCallback((boardId) => {
+    const preferred = `project/${boardId}/${boardId}.ino`;
+    const prefFile = projectFileMap.get(preferred);
+    if (prefFile && prefFile.content && !isFileDisabled(prefFile.path)) return prefFile.content;
 
-  // Rebuild pin→component connectivity map whenever wires change
-  useEffect(() => {
-    const map = {};
-    wires.forEach(w => {
-      const from = (w.from || '').split(':');
-      const to = (w.to || '').split(':');
-      if (from.length === 2 && to.length === 2) {
-        if (!map[`${from[0]}:${from[1]}`]) map[`${from[0]}:${from[1]}`] = [];
-        map[`${from[0]}:${from[1]}`].push({ compId: to[0], pinId: to[1] });
-        if (!map[`${to[0]}:${to[1]}`]) map[`${to[0]}:${to[1]}`] = [];
-        map[`${to[0]}:${to[1]}`].push({ compId: from[0], pinId: from[1] });
-      }
-    });
-    pinToComponentsRef.current = map;
-  }, [wires]);
+    const ino = (projectFiles || []).find(
 
-  // Ref to hold pushSerialRxChunk to avoid ReferenceError due to declaration order
-  const pushSerialRxChunkRef = useRef(null);
+      (f) => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino' && !isFileDisabled(f.path)
+    );
+    if (ino?.content) return ino.content;
 
-  // Flush batched ESP32 serial text every 120 ms to avoid per-char setState
-  const flushESP32Serial = useCallback(() => {
-    const lines = serialFlushBufRef.current.splice(0);
-    if (!lines.length) return;
-    const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
-    const boardId = esp32Board ? esp32Board.id : 'esp32';
-    if (pushSerialRxChunkRef.current) {
-      lines.forEach(line => pushSerialRxChunkRef.current(line, boardId, 'sim'));
-    }
-  }, []);
+    return '';
+  }, [projectFileMap, projectFiles]);
 
-  // Helper to trace wires from a component pin to a connected ESP32 pin
-  const traceConnectedEsp32Pin = useCallback((componentId, componentPinName) => {
-    const visited = new Set();
-    const queue = [`${componentId}:${componentPinName}`];
-    visited.add(`${componentId}:${componentPinName}`);
+  const getBoardCompileFiles = useCallback((boardId, preferredMainPath = '') => {
+    // Virtualize project files to include current editor changes
+    const virtualProjectFiles = (projectFiles || []).map(f => ({
+      ...f,
+      content: f.id === activeCodeFileId ? code : (f.content || '')
+    }));
 
-    while (queue.length > 0) {
-      const current = queue.shift();
-      const [currCompId, currPin] = current.split(':');
+    return getBoardCompileFilesShared({ projectFiles: virtualProjectFiles }, boardId);
+  }, [projectFiles, activeCodeFileId, code]);
 
-      const currComp = (componentsRef.current || components).find(c => c.id === currCompId);
-      if (currComp && /esp32/i.test(currComp.type || '')) {
-        const pinNum = parseInt(currPin.replace(/\D/g, ''), 10);
-        if (!isNaN(pinNum)) {
-          return pinNum;
-        }
-      }
+  const logSerial = (msg, color = 'var(--text)') => {
+    // In a real implementation this would push to a serial console state array
+    console.log(`[SIM]`, msg);
+  };
 
-      for (const wire of wires || []) {
-        if (wire.from === current && !visited.has(wire.to)) {
-          visited.add(wire.to);
-          queue.push(wire.to);
-        } else if (wire.to === current && !visited.has(wire.from)) {
-          visited.add(wire.from);
-          queue.push(wire.from);
-        }
-      }
-    }
-    return null;
-  }, [components, wires]);
-
-  const esp32Socket = useHardwareSocket({
-    onSerialLine: (text) => { serialFlushBufRef.current.push(text); },
-    onGpioSync: (pin, value) => {
-      const pinId = String(pin);
-      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
-      if (esp32Board) {
-        const targets = pinToComponentsRef.current[`${esp32Board.id}:${pinId}`] || [];
-        if (targets.length > 0) {
-          setOopStates(prev => {
-            const next = { ...prev };
-            targets.forEach(t => {
-              const comp = componentsRef.current.find(c => c.id === t.compId);
-              const newPinStates = { ...(next[t.compId]?.pinStates || {}), [t.pinId]: value };
-              const extra = {};
-              // wokwi-led lights up when anode pin A is HIGH
-              if (comp?.type === 'wokwi-led' && t.pinId === 'A') {
-                extra.illuminated = value === 1;
-              }
-              // Membrane Keypad Matrix scanning bridging
-              if (comp?.type === 'wokwi-membrane-keypad' && t.pinId.startsWith('R')) {
-                const pressedKey = next[t.compId]?.pressedKey;
-                if (pressedKey) {
-                  const matrix = {
-                    '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
-                    '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
-                    '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
-                    '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
-                  };
-                  const pair = matrix[pressedKey];
-                  if (pair && pair[0] === t.pinId) {
-                    const colPin = pair[1];
-                    const colEspPin = traceConnectedEsp32Pin(t.compId, colPin);
-                    if (colEspPin !== null) {
-                      esp32Socket.sendGpio(colEspPin, value); // column pin mirrors row state!
-                    }
-                  }
-                }
-              }
-              next[t.compId] = { ...(next[t.compId] || {}), pinStates: newPinStates, ...extra };
-            });
-            return next;
-          });
-        }
-      }
-      setPinStates(prev => ({ ...prev, [pinId]: value === 1 }));
-    },
-    onLog: (msg, dir) => logSerial(msg, dir === 'err' ? 'var(--red, #f87171)' : undefined),
-    onStop: () => {
-      if (serialFlushTimer.current) { clearInterval(serialFlushTimer.current); serialFlushTimer.current = null; }
-      if (compileTimeoutRef.current) { clearTimeout(compileTimeoutRef.current); compileTimeoutRef.current = null; }
-      esp32BuildIdRef.current = null;
-      setIsRunning(false);
-      setIsCompiling(false);
-      runStartGuardRef.current = false;
-    },
-  });
 
   const lastCompiledRef = useRef(null)
   const micropythonUf2PayloadRef = useRef(null)
@@ -1078,7 +995,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const rp2040GdbLastLogRef = useRef(new Map())
   const rp2040UartMicroPythonBoardsRef = useRef(new Set())
   const rp2040UartSilentWarnedBoardsRef = useRef(new Set())
-  const runStartGuardRef = useRef(false)
   const runComponentUpdateCountsRef = useRef({})
   const runPinTransitionCountsRef = useRef({})
   const runLagTelemetryLastStateRef = useRef(new Map())
@@ -1197,110 +1113,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         });
       }
 
-      // Handle ESP32 direct component interactions via esp32Socket
-      if (isRunning) {
-        // Helper to trace connections to ESP32 pins
-        const getEsp32Connections = (componentId) => {
-          const connections = [];
-          const compPins = new Set();
-          for (const wire of wires || []) {
-            if (wire.from.startsWith(`${componentId}:`)) {
-              compPins.add(wire.from.split(':')[1]);
-            }
-            if (wire.to.startsWith(`${componentId}:`)) {
-              compPins.add(wire.to.split(':')[1]);
-            }
-          }
-          for (const pinName of compPins) {
-            const espPin = traceConnectedEsp32Pin(componentId, pinName);
-            if (espPin !== null) {
-              connections.push({ compPin: pinName, esp32Pin: espPin });
-            }
-          }
-          return connections;
-        };
-
-        if (comp.type === 'wokwi-membrane-keypad') {
-          if (event && event.startsWith && event.startsWith('press:')) {
-            const key = event.split(':')[1];
-            setOopStates(prev => ({
-              ...prev,
-              [comp.id]: { ...(prev[comp.id] || {}), pressedKey: key }
-            }));
-            const matrix = {
-              '1': ['R1', 'C1'], '2': ['R1', 'C2'], '3': ['R1', 'C3'], 'A': ['R1', 'C4'],
-              '4': ['R2', 'C1'], '5': ['R2', 'C2'], '6': ['R2', 'C3'], 'B': ['R2', 'C4'],
-              '7': ['R3', 'C1'], '8': ['R3', 'C2'], '9': ['R3', 'C3'], 'C': ['R3', 'C4'],
-              '*': ['R4', 'C1'], '0': ['R4', 'C2'], '#': ['R4', 'C3'], 'D': ['R4', 'C4']
-            };
-            const pair = matrix[key];
-            if (pair) {
-              const [rowPin, colPin] = pair;
-              const rowEspPin = traceConnectedEsp32Pin(comp.id, rowPin);
-              const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
-              if (colEspPin !== null) {
-                const isRowLow = rowEspPin !== null && pinStates[rowEspPin] === false;
-                esp32Socket.sendGpio(colEspPin, isRowLow ? 0 : 1);
-              }
-            }
-          } else if (event === 'release') {
-            setOopStates(prev => ({
-              ...prev,
-              [comp.id]: { ...(prev[comp.id] || {}), pressedKey: null }
-            }));
-            ['C1', 'C2', 'C3', 'C4'].forEach(colPin => {
-              const colEspPin = traceConnectedEsp32Pin(comp.id, colPin);
-              if (colEspPin !== null) {
-                esp32Socket.sendGpio(colEspPin, 1);
-              }
-            });
-          }
-        }
-        else if (comp.type === 'wokwi-pushbutton') {
-          const conns = getEsp32Connections(comp.id);
-          const val = (event === 'press') ? 0 : 1;
-          for (const conn of conns) {
-            esp32Socket.sendGpio(conn.esp32Pin, val);
-          }
-        }
-        else if (comp.type === 'PIR-Motion-Sensor') {
-          const conns = getEsp32Connections(comp.id);
-          const val = (event === 'motion_start') ? 1 : 0;
-          for (const conn of conns) {
-            esp32Socket.sendGpio(conn.esp32Pin, val);
-          }
-        }
-        else {
-          const conns = getEsp32Connections(comp.id);
-          if (conns.length > 0) {
-            let digitalVal = null;
-            if (typeof event === 'string') {
-              const evt = event.toLowerCase();
-              if (evt === 'press' || evt === 'motion_start' || evt === 'high' || evt === 'true' || evt.startsWith('press:')) {
-                digitalVal = 1;
-              } else if (evt === 'release' || evt === 'motion_stop' || evt === 'low' || evt === 'false') {
-                digitalVal = 0;
-              }
-            } else if (event && typeof event === 'object') {
-              if (event.value !== undefined) {
-                if (typeof event.value === 'boolean') {
-                  digitalVal = event.value ? 1 : 0;
-                } else {
-                  const num = Number(event.value);
-                  if (!isNaN(num)) {
-                    digitalVal = num > 50 ? 1 : 0;
-                  }
-                }
-              }
-            }
-            if (digitalVal !== null) {
-              for (const conn of conns) {
-                esp32Socket.sendGpio(conn.esp32Pin, digitalVal);
-              }
-            }
-          }
-        }
-      }
+      if (handleEsp32Interaction(comp, event)) return;
     };
 
     return attrs;
@@ -1330,6 +1143,38 @@ export function SimulatorPage({ gamificationMode = false }) {
     liveOopStatesRef.current = {};
     prevIds.forEach(notifyLiveOopStateListeners);
   }, [notifyLiveOopStateListeners]);
+
+  const workerRef = useRef(null)
+  const pushSerialRxChunkRef = useRef(null);
+  const runStartGuardRef = useRef(false)
+  const {
+    handleEsp32Interaction,
+    startEsp32Session,
+    stopEsp32Session,
+    esp32Socket
+  } = useEsp32Engine({
+    workerRef,
+    components,
+    wires,
+    setOopStates,
+    pinStates,
+    setPinStates,
+    pushSerialRxChunkRef,
+    logSerial,
+    setIsRunning,
+    setIsCompiling,
+    setIsBooting, // TODO: Pass booting state setter to ESP32 engine
+    runStartGuardRef,
+    appendConsoleEntry,
+    getBoardCompileFiles,
+    getBoardMainCode,
+    code,
+    useBlocklyCode,
+    blocklyGeneratedCode,
+    isRunning,
+    getLiveOopStateSnapshot,
+    updateLiveOopStates
+  });
   const applyLiveNeopixelData = useCallback((neopixelState) => {
     liveNeopixelDataRef.current = neopixelState || {};
     if (!liveNeopixelDataRef.current || Object.keys(liveNeopixelDataRef.current).length === 0) return;
@@ -1389,6 +1234,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     telemetrySampleInterval,
     selectedTelemetryComponentIds,
     setSelectedTelemetryComponentIds,
+    isBooting,
+    isCompiling,
   });
 
   const handleTelemetryStateMessageRef = useRef(handleTelemetryStateMessage);
@@ -5123,28 +4970,9 @@ export function SimulatorPage({ gamificationMode = false }) {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }, [projectFileMap]);
 
-  const getBoardMainCode = useCallback((boardId) => {
-    const preferred = `project/${boardId}/${boardId}.ino`;
-    const prefFile = projectFileMap.get(preferred);
-    if (prefFile && prefFile.content && !isFileDisabled(prefFile.path)) return prefFile.content;
+  
 
-    const ino = (projectFiles || []).find(
-      (f) => f.path.startsWith(`project/${boardId}/`) && fileExt(f.path) === '.ino' && !isFileDisabled(f.path)
-    );
-    if (ino?.content) return ino.content;
-
-    return '';
-  }, [projectFileMap, projectFiles]);
-
-  const getBoardCompileFiles = useCallback((boardId, preferredMainPath = '') => {
-    // Virtualize project files to include current editor changes
-    const virtualProjectFiles = (projectFiles || []).map(f => ({
-      ...f,
-      content: f.id === activeCodeFileId ? code : (f.content || '')
-    }));
-
-    return getBoardCompileFilesShared({ projectFiles: virtualProjectFiles }, boardId);
-  }, [projectFiles, activeCodeFileId, code]);
+  
 
   const getBoardFirmwareAssets = useCallback((boardId) => {
     const boardFiles = projectFiles
@@ -6087,10 +5915,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
 
   // ─── Simulator Run & Stop Logic ─────────────────────────────────────────────
-  const logSerial = (msg, color = 'var(--text)') => {
-    // In a real implementation this would push to a serial console state array
-    console.log(`[SIM]`, msg);
-  };
+  
 
   const logCompileSummary = useCallback((compiledResult, boardComp, boardKind) => {
     const summaryLines = extractCompileSummaryLines(compiledResult?.stdout || '');
@@ -6616,7 +6441,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       runFpsTelemetryLastLogRef.current.clear();
       runLastBoardPinsRef.current = new Map();
 
-      setIsRunning(true);
       setIsCompiling(true);
       setRunStartedAtMs(Date.now());
       setRunDurationSec(0);
@@ -6634,38 +6458,18 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardBaudMap = {};
       const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
 
-      // ─── ESP32 QEMU server-side path ────────────────────────────────────────
-      const esp32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'esp32');
-      if (esp32Board) {
-        logSerial('⚙️  Sending ESP32 firmware to QEMU server...');
-        const compileUnit = getBoardCompileFiles(esp32Board.id, '');
-        const compileSource = useBlocklyCode ? blocklyGeneratedCode : (compileUnit.mainCode || getBoardMainCode(esp32Board.id) || code);
-
-        if (serialFlushTimer.current) clearInterval(serialFlushTimer.current);
-        serialFlushTimer.current = setInterval(flushESP32Serial, 120);
-
-        try {
-          const buildId = await esp32Socket.run(compileSource);
-          esp32BuildIdRef.current = buildId;
-          setIsCompiling(false);
-        } catch (esp32Err) {
-          if (serialFlushTimer.current) { clearInterval(serialFlushTimer.current); serialFlushTimer.current = null; }
-          setIsRunning(false);
-          setIsCompiling(false);
-          runStartGuardRef.current = false;
-          appendConsoleEntry('error', `ESP32 compile failed: ${esp32Err.message}`, 'simulator');
-          alert(esp32Err.message);
-        }
-        runStartGuardRef.current = false;
-        return; // ← ESP32 path complete — skip AVR/RP2040 web worker
-      }
-      // ────────────────────────────────────────────────────────────────────────
-
+      const isBackendProxy = await startEsp32Session(programmableBoards);
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
       const boardsWithoutCompilableSketch = [];
       let result = null;
 
-      if (programmableBoards.length > 0) {
+      if (isBackendProxy) {
+        result = {
+          hex: '',
+          components: components,
+          connections: wires,
+        };
+      } else if (programmableBoards.length > 0) {
         for (const boardComp of programmableBoards) {
           const kind = normalizeBoardKind(boardComp.type);
           const targetFqbn = resolveBoardFqbnForComponent(boardComp, kind);
@@ -6946,11 +6750,35 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       lastCompiledRef.current = { code, board, result };
       setIsCompiling(false);
-      logSerial('Compiled! Connecting to emulator...');
+      if (!isBackendProxy) {
+        setIsRunning(true);
+        setIsBooting(true);
+      }
+      logSerial(isBackendProxy ? 'Backend connected! Starting physics worker...' : 'Compiled! Connecting to emulator...');
 
-      // Load Web Worker
+      // ── Render Worker: create before sim worker so port is ready ──────────
+      const renderWorker = new Worker(
+        new URL('../../worker/display.render.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      renderWorkerRef.current = renderWorker;
+      setRenderWorker(renderWorker); // Triggers Provider re-render so display UIs receive the worker
+      if (typeof window !== 'undefined') {
+        window.__displayRenderWorker = renderWorker;
+        window.dispatchEvent(new CustomEvent('display-render-worker-changed', { detail: renderWorker }));
+      }
+
+      // Set up a MessageChannel so the Simulation Worker can post display frames
+      // directly to the Render Worker — zero-copy, no main-thread involvement.
+      const { port1: simPort, port2: renderPort } = new MessageChannel();
+      // Give port1 to the Render Worker (it listens for DISPLAY_FRAME here)
+      renderWorker.postMessage({ type: 'SET_SIM_PORT', port: renderPort }, [renderPort]);
+
+      // Load Simulation Web Worker
       const worker = new Worker(new URL('../../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
       workerRef.current = worker;
+      // Give port2 to the Simulation Worker (it sends DISPLAY_FRAME here)
+      worker.postMessage({ type: 'SET_RENDER_PORT', port: simPort }, [simPort]);
 
       worker.onmessage = async (event) => {
         const msg = event.data;
@@ -6969,6 +6797,12 @@ export function SimulatorPage({ gamificationMode = false }) {
             message: msg.message
           });
           return;
+        }
+
+        if (msg.type === 'state' || (msg.type === 'debug' && msg.category === 'rp2040-runtime')) {
+          if (!isBackendProxy) {
+            setIsBooting(false);
+          }
         }
 
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
@@ -7188,6 +7022,65 @@ export function SimulatorPage({ gamificationMode = false }) {
           }
           return;
         }
+        if (msg.type === 'debug' && msg.category === 'rp2040-spi') {
+          const incomingBoardId = String(msg.boardId || '').trim();
+          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
+          const resolvedBoardId = hasKnownBoard
+            ? incomingBoardId
+            : (singleBoardFallback || incomingBoardId || 'default');
+
+          const spi = msg.spi && typeof msg.spi === 'object' ? msg.spi : {};
+          const reason = String(msg.reason || 'spi');
+          const bus = String(spi.bus || 'spi?');
+          const byte = Number(spi.byte ?? Number.NaN);
+          const byteIndex = Number(spi.byteIndex ?? Number.NaN);
+          const frameBytes = Number(spi.frameBytes ?? Number.NaN);
+          const deviceCount = Number(spi.deviceCount || 0);
+          const txBytes = Number(spi.txBytes || 0);
+          const txTransactions = Number(spi.txTransactions || 0);
+          const deviceIds = Array.isArray(spi.deviceIds) ? spi.deviceIds.join(',') : '';
+          const framePreview = Array.isArray(spi.framePreview) ? spi.framePreview.slice(0, 8).map((v) => `0x${Number(v).toString(16).padStart(2, '0')}`).join(',') : '';
+          const command = Number.isFinite(Number(spi.command)) ? `cmd=0x${Number(spi.command).toString(16).padStart(2, '0')}` : '';
+          const powerOn = spi.powerOn === undefined ? '' : `powerOn=${spi.powerOn ? 1 : 0}`;
+          const writeCount = Number.isFinite(Number(spi.writeCount)) ? `writeCount=${Number(spi.writeCount)}` : '';
+          const fill = Number.isFinite(Number(spi.vramFillPercentage)) ? `fill=${Number(spi.vramFillPercentage)}` : '';
+          const role = spi.role ? `role=${String(spi.role)}` : '';
+          const boardPin = spi.boardPin ? `boardPin=${String(spi.boardPin)}` : '';
+          const componentPin = spi.componentPin ? `pin=${String(spi.componentPin)}` : '';
+          const isHigh = spi.isHigh === undefined ? '' : `isHigh=${spi.isHigh ? 1 : 0}`;
+          const voltage = Number.isFinite(Number(spi.voltage)) ? `voltage=${Number(spi.voltage).toFixed(1)}` : '';
+          const buses = Array.isArray(spi.buses) ? `buses=${spi.buses.join(',')}` : '';
+
+          const line = [
+            `RP2040 SPI ${resolvedBoardId}`,
+            `reason=${reason}`,
+            `bus=${bus}`,
+            Number.isFinite(byte) ? `byte=0x${byte.toString(16).padStart(2, '0')}` : '',
+            Number.isFinite(byteIndex) ? `index=${byteIndex}` : '',
+            Number.isFinite(frameBytes) ? `frameBytes=${frameBytes}` : '',
+            `devices=${deviceCount}`,
+            `txBytes=${txBytes}`,
+            `txFrames=${txTransactions}`,
+            command,
+            powerOn,
+            writeCount,
+            fill,
+            role,
+            boardPin,
+            componentPin,
+            isHigh,
+            voltage,
+            buses,
+            framePreview ? `preview=${framePreview}` : '',
+            deviceIds ? `ids=${deviceIds}` : '',
+          ].filter(Boolean).join(' | ');
+
+          if (rp2040DebugTelemetryEnabled) {
+            appendConsoleEntry('info', line, 'debug');
+          }
+          return;
+        }
         if (msg.type === 'sync_heartbeat') {
           if (!rp2040DebugTelemetryEnabled) {
             return;
@@ -7395,6 +7288,14 @@ export function SimulatorPage({ gamificationMode = false }) {
             runLagTelemetryLastLogRef.current.set(boardIdKey, { ts: nowMs });
           }
         }
+        if (msg.type === 'backendGpioSync') {
+          if (esp32Socket && typeof esp32Socket.sendGpio === 'function') {
+            esp32Socket.sendGpio(msg.pin, msg.value ? 1 : 0);
+          }
+        }
+        if (msg.type === 'debug_telemetry') {
+          appendConsoleEntry('info', msg.message, 'simulator');
+        }
         if (msg.type === 'serial') {
           const incomingBoardId = String(msg.boardId || '').trim();
           const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
@@ -7481,7 +7382,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         debugRp2040: rp2040DebugTelemetryEnabled,
         debugSyncHeartbeat: rp2040DebugTelemetryEnabled,
         speed: simulationSpeed,
-        telemetryEnabled: componentTelemetryEnabled,
+        telemetryEnabled: componentTelemetryEnabled && !isBooting && !isCompiling,
         telemetryMode: telemetryMode,
         watchedParamsMap: telemetryWatchedParamsMap,
         deepSilicon: deepSiliconDebuggingEnabled,
@@ -7496,6 +7397,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       rp2040UartSilentWarnedBoardsRef.current.clear();
       setIsRunning(false);
       setIsCompiling(false);
+      setIsBooting(false); // TODO: Reset booting state on error
       setRunStartedAtMs(null);
       setRunDurationSec(0);
       appendConsoleEntry('error', `Run failed: ${err?.message || 'Unknown error'}`, 'simulator');
@@ -7507,7 +7409,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const handleStop = () => {
     const wasRunning = isRunning;
     runStartGuardRef.current = false;
-    esp32Socket.stop();
+    stopEsp32Session();
     rp2040GdbLastLogRef.current.clear();
     rp2040WirelessLastLogRef.current.clear();
     rp2040UartMicroPythonBoardsRef.current.clear();
@@ -7574,8 +7476,20 @@ export function SimulatorPage({ gamificationMode = false }) {
       workerRef.current.terminate();
       workerRef.current = null;
     }
+    // Terminate the Render Worker and tell it to release all canvas resources.
+    if (renderWorkerRef.current) {
+      renderWorkerRef.current.postMessage({ type: 'DISPLAY_CLEAR_ALL' });
+      renderWorkerRef.current.terminate();
+      renderWorkerRef.current = null;
+      setRenderWorker(null); // Clear Provider so display UIs see null worker
+      if (typeof window !== 'undefined') {
+        window.__displayRenderWorker = null;
+        window.dispatchEvent(new CustomEvent('display-render-worker-changed', { detail: null }));
+      }
+    }
     setIsRunning(false);
     setIsCompiling(false);
+    setIsBooting(false); // TODO: Reset booting state on stop
     setIsPaused(false);
     setRunStartedAtMs(null);
     setRunDurationSec(0);
@@ -7596,8 +7510,33 @@ export function SimulatorPage({ gamificationMode = false }) {
     appendConsoleEntry('info', 'Simulation stopped.', 'simulator');
   };
 
+  const bootStartedAtRef = useRef(null);
+
+  // Track when boot starts
   useEffect(() => {
-    if (!isRunning || !runStartedAtMs) return;
+    if (isBooting && !isRunning) {
+      if (!bootStartedAtRef.current) {
+        bootStartedAtRef.current = Date.now();
+      }
+    }
+  }, [isBooting, isRunning]);
+
+  // Reset run start time when simulation actually starts running
+  useEffect(() => {
+    if (isRunning && !isCompiling && !isBooting) {
+      let startTime = Date.now();
+      if (bootStartedAtRef.current) {
+        const bootDuration = Date.now() - bootStartedAtRef.current;
+        startTime -= bootDuration;
+      }
+      setRunStartedAtMs(startTime);
+    } else if (!isRunning) {
+      bootStartedAtRef.current = null;
+    }
+  }, [isRunning, isCompiling, isBooting]);
+
+  useEffect(() => {
+    if (!isRunning || !runStartedAtMs || isCompiling || isBooting) return;
 
     const updateElapsed = () => {
       setRunDurationSec(Math.max(0, (Date.now() - runStartedAtMs) / 1000));
@@ -7606,7 +7545,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     updateElapsed();
     const timer = setInterval(updateElapsed, 250);
     return () => clearInterval(timer);
-  }, [isRunning, runStartedAtMs]);
+  }, [isRunning, runStartedAtMs, isCompiling, isBooting]);
 
   useEffect(() => {
     if (!hardwareStatus) return;
@@ -8820,7 +8759,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         )}
 
         {/* TOP BAR */}
-        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => { localStorage.removeItem('openhw-tour-completed'); setShowTour(true); }} />
+        <TopToolbox board={board} setBoard={setBoard} isRunning={isRunning} isPaused={isPaused} handleRun={handleRun} handlePause={handlePause} handleResume={handleResume} handleStop={handleStop} isCompiling={isCompiling} isBooting={isBooting} assessmentMode={assessmentMode} assessmentProjectName={assessmentProjectName} isSubmittingAssessment={isSubmittingAssessment} handleAssessmentSubmit={handleAssessmentSubmit} undo={undo} redo={redo} selected={selected} rotateComponent={rotateComponent} theme={theme} toggleTheme={toggleTheme} showViewPanel={showViewPanel} setShowViewPanel={setShowViewPanel} viewPanelSection={viewPanelSection} setViewPanelSection={setViewPanelSection} schematicDataUrl={schematicDataUrl} setSchematicDataUrl={setSchematicDataUrl} schematicLoading={schematicLoading} setSchematicLoading={setSchematicLoading} downloadSchematicPng={downloadSchematicPng} downloadSchematicPdf={downloadSchematicPdf} generateSchematic={generateSchematic} downloadCompCsv={downloadCompCsv} importFileRef={importFileRef} downloadPng={downloadPng} importPng={importPng} downloadSimulationJson={downloadSimulationJson} handleSave={handleSave} isExporting={isExporting} handleShareSimulation={handleShareSimulation} isSharingSimulation={isSharingSimulation} refreshProjectList={refreshProjectList} showProjectsDropdown={showProjectsDropdown} setShowProjectsDropdown={setShowProjectsDropdown} handleNewProject={handleNewProject} handleStartRename={handleStartRename} handleConfirmRename={handleConfirmRename} renamingProjectId={renamingProjectId} setRenamingProjectId={setRenamingProjectId} renameValue={renameValue} setRenameValue={setRenameValue} handleLoadProject={handleLoadProject} handleDeleteProject={handleDeleteProject} handleBackupWorkflow={handleBackupWorkflow} backupRestoreInputRef={backupRestoreInputRef} wokwiImportInputRef={wokwiImportInputRef} handleImportWokwiZip={handleImportWokwiZip} handleRestoreWorkflow={handleRestoreWorkflow} handleSyncToCloud={handleSyncToCloud} user={activeUser} navigate={navigate} isAuthenticated={isAnyAuthenticated} myProjects={myProjects} currentProjectId={currentProjectId} projectName={currentProjectName} formatProjectDate={formatProjectDate} saveHistory={saveHistory} setWires={setWires} setComponents={setComponents} setSelected={setSelected} history={history} components={components} wires={wires} webSerialSupported={webSerialSupported} hardwareBoards={boardComponents} hardwareBoardId={hardwareBoardId} setHardwareBoardId={handleHardwareBoardChange} hardwarePortPath={hardwarePortPath} setHardwarePortPath={setHardwarePortPath} resolvedHardwarePort={resolvedHardwarePort} hardwareAvailablePorts={hardwareAvailablePorts} showAllHardwarePorts={showAllHardwarePorts} setShowAllHardwarePorts={setShowAllHardwarePorts} refreshHardwarePorts={refreshHardwarePorts} isLoadingHardwarePorts={isLoadingHardwarePorts} hardwareBaudRate={hardwareBaudRate} setHardwareBaudRate={setHardwareBaudRate} hardwareResetMethod={hardwareResetMethod} setHardwareResetMethod={setHardwareResetMethod} connectHardwareSerial={connectHardwareSerial} disconnectHardwareSerial={disconnectHardwareSerial} uploadToHardware={handleUploadToHardware} hardwareConnected={hardwareConnected} hardwareConnecting={hardwareConnecting} isUploadingHardware={isUploadingHardware} hardwareStatus={hardwareStatus} editingDisabled={liveEditingDisabled} setShowProjectsSidebar={setShowProjectsSidebar} setProjectsSidebarTab={setProjectsSidebarTab} validationErrors={validationErrors} autofixPlan={autofixPlan} autofixStatus={autofixStatus} autofixLog={autofixLog} onApplyPlan={handleApplyPlan} onRefresh={triggerAutofixAnalysis} autoWiringEnabled={autoWiringEnabled} setAutoWiringEnabled={setAutoWiringEnabled} autoBreadboardEnabled={autoBreadboardEnabled} setAutoBreadboardEnabled={setAutoBreadboardEnabled} autoCodingEnabled={autoCodingEnabled} setAutoCodingEnabled={setAutoCodingEnabled} showAutofix={showAutofix} setShowAutofix={setShowAutofix} showShortcuts={showShortcuts} setShowShortcuts={setShowShortcuts} onStartTour={() => { localStorage.removeItem('openhw-tour-completed'); setShowTour(true); }} />
 
         <SimulatorStatusBanners
           studentAssignmentMode={studentAssignmentMode}
@@ -9008,60 +8947,62 @@ export function SimulatorPage({ gamificationMode = false }) {
             {/* Zoom Wrapper — scales all circuit content */}
             {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
                React state (canvasOffset) is only committed once on mouseup. */}
-              <CanvasSceneLayer
-              innerCanvasRef={innerCanvasRef}
-              canvasOffset={canvasOffset}
-              canvasZoom={canvasZoom}
-              showGrid={showGrid}
-              wires={wires}
-              wiresAlwaysOnTop={wiresAlwaysOnTop}
-              selected={selected}
-              components={components}
-              getPinPos={getPinPos}
-              getPinExitPoint={getPinExitPoint}
-              wirepointsEnabled={wirepointsEnabled}
-              respectExitSide={respectExitSide}
-              theme={theme}
-              setSelected={setSelected}
-              canvasRef={canvasRef}
-              setWireClickPos={setWireClickPos}
-              canvasOffsetRef={canvasOffsetRef}
-              canvasZoomRef={canvasZoomRef}
-              setSegDrag={setSegDrag}
-              segDragRef={segDragRef}
-              autofixPlan={autofixPlan}
-              getPinPosWithGhosts={getPinPosWithGhosts}
-              wireStart={wireStart}
-              mousePos={mousePos}
-              multiRoutePath={multiRoutePath}
-              svgRef={svgRef}
-              isRunning={isRunning}
-              isComponentDragging={isComponentDragging}
-              COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-              getComponentStateAttrs={getComponentStateAttrs}
-              updateComponentAttr={updateComponentAttr}
-              wireClickPos={wireClickPos}
-              updateWireColor={updateWireColor}
-              saveHistory={saveHistory}
-              setWires={setWires}
-              deleteWire={deleteWire}
-              PIN_DEFS={PIN_DEFS}
-              errorCompIds={errorCompIds}
-              serialBoardFilter={serialBoardFilter}
-              onCompContextMenu={onCompContextMenu}
-              onCompMouseDown={onCompMouseDown}
-              onCompClick={onCompClick}
-              getLiveOopStateSnapshot={getLiveOopStateSnapshot}
-              subscribeLiveOopState={subscribeLiveOopState}
-              neopixelRefs={neopixelRefs}
-              hoveredPin={hoveredPin}
-              setHoveredPin={setHoveredPin}
-              snappingHoles={snappingHoles}
-              getPinCategory={getPinCategory}
-              hasCategoryIntersection={hasCategoryIntersection}
-              onPinClick={onPinClick}
-              setWireStart={setWireStart}
-            />
+              <DisplayRenderProvider renderWorker={renderWorker}>
+                <CanvasSceneLayer
+                innerCanvasRef={innerCanvasRef}
+                canvasOffset={canvasOffset}
+                canvasZoom={canvasZoom}
+                showGrid={showGrid}
+                wires={wires}
+                wiresAlwaysOnTop={wiresAlwaysOnTop}
+                selected={selected}
+                components={components}
+                getPinPos={getPinPos}
+                getPinExitPoint={getPinExitPoint}
+                wirepointsEnabled={wirepointsEnabled}
+                respectExitSide={respectExitSide}
+                theme={theme}
+                setSelected={setSelected}
+                canvasRef={canvasRef}
+                setWireClickPos={setWireClickPos}
+                canvasOffsetRef={canvasOffsetRef}
+                canvasZoomRef={canvasZoomRef}
+                setSegDrag={setSegDrag}
+                segDragRef={segDragRef}
+                autofixPlan={autofixPlan}
+                getPinPosWithGhosts={getPinPosWithGhosts}
+                wireStart={wireStart}
+                mousePos={mousePos}
+                multiRoutePath={multiRoutePath}
+                svgRef={svgRef}
+                isRunning={isRunning}
+                isComponentDragging={isComponentDragging}
+                COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+                getComponentStateAttrs={getComponentStateAttrs}
+                updateComponentAttr={updateComponentAttr}
+                wireClickPos={wireClickPos}
+                updateWireColor={updateWireColor}
+                saveHistory={saveHistory}
+                setWires={setWires}
+                deleteWire={deleteWire}
+                PIN_DEFS={PIN_DEFS}
+                errorCompIds={errorCompIds}
+                serialBoardFilter={serialBoardFilter}
+                onCompContextMenu={onCompContextMenu}
+                onCompMouseDown={onCompMouseDown}
+                onCompClick={onCompClick}
+                getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+                subscribeLiveOopState={subscribeLiveOopState}
+                neopixelRefs={neopixelRefs}
+                hoveredPin={hoveredPin}
+                setHoveredPin={setHoveredPin}
+                snappingHoles={snappingHoles}
+                getPinCategory={getPinCategory}
+                hasCategoryIntersection={hasCategoryIntersection}
+                onPinClick={onPinClick}
+                setWireStart={setWireStart}
+                />
+              </DisplayRenderProvider>
 
             <SimulatorRuntimePanel
               isRunning={isRunning}
@@ -9100,8 +9041,6 @@ export function SimulatorPage({ gamificationMode = false }) {
               setIsConsoleOpen={setIsConsoleOpen}
               consoleHeight={consoleHeight}
               consoleEntries={consoleEntries}
-              activeConsoleTab={activeConsoleTab}
-              setActiveConsoleTab={setActiveConsoleTab}
               protocolLogs={protocolLogs}
               setProtocolLogs={setProtocolLogs}
               components={components}

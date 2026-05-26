@@ -2,6 +2,7 @@ import { BaseComponent } from '@openhw/emulator';
 import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
 import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
+import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
 import { PicoLogic } from '../pico-logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
@@ -49,9 +50,9 @@ import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/log
 import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic';
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
-// import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
-// import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
-// import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
+import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
+import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
+import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -78,6 +79,9 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-arduino-uno': UnoLogic,
     'openhw-arduino-uno': UnoLogic,
     'openhw-esp32': Esp32Logic,
+    'openhw-esp32-cam': Esp32CamLogic,
+    'wokwi-esp32-cam': Esp32CamLogic,
+    'esp32-cam': Esp32CamLogic,
     'wokwi-raspberry-pi-pico': PicoLogic,
     'openhw-raspberry-pi-pico': PicoLogic,
     'wokwi-raspberry-pi-pico-w': PicoLogic,
@@ -216,12 +220,12 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-neopixel-ring': NeopixelLogic,
     'openhw-arduino-sensor-shield': BaseComponent,
     'openhw-simulation-monitor': SimulationMonitorLogic,
-    // 'wokwi-ds18b20': DS18B20Logic,
-    // 'openhw-ds18b20': DS18B20Logic,
-    // 'wokwi-ir-receiver': IRReceiverLogic,
-    // 'openhw-ir-receiver': IRReceiverLogic,
-    // 'wokwi-mfrc522': MFRC522Logic,
-    // 'openhw-mfrc522': MFRC522Logic,
+    'wokwi-ds18b20': DS18B20Logic,
+    'openhw-ds18b20': DS18B20Logic,
+    'wokwi-ir-receiver': IRReceiverLogic,
+    'openhw-ir-receiver': IRReceiverLogic,
+    'wokwi-mfrc522': MFRC522Logic,
+    'openhw-mfrc522': MFRC522Logic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -231,6 +235,9 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-arduino-uno': UNO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-esp32': [{ id: 'EN' }, { id: 'VP' }, { id: 'VN' }, { id: '34' }, { id: '35' }, { id: '32' }, { id: '33' }, { id: '25' }, { id: '26' }, { id: '27' }, { id: '14' }, { id: '12' }, { id: '13' }, { id: 'GND.2' }, { id: 'VIN' }, { id: '23' }, { id: '22' }, { id: '1' }, { id: '3' }, { id: '21' }, { id: '19' }, { id: '18' }, { id: '5' }, { id: '17' }, { id: '16' }, { id: '4' }, { id: '2' }, { id: '15' }, { id: 'GND.1' }, { id: '3V3' }],
+    'openhw-esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
+    'wokwi-esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
+    'esp32-cam': [{ id: '5V.1' }, { id: 'GND.1' }, { id: '12' }, { id: '13' }, { id: '15' }, { id: '14' }, { id: '2' }, { id: '4' }, { id: '3V3' }, { id: '16' }, { id: '0' }, { id: 'GND.2' }, { id: 'VCC' }, { id: '3' }, { id: '1' }, { id: 'GND.3' }],
     'wokwi-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-raspberry-pi-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
