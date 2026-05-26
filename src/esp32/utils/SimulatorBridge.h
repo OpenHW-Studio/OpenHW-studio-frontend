@@ -132,4 +132,47 @@ void initSimulatorBridge() {
 #define digitalRead  sim_digitalRead
 #define digitalWrite sim_digitalWrite
 
+// ─── I2C (Wire) interception ─────────────────────────────────────────────────
+// Intercepts Wire.beginTransmission/write/endTransmission so the full I2C
+// payload is emitted as a >I2C:addr_hex:data_hex< UART frame when endTransmission
+// is called. The backend qemuRunner.js parses this and forwards it to the
+// frontend as an I2C_TRANSACTION WebSocket event, which drives the virtual OLED.
+
+static uint8_t  _sim_i2c_addr = 0;
+static uint8_t  _sim_i2c_buf[128];
+static uint8_t  _sim_i2c_len = 0;
+
+inline void sim_Wire_beginTransmission(uint8_t addr) {
+    _sim_i2c_addr = addr;
+    _sim_i2c_len  = 0;
+}
+
+inline void sim_Wire_write_byte(uint8_t val) {
+    if (_sim_i2c_len < 128) {
+        _sim_i2c_buf[_sim_i2c_len++] = val;
+    }
+}
+
+inline uint8_t sim_Wire_endTransmission(bool stop = true) {
+    // Build hex string of the payload
+    char hexbuf[257]; // 128 bytes * 2 chars + null
+    for (uint8_t i = 0; i < _sim_i2c_len; i++) {
+        sprintf(&hexbuf[i * 2], "%02x", _sim_i2c_buf[i]);
+    }
+    hexbuf[_sim_i2c_len * 2] = '\0';
+
+    // Emit the I2C UART frame: >I2C:<addr_hex>:<data_hex><
+    Serial.printf("\n>I2C:%02x:%s<\n", _sim_i2c_addr, hexbuf);
+    Serial.flush();
+    _sim_i2c_len = 0;
+    return 0; // success
+}
+
+// Only hijack Wire if the user has included Wire.h
+#ifdef TwoWire_h
+#define Wire_beginTransmission(addr)  sim_Wire_beginTransmission(addr)
+#define Wire_write(val)               sim_Wire_write_byte((uint8_t)(val))
+#define Wire_endTransmission(...)     sim_Wire_endTransmission(__VA_ARGS__)
+#endif
+
 #endif // SIMULATOR_BRIDGE_H
