@@ -17086,6 +17086,55 @@ var SSD1306FallbackLogic = class extends BaseComponent {
     return { ...this.state };
   }
 };
+var LdrModuleLogic = class extends BaseComponent {
+  constructor(id, manifest) {
+    super(id, manifest);
+    this.state = {
+      light: manifest?.attrs?.lux ?? 500,
+      threshold: manifest?.attrs?.threshold ?? 500,
+      pwrLed: false,
+      dOut: false
+    };
+  }
+  onEvent(event) {
+    if (event.type === "SET_ATTR") {
+      const key = event.key === "lux" ? "light" : event.key;
+      this.state[key] = event.value;
+      this.stateChanged = true;
+    }
+  }
+  update() {
+    const vcc = this.getPinVoltage("5V");
+    const gnd = this.getPinVoltage("GND");
+    if (vcc > 2 && gnd < 1) {
+      this.state.pwrLed = true;
+      const aoVoltage = vcc * (this.state.light / 1000);
+      this.setPinVoltage("AO", aoVoltage);
+      const thresholdVolts = vcc * (this.state.threshold / 1000);
+      const isHigh = aoVoltage > thresholdVolts;
+      this.setPinVoltage("DO", isHigh ? vcc : 0);
+      this.state.dOut = isHigh;
+      this.stateChanged = true;
+    } else {
+      this.state.pwrLed = false;
+      this.state.dOut = false;
+      this.setPinVoltage("AO", 0);
+      this.setPinVoltage("DO", 0);
+      this.stateChanged = true;
+    }
+  }
+  getSyncState() {
+    return { ...this.state };
+  }
+  onCustomTelemetry() {
+    this.setCustomTelemetry({
+      light: this.state.light,
+      threshold: this.state.threshold,
+      analogOutV: Number((this.getPinVoltage("AO") || 0).toFixed(2)),
+      dOut: !!this.state.dOut
+    });
+  }
+};
 var Lcd2004I2CFallbackLogic = class extends BaseComponent {
   constructor(id, manifest) {
     super(id, manifest);
@@ -17358,7 +17407,7 @@ var LOGIC_REGISTRY = {
   "wokwi-ssd1306-oled": SSD1306FallbackLogic,
   max30102: GenericI2CDeviceLogic,
   "wokwi-max7219": GenericSPIDeviceLogic,
-  "wokwi-ldr-module": BaseComponent,
+  "wokwi-ldr-module": LdrModuleLogic,
   "wokwi-7segment": BaseComponent,
   "wokwi-ili9341": ILI9341FallbackLogic,
   "wokwi-sd-card": SDCardLogic,
@@ -17407,7 +17456,7 @@ var COMPONENT_PINS = {
   "wokwi-ssd1306-oled": [{ id: "GND" }, { id: "VCC" }, { id: "SCL" }, { id: "SDA" }],
   max30102: [{ id: "VIN" }, { id: "SDA" }, { id: "SCL" }, { id: "GND" }, { id: "INT" }, { id: "IRD" }, { id: "RD" }, { id: "NC" }],
   "wokwi-max7219": [{ id: "VCC" }, { id: "GND" }, { id: "DIN" }, { id: "CS" }, { id: "CLK" }, { id: "VCC_OUT" }, { id: "GND_OUT" }, { id: "DOUT" }, { id: "CS_OUT" }, { id: "CLK_OUT" }],
-  "wokwi-ldr-module": [{ id: "VCC" }, { id: "GND" }, { id: "DO" }, { id: "AO" }],
+  "wokwi-ldr-module": [{ id: "5V" }, { id: "GND" }, { id: "DO" }, { id: "AO" }],
   "wokwi-7segment": [{ id: "A" }, { id: "B" }, { id: "C" }, { id: "D" }, { id: "E" }, { id: "F" }, { id: "G" }, { id: "DP" }, { id: "DIG1" }, { id: "DIG2" }, { id: "DIG3" }, { id: "DIG4" }, { id: "COLON" }],
   "wokwi-ili9341": [{ id: "VCC" }, { id: "GND" }, { id: "CS" }, { id: "RESET" }, { id: "DC" }, { id: "MOSI" }, { id: "SCK" }, { id: "LED" }, { id: "MISO" }],
   "wokwi-sd-card": [{ id: "VCC" }, { id: "GND" }, { id: "CS" }, { id: "SCK" }, { id: "MOSI" }, { id: "MISO" }],
