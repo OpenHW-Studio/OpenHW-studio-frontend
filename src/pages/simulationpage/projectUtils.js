@@ -10,7 +10,7 @@ import { wireColor } from './wireUtils';
  */
 
 const HOLE_PITCH = 15;
-const RAIL_MAX   = 25;
+const RAIL_MAX = 25;
 
 export const BOARD_COLOR_PALETTE = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#14b8a6', '#eab308', '#06b6d4', '#8b5cf6'];
 
@@ -26,7 +26,7 @@ export function getBoardColors(boardOptions) {
 
 export function calculateProjectPlanApplication(plan, currentComponents, currentWires, pinDefs = {}) {
   if (!plan) return { components: currentComponents, wires: currentWires };
-  
+
   // Normalize plan properties (WASM uses snake_case, JS uses camelCase)
   const addedComponents = plan.addedComponents || plan.added_components || [];
   const addedWires = plan.addedWires || plan.added_wires || [];
@@ -38,7 +38,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
   // Deep clone to prevent mutations
   const nextComponents = JSON.parse(JSON.stringify(currentComponents));
   let nextWires = JSON.parse(JSON.stringify(currentWires));
-  
+
   // 1. Remove components if requested (by ID)
   let finalComponents = nextComponents;
   if (removedComponents.length > 0) {
@@ -50,10 +50,10 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
     nextWires = nextWires.filter(w => {
       // Check for ID match
       if (removedWires.includes(w.id)) return false;
-      
+
       // Check for pin-pair match
       const isPinMatch = removedWires.some(rw => {
-        if (typeof rw === 'string') return false; 
+        if (typeof rw === 'string') return false;
         const f = (rw.from || '').replace('.', ':');
         const t = (rw.to || '').replace('.', ':');
         return (f === w.from && t === w.to) || (f === w.to && t === w.from);
@@ -85,7 +85,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
       // Determine dimensions (with registry or manifest fallbacks)
       const defW = hardwareUtils.isResistorType(ac.type) ? 70 : (hardwareUtils.isLedType(ac.type) ? 72 : 40);
       const defH = hardwareUtils.isResistorType(ac.type) ? 32 : (hardwareUtils.isLedType(ac.type) ? 44 : 20);
-      
+
       const addedComp = {
         ...ac,
         x,
@@ -107,12 +107,12 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
       }
     }
   });
-  
+
   // 4. Add new wires
   addedWires.forEach(aw => {
     const from = (aw.from || '').replace('.', ':');
     const to = (aw.to || '').replace('.', ':');
-    
+
     // Primary Deduplication: by ID
     const existingById = aw.id ? nextWires.find(w => w.id === aw.id) : null;
     if (existingById) {
@@ -124,7 +124,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
       existingById.isBelow = aw.isBelow || false;
       existingById.isSocket = aw.isSocket || false;
       existingById.offset = aw.lane || 0;
-      
+
       const oid = aw.ownerId || defaultOwnerId;
       if (oid) {
         const ids = new Set(existingById.ownerIds || (existingById.ownerId ? [existingById.ownerId] : []));
@@ -136,7 +136,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
 
     // Secondary Deduplication: by pin-pair match (for shared connectivity)
     const existingByPins = nextWires.find(w => (w.from === from && w.to === to) || (w.from === to && w.to === from));
-    
+
     if (existingByPins) {
       // Shared Ownership: Append new owner to existing wire
       const oid = aw.ownerId || defaultOwnerId;
@@ -160,7 +160,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
       });
     }
   });
-  
+
   // 5. Transformations
   transformations.forEach(trans => {
     const comp = finalComponents.find(c => c.id === trans.componentId);
@@ -174,7 +174,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
     owners: (c.ownerIds || []).join(', ') || 'N/A'
   })));
   console.groupEnd();
-  
+
   // Final Deduplication Pass: Ensure no duplicate IDs reach the React state
   const uniqueWires = [];
   const seenIds = new Set();
@@ -204,7 +204,7 @@ export function getRotatedPoint(x, y, rotation, originX, originY) {
 
 export function findNearestBreadboardHole(worldX, worldY, components, pinDefs, opts = {}) {
   const snapRadius = opts.snapRadius ?? 40;
-  const skipPower  = opts.skipPower  ?? false;
+  const skipPower = opts.skipPower ?? false;
   const bbs = components.filter(c => hardwareUtils.isBreadboardType(c.type));
   let minDist = Infinity;
   let best = null;
@@ -215,12 +215,14 @@ export function findNearestBreadboardHole(worldX, worldY, components, pinDefs, o
     for (const pin of pins) {
       if (skipPower && pin.type === 'power') continue;
       const pw = getRotatedPoint(bb.x + pin.x, bb.y + pin.y, rot, cx, cy);
-      const d  = Math.hypot(pw.x - worldX, pw.y - worldY);
+      const d = Math.hypot(pw.x - worldX, pw.y - worldY);
       if (d < snapRadius && d < minDist) {
         minDist = d;
-        best = { bbId: bb.id, holeId: pin.id, x: pw.x, y: pw.y,
-                 pinX: pin.x, pinY: pin.y, isPower: pin.type === 'power',
-                 isGnd: pin.id.includes('gnd'), isVcc: pin.id.includes('vcc') };
+        best = {
+          bbId: bb.id, holeId: pin.id, x: pw.x, y: pw.y,
+          pinX: pin.x, pinY: pin.y, isPower: pin.type === 'power',
+          isGnd: pin.id.includes('gnd'), isVcc: pin.id.includes('vcc')
+        };
       }
     }
   }
@@ -240,7 +242,7 @@ export function robustSnapComponent(comp, components, pinDefs) {
   if (!comp || hardwareUtils.isBreadboardType(comp.type))
     return { snappedWires: [], hasPerfectSnap: false, snapMatches: [] };
 
-  const pins      = pinDefs[comp.type] || [];
+  const pins = pinDefs[comp.type] || [];
   const worldPins = getComponentWorldPins(comp, pins);
 
   const snapMatches = worldPins.map(wp => {
@@ -250,17 +252,21 @@ export function robustSnapComponent(comp, components, pinDefs) {
   });
 
   const hasPerfectSnap = snapMatches.some(m => m.dist < 2);
-  const snappedWires   = [];
+  const snappedWires = [];
 
   snapMatches.forEach(m => {
     if (!m.hole) return;
-    const id = `w_socket_${comp.id}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
+    const id = `w_socket_${comp.id}_${m.wp.id}_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     if (m.dist < 3) {
-      snappedWires.push({ id, from: `${comp.id}:${m.wp.id}`, to: `${m.hole.bbId}:${m.hole.holeId}`,
-                          color: 'transparent', isBelow: true, isSocket: true });
+      snappedWires.push({
+        id, from: `${comp.id}:${m.wp.id}`, to: `${m.hole.bbId}:${m.hole.holeId}`,
+        color: 'transparent', isBelow: true, isSocket: true
+      });
     } else if (m.dist <= 6) {
-      snappedWires.push({ id, from: `${comp.id}:${m.wp.id}`, to: `${m.hole.bbId}:${m.hole.holeId}`,
-                          color: '#7f8c8d', isBelow: true, isSocket: true, isHelp: true });
+      snappedWires.push({
+        id, from: `${comp.id}:${m.wp.id}`, to: `${m.hole.bbId}:${m.hole.holeId}`,
+        color: '#7f8c8d', isBelow: true, isSocket: true, isHelp: true
+      });
     }
   });
   return { snappedWires, hasPerfectSnap, snapMatches };
@@ -268,7 +274,7 @@ export function robustSnapComponent(comp, components, pinDefs) {
 
 export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
   if (!snippet) return currentCode;
-  
+
   // First, remove any existing block for this component to ensure a clean update
   let code = removeCodeSnippet(currentCode, compId);
 
@@ -307,7 +313,7 @@ export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
     const block = `// autocoding for ${compId} start\n${globalsSnippet}\n// autocoding for ${compId} end\n\n`;
     const setupIdx = code.indexOf('void setup');
     const loopIdx = code.indexOf('void loop');
-    const insertIdx = [setupIdx, loopIdx].filter(i => i !== -1).sort((a,b)=>a-b)[0] ?? 0;
+    const insertIdx = [setupIdx, loopIdx].filter(i => i !== -1).sort((a, b) => a - b)[0] ?? 0;
     code = code.slice(0, insertIdx) + block + code.slice(insertIdx);
   }
 
@@ -317,7 +323,7 @@ export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
     const marker = `${funcName}() {`;
     const idx = src.indexOf(marker);
     const block = `  // autocoding for ${compId} start\n  ${snippet.split('\n').join('\n  ')}\n  // autocoding for ${compId} end\n`;
-    
+
     if (idx !== -1) {
       // Inject at the top of the function block
       return src.slice(0, idx + marker.length) + '\n' + block + src.slice(idx + marker.length);
@@ -714,7 +720,7 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (type === 'wokwi-neopixel-matrix') type = 'openhw-neopixel-matrix';
       if (type === 'wokwi-neopixel-ring') type = 'openhw-neopixel-ring';
       if (type === 'wokwi-arduino-sensor-shield') type = 'openhw-arduino-sensor-shield';
-      
+
       // Phase 1-3 components
       if (type === 'wokwi-analog-joystick') type = 'openhw-analog-joystick';
       if (type === 'wokwi-membrane-keypad') type = 'openhw-membrane-keypad';
@@ -845,11 +851,11 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
         if (idx === -1) return endpoint;
         const compId = endpoint.slice(0, idx);
         let pinId = endpoint.slice(idx + 1);
-        
+
         const comp = normalizedComponents.find(c => c.id === compId);
         if (comp) {
           const type = comp.type;
-          
+
           if (type === 'openhw-arduino-uno') {
             if (pinId === 'GND.1') pinId = 'gnd_1';
             else if (pinId === 'GND.2') pinId = 'gnd_2';
@@ -890,8 +896,8 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
           } else if (type === 'openhw-bmp180-breakout') {
             if (pinId === 'VCC') pinId = 'VIN';
           } else if (type === 'openhw-buzzer') {
-            if (pinId === '1') pinId = '2';
-            else if (pinId === '2') pinId = '1';
+            if (pinId === '1') pinId = 'GND';
+            else if (pinId === '2') pinId = 'SIG';
           } else if (type === 'openhw-led') {
             if (pinId.toUpperCase() === 'C') pinId = 'K';
           } else if (type === 'openhw-rgb-led') {
@@ -982,7 +988,7 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
             }
           }
         }
-        
+
         return `${compId}:${pinId}`;
       };
 
@@ -1001,7 +1007,7 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
         from,
         to,
         color: typeof wire.color === 'string' && wire.color.trim() ? wire.color : wireColor(),
-        routingInstructions: Array.isArray(wire.routingInstructions) 
+        routingInstructions: Array.isArray(wire.routingInstructions)
           ? wire.routingInstructions.filter(i => typeof i === 'string')
           : [],
         waypoints: Array.isArray(wire.waypoints)
@@ -1022,7 +1028,7 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
 
 export function parseWokwiDiagramJson(wokwiJson) {
   if (!wokwiJson || typeof wokwiJson !== 'object') return { components: [], wires: [] };
-  
+
   const parts = Array.isArray(wokwiJson.parts) ? wokwiJson.parts : (Array.isArray(wokwiJson.components) ? wokwiJson.components : []);
   const connections = Array.isArray(wokwiJson.connections) ? wokwiJson.connections : (Array.isArray(wokwiJson.wires) ? wokwiJson.wires : []);
 
@@ -1032,7 +1038,7 @@ export function parseWokwiDiagramJson(wokwiJson) {
     if (type === 'wokwi-raspberry-pi-pico') type = 'openhw-pico';
     else if (type === 'wokwi-raspberry-pi-pico-w') type = 'openhw-pico-w';
     else if (type.startsWith('wokwi-')) type = type.replace('wokwi-', 'openhw-');
-    
+
     // Map left/top to x/y if x/y are missing, and scale by 1.5x for OpenHW grid matching
     const rawX = p.x !== undefined ? p.x : (p.left !== undefined ? p.left : 0);
     const rawY = p.y !== undefined ? p.y : (p.top !== undefined ? p.top : 0);
@@ -1047,7 +1053,7 @@ export function parseWokwiDiagramJson(wokwiJson) {
     if (Array.isArray(c)) {
       const [from = '', to = '', color = 'green', rawInstructions = []] = c;
       const instructions = Array.isArray(rawInstructions) ? rawInstructions : [];
-      
+
       // Parse precise instruction waypoints into simple x/y relative diffs:
       // Note: "v10" means deltaY=10. "h-5" means deltaX=-5.
       // "*" usually denotes "auto-route here" or dynamic routing. We preserve as strings for exact parser.
@@ -1057,7 +1063,7 @@ export function parseWokwiDiagramJson(wokwiJson) {
         if (typeof inst !== 'string') continue;
         extractedInstructions.push(inst);
       }
-      
+
       return {
         id: `w_wokwi_${idx}`,
         from: String(from).replace(/:(\d)\.([lr])$/i, ':$1$2'),

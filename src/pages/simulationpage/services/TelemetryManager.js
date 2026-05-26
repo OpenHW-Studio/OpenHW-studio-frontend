@@ -1,13 +1,14 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { getTelemetryParamsForComponent } from '../utils/telemetryRegistry.js';
 
-function extractParamValue(key, comp, telemetryData, state, activeMetrics) {
+function extractParamValue(key, comp, telemetryData, state, activeMetrics, activeCustom) {
   let val = comp[key];
   if (val === undefined) val = state?.[key];
   if (val === undefined) val = telemetryData?.[key];
   if (val === undefined) val = telemetryData?.state?.[key];
   if (val === undefined) val = activeMetrics?.[key];
   if (val === undefined) val = telemetryData?.metrics?.[key];
+  if (val === undefined) val = activeCustom?.[key];
 
   if (val === undefined && String(key).startsWith('deepSilicon')) {
     const deepObj = comp.deepSilicon || telemetryData?.deepSilicon;
@@ -64,7 +65,7 @@ export function formatTelemetryEntry(comp, mode, watchedParamsMap = {}) {
   let paramStr = '';
   try {
     paramsToDisplay.forEach(p => {
-      paramStr += ` | ${p}: ${extractParamValue(p, comp, telemetryData, state, activeMetrics)}`;
+      paramStr += ` | ${p}: ${extractParamValue(p, comp, telemetryData, state, activeMetrics, activeCustom)}`;
     });
   } catch (paramErr) {
     console.error(`[Telemetry] Error building parameter string for ${id} (${type}):`, paramErr, { paramsToDisplay, comp });

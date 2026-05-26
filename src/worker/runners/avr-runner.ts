@@ -1,4 +1,4 @@
-import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portBConfig, portCConfig, portDConfig, PinState } from 'avr8js';
+import { CPU, timer0Config, timer1Config, timer2Config, AVRTimer, avrInstruction, AVRADC, adcConfig, AVRUSART, usart0Config, AVRTWI, twiConfig, AVRSPI, spiConfig, AVRIOPort, portAConfig, portBConfig, portCConfig, portDConfig, portEConfig, portFConfig, portGConfig, portHConfig, portJConfig, portKConfig, portLConfig, PinState } from 'avr8js';
 import { BaseComponent } from '@openhw/emulator';
 import { UNO_DIGITAL_PINS, UNO_ANALOG_PINS } from '../board-profiles.ts';
 import { parse } from '../fs/fs-builders.ts';
@@ -28,9 +28,17 @@ export class AVRRunner {
     usart: AVRUSART | null = null;
     twi: AVRTWI | null = null;
     spi: AVRSPI | null = null;
+    portA: AVRIOPort | null = null;
     portB: AVRIOPort | null = null;
     portC: AVRIOPort | null = null;
     portD: AVRIOPort | null = null;
+    portE: AVRIOPort | null = null;
+    portF: AVRIOPort | null = null;
+    portG: AVRIOPort | null = null;
+    portH: AVRIOPort | null = null;
+    portJ: AVRIOPort | null = null;
+    portK: AVRIOPort | null = null;
+    portL: AVRIOPort | null = null;
     updatePhysics: (() => void) | null = null;
     repropagateAllVoltages: (() => void) | null = null;
     timers: AVRTimer[] = [];
@@ -155,6 +163,17 @@ export class AVRRunner {
         this.portB = new AVRIOPort(this.cpu, portBConfig);
         this.portC = new AVRIOPort(this.cpu, portCConfig);
         this.portD = new AVRIOPort(this.cpu, portDConfig);
+        
+        if (this.boardId.toLowerCase().includes('mega')) {
+            this.portA = new AVRIOPort(this.cpu, portAConfig);
+            this.portE = new AVRIOPort(this.cpu, portEConfig);
+            this.portF = new AVRIOPort(this.cpu, portFConfig);
+            this.portG = new AVRIOPort(this.cpu, portGConfig);
+            this.portH = new AVRIOPort(this.cpu, portHConfig);
+            this.portJ = new AVRIOPort(this.cpu, portJConfig);
+            this.portK = new AVRIOPort(this.cpu, portKConfig);
+            this.portL = new AVRIOPort(this.cpu, portLConfig);
+        }
 
 
         const runnerOnStateUpdate = this.onStateUpdate.bind(this);
@@ -881,6 +900,7 @@ export class AVRRunner {
         const attachPort = (port: AVRIOPort, pinNames: string[]) => {
             port.addListener((value) => {
                 pinNames.forEach((pin, i) => {
+                    if (!pin) return;
                     // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
                     const state = port.pinState(i);
                     const isOutput = state === PinState.Low || state === PinState.High;
@@ -907,9 +927,37 @@ export class AVRRunner {
             });
         };
 
-        if (this.portB) attachPort(this.portB, UNO_DIGITAL_PINS.slice(8, 14)); // PORTB
-        if (this.portD) attachPort(this.portD, UNO_DIGITAL_PINS.slice(0, 8)); // PORTD
-        if (this.portC) attachPort(this.portC, UNO_ANALOG_PINS); // PORTC
+        const isMega = this.boardId.toLowerCase().includes('mega');
+
+        if (isMega) {
+            const MEGA_PORTA_PINS = ['22', '23', '24', '25', '26', '27', '28', '29'];
+            const MEGA_PORTB_PINS = ['53', '52', '51', '50', '10', '11', '12', '13'];
+            const MEGA_PORTC_PINS = ['37', '36', '35', '34', '33', '32', '31', '30'];
+            const MEGA_PORTD_PINS = ['21', '20', '19', '18', '', '', '', '38'];
+            const MEGA_PORTE_PINS = ['0', '1', '', '5', '2', '3', '', ''];
+            const MEGA_PORTF_PINS = ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7'];
+            const MEGA_PORTG_PINS = ['41', '40', '39', '', '', '4', '', ''];
+            const MEGA_PORTH_PINS = ['17', '16', '', '6', '7', '8', '9', ''];
+            const MEGA_PORTJ_PINS = ['15', '14', '', '', '', '', '', ''];
+            const MEGA_PORTK_PINS = ['A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'];
+            const MEGA_PORTL_PINS = ['49', '48', '47', '46', '45', '44', '43', '42'];
+
+            if (this.portA) attachPort(this.portA, MEGA_PORTA_PINS);
+            if (this.portB) attachPort(this.portB, MEGA_PORTB_PINS);
+            if (this.portC) attachPort(this.portC, MEGA_PORTC_PINS);
+            if (this.portD) attachPort(this.portD, MEGA_PORTD_PINS);
+            if (this.portE) attachPort(this.portE, MEGA_PORTE_PINS);
+            if (this.portF) attachPort(this.portF, MEGA_PORTF_PINS);
+            if (this.portG) attachPort(this.portG, MEGA_PORTG_PINS);
+            if (this.portH) attachPort(this.portH, MEGA_PORTH_PINS);
+            if (this.portJ) attachPort(this.portJ, MEGA_PORTJ_PINS);
+            if (this.portK) attachPort(this.portK, MEGA_PORTK_PINS);
+            if (this.portL) attachPort(this.portL, MEGA_PORTL_PINS);
+        } else {
+            if (this.portB) attachPort(this.portB, UNO_DIGITAL_PINS.slice(8, 14)); // PORTB
+            if (this.portD) attachPort(this.portD, UNO_DIGITAL_PINS.slice(0, 8)); // PORTD
+            if (this.portC) attachPort(this.portC, UNO_ANALOG_PINS); // PORTC
+        }
 
         // Initialize all hooked pins to LOW on startup so LED components aren't stuck waiting for a toggle
         [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
@@ -1005,7 +1053,7 @@ export class AVRRunner {
             this.lastRunLoopMs = performance.now() - loopStart;
 
             // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
-            this.emitStateIfDue(now);
+            // this.emitStateIfDue(now); // Disabled. Handled by FLUSH_VISUALS from UI thread.
         }
 
         this._dbgFrameCount++;
@@ -1083,9 +1131,17 @@ export class AVRRunner {
 
         const compStates: Array<{ id: string; state: any }> = [];
         for (const inst of this.instances.values()) {
+            const pendingEmit = (inst as any).pendingVisualStateEmit;
+            if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
+            
             const syncState = getUnifiedComponentSyncState(inst);
+            
+            // Respect the component's sync policy to avoid overloading the UI
+            if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+            
             inst.stateChanged = false;
             (inst as any).pendingVisualStateEmit = false;
+            
             compStates.push({
                 id: inst.id,
                 type: inst.type,
