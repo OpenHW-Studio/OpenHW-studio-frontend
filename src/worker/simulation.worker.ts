@@ -51,6 +51,25 @@ let boardInjectSessions: Map<string, {
     restore?: () => void;
 }> = new Map();
 
+/**
+ * MessagePort to the Render Worker. Set when the main thread sends SET_RENDER_PORT.
+ * When set, display pixel frames are sent directly here (zero-copy) instead of
+ * being passed through the main thread.
+ */
+let renderWorkerPort: MessagePort | null = null;
+
+/** Display component types that have a Render Worker renderer registered. */
+const DISPLAY_COMPONENT_TYPES = new Set([
+    'openhw-ili9341',
+    'openhw-ssd1306-oled',
+]);
+
+/** Maps component type → displayType string used in the Render Worker registry. */
+const DISPLAY_TYPE_MAP: Record<string, string> = {
+    'openhw-ili9341':      'ili9341',
+    'openhw-ssd1306-oled': 'ssd1306',
+};
+
 const RP2040_LOGICAL_FLASH_BYTES = 2 * 1024 * 1024;
 const RP2040_MICROPYTHON_FS_OFFSET = 0xA0000;
 const RP2040_CIRCUITPYTHON_FS_OFFSET = 0x100000;
@@ -776,6 +795,78 @@ function resolveRp2040ExecutableRanges(boardComp: any, boardExecutableRangesMap:
 
 let dmaWarned = false;
 
+function routeDisplayFrames(components: any[]): any[] {
+    if (!renderWorkerPort || !Array.isArray(components)) return components;
+
+    const remaining: any[] = [];
+
+    for (const comp of components) {
+        const compType = String(comp?.type || '').trim();
+        const displayType = DISPLAY_TYPE_MAP[compType];
+
+        if (!displayType || !comp?.state) {
+            remaining.push(comp);
+            continue;
+        }
+
+        // Route pixel buffer directly to Render Worker (zero-copy transfer).
+        const rawBuffer = comp.state?.buffer;
+        let transferable: ArrayBuffer | null = null;
+        let bufferForWorker: ArrayBuffer | null = null;
+
+        if (rawBuffer instanceof Uint8Array && rawBuffer.buffer) {
+            // Slice to get a fresh ArrayBuffer we can transfer without detaching the original.
+            bufferForWorker = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength);
+            transferable = bufferForWorker;
+        } else if (rawBuffer instanceof ArrayBuffer) {
+            bufferForWorker = rawBuffer.slice(0);
+            transferable = bufferForWorker;
+        }
+
+        const frame: any = {
+            type: 'DISPLAY_FRAME',
+            compId: String(comp.id || '').trim(),
+            displayType,
+            width:  comp.state?.width  ?? (displayType === 'ili9341' ? 240 : 128),
+            height: comp.state?.height ?? (displayType === 'ili9341' ? 320 : 64),
+            buffer: bufferForWorker,
+            state: {
+                powerOn:          comp.state?.powerOn,
+                reset:            comp.state?.reset,
+                // SSD1306 state fields
+                vram:             comp.state?.vram,
+                displayOn:        comp.state?.displayOn,
+                invert:           comp.state?.invert,
+                allOn:            comp.state?.allOn,
+                displayStartLine: comp.state?.displayStartLine,
+                segmentRemap:     comp.state?.segmentRemap,
+                comScanDir:       comp.state?.comScanDir,
+                displayOffset:    comp.state?.displayOffset,
+            },
+            timestamp: Date.now(),
+        };
+
+        if (transferable) {
+            renderWorkerPort.postMessage(frame, [transferable]);
+        } else {
+            renderWorkerPort.postMessage(frame);
+        }
+
+        // Strip the pixel buffer from the main-thread message — send only
+        // lightweight telemetry state (powerOn, spiFrames, compactSnapshot, etc.).
+        remaining.push({
+            ...comp,
+            state: comp.state ? {
+                ...comp.state,
+                buffer: null,  // buffer already transferred to render worker
+                vram: undefined, // vram not needed on main thread
+            } : comp.state,
+        });
+    }
+
+    return remaining;
+}
+
 function postRunnerState(stateObj: any, boardId: string) {
     const resolvedBoardId = String(stateObj?.boardId || boardId || 'default').trim() || 'default';
 
@@ -793,9 +884,14 @@ function postRunnerState(stateObj: any, boardId: string) {
         }
     }
 
+    // Route display pixel frames to the Render Worker before posting to main thread.
+    const resolvedComponents = stateObj?.components
+        ? routeDisplayFrames(stateObj.components)
+        : stateObj?.components;
+
     if (mode === 'single') {
         const msg = (stateObj && typeof stateObj === 'object')
-            ? { ...stateObj, boardId: resolvedBoardId }
+            ? { ...stateObj, boardId: resolvedBoardId, components: resolvedComponents }
             : stateObj;
         postMessage(msg);
         emitSyncHeartbeat(resolvedBoardId, msg);
@@ -810,9 +906,8 @@ function postRunnerState(stateObj: any, boardId: string) {
     const msg: any = { type: 'state', boardId: resolvedBoardId };
 
     if (stateObj.pins) msg.pins = stateObj.pins;
-
     if (stateObj.analog) msg.analog = stateObj.analog;
-    if (stateObj.components) msg.components = stateObj.components;
+    if (resolvedComponents) msg.components = resolvedComponents;
     postMessage(msg);
     emitSyncHeartbeat(resolvedBoardId, msg);
 }
@@ -857,6 +952,18 @@ let activeDeepSiliconEnabled = false;
 
 self.onmessage = async (e) => {
     const data = e.data;
+
+    // ── Render Worker port handshake ──────────────────────────────────────────
+    if (data.type === 'SET_RENDER_PORT') {
+        const port: MessagePort = data.port;
+        console.log('[SimWorker] SET_RENDER_PORT message received, port:', !!port);
+        if (port && typeof port.postMessage === 'function') {
+            renderWorkerPort = port;
+            renderWorkerPort.start();
+            console.log('[SimWorker] renderWorkerPort successfully registered and started');
+        }
+        return;
+    }
 
     if (data.type === 'START') {
         const {

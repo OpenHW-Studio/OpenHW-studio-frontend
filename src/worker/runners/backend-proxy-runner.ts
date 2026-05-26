@@ -11,6 +11,8 @@ import {
 import type { BoardRunner } from '../registries/component-registry.ts';
 
 export class BackendProxyRunner implements BoardRunner {
+    cpu: any = null;
+    serialBaudRate: number = 115200;
     running: boolean = false;
     currentWires: any[] = [];
     instances: Map<string, BaseComponent> = new Map();
@@ -23,6 +25,30 @@ export class BackendProxyRunner implements BoardRunner {
     private readonly onStateUpdate: (state: any) => void;
     private netToNode = new Map<number, number>();
     private pinToNet = new Map<string, number>();
+
+    serialRx(data: string) {
+        // Proxy board handles serial connection via backend WebSocket.
+    }
+
+    serialRxByte(value: number) {
+        // No-op
+    }
+
+    setSerialBaudRate(baud: number) {
+        this.serialBaudRate = baud;
+    }
+
+    getSerialBaudRate(): number {
+        return this.serialBaudRate;
+    }
+
+    setSpeed(speed: number) {
+        // No-op
+    }
+
+    setSolverMode(mode: 'logic') {
+        this.solverMode = mode;
+    }
     
     // Maintain proxy state
     private proxyPinStates = new Map<string, boolean>();

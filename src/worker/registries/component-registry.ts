@@ -15,7 +15,7 @@ import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic';
 import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic';
-import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic';
+import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic';
 import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic';
 import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic';

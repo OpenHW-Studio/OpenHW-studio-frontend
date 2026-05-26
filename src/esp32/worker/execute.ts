@@ -13,7 +13,7 @@ import { ServoLogic } from '@openhw/emulator/src/components/wokwi-servo/logic.ts
 import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-driver/logic.ts';
 import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
-import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
+import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic.ts';
 import { MembraneKeypadLogic } from '@openhw/emulator/src/components/wokwi-membrane-keypad/logic.ts';
 import { LCD1602Logic } from '@openhw/emulator/src/components/wokwi-LCD1602/logic.ts';
 import { PIRLogic } from '@openhw/emulator/src/components/wokwi-PIR-Motion-Sensor/logic.ts';
