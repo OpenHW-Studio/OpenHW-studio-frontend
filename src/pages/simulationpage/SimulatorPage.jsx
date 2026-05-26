@@ -5011,7 +5011,8 @@ export function SimulatorPage({ gamificationMode = false }) {
             console.log('[handleAutoCode] Injecting code into file:', targetFile.id);
             return prev.map(f => {
               if (f.id === targetFile.id) {
-                const newContent = mergeCodeSnippet(f.content, snippet, compId);
+                const currentContent = (activeCodeFileId === f.id || activeCodeFileId === f.name) ? currentCodeRef.current : f.content;
+                const newContent = mergeCodeSnippet(currentContent, snippet, compId);
                 // Also update live code if it's the active file
                 if (activeCodeFileId === targetFile.id) {
                   setCode(newContent);
@@ -6855,7 +6856,9 @@ export function SimulatorPage({ gamificationMode = false }) {
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
-                if (isRp2040CoreMissingError(compileErr)) {
+                const errStr = String(compileErr?.message || compileErr || '').toLowerCase();
+                const isRpCoreMissing = errStr.includes("platform 'rp2040:rp2040' not found") || errStr.includes('platform rp2040:rp2040 is not found') || errStr.includes('platform not installed');
+                if (isRpCoreMissing) {
                   appendConsoleEntry('error', `RP2040 core is not installed for ${boardComp.id}. Native .ino mode cannot run without Arduino-Pico core.`, 'simulator');
                 }
                 throw compileErr;
