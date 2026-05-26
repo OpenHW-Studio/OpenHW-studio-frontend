@@ -25,7 +25,7 @@ export async function compileCode(input) {
     try {
         const payload = typeof input === 'string' ? { code: input } : (input || {});
         const response = await axios.post(`${COMPILER_URL}/compile`, payload, getUserAuthConfig());
-        if (response.data && response.data.hex) {
+        if (response.data && (response.data.hex || response.data.buildId)) {
             return response.data;
         }
         throw new Error('No hex returned from compiler');

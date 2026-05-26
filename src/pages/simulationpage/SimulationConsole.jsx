@@ -205,7 +205,10 @@ export function useSimulationConsole() {
 
     if (tab === 'telemetry' && format === 'log') {
       const telemetryEntries = allEntries.filter(e => e.source === 'telemetry');
-      const content = telemetryEntries.map(e => `${e.ts} ${e.compId || e.compType || 'COMP'} ${e.message.replace('[Telemetry] ', '')}`).join('\n');
+      let content = telemetryEntries.map(e => `${e.ts} ${e.compId || e.compType || 'COMP'} ${e.message.replace('[Telemetry] ', '')}`).join('\n');
+      if (protocolLogs && protocolLogs.length > 0) {
+        content += '\n\n--- PROTOCOL LOGS ---\n' + protocolLogs.join('\n');
+      }
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
