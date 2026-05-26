@@ -242,7 +242,7 @@ export class AVRRunner {
             let returnByte = 0xFF; // Default MISO if nothing responds
 
             let unoId = '';
-            for (const [id, inst] of this.instances) {
+            for (const [id, inst] of Array.from(this.instances.entries())) {
                 if (inst.type === 'wokwi-arduino-uno') {
                     unoId = id;
                     break;
@@ -264,7 +264,7 @@ export class AVRRunner {
                     else {
                         // Check if the net is currently driven HIGH by another pin
                         let drivenHigh = false;
-                        for (const [p, net] of this.pinToNet) {
+                        for (const [p, net] of Array.from(this.pinToNet.entries())) {
                             if (net === misoNet && !p.endsWith(':12')) {
                                 const [compId, pinId] = p.split(':');
                                 if (compId === unoId && this.pinStates[pinId]) {
@@ -280,7 +280,7 @@ export class AVRRunner {
 
             for (const inst of instArray) {
                 if (inst.onSPIByte && this.isSPISelected(inst)) {
-                    const res = inst.onSPIByte(value);
+                    const res = inst.onSPIByte(value) as number | undefined;
                     if (res !== undefined) {
                         returnByte = res;
                     }
@@ -808,7 +808,7 @@ export class AVRRunner {
         }
 
         // Add resistor bridges to adjacency list
-        for (const [id, inst] of this.instances) {
+        for (const [id, inst] of Array.from(this.instances.entries())) {
             if (inst.type === 'wokwi-resistor') {
                 const p1 = `${id}:p1`;
                 const p2 = `${id}:p2`;
@@ -822,7 +822,7 @@ export class AVRRunner {
         const visited = new Set<string>();
         let currentNet = 0;
 
-        for (const startNode of adj.keys()) {
+        for (const startNode of Array.from(adj.keys())) {
             if (!visited.has(startNode)) {
                 const queue = [startNode];
                 visited.add(startNode);
