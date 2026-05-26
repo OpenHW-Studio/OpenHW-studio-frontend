@@ -15,7 +15,7 @@ const MenuDropdown = ({ items, visible, isSubmenu = false, theme, setActiveMenu 
   if (!visible) return null;
 
   return (
-    <div 
+    <div
       style={{
         position: 'absolute',
         top: isSubmenu ? 0 : '100%',
@@ -25,7 +25,7 @@ const MenuDropdown = ({ items, visible, isSubmenu = false, theme, setActiveMenu 
         paddingLeft: isSubmenu ? '4px' : 0,
       }}
     >
-      <div 
+      <div
         className="canvas-menu bg-[var(--bg2)] border border-[var(--border)] rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] min-w-[200px]"
         style={{
           background: theme === 'light' ? 'rgba(248, 250, 252, 0.95)' : 'rgba(13, 21, 37, 0.94)',
@@ -47,8 +47,8 @@ const MenuDropdown = ({ items, visible, isSubmenu = false, theme, setActiveMenu 
           item.type === 'separator' ? (
             <div key={idx} style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
           ) : (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               style={{ position: 'relative' }}
               onMouseEnter={() => setHoveredIdx(idx)}
               onMouseLeave={() => setHoveredIdx(null)}
@@ -87,7 +87,7 @@ const MenuDropdown = ({ items, visible, isSubmenu = false, theme, setActiveMenu 
 };
 
 const MenuButton = ({ label, menuKey, items, activeMenu, setActiveMenu, theme }) => (
-  <div 
+  <div
     style={{ position: 'relative', pointerEvents: 'auto' }}
     onMouseLeave={() => setActiveMenu(null)}
   >
@@ -139,11 +139,11 @@ const FloatingPanel = ({ title, show, onClose, children, width = 350 }) => {
         background: 'rgba(255, 255, 255, 0.03)'
       }}>
         <span style={{ fontSize: '13px', fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
-        <button 
+        <button
           onClick={(e) => {
             e.stopPropagation();
             onClose();
-          }} 
+          }}
           style={{
             background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', color: 'rgba(255, 255, 255, 0.6)',
             cursor: 'pointer', padding: '6px', borderRadius: '8px',
@@ -235,11 +235,10 @@ function TopToolboxInternal(props) {
 
   const toolMenuItems = [
     { label: 'Schematic View', onClick: () => { setShowSchematic(true); generateSchematic(); } },
-    { label: 'Component List', onClick: () => setShowComponentList(true) },
     { label: 'Alignment Lab', onClick: () => navigate('/alignment-lab') },
     { type: 'separator' },
-    { 
-      label: 'Export', 
+    {
+      label: 'Export',
       submenu: [
         { label: 'PNG', onClick: downloadPng },
         { label: 'JSON', onClick: downloadSimulationJson }
@@ -250,17 +249,17 @@ function TopToolboxInternal(props) {
   ];
 
   const assistMenuItems = [
-    { 
-      label: `Auto-Wiring: ${autoWiringEnabled ? 'ON' : 'OFF'}`, 
+    {
+      label: `Auto-Wiring: ${autoWiringEnabled ? 'ON' : 'OFF'}`,
       onClick: () => setAutoWiringEnabled?.(!autoWiringEnabled),
     },
-    { 
-      label: `Breadboard: ${autoBreadboardEnabled ? 'ON' : 'OFF'}`, 
+    {
+      label: `Breadboard: ${autoBreadboardEnabled ? 'ON' : 'OFF'}`,
       onClick: autoWiringEnabled ? (() => setAutoBreadboardEnabled?.(!autoBreadboardEnabled)) : undefined,
       style: { opacity: autoWiringEnabled ? 1 : 0.4, pointerEvents: autoWiringEnabled ? 'auto' : 'none' }
     },
-    { 
-      label: `Auto-Coding: ${autoCodingEnabled ? 'ON' : 'OFF'}`, 
+    {
+      label: `Auto-Coding: ${autoCodingEnabled ? 'ON' : 'OFF'}`,
       onClick: () => setAutoCodingEnabled?.(!autoCodingEnabled),
     }
   ];
@@ -269,8 +268,8 @@ function TopToolboxInternal(props) {
     { label: 'Start Tour', onClick: onStartTour },
     { label: 'Documentation', onClick: () => window.open(DOCS_URL, '_blank') },
     { label: 'Keyboard Shortcuts', shortcut: 'H', onClick: () => setShowShortcuts(true) },
-    { 
-      label: 'Assist', 
+    {
+      label: 'Assist',
       submenu: assistMenuItems
     },
     { type: 'separator' },
@@ -306,7 +305,7 @@ function TopToolboxInternal(props) {
                 onBlur={() => handleConfirmRename(currentProjectId)}
                 onKeyDown={(e) => e.key === 'Enter' && handleConfirmRename(currentProjectId)}
                 style={{
-                  fontSize: '18px', fontWeight: '600', color: 'var(--text)', 
+                  fontSize: '18px', fontWeight: '600', color: 'var(--text)',
                   background: 'transparent', border: '1px solid #2563eb', borderRadius: '4px',
                   padding: '0px 7px', outline: 'none', width: '100%', boxSizing: 'border-box',
                   height: '28px', position: 'absolute', top: 0, left: 0,
@@ -314,11 +313,11 @@ function TopToolboxInternal(props) {
                 }}
               />
             ) : (
-              <span 
+              <span
                 onClick={(e) => handleStartRename(currentProject || { id: currentProjectId, name: projectName }, e)}
-                style={{ 
-                  fontSize: '18px', fontWeight: '600', color: 'var(--text)', 
-                  cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden', 
+                style={{
+                  fontSize: '18px', fontWeight: '600', color: 'var(--text)',
+                  cursor: 'text', whiteSpace: 'nowrap', overflow: 'hidden',
                   textOverflow: 'ellipsis', width: '100%',
                   padding: '0px 7px', height: '28px', lineHeight: '26px',
                   position: 'absolute', top: 0, left: 0, boxSizing: 'border-box',
@@ -332,6 +331,36 @@ function TopToolboxInternal(props) {
           </div>
           <div className="flex items-center gap-1 -ml-2" ref={menuRef} style={{ position: 'relative', zIndex: 1500 }}>
             <MenuButton label="File" menuKey="file" items={fileMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                setActiveMenu(null);
+                setShowComponentList((v) => !v);
+              }}
+              style={{
+                background: showComponentList ? 'rgba(255,255,255,0.05)' : 'none',
+                border: 'none',
+                color: showComponentList ? 'var(--text)' : 'var(--text3)',
+                fontSize: '14px',
+                fontWeight: '500',
+                padding: '2px 8px',
+                cursor: 'pointer',
+                borderRadius: '4px',
+                transition: 'background 0.2s, color 0.2s',
+                pointerEvents: 'auto',
+              }}
+              onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.05)'; e.target.style.color = 'var(--text)'; }}
+              onMouseLeave={(e) => {
+                if (!showComponentList) {
+                  e.target.style.background = 'none';
+                  e.target.style.color = 'var(--text3)';
+                }
+              }}
+              title="Bill of materials for components on the canvas"
+            >
+              Components
+            </button>
             <MenuButton label="Tool" menuKey="tool" items={toolMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
             <MenuButton label="Help" menuKey="help" items={helpMenuItems} activeMenu={activeMenu} setActiveMenu={setActiveMenu} theme={theme} />
           </div>
@@ -667,9 +696,9 @@ function TopToolboxInternal(props) {
       </div>
       <FloatingPanel title="Auto-fix" show={showAutofix} onClose={() => setShowAutofix(false)} width={380}>
         <div style={{ padding: '12px 16px' }}>
-          <AutofixPreviewPanel 
-            project={{ components, connections: wires }} 
-            validationErrors={validationErrors || []} 
+          <AutofixPreviewPanel
+            project={{ components, connections: wires }}
+            validationErrors={validationErrors || []}
             autofixPlan={autofixPlan}
             autofixStatus={autofixStatus}
             autofixLog={autofixLog || []}
@@ -681,40 +710,40 @@ function TopToolboxInternal(props) {
       <FloatingPanel title="Schematic View" show={showSchematic} onClose={() => setShowSchematic(false)} width={420}>
         {schematicLoading ? (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.5)', fontSize: '13px' }}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', marginBottom: '12px' }}><path d="M21 12a9 9 0 1 1-4.5-7.8"/></svg>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'toolbar-spin 0.9s linear infinite', marginBottom: '12px' }}><path d="M21 12a9 9 0 1 1-4.5-7.8" /></svg>
             <div style={{ fontWeight: '600', color: '#fff' }}>Generating Schematic...</div>
             <div style={{ fontSize: '11px', marginTop: '4px' }}>Capturing current circuit layout</div>
           </div>
         ) : schematicDataUrl ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ 
-              background: '#000', borderRadius: '12px', overflow: 'hidden', 
-              border: '1px solid rgba(255,255,255,0.1)', boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)' 
+            <div style={{
+              background: '#000', borderRadius: '12px', overflow: 'hidden',
+              border: '1px solid rgba(255,255,255,0.1)', boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)'
             }}>
               <img src={schematicDataUrl} alt="Schematic" style={{ width: '100%', display: 'block' }} />
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={downloadSchematicPng} style={{ 
-                flex: 1, padding: '10px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', 
+              <button onClick={downloadSchematicPng} style={{
+                flex: 1, padding: '10px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)',
                 color: '#fff', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer',
                 fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
               }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
                 PNG
               </button>
-              <button onClick={downloadSchematicPdf} style={{ 
-                flex: 1, padding: '10px', borderRadius: '10px', background: 'var(--accent)', 
+              <button onClick={downloadSchematicPdf} style={{
+                flex: 1, padding: '10px', borderRadius: '10px', background: 'var(--accent)',
                 color: '#fff', border: 'none', cursor: 'pointer',
                 fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
               }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
                 PDF
               </button>
-              <button onClick={generateSchematic} style={{ 
-                padding: '10px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', 
+              <button onClick={generateSchematic} style={{
+                padding: '10px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)',
                 color: 'rgba(255,255,255,0.6)', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer'
               }} title="Recapture">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
               </button>
             </div>
           </div>
@@ -732,17 +761,17 @@ function TopToolboxInternal(props) {
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div style={{ 
-              border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', 
-              overflow: 'hidden', background: 'rgba(0,0,0,0.2)' 
+            <div style={{
+              border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px',
+              overflow: 'hidden', background: 'rgba(0,0,0,0.2)'
             }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ background: 'rgba(255,255,255,0.05)' }}>
                     {['#', 'Component', 'Type', 'Qty'].map(h => (
-                      <th key={h} style={{ 
-                        padding: '10px 14px', textAlign: 'left', color: 'rgba(255,255,255,0.5)', 
-                        fontWeight: '700', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' 
+                      <th key={h} style={{
+                        padding: '10px 14px', textAlign: 'left', color: 'rgba(255,255,255,0.5)',
+                        fontWeight: '700', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em'
                       }}>{h}</th>
                     ))}
                   </tr>
@@ -766,14 +795,14 @@ function TopToolboxInternal(props) {
                 </tbody>
               </table>
             </div>
-            <button onClick={downloadCompCsv} style={{ 
-              padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', 
+            <button onClick={downloadCompCsv} style={{
+              padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)',
               color: '#fff', border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer',
               fontSize: '12px', fontWeight: '600', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               transition: 'all 0.2s'
             }} onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-               onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
               Download CSV Bill of Materials
             </button>
           </div>
@@ -782,34 +811,40 @@ function TopToolboxInternal(props) {
       <FloatingPanel title="Keyboard Shortcuts" show={showShortcuts} onClose={() => setShowShortcuts(false)} width={450}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {[
-            { group: 'General', shortcuts: [
-              { key: 'F5 / ⌘ Enter', desc: 'Run / Stop' },
-              { key: 'Esc', desc: 'Cancel / Clear / Stop' },
-              { key: '⌘ + S', desc: 'Save Project' },
-              { key: '⌘ + O', desc: 'Toggle Projects' },
-              { key: '⌘ + Alt + N', desc: 'New Project' },
-              { key: 'Alt + H', desc: 'Toggle Shortcuts Help' },
-            ]},
-            { group: 'Edit', shortcuts: [
-              { key: '⌘ + Z', desc: 'Undo' },
-              { key: '⌘ + Y', desc: 'Redo' },
-              { key: 'Del / Backspace', desc: 'Delete Selected' },
-              { key: 'Alt + ⇧ + R', desc: 'Rotate Component' },
-            ]},
-            { group: 'View & Panels', shortcuts: [
-              { key: 'Alt + (+ / -)', desc: 'Zoom In / Out' },
-              { key: 'Alt + 0', desc: 'Reset Zoom' },
-              { key: 'Alt + V', desc: 'Toggle Right Panel' },
-              { key: '⌘ + B', desc: 'Toggle Console' },
-              { key: 'Alt + C', desc: 'Open Code Panel' },
-              { key: 'Alt + E', desc: 'Toggle Code Explorer' },
-              { key: 'Alt + S', desc: 'Open Serial Panel' },
-              { key: '⌘ + G', desc: 'Toggle Grid' },
-              { key: '⌘ + L', desc: 'Toggle Canvas Lock' },
-              { key: 'Alt + F', desc: 'Fit to View' },
-              { key: 'Alt + T', desc: 'Wires Top / Bottom' },
-              { key: '⌘ + ⇧ + Del', desc: 'Clear Canvas' },
-            ]},
+            {
+              group: 'General', shortcuts: [
+                { key: 'F5 / ⌘ Enter', desc: 'Run / Stop' },
+                { key: 'Esc', desc: 'Cancel / Clear / Stop' },
+                { key: '⌘ + S', desc: 'Save Project' },
+                { key: '⌘ + O', desc: 'Toggle Projects' },
+                { key: '⌘ + Alt + N', desc: 'New Project' },
+                { key: 'Alt + H', desc: 'Toggle Shortcuts Help' },
+              ]
+            },
+            {
+              group: 'Edit', shortcuts: [
+                { key: '⌘ + Z', desc: 'Undo' },
+                { key: '⌘ + Y', desc: 'Redo' },
+                { key: 'Del / Backspace', desc: 'Delete Selected' },
+                { key: 'Alt + ⇧ + R', desc: 'Rotate Component' },
+              ]
+            },
+            {
+              group: 'View & Panels', shortcuts: [
+                { key: 'Alt + (+ / -)', desc: 'Zoom In / Out' },
+                { key: 'Alt + 0', desc: 'Reset Zoom' },
+                { key: 'Alt + V', desc: 'Toggle Right Panel' },
+                { key: '⌘ + B', desc: 'Toggle Console' },
+                { key: 'Alt + C', desc: 'Open Code Panel' },
+                { key: 'Alt + E', desc: 'Toggle Code Explorer' },
+                { key: 'Alt + S', desc: 'Open Serial Panel' },
+                { key: '⌘ + G', desc: 'Toggle Grid' },
+                { key: '⌘ + L', desc: 'Toggle Canvas Lock' },
+                { key: 'Alt + F', desc: 'Fit to View' },
+                { key: 'Alt + T', desc: 'Wires Top / Bottom' },
+                { key: '⌘ + ⇧ + Del', desc: 'Clear Canvas' },
+              ]
+            },
           ].map((g, i) => (
             <div key={i} style={{ marginBottom: '8px' }}>
               <div style={{ fontSize: '11px', fontWeight: '700', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px', opacity: 0.8 }}>{g.group}</div>
@@ -817,11 +852,11 @@ function TopToolboxInternal(props) {
                 {g.shortcuts.map((s, j) => (
                   <div key={j} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: 'rgba(255,255,255,0.03)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
                     <span style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)' }}>{s.desc}</span>
-                    <kbd style={{ 
-                      background: 'rgba(255,255,255,0.1)', 
-                      padding: '2px 6px', 
-                      borderRadius: '4px', 
-                      fontSize: '11px', 
+                    <kbd style={{
+                      background: 'rgba(255,255,255,0.1)',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
                       fontFamily: 'JetBrains Mono, monospace',
                       color: '#fff',
                       border: '1px solid rgba(255,255,255,0.1)',
