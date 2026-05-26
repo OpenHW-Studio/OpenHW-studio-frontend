@@ -170,7 +170,8 @@ import {
   isStepperMotorType,
   endpointAliases,
   hasCategoryIntersection,
-  getPinCategory
+  getPinCategory,
+  isRp2040CoreMissingError
 } from './utils/hardwareUtils';
 
 // Web Editor features
