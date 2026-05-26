@@ -1,28 +1,43 @@
-import { useState } from 'react'
-import { Moon, Sun } from 'lucide-react'
-import { getAvatarLetters } from './test.js'
+import { useState } from "react";
+import { Moon, Sun } from "lucide-react";
+import { getAvatarLetters } from "./test.js";
 
-export default function ClassroomSidebar({ links, user, onLogout, onProfileClick }) {
+export default function ClassroomSidebar({
+  links,
+  user,
+  onLogout,
+  onProfileClick,
+}) {
   const [theme, setTheme] = useState(
-    () => localStorage.getItem('openhw_theme') || document.documentElement.getAttribute('data-theme') || 'light'
-  )
-  const [showProfileMenu, setShowProfileMenu] = useState(false)
+    () =>
+      localStorage.getItem("openhw_theme") ||
+      document.documentElement.getAttribute("data-theme") ||
+      "light",
+  );
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
-  const avatarInitials = getAvatarLetters(user?.name, user?.role === 'teacher' ? 'T' : 'S')
+  const avatarInitials = getAvatarLetters(
+    user?.name,
+    user?.role === "teacher" ? "T" : "S",
+  );
 
   const toggleTheme = () => {
     setTheme((prev) => {
-      const next = prev === 'dark' ? 'light' : 'dark'
-      document.documentElement.setAttribute('data-theme', next)
-      localStorage.setItem('openhw_theme', next)
-      return next
-    })
-  }
+      const next = prev === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      localStorage.setItem("openhw_theme", next);
+      return next;
+    });
+  };
 
   return (
     <aside className="teacher-sidebar teacher-sidebar--fixed">
       <div className="teacher-sidebar__brand">
-        <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--sidebar" />
+        <img
+          src="/logo-Photoroom.png"
+          alt="OpenHW-Studio"
+          className="brand-logo brand-logo--sidebar"
+        />
       </div>
 
       <nav className="teacher-sidebar__nav" aria-label="Navigation">
@@ -30,7 +45,7 @@ export default function ClassroomSidebar({ links, user, onLogout, onProfileClick
           <button
             key={item.key}
             type="button"
-            className={`teacher-sidebar__link${item.isActive ? ' is-active' : ''}`}
+            className={`teacher-sidebar__link${item.isActive ? " is-active" : ""}`}
             onClick={item.onClick}
           >
             <span className="teacher-sidebar__link-icon" aria-hidden="true">
@@ -42,9 +57,13 @@ export default function ClassroomSidebar({ links, user, onLogout, onProfileClick
       </nav>
 
       <div className="teacher-sidebar-profile">
-        <button type="button" className="teacher-theme-toggle" onClick={toggleTheme}>
-          {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
-          <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+        <button
+          type="button"
+          className="teacher-theme-toggle"
+          onClick={toggleTheme}
+        >
+          {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+          <span>{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
         </button>
 
         <button
@@ -56,7 +75,7 @@ export default function ClassroomSidebar({ links, user, onLogout, onProfileClick
             {user?.image ? (
               <img
                 src={user.image}
-                alt={user?.name || 'User'}
+                alt={user?.name || "User"}
                 className="teacher-sidebar-profile__avatar-image"
               />
             ) : (
@@ -64,7 +83,7 @@ export default function ClassroomSidebar({ links, user, onLogout, onProfileClick
             )}
           </span>
           <span className="teacher-sidebar-profile__copy">
-            <strong>{user?.name || 'User'}</strong>
+            <strong>{user?.name || "User"}</strong>
             <small>Profile</small>
           </span>
         </button>
@@ -75,17 +94,19 @@ export default function ClassroomSidebar({ links, user, onLogout, onProfileClick
               <button
                 type="button"
                 onClick={() => {
-                  setShowProfileMenu(false)
-                  onProfileClick()
+                  setShowProfileMenu(false);
+                  onProfileClick();
                 }}
               >
                 Profile
               </button>
             ) : null}
-            <button type="button" onClick={onLogout}>Logout</button>
+            <button type="button" onClick={onLogout}>
+              Logout
+            </button>
           </div>
         )}
       </div>
     </aside>
-  )
+  );
 }
