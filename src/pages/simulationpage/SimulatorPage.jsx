@@ -73,6 +73,7 @@ import { ComponentTelemetrySelectModal } from './components/ComponentTelemetrySe
 
 import { ComponentContextMenu, ComponentRenamePanel, ComponentValuePanel } from './ComponentContextMenu';
 import { CanvasSceneLayer } from './components/CanvasSceneLayer';
+import { DisplayRenderProvider } from './context/DisplayRenderContext';
 import { CreateComponentModal } from './components/CreateComponentModal';
 import { ComponentInspectorPanel } from './components/ComponentInspectorPanel';
 import { GamificationGuidePanel } from './components/GamificationGuidePanel';
@@ -757,6 +758,10 @@ export function SimulatorPage({ gamificationMode = false }) {
   const renderAnalogByBoardRef = useRef({});
   const renderComponentsByBoardRef = useRef({});
   const renderNeopixelsByBoardRef = useRef({});
+  /** Dedicated OffscreenCanvas Render Worker — owns all display canvas contexts. */
+  const renderWorkerRef = useRef(null);
+  /** State mirror of renderWorkerRef so Provider re-renders when worker starts/stops. */
+  const [renderWorker, setRenderWorker] = useState(null);
 
   const {
     consoleEntries,
@@ -6744,12 +6749,33 @@ export function SimulatorPage({ gamificationMode = false }) {
       setIsCompiling(false);
       if (!isBackendProxy) {
         setIsRunning(true);
+        setIsBooting(true);
       }
       logSerial(isBackendProxy ? 'Backend connected! Starting physics worker...' : 'Compiled! Connecting to emulator...');
 
-      // Load Web Worker
+      // ── Render Worker: create before sim worker so port is ready ──────────
+      const renderWorker = new Worker(
+        new URL('../../worker/display.render.worker.ts', import.meta.url),
+        { type: 'module' }
+      );
+      renderWorkerRef.current = renderWorker;
+      setRenderWorker(renderWorker); // Triggers Provider re-render so display UIs receive the worker
+      if (typeof window !== 'undefined') {
+        window.__displayRenderWorker = renderWorker;
+        window.dispatchEvent(new CustomEvent('display-render-worker-changed', { detail: renderWorker }));
+      }
+
+      // Set up a MessageChannel so the Simulation Worker can post display frames
+      // directly to the Render Worker — zero-copy, no main-thread involvement.
+      const { port1: simPort, port2: renderPort } = new MessageChannel();
+      // Give port1 to the Render Worker (it listens for DISPLAY_FRAME here)
+      renderWorker.postMessage({ type: 'SET_SIM_PORT', port: renderPort }, [renderPort]);
+
+      // Load Simulation Web Worker
       const worker = new Worker(new URL('../../worker/simulation.worker.ts', import.meta.url), { type: 'module' });
       workerRef.current = worker;
+      // Give port2 to the Simulation Worker (it sends DISPLAY_FRAME here)
+      worker.postMessage({ type: 'SET_RENDER_PORT', port: simPort }, [simPort]);
 
       worker.onmessage = async (event) => {
         const msg = event.data;
@@ -6768,6 +6794,12 @@ export function SimulatorPage({ gamificationMode = false }) {
             message: msg.message
           });
           return;
+        }
+
+        if (msg.type === 'state' || (msg.type === 'debug' && msg.category === 'rp2040-runtime')) {
+          if (!isBackendProxy) {
+            setIsBooting(false);
+          }
         }
 
         if (msg.type === 'debug' && msg.category === 'rp2040-runtime') {
@@ -7041,7 +7073,9 @@ export function SimulatorPage({ gamificationMode = false }) {
             deviceIds ? `ids=${deviceIds}` : '',
           ].filter(Boolean).join(' | ');
 
-          appendConsoleEntry('info', line, 'debug');
+          if (rp2040DebugTelemetryEnabled) {
+            appendConsoleEntry('info', line, 'debug');
+          }
           return;
         }
         if (msg.type === 'sync_heartbeat') {
@@ -7439,6 +7473,17 @@ export function SimulatorPage({ gamificationMode = false }) {
       workerRef.current.terminate();
       workerRef.current = null;
     }
+    // Terminate the Render Worker and tell it to release all canvas resources.
+    if (renderWorkerRef.current) {
+      renderWorkerRef.current.postMessage({ type: 'DISPLAY_CLEAR_ALL' });
+      renderWorkerRef.current.terminate();
+      renderWorkerRef.current = null;
+      setRenderWorker(null); // Clear Provider so display UIs see null worker
+      if (typeof window !== 'undefined') {
+        window.__displayRenderWorker = null;
+        window.dispatchEvent(new CustomEvent('display-render-worker-changed', { detail: null }));
+      }
+    }
     setIsRunning(false);
     setIsCompiling(false);
     setIsBooting(false); // TODO: Reset booting state on stop
@@ -7462,10 +7507,28 @@ export function SimulatorPage({ gamificationMode = false }) {
     appendConsoleEntry('info', 'Simulation stopped.', 'simulator');
   };
 
+  const bootStartedAtRef = useRef(null);
+
+  // Track when boot starts
+  useEffect(() => {
+    if (isBooting && !isRunning) {
+      if (!bootStartedAtRef.current) {
+        bootStartedAtRef.current = Date.now();
+      }
+    }
+  }, [isBooting, isRunning]);
+
   // Reset run start time when simulation actually starts running
   useEffect(() => {
     if (isRunning && !isCompiling && !isBooting) {
-      setRunStartedAtMs(Date.now());
+      let startTime = Date.now();
+      if (bootStartedAtRef.current) {
+        const bootDuration = Date.now() - bootStartedAtRef.current;
+        startTime -= bootDuration;
+      }
+      setRunStartedAtMs(startTime);
+    } else if (!isRunning) {
+      bootStartedAtRef.current = null;
     }
   }, [isRunning, isCompiling, isBooting]);
 
@@ -8881,60 +8944,62 @@ export function SimulatorPage({ gamificationMode = false }) {
             {/* Zoom Wrapper — scales all circuit content */}
             {/* Fix #4: innerCanvasRef is used to apply CSS transform directly during panning.
                React state (canvasOffset) is only committed once on mouseup. */}
-              <CanvasSceneLayer
-              innerCanvasRef={innerCanvasRef}
-              canvasOffset={canvasOffset}
-              canvasZoom={canvasZoom}
-              showGrid={showGrid}
-              wires={wires}
-              wiresAlwaysOnTop={wiresAlwaysOnTop}
-              selected={selected}
-              components={components}
-              getPinPos={getPinPos}
-              getPinExitPoint={getPinExitPoint}
-              wirepointsEnabled={wirepointsEnabled}
-              respectExitSide={respectExitSide}
-              theme={theme}
-              setSelected={setSelected}
-              canvasRef={canvasRef}
-              setWireClickPos={setWireClickPos}
-              canvasOffsetRef={canvasOffsetRef}
-              canvasZoomRef={canvasZoomRef}
-              setSegDrag={setSegDrag}
-              segDragRef={segDragRef}
-              autofixPlan={autofixPlan}
-              getPinPosWithGhosts={getPinPosWithGhosts}
-              wireStart={wireStart}
-              mousePos={mousePos}
-              multiRoutePath={multiRoutePath}
-              svgRef={svgRef}
-              isRunning={isRunning}
-              isComponentDragging={isComponentDragging}
-              COMPONENT_REGISTRY={COMPONENT_REGISTRY}
-              getComponentStateAttrs={getComponentStateAttrs}
-              updateComponentAttr={updateComponentAttr}
-              wireClickPos={wireClickPos}
-              updateWireColor={updateWireColor}
-              saveHistory={saveHistory}
-              setWires={setWires}
-              deleteWire={deleteWire}
-              PIN_DEFS={PIN_DEFS}
-              errorCompIds={errorCompIds}
-              serialBoardFilter={serialBoardFilter}
-              onCompContextMenu={onCompContextMenu}
-              onCompMouseDown={onCompMouseDown}
-              onCompClick={onCompClick}
-              getLiveOopStateSnapshot={getLiveOopStateSnapshot}
-              subscribeLiveOopState={subscribeLiveOopState}
-              neopixelRefs={neopixelRefs}
-              hoveredPin={hoveredPin}
-              setHoveredPin={setHoveredPin}
-              snappingHoles={snappingHoles}
-              getPinCategory={getPinCategory}
-              hasCategoryIntersection={hasCategoryIntersection}
-              onPinClick={onPinClick}
-              setWireStart={setWireStart}
-            />
+              <DisplayRenderProvider renderWorker={renderWorker}>
+                <CanvasSceneLayer
+                innerCanvasRef={innerCanvasRef}
+                canvasOffset={canvasOffset}
+                canvasZoom={canvasZoom}
+                showGrid={showGrid}
+                wires={wires}
+                wiresAlwaysOnTop={wiresAlwaysOnTop}
+                selected={selected}
+                components={components}
+                getPinPos={getPinPos}
+                getPinExitPoint={getPinExitPoint}
+                wirepointsEnabled={wirepointsEnabled}
+                respectExitSide={respectExitSide}
+                theme={theme}
+                setSelected={setSelected}
+                canvasRef={canvasRef}
+                setWireClickPos={setWireClickPos}
+                canvasOffsetRef={canvasOffsetRef}
+                canvasZoomRef={canvasZoomRef}
+                setSegDrag={setSegDrag}
+                segDragRef={segDragRef}
+                autofixPlan={autofixPlan}
+                getPinPosWithGhosts={getPinPosWithGhosts}
+                wireStart={wireStart}
+                mousePos={mousePos}
+                multiRoutePath={multiRoutePath}
+                svgRef={svgRef}
+                isRunning={isRunning}
+                isComponentDragging={isComponentDragging}
+                COMPONENT_REGISTRY={COMPONENT_REGISTRY}
+                getComponentStateAttrs={getComponentStateAttrs}
+                updateComponentAttr={updateComponentAttr}
+                wireClickPos={wireClickPos}
+                updateWireColor={updateWireColor}
+                saveHistory={saveHistory}
+                setWires={setWires}
+                deleteWire={deleteWire}
+                PIN_DEFS={PIN_DEFS}
+                errorCompIds={errorCompIds}
+                serialBoardFilter={serialBoardFilter}
+                onCompContextMenu={onCompContextMenu}
+                onCompMouseDown={onCompMouseDown}
+                onCompClick={onCompClick}
+                getLiveOopStateSnapshot={getLiveOopStateSnapshot}
+                subscribeLiveOopState={subscribeLiveOopState}
+                neopixelRefs={neopixelRefs}
+                hoveredPin={hoveredPin}
+                setHoveredPin={setHoveredPin}
+                snappingHoles={snappingHoles}
+                getPinCategory={getPinCategory}
+                hasCategoryIntersection={hasCategoryIntersection}
+                onPinClick={onPinClick}
+                setWireStart={setWireStart}
+                />
+              </DisplayRenderProvider>
 
             <SimulatorRuntimePanel
               isRunning={isRunning}
