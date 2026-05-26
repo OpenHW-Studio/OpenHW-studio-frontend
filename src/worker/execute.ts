@@ -16,7 +16,7 @@ import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic.t
 import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic.ts';
 import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic.ts';
-import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
+import { HC595Logic } from '@openhw/emulator/src/components/openhw-74hc595/logic.ts';
 import {
     PICO_BOARD_PINS,
     UNO_ANALOG_PINS,
@@ -2411,7 +2411,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ili9341': ILI9341FallbackLogic,
     'wokwi-sd-card': SDCardLogic,
     'openhw-sd-card': SDCardLogic,
-    'shift_register': ShiftRegisterLogic,
+    'shift_register': HC595Logic,
     'wokwi-membrane-keypad': KeypadLogic,
     'openhw-membrane-keypad': KeypadLogic,
     'wokwi-analog-joystick': JoystickLogic,
