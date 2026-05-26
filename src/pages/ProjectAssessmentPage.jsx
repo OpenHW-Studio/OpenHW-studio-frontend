@@ -3,27 +3,7 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
-import { getProjectContentBySlug } from '../services/classAdventureAdapter'
-
-// ─── Per-project guided steps (shown as flashcards) ───────────────────────
-const PROJECT_STEPS = {
-  'led-blink': [
-    { id: 0, phase: 'wire', icon: '🟩', color: '#22c55e', title: 'Place Arduino Uno',      instruction: 'Find "Arduino Uno" in the left panel and drag it onto the canvas.',                                                                      tip: 'The big blue board is your brain! Place it roughly in the centre-left area.' },
-    { id: 1, phase: 'wire', icon: '💡', color: '#22c55e', title: 'Place the LED',           instruction: 'Drag an LED from the parts panel onto the canvas to the right of the Arduino.',                                                           tip: 'LEDs have a long leg (+) and a short leg (−). Keep the long leg on top.' },
-    { id: 2, phase: 'wire', icon: '🟤', color: '#22c55e', title: 'Add a 220Ω Resistor',    instruction: "Drag a Resistor from the parts panel. Connect it between Pin 13 on Arduino and the LED's long leg (+).",                                  tip: 'Set the resistance to 220Ω (Red-Red-Brown colour code).' },
-    { id: 3, phase: 'wire', icon: '〰️', color: '#22c55e', title: 'Connect GND Wire',       instruction: "Draw a wire from the LED's short leg (−) to any GND pin on the Arduino.",                                                               tip: 'GND = Ground = the negative return path. Electricity NEEDS a complete loop to flow.' },
-    { id: 4, phase: 'code', icon: '💻', color: '#3b82f6', title: 'Write the Blink Code',   instruction: 'Click the code editor (right panel) and type or paste the blink sketch.',                                                                  tip: 'Make sure the pin number in code matches where you connected the LED!',
-      code: `void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH); // LED ON\n  delay(1000);             // wait 1 second\n  digitalWrite(13, LOW);  // LED OFF\n  delay(1000);             // wait 1 second\n}` },
-    { id: 5, phase: 'run',  icon: '▶️', color: '#f59e0b', title: 'Run the Simulation!',    instruction: "Click the green ▶ Run button in the toolbar. Your LED should blink once per second!",                                                     tip: "If it doesn't blink, check your wiring and make sure pin 13 is used everywhere." },
-  ],
-  'rgb-led': [
-    { id: 0, phase: 'wire', icon: '🌈', color: '#a855f7', title: 'Place the RGB LED',      instruction: 'Drag an RGB LED from the parts panel. It has 4 legs — the longest is the common GND.',                                                    tip: 'RGB LED = 3 LEDs in one package! Red, Green, Blue. Common cathode = longest pin goes to GND.' },
-    { id: 1, phase: 'wire', icon: '🟤', color: '#a855f7', title: 'Add 3 Resistors',        instruction: 'Add one 220Ω resistor to EACH of the 3 color pins (R, G, B). Connect: R→Pin 9, G→Pin 10, B→Pin 11.',                                    tip: 'Each color needs its own current-limiting resistor or it burns out!' },
-    { id: 2, phase: 'code', icon: '💻', color: '#3b82f6', title: 'Write the RGB Code',     instruction: 'Use analogWrite() to mix colors! Paste the code below into the editor.',                                                                   tip: 'analogWrite() accepts 0–255. Mix values to create any colour!',
-      code: `void setup() {\n  pinMode(9, OUTPUT);   // Red\n  pinMode(10, OUTPUT);  // Green\n  pinMode(11, OUTPUT);  // Blue\n}\n\nvoid loop() {\n  analogWrite(9, 200); analogWrite(10, 0); analogWrite(11, 200);\n  delay(1000);\n  analogWrite(9, 0); analogWrite(10, 200); analogWrite(11, 200);\n  delay(1000);\n}` },
-    { id: 3, phase: 'run',  icon: '▶️', color: '#f59e0b', title: 'Run & See the Colors!',  instruction: 'Click ▶ Run. The LED should cycle through colors you defined!',                                                                             tip: 'Try changing the analogWrite values (0-255) to create your own color mix.' },
-  ],
-}
+import { getProjectContentBySlug, getProjectGuidedSteps } from '../services/classAdventureAdapter'
 
 const PHASE_LABEL = { wire: 'Wiring', code: 'Coding', run: 'Run' }
 const PHASE_COLOR = { wire: '#22c55e', code: '#3b82f6', run: '#f59e0b' }
@@ -219,11 +199,11 @@ function StepCard({ step, index, total, isActive, onClick }) {
         </div>
       </div>
 
-      {/* Expanded content */}
-      {isActive && (
-        <div style={{ animation:'fadeUp .25s ease' }}>
-          <div style={{ fontSize:14, color:'#cbd5e1', lineHeight:1.75, marginBottom:12 }}>{step.instruction}</div>
-          {step.code && <CodeSnippet code={step.code} />}
+{/* Expanded content */}
+       {isActive && (
+         <div style={{ animation:'fadeUp .25s ease' }}>
+           <div style={{ fontSize:14, color:'#cbd5e1', lineHeight:1.75, marginBottom:12, whiteSpace:'pre-line' }}>{step.instruction}</div>
+           {step.code && <CodeSnippet code={step.code} />}
           <div style={{
             display:'flex', gap:8, alignItems:'flex-start', marginTop:12,
             background:'rgba(251,191,36,.08)', border:'1px solid rgba(251,191,36,.2)',
@@ -288,7 +268,8 @@ export default function ProjectAssessmentPage() {
   }, [classId, projectName])
 
   const projectColor  = location.state?.projectColor || '#22c55e'
-const steps         = PROJECT_STEPS[projectName] || []
+
+   const steps          = useMemo(() => getProjectGuidedSteps(classProjectContent, projectName), [classProjectContent, projectName])
 
    const [theme,            setTheme]           = useState('dark')
   const [activeStep,       setActiveStep]       = useState(0)
