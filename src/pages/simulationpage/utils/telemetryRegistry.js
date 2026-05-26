@@ -44,6 +44,8 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'openhw-photodiode': ['light'],
   'openhw-ldr-module': ['light', 'threshold', 'dOut'],
   'openhw-soil-moisture-sensor': ['moisture'],
+  'mq-2 gas sensor': ['threshold', 'gasLevel', 'limitExceeded'],
+  'dht-22': ['temperature', 'humidity', 'lastReadMs', 'error'],
   'openhw-ntc-thermistor': ['temperature', 'resistance', 'voltage'],
   'openhw-ntc-temperature-sensor': ['temperature', 'resistance', 'voltage'],
   'openhw-rotary-encoder': ['rot', 'sw'],
