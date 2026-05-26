@@ -181,10 +181,15 @@ export const LOGIC_REGISTRY: Record<string, any> = {
 
     // Sensors — custom components
     'DHT-22': DHT22Logic,
+    'openhw-dht22': DHT22Logic,
     'MQ-2 Gas Sensor': GasSensorLogic,
+    'openhw-mq2-gas-sensor': GasSensorLogic,
     'wokwi-pir-motion-sensor': PIRLogic,
+    'openhw-pir-motion-sensor': PIRLogic,
     'wokwi-raindrop-module': RaindropModuleLogic,
+    'openhw-raindrop-module': RaindropModuleLogic,
     'wokwi-raindrop-pad': RaindropPadLogic,
+    'openhw-raindrop-pad': RaindropPadLogic,
 
     'wokwi-breadboard': BaseComponent,
     'openhw-breadboard': BaseComponent,
