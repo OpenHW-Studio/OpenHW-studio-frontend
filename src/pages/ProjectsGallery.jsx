@@ -8,6 +8,7 @@ import {
   getLockedProjects,
   getProjectStatus,
 } from '../services/gamification/ProjectsConfig'
+import { getMissingComponents, canStartProject } from '../services/gamification/ComponentsConfig'
 // Component unlock now handled by project rewards - no quiz-based unlock
 
 const S = {
@@ -108,6 +109,8 @@ export default function ProjectsGallery() {
     earnedBadges, completeLevel, unlockedComponentTypes, coins, completedProjects = [],
     isProjectUnlocked,
   } = useGamification()
+
+  const unlockedComponents = unlockedComponentTypes || []
 
   // Sequential prerequisite chain (uses shared ProjectsConfig helper)
   const isSeqUnlocked = (slug) => getProjectStatus(slug, completedProjects) !== 'locked' 

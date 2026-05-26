@@ -149,7 +149,7 @@ export default function App() {
           {/* Global toast notifications (level-up, badge earned, XP) */}
           <GamificationToasts />
 
-          <React.Suspense fallback={<div style={{height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00d4ff'}}>Loading...</div>}>
+          <React.Suspense fallback={<div style={{height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center'}}><div className="loader"></div></div>}>
             <Routes>
             {/* Public Routes */}
             <Route path="/" element={<LandingPage />} />

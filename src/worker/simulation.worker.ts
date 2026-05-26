@@ -17,6 +17,9 @@ import { BoardRunner, createRunnerForBoard, LOGIC_REGISTRY, COMPONENT_PINS, buil
 import { avrInstruction } from 'avr8js';
 import { BaseComponent } from '@openhw/emulator';
 import {
+    setRealMetrics
+} from './registries/component-registry';
+import {
     isProgrammableBoardType,
     resolveUartRoute,
     areBoardsSoftSerialConnected,
@@ -1244,6 +1247,20 @@ self.onmessage = async (e) => {
                 }
             });
         }
+    } else if (data.type === 'FLUSH_VISUALS') {
+        if (mode === 'single' && runner) {
+            if (typeof (runner as any).forceEmitState === 'function') {
+                (runner as any).forceEmitState();
+            }
+        } else {
+            boardRunners.forEach((br) => {
+                if (typeof (br as any).forceEmitState === 'function') {
+                    (br as any).forceEmitState();
+                }
+            });
+        }
+    } else if (data.type === 'REAL_METRICS') {
+        setRealMetrics(data.canvasFps, data.uiMainThreadBlockedTimeMs);
     } else if (data.type === 'SERIAL_SET_BAUD') {
         const parsedBaud = Number(data.baudRate);
         if (!Number.isFinite(parsedBaud)) {

@@ -501,8 +501,8 @@ function syncNextIds(_comps, ws) {
   }
 }
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || 'http://localhost:5001/examples';
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api').replace(/\/$/, '');
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/examples' : '/examples');
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api')).replace(/\/$/, '');
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
 const GROUP_ICON_SVG = {
@@ -1802,6 +1802,14 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
 
   // Incremented whenever backend components are injected/updated so catalog consumers re-render
   const [customCatalogVersion, setCustomCatalogVersion] = useState(0);
+
+  const [respectExitSide, setRespectExitSide] = useState(() => {
+    const val = localStorage.getItem('openhw.respectExitSide');
+    return val !== 'false';
+  });
+  useEffect(() => {
+    localStorage.setItem('openhw.respectExitSide', respectExitSide ? 'true' : 'false');
+  }, [respectExitSide]);
 
   // Theme Logic — defaults to light mode
   const [theme, setTheme] = useState(() => {
@@ -4247,7 +4255,7 @@ useEffect(() => {
     const e1 = getPinExitPoint(fromParts[0], fromParts.slice(1).join(':'), 0) || p1;
     const e2 = getPinExitPoint(toParts[0], toParts.slice(1).join(':'), 0) || p2;
     return { p1, p2, e1, e2, waypoints: wire.waypoints || [] };
-  }), [wires, getPinPos, getPinExitPoint]);
+  }, respectExitSide), [wires, getPinPos, getPinExitPoint, respectExitSide]);
 
   // Keep reactive refs current so async effects always use latest values
   getPinPosRef.current = getPinPos;

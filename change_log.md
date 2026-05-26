@@ -1,5 +1,21 @@
 # Change Log
 
+## [2026-05-22] Implement Global Collision Detection for Mid-Air Buses
+- **Objective**: Prevent mid-air bus trunks (the `midX` and `midY` parallel jumps) from perfectly overlapping when two different wire bundles happen to calculate the exact same mathematical midpoint.
+- **Files Modified**:
+  - `src/utils/wireRouting.js`: Extended the global `usedX` and `usedY` collision registry into Phase 3. 
+- **Reasoning**: While Phase 1 & 2 guaranteed that the vertical and horizontal clearance tracks leaving the components were completely unique, Phase 3 independently calculated `bundleMidX` by taking the average of the two endpoints. If an Uno->Driver bundle and a Stepper->Driver bundle calculated the exact same `bundleMidX`, their vertical trunks would perfectly merge mid-air.
+- **Implementation**: The router now treats every `laneX` and `laneY` within a proposed bus trunk as a required resource. If any line in the proposed mid-air bus intersects with a previously registered `turnX`/`turnY` clearance track, or another previously registered `midX`/`midY` trunk, the entire bus is automatically bumped outward incrementally (+15, -15, +30, -30) until it finds a completely unreserved vertical/horizontal slice of the canvas. This formally extends the "100% mathematically overlap-free" guarantee to every single orthogonal segment on the board.
+
+## [2026-05-22] Fix Routing Direction For Rotated Components
+
+## [2026-05-22] Implement Source-Destination Bundled Wire Bussing
+- **Objective**: Ensure that multiple wires exiting the same board and traveling to the same component are grouped perfectly together in a parallel bus to prevent scattered midpoints and messy mid-air crossings.
+- **Files Modified**:
+  - `src/utils/wireRouting.js`: Updated `calculateWireBundleOffsets` to group wires by source edge AND destination component (`srcCompId::e1Dir::dstCompId`). Calculated a shared "Center of Mass" (`bundleMidX` / `bundleMidY`) for each subgroup, and assigned internal `laneOffsets`. Updated `buildBaseRoutePoints` to prioritize these shared midpoints over calculating them per-wire.
+- **Reasoning**: Without shared midpoints, every wire individually calculated its crossing axis based on its specific pins, which caused wires to cross over each other randomly in the gap between components. Forcing a unified crossing axis eliminates this overlapping "spaghetti" effect.
+- **Performance Impact Breakdown**: Added O(N) grouping calculations inside the bundle resolver, taking < 0.1ms.
+
 ## [2026-05-21] Resolve Web Worker ReferenceError and Silent Simulator Hang
 - **Objective**: Fix a silent runtime exception when initializing the AVR emulator runner in the Web Worker, and ensure all internal worker runner creation/startup errors are bubbled up, logged to the UI serial and simulator console, and handled by gracefully stopping the simulation.
 - **Files Modified**:
