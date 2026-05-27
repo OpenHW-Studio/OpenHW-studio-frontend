@@ -46,6 +46,7 @@ import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/l
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic.ts';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic.ts';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic.ts';
+import { MPU6050Logic } from '@openhw/emulator/src/components/openhw-mpu6050/logic.ts';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles.ts';
 
@@ -172,8 +173,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ds1307-rtc': BaseComponent,
     'wokwi-hc-sr04': BaseComponent,
     'openhw-hc-sr04': BaseComponent,
-    'wokwi-mpu6050': BaseComponent,
-    'openhw-mpu6050': BaseComponent,
+    'wokwi-mpu6050': MPU6050Logic,
+    'openhw-mpu6050': MPU6050Logic,
     'wokwi-nlsf595': BaseComponent,
     'openhw-nlsf595': BaseComponent,
     'wokwi-relay-module': BaseComponent,
