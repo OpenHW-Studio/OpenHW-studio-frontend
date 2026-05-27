@@ -7,6 +7,7 @@ import {
     invokeOptional,
     LOGIC_REGISTRY,
     COMPONENT_PINS,
+    collectConnectedComponentPins,
 } from '../registries/component-registry.ts';
 import type { BoardRunner } from '../registries/component-registry.ts';
 
@@ -141,6 +142,7 @@ export class BackendProxyRunner implements BoardRunner {
 
     // Public method to be called by worker.onmessage when backend sends GPIO sync
     public syncGpio(pin: string, isHigh: boolean) {
+        console.log(`[BackendProxyRunner] syncGpio pin=${pin} isHigh=${isHigh}`);
         this.proxyPinStates.set(String(pin), isHigh);
         this.pinsChanged = true;
 
@@ -339,8 +341,89 @@ export class BackendProxyRunner implements BoardRunner {
         }
     }
 
+    public syncTone(pin: string, frequency: number, duration: number) {
+        console.log(`[BackendProxyRunner] Routing Tone for pin ${pin}, freq ${frequency}, dur ${duration}`);
+
+        const aliases = [pin];
+        if (/^\d+$/.test(pin)) {
+            aliases.push(`D${pin}`, `GPIO${pin}`);
+        } else if (/^(D|GPIO)(\d+)$/i.test(pin)) {
+            const num = pin.replace(/\D/g, '');
+            aliases.push(num, `D${num}`, `GPIO${num}`);
+        }
+
+        const endpoints = collectConnectedComponentPins(
+            this.boardId,
+            aliases,
+            this.currentWires,
+            this.instances
+        );
+
+        if (endpoints.length === 0) {
+            // Fallback: if not wired/routed via net but a buzzer exists, control it directly
+            const buzzers = Array.from(this.instances.values()).filter(inst => 
+                inst.type === 'openhw-buzzer' || inst.type === 'wokwi-buzzer'
+            );
+            if (buzzers.length === 1) {
+                endpoints.push({ inst: buzzers[0], pinId: '1' });
+            }
+        }
+
+        const isSilent = (frequency === 0);
+        const pulseUs = !isSilent ? (1000000 / frequency) / 2 : 0;
+        const periodUs = !isSilent ? (1000000 / frequency) : 0;
+
+        const meta = {
+            protocol: 'pwm',
+            boardPin: pin,
+            isHigh: !isSilent,
+            frequencyHz: frequency,
+            dutyCycle: !isSilent ? 0.5 : 0,
+            pulseUs,
+            periodUs,
+            source: 'gpio',
+            cycles: this.proxySimulatedCycles,
+        };
+
+        for (const endpoint of endpoints) {
+            const inst = endpoint.inst;
+            if (isSilent) {
+                inst.setState({
+                    isBuzzing: false,
+                    frequency: 0,
+                    current: 0,
+                    voltageDrop: 0
+                });
+                (inst as any)._isToneBypassed = false;
+            } else {
+                (inst as any)._isToneBypassed = true;
+                
+                // Route through the component's protocol handler hooks where available,
+                // matching how AVR and RP2040 runners trigger buzzer updates.
+                if (typeof (inst as any).onPWMSignal === 'function') {
+                    (inst as any).onPWMSignal(endpoint.pinId, frequency, 0.5, pulseUs);
+                } else if (typeof (inst as any).onPWM === 'function') {
+                    (inst as any).onPWM(endpoint.pinId, meta);
+                } else {
+                    inst.setState({
+                        isBuzzing: true,
+                        frequency: frequency,
+                        voltageDrop: 3.3,
+                        current: 0.015
+                    });
+                }
+            }
+
+            if (typeof (inst as any).onCustomTelemetry === 'function') {
+                (inst as any).onCustomTelemetry();
+            }
+            this.pinsChanged = true;
+        }
+    }
+
     public syncSpiBatch(b64: string) {
         try {
+            this.updatePhysicsInternal();
             const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
             const spiDevices = Array.from(this.instances.values()).filter(inst => 
                 typeof (inst as any).onSPIByte === 'function'

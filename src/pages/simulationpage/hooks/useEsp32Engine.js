@@ -109,6 +109,18 @@ export function useEsp32Engine({
       }
       setPinStates(prev => ({ ...prev, [pinId]: value === 1 }));
     },
+    onTone: (pin, frequency, duration) => {
+      const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
+      if (esp32Board && workerRef?.current) {
+        workerRef.current.postMessage({
+          type: 'TONE',
+          boardId: esp32Board.id,
+          pin,
+          frequency,
+          duration
+        });
+      }
+    },
     onI2cTransaction: (addr, data) => {
       const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
       if (esp32Board && workerRef?.current) {
