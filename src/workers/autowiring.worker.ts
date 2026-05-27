@@ -66,7 +66,35 @@ self.onmessage = async (e) => {
         
         reset(); // reset engine state just in case, though this pure function might not strictly need it
         
-        const snippet = generateCodeForComponent(compId, wires || [], manifest, components || []);
+        // WORKAROUND: The WASM engine currently struggles to trace wires through intermediate 
+        // passive components (like resistors). We create a "flattened" virtual wire list
+        // where resistors are bypassed, allowing the engine to correctly identify the Arduino pins.
+        let virtualWires = [...(wires || [])];
+        const resistors = (components || []).filter((c: any) => c.type === 'openhw-resistor' || c.type === 'openhw-resistor-10k');
+        
+        resistors.forEach((res: any) => {
+           const wireToRes = virtualWires.find((w: any) => 
+               (w.from.startsWith(compId + ':') && w.to.startsWith(res.id + ':')) || 
+               (w.to.startsWith(compId + ':') && w.from.startsWith(res.id + ':'))
+           );
+           const wireFromRes = virtualWires.find((w: any) => 
+               w !== wireToRes && (w.from.startsWith(res.id + ':') || w.to.startsWith(res.id + ':'))
+           );
+           
+           if (wireToRes && wireFromRes) {
+               const compPinInfo = wireToRes.from.startsWith(compId + ':') ? wireToRes.from : wireToRes.to;
+               const targetPinInfo = wireFromRes.from.startsWith(res.id + ':') ? wireFromRes.to : wireFromRes.from;
+               
+               virtualWires = virtualWires.filter((w: any) => w !== wireToRes && w !== wireFromRes);
+               virtualWires.push({
+                   id: 'virtual_' + res.id,
+                   from: compPinInfo,
+                   to: targetPinInfo
+               });
+           }
+        });
+
+        const snippet = generateCodeForComponent(compId, virtualWires, manifest, components || []);
         
         let plan: any = { code_snippet: snippet };
         if (manifest?.autocoding?.libraries) {
