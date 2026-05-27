@@ -4973,7 +4973,19 @@ export function SimulatorPage({ gamificationMode = false }) {
       if (type === 'AUTONOMOUS_RESULT') {
         const snippet = payload.code_snippet;
         console.log('[handleAutoCode] Worker returned snippet:', snippet);
-        if (snippet) {
+        let parsedSnippet = snippet;
+        if (typeof snippet === 'string') {
+          try { parsedSnippet = JSON.parse(snippet); } catch (e) {}
+        }
+
+        const isSnippetValid = parsedSnippet && (
+          (typeof parsedSnippet === 'string' && parsedSnippet.trim() !== '{}' && parsedSnippet.trim() !== '') ||
+          (typeof parsedSnippet === 'object' && (
+            Object.keys(parsedSnippet).length > 0 ||
+            parsedSnippet.globals || parsedSnippet.setup || parsedSnippet.loop
+          ))
+        );
+        if (isSnippetValid) {
           const boardComp = components.find(c => c.id === targetBoardId);
           const boardKind = normalizeBoardKind(boardComp.type);
           const filename = getDefaultMainFileName(boardKind, targetBoardId, {
@@ -5012,7 +5024,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             return prev.map(f => {
               if (f.id === targetFile.id) {
                 const currentContent = (activeCodeFileId === f.id || activeCodeFileId === f.name) ? currentCodeRef.current : f.content;
-                const newContent = mergeCodeSnippet(currentContent, snippet, compId);
+                const newContent = mergeCodeSnippet(currentContent, parsedSnippet, compId);
                 // Also update live code if it's the active file
                 if (activeCodeFileId === targetFile.id) {
                   setCode(newContent);
