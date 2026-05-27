@@ -1,75 +1,85 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { useAuth } from '../../context/AuthContext.jsx'
-import { signupUser } from '../../services/authService.js'
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { signupUser } from "../../services/authService.js";
+import { ChevronLeft } from "lucide-react";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
+const BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? "http://localhost:5001/api" : "/api");
 
 export default function SignupPage() {
-  const navigate = useNavigate()
-  const { login, isAuthenticated, role } = useAuth()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const navigate = useNavigate();
+  const { login, isAuthenticated, role } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    role: 'student',
-    college: '',
-    semester: '',
-    bio: '',
-    image: ''
-  })
+    name: "",
+    email: "",
+    password: "",
+    role: "student",
+    college: "",
+    semester: "",
+    bio: "",
+    image: "",
+  });
 
   useEffect(() => {
     if (isAuthenticated) {
-      if (role === 'teacher') navigate('/teacher/dashboard')
-      else if (role === 'student') navigate('/student/dashboard')
-      else navigate('/user/dashboard')
+      if (role === "teacher") navigate("/teacher/dashboard");
+      else if (role === "student") navigate("/student/dashboard");
+      else navigate("/user/dashboard");
     }
-  }, [isAuthenticated, role, navigate])
+  }, [isAuthenticated, role, navigate]);
 
   const handleInputChange = (e) => {
-    const value = e.target.type === 'email' ? e.target.value.trim() : e.target.value
-    setFormData({ ...formData, [e.target.name]: value })
-  }
+    const value =
+      e.target.type === "email" ? e.target.value.trim() : e.target.value;
+    setFormData({ ...formData, [e.target.name]: value });
+  };
 
   const handleSignup = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+    e.preventDefault();
+    setLoading(true);
+    setError("");
     try {
-      const data = await signupUser(formData)
-      login(data.token, data.user)
+      const data = await signupUser(formData);
+      login(data.token, data.user);
       const handleRedirect = (userRole) => {
-        if (userRole === 'teacher') navigate('/teacher/dashboard')
-        else if (userRole === 'student') navigate('/student/dashboard')
-        else navigate('/user/dashboard')
-      }
-      handleRedirect(data.user.role)
+        if (userRole === "teacher") navigate("/teacher/dashboard");
+        else if (userRole === "student") navigate("/student/dashboard");
+        else navigate("/user/dashboard");
+      };
+      handleRedirect(data.user.role);
     } catch (err) {
-      setError(err.message || 'Registration failed. Please try again.')
+      setError(err.message || "Registration failed. Please try again.");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleGoogleLogin = () => {
     // Save the selected role before redirecting to Google OAuth
-    localStorage.setItem('pending_oauth_role', formData.role);
+    localStorage.setItem("pending_oauth_role", formData.role);
 
-    const authUrl = BASE_URL.replace('/api', '/auth');
+    const authUrl = BASE_URL.replace("/api", "/auth");
     window.location.href = `${authUrl}/google`;
-  }
+  };
 
   return (
     <div className="auth-screen auth-screen--signup">
       <div className="auth-shell auth-shell--wide auth-shell--reverse">
         <section className="auth-panel">
-          <Link to="/login" className="auth-panel__back">Back to User Login</Link>
+          <Link to="/login" className="auth-panel__back">
+            <ChevronLeft className="w-5 h-5" /> Back to User Login
+          </Link>
 
           <div className="auth-panel__brand">
-            <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
+            <img
+              src="/logo-Photoroom.png"
+              alt="OpenHW-Studio"
+              className="brand-logo brand-logo--auth"
+            />
           </div>
 
           <header className="auth-panel__header">
@@ -81,8 +91,8 @@ export default function SignupPage() {
             <div className="auth-role-picker">
               <button
                 type="button"
-                className={`auth-role-picker__option${formData.role === 'teacher' ? ' is-active' : ''}`}
-                onClick={() => setFormData({ ...formData, role: 'teacher' })}
+                className={`auth-role-picker__option${formData.role === "teacher" ? " is-active" : ""}`}
+                onClick={() => setFormData({ ...formData, role: "teacher" })}
               >
                 <strong>Teacher</strong>
                 <span>Create classes and assignments</span>
@@ -90,8 +100,8 @@ export default function SignupPage() {
 
               <button
                 type="button"
-                className={`auth-role-picker__option${formData.role === 'student' ? ' is-active' : ''}`}
-                onClick={() => setFormData({ ...formData, role: 'student' })}
+                className={`auth-role-picker__option${formData.role === "student" ? " is-active" : ""}`}
+                onClick={() => setFormData({ ...formData, role: "student" })}
               >
                 <strong>Student</strong>
                 <span>Track coursework and progress</span>
@@ -157,7 +167,7 @@ export default function SignupPage() {
                 />
               </label>
 
-              {formData.role === 'student' && (
+              {formData.role === "student" && (
                 <>
                   <label className="auth-field">
                     <span>College</span>
@@ -186,35 +196,52 @@ export default function SignupPage() {
 
             {error && <div className="auth-form__error">{error}</div>}
 
-            <button type="submit" className="auth-form__submit" disabled={loading}>
-              {loading ? 'Creating account...' : 'Create Account'}
+            <button
+              type="submit"
+              className="auth-form__submit"
+              disabled={loading}
+            >
+              {loading ? "Creating account..." : "Create Account"}
             </button>
           </form>
 
           <p className="auth-panel__footer">
-            Already have an account? <Link to="/classroom/signin">Sign in</Link>
+            Already have an account? <Link to="/login">Log in</Link>
           </p>
         </section>
 
         <section className="auth-showcase auth-showcase--signup">
-          <div className="auth-showcase__badge">Teacher &amp; Student Access</div>
-          <h1 className="auth-showcase__title">Join the classroom and start learning or teaching with hardware simulation.</h1>
+          <div className="auth-showcase__badge">
+            Teacher &amp; Student Access
+          </div>
+          <h1 className="auth-showcase__title">
+            Join the classroom and start learning or teaching with hardware
+            simulation.
+          </h1>
           <p className="auth-showcase__copy">
-            Create your classroom account to access assignments, track progress, manage classes, and collaborate on real circuit simulations — all in one place.
+            Create your classroom account to access assignments, track progress,
+            manage classes, and collaborate on real circuit simulations — all in
+            one place.
           </p>
 
           <div className="auth-showcase__highlights">
             <div className="auth-showcase__card">
               <strong>For Teachers</strong>
-              <span>Create classes, set assignments, review student submissions, and monitor progress in real time.</span>
+              <span>
+                Create classes, set assignments, review student submissions, and
+                monitor progress in real time.
+              </span>
             </div>
             <div className="auth-showcase__card">
               <strong>For Students</strong>
-              <span>Join classes, submit simulation projects, and track your coursework from a single dashboard.</span>
+              <span>
+                Join classes, submit simulation projects, and track your
+                coursework from a single dashboard.
+              </span>
             </div>
           </div>
         </section>
       </div>
     </div>
-  )
+  );
 }
