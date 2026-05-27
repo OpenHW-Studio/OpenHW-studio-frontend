@@ -115,9 +115,9 @@ function _diagTick(type) {
  *   onI2cEvent?    : (bus: number, addr: number, event: number, response: number) => void,
  *   onI2cTransaction?   : (addr: number, data: number[]) => void,
  *   onProxyI2cComplete? : (addr: number, data: number[]) => void,
- *   onSpiEvent?    : (bus: number, event: number, response: number) => void,
  *   onSpiBatch?    : (b64: string) => void,
  *   onEpaperUpdate?: (componentId: string, frame: { width: number, height: number, frame_b64: string, refresh_ms: number }) => void,
+ *   onTone?        : (pin: string, frequency: number, duration: number) => void,
  * }} callbacks
  */
 export function useHardwareSocket({
@@ -136,7 +136,8 @@ export function useHardwareSocket({
     onProxyI2cComplete,
     onSpiEvent,
     onSpiBatch,
-    onEpaperUpdate
+    onEpaperUpdate,
+    onTone
 } = {}) {
     // ── Refs (survive renders without causing re-renders) ────────────────────
 
@@ -172,13 +173,13 @@ export function useHardwareSocket({
     const cbRef = useRef({
         onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
         onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
-        onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate
+        onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone
     });
     useEffect(() => {
         cbRef.current = {
             onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
             onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
-            onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate
+            onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone
         };
     });
 
@@ -368,6 +369,10 @@ export function useHardwareSocket({
 
                 case 'GPIO_SYNC':
                     cbRef.current.onGpioSync?.(String(msg.pin), msg.value);
+                    break;
+
+                case 'TONE':
+                    cbRef.current.onTone?.(String(msg.pin), msg.frequency, msg.duration);
                     break;
 
                 // ── GPIO direction event (input / output mode change) ────────
