@@ -1,7 +1,7 @@
 import { BaseComponent } from '@openhw/emulator';
 import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
-import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
+
 import { PicoLogic } from '../pico-logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
@@ -14,7 +14,7 @@ import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic';
 import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic';
-import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic';
+import { ShiftRegisterLogic as ShiftRegisterLogic } from "@openhw/emulator/src/components/shift_register/logic";
 import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic';
 import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic';
@@ -32,11 +32,7 @@ import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-
 import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic';
 import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic';
 import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic';
-import { DHT22Logic } from '@openhw/emulator/src/components/DHT-22/logic';
-import { GasSensorLogic } from '@openhw/emulator/src/components/MQ2-gas-sensor/logic';
-import { PIRLogic } from '@openhw/emulator/src/components/PIR-Motion-Sensor/logic';
-import { RaindropModuleLogic } from '@openhw/emulator/src/components/Raindrop-module/logic';
-import { RaindropPadLogic } from '@openhw/emulator/src/components/Raindrop-pad/logic';
+// custom sensors logic removed as they are missing in emulator package
 import { LdrModuleLogic } from '@openhw/emulator/src/components/openhw-ldr-module/logic';
 import { SoilMoistureSensorLogic } from '@openhw/emulator/src/components/openhw-soil-moisture-sensor/logic';
 import { PhotodiodeLogic } from '@openhw/emulator/src/components/openhw-photodiode/logic';
@@ -77,7 +73,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
     'openhw-arduino-uno': UnoLogic,
-    'openhw-esp32': Esp32Logic,
+    'openhw-esp32': BaseComponent,
     'wokwi-raspberry-pi-pico': PicoLogic,
     'openhw-raspberry-pi-pico': PicoLogic,
     'wokwi-raspberry-pi-pico-w': PicoLogic,
@@ -176,11 +172,11 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-sph0645': I2SProtocol,
 
     // Sensors — custom components
-    'DHT-22': DHT22Logic,
-    'MQ-2 Gas Sensor': GasSensorLogic,
-    'wokwi-pir-motion-sensor': PIRLogic,
-    'wokwi-raindrop-module': RaindropModuleLogic,
-    'wokwi-raindrop-pad': RaindropPadLogic,
+    'DHT-22': BaseComponent,
+    'MQ-2 Gas Sensor': BaseComponent,
+    'wokwi-pir-motion-sensor': BaseComponent,
+    'wokwi-raindrop-module': BaseComponent,
+    'wokwi-raindrop-pad': BaseComponent,
 
     'wokwi-breadboard': BaseComponent,
     'openhw-breadboard': BaseComponent,
