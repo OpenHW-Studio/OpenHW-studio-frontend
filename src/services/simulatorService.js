@@ -59,10 +59,11 @@ export async function runBinaryCode(firmware_b64) {
     }
 }
 
-export async function stopSession(buildId) {
+export async function stopSession(buildId, target = 'esp32') {
     const config = getUserAuthConfig();
     try {
-        const response = await axios.post(`${COMPILER_URL}/compile/esp32/stop/${buildId}`, {}, config);
+        const endpoint = target === 'stm32' ? `compile/stm32/stop/${buildId}` : `compile/esp32/stop/${buildId}`;
+        const response = await axios.post(`${COMPILER_URL}/${endpoint}`, {}, config);
         return response.data;
     } catch (error) {
         console.error(`[SimulatorService] Failed to stop session ${buildId}:`, error.message);
