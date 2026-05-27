@@ -8,13 +8,13 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const { isAuthenticated, role } = useAuth();
   const [theme, setTheme] = useState(
-    () => document.documentElement.getAttribute("data-theme") || "dark",
+    () => localStorage.getItem("theme") || "dark",
   );
-
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);
     document.documentElement.setAttribute("data-theme", newTheme);
+    localStorage.setItem("theme", newTheme); // Save choice
   };
 
   const handleNavigate = (path) => {
@@ -61,11 +61,11 @@ export default function LandingPage() {
                 className="btn btn-ghost"
                 onClick={() => handleNavigate("/login")}
               >
-                Sign In
+                Log In
               </button>
               <button
                 className="btn btn-primary"
-                onClick={() => handleNavigate("/login")}
+                onClick={() => handleNavigate("/signup")}
               >
                 Get Started
               </button>
@@ -112,7 +112,9 @@ export default function LandingPage() {
           <div className="board-chip arduino">Arduino Uno</div>
           <div className="board-chip pico">Raspberry Pi Pico</div>
           <div className="board-chip esp32">ESP32</div>
-          <div className="board-chip stm coming">STM32 — Coming Soon</div>
+          <div className="board-chip bg-blue-500/10 border-blue-500/40 text-blue-400">
+            STM32
+          </div>
         </div>
       </section>
 
@@ -295,14 +297,16 @@ export default function LandingPage() {
       <footer className="footer">
         <div className="footer-brand">
           <img
-            src="/image.png"
+            src="/logo-Photoroom.png"
             alt="OpenHW-Studio"
             className="brand-logo brand-logo--footer"
           />
         </div>
         <p>Open Source Hardware Simulation & Learning Platform</p>
         <div className="footer-links">
-          <a href="#">GitHub</a>
+          <a href="https://github.com/OpenHW-Studio/" target="_blank">
+            GitHub
+          </a>
           <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
             Documentation
           </a>
