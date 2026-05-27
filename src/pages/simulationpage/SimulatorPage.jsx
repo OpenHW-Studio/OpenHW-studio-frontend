@@ -6570,12 +6570,21 @@ export function SimulatorPage({ gamificationMode = false }) {
             } else {
               logSerial(`Compiling ${boardComp.id}...`);
               try {
+                // Collect libraries required by all placed components on this board
+                const requiredLibsForBoard = [...new Set(
+                  components
+                    .filter((c) => !isProgrammableBoardType(c.type))
+                    .flatMap((c) => COMPONENT_REGISTRY[c.type]?.autocoding?.libraries || [])
+                    .map((l) => String(l || '').trim())
+                    .filter(Boolean)
+                )];
                 compiled = await compileCode({
                   code: nativeCompileSource,
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
                   builder,
+                  ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
@@ -6608,11 +6617,20 @@ export function SimulatorPage({ gamificationMode = false }) {
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
             try {
+              // Collect libraries required by all placed components on this board
+              const requiredLibsForBoard = [...new Set(
+                components
+                  .filter((c) => !isProgrammableBoardType(c.type))
+                  .flatMap((c) => COMPONENT_REGISTRY[c.type]?.autocoding?.libraries || [])
+                  .map((l) => String(l || '').trim())
+                  .filter(Boolean)
+              )];
               compiled = await compileCode({
                 code: compileSource,
                 files: compileUnit.files,
                 sketchName: compileUnit.sketchName,
                 fqbn: targetFqbn,
+                ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
               });
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
