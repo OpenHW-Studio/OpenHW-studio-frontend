@@ -172,7 +172,7 @@ function CanvasSceneLayerBase({
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
       >
         {/* Placed wires (Bottom layer) - All non-selected wires when alwaysOnTop is disabled */}
-        {wires.filter(w => !wiresAlwaysOnTop && selected !== w.id).map((w, index) => {
+        {wires.filter(w => !wiresAlwaysOnTop && selected !== w.id && !w.isSocket).map((w, index) => {
           const fromParts = w.from.split(':');
           const toParts = w.to.split(':');
           let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));
@@ -266,7 +266,7 @@ function CanvasSceneLayerBase({
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
       >
         {/* Placed wires (Top layer) - Selected wire OR all wires if enabled */}
-        {wires.filter(w => wiresAlwaysOnTop || selected === w.id).map((w, index) => {
+        {wires.filter(w => (wiresAlwaysOnTop || selected === w.id) && !w.isSocket).map((w, index) => {
           const fromParts = w.from.split(':');
           const toParts = w.to.split(':');
           let p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'));

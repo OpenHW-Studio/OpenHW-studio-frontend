@@ -9464,7 +9464,7 @@ useEffect(() => {
             <svg
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1, overflow: 'visible' }}
             >
-              {wires.filter(w => w.isBelow === true).map(w => {
+              {wires.filter(w => w.isBelow === true && !w.isSocket).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
                 const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
@@ -9520,7 +9520,7 @@ useEffect(() => {
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'visible' }}
             >
               {/* Placed wires (Top layer) */}
-              {wires.filter(w => w.isBelow !== true).map(w => {
+              {wires.filter(w => w.isBelow !== true && !w.isSocket).map(w => {
                 const fromParts = w.from.split(':')
                 const toParts = w.to.split(':')
                 const p1 = getPinPos(fromParts[0], fromParts.slice(1).join(':'))
