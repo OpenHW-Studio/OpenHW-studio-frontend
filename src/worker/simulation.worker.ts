@@ -1484,7 +1484,7 @@ self.onmessage = async (e) => {
     } else if (data.type === 'esp32:pwm:sync') {
         const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
         if (target && typeof (target as any).syncPwm === 'function') {
-            (target as any).syncPwm(data.channel, data.duty_pct);
+            (target as any).syncPwm(data.channel, data.duty_pct, data.pins);
         }
     } else if (data.type === 'esp32:spi:batch') {
         const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
