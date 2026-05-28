@@ -1,10 +1,19 @@
-import { getToken } from "./authService.js";
+import { getAdminToken, getToken } from "./authService.js";
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/api";
 
 const authHeaders = () => {
   const token = getToken();
   if (!token) throw new Error("No token found. Please sign in again.");
+  return {
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+  };
+};
+
+const adminAuthHeaders = () => {
+  const token = getAdminToken();
+  if (!token) throw new Error("No admin token found. Please sign in again.");
   return {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
@@ -69,4 +78,32 @@ export const getClassAdventureStudentProgress = async (classId) => {
     credentials: 'include'
   });
   return parseResponse(response, "Failed to fetch student progress");
+};
+
+export const getAdminGlobalAdventureConfig = async () => {
+  const response = await fetch(`${BASE_URL}/admin/adventure/config`, {
+    method: "GET",
+    headers: adminAuthHeaders(),
+    credentials: "include",
+  });
+  return parseResponse(response, "Failed to fetch global adventure configuration");
+};
+
+export const updateAdminGlobalAdventureConfig = async (content) => {
+  const response = await fetch(`${BASE_URL}/admin/adventure/config`, {
+    method: "PUT",
+    headers: adminAuthHeaders(),
+    body: JSON.stringify({ content }),
+    credentials: "include",
+  });
+  return parseResponse(response, "Failed to save global adventure configuration");
+};
+
+export const getGlobalAdventureConfig = async () => {
+  const response = await fetch(`${BASE_URL}/adventure/config`, {
+    method: "GET",
+    headers: authHeaders(),
+    credentials: "include",
+  });
+  return parseResponse(response, "Failed to fetch global adventure content");
 };

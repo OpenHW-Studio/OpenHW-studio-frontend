@@ -77,9 +77,109 @@ const generateStepsFromEvaluation = (projectSlug, config) => {
   return steps;
 };
 
+const buildBaseAdventureProject = (project, index) => {
+  const flashcards = getProjectFlashcards(project.slug) || [];
+  const quizQuestions = flashcards.map((card, cardIndex) => ({
+    id: `q-${card.id || cardIndex + 1}`,
+    question: card.quiz?.question || card.front || "",
+    options: card.quiz?.options || [],
+    correctAnswer: Number.isFinite(card.quiz?.correctAnswer) ? Number(card.quiz.correctAnswer) : 0,
+    explanation: card.detail || "",
+  }));
+
+  return {
+    id: project.id || project.slug,
+    slug: project.slug,
+    worldId: `world-${project.world || 1}`,
+    order: Number(project.number || index + 1),
+    enabled: true,
+    title: project.title,
+    subtitle: project.subtitle || "",
+    description: project.description || "",
+    prerequisite: project.prerequisite || null,
+    xpReward: project.xpReward || 0,
+    rewardComponents: getUnlockComponents(project.slug),
+    theory: flashcards,
+    quizQuestions,
+    assessment: project.evaluation || {},
+  };
+};
+
+const mergeWorldsWithFallback = (contentWorlds = [], fallbackWorlds = []) => {
+  const fallbackById = new Map(fallbackWorlds.map((world) => [world.id, world]));
+  const merged = contentWorlds.map((world, index) => {
+    const base = fallbackById.get(world.id);
+    return {
+      ...base,
+      ...world,
+      id: world.id || base?.id || `world-${index + 1}`,
+      title: world.title || base?.title || `World ${index + 1}`,
+      theme: world.theme ?? base?.theme ?? "",
+      color: world.color || base?.color || "#3b82f6",
+      icon: world.icon || base?.icon || "🧭",
+      order: Number.isFinite(world.order) ? world.order : Number(base?.order || index + 1),
+    };
+  });
+
+  const existingIds = new Set(merged.map((world) => world.id));
+  fallbackWorlds.forEach((world) => {
+    if (!existingIds.has(world.id)) {
+      merged.push(world);
+    }
+  });
+
+  return merged.sort((a, b) => (a.order || 0) - (b.order || 0));
+};
+
+const mergeProjectsWithFallback = (contentProjects = [], fallbackProjects = []) => {
+  const projectBySlug = new Map(contentProjects.map((project) => [project.slug, project]));
+  const merged = fallbackProjects.map((baseProject) => {
+    const existing = projectBySlug.get(baseProject.slug);
+    if (!existing) return baseProject;
+
+    return {
+      ...baseProject,
+      ...existing,
+      id: existing.id || baseProject.id,
+      slug: baseProject.slug,
+      worldId: existing.worldId || baseProject.worldId,
+      order: Number.isFinite(existing.order) ? existing.order : baseProject.order,
+      enabled: existing.enabled ?? baseProject.enabled,
+      title: existing.title || baseProject.title,
+      subtitle: existing.subtitle ?? baseProject.subtitle,
+      description: existing.description ?? baseProject.description,
+      prerequisite: existing.prerequisite ?? baseProject.prerequisite,
+      xpReward: Number.isFinite(existing.xpReward) ? existing.xpReward : baseProject.xpReward,
+      theory: Array.isArray(existing.theory) && existing.theory.length ? existing.theory : baseProject.theory,
+      quizQuestions: Array.isArray(existing.quizQuestions) && existing.quizQuestions.length ? existing.quizQuestions : baseProject.quizQuestions,
+      rewardComponents: Array.isArray(existing.rewardComponents) && existing.rewardComponents.length ? existing.rewardComponents : baseProject.rewardComponents,
+      assessment: {
+        ...baseProject.assessment,
+        ...(existing.assessment || {}),
+        passingThreshold:
+          Number.isFinite(existing.assessment?.passingThreshold)
+            ? existing.assessment.passingThreshold
+            : baseProject.assessment?.passingThreshold ?? 60,
+        evaluationCriteria:
+          existing.assessment?.evaluationCriteria ?? baseProject.assessment?.evaluationCriteria ?? {},
+      },
+    };
+  });
+
+  const knownSlugs = new Set(merged.map((project) => project.slug));
+  contentProjects.forEach((project) => {
+    if (!knownSlugs.has(project.slug)) {
+      merged.push(project);
+    }
+  });
+
+  return merged.sort((a, b) => (a.order || 0) - (b.order || 0));
+};
+
 export const buildFallbackClassAdventureContent = () => {
   const worldsMap = new Map();
   const projects = PROJECTS.map((project, index) => {
+    const baseProject = buildBaseAdventureProject(project, index);
     const worldId = `world-${project.world || 1}`;
     if (!worldsMap.has(worldId)) {
       worldsMap.set(worldId, {
@@ -91,33 +191,30 @@ export const buildFallbackClassAdventureContent = () => {
         order: Number(project.world || 1),
       });
     }
-    return {
-      id: project.id || project.slug,
-      slug: project.slug,
-      worldId,
-      order: Number(project.number || index + 1),
-      enabled: true,
-      title: project.title,
-      subtitle: project.subtitle || "",
-      description: project.description || "",
-      prerequisite: project.prerequisite || null,
-      xpReward: project.xpReward || 0,
-      rewardComponents: getUnlockComponents(project.slug),
-      theory: getProjectFlashcards(project.slug),
-      quizQuestions: (getProjectFlashcards(project.slug) || []).map((card, cardIndex) => ({
-        id: `q-${card.id || cardIndex + 1}`,
-        question: card.quiz?.question || card.front,
-        options: card.quiz?.options || [],
-        correctAnswer: Number.isFinite(card.quiz?.correctAnswer) ? Number(card.quiz.correctAnswer) : 0,
-        explanation: card.detail || "",
-      })),
-      assessment: project.evaluation || {},
-    };
+    return baseProject;
   });
   return {
     worlds: [...worldsMap.values()].sort((a, b) => a.order - b.order),
     projects,
     version: 1,
+  };
+};
+
+export const normalizeAdventureContent = (content) => {
+  const fallback = buildFallbackClassAdventureContent();
+  if (!content) return fallback;
+
+  const fallbackWorlds = fallback.worlds || [];
+  const fallbackProjects = fallback.projects || [];
+  const worlds = mergeWorldsWithFallback(content.worlds || [], fallbackWorlds);
+  const projects = mergeProjectsWithFallback(content.projects || [], fallbackProjects);
+
+  return {
+    ...fallback,
+    ...content,
+    worlds,
+    projects,
+    version: Number.isFinite(content.version) ? content.version : fallback.version,
   };
 };
 

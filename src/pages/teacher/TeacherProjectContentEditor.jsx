@@ -552,392 +552,207 @@ export default function TeacherProjectContentEditor() {
     );
   }
 
-  return (
-    <div className="teacher-editor-page">
-      <div className="teacher-editor-topbar">
-        <button
-          type="button"
-          className="btn-back"
-          onClick={() => navigate(`/teacher/classes/${classId}`)}
-          style={{
-            background: "rgba(255,255,255,.06)",
-            border: "none",
-            borderRadius: 8,
-            padding: "8px 16px",
-            cursor: "pointer",
-            color: "#94a3b8",
-          }}
-        >
-          ← Back to Class
-        </button>
-        <div style={{ flex: 1, marginLeft: 16 }}>
-          <div style={{ fontSize: 12, color, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase" }}>
-            📖 {projectMeta?.title || projectSlug}
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 900, color: "#f0f4ff" }}>Content Editor</div>
-        </div>
-        <div style={{ display: "flex", gap: 10 }}>
+return (
+      <div className="teacher-editor-page">
+        <div className="teacher-editor-topbar">
           <button
             type="button"
+            className="btn-back"
             onClick={() => navigate(`/teacher/classes/${classId}`)}
-            style={{
-              padding: "10px 16px",
-              borderRadius: 8,
-              border: "none",
-              background: "rgba(255,255,255,.08)",
-              color: "#cbd5e1",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-            disabled={saving}
           >
-            Cancel
+            ← Back to Class
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving}
-            style={{
-              padding: "10px 20px",
-              borderRadius: 8,
-              border: "none",
-              background: color,
-              color: "#fff",
-              fontWeight: 700,
-              cursor: saving ? "not-allowed" : "pointer",
-              opacity: saving ? 0.6 : 1,
-            }}
-          >
-            {saving ? "Saving..." : "Save"}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div style={{ color: "#f87171", padding: "12px 24px", background: "rgba(239,68,68,.12)" }}>
-          {error}
-        </div>
-      )}
-      {successMsg && (
-        <div style={{ color: "#34d399", padding: "12px 24px", background: "rgba(52,211,153,.12)" }}>
-          {successMsg}
-        </div>
-      )}
-
-      <div className="teacher-editor-tabs" style={{ display: "flex", gap: 6, padding: "12px 24px", borderBottom: "1px solid rgba(255,255,255,.08)" }}>
-        <button
-          type="button"
-          onClick={() => setActiveTab("theory")}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 8,
-            border: "none",
-            background: activeTab === "theory" ? color : "rgba(255,255,255,.06)",
-            color: activeTab === "theory" ? "#fff" : "#94a3b8",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Theory ({theoryCards.length} cards)
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("quiz")}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 8,
-            border: "none",
-            background: activeTab === "quiz" ? color : "rgba(255,255,255,.06)",
-            color: activeTab === "quiz" ? "#fff" : "#94a3b8",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Quiz ({quizQuestions.length} questions)
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("rewards")}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 8,
-            border: "none",
-            background: activeTab === "rewards" ? color : "rgba(255,255,255,.06)",
-            color: activeTab === "rewards" ? "#fff" : "#94a3b8",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Rewards ({rewardComponents.length} components)
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab("assessment")}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 8,
-            border: "none",
-            background: activeTab === "assessment" ? color : "rgba(255,255,255,.06)",
-            color: activeTab === "assessment" ? "#fff" : "#94a3b8",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          Assessment
-        </button>
-      </div>
-      <div className="teacher-editor-content" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, padding: 24 }}>
-        {/* Left: Editor */}
-        <div className="editor-pane">
-          {activeTab === "theory" && (
-            <div style={{ display: "grid", gap: 16 }}>
-              {theoryCards.map((card, idx) => (
-                <div
-                  key={card.id}
-                  className="editor-card"
-                  style={{
-                    border: "1px solid rgba(255,255,255,.08)",
-                    borderRadius: 14,
-                    padding: 20,
-                    background: "rgba(255,255,255,.03)",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <strong style={{ fontSize: 16, color: "#f0f4ff" }}>
-                      Card {idx + 1}
-                    </strong>
-                    <button
-                      type="button"
-                      onClick={() => removeCard(idx)}
-                      style={{
-                        background: "rgba(239,68,68,.14)",
-                        border: "none",
-                        borderRadius: 6,
-                        color: "#f87171",
-                        cursor: "pointer",
-                        padding: "4px 10px",
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                      title="Remove card"
-                    >
-                      Remove
-                    </button>
-                  </div>
-
-                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "auto 1fr" }}>
-                    <label style={{ color: "#94a3b8" }}>Emoji</label>
-                    <input
-                      type="text"
-                      value={card.emoji || ""}
-                      onChange={(e) => updateCard(idx, "emoji", e.target.value)}
-                      style={{
-                        background: "rgba(255,255,255,.05)",
-                        border: "1px solid rgba(255,255,255,.1)",
-                        borderRadius: 6,
-                        padding: "8px 10px",
-                        color: "#e2e8f0",
-                      }}
-                    />
-
-                    <label style={{ color: "#94a3b8" }}>Front</label>
-                    <input
-                      type="text"
-                      value={card.front || ""}
-                      onChange={(e) => updateCard(idx, "front", e.target.value)}
-                      style={{
-                        background: "rgba(255,255,255,.05)",
-                        border: "1px solid rgba(255,255,255,.1)",
-                        borderRadius: 6,
-                        padding: "8px 10px",
-                        color: "#e2e8f0",
-                      }}
-                      placeholder="Question/title"
-                    />
-
-                    <label style={{ color: "#94a3b8" }}>Simple</label>
-                    <textarea
-                      value={card.simple || ""}
-                      onChange={(e) => updateCard(idx, "simple", e.target.value)}
-                      rows={2}
-                      style={{
-                        background: "rgba(255,255,255,.05)",
-                        border: "1px solid rgba(255,255,255,.1)",
-                        borderRadius: 6,
-                        padding: "8px 10px",
-                        color: "#e2e8f0",
-                        resize: "vertical",
-                      }}
-                      placeholder="Short summary (back face)"
-                    />
-
-                    <label style={{ color: "#94a3b8" }}>Detail</label>
-                    <textarea
-                      value={card.detail || ""}
-                      onChange={(e) => updateCard(idx, "detail", e.target.value)}
-                      rows={4}
-                      style={{
-                        background: "rgba(255,255,255,.05)",
-                        border: "1px solid rgba(255,255,255,.1)",
-                        borderRadius: 6,
-                        padding: "8px 10px",
-                        color: "#e2e8f0",
-                        resize: "vertical",
-                      }}
-                      placeholder="Full explanation (back face)"
-                    />
-
-                    <label style={{ color: "#94a3b8" }}>Fun Fact</label>
-                    <textarea
-                      value={card.funFact || ""}
-                      onChange={(e) => updateCard(idx, "funFact", e.target.value)}
-                      rows={2}
-                      style={{
-                        background: "rgba(255,255,255,.05)",
-                        border: "1px solid rgba(255,255,255,.1)",
-                        borderRadius: 6,
-                        padding: "8px 10px",
-                        color: "#e2e8f0",
-                        resize: "vertical",
-                      }}
-                      placeholder="Optional fun fact"
-                    />
-                  </div>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={addCard}
-                style={{
-                  padding: "12px 20px",
-                  borderRadius: 10,
-                  border: "2px dashed rgba(255,255,255,.12)",
-                  background: "transparent",
-                  color: "#60a5fa",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  marginTop: 8,
-                }}
-              >
-                + Add Card
-              </button>
+          <div style={{ textAlign: "center", flex: 1 }}>
+            <div style={{ fontSize: 12, color, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase" }}>
+              📖 {projectMeta?.title || projectSlug}
             </div>
-          )}
+            <div style={{ fontSize: 18, fontWeight: 900, color: "#f0f4ff" }}>Content Editor</div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              type="button"
+              onClick={() => navigate(`/teacher/classes/${classId}`)}
+              className="btn-ghost"
+              disabled={saving}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="btn-primary"
+              style={{ opacity: saving ? 0.6 : 1 }}
+            >
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
 
-          {activeTab === "quiz" && (
-            <div style={{ display: "grid", gap: 16 }}>
-              {quizQuestions.map((q, idx) => (
-                <div
-                  key={q.id || idx}
-                  className="editor-card"
-                  style={{
-                    border: "1px solid rgba(255,255,255,.08)",
-                    borderRadius: 14,
-                    padding: 20,
-                    background: "rgba(255,255,255,.03)",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                    <strong style={{ fontSize: 16, color: "#f0f4ff" }}>
-                      Question {idx + 1}
-                    </strong>
-                    <button
-                      type="button"
-                      onClick={() => removeQuizQuestion(idx)}
-                      style={{
-                        background: "rgba(239,68,68,.14)",
-                        border: "none",
-                        borderRadius: 6,
-                        color: "#f87171",
-                        cursor: "pointer",
-                        padding: "4px 10px",
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                      title="Remove question"
-                    >
-                      Remove
-                    </button>
+       {error && (
+         <div style={{ color: "#f87171", padding: "12px 24px", background: "rgba(239,68,68,.12)" }}>
+           {error}
+         </div>
+       )}
+       {successMsg && (
+         <div style={{ color: "#34d399", padding: "12px 24px", background: "rgba(52,211,153,.12)" }}>
+           {successMsg}
+         </div>
+       )}
+
+       <div className="teacher-editor-tabs">
+         <button
+           type="button"
+           onClick={() => setActiveTab("theory")}
+           className={"teacher-editor-tab" + (activeTab === "theory" ? " active" : "")}
+         >
+           Theory ({theoryCards.length} cards)
+         </button>
+         <button
+           type="button"
+           onClick={() => setActiveTab("quiz")}
+           className={"teacher-editor-tab" + (activeTab === "quiz" ? " active" : "")}
+         >
+           Quiz ({quizQuestions.length} questions)
+         </button>
+         <button
+           type="button"
+           onClick={() => setActiveTab("rewards")}
+           className={"teacher-editor-tab" + (activeTab === "rewards" ? " active" : "")}
+         >
+           Rewards ({rewardComponents.length} components)
+         </button>
+         <button
+           type="button"
+           onClick={() => setActiveTab("assessment")}
+           className={"teacher-editor-tab" + (activeTab === "assessment" ? " active" : "")}
+         >
+           Assessment
+         </button>
+       </div>
+<div className="teacher-editor-content">
+          <div className="editor-pane">
+            {activeTab === "theory" && (
+              <div className="editor-tab-content">
+                {theoryCards.map((card, idx) => (
+                  <div key={card.id} className="editor-card">
+                    <div className="editor-card-header">
+                      <strong>Card {idx + 1}</strong>
+                      <button type="button" onClick={() => removeCard(idx)} className="btn-remove" title="Remove card">
+                        Remove
+                      </button>
+                    </div>
+
+                    <div className="editor-form-grid">
+                      <label>Emoji</label>
+                      <input
+                        type="text"
+                        value={card.emoji || ""}
+                        onChange={(e) => updateCard(idx, "emoji", e.target.value)}
+                        className="editor-field"
+                      />
+
+                      <label>Front</label>
+                      <input
+                        type="text"
+                        value={card.front || ""}
+                        onChange={(e) => updateCard(idx, "front", e.target.value)}
+                        className="editor-field"
+                        placeholder="Question/title"
+                      />
+
+                      <label>Simple</label>
+                      <textarea
+                        value={card.simple || ""}
+                        onChange={(e) => updateCard(idx, "simple", e.target.value)}
+                        rows={2}
+                        className="editor-textarea"
+                        placeholder="Short summary (back face)"
+                      />
+
+                      <label>Detail</label>
+                      <textarea
+                        value={card.detail || ""}
+                        onChange={(e) => updateCard(idx, "detail", e.target.value)}
+                        rows={4}
+                        className="editor-textarea"
+                        placeholder="Full explanation (back face)"
+                      />
+
+<label>Fun Fact</label>
+                      <textarea
+                        value={card.funFact || ""}
+                        onChange={(e) => updateCard(idx, "funFact", e.target.value)}
+                        rows={2}
+                        className="editor-textarea"
+                        placeholder="Optional fun fact"
+                      />
+                    </div>
                   </div>
+                ))}
+                <button type="button" onClick={addCard} className="btn-add">
+                  + Add Card
+                </button>
+              </div>
+            )}
 
-                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "auto 1fr" }}>
-                    <label style={{ color: "#94a3b8" }}>Question</label>
-                    <input
-                      type="text"
-                      value={q.question || ""}
-                      onChange={(e) => updateQuizQuestion(idx, "question", e.target.value)}
-                      style={{
-                        background: "rgba(255,255,255,.05)",
-                        border: "1px solid rgba(255,255,255,.1)",
-                        borderRadius: 6,
-                        padding: "8px 10px",
-                        color: "#e2e8f0",
-                      }}
-                      placeholder="Quiz question"
-                    />
+{activeTab === "quiz" && (
+              <div className="editor-tab-content">
+                {quizQuestions.map((q, idx) => (
+                  <div key={q.id || idx} className="editor-card">
+                    <div className="editor-card-header">
+                      <strong>Question {idx + 1}</strong>
+                      <button type="button" onClick={() => removeQuizQuestion(idx)} className="btn-remove" title="Remove question">
+                        Remove
+                      </button>
+                    </div>
 
-                    {[0, 1, 2, 3].map((optIdx) => (
-                      <div key={optIdx} style={{ display: "contents" }}>
-                        <label style={{ color: "#94a3b8" }}>Option {["A","B","C","D"][optIdx]}</label>
-                        <input
-                          type="text"
-                          value={q.options?.[optIdx] || ""}
-                          onChange={(e) => updateQuizOption(idx, optIdx, e.target.value)}
-                          style={{
-                            background: "rgba(255,255,255,.05)",
-                            border: "1px solid rgba(255,255,255,.1)",
-                            borderRadius: 6,
-                            padding: "8px 10px",
-                            color: "#e2e8f0",
-                          }}
-                          placeholder={`Option ${["A","B","C","D"][optIdx]}`}
-                        />
-                      </div>
-                    ))}
+                    <div className="editor-form-grid">
+                      <label>Question</label>
+                      <input
+                        type="text"
+                        value={q.question || ""}
+                        onChange={(e) => updateQuizQuestion(idx, "question", e.target.value)}
+                        className="editor-field"
+                        placeholder="Quiz question"
+                      />
 
-                    <label style={{ color: "#94a3b8" }}>Correct Answer</label>
-                    <select
-                      value={q.correctAnswer || 0}
-                      onChange={(e) => updateQuizQuestion(idx, "correctAnswer", Number(e.target.value))}
-                      style={{
-                        background: "rgba(255,255,255,.05)",
-                        border: "1px solid rgba(255,255,255,.1)",
-                        borderRadius: 6,
-                        padding: "8px 10px",
-                        color: "#e2e8f0",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <option value={0} style={{background: "#1e1e1e"}}>A</option>
-                      <option value={1} style={{background: "#1e1e1e"}}>B</option>
-                      <option value={2} style={{background: "#1e1e1e"}}>C</option>
-                      <option value={3} style={{background: "#1e1e1e"}}>D</option>
-                    </select>
+                      {[0, 1, 2, 3].map((optIdx) => (
+                        <div key={optIdx} style={{ display: "contents" }}>
+                          <label>Option {["A","B","C","D"][optIdx]}</label>
+                          <input
+                            type="text"
+                            value={q.options?.[optIdx] || ""}
+                            onChange={(e) => updateQuizOption(idx, optIdx, e.target.value)}
+                            className="editor-field"
+                            placeholder={`Option ${["A","B","C","D"][optIdx]}`}
+                          />
+                        </div>
+                      ))}
+
+                      <label>Correct Answer</label>
+                      <select
+                        value={q.correctAnswer || 0}
+                        onChange={(e) => updateQuizQuestion(idx, "correctAnswer", Number(e.target.value))}
+                        className="editor-field"
+                      >
+                        <option value={0}>A</option>
+                        <option value={1}>B</option>
+                        <option value={2}>C</option>
+                        <option value={3}>D</option>
+                      </select>
+                    </div>
                   </div>
-                </div>
-              ))}
-              <button
-                type="button"
-                onClick={addQuizQuestion}
-                style={{
-                  padding: "12px 20px",
-                  borderRadius: 10,
-                  border: "2px dashed rgba(255,255,255,.12)",
-                  background: "transparent",
-                  color: "#60a5fa",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  marginTop: 8,
-                }}
-              >
-                + Add Question
-              </button>
-            </div>
-          )}
+                ))}
+                <button type="button" onClick={addQuizQuestion} className="btn-add">
+                  + Add Question
+                </button>
+              </div>
+            )}
 
           {activeTab === "rewards" && (
-            <div style={{ display: "grid", gap: 12 }}>
-              <p style={{ color: "#94a3b8", fontSize: 14 }}>
+            <div className="editor-tab-content">
+              <p className="editor-card-label" style={{ fontSize: 14, textAlign: "center", marginBottom: 12 }}>
                 Select components students will unlock after completing this project:
               </p>
               {COMPONENTS.map((comp) => {
@@ -946,55 +761,41 @@ export default function TeacherProjectContentEditor() {
                   <div
                     key={comp.id}
                     onClick={() => toggleComponent(comp.id)}
+                    className="editor-reward-card"
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "12px 16px",
-                      borderRadius: 10,
                       border: `1px solid ${isSelected ? comp.color + "60" : "rgba(255,255,255,.08)"}`,
                       background: isSelected ? comp.color + "12" : "rgba(255,255,255,.03)",
-                      cursor: "pointer",
-                      transition: "all 0.15s",
                     }}
                   >
                     <div
+                      className="editor-reward-card__checkbox"
                       style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: 6,
                         border: `2px solid ${isSelected ? comp.color : "rgba(255,255,255,.2)"}`,
                         background: isSelected ? comp.color : "transparent",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
                         color: isSelected ? "#fff" : "transparent",
-                        fontSize: 12,
                       }}
                     >
                       {isSelected ? "✓" : ""}
                     </div>
                     <span style={{ fontSize: 24 }}>{comp.icon}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, color: "#f0f4ff" }}>{comp.name}</div>
-                      <div style={{ fontSize: 12, color: "#94a3b8" }}>{comp.category} • {comp.description?.slice(0, 60)}...</div>
+                    <div className="editor-reward-card__info">
+                      <div className="editor-reward-card__name">{comp.name}</div>
+                      <div className="editor-reward-card__desc">{comp.category} • {comp.description?.slice(0, 60)}...</div>
                     </div>
                   </div>
                 );
               })}
             </div>
           )}
+
           {activeTab === "assessment" && (
-            <div style={{ display: "grid", gap: 14 }}>
-              <p style={{ color: "#64748b", fontSize: 12, fontWeight: 700 }}>
+            <div style={{ display: "grid", gap: 14, justifyContent: "center" }}>
+              <p className="assessment-upload-label" style={{ fontWeight: 700, textAlign: "center" }}>
                 Upload a reference circuit PNG to auto-generate evaluation criteria.
                 The image is never stored — only the extracted metadata is saved.
               </p>
 
-              {/* ── Ref. Circuit PNG upload ── */}
-              <label style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>
-                Reference Circuit Image
-              </label>
+              <label className="assessment-upload-label">Reference Circuit Image</label>
 
               <input
                 ref={refCircuitInputRef}
@@ -1005,45 +806,27 @@ export default function TeacherProjectContentEditor() {
               />
 
               {assessmentNodeContent.refCircuitName ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 12,
-                  padding: "10px 14px", background: "rgba(34,197,94,.08)",
-                  border: "1px solid rgba(34,197,94,.25)", borderRadius: 8 }}>
+                <div className="assessment-file-box">
                   <span style={{ fontSize: 18 }}>📷</span>
                   <span style={{ flex: 1, fontSize: 13, color: "#e2e8f0", fontWeight: 600 }}>
                     {assessmentNodeContent.refCircuitName}
                   </span>
-                  <span style={{
-                    fontSize: 11, fontWeight: 800, color: "#34d399",
-                    background: "rgba(34,197,94,.15)", padding: "3px 8px", borderRadius: 6 }}>
+                  <span className="assessment-file-badge">
                     ✓ Criteria extracted
                   </span>
-                  <button type="button" onClick={handleClearRefCircuit}
-                    style={{ background: "rgba(239,68,68,.14)", border: "none",
-                      borderRadius: 6, color: "#f87171", cursor: "pointer",
-                      padding: "5px 10px", fontSize: 11, fontWeight: 700 }}>
+                  <button type="button" onClick={handleClearRefCircuit} className="btn-remove">
                     Remove
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={() => refCircuitInputRef.current?.click()}
-                  style={{ display: "flex", alignItems: "center", gap: 10,
-                    padding: "14px 18px", border: "2px dashed rgba(255,255,255,.12)",
-                    background: "transparent", color: "#60a5fa", fontSize: 13,
-                    fontWeight: 700, cursor: "pointer", borderRadius: 10,
-                    transition: "background .15s" }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = "rgba(96,165,250,.07)"}
-                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                >
+                <button type="button" onClick={() => refCircuitInputRef.current?.click()} className="assessment-upload-box">
                   <span style={{ fontSize: 22 }}>📤</span>
                   Choose a PNG exported from OpenHW-Studio …
                 </button>
               )}
 
-              {/* Auto-gen error */}
               {assessmentNodeContent.autoGeneratedStatus === "error" && (
-                <div style={{ color: "#f87171", fontSize: 12, fontWeight: 600,
-                  padding: "8px 12px", background: "rgba(239,68,68,.1)",
-                  border: "1px solid rgba(239,68,68,.25)", borderRadius: 6 }}>
+                <div className="assessment-error-box">
                   ⚠ {assessmentNodeContent.autoGeneratedError}
                 </div>
               )}
@@ -1134,173 +917,28 @@ export default function TeacherProjectContentEditor() {
                   padding: "7px 10px", color: "#e2e8f0", fontSize: 13 }}
               />
 
-              {/* ── Manual scoring override ── */}
-              <label style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>
-                Scoring Tiers Override
-                <small style={{ fontWeight: 400, opacity: .7, marginLeft: 6 }}>
-                  (optional JSON — customises feedback tiers)
-                </small>
-              </label>
-              <textarea
-                value={assessmentNodeContent.overrideJson || ""}
-                onChange={(e) => updateAssessmentField("overrideJson", e.target.value)}
-                rows={6}
-                spellCheck={false}
-                style={{
-                  background: "rgba(0,0,0,.25)", border: "1px solid rgba(255,255,255,.1)",
-                  borderRadius: 6, padding: "9px 11px", color: "#a5f3fc",
-                  fontFamily: "'JetBrains Mono','Fira Code',monospace",
-                  fontSize: 11, lineHeight: 1.6, resize: "vertical",
-                }}
-                placeholder='{ "feedbackTiers": { "excellent": { ... } }, "passingThreshold": 85 }'
-              />
-            </div>
+{/* ── Manual scoring override (commented out) ── */}
+              {/* <label style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700 }}>
+                 Scoring Tiers Override
+                 <small style={{ fontWeight: 400, opacity: .7, marginLeft: 6 }}>
+                   (optional JSON — customises feedback tiers)
+                 </small>
+               </label>
+               <textarea
+                 value={assessmentNodeContent.overrideJson || ""}
+                 onChange={(e) => updateAssessmentField("overrideJson", e.target.value)}
+                 rows={6}
+                 spellCheck={false}
+                 style={{
+                   background: "rgba(0,0,0,.25)", border: "1px solid rgba(255,255,255,.1)",
+                   borderRadius: 6, padding: "9px 11px", color: "#a5f3fc",
+                   fontFamily: "'JetBrains Mono','Fira Code',monospace",
+                   fontSize: 11, lineHeight: 1.6, resize: "vertical",
+                 }}
+                 placeholder='{ "feedbackTiers": { "excellent": { ... } }, "passingThreshold": 85 }'
+               /> */}
+              </div>
           )}
-        </div>
-
-        {/* Right: Preview */}
-        <div className="preview-pane" style={{ display: "flex", "flexDirection": "column", gap: 24 }}>
-          <div style={{
-            border: "1px solid rgba(255,255,255,.08)",
-            borderRadius: 14,
-            padding: 20,
-            background: "rgba(255,255,255,.02)",
-          }}>
-            <h4 style={{ margin: "0 0 12px", color: "#f0f4ff", fontSize: 16 }}>
-              Student Preview
-            </h4>
-
-            {activeTab === "theory" && theoryCards.length > 0 && (
-              <div
-                className="preview-flipcard"
-                style={{
-                  perspective: "1000px",
-                  minHeight: 320,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <div
-                  style={{
-                    width: "100%",
-                    maxWidth: 420,
-                    minHeight: 280,
-                    position: "relative",
-                    transformStyle: "preserve-3d",
-                    borderRadius: 20,
-                    padding: 28,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    textAlign: "center",
-                    background: `linear-gradient(145deg,${color}18,${color}07)`,
-                    border: `2px solid ${color}45`,
-                  }}
-                >
-                  <div style={{ fontSize: 64, marginBottom: 14 }}>
-                    {theoryCards[0].emoji}
-                  </div>
-                  <div style={{ fontSize: 21, fontWeight: 900, color: "#f0f4ff", marginBottom: 10 }}>
-                    {theoryCards[0].front || "(Card front)"}
-                  </div>
-                  <div style={{ fontSize: 15, color: "#94a3b8", lineHeight: 1.65 }}>
-                    {theoryCards[0].simple || "(short summary)"}
-                  </div>
-                  <div style={{ marginTop: 20, fontSize: 11, fontWeight: 800, color, letterSpacing: ".08em", background: color + "18", padding: "5px 14px", borderRadius: 20, border: `1px solid ${color}33` }}>
-                    TAP TO FLIP ▶
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === "theory" && theoryCards.length > 1 && (
-              <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", justifyContent: "center" }}>
-                {theoryCards.slice(0, 5).map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      background: i === 0 ? color : "rgba(255,255,255,.1)",
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-
-            {activeTab === "quiz" && quizQuestions.length > 0 && (
-              <div style={{ border: "1px solid rgba(255,255,255,.08)", borderRadius: 12, padding: 16, background: "rgba(255,255,255,.02)" }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color, textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>
-                  {quizQuestions[0].question || "(Quiz question)"}
-                </div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {(quizQuestions[0].options || ["", "", "", ""]).map((opt, i) => (
-                    <div key={i} style={{
-                      padding: "8px 12px",
-                      borderRadius: 8,
-                      border: "1px solid rgba(255,255,255,.1)",
-                      background: i === (quizQuestions[0].correctAnswer || 0) ? "rgba(34,197,94,.14)" : "rgba(255,255,255,.04)",
-                      color: i === (quizQuestions[0].correctAnswer || 0) ? "#34d399" : "#94a3b8",
-                      fontSize: 13,
-                      fontWeight: 700,
-                    }}>
-                      {["A","B","C","D"][i]}. {opt}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === "rewards" && rewardComponents.length > 0 && (
-              <div style={{ display: "grid", gap: 10 }}>
-                <p style={{ fontSize: 12, color: "#94a3b8" }}>
-                  Students unlock these components upon completing the project:
-                </p>
-                {rewardComponents.map((compId) => {
-                  const comp = COMPONENTS.find(c => c.id === compId);
-                  if (!comp) return null;
-                  return (
-                    <div
-                      key={compId}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 10,
-                        padding: "8px 12px",
-                        borderRadius: 8,
-                        border: "1px solid rgba(255,255,255,.08)",
-                        background: comp.color + "12",
-                      }}
-                    >
-                      <span style={{ fontSize: 20 }}>{comp.icon}</span>
-                      <div>
-                        <div style={{ fontWeight: 700, color: "#f0f4ff", fontSize: 13 }}>{comp.name}</div>
-                        <div style={{ fontSize: 11, color: "#94a3b8" }}>{comp.category}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {((activeTab === "theory" && theoryCards.length === 0) ||
-              (activeTab === "quiz" && quizQuestions.length === 0) ||
-              (activeTab === "rewards" && rewardComponents.length === 0)) && (
-              <p style={{ color: "#64748b", textAlign: "center" }}>
-                Add content on the left to see preview
-              </p>
-            )}
-          </div>
-
-          <div style={{ fontSize: 12, color: "#64748b", lineHeight: 1.6 }}>
-            {activeTab === "rewards" ? (
-              <><strong>Note:</strong> Selected components will be unlocked in students' toolboxes after project completion.</>
-            ) : (
-              <><strong>Note:</strong> This preview shows how students will see your content. Quiz option highlighted is marked as correct.</>
-            )}
-          </div>
         </div>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getProjectFlashcards } from '../services/gamification/ProjectData'
-import { getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
+import { getGlobalAdventureConfig, getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
 import { getProjectContentBySlug } from '../services/classAdventureAdapter'
 
 export default function ProjectQuizPage() {
@@ -15,19 +15,12 @@ export default function ProjectQuizPage() {
   const [classQuizQuestions, setClassQuizQuestions] = useState(null)
   const { theme = 'dark' } = useGamification()
 
-  const baseProject = PROJECTS.find(p => p.slug === projectName)
+const baseProject = PROJECTS.find(p => p.slug === projectName)
   const [customProject, setCustomProject] = useState(null)
-  const [loadingCustom, setLoadingCustom] = useState(() => !!classId && !baseProject)
-
-  // Load custom project metadata from class adventure if needed
+  const [loadingCustom, setLoadingCustom] = useState(() => !baseProject)
 
   // Load custom project metadata from class adventure if needed
   useEffect(() => {
-    if (!classId) {
-      setCustomProject(null)
-      setLoadingCustom(false)
-      return
-    }
     if (baseProject) {
       setCustomProject(null)
       setLoadingCustom(false)
@@ -37,7 +30,7 @@ export default function ProjectQuizPage() {
     setLoadingCustom(true)
     const load = async () => {
       try {
-        const response = await getResolvedClassAdventure(classId)
+        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
         if (cancelled) return
         const classProject = getProjectContentBySlug(response?.resolved, projectName)
         if (classProject) {
@@ -74,12 +67,8 @@ export default function ProjectQuizPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      if (!classId) {
-        setClassQuizQuestions(null)
-        return
-      }
       try {
-        const response = await getResolvedClassAdventure(classId)
+        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
         if (cancelled) return
         const projectContent = getProjectContentBySlug(response?.resolved, projectName)
         setClassQuizQuestions(Array.isArray(projectContent?.quizQuestions) && projectContent.quizQuestions.length ? projectContent.quizQuestions : null)

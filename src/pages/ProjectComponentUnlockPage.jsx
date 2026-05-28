@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getUnlockComponents } from '../services/gamification/ProjectData'
-import { getResolvedClassAdventure } from '../services/classAdventureService'
+import { getGlobalAdventureConfig, getResolvedClassAdventure } from '../services/classAdventureService'
 import { getProjectContentBySlug } from '../services/classAdventureAdapter'
 
 export default function ProjectComponentUnlockPage() {
@@ -21,12 +21,8 @@ export default function ProjectComponentUnlockPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      if (!classId) {
-        setClassRewardComponents(null)
-        return
-      }
       try {
-        const response = await getResolvedClassAdventure(classId)
+        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
         if (cancelled) return
         const projectContent = getProjectContentBySlug(response?.resolved, projectName)
         setClassRewardComponents(Array.isArray(projectContent?.rewardComponents) && projectContent.rewardComponents.length ? projectContent.rewardComponents : null)

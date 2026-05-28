@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
-import { getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
+import { getGlobalAdventureConfig, getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
 import { getProjectContentBySlug, getProjectGuidedSteps } from '../services/classAdventureAdapter'
 
 const PHASE_LABEL = { wire: 'Wiring', code: 'Coding', run: 'Run' }
@@ -200,10 +200,10 @@ function StepCard({ step, index, total, isActive, onClick }) {
       </div>
 
 {/* Expanded content */}
-       {isActive && (
-         <div style={{ animation:'fadeUp .25s ease' }}>
-           <div style={{ fontSize:14, color:'#cbd5e1', lineHeight:1.75, marginBottom:12, whiteSpace:'pre-line' }}>{step.instruction}</div>
-           {step.code && <CodeSnippet code={step.code} />}
+      {isActive && (
+        <div style={{ animation:'fadeUp .25s ease' }}>
+          <div style={{ fontSize:14, color:'#cbd5e1', lineHeight:1.75, marginBottom:12, whiteSpace:'pre-line' }}>{step.instruction}</div>
+          {step.code && <CodeSnippet code={step.code} />}
           <div style={{
             display:'flex', gap:8, alignItems:'flex-start', marginTop:12,
             background:'rgba(251,191,36,.08)', border:'1px solid rgba(251,191,36,.2)',
@@ -251,12 +251,8 @@ export default function ProjectAssessmentPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      if (!classId) {
-        setClassProjectContent(null)
-        return
-      }
       try {
-        const response = await getResolvedClassAdventure(classId)
+        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
         if (cancelled) return
         setClassProjectContent(getProjectContentBySlug(response?.resolved, projectName))
       } catch {
@@ -267,11 +263,11 @@ export default function ProjectAssessmentPage() {
     return () => { cancelled = true }
   }, [classId, projectName])
 
-  const projectColor  = location.state?.projectColor || '#22c55e'
+const projectColor  = location.state?.projectColor || '#22c55e'
 
-   const steps          = useMemo(() => getProjectGuidedSteps(classProjectContent, projectName), [classProjectContent, projectName])
+  const steps         = useMemo(() => getProjectGuidedSteps(classProjectContent, projectName), [classProjectContent, projectName])
 
-   const [theme,            setTheme]           = useState('dark')
+  const [theme,            setTheme]           = useState('dark')
   const [activeStep,       setActiveStep]       = useState(0)
   const [submission,       setSubmission]       = useState(null)
   const [evalResult,       setEvalResult]       = useState(null)

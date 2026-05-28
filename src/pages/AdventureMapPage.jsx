@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../services/gamification/ProjectsConfig'
-import { getMyClassAdventureProgress, getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
+import { getGlobalAdventureConfig, getMyClassAdventureProgress, getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
 import { buildFallbackClassAdventureContent } from '../services/classAdventureAdapter'
 
 // ─── World groupings ────────────────────────────────────────────────────────
@@ -334,16 +334,15 @@ export default function AdventureMapPage() {
   useEffect(() => {
     let cancelled = false
     const loadClassAdventure = async () => {
-      if (!classId) {
-        setClassAdventure(null)
-        setClassProgress(null)
-        return
-      }
       try {
-        const [adventureResponse, progressResponse] = await Promise.all([
-          getResolvedClassAdventure(classId),
-          getMyClassAdventureProgress(classId),
-        ])
+        if (!classId) {
+          const response = await getGlobalAdventureConfig()
+          if (cancelled) return
+          setClassAdventure(response?.resolved || null)
+          setClassProgress(null)
+          return
+        }
+        const [adventureResponse, progressResponse] = await Promise.all([getResolvedClassAdventure(classId), getMyClassAdventureProgress(classId)])
         if (cancelled) return
         setClassAdventure(adventureResponse?.resolved || null)
         setClassProgress(progressResponse?.progress || null)
@@ -362,7 +361,6 @@ export default function AdventureMapPage() {
 
   const resolvedProjects = useMemo(() => {
     const source = [...PROJECTS]
-    if (!classId) return source
     const content = classAdventure || buildFallbackClassAdventureContent()
     const projectRows = Array.isArray(content?.projects) ? content.projects : []
     if (!projectRows.length) return source
@@ -380,7 +378,7 @@ export default function AdventureMapPage() {
   }, [classAdventure])
 
   const getStatus = (project) => {
-    if (!classAdventure) return getProjectStatus(project.slug, completedProjects)
+    if (!classAdventure?.projects?.length) return getProjectStatus(project.slug, completedProjects)
     if (completedProjects.includes(project.slug)) return 'completed'
     if (!project.prerequisite) return 'available'
     return completedProjects.includes(project.prerequisite) ? 'available' : 'locked'
@@ -426,7 +424,7 @@ export default function AdventureMapPage() {
   const totalProjects  = resolvedProjects.length
 
   const worldGroups = useMemo(() => {
-    if (!classId || !classAdventure?.worlds?.length) {
+    if (!classAdventure?.worlds?.length) {
       return WORLDS.map(w => ({
         ...w,
         projects: resolvedProjects.filter(p => w.slugs.includes(p.slug)).sort((a, b) => a.number - b.number),
