@@ -4460,45 +4460,54 @@ useEffect(() => {
   // Instead: apply only the CSS transform during pinch, update refs for correctness,
   // then flush to React state via a debounce AFTER the gesture ends.
   const onWheel = useCallback((e) => {
-    if (isCanvasLockedRef.current || !e.ctrlKey) return;
+    if (isCanvasLockedRef.current) return;
     e.preventDefault();
 
-    const zoomSpeed = 0.002;
-    const delta = -e.deltaY * zoomSpeed;
-    const currentZoom = canvasZoomRef.current;
-    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
+    if (!e.ctrlKey) {
+      const zoomSpeed = 0.002;
+      const delta = -e.deltaY * zoomSpeed;
+      const currentZoom = canvasZoomRef.current;
+      const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
 
-    if (newZoom === currentZoom) return;
+      if (newZoom === currentZoom) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
 
-    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
-    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
+      const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
+      const cy = (my - canvasOffsetRef.current.y) / currentZoom;
 
-    const newOffsetX = mx - cx * newZoom;
-    const newOffsetY = my - cy * newZoom;
+      const newOffsetX = mx - cx * newZoom;
+      const newOffsetY = my - cy * newZoom;
 
-    // 1. Update refs immediately — keeps subsequent wheel events reading the correct values
-    canvasZoomRef.current = newZoom;
-    canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+      canvasZoomRef.current = newZoom;
+      canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+    } else {
+      const dx = e.shiftKey ? -e.deltaY : -e.deltaX;
+      const dy = e.shiftKey ? 0 : -e.deltaY;
 
-    // 2. Apply directly to DOM — zero React renders mid-pinch = zero vibration
+      const newOffsetX = canvasOffsetRef.current.x + dx;
+      const newOffsetY = canvasOffsetRef.current.y + dy;
+
+      canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
+    }
+
     if (innerCanvasRef.current) {
       innerCanvasRef.current.style.transform =
-        `translate(${newOffsetX}px, ${newOffsetY}px) scale(${newZoom})`;
+        `translate(${canvasOffsetRef.current.x}px, ${canvasOffsetRef.current.y}px) scale(${canvasZoomRef.current})`;
       innerCanvasRef.current.style.transformOrigin = '0 0';
     }
 
-    // 3. Debounce the React state flush — commit once the user stops pinching
+    if (isRunning) return;
+
     if (rafZoomRef.current) clearTimeout(rafZoomRef.current);
     rafZoomRef.current = setTimeout(() => {
       rafZoomRef.current = null;
       setCanvasZoom(canvasZoomRef.current);
       setCanvasOffset({ ...canvasOffsetRef.current });
     }, 150);
-  }, []);
+  }, [isRunning]);
 
   // ── Move and Select component ──────────────────────────────────────────────
   const onCompMouseDown = useCallback((e, id) => {

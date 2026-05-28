@@ -5003,7 +5003,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (isCanvasLockedRef.current) return;
     e.preventDefault();
 
-    if (e.ctrlKey) {
+    if (!e.ctrlKey) {
       // ─── ZOOM LOGIC ─────────────────────────────────────────────────────────
       const zoomSpeed = 0.002;
       const delta = -e.deltaY * zoomSpeed;
