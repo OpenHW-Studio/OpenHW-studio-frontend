@@ -25,13 +25,6 @@ export default function StudentAssignmentModal({
   const { classId } = useParams();
   const [viewMode, setViewMode] = useState('submission'); // 'submission' or 'grading'
 
-  // Diagnostic log for every render when modal is open
-  console.log('[StudentAssignmentModal] Rendering. Mode:', viewMode, 'Assignment ID:', assignment?._id, 'Autograde Props:', {
-    isAutogradingEnabled: assignment?.isAutogradingEnabled,
-    autogradingKeyLength: assignment?.autogradingKey?.length || 0,
-    hasKey: !!assignment?.autogradingKey
-  });
-
   if (!assignment) return null;
 
   const attachments = pickAttachments(assignment);
@@ -44,33 +37,19 @@ export default function StudentAssignmentModal({
     const hasReferenceKey = !!assignment.autogradingKey && assignment.autogradingKey.length > 20;
     const isAutograding = hasEnabledFlag || hasReferenceKey;
     
-    console.log('[Submission] Starting Final Submit. Autograde Detection:', {
-      hasEnabledFlag,
-      hasReferenceKey,
-      isAutograding,
-      viewMode
-    });
-    
     if (isAutograding) {
-      console.log('[Submission] Switching to GRADING view mode.');
       setViewMode('grading');
     }
 
     try {
-      console.log('[Submission] Calling backend onSubmit...');
       await onSubmit();
-      console.log('[Submission] Backend onSubmit successful.');
       
       if (!isAutograding) {
-        console.log('[Submission] Standard assignment, closing modal.');
         onClose();
-      } else {
-        console.log('[Submission] Autograded assignment, keeping modal open for audit results.');
       }
     } catch (e) {
       console.error('[Submission] CRITICAL: Submission failed', e);
       if (isAutograding) {
-        console.log('[Submission] Reverting to submission view due to error.');
         setViewMode('submission');
       }
     }
