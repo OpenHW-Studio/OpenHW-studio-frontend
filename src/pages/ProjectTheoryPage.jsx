@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getProjectFlashcards } from '../services/gamification/ProjectData'
-import { getResolvedClassAdventure } from '../services/classAdventureService'
+import { getGlobalAdventureConfig, getResolvedClassAdventure } from '../services/classAdventureService'
 import { getProjectContentBySlug } from '../services/classAdventureAdapter'
 
 export default function ProjectTheoryPage() {
@@ -15,19 +15,12 @@ export default function ProjectTheoryPage() {
   const [classTheoryCards, setClassTheoryCards] = useState(null)
   const { theme = 'dark' } = useGamification()
 
-  const baseProject = PROJECTS.find(p => p.slug === projectName)
+const baseProject = PROJECTS.find(p => p.slug === projectName)
   const [customProject, setCustomProject] = useState(null)
-  const [loadingCustom, setLoadingCustom] = useState(() => !!classId && !baseProject)
-
-  // Load custom project metadata from class adventure if needed
+  const [loadingCustom, setLoadingCustom] = useState(() => !baseProject)
 
   // Load custom project metadata from class adventure if needed
   useEffect(() => {
-    if (!classId) {
-      setCustomProject(null)
-      setLoadingCustom(false)
-      return
-    }
     if (baseProject) {
       setCustomProject(null)
       setLoadingCustom(false)
@@ -37,7 +30,7 @@ export default function ProjectTheoryPage() {
     setLoadingCustom(true)
     const load = async () => {
       try {
-        const response = await getResolvedClassAdventure(classId)
+        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
         if (cancelled) return
         const classProject = getProjectContentBySlug(response?.resolved, projectName)
         if (classProject) {
@@ -74,12 +67,8 @@ export default function ProjectTheoryPage() {
   useEffect(() => {
     let cancelled = false
     const load = async () => {
-      if (!classId) {
-        setClassTheoryCards(null)
-        return
-      }
       try {
-        const response = await getResolvedClassAdventure(classId)
+        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
         if (cancelled) return
         const projectContent = getProjectContentBySlug(response?.resolved, projectName)
         setClassTheoryCards(Array.isArray(projectContent?.theory) && projectContent.theory.length ? projectContent.theory : null)
