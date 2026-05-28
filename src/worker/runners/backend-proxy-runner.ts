@@ -320,20 +320,28 @@ export class BackendProxyRunner implements BoardRunner {
         }
     }
 
-    public syncPwm(channel: number, duty_pct: number) {
-        // Find connected components mapped to this PWM channel (duty is 0.0 to 1.0)
-        // Usually, PWM duty comes in as 0-100 or 0.0-1.0. Assuming 0.0-1.0
+    public syncPwm(channel: number, duty_pct: number, pins?: number[]) {
         const pwmDuty = Math.max(0, Math.min(1.0, duty_pct));
-        for (const conn of this.connections) {
-            if (conn.fromComponent === this.boardId) {
-                // Determine if this pin maps to the PWM channel (requires pin mapping logic or broadcasting)
-                // For proxy simplicity, we broadcast PWM to devices that implement onPWM
-                const targetId = conn.toComponent;
-                const targetInst = this.instances.get(targetId);
-                if (targetInst && typeof (targetInst as any).onPWM === 'function') {
-                    // Normalize to whatever scale the component expects (e.g. 0-255 or 0-1.0)
-                    // If component expects 0-255:
-                    (targetInst as any).onPWM(pwmDuty * 255);
+        const voltage = 3.3 * pwmDuty;
+
+        // Apply PWM as an analog voltage (averaged duty cycle) to the mapped pins
+        if (pins && pins.length > 0) {
+            for (const pin of pins) {
+                const pinStr = String(pin);
+                this.proxyPinStates.set(pinStr, pwmDuty > 0.5); // Track logical state roughly
+
+                const boardInst = this.instances.get(this.boardId);
+                if (boardInst) {
+                    let actualPin = pinStr;
+                    for (const pv of [pinStr, `D${pinStr}`, `GPIO${pinStr}`]) {
+                        if (this.pinToNet.has(`${this.boardId}:${pv}`)) {
+                            actualPin = pv;
+                            break;
+                        }
+                    }
+                    (boardInst as any).setPinVoltage?.(actualPin, voltage);
+                    // Broadcast voltage to all connected components
+                    this.visitNode(`${this.boardId}:${actualPin}`, voltage);
                 }
             }
         }

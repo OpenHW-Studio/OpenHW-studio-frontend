@@ -8776,6 +8776,14 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       lastCompiledRef.current = { code, board, result };
       setIsCompiling(false);
+      
+      if (!runStartGuardRef.current) {
+        appendConsoleEntry("warn", "Run aborted by user during compilation.", "simulator");
+        setIsRunning(false);
+        setIsBooting(false);
+        return;
+      }
+
       if (!isBackendProxy) {
         setIsRunning(true);
         setIsBooting(true);
