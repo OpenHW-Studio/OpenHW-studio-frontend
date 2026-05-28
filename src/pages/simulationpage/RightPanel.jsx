@@ -4,9 +4,6 @@ import { PlotterManager } from './components/PlotterManager';
 import { SerialTabBar, SerialOutputPane, SerialSendRow } from './components/SerialMonitor';
 import { Btn } from './Btn';
 import { getBoardColors } from './projectUtils';
-
-
-
 // Lazy-load the heavy Blockly editor to improve initial LCP metrics
 const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.jsx'));
 
@@ -400,10 +397,13 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
 
       {/* Toggle Button */}
       <button
+        type="button"
         onClick={() => setIsPanelOpen(!isPanelOpen)}
+        title={isPanelOpen ? 'Hide panel' : 'Show panel'}
+        aria-label={isPanelOpen ? 'Hide panel' : 'Show panel'}
         style={{
           position: 'absolute',
-          left: isPanelOpen ? 0 : 0,
+          left: 0,
           top: '50%',
           transform: 'translateY(-50%)',
           height: 48,
@@ -418,15 +418,15 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.2)'
+          boxShadow: '2px 0 8px rgba(0,0,0,0.2)',
         }}
       >
         {isPanelOpen ? (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M9 18l6-6-6-6" />
           </svg>
         ) : (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <path d="M15 18l-6-6 6-6" />
           </svg>
         )}
@@ -677,7 +677,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                 <div style={{ display: 'flex', minHeight: 0, flex: 1 }}>
                   {showCodeExplorer && (
                     <>
-                      <div 
+                      <div
                         ref={explorerRef}
                         className="code-explorer-container"
                         style={{ width: isExplorerDragging ? 'var(--explorer-width)' : explorerWidth, maxWidth: 200, borderRight: theme === 'light' ? '1px solid #cbd5e1' : '1px solid #1e2d47', display: 'flex', flexDirection: 'column', background: theme === 'light' ? '#f1f5f9' : '#090e1a', flexShrink: 0, willChange: isExplorerDragging ? 'width' : 'auto', contain: isExplorerDragging ? 'size layout paint' : 'none' }}
@@ -1595,23 +1595,23 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                   ) : (
                     /* Plotter Mode - Modernized with Per-Board Management */
                     <div data-tour-step="plotter" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                    <PlotterManager
-                      showAddChannel={showAddChannel}
-                      setShowAddChannel={setShowAddChannel}
-                      plotterPaused={plotterPaused}
-                      setPlotterPaused={setPlotterPaused}
-                      plotDataRef={plotDataRef}
-                      selectedPlotPins={selectedPlotPins}
-                      setSelectedPlotPins={setSelectedPlotPins}
-                      plotterTimeDiv={plotterTimeDiv}
-                      setPlotterTimeDiv={setPlotterTimeDiv}
-                      serialBoardOptions={serialBoardOptions}
-                      serialBoardLabels={serialBoardLabels}
-                      serialBoardKinds={serialBoardKinds}
-                      boardColors={boardColors}
-                      theme={theme}
-                      isRunning={isRunning}
-                    />
+                      <PlotterManager
+                        showAddChannel={showAddChannel}
+                        setShowAddChannel={setShowAddChannel}
+                        plotterPaused={plotterPaused}
+                        setPlotterPaused={setPlotterPaused}
+                        plotDataRef={plotDataRef}
+                        selectedPlotPins={selectedPlotPins}
+                        setSelectedPlotPins={setSelectedPlotPins}
+                        plotterTimeDiv={plotterTimeDiv}
+                        setPlotterTimeDiv={setPlotterTimeDiv}
+                        serialBoardOptions={serialBoardOptions}
+                        serialBoardLabels={serialBoardLabels}
+                        serialBoardKinds={serialBoardKinds}
+                        boardColors={boardColors}
+                        theme={theme}
+                        isRunning={isRunning}
+                      />
                     </div>
                   )}
                 </div>

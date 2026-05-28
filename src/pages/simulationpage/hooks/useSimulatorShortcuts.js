@@ -31,13 +31,21 @@ export function useSimulatorShortcuts({
 
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
 
-      // Undo/Redo
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      // Blocks tab uses Blockly's own undo stack — do not touch the circuit history.
+      if (isPanelOpen && codeTab === 'block') {
+        if (mod && (key === 'z' || key === 'y')) return;
+      }
+
+      // Undo/Redo (circuit canvas only)
+      if (mod && key === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) {
         e.preventDefault();
         redo();
         return;
