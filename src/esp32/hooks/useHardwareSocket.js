@@ -115,9 +115,9 @@ function _diagTick(type) {
  *   onI2cEvent?    : (bus: number, addr: number, event: number, response: number) => void,
  *   onI2cTransaction?   : (addr: number, data: number[]) => void,
  *   onProxyI2cComplete? : (addr: number, data: number[]) => void,
- *   onSpiEvent?    : (bus: number, event: number, response: number) => void,
  *   onSpiBatch?    : (b64: string) => void,
  *   onEpaperUpdate?: (componentId: string, frame: { width: number, height: number, frame_b64: string, refresh_ms: number }) => void,
+ *   onTone?        : (pin: string, frequency: number, duration: number) => void,
  * }} callbacks
  */
 export function useHardwareSocket({
@@ -136,7 +136,8 @@ export function useHardwareSocket({
     onProxyI2cComplete,
     onSpiEvent,
     onSpiBatch,
-    onEpaperUpdate
+    onEpaperUpdate,
+    onTone
 } = {}) {
     // ── Refs (survive renders without causing re-renders) ────────────────────
 
@@ -145,6 +146,9 @@ export function useHardwareSocket({
 
     /** The active session buildId, or null when idle. */
     const buildIdRef        = useRef(null);
+
+    /** The active session target (e.g. 'esp32' or 'stm32'). */
+    const targetRef         = useRef('esp32');
 
     /** Batched SERIAL_OUTPUT lines waiting to be flushed. */
     const serialBatchRef    = useRef([]);
@@ -169,13 +173,13 @@ export function useHardwareSocket({
     const cbRef = useRef({
         onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
         onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
-        onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate
+        onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone
     });
     useEffect(() => {
         cbRef.current = {
             onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
             onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
-            onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate
+            onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone
         };
     });
 
@@ -252,12 +256,13 @@ export function useHardwareSocket({
         }
 
         if (buildIdRef.current) {
-            stopSession(buildIdRef.current).catch(err => {
+            stopSession(buildIdRef.current, targetRef.current || 'esp32').catch(err => {
                 console.warn('[useHardwareSocket] Failed to stop session on backend:', err);
             });
         }
 
         buildIdRef.current      = null;
+        targetRef.current       = 'esp32';
         serialBatchRef.current  = [];
         reconnectCountRef.current = 0;
 
@@ -296,7 +301,7 @@ export function useHardwareSocket({
                 case 'COMPILE_SUCCESS':
                     // arduino-cli compilation done; QEMU is about to start
                     clearWatchdog();
-                    cbRef.current.onLog?.('✅ Compiled — QEMU is starting…', 'sys');
+                    cbRef.current.onLog?.('✅ Compiled — Emulator is starting…', 'sys');
                     // Re-arm watchdog for the boot phase
                     armWatchdog(BOOTING_TIMEOUT_MS, 'Boot');
                     break;
@@ -339,6 +344,24 @@ export function useHardwareSocket({
                     cbRef.current.onPhaseChange?.('running');
                     break;
 
+                case 'SIMULATOR_READY':
+                    clearWatchdog();
+                    cbRef.current.onLog?.('🟢 Device is running and ready.', 'sys');
+                    cbRef.current.onPhaseChange?.('running');
+                    break;
+
+                case 'SIMULATOR_STOPPED':
+                    cbRef.current.onLog?.(`🛑 Simulator exited (code ${msg.code ?? '?'}).`, 'sys');
+                    cbRef.current.onPhaseChange?.('stopped');
+                    stop();
+                    break;
+
+                case 'RUNTIME_ERROR':
+                    cbRef.current.onLog?.(`❌ Runtime error: ${msg.message}`, 'sys');
+                    cbRef.current.onPhaseChange?.('stopped');
+                    stop();
+                    break;
+
                 case 'FIRMWARE_STALLED':
                     cbRef.current.onLog?.(`⚠️ ${msg.message}`, 'sys');
                     cbRef.current.onPhaseChange?.('stalled');
@@ -346,6 +369,10 @@ export function useHardwareSocket({
 
                 case 'GPIO_SYNC':
                     cbRef.current.onGpioSync?.(String(msg.pin), msg.value);
+                    break;
+
+                case 'TONE':
+                    cbRef.current.onTone?.(String(msg.pin), msg.frequency, msg.duration);
                     break;
 
                 // ── GPIO direction event (input / output mode change) ────────
@@ -431,6 +458,7 @@ export function useHardwareSocket({
 
                 case 'SERIAL_OUTPUT':
                     if (msg.text) serialBatchRef.current.push(msg.text);
+                    else if (msg.data) serialBatchRef.current.push(msg.data);
                     break;
 
                 case 'SERIAL_LOG': {
@@ -525,19 +553,21 @@ export function useHardwareSocket({
     // ── Public: run ───────────────────────────────────────────────────────────
 
     /**
-     * run(code)
+     * run(code, target)
      *
      * 1. Opens a WebSocket immediately (before the compile request) so no
      *    early COMPILE_ERROR messages are missed.
-     * 2. Sends the code to /api/compile?target=esp32.
+     * 2. Sends the code to /api/compile?target=esp32 or target=stm32.
      * 3. Arms the compile watchdog.
      *
      * @param {string} code - Arduino C++ sketch source code.
+     * @param {string} target - The platform target ('esp32' or 'stm32')
      * @returns {Promise<string>} The buildId assigned by the backend.
      */
-    const run = useCallback(async (code) => {
+    const run = useCallback(async (code, target = 'esp32') => {
         stoppedRef.current = false;
         reconnectCountRef.current = 0;
+        targetRef.current = target;
 
         cbRef.current.onLog?.('⚙️  Sending code to compile server…', 'sys');
 
@@ -558,7 +588,7 @@ export function useHardwareSocket({
 
         let result;
         try {
-            result = await compileCode({ code, target: 'esp32' });
+            result = await compileCode({ code, target });
         } catch (err) {
             stop();
             const serverMsg = err.response?.data?.error || err.message;
