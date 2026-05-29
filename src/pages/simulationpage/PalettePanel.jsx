@@ -1,4 +1,8 @@
-import React, { useState, useRef, useEffect, memo } from 'react';
+import React, { useState, useRef, useEffect, memo, useMemo, useCallback } from 'react';
+import {
+  buildUnlockedComponentSet,
+  isComponentTypeUnlocked,
+} from '../../services/adventureService';
 
 const PalettePanel = memo(({
   isPaletteHovered,
@@ -10,7 +14,13 @@ const PalettePanel = memo(({
   handleUploadZip,
   openComponentEditor,
   showLockToast,
-  isPaletteItemLocked,
+  /** Component type IDs the user has unlocked (from API or parent). null = not loaded yet. */
+  unlockedComponents = null,
+  /** When true, items not in unlockedComponents are locked in the palette. */
+  enforceUnlocks = false,
+  /** When true, locked items are removed from the list instead of grayed out. */
+  hideLockedComponents = false,
+  unlocksLoading = false,
   CATALOG,
   GROUP_COLORS,
   GROUP_ICON_SVG,
@@ -42,7 +52,7 @@ const PalettePanel = memo(({
     catch (e) { return new Set(); }
   });
 
-  const toggleFavorite = React.useCallback((type) => {
+  const toggleFavorite = useCallback((type) => {
     setFavoriteComponents(prev => {
       const next = new Set(prev);
       if (next.has(type)) next.delete(type); else next.add(type);
@@ -51,6 +61,26 @@ const PalettePanel = memo(({
     });
   }, []);
 
+  const unlockedSet = useMemo(
+    () => (enforceUnlocks ? buildUnlockedComponentSet(unlockedComponents) : null),
+    [enforceUnlocks, unlockedComponents],
+  );
+
+  const isItemLocked = useCallback(
+    (itemType) => {
+      if (!enforceUnlocks) return false;
+      // During loading or if no unlocks data, lock everything (secure default)
+      if (unlocksLoading || unlockedComponents === null) return true;
+      return !isComponentTypeUnlocked(itemType, unlockedSet);
+    },
+    [enforceUnlocks, unlocksLoading, unlockedComponents, unlockedSet],
+  );
+
+  const matchesSearch = useCallback((item, search) => {
+    const label = (item.label || item.name || '').toLowerCase();
+    const type = (item.type || '').toLowerCase();
+    return label.includes(search) || type.includes(search);
+  }, []);
 
   useEffect(() => {
     if (!paletteContextMenu) return;
@@ -67,26 +97,34 @@ const PalettePanel = memo(({
     return () => document.removeEventListener('mousedown', close);
   }, [showFilterDropdown]);
 
-  const favoriteItemsGrid = React.useMemo(() => {
+  const favoriteItemsGrid = useMemo(() => {
     if (favoriteComponents.size === 0) {
       return <div style={{ padding: '6px 2px', fontSize: 11, color: 'var(--text3)', fontStyle: 'italic' }}>Right-click a component to favourite</div>;
     }
     const favItems = [];
-    CATALOG.forEach(g => g.items.forEach(item => { if (favoriteComponents.has(item.type)) favItems.push({ ...item, group: g.group }); }));
+    CATALOG.forEach(g => g.items.forEach(item => {
+      if (!favoriteComponents.has(item.type)) return;
+      if (hideLockedComponents && isItemLocked(item.type)) return;
+      favItems.push({ ...item, group: g.group });
+    }));
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, padding: '2px 0' }}>
         {favItems.map(item => {
           const gColor = GROUP_COLORS[item.group] || 'var(--accent)';
+          const locked = isItemLocked(item.type);
           return (
             <div
               key={`fav-${item.type}`}
-              draggable
-              onDragStart={e => onPaletteDragStart(e, item)}
-              onClick={() => { addComponentAtCenter(item); }}
+              draggable={!locked}
+              onDragStart={e => !locked && onPaletteDragStart(e, item)}
+              onClick={() => {
+                if (locked) { showLockToast(item.label, WOKWI_TO_COMP_ID[item.type]); return; }
+                addComponentAtCenter(item);
+              }}
               onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setPaletteContextMenu({ x: e.clientX, y: e.clientY, item }); }}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = `${gColor}44`; e.currentTarget.style.background = 'var(--bg)'; }}
+              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '6px 4px', borderRadius: 7, border: `1px solid ${gColor}44`, background: 'var(--bg)', cursor: locked ? 'not-allowed' : 'pointer', userSelect: 'none', transition: 'all .15s', minHeight: 38, boxSizing: 'border-box', opacity: locked ? 0.4 : 1, filter: locked ? 'grayscale(1)' : 'none' }}
+              onMouseEnter={e => { if (!locked) { e.currentTarget.style.borderColor = gColor; e.currentTarget.style.background = `${gColor}14`; } }}
+              onMouseLeave={e => { if (!locked) { e.currentTarget.style.borderColor = `${gColor}44`; e.currentTarget.style.background = 'var(--bg)'; } }}
             >
               <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text)', textAlign: 'center', lineHeight: 1.2, width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingLeft: 2, paddingRight: 2 }}>{item.label}</span>
             </div>
@@ -94,18 +132,18 @@ const PalettePanel = memo(({
         })}
       </div>
     );
-  }, [favoriteComponents, CATALOG, GROUP_COLORS, onPaletteDragStart, addComponentAtCenter]);
+  }, [favoriteComponents, CATALOG, GROUP_COLORS, onPaletteDragStart, addComponentAtCenter, hideLockedComponents, isItemLocked, showLockToast, WOKWI_TO_COMP_ID]);
 
-  const catalogItemsGrid = React.useMemo(() => {
+  const catalogItemsGrid = useMemo(() => {
+    const search = (paletteSearch || '').toLowerCase();
     return CATALOG.map((group, index) => {
       const isGroupMatch = activeGroupFilter === 'All' || group.group === activeGroupFilter;
       if (!isGroupMatch) return null;
 
       const filteredItems = group.items.filter(item => {
-        const label = (item.label || item.name || '').toLowerCase();
-        const type = (item.type || '').toLowerCase();
-        const search = (paletteSearch || '').toLowerCase();
-        return label.includes(search) || type.includes(search);
+        if (hideLockedComponents && isItemLocked(item.type)) return false;
+        if (!search) return true;
+        return matchesSearch(item, search);
       });
       if (filteredItems.length === 0) return null;
       const groupColor = GROUP_COLORS[group.group] || 'var(--accent)';
@@ -129,7 +167,7 @@ const PalettePanel = memo(({
                 const rawScale = Math.min(previewW / compW, previewH / compH);
                 const scale = Math.max(0.22, Math.min(1.6, rawScale));
                 const hasUI = !!COMPONENT_REGISTRY[item.type]?.UI;
-                const locked = isPaletteItemLocked(item.type);
+                const locked = isItemLocked(item.type);
                 return (
                   <div
                     key={item.type}
@@ -171,7 +209,7 @@ const PalettePanel = memo(({
           ) : (
             /* LIST VIEW */
             filteredItems.map(item => {
-              const locked = isPaletteItemLocked(item.type);
+              const locked = isItemLocked(item.type);
               return (
                 <div
                   key={item.type}
@@ -202,10 +240,29 @@ const PalettePanel = memo(({
         </div>
       );
     });
-  }, [CATALOG, activeGroupFilter, paletteSearch, paletteViewMode, GROUP_COLORS, GROUP_ICON_SVG, COMPONENT_REGISTRY, isPaletteItemLocked, onPaletteDragStart, showLockToast, WOKWI_TO_COMP_ID, addComponentAtCenter, COMPONENT_DESCRIPTIONS]);
+  }, [CATALOG, activeGroupFilter, paletteSearch, paletteViewMode, GROUP_COLORS, GROUP_ICON_SVG, COMPONENT_REGISTRY, isItemLocked, hideLockedComponents, matchesSearch, onPaletteDragStart, showLockToast, WOKWI_TO_COMP_ID, addComponentAtCenter, COMPONENT_DESCRIPTIONS]);
 
   return (
     <>
+      {/* Loading overlay when unlocks are being fetched */}
+      {unlocksLoading && (
+        <div style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          padding: '20px 40px',
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          color: 'var(--text)',
+          fontSize: 14,
+          fontWeight: 500,
+          zIndex: 1000,
+        }}>
+          Loading Adventure unlocks...
+        </div>
+      )}
       {/* PALETTE — hover to expand */}
       <aside
         className="bg-[var(--bg2)] border-r border-[var(--border)] overflow-y-auto overflow-x-hidden flex flex-col shrink-0"
@@ -265,7 +322,14 @@ const PalettePanel = memo(({
         }}>
             {/* Sticky top section */}
             <div style={{ flexShrink: 0, padding: '10px 8px 0', background: 'var(--bg2)' }}>
-              <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest px-2 pt-1 pb-2">Components</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 8px' }}>
+                <div className="text-[11px] font-bold text-[var(--text3)] uppercase tracking-widest">Components</div>
+                {enforceUnlocks && (
+                  <span style={{ fontSize: 10, color: unlocksLoading ? '#fbbf24' : 'var(--text3)', fontWeight: 700 }}>
+                    {unlocksLoading ? 'Syncing unlocks…' : 'Adventure mode'}
+                  </span>
+                )}
+              </div>
 
               {/* Search + Filter + View Toggle */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 12, alignItems: 'center' }}>

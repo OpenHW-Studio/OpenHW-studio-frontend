@@ -1,5 +1,5 @@
 
-import { PROJECT_DATA, getWokwiType } from './ProjectData';
+import { PROJECT_DATA, getOpenhwType } from './ProjectData';
 
 export const PROJECTS = [
   // ── World 1: Circuit Basics ──────────────────────────────────────────────
@@ -22,7 +22,6 @@ export const PROJECTS = [
     world: 1,
     tags: ['LED', 'digital output', 'blinking'],
     // Components available at start (given for free — no unlock needed)
-    startingComponents: ['wokwi-arduino-uno', 'wokwi-led', 'wokwi-resistor'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
     // What you EARN when you finish this project
     rewardComponents: [

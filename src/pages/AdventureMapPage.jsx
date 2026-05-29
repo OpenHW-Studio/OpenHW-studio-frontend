@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../services/gamification/ProjectsConfig'
-import { getGlobalAdventureConfig, getMyClassAdventureProgress, getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
+import {
+  getAdventureContent,
+  getAdventureProgress,
+  getLocalAdventureStepProgress,
+} from '../services/adventureService'
 import { buildFallbackClassAdventureContent } from '../services/classAdventureAdapter'
 
 // ─── World groupings ────────────────────────────────────────────────────────
@@ -335,14 +339,10 @@ export default function AdventureMapPage() {
     let cancelled = false
     const loadClassAdventure = async () => {
       try {
-        if (!classId) {
-          const response = await getGlobalAdventureConfig()
-          if (cancelled) return
-          setClassAdventure(response?.resolved || null)
-          setClassProgress(null)
-          return
-        }
-        const [adventureResponse, progressResponse] = await Promise.all([getResolvedClassAdventure(classId), getMyClassAdventureProgress(classId)])
+        const [adventureResponse, progressResponse] = await Promise.all([
+          getAdventureContent(classId),
+          getAdventureProgress(classId),
+        ])
         if (cancelled) return
         setClassAdventure(adventureResponse?.resolved || null)
         setClassProgress(progressResponse?.progress || null)
@@ -390,28 +390,6 @@ export default function AdventureMapPage() {
     navigate(classId ? `${route}?classId=${encodeURIComponent(classId)}` : route)
   }
 
-  const markStepComplete = async (projectSlug, stepKey, stepOrder) => {
-    const progress = getLocalStepProgress(projectSlug) || { currentStepOrder: 1, completedSteps: [] }
-    const completedSteps = new Set(progress.completedSteps || [])
-    completedSteps.add(`${projectSlug}:${stepKey}`)
-    const nextOrder = Math.max(progress.currentStepOrder || 1, stepOrder + 1)
-    localStorage.setItem(
-      `adventureProgress:${projectSlug}`,
-      JSON.stringify({ currentStepOrder: nextOrder, completedSteps: Array.from(completedSteps) })
-    )
-    if (classId) {
-      try {
-        await postClassAdventureProgressEvent(classId, {
-          eventType: 'STEP_COMPLETED',
-          projectSlug,
-          payload: { stepKey, stepOrder },
-        })
-      } catch {}
-    }
-  }
-
-  window.markAdventureStepComplete = markStepComplete
-
   const handleStart = (slug, mode) => {
     setSelectedProject(null)
     const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
@@ -453,20 +431,11 @@ export default function AdventureMapPage() {
     }))
   )
 
-  const getLocalStepProgress = (slug) => {
-    try {
-      const raw = localStorage.getItem(`adventureProgress:${slug}`)
-      return raw ? JSON.parse(raw) : null
-    } catch {
-      return null
-    }
-  }
-
   const getStepStatusForProject = (project, step, isProjectLocked) => {
     if (step.soon || isProjectLocked) return 'locked'
     if (completedProjects.includes(project.slug)) return 'completed'
 
-    const progress = getLocalStepProgress(project.slug)
+    const progress = getLocalAdventureStepProgress(project.slug)
     const currentOrder = progress?.currentStepOrder || 1
     const completedSteps = progress?.completedSteps || []
     const stepId = `${project.slug}:${step.key}`

@@ -3,8 +3,11 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getProjectFlashcards } from '../services/gamification/ProjectData'
-import { getGlobalAdventureConfig, getResolvedClassAdventure } from '../services/classAdventureService'
-import { getProjectContentBySlug } from '../services/classAdventureAdapter'
+import {
+  getAdventureProjectContent,
+  markAdventureStepComplete,
+  toProjectDisplayMeta,
+} from '../services/adventureService'
 
 export default function ProjectTheoryPage() {
   const { projectName } = useParams()
@@ -30,20 +33,9 @@ const baseProject = PROJECTS.find(p => p.slug === projectName)
     setLoadingCustom(true)
     const load = async () => {
       try {
-        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
+        const { project: classProject } = await getAdventureProjectContent(classId, projectName)
         if (cancelled) return
-        const classProject = getProjectContentBySlug(response?.resolved, projectName)
-        if (classProject) {
-          setCustomProject({
-            slug: classProject.slug,
-            id: classProject.id,
-            title: classProject.title,
-            color: classProject.color || '#3b82f6',
-            xpReward: classProject.xpReward || 100,
-          })
-        } else {
-          setCustomProject(null)
-        }
+        setCustomProject(toProjectDisplayMeta(classProject))
       } catch (err) {
         console.error('Failed to load custom project:', err)
         setCustomProject(null)
@@ -68,9 +60,8 @@ const baseProject = PROJECTS.find(p => p.slug === projectName)
     let cancelled = false
     const load = async () => {
       try {
-        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
         if (cancelled) return
-        const projectContent = getProjectContentBySlug(response?.resolved, projectName)
         setClassTheoryCards(Array.isArray(projectContent?.theory) && projectContent.theory.length ? projectContent.theory : null)
       } catch {
         if (!cancelled) setClassTheoryCards(null)
@@ -85,13 +76,16 @@ const baseProject = PROJECTS.find(p => p.slug === projectName)
   const card = flashcards[currentIdx]
 
   useEffect(() => {
-    if (doneCount >= total) {
+    if (doneCount >= total && total > 0) {
       setAllDone(true)
-      if (window.markAdventureStepComplete) {
-        window.markAdventureStepComplete(projectName, 'read', 1)
-      }
+      markAdventureStepComplete({
+        classId,
+        projectSlug: projectName,
+        stepKey: 'read',
+        stepOrder: 1,
+      }).catch(() => {})
     }
-  }, [doneCount, total, projectName])
+  }, [doneCount, total, projectName, classId])
 
   const handleFlip = () => !flipped && setFlipped(true)
 
