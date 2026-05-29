@@ -297,7 +297,13 @@ export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
     loopSnippet = loopSnippet.replace(/\bSerial\./g, 'Serial1.');
   }
 
-  if (!code || !code.trim()) {
+  const isEmptyCode = (str) => {
+    if (!str) return true;
+    const t = str.trim();
+    return t === '' || t === '{}';
+  };
+
+  if (isEmptyCode(code)) {
     let base = '';
     if (globalsSnippet) base += `// autocoding for ${compId} start\n${globalsSnippet}\n// autocoding for ${compId} end\n\n`;
     base += `void setup() {\n`;
