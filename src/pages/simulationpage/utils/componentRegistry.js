@@ -214,13 +214,18 @@ export function injectComponentsIntoRegistry(comps) {
         const probeEl = React.createElement(uiComponent, {
           state: {}, attrs: {}, isRunning: false,
         });
-        // Only call the function component directly — do NOT render into DOM
+        // Render-probe: call directly to catch stale transpiled reference errors
         if (typeof uiComponent === 'function') {
           uiComponent({ state: {}, attrs: {}, isRunning: false });
         }
       } catch (probeErr) {
-        console.warn(`[ComponentCache] Skipping stale/broken cached component "${id}" (probe failed: ${probeErr.message}). Will re-fetch on next load.`);
-        continue;
+        // If it throws a hook error, the component successfully ran up to the hook and is likely valid.
+        if (probeErr.message && probeErr.message.includes('Invalid hook call')) {
+          // Pass the probe safely
+        } else {
+          console.warn(`[ComponentCache] Skipping stale/broken cached component "${id}" (probe failed: ${probeErr.message}). Will re-fetch on next load.`);
+          continue;
+        }
       }
 
       registry[manifest.type] = {

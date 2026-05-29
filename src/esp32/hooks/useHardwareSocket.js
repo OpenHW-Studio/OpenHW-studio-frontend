@@ -33,8 +33,8 @@
  *   if the backend becomes unresponsive.
  */
 
-import { useRef, useCallback, useEffect } from 'react';
-import { compileCode } from '../../services/simulatorService.js';
+import { useRef, useCallback, useEffect, useMemo } from 'react';
+import { compileCode, runBinaryCode, stopSession } from '../../services/simulatorService.js';
 
 // ─── Configuration ─────────────────────────────────────────────────────────────
 
@@ -67,6 +67,37 @@ function getWsBaseUrl() {
     return base.replace(/^https/, 'wss').replace(/^http/, 'ws');
 }
 
+// ── Frontend perf diagnostics ────────────────────────────────────────────
+
+/**
+ * Module-level message rate tracker.
+ * Logs to browser console every 1 second so we can correlate frontend
+ * message volume with Chrome CPU usage during simulation boot.
+ */
+const _diag = {
+    total:   0,
+    gpio:    0,
+    lastMs:  Date.now(),
+};
+
+function _diagTick(type) {
+    _diag.total++;
+    if (type === 'GPIO_SYNC') _diag.gpio++;
+    const now = Date.now();
+    const dt  = now - _diag.lastMs;
+    if (dt >= 1000) {
+        const rate = (_diag.total / (dt / 1000)).toFixed(0);
+        const gpio = (_diag.gpio  / (dt / 1000)).toFixed(0);
+        console.log(
+            `[WS-PERF] msgs/s=${rate} | GPIO_SYNC/s=${gpio}` +
+            ` | total-recv=${_diag.total}`
+        );
+        _diag.total  = 0;
+        _diag.gpio   = 0;
+        _diag.lastMs = now;
+    }
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -76,9 +107,37 @@ function getWsBaseUrl() {
  *   onLog?         : (msg: string, dir: string) => void,
  *   onPhaseChange? : (phase: 'compiling'|'booting'|'running'|'stalled'|'stopped') => void,
  *   onStop?        : () => void,
+ *   onNeopixelSync?: (channel: number, pixels: any[]) => void,
+ *   onGpioDir?     : (pin: number, dir: number) => void,
+ *   onPwmSync?     : (channel: number, duty_pct: number) => void,
+ *   onGpioRouting? : (gpio: number, signal_id: number) => void,
+ *   onGpioRoutingClear? : (gpio: number) => void,
+ *   onI2cEvent?    : (bus: number, addr: number, event: number, response: number) => void,
+ *   onI2cTransaction?   : (addr: number, data: number[]) => void,
+ *   onProxyI2cComplete? : (addr: number, data: number[]) => void,
+ *   onSpiEvent?    : (bus: number, event: number, response: number) => void,
+ *   onSpiBatch?    : (b64: string) => void,
+ *   onEpaperUpdate?: (componentId: string, frame: { width: number, height: number, frame_b64: string, refresh_ms: number }) => void,
  * }} callbacks
  */
-export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChange, onStop } = {}) {
+export function useHardwareSocket({
+    onSerialLine,
+    onGpioSync,
+    onLog,
+    onPhaseChange,
+    onStop,
+    onNeopixelSync,
+    onGpioDir,
+    onPwmSync,
+    onGpioRouting,
+    onGpioRoutingClear,
+    onI2cEvent,
+    onI2cTransaction,
+    onProxyI2cComplete,
+    onSpiEvent,
+    onSpiBatch,
+    onEpaperUpdate
+} = {}) {
     // ── Refs (survive renders without causing re-renders) ────────────────────
 
     /** The live WebSocket connection, or null when idle. */
@@ -107,8 +166,18 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
      * Updating on every render means handlers always close over the latest
      * onSerialLine / onGpioSync / etc without needing them in dep arrays.
      */
-    const cbRef = useRef({ onSerialLine, onGpioSync, onLog, onPhaseChange, onStop });
-    useEffect(() => { cbRef.current = { onSerialLine, onGpioSync, onLog, onPhaseChange, onStop }; });
+    const cbRef = useRef({
+        onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
+        onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
+        onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate
+    });
+    useEffect(() => {
+        cbRef.current = {
+            onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
+            onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
+            onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate
+        };
+    });
 
     // ── Serial flush ─────────────────────────────────────────────────────────
 
@@ -182,6 +251,12 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
             wsRef.current = null;
         }
 
+        if (buildIdRef.current) {
+            stopSession(buildIdRef.current).catch(err => {
+                console.warn('[useHardwareSocket] Failed to stop session on backend:', err);
+            });
+        }
+
         buildIdRef.current      = null;
         serialBatchRef.current  = [];
         reconnectCountRef.current = 0;
@@ -206,6 +281,9 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
         ws.onmessage = (event) => {
             let msg;
             try { msg = JSON.parse(event.data); } catch { return; }
+
+            // Perf diagnostic tick — logs msg/s & GPIO/s to browser console
+            _diagTick(msg.type);
 
             // Drop stale messages from a previous session
             if (msg.buildId && msg.buildId !== buildId) return;
@@ -258,8 +336,7 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
                     // may get it twice — this guard prevents a phase downgrade).
                     clearWatchdog();
                     cbRef.current.onLog?.('🟡 Firmware running (no sim_ready() detected).', 'sys');
-                    // Only elevate to running if not already there
-                    cbRef.current.onPhaseChange?.(prev => prev === 'running' ? 'running' : 'running');
+                    cbRef.current.onPhaseChange?.('running');
                     break;
 
                 case 'FIRMWARE_STALLED':
@@ -269,6 +346,87 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
 
                 case 'GPIO_SYNC':
                     cbRef.current.onGpioSync?.(String(msg.pin), msg.value);
+                    break;
+
+                // ── GPIO direction event (input / output mode change) ────────
+                case 'GPIO_DIR':
+                    cbRef.current.onGpioDir?.(msg.pin, msg.dir);
+                    break;
+
+                case 'WS2812_UPDATE':
+                    cbRef.current.onNeopixelSync?.(msg.channel, msg.pixels);
+                    break;
+
+                // ── PWM / LEDC duty-cycle change ──────────────────────────────
+                case 'PWM_SYNC':
+                    cbRef.current.onPwmSync?.(msg.channel, msg.duty_pct);
+                    break;
+
+                // ── GPIO Matrix routing ────────────────────────────────────────
+                case 'GPIO_ROUTING':
+                    cbRef.current.onGpioRouting?.(msg.gpio, msg.signal_id);
+                    break;
+
+                case 'GPIO_ROUTING_CLEAR':
+                    cbRef.current.onGpioRoutingClear?.(msg.gpio);
+                    break;
+
+                // ── I2C protocol telemetry ─────────────────────────────────────
+                // Raw per-byte I2C event (bus, addr, event code, response byte).
+                case 'protocol:i2c':
+                    cbRef.current.onI2cEvent?.(msg.bus, msg.addr, msg.event, msg.response);
+                    break;
+
+                // Full buffered I2C write transaction (emitted by ProxySlave on STOP).
+                case 'I2C_TRANSACTION':
+                case 'i2c_transaction':
+                    console.log(`[useHardwareSocket] Received i2c_transaction for addr 0x${msg.addr?.toString(16)}, size: ${msg.data?.length}`);
+                    cbRef.current.onI2cTransaction?.(msg.addr, msg.data);
+                    break;
+
+                // ProxySlave completed a master write — replay bytes on the
+                // frontend virtual device to keep its state in sync.
+                case 'PROXY_I2C_COMPLETE':
+                case 'proxy_i2c_complete':
+                    cbRef.current.onProxyI2cComplete?.(msg.addr, msg.data);
+                    break;
+
+                // ── SPI protocol telemetry ─────────────────────────────────────
+                // Per-byte / CS-change SPI event.
+                case 'protocol:spi':
+                    cbRef.current.onSpiEvent?.(msg.bus, msg.event, msg.response);
+                    break;
+
+                // High-throughput batched SPI MOSI bytes encoded as base64.
+                // The worker flushes up to 4096 bytes per frame at 20 fps
+                // to prevent per-byte WebSocket flooding (e.g. TFT display writes).
+                case 'SPI_BATCH':
+                    cbRef.current.onSpiBatch?.(msg.b64);
+                    break;
+
+                // ── ePaper SSD168x / UC8159c display frame ────────────────────
+                // Fired by the backend SSD168x or UC8159c slave decoder on every
+                // MASTER_ACTIVATION (0x20) command. The `data` envelope matches
+                // the Velxio `onEpaperUpdate` callback shape exactly.
+                case 'EPAPER_UPDATE':
+                    if (msg.data && msg.data.component_id) {
+                        cbRef.current.onEpaperUpdate?.(msg.data.component_id, {
+                            width:      msg.data.width,
+                            height:     msg.data.height,
+                            frame_b64:  msg.data.frame_b64,
+                            refresh_ms: msg.data.refresh_ms ?? 50,
+                        });
+                    }
+                    break;
+
+                // ── UART1 / UART2 serial output ────────────────────────────────
+                // UART0 is handled via SERIAL_OUTPUT; secondary UARTs route here.
+                case 'UART_OUTPUT':
+                    if (msg.text) {
+                        // Forward to serial monitor with a UART prefix so the user
+                        // can distinguish UART0 vs UART1/2 output in the log.
+                        cbRef.current.onLog?.(`[UART${msg.uart ?? '?'}] ${msg.text}`, 'rx');
+                    }
                     break;
 
                 case 'SERIAL_OUTPUT':
@@ -390,12 +548,21 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
         const ws = new WebSocket(getWsBaseUrl());
         wsRef.current = ws;
 
+        // If WS fails instantly before compileCode returns, we must catch it
+        ws.onclose = () => {
+            if (!buildIdRef.current) {
+                // compileCode hasn't returned yet, but WS died
+                stop();
+            }
+        };
+
         let result;
         try {
             result = await compileCode({ code, target: 'esp32' });
         } catch (err) {
             stop();
-            cbRef.current.onLog?.('❌ Could not reach the compile server.', 'sys');
+            const serverMsg = err.response?.data?.error || err.message;
+            cbRef.current.onLog?.(`❌ Compile failed: ${serverMsg}`, 'sys');
             throw err;
         }
 
@@ -415,7 +582,7 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
 
         if (ws.readyState === WebSocket.OPEN) {
             doRegister();
-        } else {
+        } else if (ws.readyState === WebSocket.CONNECTING) {
             ws.onopen = doRegister;
         }
 
@@ -444,6 +611,10 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
         const ws = new WebSocket(getWsBaseUrl());
         wsRef.current = ws;
 
+        ws.onclose = () => {
+            if (!buildIdRef.current) stop();
+        };
+
         let result;
         try {
             // result = await directBootCode();
@@ -468,12 +639,58 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
 
         if (ws.readyState === WebSocket.OPEN) {
             doRegister();
-        } else {
+        } else if (ws.readyState === WebSocket.CONNECTING) {
             ws.onopen = doRegister;
         }
 
         startFlushTimer();
         armWatchdog(DIRECT_BOOT_TIMEOUT_MS, 'Direct boot');
+
+        return result.buildId;
+    }, [attachHandlers, startFlushTimer, armWatchdog, stop]);
+
+    const runBinary = useCallback(async (firmware_b64) => {
+        stoppedRef.current = false;
+        reconnectCountRef.current = 0;
+
+        cbRef.current.onLog?.('⚙️  Flashing dynamic binary to QEMU...', 'sys');
+
+        const ws = new WebSocket(getWsBaseUrl());
+        wsRef.current = ws;
+
+        ws.onclose = () => {
+            if (!buildIdRef.current) stop();
+        };
+
+        let result;
+        try {
+            result = await runBinaryCode(firmware_b64);
+        } catch (err) {
+            stop();
+            cbRef.current.onLog?.('❌ Flash request failed.', 'sys');
+            throw err;
+        }
+
+        if (!result?.buildId) {
+            stop();
+            throw new Error('No buildId returned from run-binary endpoint.');
+        }
+
+        buildIdRef.current = result.buildId;
+        cbRef.current.onLog?.('🔗 Connecting to emulation session…', 'sys');
+
+        attachHandlers(ws, result.buildId);
+        const doRegister = () =>
+            ws.send(JSON.stringify({ type: 'REGISTER_SESSION', buildId: result.buildId }));
+
+        if (ws.readyState === WebSocket.OPEN) {
+            doRegister();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+            ws.onopen = doRegister;
+        }
+
+        startFlushTimer();
+        armWatchdog(DIRECT_BOOT_TIMEOUT_MS, 'Emulation boot');
 
         return result.buildId;
     }, [attachHandlers, startFlushTimer, armWatchdog, stop]);
@@ -497,24 +714,241 @@ export function useHardwareSocket({ onSerialLine, onGpioSync, onLog, onPhaseChan
         ws.send(JSON.stringify({ type: 'SET_GPIO', buildId, pin, value: value ? 1 : 0 }));
     }, []);
 
+    const sendAdc = useCallback((channel, millivolts) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+
+        ws.send(JSON.stringify({ type: 'SET_ADC', buildId, channel, millivolts }));
+    }, []);
+
+    const sendDht = useCallback((pin, temp, hum) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+
+        ws.send(JSON.stringify({ type: 'SET_DHT', buildId, pin, temp, hum }));
+    }, []);
+
+    /**
+     * sensorAttach(sensor_type, pin, properties)
+     *
+     * Tell the backend worker to register a virtual sensor on a GPIO pin so
+     * it can respond to QEMU timing-critical queries (DHT-22 bit-banging,
+     * HC-SR04 echo pulses, ePaper SSD168x SPI decoding, etc.) without round-
+     * tripping over WebSocket per-bit.  Call once per sensor when the user
+     * places a component on the canvas and connects wires.
+     *
+     * @param {string} sensor_type  - 'dht22' | 'hc-sr04' | 'epaper-ssd168x' | etc.
+     * @param {number} pin          - GPIO pin number the sensor data line is on.
+     * @param {object} properties   - Sensor-specific initial values (temp, humidity…)
+     */
+    const sensorAttach = useCallback((sensor_type, pin, properties = {}) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) {
+            console.log(`[useHardwareSocket] sensorAttach ignored: ws=${!!ws}, readyState=${ws?.readyState}, buildId=${buildId}`);
+            return;
+        }
+
+        console.log(`[useHardwareSocket] SENSOR_ATTACH sending for ${sensor_type} on pin ${pin}`);
+        ws.send(JSON.stringify({ type: 'SENSOR_ATTACH', buildId, sensor_type, pin, properties }));
+    }, []);
+
+    /**
+     * sensorUpdate(pin, properties)
+     *
+     * Push updated parameter values (e.g. new temperature, new distance) to
+     * an already-attached virtual sensor while the simulation is running.
+     *
+     * @param {number} pin        - GPIO pin the sensor is attached to.
+     * @param {object} properties - Updated sensor-specific key/value pairs.
+     */
+    const sensorUpdate = useCallback((pin, properties = {}) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+
+        ws.send(JSON.stringify({ type: 'SENSOR_UPDATE', buildId, pin, properties }));
+    }, []);
+
+    /**
+     * sensorDetach(pin)
+     *
+     * Remove the virtual sensor from the given GPIO pin. Call when the user
+     * deletes a sensor component or disconnects its wires during simulation.
+     *
+     * @param {number} pin - GPIO pin the sensor was attached to.
+     */
+    const sensorDetach = useCallback((pin) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+
+        ws.send(JSON.stringify({ type: 'SENSOR_DETACH', buildId, pin }));
+    }, []);
+
+    /**
+     * setAdcValue(pin, value)
+     *
+     * Inject a 12-bit ADC reading (0–4095) for a GPIO pin.
+     * Used by potentiometer / LDR / joystick components to push their
+     * current state into the firmware's analogRead() shim.
+     *
+     * @param {number} pin   - GPIO pin number.
+     * @param {number} value - 12-bit ADC value (0–4095).
+     */
+    const setAdcValue = useCallback((pin, value) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+        ws.send(JSON.stringify({ type: 'ADC_SET', buildId, pin, value: Math.round(value) & 0x0FFF }));
+    }, []);
+
+    /**
+     * setI2cResponse(addr, bytes)
+     *
+     * Pre-load the bytes that the firmware will receive when it calls
+     * Wire.requestFrom(addr, n). Used by I2C sensor components (MPU6050,
+     * BMP280, etc.) to push their simulated register values into the firmware.
+     *
+     * @param {number}   addr  - 7-bit I2C address.
+     * @param {number[]} bytes - Array of byte values (0–255).
+     */
+    const setI2cResponse = useCallback((addr, bytes) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+        ws.send(JSON.stringify({ type: 'I2C_RESP_SET', buildId, addr, bytes }));
+    }, []);
+
+    /**
+     * setSpiResponse(bytes)
+     *
+     * Pre-load MISO bytes that the firmware will receive during SPI.transfer()
+     * calls. Bytes are consumed in order (FIFO). Used by SPI peripherals that
+     * need to send data back to the ESP32 (SD cards, touch controllers, etc.).
+     *
+     * @param {number[]} bytes - Array of MISO byte values (0–255).
+     */
+    const setSpiResponse = useCallback((bytes) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+        ws.send(JSON.stringify({ type: 'SPI_RESP_SET', buildId, bytes }));
+    }, []);
+
+    /**
+     * sendSerialBytes(bytes, uart?)
+     *
+     * Inject raw bytes into the ESP32's UART RX FIFO (default UART0).
+     * The ESP32 UART RX FIFO is 128 bytes in hardware — this function sends
+     * at most 64 bytes per call to prevent overflow (same constraint as Velxio).
+     * Useful for simulating GPS sentence injection, RFID tag reads, etc.
+     *
+     * @param {number[]} bytes - Array of byte values (0–255).
+     * @param {number}   uart  - UART index (0, 1, or 2). Defaults to 0.
+     */
+    const sendSerialBytes = useCallback((bytes, uart = 0) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+        if (!bytes || bytes.length === 0) return;
+
+        // Chunk into ≤64-byte slices to avoid UART RX FIFO overflow in QEMU
+        const CHUNK = 64;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+            ws.send(JSON.stringify({
+                type: 'SERIAL_INPUT',
+                buildId,
+                bytes: bytes.slice(i, i + CHUNK),
+                uart,
+            }));
+        }
+    }, []);
+
+    const sendCameraAttach = useCallback(() => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+
+        ws.send(JSON.stringify({ type: 'CAMERA_ATTACH', buildId }));
+    }, []);
+
+    const sendCameraFrame = useCallback((jpegBytes, width = 320, height = 240) => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+
+        const u8 = jpegBytes instanceof Uint8Array ? jpegBytes : new Uint8Array(jpegBytes);
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < u8.length; i += chunkSize) {
+            binary += String.fromCharCode(...u8.subarray(i, i + chunkSize));
+        }
+        const b64 = btoa(binary);
+
+        ws.send(JSON.stringify({ type: 'CAMERA_FRAME', buildId, fmt: 'jpeg', w: width, h: height, b64 }));
+    }, []);
+
+    const sendCameraDetach = useCallback(() => {
+        const ws      = wsRef.current;
+        const buildId = buildIdRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN || !buildId) return;
+
+        ws.send(JSON.stringify({ type: 'CAMERA_DETACH', buildId }));
+    }, []);
+
     // ── Cleanup on unmount ────────────────────────────────────────────────────
 
     useEffect(() => () => stop(), [stop]);
 
-    // ── Public API ────────────────────────────────────────────────────────────
+    // ─── Public API ─────────────────────────────────────────────────────────────────
 
-    return {
+    return useMemo(() => ({
         /** Compile code and start a QEMU session. Returns a Promise<buildId>. */
         run,
+        /** Boot QEMU from a dynamic base64 binary. */
+        runBinary,
         /** Boot from a pre-compiled binary. Returns a Promise<buildId>. */
         directBoot,
         /** Inject a GPIO level into the firmware. */
         sendGpio,
+        /** Inject an ADC analog millivolt voltage (0–3300 mV). */
+        sendAdc,
+        /** Inject a DHT-22 temperature + humidity reading. */
+        sendDht,
+        /** Attach a virtual sensor to a GPIO pin in the QEMU worker. */
+        sensorAttach,
+        /** Update an already-attached virtual sensor's parameters. */
+        sensorUpdate,
+        /** Detach a virtual sensor from a GPIO pin. */
+        sensorDetach,
+        /** Inject a 12-bit ADC value (0-4095) for a GPIO pin via UART shim. */
+        setAdcValue,
+        /** Pre-load I2C read-response bytes for a 7-bit address. */
+        setI2cResponse,
+        /** Pre-load MISO bytes for SPI.transfer() calls (FIFO). */
+        setSpiResponse,
+        /**
+         * Inject raw UART RX bytes into the ESP32 firmware (≤64 bytes/call).
+         * Automatically chunks larger arrays to prevent FIFO overflow.
+         */
+        sendSerialBytes,
+        /** Tell the backend an ESP32-CAM webcam is connected (call once on permission grant). */
+        sendCameraAttach,
+        /**
+         * Push one JPEG frame from the browser webcam to QEMU's OV2640 DMA buffer.
+         * Call at ~10 fps. jpegBytes can be ArrayBuffer or Uint8Array.
+         */
+        sendCameraFrame,
+        /** Drop the camera payload. */
+        sendCameraDetach,
         /** Tear down the current session cleanly. */
         stop,
         /** Read-only ref to the active buildId (null when idle). */
         buildIdRef,
         /** Read-only ref to the live WebSocket (null when idle). */
         wsRef,
-    };
+    }), [run, runBinary, directBoot, sendGpio, sendAdc, sendDht, sensorAttach, sensorUpdate, sensorDetach, setAdcValue, setI2cResponse, setSpiResponse, sendSerialBytes, sendCameraAttach, sendCameraFrame, sendCameraDetach, stop]);
 }

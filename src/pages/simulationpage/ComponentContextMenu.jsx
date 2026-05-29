@@ -88,6 +88,32 @@ export const ComponentContextMenu = ({
       });
     }
 
+    if (kind === 'esp32') {
+      const currentEnv = resolveComponentAttrString(comp?.attrs, 'env', 'native');
+      const isEsp32Cam = comp.type.includes('esp32-cam') || comp.type.includes('esp32_cam') || comp.id.includes('esp32-cam') || comp.id.includes('esp32_cam');
+      const currentCamSource = resolveComponentAttrString(comp?.attrs, 'cameraSource', 'webcam');
+
+      menus.push({
+        label: 'Env',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>,
+        options: [
+          { label: 'Arduino (None)', active: currentEnv === 'native' || currentEnv === 'ino', onClick: () => updateComponentAttr?.(comp.id, 'env', 'native') },
+          { label: 'MicroPython', active: currentEnv === 'micropython', onClick: () => updateComponentAttr?.(comp.id, 'env', 'micropython') }
+        ]
+      });
+
+      if (isEsp32Cam) {
+        menus.push({
+          label: 'Cam Src',
+          icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>,
+          options: [
+            { label: 'Webcam', active: currentCamSource === 'webcam', onClick: () => updateComponentAttr?.(comp.id, 'cameraSource', 'webcam') },
+            { label: 'Static JPEG', active: currentCamSource === 'static', onClick: () => updateComponentAttr?.(comp.id, 'cameraSource', 'static') }
+          ]
+        });
+      }
+    }
+
     if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
       const currentColor = resolveComponentAttrString(comp?.attrs, 'color', 'red');
       const ledColors = [

@@ -45,6 +45,32 @@ export async function compileCode(input) {
 }
 
 /**
+ * Boots the ESP32 emulator using a precompiled base64 binary.
+ */
+export async function runBinaryCode(firmware_b64) {
+    try {
+        const response = await axios.post(`${COMPILER_URL}/compile/esp32/run-binary`, { firmware_b64, target: 'esp32' }, getUserAuthConfig());
+        if (response.data && response.data.buildId) {
+            return response.data;
+        }
+        throw new Error('No buildId returned from runBinaryCode');
+    } catch (error) {
+        throw error;
+    }
+}
+
+export async function stopSession(buildId) {
+    const config = getUserAuthConfig();
+    try {
+        const response = await axios.post(`${COMPILER_URL}/compile/esp32/stop/${buildId}`, {}, config);
+        return response.data;
+    } catch (error) {
+        console.error(`[SimulatorService] Failed to stop session ${buildId}:`, error.message);
+        throw error;
+    }
+}
+
+/**
  * Flash firmware to a physical board.
  */
 export async function flashFirmware({ port, fqbn, hex, baudRate, resetMethod }) {
