@@ -5003,39 +5003,26 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (isCanvasLockedRef.current) return;
     e.preventDefault();
 
-    if (e.ctrlKey) {
-      // ─── ZOOM LOGIC ─────────────────────────────────────────────────────────
-      const zoomSpeed = 0.002;
-      const delta = -e.deltaY * zoomSpeed;
-      const currentZoom = canvasZoomRef.current;
-      const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
+    // ─── ZOOM LOGIC (scroll wheel always zooms) ─────────────────────────────
+    const zoomSpeed = 0.002;
+    const delta = -e.deltaY * zoomSpeed;
+    const currentZoom = canvasZoomRef.current;
+    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
 
-      if (newZoom === currentZoom) return;
+    if (newZoom === currentZoom) return;
 
-      const rect = canvasRef.current.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
 
-      const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
-      const cy = (my - canvasOffsetRef.current.y) / currentZoom;
+    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
+    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
 
-      const newOffsetX = mx - cx * newZoom;
-      const newOffsetY = my - cy * newZoom;
+    const newOffsetX = mx - cx * newZoom;
+    const newOffsetY = my - cy * newZoom;
 
-      canvasZoomRef.current = newZoom;
-      canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
-    } else {
-      // ─── PANNING LOGIC (Trackpad / Wheel) ───────────────────────────────────
-      // Use deltaX and deltaY directly for trackpad support.
-      // Shift key swaps vertical wheel to horizontal movement for standard mice.
-      const dx = e.shiftKey ? -e.deltaY : -e.deltaX;
-      const dy = e.shiftKey ? 0 : -e.deltaY;
-
-      const newOffsetX = canvasOffsetRef.current.x + dx;
-      const newOffsetY = canvasOffsetRef.current.y + dy;
-
-      canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
-    }
+    canvasZoomRef.current = newZoom;
+    canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
 
     // Apply directly to DOM for zero-latency 60fps movement
     if (innerCanvasRef.current) {
