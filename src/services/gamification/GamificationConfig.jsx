@@ -14,98 +14,9 @@ export const LEVELS = [
     color: '#22c55e',
     icon: '💡',
     unlockedComponents: [
-      'wokwi-arduino-uno',
       'openhw-arduino-uno',
-      'wokwi-led',
       'openhw-led',
-      'wokwi-resistor',
       'openhw-resistor',
-      'wokwi-breadboard',
-      'openhw-breadboard',
-      'wokwi-breadboard-half',
-      'openhw-breadboard-half',
-      'wokwi-breadboard-mini',
-      'openhw-breadboard-mini',
-      'wokwi-a4988',
-      'openhw-a4988',
-      'wokwi-stepper-motor',
-      'openhw-stepper-motor',
-      'wokwi-nlsf595',
-      'openhw-nlsf595',
-      'wokwi-cd74hc4067',
-      'openhw-cd74hc4067',
-      'wokwi-l293d',
-      'openhw-l293d',
-      'wokwi-rgb-led',
-      'openhw-rgb-led',
-      'wokwi-rotary-encoder',
-      'openhw-rotary-encoder',
-      'wokwi-logic-analyzer',
-      'openhw-logic-analyzer',
-      'wokwi-nokia-5110',
-      'openhw-nokia-5110',
-      'wokwi-soil-moisture-sensor',
-      'openhw-soil-moisture-sensor',
-      'wokwi-sd-card',
-      'openhw-sd-card',
-      'wokwi-ldr-module',
-      'openhw-ldr-module',
-      'wokwi-tm1637-7segment',
-      'openhw-tm1637-7segment',
-      'wokwi-npn-transistor',
-      'openhw-npn-transistor',
-      'wokwi-diode',
-      'openhw-diode',
-      'wokwi-photodiode',
-      'openhw-photodiode',
-      'wokwi-photoresistor',
-      'openhw-photoresistor',
-      'wokwi-ntc-thermistor',
-      'openhw-ntc-thermistor',
-      'wokwi-ntc-temperature-sensor',
-      'openhw-ntc-temperature-sensor',
-      'wokwi-pca9685',
-      'openhw-pca9685',
-      'wokwi-pca9865',
-      'openhw-pca9865',
-      'wokwi-arduino-sensor-shield',
-      'openhw-arduino-sensor-shield',
-      'wokwi-arduino-nano',
-      'openhw-arduino-nano',
-      'wokwi-arduino-mega',
-      'openhw-arduino-mega',
-      'wokwi-attiny85',
-      'openhw-attiny85',
-      'wokwi-raspberry-pi-pico',
-      'openhw-pico',
-      'wokwi-raspberry-pi-pico-w',
-      'openhw-pico-w',
-      'wokwi-power-supply',
-      'openhw-power-supply',
-      'wokwi-battery',
-      'openhw-battery',
-      'wokwi-charger',
-      'openhw-charger',
-      'wokwi-hc-sr04',
-      'openhw-hc-sr04',
-      'wokwi-bmp180',
-      'openhw-bmp180',
-      'wokwi-bmp180-breakout',
-      'openhw-bmp180-breakout',
-      'wokwi-ds1307-rtc',
-      'openhw-ds1307-rtc',
-      'wokwi-mpu6050',
-      'openhw-mpu6050',
-      'wokwi-relay-module',
-      'openhw-relay-module',
-      'wokwi-potentiometer',
-      'openhw-potentiometer',
-      'wokwi-slide-potentiometer',
-      'openhw-slide-potentiometer',
-      'wokwi-buzzer',
-      'openhw-buzzer',
-      'wokwi-pushbutton',
-      'openhw-pushbutton',
     ],
     badge: {
       id: 'badge_spark_starter',
@@ -176,11 +87,8 @@ export const LEVELS = [
     color: '#eab308',
     icon: '🌞',
     unlockedComponents: [
-      'wokwi-rgb-led',
       'openhw-rgb-led',
-      'wokwi-neopixel-matrix',
       'openhw-neopixel-matrix',
-      'wokwi-neopixel-ring',
       'openhw-neopixel-ring',
     ],
     badge: {
@@ -201,22 +109,13 @@ export const LEVELS = [
     color: '#3b82f6',
     icon: '⚙️',
     unlockedComponents: [
-      'wokwi-lcd1602',
-      'wokwi-lcd1602-i2c',
       'openhw-lcd1602-i2c',
-      'wokwi-lcd2004-i2c',
       'openhw-lcd2004-i2c',
-      'wokwi-ssd1306-oled',
       'openhw-ssd1306-oled',
-      'wokwi-max7219',
       'openhw-max7219',
-      'wokwi-ili9341',
       'openhw-ili9341',
-      'wokwi-7segment',
       'openhw-7segment',
-      'wokwi-tm1637-7segment',
       'openhw-tm1637-7segment',
-      'wokwi-servo',
       'openhw-servo',
     ],
     badge: {
@@ -307,25 +206,32 @@ export const RARITY_CONFIG = {
 };
 
 // isComponentUnlocked now receives the unlockedComponentTypes array/set from context state
-export function isComponentUnlocked(componentType, unlockedComponentTypes) {
-  if (!unlockedComponentTypes) {
-    return STARTING_COMPONENTS.includes(componentType) ||
-      (componentType.startsWith('openhw-') && STARTING_COMPONENTS.includes(componentType.replace('openhw-', 'wokwi-'))) ||
-      (componentType.startsWith('wokwi-') && STARTING_COMPONENTS.includes(componentType.replace('wokwi-', 'openhw-')));
-  }
-  if (unlockedComponentTypes === '*') return true;
-  
-  const check = (type) => {
-    if (Array.isArray(unlockedComponentTypes)) return unlockedComponentTypes.includes(type);
-    if (unlockedComponentTypes instanceof Set) return unlockedComponentTypes.has(type);
-    return false;
-  };
+export function isComponentUnlocked(componentType, unlockedComponentTypes, currentLevel = 1) {
+   if (unlockedComponentTypes === '*') return true;
+   
+   const check = (type, list) => {
+     if (!list) return false;
+     if (Array.isArray(list)) return list.includes(type);
+     if (list instanceof Set) return list.has(type);
+     return false;
+   };
 
-  if (check(componentType)) return true;
-  if (componentType.startsWith('openhw-') && check(componentType.replace('openhw-', 'wokwi-'))) return true;
-  if (componentType.startsWith('wokwi-') && check(componentType.replace('wokwi-', 'openhw-'))) return true;
-  return false;
-}
+   if (check(componentType, unlockedComponentTypes)) return true;
+   if (componentType.startsWith('openhw-') && check(componentType.replace('openhw-', 'wokwi-'), unlockedComponentTypes)) return true;
+   if (componentType.startsWith('wokwi-') && check(componentType.replace('wokwi-', 'openhw-'), unlockedComponentTypes)) return true;
+   
+   // Check level-based unlocks for all levels up to current level
+   for (const level of LEVELS) {
+     if (level.id > currentLevel) break;
+     if (level.unlockedComponents) {
+       if (check(componentType, level.unlockedComponents)) return true;
+       if (componentType.startsWith('openhw-') && check(componentType.replace('openhw-', 'wokwi-'), level.unlockedComponents)) return true;
+       if (componentType.startsWith('wokwi-') && check(componentType.replace('wokwi-', 'openhw-'), level.unlockedComponents)) return true;
+     }
+   }
+   
+   return false;
+ }
 
 // Total XP needed to reach a level
 export function xpForLevel(levelId) {

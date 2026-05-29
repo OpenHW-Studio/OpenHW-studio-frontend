@@ -3,8 +3,12 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getUnlockComponents } from '../services/gamification/ProjectData'
-import { getGlobalAdventureConfig, getResolvedClassAdventure } from '../services/classAdventureService'
-import { getProjectContentBySlug } from '../services/classAdventureAdapter'
+import { saveClassAdventureUnlocks } from '../services/gamification/unlockService'
+import {
+  getAdventureProjectContent,
+  markAdventureStepComplete,
+  toProjectDisplayMeta,
+} from '../services/adventureService'
 
 export default function ProjectComponentUnlockPage() {
   const { projectName } = useParams()
@@ -12,27 +16,45 @@ export default function ProjectComponentUnlockPage() {
   const navigate = useNavigate()
   const classId = new URLSearchParams(location.search).get('classId')
   const mapPath = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure'
-  const [classRewardComponents, setClassRewardComponents] = useState(null)
-  const { theme = 'dark' } = useGamification()
+  const { theme, unlockComponentTypes } = useGamification()
 
-  const project = PROJECTS.find(p => p.slug === projectName)
-  const color = project?.color || '#3b82f6'
+  const baseProject = PROJECTS.find(p => p.slug === projectName)
+  const [customProject, setCustomProject] = useState(null)
+  const [classRewardComponents, setClassRewardComponents] = useState(null)
+  const [loadingContent, setLoadingContent] = useState(() => !baseProject)
+  const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     const load = async () => {
+      if (!baseProject) setLoadingContent(true)
       try {
-        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
         if (cancelled) return
-        const projectContent = getProjectContentBySlug(response?.resolved, projectName)
-        setClassRewardComponents(Array.isArray(projectContent?.rewardComponents) && projectContent.rewardComponents.length ? projectContent.rewardComponents : null)
-      } catch {
-        if (!cancelled) setClassRewardComponents(null)
+        if (!baseProject) {
+          setCustomProject(toProjectDisplayMeta(projectContent))
+        }
+        setClassRewardComponents(
+          Array.isArray(projectContent?.rewardComponents) && projectContent.rewardComponents.length
+            ? projectContent.rewardComponents
+            : null,
+        )
+      } catch (err) {
+        if (cancelled) return
+        console.error('Failed to load project unlock content:', err)
+        if (!baseProject) setCustomProject(null)
+        setClassRewardComponents(null)
+      } finally {
+        if (!cancelled) setLoadingContent(false)
       }
     }
     load()
     return () => { cancelled = true }
-  }, [classId, projectName])
+  }, [classId, projectName, baseProject])
+
+  const project = baseProject || customProject
+  const loading = loadingContent && !baseProject
+  const color = project?.color || '#3b82f6'
 
   const components = classRewardComponents || getUnlockComponents(projectName)
   const total = components.length
@@ -41,24 +63,76 @@ export default function ProjectComponentUnlockPage() {
   const [allUnlocked, setAllUnlocked] = useState(false)
 
   useEffect(() => {
-    if (unlockedComponents.size >= total) {
+    if (unlockedComponents.size >= total && total > 0) {
       setAllUnlocked(true)
-      if (window.markAdventureStepComplete) {
-        window.markAdventureStepComplete(projectName, 'unlock', 3)
+      markAdventureStepComplete({
+        classId,
+        projectSlug: projectName,
+        stepKey: 'unlock',
+        stepOrder: 3,
+      }).catch(() => {})
+    }
+  }, [unlockedComponents, total, projectName, classId])
+
+  const handleUnlock = async (index) => {
+    if (!unlockedComponents.has(index)) {
+      setUnlockedComponents(prev => new Set([...prev, index]))
+
+      const component = components[index]
+      if (component && component.type) {
+        const canonicalType = component.type
+
+        setIsSaving(true)
+        try {
+          if (classId) {
+            await saveClassAdventureUnlocks(classId, [canonicalType])
+          } else {
+            await unlockComponentTypes([canonicalType])
+          }
+        } catch (error) {
+          console.error('Failed to unlock component type:', error)
+          setUnlockedComponents(prev => new Set([...prev].filter((_, i) => i !== index)))
+        } finally {
+          setIsSaving(false)
+        }
       }
     }
-  }, [unlockedComponents, total, projectName])
+  }
 
-   const handleUnlock = (index) => {
-     if (!unlockedComponents.has(index)) {
-       setUnlockedComponents(prev => new Set([...prev, index]))
-     }
-   }
+  const handleUnlockAll = async () => {
+    const allIndices = new Set(components.map((_, i) => i))
+    setUnlockedComponents(allIndices)
 
-   const handleUnlockAll = () => {
-     const allIndices = new Set(components.map((_, i) => i))
-     setUnlockedComponents(allIndices)
-   }
+    const canonicalTypes = components
+      .filter(comp => comp && comp.type)
+      .map(comp => comp.type)
+      .filter(Boolean)
+
+    if (canonicalTypes.length > 0) {
+      setIsSaving(true)
+      try {
+        if (classId) {
+          await saveClassAdventureUnlocks(classId, canonicalTypes)
+        } else {
+          await unlockComponentTypes(canonicalTypes)
+        }
+      } catch (error) {
+        console.error('Failed to unlock component types:', error)
+        setUnlockedComponents(new Set())
+      } finally {
+        setIsSaving(false)
+      }
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="gamification-page" style={{ background: theme === 'dark' ? 'linear-gradient(160deg,#080e1e 0%,#0c1528 55%,#07101f 100%)' : 'linear-gradient(160deg,#f0f4ff 0%,#e8edf8 55%,#f0f4ff 100%)', color: theme === 'dark' ? '#e2e8f0' : '#1e293b', padding: 40, textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Loading project…</div>
+      </div>
+    )
+  }
 
   if (!project) {
     return (
@@ -86,7 +160,7 @@ export default function ProjectComponentUnlockPage() {
         <div className="completion-subtitle" style={{ color: theme === 'dark' ? '#64748b' : '#94a3b8', marginBottom: 24 }}>
           You earned all {total} new components!
         </div>
-        
+
         <div className="component-unlock-list" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginBottom: 24 }}>
           {components.map((comp, i) => (
             <div key={i} className="component-unlock-item" style={{
@@ -115,102 +189,105 @@ export default function ProjectComponentUnlockPage() {
     )
   }
 
-    return (
-      <div className="gamification-page" style={{ background: theme === 'dark' ? 'linear-gradient(160deg,#080e1e 0%,#0c1528 55%,#07101f 100%)' : 'linear-gradient(160deg,#f0f4ff 0%,#e8edf8 55%,#f0f4ff 100%)', color: theme === 'dark' ? '#e2e8f0' : '#1e293b' }}>
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap');
-        `}</style>
+  return (
+    <div className="gamification-page" style={{ background: theme === 'dark' ? 'linear-gradient(160deg,#080e1e 0%,#0c1528 55%,#07101f 100%)' : 'linear-gradient(160deg,#f0f4ff 0%,#e8edf8 55%,#f0f4ff 100%)', color: theme === 'dark' ? '#e2e8f0' : '#1e293b' }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap');
+      `}</style>
 
-        <div className="gamification-topbar">
-          <button className="btn-back" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8' }} onClick={() => navigate(mapPath)}>
-            ← Map
-          </button>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, color, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>
-              🎁 {project.title}
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: theme === 'dark' ? '#f0f4ff' : '#0f172a' }}>Component Unlock</div>
+      <div className="gamification-topbar">
+        <button className="btn-back" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)', color: '#94a3b8' }} onClick={() => navigate(mapPath)}>
+          ← Map
+        </button>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase' }}>
+            🎁 {project.title}
           </div>
-          <div style={{ fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
-            {unlockedComponents.size}/{total} unlocked
+          <div style={{ fontSize: 14, fontWeight: 700, color: theme === 'dark' ? '#f0f4ff' : '#0f172a' }}>Component Unlock</div>
+        </div>
+        <div style={{ fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
+          {unlockedComponents.size}/{total} unlocked
+        </div>
+      </div>
+
+      <div className="gamification-content" style={{ animation: 'fadeUp .35s ease' }}>
+        <div style={{ textAlign: 'center', marginBottom: 28 }}>
+          <div style={{ fontSize: 24, fontWeight: 800, color: theme === 'dark' ? '#f0f4ff' : '#0f172a', marginBottom: 8 }}>
+            New Components!
+          </div>
+          <div style={{ fontSize: 14, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
+            Complete the project to earn these parts
           </div>
         </div>
 
-        <div className="gamification-content" style={{ animation: 'fadeUp .35s ease' }}>
-          <div style={{ textAlign: 'center', marginBottom: 28 }}>
-            <div style={{ fontSize: 24, fontWeight: 800, color: theme === 'dark' ? '#f0f4ff' : '#0f172a', marginBottom: 8 }}>
-              New Components!
-            </div>
-            <div style={{ fontSize: 14, color: theme === 'dark' ? '#94a3b8' : '#64748b' }}>
-              Complete the project to earn these parts
-            </div>
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 14, color: theme === 'dark' ? '#94a3b8' : '#64748b', marginBottom: 8 }}>
+            {unlockedComponents.size} of {total} components unlocked
           </div>
-
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 14, color: theme === 'dark' ? '#94a3b8' : '#64748b', marginBottom: 8 }}>
-              {unlockedComponents.size} of {total} components unlocked
-            </div>
-            <div className="progress-bar-track" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)', height: 6, borderRadius: 99, overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 99, width: `${(unlockedComponents.size / total) * 100}%`, background: color, transition: 'width .4s ease' }} />
-            </div>
+          <div className="progress-bar-track" style={{ background: theme === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)', height: 6, borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{ height: '100%', borderRadius: 99, width: `${total ? (unlockedComponents.size / total) * 100 : 0}%`, background: color, transition: 'width .4s ease' }} />
           </div>
+        </div>
 
-          <div className="component-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {components.map((comp, index) => {
-              const isUnlocked = unlockedComponents.has(index)
-              return (
-                <div
-                  key={index}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: 16,
-                    background: theme === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
-                    borderRadius: 12,
-                    border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-                    opacity: isUnlocked ? 1 : 0.7,
-                  }}
-                >
-                  <div style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: 12,
-                    background: isUnlocked ? comp.color : (theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'),
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: 28,
-                    flexShrink: 0,
-                  }}>
-                    {isUnlocked ? comp.icon : '🔒'}
+        <div className="component-list" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {components.map((comp, index) => {
+            const isUnlocked = unlockedComponents.has(index)
+            return (
+              <div
+                key={index}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  padding: 16,
+                  background: theme === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)',
+                  borderRadius: 12,
+                  border: `1px solid ${theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                  opacity: isUnlocked ? 1 : 0.7,
+                }}
+              >
+                <div style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 12,
+                  background: isUnlocked ? comp.color : (theme === 'dark' ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'),
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 28,
+                  flexShrink: 0,
+                }}>
+                  {isUnlocked ? comp.icon : '🔒'}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: theme === 'dark' ? '#f0f4ff' : '#0f172a', marginBottom: 2 }}>
+                    {comp.name}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: theme === 'dark' ? '#f0f4ff' : '#0f172a', marginBottom: 2 }}>
-                      {comp.name}
-                    </div>
-                     <div style={{ fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b', lineHeight: 1.4 }}>
-                       {comp.desc}
-                     </div>
+                  <div style={{ fontSize: 13, color: theme === 'dark' ? '#94a3b8' : '#64748b', lineHeight: 1.4 }}>
+                    {comp.desc}
                   </div>
-                  {!isUnlocked && (
-                    <button
-                      onClick={() => handleUnlock(index)}
-                      style={{
-                        padding: '8px 16px',
-                        borderRadius: 8,
-                        border: 'none',
-                        background: `linear-gradient(135deg, ${comp.color}, ${comp.color}cc)`,
-                        color: '#fff',
-                        fontWeight: 700,
-                        fontSize: 13,
-                        cursor: 'pointer',
-                        flexShrink: 0,
-                      }}
-                    >
-                      Unlock
-                    </button>
-                  )}
+                </div>
+                {!isUnlocked && (
+                  <button
+                    disabled={isSaving}
+                    onClick={() => handleUnlock(index)}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: 8,
+                      border: 'none',
+                      background: isSaving
+                        ? `linear-gradient(135deg, ${comp.color}99, ${comp.color}99)`
+                        : `linear-gradient(135deg, ${comp.color}, ${comp.color}cc)`,
+                      color: '#fff',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: isSaving ? 'not-allowed' : 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {isSaving ? 'Saving...' : 'Unlock'}
+                  </button>
+                )}
                   {isUnlocked && (
                     <div style={{
                       padding: '8px 16px',
@@ -226,24 +303,26 @@ export default function ProjectComponentUnlockPage() {
                 </div>
               )
             })}
-          </div>
 
           {unlockedComponents.size < total && (
             <div style={{ textAlign: 'center', marginTop: 8 }}>
               <button
+                disabled={isSaving}
                 onClick={handleUnlockAll}
                 style={{
                   padding: '10px 20px',
                   borderRadius: 8,
                   border: 'none',
-                  background: `linear-gradient(135deg, ${color}, ${color}cc)`,
+                  background: isSaving
+                    ? `linear-gradient(135deg, ${color}99, ${color}99)`
+                    : `linear-gradient(135deg, ${color}, ${color}cc)`,
                   color: '#fff',
                   fontWeight: 700,
                   fontSize: 14,
-                  cursor: 'pointer',
+                  cursor: isSaving ? 'not-allowed' : 'pointer',
                 }}
               >
-                Unlock All ({total - unlockedComponents.size} remaining)
+                {isSaving ? 'Saving...' : `Unlock All (${total - unlockedComponents.size} remaining)`}
               </button>
             </div>
           )}
@@ -260,6 +339,6 @@ export default function ProjectComponentUnlockPage() {
           )}
         </div>
       </div>
-    )
+    </div>
+  )
 }
-

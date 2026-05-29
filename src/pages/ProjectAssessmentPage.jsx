@@ -2,8 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
-import { getGlobalAdventureConfig, getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
-import { getProjectContentBySlug, getProjectGuidedSteps } from '../services/classAdventureAdapter'
+import { getProjectGuidedSteps } from '../services/classAdventureAdapter'
+import {
+  getAdventureProjectContent,
+  markAdventureStepComplete,
+  postProjectCompleted,
+} from '../services/adventureService'
 
 const PHASE_LABEL = { wire: 'Wiring', code: 'Coding', run: 'Run' }
 const PHASE_COLOR = { wire: '#22c55e', code: '#3b82f6', run: '#f59e0b' }
@@ -252,9 +256,9 @@ export default function ProjectAssessmentPage() {
     let cancelled = false
     const load = async () => {
       try {
-        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
+        const { project } = await getAdventureProjectContent(classId, projectName)
         if (cancelled) return
-        setClassProjectContent(getProjectContentBySlug(response?.resolved, projectName))
+        setClassProjectContent(project)
       } catch {
         if (!cancelled) setClassProjectContent(null)
       }
@@ -323,15 +327,16 @@ const projectColor  = location.state?.projectColor || '#22c55e'
     if (result.passed) {
       if (!completedProjects.includes(projectName)) completeProject?.(projectName)
       else { const proj = PROJECTS.find(p => p.slug === projectName); awardXP?.(Math.round((proj?.xpReward || 100) * 0.25), 'Re-submission bonus') }
-      if (window.markAdventureStepComplete) {
-        window.markAdventureStepComplete(projectName, 'sim', 4)
-      }
+      markAdventureStepComplete({
+        classId,
+        projectSlug: projectName,
+        stepKey: 'sim',
+        stepOrder: 4,
+      }).catch(() => {})
       if (classId) {
         const proj = PROJECTS.find(p => p.slug === projectName)
-        postClassAdventureProgressEvent(classId, {
-          eventType: 'PROJECT_COMPLETED',
-          projectSlug: projectName,
-          payload: { xpEarned: classProjectContent?.xpReward || proj?.xpReward || 0 },
+        postProjectCompleted(classId, projectName, {
+          xpEarned: classProjectContent?.xpReward || proj?.xpReward || 0,
         }).catch(() => {})
       }
     }

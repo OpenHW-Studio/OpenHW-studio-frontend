@@ -36,6 +36,7 @@ import {
   getMyAssignmentSubmission,
   submitAssignment,
 } from "../../services/classroomService.js";
+import { getUserUnlockedComponents } from "../../services/adventureService";
 import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
 import StudentAssignmentModal from "../../components/teacher/class-detail/StudentAssignmentModal.jsx";
 import {
@@ -302,27 +303,33 @@ export function SimulatorPage({ gamificationMode = false }) {
   const isLiveTeacher = liveMeetingMode && liveRoleParam === 'teacher'
   const isLiveStudent = liveMeetingMode && !isLiveTeacher
 
-  // -- Gamification --
-  const {
-    trackComponentPlaced,
-    trackWireDrawn,
-    trackSimulationRun,
-    isUnlocked,
-    coins = 0,
-    currentLevel,
-    currentLevelData,
-    nextLevel,
-    xpProgress,
-  } = typeof useGamification === "function" ? useGamification() : {};
+// -- Gamification --
+   const {
+     trackComponentPlaced,
+     trackWireDrawn,
+     trackSimulationRun,
+     isUnlocked,
+     unlockedComponentTypes,
+     unlockComponentTypes,
+     coins = 0,
+     currentLevel,
+     currentLevelData,
+     nextLevel,
+     xpProgress,
+   } = useGamification();
+
+  const enforcePaletteUnlocks = gamificationMode || Boolean(classId);
   const gamProject = useMemo(
     () =>
       gamificationMode && typeof PROJECTS !== "undefined"
         ? (PROJECTS.find((p) => p.slug === projectName) ?? null)
         : null,
     [gamificationMode, projectName],
-  );
+);
   const [gamPanelOpen, setGamPanelOpen] = useState(true);
   const [gamTab, setGamTab] = useState("components");
+  const [adventureUnlockedComponents, setAdventureUnlockedComponents] = useState(null);
+  const [isUnlocksLoading, setIsUnlocksLoading] = useState(false);
   const WOKWI_TO_COMP_ID = useMemo(
     () => ({
       "wokwi-led": "led",
@@ -423,39 +430,109 @@ export function SimulatorPage({ gamificationMode = false }) {
       "wokwi-breadboard-half": "breadboard",
       "openhw-breadboard-half": "breadboard",
       "wokwi-breadboard-mini": "breadboard",
-      "openhw-breadboard-mini": "breadboard",
-      "wokwi-neopixel-matrix": "neopixel",
-      "openhw-neopixel-matrix": "neopixel",
-      "wokwi-neopixel-ring": "neopixel",
-      "openhw-neopixel-ring": "neopixel",
-      "wokwi-arduino-sensor-shield": "shield",
-      "openhw-arduino-sensor-shield": "shield",
-    }),
+       "wokwi-neopixel-matrix": "neopixel",
+       "openhw-neopixel-matrix": "neopixel",
+       "wokwi-neopixel-ring": "neopixel",
+       "openhw-neopixel-ring": "neopixel",
+       "wokwi-arduino-sensor-shield": "shield",
+       "openhw-arduino-sensor-shield": "shield",
+       // Motor and motor-driver mappings (used in component unlocks)
+       "wokwi-motor": "motor",
+       "openhw-motor": "motor",
+       "wokwi-motor-driver": "motor-driver",
+       "openhw-motor-driver": "motor-driver",
+     }),
     [],
   );
 
-  const isPaletteItemLocked = useCallback(
-    (itemType) => {
-      if (!gamificationMode) return false;
-      const compId = WOKWI_TO_COMP_ID[itemType];
-      if (!compId) return false;
-      return isUnlocked ? !isUnlocked(compId) : false;
-    },
-    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID],
-  );
+  useEffect(() => {
+    if (!enforcePaletteUnlocks) {
+      setAdventureUnlockedComponents(null);
+      setIsUnlocksLoading(false);
+      return undefined;
+    }
+
+    if (!activeUser) {
+      console.log('DEBUG: Auth missing, waiting for user...');
+      setIsUnlocksLoading(false);
+      return undefined;
+    }
+
+    setIsUnlocksLoading(true);
+    let cancelled = false;
+    const loadAdventureUnlocks = async () => {
+      console.log('DEBUG: activeUser _id=', activeUser?._id, 'id=', activeUser?.id, 'classId=', classId);
+      try {
+        const unlocked = await getUserUnlockedComponents({
+          classId: classId || undefined,
+          userId: activeUser?._id || activeUser?.id || undefined,
+        });
+        console.log('DEBUG: Fetched from API:', unlocked);
+        if (!cancelled) {
+          setAdventureUnlockedComponents(Array.isArray(unlocked) ? unlocked : []);
+          // Immediately sync Adventure unlocks to context (no delay for gamProjectComponents)
+          if (Array.isArray(unlocked) && unlocked.length > 0) {
+            await unlockComponentTypes(unlocked);
+          }
+          setIsUnlocksLoading(false);
+        }
+      } catch (e) {
+        console.log('DEBUG: API fetch error:', e);
+        if (!cancelled) {
+          setAdventureUnlockedComponents([]);
+          setIsUnlocksLoading(false);
+        }
+      }
+    };
+    loadAdventureUnlocks();
+    return () => {
+      cancelled = true;
+    };
+  }, [enforcePaletteUnlocks, classId, activeUser?._id, activeUser?.id, activeUser, unlockComponentTypes]);
+
+  const paletteUnlockedComponents = useMemo(() => {
+    if (!enforcePaletteUnlocks) return null;
+    if (adventureUnlockedComponents === null) return null;
+
+    if (adventureUnlockedComponents.includes("*")) return ["*"];
+
+    if (unlockedComponentTypes === "*") return ["*"];
+
+    const contextTypes =
+      gamificationMode && Array.isArray(unlockedComponentTypes)
+        ? unlockedComponentTypes
+        : [];
+
+    return [...new Set([...adventureUnlockedComponents, ...contextTypes])];
+  }, [
+    enforcePaletteUnlocks,
+    adventureUnlockedComponents,
+    gamificationMode,
+    unlockedComponentTypes,
+  ]);
 
   const gamProjectComponents = useMemo(() => {
     if (!gamProject?.components) return [];
+    console.log('DEBUG: Total components in catalog:', gamProject.components.length, 'vs Unlocked:', adventureUnlockedComponents?.length, 'contextUnlocks:', unlockedComponentTypes?.length);
     return gamProject.components.map((c) => {
-      const compId = WOKWI_TO_COMP_ID[c.type];
       const compDef =
-        compId && typeof COMPONENT_MAP !== "undefined"
-          ? COMPONENT_MAP[compId]
+        typeof COMPONENT_MAP !== "undefined" && (c.type.startsWith('openhw-') || c.type.startsWith('wokwi-'))
+          ? COMPONENT_MAP[c.type.replace('openhw-', '').replace('wokwi-', '')]
           : null;
-      const isLocked = compId && isUnlocked ? !isUnlocked(compId) : false;
-      return { ...c, compId, compDef, isLocked };
+      // Check against BOTH context unlocks AND adventure unlocks
+      const normalizedType = c.type.replace('openhw-', '').replace('wokwi-', '');
+      const isLocked = !(
+        isUnlocked(c.type) || 
+        isUnlocked(c.type.replace('openhw-', 'wokwi-')) || 
+        isUnlocked(c.type.replace('wokwi-', 'openhw-')) ||
+        // Also check adventure unlocks directly
+        adventureUnlockedComponents?.includes(c.type) ||
+        adventureUnlockedComponents?.includes(c.type.replace('openhw-', 'wokwi-')) ||
+        adventureUnlockedComponents?.includes(normalizedType)
+      );
+      return { ...c, compId: c.type.replace('openhw-', '').replace('wokwi-', ''), compDef, isLocked };
     });
-  }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
+  }, [gamProject, isUnlocked, unlockedComponentTypes, adventureUnlockedComponents]);
 
   const gamLockedCount = gamProjectComponents.filter(
     (c) => c.isLocked && c.compId,
@@ -1903,23 +1980,34 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => window.removeEventListener("online", drainQueue);
   }, []);
 
-  // ── Sync backend custom components (cache-first, version-checked) ──────────
+// ── Sync backend custom components (cache-first, version-checked) ──────────
   // On every page load:
   //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
   //  2. GET /api/components/version (~40 bytes) → compare hash
   //  3. Only fetch + transpile when the hash actually changed
+  //  Note: In Adventure/Classroom mode, clear cache to ensure component filtering
+  //  is based on fresh unlock data from the API.
   useEffect(() => {
     let cancelled = false;
 
     const syncBackendComponents = async () => {
-      // ── Step 1: Serve from cache immediately ──────────────────────────────
-      const cached = await getCachedComponents();
-      if (cached.length > 0 && !cancelled) {
-        injectComponentsIntoRegistry(cached);
-        setCustomCatalogVersion((v) => v + 1);
-        console.log(
-          `[ComponentCache] Injected ${cached.length} components from IDB cache.`,
-        );
+      // ── Step 1: In Adventure mode, clear cache to force fresh component list
+      // This prevents "ghost cache" of 107 components from appearing
+      if (enforcePaletteUnlocks) {
+        await clearComponentCache();
+        console.log("[ComponentCache] Cleared cache for Adventure mode.");
+      }
+
+      // ── Step 1b: Serve from cache immediately (non-Adventure mode only) ───────
+      if (!enforcePaletteUnlocks) {
+        const cached = await getCachedComponents();
+        if (cached.length > 0 && !cancelled) {
+          injectComponentsIntoRegistry(cached);
+          setCustomCatalogVersion((v) => v + 1);
+          console.log(
+            `[ComponentCache] Injected ${cached.length} components from IDB cache.`,
+          );
+        }
       }
 
       // ── Step 2: Lightweight version check ────────────────────────────────
@@ -3729,7 +3817,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       if (item) return { ...item, group: group.group };
     }
     return { type: comp.type, label: comp.label || comp.type, group: "Custom" };
-  }, [selected, components]);
+  }, [selected, components, CATALOG]);
 
   // ── Serial auto-scroll ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -11933,8 +12021,11 @@ export function SimulatorPage({ gamificationMode = false }) {
             handleUploadZip={handleUploadZip}
             openComponentEditor={openComponentEditor}
             showLockToast={showLockToast}
-            isPaletteItemLocked={isPaletteItemLocked}
-            CATALOG={LOCAL_CATALOG}
+            unlockedComponents={paletteUnlockedComponents}
+            enforceUnlocks={enforcePaletteUnlocks}
+            hideLockedComponents={false}
+            unlocksLoading={isUnlocksLoading}
+            CATALOG={CATALOG}
             GROUP_COLORS={GROUP_COLORS}
             GROUP_ICON_SVG={GROUP_ICON_SVG}
             COMPONENT_REGISTRY={COMPONENT_REGISTRY}

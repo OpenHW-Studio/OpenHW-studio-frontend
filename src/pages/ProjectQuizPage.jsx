@@ -3,8 +3,12 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
 import { getProjectFlashcards } from '../services/gamification/ProjectData'
-import { getGlobalAdventureConfig, getResolvedClassAdventure, postClassAdventureProgressEvent } from '../services/classAdventureService'
-import { getProjectContentBySlug } from '../services/classAdventureAdapter'
+import {
+  getAdventureProjectContent,
+  markAdventureStepComplete,
+  postQuizSubmitted,
+  toProjectDisplayMeta,
+} from '../services/adventureService'
 
 export default function ProjectQuizPage() {
   const { projectName } = useParams()
@@ -12,43 +16,35 @@ export default function ProjectQuizPage() {
   const navigate = useNavigate()
   const classId = new URLSearchParams(location.search).get('classId')
   const mapPath = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure'
-  const [classQuizQuestions, setClassQuizQuestions] = useState(null)
   const { theme = 'dark' } = useGamification()
 
-const baseProject = PROJECTS.find(p => p.slug === projectName)
+  const baseProject = PROJECTS.find(p => p.slug === projectName)
   const [customProject, setCustomProject] = useState(null)
-  const [loadingCustom, setLoadingCustom] = useState(() => !baseProject)
+  const [classQuizQuestions, setClassQuizQuestions] = useState(null)
+  const [loadingContent, setLoadingContent] = useState(() => !baseProject)
 
-  // Load custom project metadata from class adventure if needed
   useEffect(() => {
-    if (baseProject) {
-      setCustomProject(null)
-      setLoadingCustom(false)
-      return
-    }
     let cancelled = false
-    setLoadingCustom(true)
     const load = async () => {
+      if (!baseProject) setLoadingContent(true)
       try {
-        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
+        const { project: projectContent } = await getAdventureProjectContent(classId, projectName)
         if (cancelled) return
-        const classProject = getProjectContentBySlug(response?.resolved, projectName)
-        if (classProject) {
-          setCustomProject({
-            slug: classProject.slug,
-            id: classProject.id,
-            title: classProject.title,
-            color: classProject.color || '#3b82f6',
-            xpReward: classProject.xpReward || 100,
-          })
-        } else {
-          setCustomProject(null)
+        if (!baseProject) {
+          setCustomProject(toProjectDisplayMeta(projectContent))
         }
+        setClassQuizQuestions(
+          Array.isArray(projectContent?.quizQuestions) && projectContent.quizQuestions.length
+            ? projectContent.quizQuestions
+            : null,
+        )
       } catch (err) {
-        console.error('Failed to load custom project:', err)
-        setCustomProject(null)
+        if (cancelled) return
+        console.error('Failed to load project quiz content:', err)
+        if (!baseProject) setCustomProject(null)
+        setClassQuizQuestions(null)
       } finally {
-        if (!cancelled) setLoadingCustom(false)
+        if (!cancelled) setLoadingContent(false)
       }
     }
     load()
@@ -56,29 +52,13 @@ const baseProject = PROJECTS.find(p => p.slug === projectName)
   }, [classId, projectName, baseProject])
 
   const project = baseProject || customProject
-  const loading = loadingCustom && !baseProject
+  const loading = loadingContent && !baseProject
   const color = project?.color || '#3b82f6'
 
   const [idx, setIdx] = useState(0)
   const [quizPick, setQuizPick] = useState(null)
   const [allDone, setAllDone] = useState(false)
   const [selectedAnswers, setSelectedAnswers] = useState(() => Array(getProjectFlashcards(projectName).length).fill(null))
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const response = classId ? await getResolvedClassAdventure(classId) : await getGlobalAdventureConfig()
-        if (cancelled) return
-        const projectContent = getProjectContentBySlug(response?.resolved, projectName)
-        setClassQuizQuestions(Array.isArray(projectContent?.quizQuestions) && projectContent.quizQuestions.length ? projectContent.quizQuestions : null)
-      } catch {
-        if (!cancelled) setClassQuizQuestions(null)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [classId, projectName])
 
   const flashcards = classQuizQuestions
     ? classQuizQuestions.map((question, index) => ({
@@ -101,14 +81,18 @@ const baseProject = PROJECTS.find(p => p.slug === projectName)
   }).length
 
   useEffect(() => {
-    if (allDone && correctCount >= total * 0.7 && window.markAdventureStepComplete) {
-      window.markAdventureStepComplete(projectName, 'quiz', 2)
+    if (allDone && correctCount >= total * 0.7) {
+      markAdventureStepComplete({
+        classId,
+        projectSlug: projectName,
+        stepKey: 'quiz',
+        stepOrder: 2,
+      }).catch(() => {})
     }
     if (allDone && classId) {
-      postClassAdventureProgressEvent(classId, {
-        eventType: 'QUIZ_SUBMITTED',
-        projectSlug: projectName,
-        payload: { score: total ? Math.round((correctCount / total) * 100) : 0, passed: correctCount >= total * 0.7 },
+      postQuizSubmitted(classId, projectName, {
+        score: total ? Math.round((correctCount / total) * 100) : 0,
+        passed: correctCount >= total * 0.7,
       }).catch(() => {})
     }
   }, [allDone, correctCount, total, projectName, classId])

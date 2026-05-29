@@ -107,3 +107,11 @@ export const getGlobalAdventureConfig = async () => {
   });
   return parseResponse(response, "Failed to fetch global adventure content");
 };
+
+export const getAdventureUnlocks = async (classId) => {
+  const response = await fetch(`${BASE_URL}/classroom/${classId}/adventure/unlocks`, {
+    method: "GET",
+    headers: authHeaders(),
+  });
+  return parseResponse(response, "Failed to fetch adventure unlocks");
+};

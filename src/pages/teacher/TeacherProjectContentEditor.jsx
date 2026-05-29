@@ -468,16 +468,16 @@ export default function TeacherProjectContentEditor() {
         (p) => p.slug === projectSlug
       );
 
-        // Build rewardComponents array with full component data
-        const selectedRewardComponents = COMPONENTS.filter((c) =>
-          rewardComponents.includes(c.id)
-        ).map(({ id, name, icon, color, description }) => ({
-          id,
-          name,
-          icon,
-          color,
-          desc: description || "",
-        }));
+// Build rewardComponents array with full component data (using openhw-* format)
+         const selectedRewardComponents = COMPONENTS.filter((c) =>
+           rewardComponents.includes(c.id)
+         ).map(({ id, name, icon, color, description }) => ({
+           type: `openhw-${id}`,
+           name,
+           icon,
+           color,
+           desc: description || "",
+         }));
 
         const makeAssessmentContent = () => {
           const thr = Number.isInteger(assessmentNodeContent.passingThreshold)

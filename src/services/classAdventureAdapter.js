@@ -232,3 +232,39 @@ export const getProjectGuidedSteps = (project, projectSlug) => {
 export const getProjectContentBySlug = (content, slug) =>
   (content?.projects || []).find((project) => project.slug === slug) || null;
 
+// ── Helper: Convert ProjectBank entry to adventure project format ──
+export const projectBankToAdventureProject = (bankProject, index) => {
+  return {
+    id: bankProject._id || bankProject.slug,
+    slug: bankProject.slug,
+    worldId: `world-${bankProject.world || 1}`,
+    order: bankProject.order || index + 1,
+    enabled: bankProject.enabled !== false,
+    title: bankProject.title,
+    subtitle: bankProject.subtitle || "",
+    description: bankProject.description || "",
+    prerequisite: bankProject.prerequisite || null,
+    xpReward: bankProject.xpReward || 0,
+    rewardComponents: bankProject.rewardComponents || [],
+    theory: bankProject.theory || [],
+    quizQuestions: bankProject.quizQuestions || [],
+    guidedSteps: bankProject.guidedSteps || [],
+    assessment: bankProject.assessment || {},
+    components: bankProject.components || [],
+    starterCode: bankProject.starterCode || "",
+  };
+};
+
+// ── Helper: Fetch projects from ProjectBank and merge with fallback ──
+export const fetchProjectBankProjects = async () => {
+  try {
+    const sharedResponse = await fetch(`${(import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:5001/api" : "/api"))}/project-bank/shared`);
+    if (!sharedResponse.ok) return [];
+    const data = await sharedResponse.json();
+    return (data.projects || []).map((p, i) => projectBankToAdventureProject(p, i));
+  } catch (e) {
+    console.warn("Failed to fetch shared project bank:", e);
+    return [];
+  }
+};
+
