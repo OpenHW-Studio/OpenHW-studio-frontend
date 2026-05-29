@@ -674,7 +674,7 @@ export function collectConnectedComponentPins(
     }
 
     for (const [id, inst] of instances.entries()) {
-        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
             connect(`${id}:p1`, `${id}:p2`);
         }
     }
@@ -709,7 +709,7 @@ export function collectConnectedComponentPins(
         if (!compId || compId === boardId) continue;
         const inst = instances.get(compId);
         if (!inst) continue;
-        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') continue;
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') continue;
         out.set(`${compId}:${pinId}`, { inst, pinId });
     }
 
