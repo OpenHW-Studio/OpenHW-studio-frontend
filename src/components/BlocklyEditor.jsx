@@ -1431,7 +1431,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       renderer: 'zelos',
       grid: { spacing: 20, length: 3, colour: isDark ? '#1e2d47' : '#e2e8f0', snap: true },
       zoom: { controls: true, wheel: true, startScale: 0.9, maxScale: 3, minScale: 0.3, pinch: true },
-      move: { scrollbars: true, drag: true, wheel: true },
+      move: { scrollbars: true, drag: true, wheel: false },
       scrollbars: true,
       trashcan: true,
       sounds: false,
@@ -1860,7 +1860,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
         </svg>
       </button>
 
-      {/* Hide Blockly's built-in scrollbars, force opaque markers, and hide zoom in/out */}
+      {/* Hide Blockly's built-in scrollbars but keep dragging enabled, force opaque markers, and hide zoom in/out */}
       <style>{`
         .blocklyScrollbarHorizontal, .blocklyScrollbarVertical { display: none !important; }
         .panel-scroll .injectionDiv,
