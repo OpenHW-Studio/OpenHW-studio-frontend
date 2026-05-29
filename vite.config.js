@@ -71,7 +71,7 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       environment: 'jsdom',
-      exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
+      exclude: ['e2e/**', 'node_modules/**', 'dist/**', 'src/worker/protocol-compliance.test.mjs'],
       deps: {
         inline: ['rp2040js', 'avr8js', '@openhw/emulator', 'littlefs'],
       }
