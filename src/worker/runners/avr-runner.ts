@@ -510,7 +510,7 @@ export class AVRRunner {
             const nextVoltage = Math.max(0, voltage - drop);
             inst.setPinVoltage(otherPin, nextVoltage);
             visit(`${compId}:${otherPin}`, nextVoltage);
-        } else if (inst.type === 'openhw-led' || inst.type === 'openhw-led') {
+        } else if (inst.type === 'openhw-led' || inst.type === 'wokwi-led') {
             // Forward bias: Anode to Cathode
             if (pinId === 'A') {
                 const nextV = Math.max(0, voltage - 1.8);
@@ -1560,7 +1560,7 @@ export class AVRRunner {
         // Identify nets that contain a resistor pin
         this.netHasResistor.clear();
         for (const [id, inst] of this.instances) {
-            if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+            if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
                 const n1 = this.pinToNet.get(`${id}:p1`);
                 const n2 = this.pinToNet.get(`${id}:p2`);
                 if (n1 !== undefined) this.netHasResistor.add(n1);

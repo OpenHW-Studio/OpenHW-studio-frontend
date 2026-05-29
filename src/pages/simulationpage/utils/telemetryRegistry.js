@@ -169,7 +169,7 @@ export function getTelemetryParamsForComponent(compType) {
   // Categorize components to prevent modal clutter
   const isBoard = safeCompType.includes('arduino') || safeCompType.includes('pico') || safeCompType.includes('attiny');
   const isI2C = safeCompType.includes('ssd1306') || safeCompType.includes('lcd1602-i2c') || safeCompType.includes('lcd2004-i2c') || safeCompType.includes('mpu6050') || safeCompType.includes('ds1307') || safeCompType.includes('bmp180') || safeCompType.includes('max30102');
-  const isSPI = safeCompType.includes('max7219') || safeCompType.includes('ili9341') || safeCompType.includes('nokia-5110') || safeCompType.includes('sd-card');
+  const isSPI = safeCompType.includes('max7219') || safeCompType.includes('ili9341') || safeCompType.includes('nokia-5110') || safeCompType.includes('sd-card') || safeCompType.includes('mfrc522');
   const isOneWire = safeCompType.includes('dht22');
   const isAnalog = safeCompType.includes('potentiometer') || safeCompType.includes('photoresistor') || safeCompType.includes('thermistor') || safeCompType.includes('joystick') || safeCompType.includes('soil') || safeCompType.includes('sensor');
   const isPWM = safeCompType.includes('led') || safeCompType.includes('servo') || safeCompType.includes('buzzer') || safeCompType.includes('motor');
