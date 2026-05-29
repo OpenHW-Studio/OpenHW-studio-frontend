@@ -149,6 +149,9 @@ export function useEsp32Engine({
       if (runStartGuardRef && runStartGuardRef.current !== undefined) {
           runStartGuardRef.current = false;
       }
+      if (workerRef?.current) {
+          workerRef.current.postMessage({ type: 'STOP' });
+      }
       micropythonModeRef.current = false;
       replStateRef.current = 'idle';
       serialBufferRef.current = '';
