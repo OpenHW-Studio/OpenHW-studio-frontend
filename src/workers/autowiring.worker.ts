@@ -51,6 +51,17 @@ self.onmessage = async (e) => {
           throw new Error(plan);
         }
 
+        // WORKAROUND: Force Neopixel DIN to map to pin 6 on Arduino
+        if (newComp.type.includes('neopixel') && plan.added_wires) {
+            plan.added_wires.forEach((w: any) => {
+                if (w.from === `${newComp.id}:DIN` && w.to.startsWith(boardId + ':')) {
+                    w.to = `${boardId}:6`;
+                } else if (w.to === `${newComp.id}:DIN` && w.from.startsWith(boardId + ':')) {
+                    w.from = `${boardId}:6`;
+                }
+            });
+        }
+
         // Forward library dependencies from manifest
         if (manifest?.autocoding?.libraries) {
             plan.libraries = manifest.autocoding.libraries;

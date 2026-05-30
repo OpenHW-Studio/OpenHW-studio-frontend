@@ -6230,19 +6230,20 @@ export function SimulatorPage({ gamificationMode = false }) {
               payload.libraries,
             );
             alert(
-              `Note: This component requires libraries: ${payload.libraries.join(", ")}.\nPlease ensure they are installed.`,
+              `Note: This component requires libraries: ${payload.libraries.join(", ")}.\nThey have been automatically added to your library.txt!`,
             );
           }
 
           setProjectFiles((prev) => {
-            let targetFile = prev.find(
+            let nextFiles = [...prev];
+            let targetFile = nextFiles.find(
               (f) =>
                 f.boardId === targetBoardId ||
                 f.id === filename ||
                 f.name === filename,
             );
             if (!targetFile) {
-              const codeFiles = prev.filter(
+              const codeFiles = nextFiles.filter(
                 (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
               );
               if (codeFiles.length > 0) {
@@ -6264,7 +6265,42 @@ export function SimulatorPage({ gamificationMode = false }) {
                   }),
                   dirty: false,
                 };
-                prev = [...prev, targetFile];
+                nextFiles.push(targetFile);
+              }
+            }
+
+            // Automagically add required libraries to library.txt
+            if (payload.libraries && payload.libraries.length > 0) {
+              const libFilename = "library.txt";
+              let libFileIdx = nextFiles.findIndex((f) => f.boardId === targetBoardId && f.name === libFilename);
+              let libContent = libFileIdx !== -1 ? (nextFiles[libFileIdx].content || "") : "";
+              const existingLibs = libContent.split('\n').map(l => l.trim()).filter(Boolean);
+              let addedAny = false;
+              
+              for (const reqLib of payload.libraries) {
+                if (!existingLibs.includes(reqLib)) {
+                  existingLibs.push(reqLib);
+                  addedAny = true;
+                }
+              }
+              
+              if (addedAny) {
+                const newLibContent = existingLibs.join('\n');
+                if (libFileIdx !== -1) {
+                  nextFiles[libFileIdx] = { ...nextFiles[libFileIdx], content: newLibContent };
+                } else {
+                  const libId = `project/${targetBoardId}/${libFilename}`;
+                  nextFiles.push({
+                    id: libId,
+                    path: libId,
+                    name: libFilename,
+                    kind: "code",
+                    boardId: targetBoardId,
+                    boardKind: boardKind,
+                    content: newLibContent,
+                    dirty: false
+                  });
+                }
               }
             }
 
@@ -6272,7 +6308,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               "[handleAutoCode] Injecting code into file:",
               targetFile.id,
             );
-            return prev.map((f) => {
+            return nextFiles.map((f) => {
               if (f.id === targetFile.id) {
                 const currentContent = (activeCodeFileId === f.id || activeCodeFileId === f.name) ? currentCodeRef.current : f.content;
                 const newContent = mergeCodeSnippet(currentContent, parsedSnippet, compId);
