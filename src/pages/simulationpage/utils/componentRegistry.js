@@ -132,7 +132,7 @@ export function sortCatalog(catalog) {
   });
 }
 
-function normalizeGroupName(name, groupMapping) {
+export function normalizeGroupName(name, groupMapping = GROUP_MAPPING) {
   return groupMapping[name] || name;
 }
 
@@ -179,6 +179,29 @@ export function injectComponentsIntoRegistry(comps) {
 
       const uiComponent = resolveUiExport(exportsUI);
       if (!uiComponent) continue;
+
+      // ── Render-probe: catch stale/broken cached transpiled code before it ──
+      // reaches React's render tree. If the component throws synchronously
+      // (e.g. "can't access property BOUNDS, _constants is null"), we skip
+      // this entry. The IDB DB_VERSION bump will evict the stale cache so the
+      // next load fetches fresh, correct transpiled code automatically.
+      try {
+        const probeEl = React.createElement(uiComponent, {
+          state: {}, attrs: {}, isRunning: false,
+        });
+        // Render-probe: call directly to catch stale transpiled reference errors
+        if (typeof uiComponent === 'function') {
+          uiComponent({ state: {}, attrs: {}, isRunning: false });
+        }
+      } catch (probeErr) {
+        // If it throws a hook error, the component successfully ran up to the hook and is likely valid.
+        if (probeErr.message && probeErr.message.includes('Invalid hook call')) {
+          // Pass the probe safely
+        } else {
+          console.warn(`[ComponentCache] Skipping stale/broken cached component "${id}" (probe failed: ${probeErr.message}). Will re-fetch on next load.`);
+          continue;
+        }
+      }
 
       registry[manifest.type] = {
         manifest,

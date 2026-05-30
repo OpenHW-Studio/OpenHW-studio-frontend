@@ -205,7 +205,10 @@ export function useSimulationConsole() {
 
     if (tab === 'telemetry' && format === 'log') {
       const telemetryEntries = allEntries.filter(e => e.source === 'telemetry');
-      const content = telemetryEntries.map(e => `${e.ts} ${e.compId || e.compType || 'COMP'} ${e.message.replace('[Telemetry] ', '')}`).join('\n');
+      let content = telemetryEntries.map(e => `${e.ts} ${e.compId || e.compType || 'COMP'} ${e.message.replace('[Telemetry] ', '')}`).join('\n');
+      if (protocolLogs && protocolLogs.length > 0) {
+        content += '\n\n--- PROTOCOL LOGS ---\n' + protocolLogs.join('\n');
+      }
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -278,8 +281,6 @@ export function SimulationConsolePanel({
   isOpen,
   height,
   entries = [],
-  activeTab = 'console',
-  onTabChange,
   protocolLogs = [],
   componentTelemetryEnabled,
   setComponentTelemetryEnabled,
@@ -297,6 +298,7 @@ export function SimulationConsolePanel({
 }) {
   const bodyRef = useRef(null);
   const shouldAutoScrollRef = useRef(true);
+  const [activeTab, setActiveTab] = useState('console');
   const [filterLevel, setFilterLevel] = useState('all'); // all | error | warn
   const [expandedDetails, setExpandedDetails] = useState({});
   const [showBusTraffic, setShowBusTraffic] = useState(false);
@@ -409,7 +411,7 @@ export function SimulationConsolePanel({
             ].map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => startTransition(() => onTabChange?.(tab.key))}
+                onClick={() => startTransition(() => setActiveTab(tab.key))}
                 style={{
                   padding: '4px 10px',
                   borderRadius: 6,
@@ -552,7 +554,7 @@ export function SimulationConsolePanel({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onMouseDown={e => e.stopPropagation()}>
           {activeTab === 'telemetry' && (
             <button
-              onClick={onDownloadLog}
+              onClick={() => onDownloadLog?.(activeTab)}
               style={{
                 background: 'var(--card)',
                 border: '1px solid var(--border)',
@@ -576,7 +578,7 @@ export function SimulationConsolePanel({
             </button>
           )}
           <button
-            onClick={onDownload}
+            onClick={() => onDownload?.(activeTab)}
             style={{
               background: 'var(--card)',
               border: '1px solid var(--border)',
@@ -598,7 +600,7 @@ export function SimulationConsolePanel({
             </svg>
           </button>
           <button
-            onClick={onClear}
+            onClick={() => onClear?.(activeTab)}
             style={{
               background: 'var(--card)',
               border: '1px solid var(--border)',

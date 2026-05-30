@@ -8,8 +8,6 @@ function CanvasBottomControlsBase({
   setIsConsoleOpen,
   consoleHeight,
   consoleEntries,
-  activeConsoleTab,
-  setActiveConsoleTab,
   protocolLogs,
   setProtocolLogs,
   components,
@@ -111,8 +109,6 @@ function CanvasBottomControlsBase({
         isOpen={isConsoleOpen}
         height={consoleHeight}
         entries={consoleEntries}
-        activeTab={activeConsoleTab}
-        onTabChange={setActiveConsoleTab}
         protocolLogs={protocolLogs}
         componentTelemetryEnabled={componentTelemetryEnabled}
         setComponentTelemetryEnabled={setComponentTelemetryEnabled}
@@ -124,16 +120,16 @@ function CanvasBottomControlsBase({
         onOpenTelemetryModal={onOpenTelemetryModal}
         onResizeStart={onMouseDownConsoleResize}
         onClose={() => setIsConsoleOpen(false)}
-        onClear={() => {
-          if (activeConsoleTab === 'telemetry') {
+        onClear={(tab) => {
+          if (tab === 'telemetry') {
             setProtocolLogs([]);
             clearConsoleEntries('telemetry');
           } else {
             clearConsoleEntries('console');
           }
         }}
-        onDownload={() => downloadConsoleLog(activeConsoleTab, protocolLogs, telemetryMode, 'json')}
-        onDownloadLog={() => downloadConsoleLog(activeConsoleTab, protocolLogs, telemetryMode, 'log')}
+        onDownload={(tab) => downloadConsoleLog(tab, protocolLogs, telemetryMode, 'json')}
+        onDownloadLog={(tab) => downloadConsoleLog(tab, protocolLogs, telemetryMode, 'log')}
       />
     </>
   );
