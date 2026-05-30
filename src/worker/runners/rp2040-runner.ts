@@ -597,6 +597,48 @@ function loadRP2040Firmware(rp2040: RP2040, firmware: string, options: RP2040Fir
     return entryInfo;
 }
 
+class RP2040MockClock {
+    private _micros = 0;
+    private timers: Array<{ micros: number; callback: () => void }> = [];
+    
+    get micros() { return this._micros; }
+    get nanos() { return this._micros * 1000; }
+    
+    pause() { /* Idle */ }
+    resume() { /* Idle */ }
+    
+    createTimer(deltaMicros: number, callback: () => void) {
+        const timer = { micros: this._micros + deltaMicros, callback };
+        this.timers.push(timer);
+        this.timers.sort((a, b) => a.micros - b.micros);
+        return timer;
+    }
+    
+    deleteTimer(timer: any) {
+        const index = this.timers.indexOf(timer);
+        if (index >= 0) this.timers.splice(index, 1);
+    }
+    
+    tick(nanos: number) {
+        this.advance(nanos / 1000);
+    }
+
+    advance(deltaMicros: number) {
+        const targetTime = this._micros + Math.max(deltaMicros, 0);
+        while (this.timers.length > 0 && this.timers[0].micros <= targetTime) {
+            const timer = this.timers.shift()!;
+            this._micros = timer.micros;
+            timer.callback();
+        }
+        this._micros = targetTime;
+    }
+
+    get nanosToNextAlarm(): number {
+        if (this.timers.length === 0) return -1;
+        return Math.max(0, (this.timers[0].micros - this._micros) * 1000);
+    }
+}
+
 export class RP2040Runner implements BoardRunner {
     cpu: RP2040 | null = null;
     gdbWs: WebSocket | null = null;
@@ -643,10 +685,12 @@ export class RP2040Runner implements BoardRunner {
     private i2cBitBangState = new Map<RP2040I2CBus, RP2040I2CBitBangState>();
     private i2cHardwareSeen = new Map<RP2040I2CBus, boolean>([['i2c0', false], ['i2c1', false]]);
     private spiDeviceCache = new Map<'spi0' | 'spi1', BaseComponent[]>();
+    private spiDeviceBusById = new Map<string, Set<'spi0' | 'spi1'>>();
     private peripheralDeviceCacheReady: boolean = false;
     private pwmState = new Map<string, { lastRiseCycle: number; lastFallCycle: number; lastPeriodCycles: number }>();
     private i2sState = new Map<string, { bclkLast: boolean; wsLast: boolean; shiftBuf: number; bitCount: number }>();
     private oneWireState = new Map<string, { lowStartCycle: number | null; highStartCycle: number | null }>();
+    private spiFrameState = new Map<'spi0' | 'spi1', { bytes: number[]; lastByteTime: number }>();
     private componentSyncMeta = new Map<string, { lastSentAt: number; lastWeight: number }>();
     private hasFaulted: boolean = false;
     private bootromLoaded: boolean = false;
@@ -677,6 +721,9 @@ export class RP2040Runner implements BoardRunner {
     private pioStepAccum = 0;
     private debugSerialTxBytes: number = 0;
     private debugSerialRxBytes: number = 0;
+    private debugSpiTxBytes: number = 0;
+    private debugSpiTxTransactions: number = 0;
+    private debugLastSpiLogAt: number = 0;
     private debugGpioTransitions: number = 0;
     private debugLastGpioPin: string = '';
     private debugLastPc: number = 0;
@@ -874,39 +921,46 @@ export class RP2040Runner implements BoardRunner {
         }
         this.pioStepAccum = 0;
 
-        try {
-            const gdbWs = new WebSocket('ws://localhost:3333');
-            this.gdbStatus = 'connecting';
-            this.emitGdbStatus('connecting', 'Attempting ws://localhost:3333');
-            const gdbServer = new GDBServer(this.cpu);
-            const gdbConn = new GDBConnection(gdbServer, (res) => {
-                if (gdbWs.readyState === WebSocket.OPEN) gdbWs.send(res);
-            });
-            gdbWs.onopen = () => {
-                this.gdbStatus = 'connected';
-                this.gdbLastError = '';
-                this.emitGdbStatus('connected', 'GDB bridge connected');
-            };
-            gdbWs.onmessage = (e) => {
-                if (typeof e.data === 'string') gdbConn.feedData(e.data);
-            };
-            gdbWs.onerror = () => {
-                this.gdbStatus = 'error';
-                this.gdbLastError = 'WebSocket error';
-                this.emitGdbStatus('error', this.gdbLastError);
-            };
-            gdbWs.onclose = (evt: any) => {
-                this.gdbStatus = 'closed';
-                const reason = String(evt?.reason || '').trim();
-                const detail = `code=${Number(evt?.code || 0)}${reason ? ` reason=${reason}` : ''}`;
-                this.emitGdbStatus('closed', detail);
-            };
-            this.gdbWs = gdbWs;
-        } catch (err) {
-            console.warn('Silent failure opening GDB Bridge ws://localhost:3333', err);
-            this.gdbStatus = 'error';
-            this.gdbLastError = String((err as any)?.message || err || 'Unknown GDB bridge error');
-            this.emitGdbStatus('error', this.gdbLastError);
+        const enableGdbBridge = (this as any).enableGdbBridge === true;
+        if (enableGdbBridge) {
+            try {
+                const gdbWs = new WebSocket('ws://localhost:3333');
+                this.gdbStatus = 'connecting';
+                this.emitGdbStatus('connecting', 'Attempting ws://localhost:3333');
+                const gdbServer = new GDBServer(this.cpu);
+                const gdbConn = new GDBConnection(gdbServer, (res) => {
+                    if (gdbWs.readyState === WebSocket.OPEN) gdbWs.send(res);
+                });
+                gdbWs.onopen = () => {
+                    this.gdbStatus = 'connected';
+                    this.gdbLastError = '';
+                    this.emitGdbStatus('connected', 'GDB bridge connected');
+                };
+                gdbWs.onmessage = (e) => {
+                    if (typeof e.data === 'string') gdbConn.feedData(e.data);
+                };
+                gdbWs.onerror = () => {
+                    this.gdbStatus = 'disabled';
+                    this.gdbLastError = 'GDB bridge unavailable';
+                    this.emitGdbStatus('stopped', this.gdbLastError);
+                };
+                gdbWs.onclose = (evt: any) => {
+                    this.gdbStatus = 'disabled';
+                    const reason = String(evt?.reason || '').trim();
+                    const detail = `code=${Number(evt?.code || 0)}${reason ? ` reason=${reason}` : ''}`;
+                    this.emitGdbStatus('stopped', detail);
+                };
+                this.gdbWs = gdbWs;
+            } catch (err) {
+                console.warn('Silent failure opening GDB Bridge ws://localhost:3333', err);
+                this.gdbStatus = 'disabled';
+                this.gdbLastError = String((err as any)?.message || err || 'Unknown GDB bridge error');
+                this.emitGdbStatus('stopped', this.gdbLastError);
+            }
+        } else {
+            this.gdbStatus = 'disabled';
+            this.gdbLastError = 'GDB bridge disabled';
+            this.emitGdbStatus('stopped', this.gdbLastError);
         }
         this.bootromLoaded = true;
         this.entryInfo = loadRP2040Firmware(this.cpu, this.firmwareHex, {
@@ -959,6 +1013,11 @@ export class RP2040Runner implements BoardRunner {
         this.running = true;
         this.lastTime = performance.now();
         this.lastStateEmitTime = this.lastTime;
+        if (this.debugEnabled) {
+            const spi0Ids = this.spiDeviceCache.get('spi0')?.map((inst) => inst.id) || [];
+            const spi1Ids = this.spiDeviceCache.get('spi1')?.map((inst) => inst.id) || [];
+            console.log(`[RP2040 START] board=${this.boardId} gdb=${this.gdbStatus} spi0=[${spi0Ids.join(', ')}] spi1=[${spi1Ids.join(', ')}]`);
+        }
         this.emitDebugSnapshot('start', this.lastTime, true);
         this.emitWirelessStubStatus('start', true);
         this.runLoop();
@@ -1218,6 +1277,8 @@ export class RP2040Runner implements BoardRunner {
             .filter((pin) => !!this.pinStates[pin])
             .sort((a, b) => Number(a.replace('GP', '')) - Number(b.replace('GP', '')));
         const pinBitmap = Array.from({ length: 29 }, (_, idx) => (this.pinStates[`GP${idx}`] ? '1' : '0')).join('');
+        const spi0Devices = this.spiDeviceCache.get('spi0')?.map((inst) => inst.id) || [];
+        const spi1Devices = this.spiDeviceCache.get('spi1')?.map((inst) => inst.id) || [];
 
         const payload = {
             type: 'debug',
@@ -1227,12 +1288,20 @@ export class RP2040Runner implements BoardRunner {
             metrics: {
                 running: this.running,
                 faulted: this.hasFaulted,
+                gdbStatus: this.gdbStatus,
+                gdbLastError: this.gdbLastError,
                 pc,
                 sp: this.cpu.core.SP >>> 0,
                 cycles: this.cpu.core.cycles >>> 0,
                 activeUart: this.activeUartIndex,
                 serialTxBytes: this.debugSerialTxBytes,
                 serialRxBytes: this.debugSerialRxBytes,
+                spiTxBytes: this.debugSpiTxBytes,
+                spiTxTransactions: this.debugSpiTxTransactions,
+                spiDevices: {
+                    spi0: spi0Devices,
+                    spi1: spi1Devices,
+                },
                 usbCdcReady: this.usbCdcReady,
                 serialInputQueue: this.serialBuffer.length,
                 stepCount: this.debugStepCount,
@@ -1544,9 +1613,36 @@ export class RP2040Runner implements BoardRunner {
         this.i2cHardwareSeen.set('i2c0', false);
         this.i2cHardwareSeen.set('i2c1', false);
         this.i2cBitBangState.clear();
+        this.spiDeviceBusById.clear();
         this.spiDeviceCache.set('spi0', this.scanRp2040ConnectedSPIDevices('spi0'));
         this.spiDeviceCache.set('spi1', this.scanRp2040ConnectedSPIDevices('spi1'));
+        for (const [bus, devices] of this.spiDeviceCache.entries()) {
+            for (const inst of devices) {
+                let buses = this.spiDeviceBusById.get(inst.id);
+                if (!buses) {
+                    buses = new Set();
+                    this.spiDeviceBusById.set(inst.id, buses);
+                }
+                buses.add(bus);
+            }
+        }
         this.peripheralDeviceCacheReady = true;
+
+        if (this.debugEnabled) {
+            const spi0Ids = this.spiDeviceCache.get('spi0')?.map((inst) => inst.id) || [];
+            const spi1Ids = this.spiDeviceCache.get('spi1')?.map((inst) => inst.id) || [];
+            console.log(`[RP2040 SPI CACHE] spi0=[${spi0Ids.join(', ')}] spi1=[${spi1Ids.join(', ')}]`);
+            this.onStateUpdate({
+                type: 'debug',
+                boardId: this.boardId,
+                category: 'rp2040-spi',
+                reason: 'cache-rebuilt',
+                spi: {
+                    spi0: spi0Ids,
+                    spi1: spi1Ids,
+                },
+            });
+        }
     }
 
     private getRp2040ConnectedI2CDevices(bus: 'i2c0' | 'i2c1'): BaseComponent[] {
@@ -1561,6 +1657,13 @@ export class RP2040Runner implements BoardRunner {
         // Fallback: if bus-pin topology detection misses a supported device,
         // allow address-based matching to keep common display modules functional.
         return this.getI2CCallbackDevices();
+    }
+
+    private getRp2040ConnectedSPIBusesForDevice(componentId: string): Array<'spi0' | 'spi1'> {
+        if (!this.peripheralDeviceCacheReady) {
+            this.rebuildPeripheralDeviceCache();
+        }
+        return Array.from(this.spiDeviceBusById.get(componentId) || []);
     }
 
     private getI2CCallbackDevices(): BaseComponent[] {
@@ -1714,7 +1817,63 @@ export class RP2040Runner implements BoardRunner {
         if (!this.peripheralDeviceCacheReady) {
             this.rebuildPeripheralDeviceCache();
         }
-        return this.spiDeviceCache.get(bus) || [];
+        const wired = this.spiDeviceCache.get(bus) || [];
+        if (wired.length > 0) return wired;
+
+        // Fallback: if wire trace missed it, return all components implementing onSPIByte
+        const fallback: BaseComponent[] = [];
+        for (const inst of this.instances.values()) {
+            if (typeof inst.onSPIByte === 'function') {
+                fallback.push(inst);
+            }
+        }
+        return fallback;
+    }
+
+    private getSpiControlPinRole(pinId: string): 'CS' | 'DC' | 'RESET' | null {
+        const key = String(pinId || '').toUpperCase();
+        if (['CS', 'CE', 'SS', 'SSEL', 'NSS', 'CSN', 'CS_N', 'NCE'].includes(key)) return 'CS';
+        if (['DC', 'D_C', 'A0', 'RS'].includes(key)) return 'DC';
+        if (['RESET', 'RST', 'RES', 'NRST'].includes(key)) return 'RESET';
+        return null;
+    }
+
+    private flushRp2040SpiFrame(bus: 'spi0' | 'spi1', reason: string) {
+        const state = this.spiFrameState.get(bus);
+        if (!state || state.bytes.length === 0) return;
+
+        const devices = this.getRp2040ConnectedSPIDevices(bus);
+        this.onStateUpdate({
+            type: 'protocol:spi',
+            boardId: this.boardId,
+            data: [...state.bytes],
+            timestamp: state.lastByteTime,
+        });
+        this.debugSpiTxTransactions += 1;
+
+        this.onStateUpdate({
+            type: 'debug',
+            boardId: this.boardId,
+            category: 'rp2040-spi',
+            reason: 'frame',
+            spi: {
+                bus,
+                frameBytes: state.bytes.length,
+                txBytes: this.debugSpiTxBytes,
+                txTransactions: this.debugSpiTxTransactions,
+                deviceCount: devices.length,
+                deviceIds: devices.map((d) => d.id),
+                flushReason: reason,
+            },
+        });
+
+        if (this.debugEnabled) {
+            console.log(
+                `[RP2040 SPI] ${bus} frame=${state.bytes.length} reason=${reason} devices=${devices.length}`
+            );
+        }
+
+        state.bytes = [];
     }
 
     private scanRp2040ConnectedSPIDevices(bus: 'spi0' | 'spi1'): BaseComponent[] {
@@ -1733,9 +1892,7 @@ export class RP2040Runner implements BoardRunner {
             if (!this.isComponentPinConnectedToBoardPins(inst.id, sckPin, pinMap.sck)) continue;
 
             const csPin = this.findExistingPinName(inst, ['CS', 'SS', 'CSN', 'NSS', 'CE', 'CS_N']);
-            if (csPin && !this.isComponentPinConnectedToBoardPins(inst.id, csPin, pinMap.cs)) {
-                continue;
-            }
+            if (!csPin) continue;
 
             devices.push(inst);
         }
@@ -1867,10 +2024,26 @@ export class RP2040Runner implements BoardRunner {
 
         const attachBus = (index: 0 | 1, bus: 'spi0' | 'spi1') => {
             const spi: any = (this.cpu as any)?.spi?.[index];
-            if (!spi) return;
+            const frameState = this.spiFrameState.get(bus) || { bytes: [], lastByteTime: 0 };
+            this.spiFrameState.set(bus, frameState);
+            if (!spi) {
+                this.onStateUpdate({
+                    type: 'debug',
+                    boardId: this.boardId,
+                    category: 'rp2040-spi',
+                    reason: 'missing-bus',
+                    spi: { bus, attached: false, deviceCount: 0 },
+                });
+                return;
+            }
 
-            let spiTransactionBytes: number[] = [];
-            let lastSpiTime = 0;
+            this.onStateUpdate({
+                type: 'debug',
+                boardId: this.boardId,
+                category: 'rp2040-spi',
+                reason: 'attach-bus',
+                spi: { bus, attached: true, deviceCount: 0 },
+            });
 
             // rp2040js SPI doTX currently sets busy=true after invoking onTransmit().
             // Under high-throughput writes this can stall and/or drop bytes because
@@ -1890,21 +2063,21 @@ export class RP2040Runner implements BoardRunner {
 
             spi.onTransmit = (value: number) => {
                 const nowMs = this.getSimulatedTimeMs();
-                if (nowMs - lastSpiTime > 2.0 && spiTransactionBytes.length > 0) {
-                     this.onStateUpdate({
-                         type: 'protocol:spi',
-                         boardId: this.boardId,
-                         data: [...spiTransactionBytes],
-                         timestamp: lastSpiTime
-                     });
-                     spiTransactionBytes = [];
+                if (nowMs - frameState.lastByteTime > 2.0 && frameState.bytes.length > 0) {
+                    this.flushRp2040SpiFrame(bus, 'idle-gap');
                 }
-                lastSpiTime = nowMs;
-                spiTransactionBytes.push(value & 0xff);
+                frameState.lastByteTime = nowMs;
+                frameState.bytes.push(value & 0xff);
+                this.debugSpiTxBytes += 1;
 
                 const byte = value & 0xff;
+                const byteIndex = frameState.bytes.length - 1;
                 let response = 0xff;
                 const devices = this.getRp2040ConnectedSPIDevices(bus);
+
+                if (frameState.bytes.length === 1 || nowMs - this.debugLastSpiLogAt > 500) {
+                    this.debugLastSpiLogAt = nowMs;
+                }
 
                 for (const inst of devices) {
                     this.syncSpiControlPins(inst);
@@ -2599,6 +2772,17 @@ export class RP2040Runner implements BoardRunner {
 
         for (const endpoint of this.getProtocolEndpointsForGpPin(pinName)) {
             endpoint.inst.onPinStateChange(endpoint.pinId, isHigh, normalizedCycles);
+
+            if (isHigh) {
+                const pinNameUpper = String(endpoint.pinId || '').toUpperCase();
+                if (['CS', 'SS', 'CSN', 'NSS', 'CE', 'CS_N'].includes(pinNameUpper)) {
+                    if (endpoint.inst.state?.csActive === false) {
+                        for (const bus of this.getRp2040ConnectedSPIBusesForDevice(endpoint.inst.id)) {
+                            this.flushRp2040SpiFrame(bus, `cs-deassert:${pinName}`);
+                        }
+                    }
+                }
+            }
         }
 
         const functionSelect = this.cpu?.gpio?.[pin]?.functionSelect ?? 0;
@@ -2654,54 +2838,97 @@ export class RP2040Runner implements BoardRunner {
         if (!this.running || !this.cpu) return;
 
         const loopStart = performance.now();
+        const now = performance.now();
+        const deltaTime = now - this.lastTime;
         let physicsMs = 0;
         let componentMs = 0;
 
-        const { core } = this.cpu;
-        const clock = (this.cpu as any).clock;
-        const F_CPU = 125_000_000;
-        const CYCLE_NANOS = 1e9 / F_CPU;
-        const CYCLES_PER_FRAME = Math.floor((F_CPU / 60) * this.speed);
+        if (deltaTime > 0) {
+            const { core } = this.cpu;
+            const clock = (this.cpu as any).clock;
+            const F_CPU = 125_000_000;
+            const CYCLE_NANOS = 1e9 / F_CPU;
+            const cyclesPerMs = (F_CPU / 1000) * this.speed;
+            const cyclesToRun = deltaTime * cyclesPerMs;
+            const CYCLES_PER_FRAME = Math.floor(Math.min(cyclesToRun, (F_CPU / 10) * Math.max(1, this.speed)));
 
-        let cyclesDone = 0;
-        const now = performance.now();
+            let cyclesDone = 0;
 
-        const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
-        if (this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval) {
-            const physicsStart = performance.now();
-            // Classic Logic mode: event-driven propagation is already handled by listeners.
-            this.updateGPIOInputsFromCircuit();
-            this.lastPhysicsSolveAt = now;
-            this.circuitDirty = false;
-            physicsMs = performance.now() - physicsStart;
-        }
+            const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
+            if (this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval) {
+                const physicsStart = performance.now();
+                // Classic Logic mode: event-driven propagation is already handled by listeners.
+                this.updateGPIOInputsFromCircuit();
+                this.lastPhysicsSolveAt = now;
+                this.circuitDirty = false;
+                physicsMs = performance.now() - physicsStart;
+            }
 
-        try {
-            const executeOneInstruction = () => {
-                const before = this.cpu!.core.cycles >>> 0;
-                core.executeInstruction();
-                const after = this.cpu!.core.cycles >>> 0;
-                const delta = (after - before) >>> 0;
-                return delta > 0 ? delta : 1;
-            };
+            try {
+                const executeOneInstruction = () => {
+                    const before = this.cpu!.core.cycles >>> 0;
+                    core.executeInstruction();
+                    const after = this.cpu!.core.cycles >>> 0;
+                    const delta = (after - before) >>> 0;
+                    return delta > 0 ? delta : 1;
+                };
 
-            // DETERMINISTIC CYCLE-TARGETED LOOP (Velxio Pattern)
-            while (cyclesDone < CYCLES_PER_FRAME && this.running && this.cpu) {
-                const pioDivs = this.getPIOClockDivs();
-                const pio0Div = pioDivs[0];
-                const pio1Div = pioDivs[1];
+                // DETERMINISTIC CYCLE-TARGETED LOOP (Velxio Pattern)
+                while (cyclesDone < CYCLES_PER_FRAME && this.running && this.cpu) {
+                    const pioDivs = this.getPIOClockDivs();
+                    const pio0Div = pioDivs[0];
+                    const pio1Div = pioDivs[1];
 
-                if (core.waiting && clock) {
-                    const rawJumpNanos = Number(clock.nanosToNextAlarm);
-                    const jumpNanos = Number.isFinite(rawJumpNanos) ? rawJumpNanos : -1;
-                    if (jumpNanos <= 0) {
-                        // No pending alarm while waiting: execute one instruction so WFE/WFI
-                        // paths can still progress without stalling startup indefinitely.
+                    if (core.waiting && clock) {
+                        const rawJumpNanos = Number(clock.nanosToNextAlarm);
+                        const jumpNanos = Number.isFinite(rawJumpNanos) ? rawJumpNanos : -1;
+                        if (jumpNanos <= 0) {
+                            // No pending alarm while waiting: execute one instruction so WFE/WFI
+                            // paths can still progress without stalling startup indefinitely.
+                            const cycles = executeOneInstruction();
+                            clock.tick(cycles * CYCLE_NANOS);
+                            cyclesDone += cycles;
+                            this.debugStepCount += 1;
+
+                            this.pio0Accum += cycles;
+                            while (this.pio0Accum >= pio0Div) {
+                                this.pio0Accum -= pio0Div;
+                                this.stepPIO(0, pio0Div);
+                            }
+                            this.pio1Accum += cycles;
+                            while (this.pio1Accum >= pio1Div) {
+                                this.pio1Accum -= pio1Div;
+                                this.stepPIO(1, pio1Div);
+                            }
+                            continue;
+                        }
+
+                        // Incremental Jump with PIO Sync
+                        const jumpedCycles = Math.ceil(jumpNanos / CYCLE_NANOS);
+                        const maxJumpCycles = Math.min(jumpedCycles, CYCLES_PER_FRAME - cyclesDone);
+                        
+                        // Advance time and sync both PIO units
+                        clock.tick(maxJumpCycles * CYCLE_NANOS);
+                        
+                        this.pio0Accum += maxJumpCycles;
+                        while (this.pio0Accum >= pio0Div) {
+                            this.pio0Accum -= pio0Div;
+                            this.stepPIO(0, pio0Div);
+                        }
+                        this.pio1Accum += maxJumpCycles;
+                        while (this.pio1Accum >= pio1Div) {
+                            this.pio1Accum -= pio1Div;
+                            this.stepPIO(1, pio1Div);
+                        }
+
+                        cyclesDone += maxJumpCycles;
+                    } else {
                         const cycles = executeOneInstruction();
-                        clock.tick(cycles * CYCLE_NANOS);
+                        if (clock) clock.tick(cycles * CYCLE_NANOS);
                         cyclesDone += cycles;
                         this.debugStepCount += 1;
 
+                        // Synchronous PIO stepping
                         this.pio0Accum += cycles;
                         while (this.pio0Accum >= pio0Div) {
                             this.pio0Accum -= pio0Div;
@@ -2712,140 +2939,100 @@ export class RP2040Runner implements BoardRunner {
                             this.pio1Accum -= pio1Div;
                             this.stepPIO(1, pio1Div);
                         }
-                        continue;
-                    }
-
-                    // Incremental Jump with PIO Sync
-                    const jumpedCycles = Math.ceil(jumpNanos / CYCLE_NANOS);
-                    const maxJumpCycles = Math.min(jumpedCycles, CYCLES_PER_FRAME - cyclesDone);
-                    
-                    // Advance time and sync both PIO units
-                    clock.tick(maxJumpCycles * CYCLE_NANOS);
-                    
-                    this.pio0Accum += maxJumpCycles;
-                    while (this.pio0Accum >= pio0Div) {
-                        this.pio0Accum -= pio0Div;
-                        this.stepPIO(0, pio0Div);
-                    }
-                    this.pio1Accum += maxJumpCycles;
-                    while (this.pio1Accum >= pio1Div) {
-                        this.pio1Accum -= pio1Div;
-                        this.stepPIO(1, pio1Div);
-                    }
-
-                    cyclesDone += maxJumpCycles;
-                } else {
-                    const cycles = executeOneInstruction();
-                    if (clock) clock.tick(cycles * CYCLE_NANOS);
-                    cyclesDone += cycles;
-                    this.debugStepCount += 1;
-
-                    // Synchronous PIO stepping
-                    this.pio0Accum += cycles;
-                    while (this.pio0Accum >= pio0Div) {
-                        this.pio0Accum -= pio0Div;
-                        this.stepPIO(0, pio0Div);
-                    }
-                    this.pio1Accum += cycles;
-                    while (this.pio1Accum >= pio1Div) {
-                        this.pio1Accum -= pio1Div;
-                        this.stepPIO(1, pio1Div);
                     }
                 }
-            }
 
-            // Sync peripherals and UI once per frame
-            this.rebaseProgramCounterAlias(cyclesDone);
+                // Sync peripherals and UI once per frame
+                this.rebaseProgramCounterAlias(cyclesDone);
 
-            const sampledPc = this.cpu.core.PC >>> 0;
-            if (this.shouldFaultForInvalidPc(sampledPc)) {
-                this.faultAndStop('Execution jumped outside valid memory', sampledPc);
+                const sampledPc = this.cpu.core.PC >>> 0;
+                if (this.shouldFaultForInvalidPc(sampledPc)) {
+                    this.faultAndStop('Execution jumped outside valid memory', sampledPc);
+                    return;
+                }
+
+                // Process budgets and monitor sync
+                if (this.softSerialDecodeState.receiving || this.softSerialRxFrame || this.softSerialRxQueue.length > 0) {
+                    const currentTotalCycles = Number(this.cpu.core.cycles);
+                    this.advanceSoftSerialIngress(currentTotalCycles);
+                    this.processSoftSerialDecode(currentTotalCycles);
+                }
+
+                const frameTimeMs = 16.6; 
+                const bytesPerMs = this.serialBaudRate / 10000;
+                this.serialByteBudget += frameTimeMs * bytesPerMs; 
+
+                const uart0 = this.cpu.uart[0];
+                const uart1 = this.cpu.uart[1];
+                if (this.serialBuffer.length > 0 && this.serialByteBudget >= 1) {
+                    const maxBytes = Math.floor(this.serialByteBudget);
+                    let sent = 0;
+                    for (let i = 0; i < maxBytes && this.serialBuffer.length > 0; i++) {
+                        const packet = this.serialBuffer[0]!;
+                        let delivered = false;
+                        if (packet.source === 2) {
+                            if (this.usbCdc && this.usbCdcReady) {
+                                try {
+                                    const usbTxFifo: any = (this.usbCdc as any).txFIFO;
+                                    const fifoFull = !!(usbTxFifo && (usbTxFifo.full || usbTxFifo.itemCount >= usbTxFifo.size));
+                                    if (fifoFull) {
+                                        delivered = false;
+                                    } else {
+                                        this.usbCdc.sendSerialByte(packet.value & 0xff);
+                                        delivered = true;
+                                    }
+                                } catch (e) {
+                                    delivered = false;
+                                }
+                            }
+                        } else {
+                            delivered = ((packet.source === 1 ? uart1 : uart0) || uart0).feedByte(packet.value & 0xff);
+                        }
+                        if (!delivered) break;
+                        this.serialBuffer.shift();
+                        sent += 1;
+                    }
+                    this.serialByteBudget -= sent;
+                }
+
+                const clockScale = 16_000_000 / this.getRp2040ClockHz();
+                const normalizedUpdateCycles = Math.floor(Number(this.cpu!.core.cycles) * clockScale);
+                const componentStart = performance.now();
+                const instArray = Array.from(this.instances.values());
+                instArray.forEach((inst) => {
+                    // Annotate component with junction-aware connectivity (since RP2040Runner doesn't use pinToNet, 
+                    // we'll rely on the fact that isWired is usually true if we reached this point, 
+                    // but for consistency we can set it if there's any wire on any pin).
+                    if (inst.state.isWired === undefined) {
+                        inst.state.isWired = Object.keys(inst.pins).some(p => 
+                            this.currentWires.some(w => w.from === `${inst.id}:${p}` || w.to === `${inst.id}:${p}`)
+                        );
+                    }
+                    // For RP2040, we'll let the component's internal logic handle resistor detection 
+                    // for now, or we could implement a netlist here too. 
+                    // But since the user is on Uno, let's focus on AVRRunner first.
+                    inst.update(normalizedUpdateCycles, this.currentWires, instArray);
+                });
+                componentMs = performance.now() - componentStart;
+
+            } catch (err: any) {
+                const baseMessage = String(err?.message || err || 'RP2040 execution error');
+                const shortStack = typeof err?.stack === 'string'
+                    ? err.stack.split('\n').slice(0, 4).map((line: string) => line.trim()).join(' | ')
+                    : '';
+                const message = shortStack ? `${baseMessage} :: ${shortStack}` : baseMessage;
+                this.faultAndStop(message, this.cpu.core.PC >>> 0);
                 return;
             }
 
-            // Process budgets and monitor sync
-            if (this.softSerialDecodeState.receiving || this.softSerialRxFrame || this.softSerialRxQueue.length > 0) {
-                const currentTotalCycles = Number(this.cpu.core.cycles);
-                this.advanceSoftSerialIngress(currentTotalCycles);
-                this.processSoftSerialDecode(currentTotalCycles);
-            }
-
-            const frameTimeMs = 16.6; 
-            const bytesPerMs = this.serialBaudRate / 10000;
-            this.serialByteBudget += frameTimeMs * bytesPerMs; 
-
-            const uart0 = this.cpu.uart[0];
-            const uart1 = this.cpu.uart[1];
-            if (this.serialBuffer.length > 0 && this.serialByteBudget >= 1) {
-                const maxBytes = Math.floor(this.serialByteBudget);
-                let sent = 0;
-                for (let i = 0; i < maxBytes && this.serialBuffer.length > 0; i++) {
-                    const packet = this.serialBuffer[0]!;
-                    let delivered = false;
-                    if (packet.source === 2) {
-                        if (this.usbCdc && this.usbCdcReady) {
-                            try {
-                                const usbTxFifo: any = (this.usbCdc as any).txFIFO;
-                                const fifoFull = !!(usbTxFifo && (usbTxFifo.full || usbTxFifo.itemCount >= usbTxFifo.size));
-                                if (fifoFull) {
-                                    delivered = false;
-                                } else {
-                                    this.usbCdc.sendSerialByte(packet.value & 0xff);
-                                    delivered = true;
-                                }
-                            } catch (e) {
-                                delivered = false;
-                            }
-                        }
-                    } else {
-                        delivered = ((packet.source === 1 ? uart1 : uart0) || uart0).feedByte(packet.value & 0xff);
-                    }
-                    if (!delivered) break;
-                    this.serialBuffer.shift();
-                    sent += 1;
-                }
-                this.serialByteBudget -= sent;
-            }
-
-            const clockScale = 16_000_000 / this.getRp2040ClockHz();
-            const normalizedUpdateCycles = Math.floor(Number(this.cpu!.core.cycles) * clockScale);
-            const componentStart = performance.now();
-            const instArray = Array.from(this.instances.values());
-            instArray.forEach((inst) => {
-                // Annotate component with junction-aware connectivity (since RP2040Runner doesn't use pinToNet, 
-                // we'll rely on the fact that isWired is usually true if we reached this point, 
-                // but for consistency we can set it if there's any wire on any pin).
-                if (inst.state.isWired === undefined) {
-                    inst.state.isWired = Object.keys(inst.pins).some(p => 
-                        this.currentWires.some(w => w.from === `${inst.id}:${p}` || w.to === `${inst.id}:${p}`)
-                    );
-                }
-                // For RP2040, we'll let the component's internal logic handle resistor detection 
-                // for now, or we could implement a netlist here too. 
-                // But since the user is on Uno, let's focus on AVRRunner first.
-                inst.update(normalizedUpdateCycles, this.currentWires, instArray);
-            });
-            componentMs = performance.now() - componentStart;
-
-        } catch (err: any) {
-            const baseMessage = String(err?.message || err || 'RP2040 execution error');
-            const shortStack = typeof err?.stack === 'string'
-                ? err.stack.split('\n').slice(0, 4).map((line: string) => line.trim()).join(' | ')
-                : '';
-            const message = shortStack ? `${baseMessage} :: ${shortStack}` : baseMessage;
-            this.faultAndStop(message, this.cpu.core.PC >>> 0);
-            return;
+            this.lastPhysicsMs = physicsMs;
+            this.lastComponentUpdateMs = componentMs;
+            this.lastRunLoopMs = performance.now() - loopStart;
+            this.lastTime = now;
         }
-
-        this.lastPhysicsMs = physicsMs;
-        this.lastComponentUpdateMs = componentMs;
-        this.lastRunLoopMs = performance.now() - loopStart;
-
-        this.emitStateIfDue();
 
         if (this.running) {
             this.emitDebugSnapshot('tick', now);
-            this.lastTime = now;
             setTimeout(this.runLoop, 1);
         }
     };
@@ -3076,8 +3263,16 @@ export class RP2040Runner implements BoardRunner {
         
         const compStates: Array<{ id: string; state: any }> = [];
         for (const inst of this.instances.values()) {
+            const pendingEmit = (inst as any).pendingVisualStateEmit;
+            if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
+
             const syncState = getUnifiedComponentSyncState(inst);
+            
+            if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
+
             inst.stateChanged = false;
+            (inst as any).pendingVisualStateEmit = false;
+            
             compStates.push({
                 id: inst.id,
                 type: inst.type,

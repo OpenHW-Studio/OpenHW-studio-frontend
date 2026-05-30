@@ -25,7 +25,7 @@ export async function compileCode(input) {
     try {
         const payload = typeof input === 'string' ? { code: input } : (input || {});
         const response = await axios.post(`${COMPILER_URL}/compile`, payload, getUserAuthConfig());
-        if (response.data && response.data.hex) {
+        if (response.data && (response.data.hex || response.data.buildId)) {
             return response.data;
         }
         throw new Error('No hex returned from compiler');
@@ -40,6 +40,33 @@ export async function compileCode(input) {
             const body = highlights || details || error.response.data.error || 'Unknown compile failure';
             throw new Error(`Compilation Failed:${stage}${category}\n${body}${hint}`);
         }
+        throw error;
+    }
+}
+
+/**
+ * Boots the ESP32 emulator using a precompiled base64 binary.
+ */
+export async function runBinaryCode(firmware_b64) {
+    try {
+        const response = await axios.post(`${COMPILER_URL}/compile/esp32/run-binary`, { firmware_b64, target: 'esp32' }, getUserAuthConfig());
+        if (response.data && response.data.buildId) {
+            return response.data;
+        }
+        throw new Error('No buildId returned from runBinaryCode');
+    } catch (error) {
+        throw error;
+    }
+}
+
+export async function stopSession(buildId, target = 'esp32') {
+    const config = getUserAuthConfig();
+    try {
+        const endpoint = target === 'stm32' ? `compile/stm32/stop/${buildId}` : `compile/esp32/stop/${buildId}`;
+        const response = await axios.post(`${COMPILER_URL}/${endpoint}`, {}, config);
+        return response.data;
+    } catch (error) {
+        console.error(`[SimulatorService] Failed to stop session ${buildId}:`, error.message);
         throw error;
     }
 }

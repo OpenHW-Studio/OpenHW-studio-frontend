@@ -16,7 +16,7 @@ import { ServoLogic } from '@openhw/emulator/src/components/wokwi-servo/logic.ts
 import { MotorDriverLogic } from '@openhw/emulator/src/components/wokwi-motor-driver/logic.ts';
 import { SlidePotLogic } from '@openhw/emulator/src/components/wokwi-slide-potentiometer/logic.ts';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/wokwi-potentiometer/logic.ts';
-import { ShiftRegisterLogic } from '@openhw/emulator/src/components/shift_register/logic.ts';
+import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic.ts';
 import {
     PICO_BOARD_PINS,
     UNO_ANALOG_PINS,
@@ -2012,7 +2012,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-pushbutton': [{ id: '1' }, { id: '2' }],
     'openhw-pushbutton': [{ id: '1' }, { id: '2' }],
     'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
-    'openhw-buzzer': [{ id: '1' }, { id: '2' }],
+    'openhw-buzzer': [{ id: 'GND' }, { id: 'SIG' }],
     'wokwi-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
     'openhw-neopixel-matrix': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-ws2812b': [{ id: 'DIN' }, { id: 'VCC' }, { id: 'GND' }],
