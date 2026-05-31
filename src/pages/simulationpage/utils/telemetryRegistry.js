@@ -34,7 +34,10 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'openhw-mpu6050': ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'temp'],
   'openhw-adxl345': ['accelX', 'accelY', 'accelZ', 'powered', 'i2cAddress'],
   'openhw-ds1307-rtc': ['running', 'time'],
-  'openhw-bmp180': ['temp', 'pressure', 'altitude'],
+  'openhw-bmp180': ['temperature', 'pressure', 'altitude', 'powered'],
+  'openhw-bmp180-breakout': ['temperature', 'pressure', 'altitude', 'powered'],
+  'wokwi-bmp180': ['temperature', 'pressure', 'altitude', 'powered'],
+  'wokwi-bmp180-breakout': ['temperature', 'pressure', 'altitude', 'powered'],
   'openhw-dht22': ['temperature', 'humidity', 'lastReadMs', 'error'],
   'max30102': ['ir', 'red', 'temp', 'active'],
   'openhw-hc-sr04': ['distance', 'echoTimeMs'],
@@ -123,7 +126,8 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'wokwi-ws2821b': ['pixels', 'brightness', 'count'],
   'wokwi-mpu6050': ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'temp'],
   'wokwi-ds1307': ['running', 'time'],
-  'wokwi-bmp180': ['temp', 'pressure', 'altitude'],
+  'wokwi-bmp180': ['temperature', 'pressure', 'altitude', 'powered'],
+  'wokwi-bmp180-breakout': ['temperature', 'pressure', 'altitude', 'powered'],
   'wokwi-dht22': ['temperature', 'humidity', 'lastReadMs', 'error'],
   'wokwi-max30102': ['ir', 'red', 'temp', 'active'],
   'wokwi-hc-sr04': ['distance', 'echoTimeMs'],
@@ -172,7 +176,7 @@ export function getTelemetryParamsForComponent(compType) {
     return COMPONENT_TELEMETRY_PARAMS[compType];
   }
 
-  const baseParams = COMPONENT_TELEMETRY_PARAMS[compType] || ['illuminated', 'voltageDrop', 'current', 'brightness', 'color', 'glow', 'value', 'pressed', 'angle'];
+  const baseParams = COMPONENT_TELEMETRY_PARAMS[compType] ?? [];
   
   // Every component gets basic pin state tracking
   const universalParams = ['pins', 'pinToggles'];
