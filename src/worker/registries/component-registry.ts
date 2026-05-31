@@ -54,6 +54,7 @@ import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-recei
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { MPU6050Logic } from '@openhw/emulator/src/components/openhw-mpu6050/logic';
 import { BMP180Logic } from '@openhw/emulator/src/components/openhw-bmp180/logic';
+import { DS1307RTCLogic } from '@openhw/emulator/src/components/openhw-ds1307-rtc/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -200,8 +201,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-bmp180': BMP180Logic,
     'wokwi-bmp180-breakout': BMP180Logic,
     'openhw-bmp180-breakout': BMP180Logic,
-    'wokwi-ds1307-rtc': BaseComponent,
-    'openhw-ds1307-rtc': BaseComponent,
+    'wokwi-ds1307-rtc': DS1307RTCLogic,
+    'openhw-ds1307-rtc': DS1307RTCLogic,
     'wokwi-hc-sr04': BaseComponent,
     'openhw-hc-sr04': BaseComponent,
     'wokwi-mpu6050': MPU6050Logic,
