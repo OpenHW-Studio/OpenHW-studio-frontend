@@ -3516,7 +3516,6 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // ── Static component descriptions ────────────────────────────────────────────
   const COMPONENT_DESCRIPTIONS = {
-      "DC motor. Converts electrical energy to rotational motion. Controlled via H-bridge.",
     "wokwi-servo":
       "Hobby servo motor. Precise angular position control via PWM signal (0–180°).",
     "openhw-servo":
