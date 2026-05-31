@@ -16,6 +16,10 @@ export const sidebarLinks = [
 export const tabs = [
   { key: "stream", label: "Stream" },
   { key: "classwork", label: "Classwork" },
+<<<<<<< HEAD
+=======
+  { key: "adventure", label: "Adventure" },
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   { key: "people", label: "People" },
   { key: "marks", label: "Marks" },
 ];

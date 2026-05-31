@@ -115,9 +115,15 @@ function _diagTick(type) {
  *   onI2cEvent?    : (bus: number, addr: number, event: number, response: number) => void,
  *   onI2cTransaction?   : (addr: number, data: number[]) => void,
  *   onProxyI2cComplete? : (addr: number, data: number[]) => void,
+<<<<<<< HEAD
  *   onSpiBatch?    : (b64: string) => void,
  *   onEpaperUpdate?: (componentId: string, frame: { width: number, height: number, frame_b64: string, refresh_ms: number }) => void,
  *   onTone?        : (pin: string, frequency: number, duration: number) => void,
+=======
+ *   onSpiEvent?    : (bus: number, event: number, response: number) => void,
+ *   onSpiBatch?    : (b64: string) => void,
+ *   onEpaperUpdate?: (componentId: string, frame: { width: number, height: number, frame_b64: string, refresh_ms: number }) => void,
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
  * }} callbacks
  */
 export function useHardwareSocket({
@@ -136,8 +142,12 @@ export function useHardwareSocket({
     onProxyI2cComplete,
     onSpiEvent,
     onSpiBatch,
+<<<<<<< HEAD
     onEpaperUpdate,
     onTone
+=======
+    onEpaperUpdate
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 } = {}) {
     // ── Refs (survive renders without causing re-renders) ────────────────────
 
@@ -147,9 +157,12 @@ export function useHardwareSocket({
     /** The active session buildId, or null when idle. */
     const buildIdRef        = useRef(null);
 
+<<<<<<< HEAD
     /** The active session target (e.g. 'esp32' or 'stm32'). */
     const targetRef         = useRef('esp32');
 
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     /** Batched SERIAL_OUTPUT lines waiting to be flushed. */
     const serialBatchRef    = useRef([]);
 
@@ -173,13 +186,21 @@ export function useHardwareSocket({
     const cbRef = useRef({
         onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
         onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
+<<<<<<< HEAD
         onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone
+=======
+        onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     });
     useEffect(() => {
         cbRef.current = {
             onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
             onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
+<<<<<<< HEAD
             onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone
+=======
+            onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         };
     });
 
@@ -256,13 +277,20 @@ export function useHardwareSocket({
         }
 
         if (buildIdRef.current) {
+<<<<<<< HEAD
             stopSession(buildIdRef.current, targetRef.current || 'esp32').catch(err => {
+=======
+            stopSession(buildIdRef.current).catch(err => {
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
                 console.warn('[useHardwareSocket] Failed to stop session on backend:', err);
             });
         }
 
         buildIdRef.current      = null;
+<<<<<<< HEAD
         targetRef.current       = 'esp32';
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         serialBatchRef.current  = [];
         reconnectCountRef.current = 0;
 
@@ -301,7 +329,11 @@ export function useHardwareSocket({
                 case 'COMPILE_SUCCESS':
                     // arduino-cli compilation done; QEMU is about to start
                     clearWatchdog();
+<<<<<<< HEAD
                     cbRef.current.onLog?.('✅ Compiled — Emulator is starting…', 'sys');
+=======
+                    cbRef.current.onLog?.('✅ Compiled — QEMU is starting…', 'sys');
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
                     // Re-arm watchdog for the boot phase
                     armWatchdog(BOOTING_TIMEOUT_MS, 'Boot');
                     break;
@@ -344,6 +376,7 @@ export function useHardwareSocket({
                     cbRef.current.onPhaseChange?.('running');
                     break;
 
+<<<<<<< HEAD
                 case 'SIMULATOR_READY':
                     clearWatchdog();
                     cbRef.current.onLog?.('🟢 Device is running and ready.', 'sys');
@@ -362,6 +395,8 @@ export function useHardwareSocket({
                     stop();
                     break;
 
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
                 case 'FIRMWARE_STALLED':
                     cbRef.current.onLog?.(`⚠️ ${msg.message}`, 'sys');
                     cbRef.current.onPhaseChange?.('stalled');
@@ -371,10 +406,13 @@ export function useHardwareSocket({
                     cbRef.current.onGpioSync?.(String(msg.pin), msg.value);
                     break;
 
+<<<<<<< HEAD
                 case 'TONE':
                     cbRef.current.onTone?.(String(msg.pin), msg.frequency, msg.duration);
                     break;
 
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
                 // ── GPIO direction event (input / output mode change) ────────
                 case 'GPIO_DIR':
                     cbRef.current.onGpioDir?.(msg.pin, msg.dir);
@@ -458,7 +496,10 @@ export function useHardwareSocket({
 
                 case 'SERIAL_OUTPUT':
                     if (msg.text) serialBatchRef.current.push(msg.text);
+<<<<<<< HEAD
                     else if (msg.data) serialBatchRef.current.push(msg.data);
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
                     break;
 
                 case 'SERIAL_LOG': {
@@ -553,6 +594,7 @@ export function useHardwareSocket({
     // ── Public: run ───────────────────────────────────────────────────────────
 
     /**
+<<<<<<< HEAD
      * run(code, target)
      *
      * 1. Opens a WebSocket immediately (before the compile request) so no
@@ -568,6 +610,21 @@ export function useHardwareSocket({
         stoppedRef.current = false;
         reconnectCountRef.current = 0;
         targetRef.current = target;
+=======
+     * run(code)
+     *
+     * 1. Opens a WebSocket immediately (before the compile request) so no
+     *    early COMPILE_ERROR messages are missed.
+     * 2. Sends the code to /api/compile?target=esp32.
+     * 3. Arms the compile watchdog.
+     *
+     * @param {string} code - Arduino C++ sketch source code.
+     * @returns {Promise<string>} The buildId assigned by the backend.
+     */
+    const run = useCallback(async (code) => {
+        stoppedRef.current = false;
+        reconnectCountRef.current = 0;
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
         cbRef.current.onLog?.('⚙️  Sending code to compile server…', 'sys');
 
@@ -588,7 +645,11 @@ export function useHardwareSocket({
 
         let result;
         try {
+<<<<<<< HEAD
             result = await compileCode({ code, target });
+=======
+            result = await compileCode({ code, target: 'esp32' });
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         } catch (err) {
             stop();
             const serverMsg = err.response?.data?.error || err.message;

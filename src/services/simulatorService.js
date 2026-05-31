@@ -59,11 +59,18 @@ export async function runBinaryCode(firmware_b64) {
     }
 }
 
+<<<<<<< HEAD
 export async function stopSession(buildId, target = 'esp32') {
     const config = getUserAuthConfig();
     try {
         const endpoint = target === 'stm32' ? `compile/stm32/stop/${buildId}` : `compile/esp32/stop/${buildId}`;
         const response = await axios.post(`${COMPILER_URL}/${endpoint}`, {}, config);
+=======
+export async function stopSession(buildId) {
+    const config = getUserAuthConfig();
+    try {
+        const response = await axios.post(`${COMPILER_URL}/compile/esp32/stop/${buildId}`, {}, config);
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         return response.data;
     } catch (error) {
         console.error(`[SimulatorService] Failed to stop session ${buildId}:`, error.message);
