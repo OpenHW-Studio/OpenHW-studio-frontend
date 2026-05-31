@@ -89,7 +89,10 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'openhw-esp32': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
   'openhw-esp32-cam': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
   'esp32-cam': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
+<<<<<<< HEAD
   'openhw-stm32-bluepill': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   'openhw-arduino-sensor-shield': [],
   'logic-mux-2to1': ['d0High', 'd1High', 'selHigh', 'outputHigh'],
   'logic-d-flipflop': ['d', 'clk', 'q', 'qbar'],
@@ -155,7 +158,10 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   // TODO: Support Wokwi ESP32 board telemetry parameters
   'wokwi-esp32': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
   'wokwi-esp32-cam': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
+<<<<<<< HEAD
   'wokwi-stm32-bluepill': ['leds', 'deepSiliconRegisters', 'deepSiliconSRAM', 'deepSiliconTimers', 'deepSiliconPower', 'deepSiliconInterrupts', 'backendDataReceived'],
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   'wokwi-ds18b20': ['temperature', 'powered', 'resolution'],
   'wokwi-ir-receiver': ['powered', 'transmitting', 'lastButton', 'lastValue'],
   'wokwi-mfrc522': ['powered', 'cardPresent', 'cardUID'],

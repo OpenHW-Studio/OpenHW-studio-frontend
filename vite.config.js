@@ -42,11 +42,16 @@ export default defineConfig(({ mode }) => {
       cssMinify: true,
     },
     resolve: {
+<<<<<<< HEAD
       alias: useAlias ? {
+=======
+      alias: resolvedEmulatorPath ? {
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         '@openhw/emulator': resolvedEmulatorPath,
       } : {},
     },
     optimizeDeps: {
+<<<<<<< HEAD
       exclude: ['@openhw/emulator'],
       esbuildOptions: {
         plugins: [
@@ -64,6 +69,38 @@ export default defineConfig(({ mode }) => {
             },
           },
         ],
+=======
+      include: ['@openhw/emulator'],
+      esbuildOptions: {
+         plugins: [
+           {
+             name: 'raw-html',
+             setup(build) {
+               build.onResolve({ filter: /\.html\?raw$/ }, (args) => ({
+                 path: path.resolve(path.dirname(args.importer), args.path.replace(/\?raw$/, '')),
+                 namespace: 'raw-html',
+               }))
+               build.onLoad({ filter: /.*/, namespace: 'raw-html' }, (args) => ({
+                 contents: `export default ${JSON.stringify(fs.readFileSync(args.path, 'utf8'))}`,
+                 loader: 'js',
+               }))
+             },
+           },
+           {
+             name: 'raw-ts',
+             setup(build) {
+               build.onResolve({ filter: /\.(ts|tsx)\?raw$/ }, (args) => ({
+                 path: path.resolve(path.dirname(args.importer), args.path.replace(/\?raw$/, '')),
+                 namespace: 'raw-ts',
+               }))
+               build.onLoad({ filter: /.*/, namespace: 'raw-ts' }, (args) => ({
+                 contents: `export default ${JSON.stringify(fs.readFileSync(args.path, 'utf8'))}`,
+                 loader: 'js',
+               }))
+             },
+           },
+         ],
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
       },
     },
     ssr: {
@@ -79,7 +116,11 @@ export default defineConfig(({ mode }) => {
       fs: {
         allow: [
           path.resolve(__dirname, '..'),
+<<<<<<< HEAD
           ...(useAlias ? [resolvedEmulatorPath] : []),
+=======
+          ...(resolvedEmulatorPath ? [resolvedEmulatorPath] : []),
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         ],
       },
     },

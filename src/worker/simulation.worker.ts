@@ -95,7 +95,11 @@ function normalizeHashValue(value: any, depth = 0): any {
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
 
     if (ArrayBuffer.isView(value)) {
+<<<<<<< HEAD
         const view = value as ArrayLike<number> & { length?: number };
+=======
+        const view = value as unknown as ArrayLike<number> & { length?: number };
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         const len = Number(view?.length || 0);
         const preview: number[] = [];
         for (let i = 0; i < Math.min(len, 24); i++) {
@@ -1461,6 +1465,7 @@ self.onmessage = async (e) => {
                 });
             }
         }
+<<<<<<< HEAD
     } else if (data.type === 'TONE') {
         const pin = String(data.pin);
         const frequency = Number(data.frequency);
@@ -1485,6 +1490,8 @@ self.onmessage = async (e) => {
                 });
             }
         }
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     } else if (data.type === 'esp32:i2c:transaction') {
         if (mode === 'single' && runner) {
             if (typeof (runner as any).syncI2cTransaction === 'function') {
@@ -1506,22 +1513,38 @@ self.onmessage = async (e) => {
             }
         }
     } else if (data.type === 'esp32:pwm:sync') {
+<<<<<<< HEAD
         const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+=======
+        const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         if (target && typeof (target as any).syncPwm === 'function') {
             (target as any).syncPwm(data.channel, data.duty_pct);
         }
     } else if (data.type === 'esp32:spi:batch') {
+<<<<<<< HEAD
         const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+=======
+        const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         if (target && typeof (target as any).syncSpiBatch === 'function') {
             (target as any).syncSpiBatch(data.b64);
         }
     } else if (data.type === 'esp32:neopixel:sync') {
+<<<<<<< HEAD
         const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+=======
+        const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         if (target && typeof (target as any).syncNeopixel === 'function') {
             (target as any).syncNeopixel(data.channel, data.pixels);
         }
     } else if (data.type === 'esp32:adc:sync') {
+<<<<<<< HEAD
         const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+=======
+        const target = data.boardId ? boardRunners.get(data.boardId) : (mode === 'single' ? runner : null);
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         if (target && typeof (target as any).syncAdc === 'function') {
             (target as any).syncAdc(data.channel, data.val);
         }

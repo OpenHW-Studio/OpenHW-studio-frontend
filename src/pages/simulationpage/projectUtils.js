@@ -297,6 +297,7 @@ export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
     loopSnippet = loopSnippet.replace(/\bSerial\./g, 'Serial1.');
   }
 
+<<<<<<< HEAD
   const isEmptyCode = (str) => {
     if (!str) return true;
     const t = str.trim();
@@ -304,6 +305,9 @@ export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
   };
 
   if (isEmptyCode(code)) {
+=======
+  if (!code || !code.trim()) {
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     let base = '';
     if (globalsSnippet) base += `// autocoding for ${compId} start\n${globalsSnippet}\n// autocoding for ${compId} end\n\n`;
     base += `void setup() {\n`;

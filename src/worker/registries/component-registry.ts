@@ -715,7 +715,11 @@ export function collectConnectedComponentPins(
     }
 
     for (const [id, inst] of instances.entries()) {
+<<<<<<< HEAD
         if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
+=======
+        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
             connect(`${id}:p1`, `${id}:p2`);
         }
     }
@@ -750,7 +754,11 @@ export function collectConnectedComponentPins(
         if (!compId || compId === boardId) continue;
         const inst = instances.get(compId);
         if (!inst) continue;
+<<<<<<< HEAD
         if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') continue;
+=======
+        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') continue;
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         out.set(`${compId}:${pinId}`, { inst, pinId });
     }
 

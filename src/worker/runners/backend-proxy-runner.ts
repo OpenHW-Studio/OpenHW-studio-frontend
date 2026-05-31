@@ -7,7 +7,10 @@ import {
     invokeOptional,
     LOGIC_REGISTRY,
     COMPONENT_PINS,
+<<<<<<< HEAD
     collectConnectedComponentPins,
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 } from '../registries/component-registry.ts';
 import type { BoardRunner } from '../registries/component-registry.ts';
 
@@ -142,7 +145,10 @@ export class BackendProxyRunner implements BoardRunner {
 
     // Public method to be called by worker.onmessage when backend sends GPIO sync
     public syncGpio(pin: string, isHigh: boolean) {
+<<<<<<< HEAD
         console.log(`[BackendProxyRunner] syncGpio pin=${pin} isHigh=${isHigh}`);
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         this.proxyPinStates.set(String(pin), isHigh);
         this.pinsChanged = true;
 
@@ -341,6 +347,7 @@ export class BackendProxyRunner implements BoardRunner {
         }
     }
 
+<<<<<<< HEAD
     public syncTone(pin: string, frequency: number, duration: number) {
         console.log(`[BackendProxyRunner] Routing Tone for pin ${pin}, freq ${frequency}, dur ${duration}`);
 
@@ -424,6 +431,10 @@ export class BackendProxyRunner implements BoardRunner {
     public syncSpiBatch(b64: string) {
         try {
             this.updatePhysicsInternal();
+=======
+    public syncSpiBatch(b64: string) {
+        try {
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
             const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
             const spiDevices = Array.from(this.instances.values()).filter(inst => 
                 typeof (inst as any).onSPIByte === 'function'

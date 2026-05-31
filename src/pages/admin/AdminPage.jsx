@@ -43,6 +43,10 @@ import DeploymentsTab from './components/DeploymentsTab';
 import DockerTab from './components/DockerTab';
 import LogsTab from './components/LogsTab';
 import UserMapTab from './components/UserMapTab';
+<<<<<<< HEAD
+=======
+import AdminAdventureContentTab from './components/AdminAdventureContentTab';
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 import { LibrarySearchModal, TranspileModal } from './components/Modals';
 
 export default function AdminPage() {
@@ -416,6 +420,11 @@ export default function AdminPage() {
                     onRefresh={loadData} 
                     addLog={addLog}
                 />;
+<<<<<<< HEAD
+=======
+            case 'adventure-content':
+                return <AdminAdventureContentTab />;
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
             case 'approval':
                 return <ApprovalsTab 
                     pendingComponents={pendingComponents} 

@@ -10852,8 +10852,13 @@ updateWireColor(connectedWire.id, newColor);
                     onClick={() => {
                       if (activeUser?.role === 'teacher') navigate('/teacher/dashboard')
                       else if (activeUser?.role === 'student') navigate('/student/dashboard')
+<<<<<<< HEAD
                       else if (activeUser?.role === 'admin') navigate('/admin/dashboard')
                       else navigate('/user/dashboard')
+=======
+                      else if (activeUser?.role === 'admin') navigate(`/${activeUser?.role}/dashboard`)
+                        else navigate(`${activeUser?.role || 'user'}/dashboard`)
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
                     }}
                     title="Go to dashboard"
                   >
