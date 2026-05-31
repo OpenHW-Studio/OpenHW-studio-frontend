@@ -47,13 +47,13 @@ import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/log
 import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
-import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic';
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { MPU6050Logic } from '@openhw/emulator/src/components/openhw-mpu6050/logic';
+import { BMP180Logic } from '@openhw/emulator/src/components/openhw-bmp180/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -122,10 +122,11 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-ssd1306-oled': SSD1306Logic,
     'openhw-ssd1306-oled': SSD1306Logic,
     max30102: MAX30102Logic,
-    \'wokwi-max7219\': MAX7219Logic,
-    \'openhw-max7219\': MAX7219Logic,
-    \'wokwi-ldr-module\': LdrModuleLogic,
-    \'openhw-ldr-module\': LdrModuleLogic,    'wokwi-7segment': BaseComponent,
+    'wokwi-max7219': MAX7219Logic,
+    'openhw-max7219': MAX7219Logic,
+    'wokwi-ldr-module': LdrModuleLogic,
+    'openhw-ldr-module': LdrModuleLogic,
+    'wokwi-7segment': BaseComponent,
     'openhw-7segment': BaseComponent,
     'wokwi-ili9341': ILI9341Logic,
     'openhw-ili9341': ILI9341Logic,
@@ -168,8 +169,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-npn-transistor': NPNTransistorLogic,
     'wokwi-a4988': A4988Logic,
     'openhw-a4988': A4988Logic,
-    'wokwi-cd74hc4067': CD74HC4067Logic,
-    'openhw-cd74hc4067': CD74HC4067Logic,
+    'wokwi-cd74hc4067': BaseComponent,
+    'openhw-cd74hc4067': BaseComponent,
     'wokwi-logic-analyzer': SimulationMonitorLogic,
     'openhw-logic-analyzer': SimulationMonitorLogic,
 
@@ -195,10 +196,10 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-breadboard': BaseComponent,
     'wokwi-breadboard-half': BaseComponent,
     'openhw-breadboard-half': BaseComponent,
-    'wokwi-bmp180': BaseComponent,
-    'openhw-bmp180': BaseComponent,
-    'wokwi-bmp180-breakout': BaseComponent,
-    'openhw-bmp180-breakout': BaseComponent,
+    'wokwi-bmp180': BMP180Logic,
+    'openhw-bmp180': BMP180Logic,
+    'wokwi-bmp180-breakout': BMP180Logic,
+    'openhw-bmp180-breakout': BMP180Logic,
     'wokwi-ds1307-rtc': BaseComponent,
     'openhw-ds1307-rtc': BaseComponent,
     'wokwi-hc-sr04': BaseComponent,

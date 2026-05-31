@@ -195,12 +195,18 @@ export class AVRRunner {
 
             stop() {
                 const instArray = Array.from(this.instances.values());
-                for (const inst of instArray) {
-                    if (inst.onI2CStop) {
-                        inst.onI2CStop();
+                // Only call onI2CStop on the active slave, not all instances
+                if (this.activeSlave) {
+                    if (this.activeSlave.onI2CStop) {
+                        this.activeSlave.onI2CStop();
                     }
-                    if (this.currentBuffer.length > 0 && inst.onI2CStart && this.activeSlave === inst) {
-                        inst.recordI2cTransaction([...this.currentBuffer]);
+                    if (this.currentBuffer.length > 0 && this.activeSlave.onI2CStart) {
+                        this.activeSlave.recordI2cTransaction?.([...this.currentBuffer]);
+                    }
+                } else {
+                    // Fallback: notify all in case no active slave tracked (e.g. broadcast stop)
+                    for (const inst of instArray) {
+                        if (inst.onI2CStop) inst.onI2CStop();
                     }
                 }
 
@@ -240,11 +246,11 @@ export class AVRRunner {
             }
 
             writeByte(value: number) {
-                const instArray = Array.from(this.instances.values());
+                // Only send write bytes to the active slave, not all instances
                 let handled = false;
-                for (const inst of instArray) {
-                    if (inst.onI2CByte) {
-                        if (inst.onI2CByte(-1, value)) {
+                if (this.activeSlave) {
+                    if (this.activeSlave.onI2CByte) {
+                        if (this.activeSlave.onI2CByte(-1, value)) {
                             handled = true;
                         }
                     }
