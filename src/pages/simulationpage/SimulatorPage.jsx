@@ -349,7 +349,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     'wokwi-lcd1602': 'lcd',
     'openhw-lcd1602': 'lcd',
     'openhw-lcd2004': 'lcd',
-    'openhw-lcd1602-i2c': 'lcd',
     'wokwi-lcd1602-i2c': 'lcd',
     'openhw-lcd1602-i2c': 'lcd',
     'wokwi-lcd2004-i2c': 'lcd',
