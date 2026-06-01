@@ -290,16 +290,21 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
   // ── Block Editor enable/disable toggle (persisted via props from SimulatorPage) ─
   const toggleBlocklyDisabled = React.useCallback(() => {
     if (!setBlocklyDisabled) return;
-    setBlocklyDisabled(prev => {
-      const next = !prev;
-      try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) { }
-      if (next) {
-        if (setUseBlocklyCode) setUseBlocklyCode(false);
-        if (setCodeTab) setCodeTab('code');
-      }
-      return next;
-    });
-  }, [setBlocklyDisabled, setUseBlocklyCode, setCodeTab]);
+    const next = !blocklyDisabled;
+    setBlocklyDisabled(next);
+    try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) { }
+    if (next) {
+      if (setUseBlocklyCode) setUseBlocklyCode(false);
+      if (setCodeTab) setCodeTab('code');
+    }
+  }, [blocklyDisabled, setBlocklyDisabled, setUseBlocklyCode, setCodeTab]);
+
+  React.useEffect(() => {
+    if (blocklyDisabled) {
+      if (setUseBlocklyCode) setUseBlocklyCode(false);
+      if (setCodeTab) setCodeTab('code');
+    }
+  }, [blocklyDisabled, setUseBlocklyCode, setCodeTab]);
 
 
   React.useEffect(() => {

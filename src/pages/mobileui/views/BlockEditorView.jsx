@@ -22,16 +22,21 @@ export default function BlockEditorView(props) {
 
   const toggleBlocklyDisabled = React.useCallback(() => {
     if (!setBlocklyDisabled) return;
-    setBlocklyDisabled(prev => {
-      const next = !prev;
-      try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) {}
-      if (next) {
-        if (setUseBlocklyCode) setUseBlocklyCode(false);
-        if (setCodeTab) setCodeTab('code');
-      }
-      return next;
-    });
-  }, [setBlocklyDisabled, setUseBlocklyCode, setCodeTab]);
+    const next = !blocklyDisabled;
+    setBlocklyDisabled(next);
+    try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) {}
+    if (next) {
+      if (setUseBlocklyCode) setUseBlocklyCode(false);
+      if (setCodeTab) setCodeTab('code');
+    }
+  }, [blocklyDisabled, setBlocklyDisabled, setUseBlocklyCode, setCodeTab]);
+
+  React.useEffect(() => {
+    if (blocklyDisabled) {
+      if (setUseBlocklyCode) setUseBlocklyCode(false);
+      if (setCodeTab) setCodeTab('code');
+    }
+  }, [blocklyDisabled, setUseBlocklyCode, setCodeTab]);
 
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 140px)', flexDirection: 'column', overflow: 'hidden', position: 'relative', pointerEvents: editingDisabled ? 'none' : 'auto', background: 'var(--bg)' }}>
