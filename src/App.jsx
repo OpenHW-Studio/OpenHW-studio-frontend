@@ -21,6 +21,7 @@ import ProjectTheoryPage from './pages/ProjectTheoryPage.jsx'
 import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
 import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
 import TeacherProjectContentEditor from './pages/teacher/TeacherProjectContentEditor.jsx'
+import TeacherProjectBankPage from './pages/teacher/TeacherProjectBankPage.jsx'
 // Lazy-loaded routes to drastically improve LCP
 import SigninPage from './pages/auth/SigninPage.jsx';
 import SignupPage from './pages/auth/SignupPage.jsx';
@@ -365,7 +366,30 @@ export default function App() {
                 </ProtectedRoute>
               }
             />
-
+            <Route
+              path="/teacher/project-bank"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  {React.createElement(React.lazy(() => import('./pages/teacher/TeacherProjectBankPage.jsx')))}
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/project-bank/new"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherProjectContentEditor />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/project-bank/:projectSlug/edit"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherProjectContentEditor />
+                </ProtectedRoute>
+              }
+            />
 
                 {/* Admin */}
                 <Route path="/admin" element={<AdminLandingPage />} />

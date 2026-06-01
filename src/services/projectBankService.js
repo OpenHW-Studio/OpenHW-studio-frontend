@@ -1,10 +1,11 @@
 // Service for Project Bank API operations
 import axios from 'axios';
+import { getToken } from './authService.js';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
 
 const authHeaders = () => {
-  const token = localStorage.getItem('token');
+  const token = getToken();
   return {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
@@ -57,5 +58,6 @@ export const unpublishProjectBankEntry = async (projectId) => {
 };
 
 export const getProjectBySlug = async (slug) => {
-  const response = await axios.get(`${API_BASE_URL}/project-bank/slug/${slug}`);
+  const response = await axios.get(`${API_BASE_URL}/project-bank/slug/${slug}`, { headers: authHeaders() });
   return response.data;
+};

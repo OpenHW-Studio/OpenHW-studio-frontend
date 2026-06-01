@@ -297,11 +297,12 @@ export function SimulatorPage({ gamificationMode = false }) {
   const assignmentMode = Boolean(classId && assignmentId)
   const studentAssignmentMode = assignmentMode && activeUser?.role === 'student'
   const liveSessionCode = String(liveCode || '').trim().toUpperCase()
-  const currentLiveUserId = String(activeUser?._id || activeUser?.id || '')
-  const liveRoleParam = String(assessmentParams.get('role') || '').trim().toLowerCase()
-  const liveMeetingMode = Boolean(liveSessionCode)
-  const isLiveTeacher = liveMeetingMode && liveRoleParam === 'teacher'
-  const isLiveStudent = liveMeetingMode && !isLiveTeacher
+   const currentLiveUserId = String(activeUser?._id || activeUser?.id || '')
+   const liveRoleParam = String(assessmentParams.get('role') || '').trim().toLowerCase()
+   const liveMeetingMode = Boolean(liveSessionCode)
+   const isLiveTeacher = liveMeetingMode && liveRoleParam === 'teacher'
+   const isLiveStudent = liveMeetingMode && !isLiveTeacher
+   const returnTo = location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null
 
 // -- Gamification --
    const {
@@ -1948,15 +1949,41 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
     };
 
-    loadDemoProject();
-    return () => {
-      cancelled = true;
-      if (deferTimer !== null) window.clearTimeout(deferTimer);
-    };
-  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+loadDemoProject();
+     return () => {
+       cancelled = true;
+       if (deferTimer !== null) window.clearTimeout(deferTimer);
+     };
+   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Offline component queue: flush to backend when connectivity restores ──
-  useEffect(() => {
+// ── Load circuit data from bankProjectCriteria (opened from Project Bank Editor) ──
+    useEffect(() => {
+      if (!returnTo) return;
+
+      // Check if we have circuit data from Project Bank Editor
+      const stored = localStorage.getItem("bankProjectCriteria");
+      if (!stored) return;
+
+      try {
+        const parsed = JSON.parse(stored);
+        // Only load if it has the full payload format (components/connections)
+        if (parsed && Array.isArray(parsed.components) && Array.isArray(parsed.connections)) {
+          const { components: normalizedComponents, wires: normalizedConnections } =
+            normalizeImportedCircuitData(parsed.components, parsed.connections);
+
+          setBoard(parsed.board || "arduino_uno");
+          setComponents(normalizedComponents);
+          setWires(normalizedConnections);
+          setCode(parsed.code || "");
+          syncNextIds(normalizedComponents, normalizedConnections);
+        }
+      } catch (e) {
+        console.warn("[BankProjectCriteria] Failed to parse circuit data:", e);
+      }
+    }, [returnTo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Offline component queue: flush to backend when connectivity restores ──
+    useEffect(() => {
     const drainQueue = async () => {
       const queued = await getQueuedComponents();
       if (!queued.length) return;
@@ -11907,6 +11934,11 @@ export function SimulatorPage({ gamificationMode = false }) {
             localStorage.removeItem("openhw-tour-completed");
             setShowTour(true);
           }}
+          returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
+          navigate={navigate}
+          components={components}
+          wires={wires}
+          code={code}
         />
 
         <SimulatorStatusBanners

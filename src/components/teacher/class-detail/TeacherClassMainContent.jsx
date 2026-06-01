@@ -412,6 +412,7 @@ function TeacherAdventureTab({
   savingAdventureConfig,
   onOpenClassAdventure,
   onOpenProjectEditor,
+  onOpenProjectBank,
 }) {
   const worlds = (adventureContent?.worlds || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
   const projects = (adventureContent?.projects || []);
@@ -583,6 +584,31 @@ function TeacherAdventureTab({
                     }}
                   >
                     + Add Project
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenProjectBank(world.id)}
+                    style={{
+                      padding: "8px 14px",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      background: "var(--accent)",
+                      border: "none",
+                      borderRadius: 10,
+                      cursor: "pointer",
+                      color: "#fff",
+                      transition: "all 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                      e.currentTarget.style.boxShadow = "var(--glow)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "none";
+                    }}
+                  >
+                    📦 Add from Bank
                   </button>
                 </div>
                <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
