@@ -11,6 +11,7 @@ import TeacherComposerModal from "../../components/teacher/class-detail/TeacherC
 import TeacherEditClassModal from "../../components/teacher/class-detail/TeacherEditClassModal.jsx";
 import TeacherAssignmentSubmissionsModal from "../../components/teacher/class-detail/TeacherAssignmentSubmissionsModal.jsx";
 import ClassroomFilePreviewModal from "../../components/common/ClassroomFilePreviewModal.jsx";
+import ProjectBankModal from "../../components/teacher/class-detail/ProjectBankModal.jsx";
 import { sidebarLinks } from "../../components/teacher/class-detail/helpers.js";
 import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -35,6 +36,7 @@ import {
   updateClassAdventureConfig,
 } from "../../services/classAdventureService.js";
 import { buildFallbackClassAdventureContent } from "../../services/classAdventureAdapter.js";
+import { importToProjectBank } from "../../services/projectBankService.js";
 
 export default function TeacherClassDetailPage() {
   const { classId } = useParams();
@@ -104,6 +106,9 @@ export default function TeacherClassDetailPage() {
     summary: { totalStudents: 0, activeStudents: 0 },
   });
   const [savingAdventureConfig, setSavingAdventureConfig] = useState(false);
+  const [showProjectBankModal, setShowProjectBankModal] = useState(false);
+  const [projectBankWorldId, setProjectBankWorldId] = useState(null);
+  const [importingBankProject, setImportingBankProject] = useState(false);
 
   const classMenuRef = useRef(null);
   const codeMenuRef = useRef(null);
@@ -880,9 +885,66 @@ export default function TeacherClassDetailPage() {
     }
   };
 
-  const handleOpenProjectEditor = (projectId, projectSlug) => {
-    navigate(`/teacher/classes/${classId}/projects/${projectSlug}/edit`);
-  };
+   const handleOpenProjectEditor = (projectId, projectSlug) => {
+     navigate(`/teacher/classes/${classId}/projects/${projectSlug}/edit`);
+   };
+
+   const handleAddProjectFromBank = async (bankProject) => {
+      const targetWorldId = projectBankWorldId || bankProject.worldId;
+      if (!targetWorldId) return;
+      setImportingBankProject(true);
+      try {
+        const response = await importToProjectBank({ project: bankProject });
+        const entry = response.project || response;
+        handleAddProjectFromBankEntry(targetWorldId, entry);
+        setInfo("Project imported from bank.");
+      } catch (err) {
+        handleAddProjectFromBankEntry(targetWorldId, bankProject);
+        setInfo("Project added from bank.");
+      } finally {
+        setImportingBankProject(false);
+        setShowProjectBankModal(false);
+        setProjectBankWorldId(null);
+      }
+    };
+
+   const handleAddProjectFromBankEntry = (worldId, bankProject) => {
+     const project = {
+       id: `project-${Date.now()}`,
+       slug: bankProject.slug || `bank-${Date.now()}`,
+       worldId: worldId,
+       order: (adventureContent?.projects || []).length + 1,
+       enabled: true,
+       title: bankProject.title || "Imported Project",
+       subtitle: bankProject.subtitle || "",
+       description: bankProject.description || "",
+       prerequisite: bankProject.prerequisite || null,
+       xpReward: bankProject.xpReward || 100,
+       rewardComponents: bankProject.rewardComponents || [],
+       theory: bankProject.theory || [],
+       quizQuestions: bankProject.quizQuestions || [],
+       nodes: bankProject.nodes || [
+         { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
+         { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
+         { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
+         { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
+       ],
+       assessment: bankProject.assessment || {},
+       guidedSteps: bankProject.guidedSteps || [],
+     };
+     setAdventureContent((current) => {
+       const projects = current?.projects || [];
+       return {
+         ...current,
+         projects: [...projects, project],
+       };
+     });
+   };
+
+   const handleOpenProjectBank = (worldId) => {
+      setProjectBankWorldId(worldId);
+      setShowProjectBankModal(true);
+    };
 
   if (loading) {
     return (
@@ -979,11 +1041,12 @@ export default function TeacherClassDetailPage() {
                 onDeleteProject={handleDeleteProject}
                 onSaveAdventureConfig={handleSaveAdventureConfig}
                savingAdventureConfig={savingAdventureConfig}
-               onOpenClassAdventure={() =>
-                 navigate(`/adventure?classId=${encodeURIComponent(classId)}`)
-               }
-               onOpenProjectEditor={handleOpenProjectEditor}
-             />
+                onOpenClassAdventure={() =>
+                  navigate(`/adventure?classId=${encodeURIComponent(classId)}`)
+                }
+                onOpenProjectEditor={handleOpenProjectEditor}
+                onOpenProjectBank={handleOpenProjectBank}
+              />
 
             <TeacherClassSidebar
               codeMenuRef={codeMenuRef}
@@ -1021,6 +1084,15 @@ export default function TeacherClassDetailPage() {
         <div className="teacher-toast" role="status">
           {info}
         </div>
+      ) : null}
+
+      {showProjectBankModal ? (
+        <ProjectBankModal
+          isOpen={showProjectBankModal}
+          onClose={() => { setShowProjectBankModal(false); setProjectBankWorldId(null); }}
+          onAddProject={handleAddProjectFromBank}
+          selectedWorldId={projectBankWorldId}
+        />
       ) : null}
 
       {showComposer ? (
