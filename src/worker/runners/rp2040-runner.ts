@@ -2678,13 +2678,35 @@ export class RP2040Runner implements BoardRunner {
                     visit(`${compId}:1`);
                 }
             }
+        } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
+            const isRight = inst.state?.value === "1" || inst.state?.value === 1 || inst.state?.value === true;
+            if (isRight) {
+                if (pinId === '3') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('3', voltage);
+                    visit(`${compId}:3`);
+                }
+            } else {
+                if (pinId === '1') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`);
+                }
+            }
         }
     }
 
     private updatePhysicsInternal() {}
 
     private propagateBoardPin(gpPin: string, isHigh: boolean) {
-        const voltage = isHigh ? 3.3 : 0.0;
+        this.propagateBoardPinInternal(gpPin, isHigh ? 3.3 : 0.0, isHigh);
+    }
+
+    private propagateBoardPinInternal(gpPin: string, voltage: number, isHigh: boolean = voltage > 1.8) {
 
         const boardInst = this.instances.get(this.boardId);
         if (boardInst && this.cpu) {
@@ -2742,6 +2764,9 @@ export class RP2040Runner implements BoardRunner {
                 }
                 if (upper === '3V3' || upper === 'VCC' || upper.startsWith('3V3.')) {
                     inst.setPinVoltage(pinKey, 3.3);
+                }
+                if (upper === '5V' || upper === 'VBUS') {
+                    inst.setPinVoltage(pinKey, 5.0);
                 }
             });
         });
@@ -2806,6 +2831,17 @@ export class RP2040Runner implements BoardRunner {
 
     private updateGPIOInputsFromCircuit() {
         if (!this.cpu) return;
+
+        // Propagate fixed power rails through the passive network
+        ['GND', 'AGND', 'VSS', 'GND_1', 'GND_2', 'GND_3', 'GND_4', 'GND_5', 'GND_6'].forEach(pin => {
+            this.propagateBoardPinInternal(pin, 0.0, false);
+        });
+        ['3V3', 'VCC'].forEach(pin => {
+            this.propagateBoardPinInternal(pin, 3.3, true);
+        });
+        ['5V', 'VBUS'].forEach(pin => {
+            this.propagateBoardPinInternal(pin, 5.0, true);
+        });
 
         for (let gp = 0; gp < 29; gp++) {
             const gpPin = `GP${gp}`;
