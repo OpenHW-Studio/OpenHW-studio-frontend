@@ -62,6 +62,20 @@ self.onmessage = async (e) => {
             });
         }
 
+        // WORKAROUND: Force Rotary Encoder pins for ESP32
+        if (newComp.type.includes('rotary-encoder') && boardId.includes('esp32')) {
+            if (!plan.added_wires) plan.added_wires = [];
+            // Remove any existing wires for this component to prevent duplicates
+            plan.added_wires = plan.added_wires.filter((w: any) => !w.from.startsWith(newComp.id + ':') && !w.to.startsWith(newComp.id + ':'));
+            
+            // Wire to 2, 3, 4 because the manifest hardcodes these pins in its auto-code block
+            plan.added_wires.push({ from: `${newComp.id}:GND`, to: `${boardId}:GND.1`, color: 'black' });
+            plan.added_wires.push({ from: `${newComp.id}:VCC`, to: `${boardId}:3V3`, color: 'red' });
+            plan.added_wires.push({ from: `${newComp.id}:SW`, to: `${boardId}:4`, color: 'green' });
+            plan.added_wires.push({ from: `${newComp.id}:DT`, to: `${boardId}:3`, color: 'blue' });
+            plan.added_wires.push({ from: `${newComp.id}:CLK`, to: `${boardId}:2`, color: 'yellow' });
+        }
+
         // Forward library dependencies from manifest
         if (manifest?.autocoding?.libraries) {
             plan.libraries = manifest.autocoding.libraries;
