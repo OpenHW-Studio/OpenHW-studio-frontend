@@ -415,3 +415,14 @@ export async function toggleMaintenanceMode(enabled) {
     const response = await axios.post(`${COMPILER_URL}/admin/maintenance/toggle`, { enabled }, getAdminAuthConfig());
     return response.data;
 }
+
+export async function fetchResourceStatus() {
+    const response = await axios.get(`${COMPILER_URL}/admin/resource-status`, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function triggerRecalibrate() {
+    const response = await axios.post(`${COMPILER_URL}/admin/recalibrate`, {}, getAdminAuthConfig());
+    return response.data;
+}
+
