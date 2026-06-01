@@ -1,4 +1,5 @@
 
+<<<<<<< HEAD
 // ── Starting components (always available from Day 1) ─────────────────────────
 export const STARTING_COMPONENTS = [
   'wokwi-arduino-uno',
@@ -10,6 +11,10 @@ export const STARTING_COMPONENTS = [
   'wokwi-breadboard',
   'openhw-breadboard',
 ];
+=======
+// ── Starting components (none - all unlocked via adventure) ───────────────────
+export const STARTING_COMPONENTS = [];
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
 // ── Level config (XP-based titles / badges, separate from component unlocking) ─
 export const LEVELS = [
@@ -23,6 +28,7 @@ export const LEVELS = [
     color: '#22c55e',
     icon: '💡',
     unlockedComponents: [
+<<<<<<< HEAD
       'wokwi-arduino-uno',
       'openhw-arduino-uno',
       'wokwi-led',
@@ -115,6 +121,11 @@ export const LEVELS = [
       'openhw-buzzer',
       'wokwi-pushbutton',
       'openhw-pushbutton',
+=======
+      'openhw-arduino-uno',
+      'openhw-led',
+      'openhw-resistor',
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     ],
     badge: {
       id: 'badge_spark_starter',
@@ -185,11 +196,16 @@ export const LEVELS = [
     color: '#eab308',
     icon: '🌞',
     unlockedComponents: [
+<<<<<<< HEAD
       'wokwi-rgb-led',
       'openhw-rgb-led',
       'wokwi-neopixel-matrix',
       'openhw-neopixel-matrix',
       'wokwi-neopixel-ring',
+=======
+      'openhw-rgb-led',
+      'openhw-neopixel-matrix',
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
       'openhw-neopixel-ring',
     ],
     badge: {
@@ -210,6 +226,7 @@ export const LEVELS = [
     color: '#3b82f6',
     icon: '⚙️',
     unlockedComponents: [
+<<<<<<< HEAD
       'wokwi-lcd1602',
       'wokwi-lcd1602-i2c',
       'openhw-lcd1602-i2c',
@@ -226,6 +243,15 @@ export const LEVELS = [
       'wokwi-tm1637-7segment',
       'openhw-tm1637-7segment',
       'wokwi-servo',
+=======
+      'openhw-lcd1602-i2c',
+      'openhw-lcd2004-i2c',
+      'openhw-ssd1306-oled',
+      'openhw-max7219',
+      'openhw-ili9341',
+      'openhw-7segment',
+      'openhw-tm1637-7segment',
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
       'openhw-servo',
     ],
     badge: {
@@ -316,6 +342,7 @@ export const RARITY_CONFIG = {
 };
 
 // isComponentUnlocked now receives the unlockedComponentTypes array/set from context state
+<<<<<<< HEAD
 export function isComponentUnlocked(componentType, unlockedComponentTypes) {
   if (!unlockedComponentTypes) {
     return STARTING_COMPONENTS.includes(componentType) ||
@@ -335,6 +362,34 @@ export function isComponentUnlocked(componentType, unlockedComponentTypes) {
   if (componentType.startsWith('wokwi-') && check(componentType.replace('wokwi-', 'openhw-'))) return true;
   return false;
 }
+=======
+export function isComponentUnlocked(componentType, unlockedComponentTypes, currentLevel = 1) {
+   if (unlockedComponentTypes === '*') return true;
+   
+   const check = (type, list) => {
+     if (!list) return false;
+     if (Array.isArray(list)) return list.includes(type);
+     if (list instanceof Set) return list.has(type);
+     return false;
+   };
+
+   if (check(componentType, unlockedComponentTypes)) return true;
+   if (componentType.startsWith('openhw-') && check(componentType.replace('openhw-', 'wokwi-'), unlockedComponentTypes)) return true;
+   if (componentType.startsWith('wokwi-') && check(componentType.replace('wokwi-', 'openhw-'), unlockedComponentTypes)) return true;
+   
+   // Check level-based unlocks for all levels up to current level
+   for (const level of LEVELS) {
+     if (level.id > currentLevel) break;
+     if (level.unlockedComponents) {
+       if (check(componentType, level.unlockedComponents)) return true;
+       if (componentType.startsWith('openhw-') && check(componentType.replace('openhw-', 'wokwi-'), level.unlockedComponents)) return true;
+       if (componentType.startsWith('wokwi-') && check(componentType.replace('wokwi-', 'openhw-'), level.unlockedComponents)) return true;
+     }
+   }
+   
+   return false;
+ }
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
 // Total XP needed to reach a level
 export function xpForLevel(levelId) {

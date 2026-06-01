@@ -1,5 +1,9 @@
 import { useState } from 'react'
+<<<<<<< HEAD
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
+=======
+import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 import { useGamification } from '../context/GamificationContext'
 
 const THEMES = {
@@ -15,6 +19,11 @@ const css = `
 export default function GuidedSimulatorPage() {
   const navigate = useNavigate()
   const { projectName = '' } = useParams()
+<<<<<<< HEAD
+=======
+  const [searchParams] = useSearchParams()
+  const classId = searchParams.get('classId')
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   const location = useLocation()
   const { xp = 0, coins = 0 } = useGamification?.() || {}
 
@@ -30,7 +39,13 @@ export default function GuidedSimulatorPage() {
     document.documentElement.setAttribute('data-theme', next)
   }
 
+<<<<<<< HEAD
   const simUrl = `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}`
+=======
+  const simUrl = classId
+    ? `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}&classId=${encodeURIComponent(classId)}`
+    : `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}`
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   const projectTitle = projectName.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
 
   return (
@@ -47,7 +62,11 @@ export default function GuidedSimulatorPage() {
       }}>
 
         <button
+<<<<<<< HEAD
           onClick={() => navigate(`/${projectName}/assessment`, { state:{ projectColor } })}
+=======
+          onClick={() => navigate(classId ? `/${projectName}/assessment?classId=${encodeURIComponent(classId)}` : `/${projectName}/assessment`, { state:{ projectColor } })}
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
           style={{
             background: theme==='dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)',
             border:`1px solid ${colors.borderAlt}`,

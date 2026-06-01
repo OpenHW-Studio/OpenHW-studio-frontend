@@ -1,7 +1,20 @@
+<<<<<<< HEAD
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../services/gamification/ProjectsConfig'
+=======
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useGamification } from '../context/GamificationContext'
+import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../services/gamification/ProjectsConfig'
+import {
+  getAdventureContent,
+  getAdventureProgress,
+  getLocalAdventureStepProgress,
+} from '../services/adventureService'
+import { buildFallbackClassAdventureContent } from '../services/classAdventureAdapter'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
 // ─── World groupings ────────────────────────────────────────────────────────
 const WORLDS = [
@@ -121,7 +134,11 @@ function RewardPreview({ rewards, T }) {
 
 // ─── Modal ─────────────────────────────────────────────────────────────────
 function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }) {
+<<<<<<< HEAD
   const rewards = getProjectRewardComponents(project.slug)
+=======
+  const rewards = project.rewardComponents || getProjectRewardComponents(project.slug)
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   const fullProject = PROJECTS.find(p => p.slug === project.slug)
   if (!project) return null
 
@@ -306,6 +323,7 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }
     </div>
   )
 }
+<<<<<<< HEAD
 
 // ─── Project Node ───────────────────────────────────────────────────────────
 function ProjectNode({ project, status, onClick, isFirst, T }) {
@@ -392,15 +410,30 @@ function ProjectNode({ project, status, onClick, isFirst, T }) {
 // ─── Main Page ──────────────────────────────────────────────────────────────
 export default function AdventureMapPage() {
   const navigate = useNavigate()
+=======
+// --- Main Page -----------------------------------------------------------
+export default function AdventureMapPage() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const classId = searchParams.get('classId')
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   const {
     xp, currentLevel, currentLevelData, nextLevel, xpProgress,
     completedProjects = [],
   } = useGamification()
+<<<<<<< HEAD
+=======
+  const [classAdventure, setClassAdventure] = useState(null)
+  const [classProgress, setClassProgress] = useState(null)
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
   // ── Read initial theme from document (set by LandingPage) ──
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const [selectedProject, setSelectedProject] = useState(null)
+<<<<<<< HEAD
 
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   const T = getT(theme)
 
   const toggleTheme = () => {
@@ -409,6 +442,7 @@ export default function AdventureMapPage() {
     document.documentElement.setAttribute('data-theme', next)
   }
 
+<<<<<<< HEAD
   const getStatus = (project) => getProjectStatus(project.slug, completedProjects)
   const handleNodeClick = (project) => setSelectedProject(project)
 
@@ -426,6 +460,118 @@ export default function AdventureMapPage() {
     ...w,
     projects: PROJECTS.filter(p => w.slugs.includes(p.slug)).sort((a, b) => a.number - b.number),
   }))
+=======
+  useEffect(() => {
+    let cancelled = false
+    const loadClassAdventure = async () => {
+      try {
+        const [adventureResponse, progressResponse] = await Promise.all([
+          getAdventureContent(classId),
+          getAdventureProgress(classId),
+        ])
+        if (cancelled) return
+        setClassAdventure(adventureResponse?.resolved || null)
+        setClassProgress(progressResponse?.progress || null)
+      } catch {
+        if (!cancelled) {
+          setClassAdventure(null)
+          setClassProgress(null)
+        }
+      }
+    }
+    loadClassAdventure()
+    return () => {
+      cancelled = true
+    }
+  }, [classId])
+
+  const resolvedProjects = useMemo(() => {
+    const source = [...PROJECTS]
+    const content = classAdventure || buildFallbackClassAdventureContent()
+    const projectRows = Array.isArray(content?.projects) ? content.projects : []
+    if (!projectRows.length) return source
+    return projectRows
+      .filter((project) => project.enabled !== false)
+      .map((project, index) => ({
+        ...source.find((base) => base.slug === project.slug),
+        ...project,
+        number: Number.isFinite(project.order) ? project.order : index + 1,
+        world: Number(String(project.worldId || '').replace('world-', '')) || 1,
+        color: project.color || source.find((base) => base.slug === project.slug)?.color || '#3b82f6',
+        icon: project.icon || source.find((base) => base.slug === project.slug)?.icon || '🧩',
+      }))
+      .sort((a, b) => (a.world - b.world) || (a.number - b.number))
+  }, [classAdventure])
+
+  const getStatus = (project) => {
+    if (!classAdventure?.projects?.length) return getProjectStatus(project.slug, completedProjects)
+    if (completedProjects.includes(project.slug)) return 'completed'
+    if (!project.prerequisite) return 'available'
+    return completedProjects.includes(project.prerequisite) ? 'available' : 'locked'
+  }
+  const handleNodeClick = (project) => setSelectedProject(project)
+  const handleStepNavigate = (project, step) => {
+    if (!step?.route) return
+    const route = step.route(project.slug)
+    navigate(classId ? `${route}?classId=${encodeURIComponent(classId)}` : route)
+  }
+
+  const handleStart = (slug, mode) => {
+    setSelectedProject(null)
+    const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+    if (mode === 'guide') navigate(`/${slug}/reading${suffix}`)
+    else if (mode === 'guide-simple') navigate(`/${slug}/guide${suffix}`)
+    else navigate(`/${slug}/assessment${suffix}`)
+  }
+
+  const completedCount = completedProjects.length
+  const totalProjects  = resolvedProjects.length
+
+  const worldGroups = useMemo(() => {
+    if (!classAdventure?.worlds?.length) {
+      return WORLDS.map(w => ({
+        ...w,
+        projects: resolvedProjects.filter(p => w.slugs.includes(p.slug)).sort((a, b) => a.number - b.number),
+      }))
+    }
+    return classAdventure.worlds
+      .sort((a, b) => (a.order || 0) - (b.order || 0))
+      .map((world, worldIdx) => ({
+        id: world.id || `world-${worldIdx + 1}`,
+        name: world.title || `World ${worldIdx + 1}`,
+        theme: world.theme || '',
+        color: world.color || '#3b82f6',
+        bg: `${world.color || '#3b82f6'}14`,
+        border: `${world.color || '#3b82f6'}44`,
+        icon: world.icon || '🧭',
+        projects: resolvedProjects.filter((project) => project.worldId === world.id).sort((a, b) => (a.order || 0) - (b.order || 0)),
+      }))
+  }, [classId, classAdventure, resolvedProjects])
+
+  const stepGap = 80
+  const stepTopPad = 36
+  const getStepPoints = (count) => (
+    Array.from({ length: count }, (_, i) => ({
+      x: PATH_X[i % PATH_X.length],
+      y: stepTopPad + i * stepGap,
+    }))
+  )
+
+  const getStepStatusForProject = (project, step, isProjectLocked) => {
+    if (step.soon || isProjectLocked) return 'locked'
+    if (completedProjects.includes(project.slug)) return 'completed'
+
+    const progress = getLocalAdventureStepProgress(project.slug)
+    const currentOrder = progress?.currentStepOrder || 1
+    const completedSteps = progress?.completedSteps || []
+    const stepId = `${project.slug}:${step.key}`
+
+    if (completedSteps.includes(stepId)) return 'completed'
+    if (step.order === currentOrder) return 'current'
+    if (step.order < currentOrder) return 'unlocked'
+    return 'locked'
+  }
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
   return (
     <div style={{
@@ -475,7 +621,11 @@ export default function AdventureMapPage() {
               fontSize: 13, fontWeight: 700,
               fontFamily: 'inherit', transition: 'all .15s',
             }}
+<<<<<<< HEAD
             onClick={() => navigate(-1)}
+=======
+            onClick={() => navigate(classId ? `/student/classes/${encodeURIComponent(classId)}` : '/student/dashboard')}
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
           >← Back</button>
 
           <span style={{
@@ -527,6 +677,26 @@ export default function AdventureMapPage() {
             >
               {theme === 'dark' ? '☀️' : '🌙'}
             </button>
+<<<<<<< HEAD
+=======
+
+            {/* My Components button */}
+            <button
+              onClick={() => navigate('/components')}
+              title="View your components"
+              style={{
+                background: 'rgba(59,130,246,0.1)',
+                border: '1px solid rgba(59,130,246,0.3)',
+                borderRadius: 8, padding: '6px 12px',
+                color: '#60a5fa', cursor: 'pointer',
+                fontSize: 12, fontWeight: 700, fontFamily: 'inherit',
+                transition: 'all .15s',
+                display: 'flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              🧰 My Components
+            </button>
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
           </div>
         </div>
       </header>
@@ -546,6 +716,7 @@ export default function AdventureMapPage() {
           Adventure Map
         </h1>
         <p style={{ color: T.heroSubText, fontSize: 14, margin: '0 auto 6px', maxWidth: 380, lineHeight: 1.6 }}>
+<<<<<<< HEAD
           🎁 Start with LED + Resistor. Complete projects to earn more components.<br/>
           No quizzes — just build and learn!
         </p>
@@ -559,6 +730,18 @@ export default function AdventureMapPage() {
         }}>
           🎒 Your Starter Kit: <strong>Arduino + LED + Resistor</strong>
         </div>
+=======
+          Complete projects to earn more components.<br/>
+          Short quizzes help lock in what you learn.
+        </p>
+        {classId && (
+          <p style={{ color: T.heroSubText, fontSize: 12, margin: '0 auto', maxWidth: 420 }}>
+            Class mode active {classProgress?.lastActivityAt ? `- Last activity ${new Date(classProgress.lastActivityAt).toLocaleString()}` : ''}
+          </p>
+        )}
+
+
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
       </div>
 
       {/* Map */}
@@ -584,6 +767,7 @@ export default function AdventureMapPage() {
                 </div>
               </div>
 
+<<<<<<< HEAD
               {/* Nodes */}
               {world.projects.map((project, pi) => {
                 const status    = getStatus(project)
@@ -656,6 +840,173 @@ export default function AdventureMapPage() {
                         isFirst={isFirst}
                         T={T}
                       />
+=======
+              {/* Project Journey Blocks */}
+              {world.projects.map((project) => {
+                const status = getStatus(project)
+                const isCompleted = status === 'completed'
+                const isAvailable = status === 'available'
+                const isLocked = status === 'locked'
+
+                const steps = [
+                  { key: 'read', label: 'Reading Part', icon: '\u{1F4D6}', order: 1, route: (slug) => '/' + slug + '/reading' },
+                  { key: 'quiz', label: 'Quiz', icon: '\u2753', order: 2, route: (slug) => '/' + slug + '/quiz' },
+                  { key: 'unlock', label: 'Component Unlock', icon: '\u{1F381}', order: 3, route: (slug) => '/' + slug + '/components' },
+                  { key: 'sim', label: 'Simulator / Project', icon: '\u{1F527}', order: 4, route: (slug) => '/' + slug + '/assessment' },
+                ]
+
+                const points = getStepPoints(steps.length)
+                const height = points.length > 0 ? points[points.length - 1].y + 44 : 120
+                const segments = points.slice(1).flatMap((p, i) => {
+                  const prev = points[i]
+                  return [
+                    {
+                      type: 'h',
+                      x: Math.min(prev.x, p.x),
+                      y: prev.y,
+                      length: Math.abs(p.x - prev.x),
+                    },
+                    {
+                      type: 'v',
+                      x: p.x,
+                      y: Math.min(prev.y, p.y),
+                      length: Math.abs(p.y - prev.y),
+                    },
+                  ]
+                })
+
+                return (
+                  <div key={project.slug} style={{ marginBottom: 16 }}>
+                    {/* Project Heading */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      background: `${project.color}12`,
+                      border: `1px solid ${project.color}33`,
+                      color: isLocked ? T.labelLocked : project.color,
+                      fontSize: 13,
+                      fontWeight: 800,
+                    }}>
+                      <span style={{ fontSize: 18 }}>{project.icon}</span>
+                      <span style={{ flex: 1, color: isLocked ? T.labelLocked : T.labelText }}>
+                        {project.title}
+                      </span>
+                      <span style={{
+                        fontSize: 11,
+                        color: isLocked ? T.labelLocked : T.labelXp,
+                        fontWeight: 700,
+                      }}>
+                        {isCompleted ? '✅ Completed' : `${project.xpReward} XP`}
+                      </span>
+                    </div>
+
+                    {/* Step Nodes */}
+                    <div style={{ position: 'relative', height, marginTop: 6 }}>
+                    {segments.map((seg, idx) => (
+                      <div
+                        key={idx}
+                        style={seg.type === 'h' ? {
+                          position: 'absolute',
+                          left: `${seg.x}%`,
+                          top: seg.y,
+                          width: `${seg.length}%`,
+                          height: 2,
+                          backgroundImage: `repeating-linear-gradient(90deg, ${T.connectorLocked} 0 6px, transparent 6px 14px)`,
+                          opacity: 0.9,
+                        } : {
+                          position: 'absolute',
+                          left: `${seg.x}%`,
+                          top: seg.y,
+                          width: 2,
+                          height: seg.length,
+                          transform: 'translateX(-50%)',
+                          backgroundImage: `repeating-linear-gradient(180deg, ${T.connectorLocked} 0 6px, transparent 6px 14px)`,
+                          opacity: 0.9,
+                        }}
+                      />
+                    ))}
+
+                      {steps.map((step, si) => {
+                        const point = points[si]
+                        const stepStatus = getStepStatusForProject(project, step, isLocked)
+                        const isStepLocked = stepStatus === 'locked' || step.soon
+                        const nodeSize = isAvailable ? 56 : 50
+
+                        return (
+                          <div
+                            key={step.key}
+                            onClick={() => !isStepLocked && handleStepNavigate(project, step)}
+                            style={{
+                              position: 'absolute',
+                              left: `${point.x}%`,
+                              top: point.y,
+                              transform: 'translate(-50%, -50%)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: 8,
+                              cursor: isStepLocked ? 'default' : 'pointer',
+                            }}
+                          >
+                            <div style={{
+                              width: nodeSize,
+                              height: nodeSize,
+                              borderRadius: '50%',
+                              border: `2px solid ${isStepLocked ? T.nodeLockedBorder : project.color}`,
+                              background: isStepLocked
+                                ? T.nodeLockedBg
+                                : `radial-gradient(circle, ${project.color}20, transparent)`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              boxShadow: isStepLocked ? 'none' : `0 0 14px ${project.color}44`,
+                              transition: 'transform .2s, box-shadow .2s',
+                            }}>
+                              <span style={{
+                                fontSize: 18,
+                                filter: isStepLocked ? 'grayscale(1) opacity(.35)' : 'none',
+                                lineHeight: 1,
+                              }}>
+                                {isStepLocked ? '🔒' : step.icon}
+                              </span>
+                            </div>
+
+                            <div style={{
+                              padding: '6px 10px',
+                              borderRadius: 10,
+                              border: `1px dashed ${isStepLocked ? T.labelLocked : project.color}55`,
+                              background: isStepLocked ? 'rgba(255,255,255,0.02)' : `${project.color}12`,
+                              color: isStepLocked ? T.labelLocked : T.labelText,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              minWidth: 160,
+                              textAlign: 'center',
+                              zIndex: 2,
+                            }}>
+                              {step.label}
+                              {stepStatus === 'completed' && !step.soon && (
+                                <span style={{ marginLeft: 6, color: '#22c55e' }}>✓</span>
+                              )}
+                              {step.soon && (
+                                <div style={{
+                                  fontSize: 9,
+                                  fontWeight: 700,
+                                  marginTop: 2,
+                                  color: T.labelLocked,
+                                  letterSpacing: '.06em',
+                                  textTransform: 'uppercase',
+                                }}>
+                                  Coming Soon
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
                     </div>
                   </div>
                 )
@@ -679,7 +1030,11 @@ export default function AdventureMapPage() {
         })}
 
         {/* All done! */}
+<<<<<<< HEAD
         {completedCount === totalProjects && (
+=======
+        {totalProjects > 0 && completedCount === totalProjects && (
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
           <div style={{ textAlign: 'center', padding: '32px 20px', animation: 'fadeSlideUp .6s ease both' }}>
             <div style={{ fontSize: 56, marginBottom: 12, animation: 'starSpin 3s linear infinite' }}>🏆</div>
             <div style={{
@@ -738,8 +1093,13 @@ export default function AdventureMapPage() {
               transition: 'width .6s ease',
             }} />
           </div>
+<<<<<<< HEAD
           <div style={{ fontSize: 10, color: T.progressPct, textAlign: 'center' }}>
             {Math.round((completedCount / totalProjects) * 100)}%
+=======
+            <div style={{ fontSize: 10, color: T.progressPct, textAlign: 'center' }}>
+            {totalProjects > 0 ? Math.round((completedCount / totalProjects) * 100) : 0}%
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
           </div>
         </div>
       </div>
@@ -757,4 +1117,11 @@ export default function AdventureMapPage() {
       )}
     </div>
   )
+<<<<<<< HEAD
 }
+=======
+}
+
+
+
+>>>>>>> 4d6e9f5 (component locked feature added successfully)

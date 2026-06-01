@@ -1,9 +1,13 @@
+<<<<<<< HEAD
 
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { COMPONENTS } from '../services/gamification/ComponentsConfig'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
+<<<<<<< HEAD
 import { STARTING_COMPONENTS } from '../services/gamification/GamificationConfig.jsx'
 
 // ── Which project unlocks which component? ────────────────────────────────────
@@ -17,6 +21,31 @@ function findUnlockProject(componentType) {
     }
   }
   return null;
+=======
+
+// Components every user always has — must match ALWAYS_UNLOCKED in GamificationContext
+const ALWAYS_UNLOCKED = ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor']
+
+// ── Which project unlocks which component? ────────────────────────────────────
+function findUnlockProject(wokwiType) {
+  const norm = (t) => String(t || '').replace(/^(openhw-|wokwi-)/, '')
+  const normTarget = norm(wokwiType)
+  for (const project of PROJECTS) {
+    for (const reward of (project.rewardComponents || [])) {
+      if (reward.type === '*') return project
+      if (norm(reward.type) === normTarget) return project
+    }
+  }
+  return null
+}
+
+// ── Normalize a component type to its openhw- form ───────────────────────────
+function toOpenhw(type) {
+  if (!type) return type
+  if (type.startsWith('openhw-')) return type
+  if (type.startsWith('wokwi-')) return `openhw-${type.slice(6)}`
+  return `openhw-${type}`
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 }
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
@@ -72,6 +101,7 @@ const S = {
     border: '1px solid rgba(52,211,153,0.2)',
     borderRadius: 16, padding: '18px 24px', marginBottom: 32,
   },
+<<<<<<< HEAD
   progressIcon: {
     fontSize: 36, flexShrink: 0,
   },
@@ -94,12 +124,28 @@ const S = {
   sectionBadge: {
     padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700,
   },
+=======
+  progressIcon: { fontSize: 36, flexShrink: 0 },
+  progressText: { flex: 1 },
+  progressTitle: { fontSize: 18, fontWeight: 800, color: '#34d399', margin: '0 0 4px' },
+  progressDesc: { fontSize: 13, color: '#94a3b8', margin: 0 },
+  progressCount: { textAlign: 'right', flexShrink: 0 },
+  progressNum: { fontSize: 32, fontWeight: 900, color: '#34d399' },
+  progressTotal: { fontSize: 13, color: '#64748b' },
+  section: { maxWidth: 1100, margin: '0 auto', padding: '0 24px 32px' },
+  sectionHeader: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 },
+  sectionTitle: { fontSize: 20, fontWeight: 800, margin: 0 },
+  sectionBadge: { padding: '4px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700 },
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
     gap: 16,
   },
+<<<<<<< HEAD
   // Component card states
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   card: {
     borderRadius: 16, padding: '20px',
     transition: 'all 0.2s',
@@ -119,9 +165,13 @@ const S = {
     border: '1px solid rgba(255,255,255,0.06)',
     opacity: 0.6,
   },
+<<<<<<< HEAD
   cardTop: {
     display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12,
   },
+=======
+  cardTop: { display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   iconCircle: {
     width: 52, height: 52, borderRadius: 14,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -178,6 +228,7 @@ const S = {
 
 export default function ComponentsPage() {
   const navigate = useNavigate()
+<<<<<<< HEAD
   const { unlockedComponentTypes, completedProjects, currentLevel, xp } = useGamification()
   const [expandedCard, setExpandedCard] = useState(null)
 
@@ -206,6 +257,59 @@ export default function ComponentsPage() {
   const lockedComponents = COMPONENTS.filter(c => {
     if (isOwned(c.wokwiType || `wokwi-${c.id}`)) return false
     const unlocker = getUnlocker(c.wokwiType || `wokwi-${c.id}`)
+=======
+  const { unlockedComponentTypes, completedProjects } = useGamification()
+  const [expandedCard, setExpandedCard] = useState(null)
+
+  const isAllUnlocked = unlockedComponentTypes === '*'
+
+  // Build a set of all known unlocked openhw-* types for O(1) lookup
+  const unlockedSet = isAllUnlocked
+    ? null
+    : new Set(
+        (Array.isArray(unlockedComponentTypes) ? unlockedComponentTypes : [])
+          .map(toOpenhw)
+      )
+
+  // Check if a component (identified by its wokwiType e.g. 'openhw-led') is owned
+  const isOwned = (wokwiType) => {
+    if (isAllUnlocked) return true
+    if (!wokwiType) return false
+
+    const openhwForm = toOpenhw(wokwiType)
+
+    // Direct match in openhw- form
+    if (unlockedSet.has(openhwForm)) return true
+
+    // Try the wokwi- form in case it was stored differently
+    const wokwiForm = wokwiType.startsWith('wokwi-')
+      ? wokwiType
+      : `wokwi-${wokwiType.replace(/^openhw-/, '')}`
+    if (unlockedSet.has(wokwiForm)) return true
+
+    return false
+  }
+
+  const isStarterComponent = (wokwiType) =>
+    ALWAYS_UNLOCKED.includes(toOpenhw(wokwiType))
+
+  // Next incomplete project (first available one the user hasn't finished)
+  const nextProject = PROJECTS.find(p =>
+    !completedProjects.includes(p.slug) &&
+    (!p.prerequisite || completedProjects.includes(p.prerequisite))
+  )
+
+  // Categorize all components
+  const ownedComponents   = COMPONENTS.filter(c => isOwned(c.wokwiType))
+  const nextComponents    = COMPONENTS.filter(c => {
+    if (isOwned(c.wokwiType)) return false
+    const unlocker = findUnlockProject(c.wokwiType)
+    return unlocker && unlocker.slug === nextProject?.slug
+  })
+  const lockedComponents  = COMPONENTS.filter(c => {
+    if (isOwned(c.wokwiType)) return false
+    const unlocker = findUnlockProject(c.wokwiType)
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     return !unlocker || unlocker.slug !== nextProject?.slug
   })
 
@@ -236,7 +340,13 @@ export default function ComponentsPage() {
           <span style={S.progressIcon}>🏆</span>
           <div style={S.progressText}>
             <p style={S.progressTitle}>
+<<<<<<< HEAD
               {isAllUnlocked ? 'All Components Unlocked! 🎉' : `Keep going, maker! ${nextProject ? `Complete "${nextProject.title}" to earn more!` : ''}`}
+=======
+              {isAllUnlocked
+                ? 'All Components Unlocked! 🎉'
+                : `Keep going, maker! ${nextProject ? `Complete "${nextProject.title}" to earn more!` : ''}`}
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
             </p>
             <p style={S.progressDesc}>
               You have earned {totalOwned} components. Complete more projects to unlock the rest!
@@ -263,10 +373,17 @@ export default function ComponentsPage() {
               key={comp.id}
               comp={comp}
               status="owned"
+<<<<<<< HEAD
               isStarting={STARTING_COMPONENTS.includes(comp.wokwiType || `wokwi-${comp.id}`)}
               expanded={expandedCard === comp.id}
               onToggle={() => setExpandedCard(expandedCard === comp.id ? null : comp.id)}
               onLearn={() => navigate(`/components/${comp.id}/theory`)}
+=======
+              isStarting={isStarterComponent(comp.wokwiType)}
+              expanded={expandedCard === comp.id}
+              onToggle={() => setExpandedCard(expandedCard === comp.id ? null : comp.id)}
+              onLearn={() => navigate('/adventure')}
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
             />
           ))}
         </div>
@@ -308,7 +425,11 @@ export default function ComponentsPage() {
           </div>
           <div style={S.grid}>
             {lockedComponents.map(comp => {
+<<<<<<< HEAD
               const unlocker = getUnlocker(comp.wokwiType || `wokwi-${comp.id}`)
+=======
+              const unlocker = findUnlockProject(comp.wokwiType)
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
               return (
                 <ComponentCard
                   key={comp.id}
@@ -330,6 +451,7 @@ export default function ComponentsPage() {
 // ── ComponentCard ─────────────────────────────────────────────────────────────
 function ComponentCard({ comp, status, isStarting, unlocker, expanded, onToggle, onLearn, onGoToProject }) {
   const catColors = {
+<<<<<<< HEAD
     Output: { bg: 'rgba(52,211,153,0.12)', color: '#34d399' },
     Input:  { bg: 'rgba(59,130,246,0.12)', color: '#60a5fa' },
     Power:  { bg: 'rgba(251,191,36,0.12)', color: '#fbbf24' },
@@ -337,6 +459,18 @@ function ComponentCard({ comp, status, isStarting, unlocker, expanded, onToggle,
     Motor:  { bg: 'rgba(249,115,22,0.12)', color: '#fb923c' },
     Display:{ bg: 'rgba(236,72,153,0.12)', color: '#f472b6' },
     IC:     { bg: 'rgba(20,184,166,0.12)', color: '#2dd4bf' },
+=======
+    Output:  { bg: 'rgba(52,211,153,0.12)',  color: '#34d399' },
+    Input:   { bg: 'rgba(59,130,246,0.12)',  color: '#60a5fa' },
+    Power:   { bg: 'rgba(251,191,36,0.12)',  color: '#fbbf24' },
+    Sensor:  { bg: 'rgba(168,85,247,0.12)',  color: '#a78bfa' },
+    Motor:   { bg: 'rgba(249,115,22,0.12)',  color: '#fb923c' },
+    Display: { bg: 'rgba(236,72,153,0.12)',  color: '#f472b6' },
+    IC:      { bg: 'rgba(20,184,166,0.12)',  color: '#2dd4bf' },
+    Boards:  { bg: 'rgba(99,102,241,0.12)',  color: '#818cf8' },
+    Logic:   { bg: 'rgba(139,92,246,0.12)',  color: '#a78bfa' },
+    Passive: { bg: 'rgba(245,158,11,0.12)',  color: '#fbbf24' },
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   }
   const cat = catColors[comp.category] || { bg: 'rgba(255,255,255,0.06)', color: '#94a3b8' }
 
@@ -345,7 +479,10 @@ function ComponentCard({ comp, status, isStarting, unlocker, expanded, onToggle,
     ...(status === 'owned' ? S.cardOwned : status === 'next' ? S.cardNext : S.cardLocked),
   }
 
+<<<<<<< HEAD
   // Simple kid-friendly description (first 80 chars of description)
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   const shortDesc = comp.description
     ? comp.description.slice(0, 90) + (comp.description.length > 90 ? '…' : '')
     : ''
@@ -363,6 +500,7 @@ function ComponentCard({ comp, status, isStarting, unlocker, expanded, onToggle,
             {comp.category}
           </span>
         </div>
+<<<<<<< HEAD
 
         {/* Status badge top-right */}
         {status === 'owned' && (
@@ -374,11 +512,19 @@ function ComponentCard({ comp, status, isStarting, unlocker, expanded, onToggle,
         {status === 'locked' && (
           <div style={{ fontSize: 18 }}>🔒</div>
         )}
+=======
+        {status === 'owned'  && <div style={{ fontSize: 18 }}>✅</div>}
+        {status === 'next'   && <div style={{ fontSize: 18 }}>🎁</div>}
+        {status === 'locked' && <div style={{ fontSize: 18 }}>🔒</div>}
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
       </div>
 
       <p style={S.cardDesc}>{shortDesc}</p>
 
+<<<<<<< HEAD
       {/* Bottom action area */}
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
       {status === 'owned' && isStarting && (
         <span style={S.startingTag}>🎁 Starter Kit</span>
       )}
@@ -417,7 +563,10 @@ function ComponentCard({ comp, status, isStarting, unlocker, expanded, onToggle,
         </div>
       )}
 
+<<<<<<< HEAD
       {/* Expanded theory preview */}
+=======
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
       {expanded && comp.theory?.sections?.[0] && (
         <div
           style={{

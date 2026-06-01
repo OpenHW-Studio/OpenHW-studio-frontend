@@ -36,7 +36,12 @@ const parseResponse = async (response, fallbackErrorMessage) => {
 export const getMyClassrooms = async () => {
   const response = await fetch(`${BASE_URL}/classroom`, {
     method: 'GET',
+<<<<<<< HEAD
     headers: authHeaders()
+=======
+    headers: authHeaders(),
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   })
 
   const data = await parseResponse(response, 'Failed to fetch classrooms')
@@ -80,7 +85,12 @@ export const updateClassroom = async (classId, classroomData) => {
 export const deleteClassroom = async (classId) => {
   const response = await fetch(`${BASE_URL}/classroom/${classId}`, {
     method: 'DELETE',
+<<<<<<< HEAD
     headers: authHeaders()
+=======
+    headers: authHeaders(),
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   })
 
   return parseResponse(response, 'Failed to delete classroom')
@@ -90,7 +100,12 @@ export const joinClassroomByCode = async (joinCode) => {
   const response = await fetch(`${BASE_URL}/classroom/join`, {
     method: 'POST',
     headers: authHeaders(),
+<<<<<<< HEAD
     body: JSON.stringify({ joinCode })
+=======
+    body: JSON.stringify({ joinCode }),
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   })
 
   const data = await parseResponse(response, 'Failed to join classroom')
@@ -281,7 +296,12 @@ export const uploadClassroomAssets = async (payload) => {
   const response = await fetch(`${BASE_URL}/classroom/uploads`, {
     method: 'POST',
     headers: authOnlyHeaders(),
+<<<<<<< HEAD
     body: formData
+=======
+    body: formData,
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   })
 
   const data = await parseResponse(response, 'Failed to upload classroom files')

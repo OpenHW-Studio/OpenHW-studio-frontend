@@ -1464,7 +1464,11 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       renderer: 'zelos',
       grid: { spacing: 20, length: 3, colour: isDark ? '#1e2d47' : '#e2e8f0', snap: true },
       zoom: { controls: true, wheel: true, startScale: 0.9, maxScale: 3, minScale: 0.3, pinch: true },
+<<<<<<< HEAD
       move: { scrollbars: true, drag: true, wheel: false },
+=======
+      move: { scrollbars: true, drag: true, wheel: true },
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
       scrollbars: true,
       trashcan: true,
       sounds: false,
