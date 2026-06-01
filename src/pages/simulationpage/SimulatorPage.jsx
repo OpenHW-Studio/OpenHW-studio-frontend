@@ -3144,7 +3144,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           kind: 'code',
           boardId: bc.id,
           boardKind: kind,
-          content: libraries.join('\n'),
+          content: `# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n`,
           dirty: false,
         });
       });
@@ -4830,7 +4830,61 @@ export function SimulatorPage({ gamificationMode = false }) {
           // Inject libraries if any
           if (payload.libraries && payload.libraries.length > 0) {
             console.log('[handleAutoCode] Libraries required:', payload.libraries);
-            alert(`Note: This component requires libraries: ${payload.libraries.join(', ')}.\nPlease ensure they are installed.`);
+            const libPath = `project/${targetBoardId}/library.txt`;
+            setProjectFiles(prev => {
+              const fileObj = prev.find(f => f.id === libPath);
+              let currentContent = '';
+              if (fileObj) {
+                currentContent = activeCodeFileId === libPath ? code : (fileObj.content || '');
+              } else {
+                currentContent = `# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n`;
+              }
+              const lines = currentContent.split('\n').map(l => l.trim());
+              const existingSet = new Set(
+                lines
+                  .filter(l => l && !l.startsWith('#'))
+                  .map(l => l.split('@')[0].trim().toLowerCase())
+              );
+              const linesToAdd = [];
+              payload.libraries.forEach(lib => {
+                const cleanLib = String(lib).trim();
+                const libNameOnly = cleanLib.split('@')[0].trim().toLowerCase();
+                if (!existingSet.has(libNameOnly)) {
+                  linesToAdd.push(cleanLib);
+                }
+              });
+              if (linesToAdd.length > 0) {
+                const newLines = [...currentContent.split('\n')];
+                linesToAdd.forEach(lib => {
+                  if (newLines.length > 0 && newLines[newLines.length - 1].trim() !== '') {
+                    newLines.push(lib);
+                  } else if (newLines.length > 0 && newLines[newLines.length - 1].trim() === '') {
+                    newLines[newLines.length - 1] = lib;
+                  } else {
+                    newLines.push(lib);
+                  }
+                });
+                const nextContent = newLines.join('\n');
+                if (activeCodeFileId === libPath) {
+                  setCode(nextContent);
+                }
+                if (fileObj) {
+                  return prev.map(f => f.id === libPath ? { ...f, content: nextContent } : f);
+                } else {
+                  return [...prev, {
+                    id: libPath,
+                    path: libPath,
+                    name: 'library.txt',
+                    kind: 'code',
+                    boardId: targetBoardId,
+                    boardKind: boardKind,
+                    content: nextContent,
+                    dirty: true
+                  }];
+                }
+              }
+              return prev;
+            });
           }
 
           setProjectFiles(prev => {
@@ -6305,11 +6359,18 @@ export function SimulatorPage({ gamificationMode = false }) {
     const cacheKeyBoard = `${kind}:${boardComp.id}`;
     const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
     const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
+
+    const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
+    const librariesTxt = libFile 
+      ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+      : '';
+
     const cacheSource = [
       sourceCode,
       ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
       fqbn,
       buildEngine,
+      librariesTxt,
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
@@ -6319,12 +6380,13 @@ export function SimulatorPage({ gamificationMode = false }) {
         files: compileUnit.files,
         sketchName: compileUnit.sketchName,
         fqbn,
+        libraries_txt: librariesTxt,
         ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
       });
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
-  }, [getBoardCompileFiles]);
+  }, [getBoardCompileFiles, projectFiles, activeCodeFileId, code]);
 
   const {
     hardwareAvailablePorts,
@@ -6633,6 +6695,11 @@ export function SimulatorPage({ gamificationMode = false }) {
               appendConsoleEntry('info', `RP2040: routed Serial output to UART0 monitor for ${boardComp.id}.`, 'simulator');
             }
 
+            const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
+            const librariesTxt = libFile 
+              ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+              : '';
+
             const cacheKeyBoard = `${kind}:${boardComp.id}`;
             const builder = configuredBuilder;
             const cacheSource = [
@@ -6642,6 +6709,7 @@ export function SimulatorPage({ gamificationMode = false }) {
               targetFqbn,
               nativeCompileSource,
               ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+              librariesTxt,
             ].join('\n/*__SPLIT__*/\n');
 
             appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
@@ -6657,6 +6725,7 @@ export function SimulatorPage({ gamificationMode = false }) {
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
                   builder,
+                  libraries_txt: librariesTxt,
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
@@ -6677,11 +6746,17 @@ export function SimulatorPage({ gamificationMode = false }) {
             continue;
           }
 
+          const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
+          const librariesTxt = libFile 
+            ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+            : '';
+
           const cacheKeyBoard = `${kind}:${boardComp.id}`;
           const cacheSource = [
             compileSource,
             targetFqbn,
             ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+            librariesTxt,
           ].join('\n/*__SPLIT__*/\n');
 
           appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
@@ -6696,6 +6771,7 @@ export function SimulatorPage({ gamificationMode = false }) {
                 files: compileUnit.files,
                 sketchName: compileUnit.sketchName,
                 fqbn: targetFqbn,
+                libraries_txt: librariesTxt,
               });
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
@@ -6728,7 +6804,13 @@ export function SimulatorPage({ gamificationMode = false }) {
         const finalCode = useBlocklyCode ? blocklyGeneratedCode : code;
         const fallbackKind = normalizeBoardKind(board);
         const engine = fallbackKind === 'rp2040' ? 'arduino-pico' : 'arduino-cli';
-        const cacheStr = [finalCode, engine].join('\n/*__SPLIT__*/\n');
+
+        const libFile = (projectFiles || []).find(f => f.path.endsWith('/library.txt') || f.name === 'library.txt');
+        const librariesTxt = libFile 
+          ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+          : '';
+
+        const cacheStr = [finalCode, engine, librariesTxt].join('\n/*__SPLIT__*/\n');
         appendConsoleEntry('info', `Compiling for ${boardKindToDisplayName(fallbackKind)}...`, 'simulator');
 
         const cached = await getCachedHex(cacheStr, board);
@@ -6740,6 +6822,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            libraries_txt: librariesTxt,
             ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
           });
           setCachedHex(cacheStr, board, result);

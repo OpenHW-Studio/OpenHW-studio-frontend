@@ -4,6 +4,7 @@ import { PlotterManager } from './components/PlotterManager';
 import { SerialTabBar, SerialOutputPane, SerialSendRow } from './components/SerialMonitor';
 import { Btn } from './Btn';
 import { getBoardColors } from './projectUtils';
+import { fetchLibrariesInfo } from '../../services/simulatorService';
 // Lazy-load the heavy Blockly editor to improve initial LCP metrics
 const BlocklyEditor = React.lazy(() => import('../../components/BlocklyEditor.jsx'));
 
@@ -146,6 +147,91 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
   }), [editingDisabled, activeCodeFileId]);
 
   const [isLibPanelOpen, setIsLibPanelOpen] = React.useState(false);
+
+  const isActiveFileLibraryTxt = React.useMemo(() => {
+    const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
+    return activeFile ? activeFile.name === 'library.txt' : false;
+  }, [activeCodeFileId, projectFiles]);
+
+  const addedLibraries = React.useMemo(() => {
+    if (!isActiveFileLibraryTxt || typeof code !== 'string') return [];
+    return code
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'))
+      .map(line => {
+        const parts = line.split('@');
+        const name = parts[0].trim();
+        const version = parts[1] ? parts[1].trim() : '';
+        return { name, version, raw: line };
+      });
+  }, [code, isActiveFileLibraryTxt]);
+
+  const [libMetadata, setLibMetadata] = React.useState({});
+
+  React.useEffect(() => {
+    if (!isActiveFileLibraryTxt || addedLibraries.length === 0) return;
+
+    const missingNames = addedLibraries
+      .map(lib => lib.name)
+      .filter(name => !libMetadata[name.toLowerCase()]);
+
+    if (missingNames.length === 0) return;
+
+    let active = true;
+    const loadMeta = async () => {
+      try {
+        const data = await fetchLibrariesInfo(missingNames);
+        if (active && data) {
+          setLibMetadata(prev => ({
+            ...prev,
+            ...data
+          }));
+        }
+      } catch (err) {
+        console.error('[RightPanel] Failed to fetch library info:', err);
+      }
+    };
+    loadMeta();
+    return () => {
+      active = false;
+    };
+  }, [addedLibraries, isActiveFileLibraryTxt, libMetadata]);
+
+  const isLibraryAdded = React.useCallback((libName) => {
+    return addedLibraries.some(lib => lib.name.toLowerCase() === libName.toLowerCase());
+  }, [addedLibraries]);
+
+  const handleAddLibraryLocal = React.useCallback((lib) => {
+    if (isLibraryAdded(lib.name)) return;
+    const entry = lib.version ? `${lib.name}@${lib.version}` : lib.name;
+    const currentLines = typeof code === 'string' ? code.split('\n') : [];
+    const newLines = [...currentLines];
+    if (newLines.length > 0 && newLines[newLines.length - 1].trim() !== '') {
+      newLines.push(entry);
+    } else if (newLines.length > 0 && newLines[newLines.length - 1].trim() === '') {
+      newLines[newLines.length - 1] = entry;
+    } else {
+      newLines.push(entry);
+    }
+    setCode(newLines.join('\n'));
+  }, [code, isLibraryAdded, setCode]);
+
+  const handleRemoveLibraryLocal = React.useCallback((libName) => {
+    const currentLines = typeof code === 'string' ? code.split('\n') : [];
+    const newLines = currentLines.filter(line => {
+      const parts = line.trim().split('@');
+      const name = parts[0].trim();
+      return name.toLowerCase() !== libName.toLowerCase();
+    });
+    setCode(newLines.join('\n'));
+  }, [code, setCode]);
+
+  React.useEffect(() => {
+    if (!isActiveFileLibraryTxt) {
+      setIsLibPanelOpen(false);
+    }
+  }, [isActiveFileLibraryTxt]);
   const [plotterPaused2, setPlotterPaused2] = React.useState(false);
   const [showAddChannel, setShowAddChannel] = React.useState(false);
 
@@ -853,40 +939,42 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                         </div>
 
                         {/* Libraries Button at bottom of Explorer */}
-                        <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.05)' }}>
-                          <button
-                            data-tour-step="library"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setFileMenu(null);
-                              setIsLibPanelOpen(!isLibPanelOpen);
-                            }}
-                            className="group"
-                            style={{
-                              width: '100%',
-                              padding: '8px 12px',
-                              borderRadius: '8px',
-                              background: isLibPanelOpen ? 'rgba(0,255,255,0.1)' : 'transparent',
-                              border: `1px solid ${isLibPanelOpen ? 'var(--accent)' : 'var(--border)'}`,
-                              color: isLibPanelOpen ? 'var(--accent)' : 'var(--text2)',
-                              fontSize: 12,
-                              fontWeight: 600,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 10,
-                              transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                            }}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isLibPanelOpen ? 1 : 0.7 }}>
-                              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                              <path d="M12 6v10" />
-                              <path d="M8 10h8" />
-                            </svg>
-                            <span>Libraries</span>
-                          </button>
-                        </div>
+                        {isActiveFileLibraryTxt && (
+                          <div style={{ padding: '8px 10px', borderTop: '1px solid var(--border)', background: 'rgba(0,0,0,0.05)' }}>
+                            <button
+                              data-tour-step="library"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFileMenu(null);
+                                setIsLibPanelOpen(!isLibPanelOpen);
+                              }}
+                              className="group"
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                background: isLibPanelOpen ? 'rgba(0,255,255,0.1)' : 'transparent',
+                                border: `1px solid ${isLibPanelOpen ? 'var(--accent)' : 'var(--border)'}`,
+                                color: isLibPanelOpen ? 'var(--accent)' : 'var(--text2)',
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: isLibPanelOpen ? 1 : 0.7 }}>
+                                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                                <path d="M12 6v10" />
+                                <path d="M8 10h8" />
+                              </svg>
+                              <span>Libraries</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                       {/* Internal Explorer Resize Handle */}
                       <div
@@ -988,14 +1076,23 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                                     <line x1="10" y1="14" x2="21" y2="3" />
                                   </svg>
                                 </a>
-                                <Btn
-                                  color="var(--green)"
-                                  disabled={installingLib === lib.name}
-                                  onClick={() => handleInstallLibrary(lib.name)}
-                                  style={{ padding: '4px 10px', fontSize: 10, borderRadius: '8px' }}
-                                >
-                                  {installingLib === lib.name ? '...' : 'Install'}
-                                </Btn>
+                                {isLibraryAdded(lib.name) ? (
+                                  <Btn
+                                    color="var(--red)"
+                                    onClick={() => handleRemoveLibraryLocal(lib.name)}
+                                    style={{ padding: '4px 10px', fontSize: 10, borderRadius: '8px' }}
+                                  >
+                                    Remove
+                                  </Btn>
+                                ) : (
+                                  <Btn
+                                    color="var(--accent)"
+                                    onClick={() => handleAddLibraryLocal(lib)}
+                                    style={{ padding: '4px 10px', fontSize: 10, borderRadius: '8px' }}
+                                  >
+                                    Add
+                                  </Btn>
+                                )}
                               </div>
                             </div>
                             <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.4, opacity: 0.9 }}>{lib.sentence}</div>
@@ -1005,18 +1102,22 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                           </div>
                         ))}
 
-                        {libResults.length === 0 && (
-                          <>
-                            <div style={{ fontSize: 10, fontWeight: '800', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 4, opacity: 0.6 }}>Installed</div>
-                            {libInstalled.length === 0 ? (
-                              <div style={{ fontSize: 12, color: 'var(--text3)', padding: '20px 0', textAlign: 'center', opacity: 0.5 }}>No external libraries.</div>
-                            ) : (
-                              libInstalled.map((lib, idx) => (
-                                <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, opacity: 0.85 }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
-                                    <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)', wordBreak: 'break-word', flex: 1, letterSpacing: -0.2 }}>{lib.library.name}</div>
+                        <div style={{ fontSize: 10, fontWeight: '800', color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 14, opacity: 0.6 }}>Libraries in library.txt</div>
+                        {addedLibraries.length === 0 ? (
+                          <div style={{ fontSize: 12, color: 'var(--text3)', padding: '20px 0', textAlign: 'center', opacity: 0.5 }}>No libraries specified.</div>
+                        ) : (
+                          addedLibraries.map((lib, idx) => {
+                            const meta = libMetadata[lib.name.toLowerCase()] || {};
+                            return (
+                              <div key={idx} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, opacity: 0.85 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)', wordBreak: 'break-word', letterSpacing: -0.2 }}>{meta.name || lib.name}</div>
+                                    {meta.author && <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2, fontWeight: 500 }}>{meta.author}</div>}
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                                     <a
-                                      href={`https://www.arduino.cc/reference/en/libraries/${(lib.library.name || '').toLowerCase().replace(/ /g, '-')}/`}
+                                      href={meta.website || `https://www.arduino.cc/reference/en/libraries/${(lib.name || '').toLowerCase().replace(/ /g, '-')}/`}
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       style={{
@@ -1039,15 +1140,26 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                                         <line x1="10" y1="14" x2="21" y2="3" />
                                       </svg>
                                     </a>
-                                  </div>
-                                  <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace', marginTop: 6, fontWeight: 600 }}>
-                                    <span style={{ color: 'var(--accent)', opacity: 0.8 }}>v{lib.library.version}</span>
-                                    <span style={{ color: 'var(--green)', opacity: 0.8 }}>● Installed</span>
+                                    <Btn
+                                      color="var(--red)"
+                                      onClick={() => handleRemoveLibraryLocal(lib.name)}
+                                      style={{ padding: '4px 10px', fontSize: 10, borderRadius: '8px' }}
+                                    >
+                                      Remove
+                                    </Btn>
                                   </div>
                                 </div>
-                              ))
-                            )}
-                          </>
+                                {meta.sentence && (
+                                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 8, marginTop: 4, lineHeight: 1.4, opacity: 0.9 }}>{meta.sentence}</div>
+                                )}
+                                {lib.version && (
+                                  <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace', marginTop: 6, fontWeight: 600 }}>
+                                    <span style={{ color: 'var(--accent)', opacity: 0.8 }}>v{lib.version}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>
