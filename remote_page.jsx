@@ -128,10 +128,15 @@ const BACKEND_INJECTED_TYPES = new Set();
 let nextId = 1
 let nextWireId = 1
 
+<<<<<<< HEAD
 // ─── SYNC ID COUNTERS AFTER LOADING EXTERNAL DATA ──────────────────────────
 // Prevents duplicate keys when a saved project has IDs higher than the
 // current module-level counter (e.g. loading "wokwi-ili9341_2" with nextId=1
 // would let a subsequent add generate the same key again).
+=======
+// syncs the module-level id counters after loading external data
+// prevents duplicate keys when saved projects have higher IDs than the current counter
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 function syncNextIds(comps, ws) {
   for (const c of (comps || [])) {
     const m = c.id && c.id.match(/_(\d+)$/);
@@ -433,6 +438,10 @@ export default function SimulatorPage() {
   const { projectName = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
+<<<<<<< HEAD
+=======
+  const classId = assessmentParams.get('classId') || ''
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
 
@@ -2398,7 +2407,19 @@ export default function SimulatorPage() {
         code,
       };
       sessionStorage.setItem(`openhw_assessment_submission:${assessmentProjectName}`, JSON.stringify(payload));
+<<<<<<< HEAD
       navigate(`/${assessmentProjectName}/assessment`);
+=======
+      const targetPath = classId
+        ? `/${assessmentProjectName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentProjectName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     } finally {
       setIsSubmittingAssessment(false);
     }

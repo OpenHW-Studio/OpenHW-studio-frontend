@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
+<<<<<<< HEAD
 
 const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/examples' : '/examples');
 
@@ -24,6 +25,14 @@ const PROJECT_STEPS = {
     { id: 3, phase: 'run',  icon: '▶️', color: '#f59e0b', title: 'Run & See the Colors!',  instruction: 'Click ▶ Run. The LED should cycle through colors you defined!',                                                                             tip: 'Try changing the analogWrite values (0-255) to create your own color mix.' },
   ],
 }
+=======
+import { getProjectGuidedSteps } from '../services/classAdventureAdapter'
+import {
+  getAdventureProjectContent,
+  markAdventureStepComplete,
+  postProjectCompleted,
+} from '../services/adventureService'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
 const PHASE_LABEL = { wire: 'Wiring', code: 'Coding', run: 'Run' }
 const PHASE_COLOR = { wire: '#22c55e', code: '#3b82f6', run: '#f59e0b' }
@@ -90,9 +99,13 @@ function evaluateAssessment(config, components, wires, code) {
       const fIE = !fT ? conn.from.component : null, tIE = !tT ? conn.to.component : null
       const fTo = fC && fT ? isTypeMatch(fC.type, fT) : false, tTo = tC && tT ? isTypeMatch(tC.type, tT) : false
       const fIo = fC && fIE ? fC.id === fIE : false, tIo = tC && tIE ? tC.id === tIE : false
+<<<<<<< HEAD
       const d = (fTo||fIo) && (tTo||tIo) && endpointMatches(fC, fPin, wire.fromLabel, conn.from) && endpointMatches(tC, tPin, wire.toLabel, conn.to)
       const r = fC && tC && ((tT && isTypeMatch(fC.type, tT))||(tIE && fC.id===tIE)) && ((fT && isTypeMatch(tC.type, fT))||(fIE && tC.id===fIE)) && endpointMatches(fC, fPin, wire.fromLabel, conn.to) && endpointMatches(tC, tPin, wire.toLabel, conn.from)
       return d || r
+=======
+      return (fTo||fIo) && (tTo||tIo) && endpointMatches(fC, fPin, wire.fromLabel, conn.from) && endpointMatches(tC, tPin, wire.toLabel, conn.to)
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     }
     requiredConnections.forEach(conn => {
       if (wires.some(w => wm(w, conn))) ok++
@@ -221,10 +234,17 @@ function StepCard({ step, index, total, isActive, onClick }) {
         </div>
       </div>
 
+<<<<<<< HEAD
       {/* Expanded content */}
       {isActive && (
         <div style={{ animation:'fadeUp .25s ease' }}>
           <div style={{ fontSize:14, color:'#cbd5e1', lineHeight:1.75, marginBottom:12 }}>{step.instruction}</div>
+=======
+{/* Expanded content */}
+      {isActive && (
+        <div style={{ animation:'fadeUp .25s ease' }}>
+          <div style={{ fontSize:14, color:'#cbd5e1', lineHeight:1.75, marginBottom:12, whiteSpace:'pre-line' }}>{step.instruction}</div>
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
           {step.code && <CodeSnippet code={step.code} />}
           <div style={{
             display:'flex', gap:8, alignItems:'flex-start', marginTop:12,
@@ -265,6 +285,7 @@ export default function ProjectAssessmentPage() {
   const navigate  = useNavigate()
   const { projectName = '' } = useParams()
   const location  = useLocation()
+<<<<<<< HEAD
   const { completedProjects = [], completeProject, awardXP, xp = 0, coins = 0 } = useGamification?.() || {}
 
   const projectTitle  = useMemo(() => titleFromSlug(projectName), [projectName])
@@ -275,10 +296,39 @@ export default function ProjectAssessmentPage() {
   const [activeStep,       setActiveStep]       = useState(0)
   const [evalConfig,       setEvalConfig]       = useState(null)
   const [loadError,        setLoadError]        = useState(null)
+=======
+  const classId = new URLSearchParams(location.search).get('classId')
+  const { completedProjects = [], completeProject, awardXP, xp = 0, coins = 0 } = useGamification?.() || {}
+  const [classProjectContent, setClassProjectContent] = useState(null)
+
+  const projectTitle  = useMemo(() => titleFromSlug(projectName), [projectName])
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const { project } = await getAdventureProjectContent(classId, projectName)
+        if (cancelled) return
+        setClassProjectContent(project)
+      } catch {
+        if (!cancelled) setClassProjectContent(null)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [classId, projectName])
+
+const projectColor  = location.state?.projectColor || '#22c55e'
+
+  const steps         = useMemo(() => getProjectGuidedSteps(classProjectContent, projectName), [classProjectContent, projectName])
+
+  const [theme,            setTheme]           = useState('dark')
+  const [activeStep,       setActiveStep]       = useState(0)
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   const [submission,       setSubmission]       = useState(null)
   const [evalResult,       setEvalResult]       = useState(null)
   const [evaluating,       setEvaluating]       = useState(false)
 
+<<<<<<< HEAD
   // Load evaluation config
   useEffect(() => {
     let cancelled = false
@@ -295,13 +345,57 @@ export default function ProjectAssessmentPage() {
     const raw = sessionStorage.getItem(`openhw_assessment_submission:${projectName}`)
     if (!raw) { setSubmission(null); setEvalResult(null); return }
     try { setSubmission(JSON.parse(raw)) } catch (e) { setSubmission(null) }
+=======
+  // Assessment config: class (MongoDB) assessment object | built-in PROJECTS.fallback
+  const assessmentConfig = useMemo(() => {
+    if (classProjectContent) {
+      const assessment = classProjectContent.assessment || {}
+      return {
+        passingThreshold: assessment.passingThreshold ?? 0,
+        evaluationCriteria: assessment.evaluationCriteria || {},
+        scoring:              assessment.scoring || {},
+      }
+    }
+    // Non-class fallback: built-in PROJECTS data
+    const project = PROJECTS.find(p => p.slug === projectName)
+    const evaluation = project?.evaluation || {}
+    return {
+      passingThreshold: evaluation.passingThreshold ?? 0,
+      evaluationCriteria: evaluation.evaluationCriteria || {},
+      scoring:              evaluation.scoring || {},
+    }
+  }, [classProjectContent, projectName])
+
+  // ─── Submission state key ──────────────────────────────────────────────────
+  const SUB_KEY = `openhw_assessment_submission:${projectName}`
+  useEffect(() => {
+    let cancelled = false
+    const refresh = () => {
+      if (cancelled) return
+      const raw = sessionStorage.getItem(SUB_KEY)
+      if (!raw) { setSubmission(null); setEvalResult(null); return }
+      try { setSubmission(JSON.parse(raw)) } catch { setSubmission(null) }
+    }
+    refresh()
+    const handler = () => { refresh() }
+    window.addEventListener('focus', handler)
+    window.addEventListener('storage', handler)
+    return () => { window.removeEventListener('focus', handler); window.removeEventListener('storage', handler) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   }, [projectName])
 
   // Auto-evaluate when both are ready
   useEffect(() => {
+<<<<<<< HEAD
     if (!evalConfig || !submission) return
     setEvaluating(true)
     const result = evaluateAssessment(evalConfig, submission.components || [], submission.wires || [], submission.code || '')
+=======
+    if (!assessmentConfig || !submission) return
+    setEvaluating(true)
+    const result = evaluateAssessment(assessmentConfig, submission.components || [], submission.wires || [], submission.code || '')
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     const payload = { projectName, submittedAt: submission.submittedAt, result }
     setEvalResult(payload)
     sessionStorage.setItem(`openhw_assessment_result:${projectName}`, JSON.stringify(payload))
@@ -309,8 +403,25 @@ export default function ProjectAssessmentPage() {
     if (result.passed) {
       if (!completedProjects.includes(projectName)) completeProject?.(projectName)
       else { const proj = PROJECTS.find(p => p.slug === projectName); awardXP?.(Math.round((proj?.xpReward || 100) * 0.25), 'Re-submission bonus') }
+<<<<<<< HEAD
     }
   }, [evalConfig, submission])
+=======
+      markAdventureStepComplete({
+        classId,
+        projectSlug: projectName,
+        stepKey: 'sim',
+        stepOrder: 4,
+      }).catch(() => {})
+      if (classId) {
+        const proj = PROJECTS.find(p => p.slug === projectName)
+        postProjectCompleted(classId, projectName, {
+          xpEarned: classProjectContent?.xpReward || proj?.xpReward || 0,
+        }).catch(() => {})
+      }
+    }
+  }, [assessmentConfig, submission, classId, completedProjects, completeProject, awardXP, projectName, classProjectContent])
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
   const clearResult = () => {
     sessionStorage.removeItem(`openhw_assessment_result:${projectName}`)
@@ -318,7 +429,14 @@ export default function ProjectAssessmentPage() {
     setSubmission(null); setEvalResult(null)
   }
 
+<<<<<<< HEAD
   const openSimulator = () => navigate(`/${projectName}/guided`, { state: { projectColor } })
+=======
+   const openSimulator = () => {
+     const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+     navigate(`/${projectName}/guided${suffix}`, { state: { projectColor } })
+   }
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
   const result = evalResult?.result
   const isDark = theme === 'dark'
@@ -341,12 +459,20 @@ export default function ProjectAssessmentPage() {
         padding: '0 20px',
       }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12, height: 56 }}>
+<<<<<<< HEAD
           <button onClick={() => navigate(`/adventure/${projectName}/guide`)} style={{ background: isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.07)', border: `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'}`, borderRadius: 8, padding: '6px 12px', color: isDark ? '#94a3b8' : '#64748b', cursor: 'pointer', fontSize: 12, fontWeight: 800, fontFamily: 'Nunito,sans-serif', flexShrink: 0 }}>← Guide</button>
+=======
+          <button onClick={() => navigate(classId ? `/adventure?classId=${encodeURIComponent(classId)}` : `/adventure`)} style={{ background: isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.07)', border: `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'}`, borderRadius: 8, padding: '6px 12px', color: isDark ? '#94a3b8' : '#64748b', cursor: 'pointer', fontSize: 12, fontWeight: 800, fontFamily: 'Nunito,sans-serif', flexShrink: 0 }}>← Map</button>
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
           <div style={{ flex:1, display:'flex', alignItems:'center', gap:10 }}>
             <div style={{ width:30, height:30, borderRadius:8, background:`${projectColor}20`, border:`1px solid ${projectColor}40`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📋</div>
             <div>
+<<<<<<< HEAD
               <div style={{ fontSize:14, fontWeight:900, color: isDark ? '#f0f4ff' : '#1e293b' }}>{projectTitle} — Assessment</div>
+=======
+              <div style={{ fontSize:14, fontWeight:900, color: isDark ? '#f0f4ff' : '#1e293b' }}>{classProjectContent?.title || projectTitle} — Assessment</div>
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
               <div style={{ fontSize:10, fontWeight:700, color: isDark ? '#475569' : '#94a3b8', textTransform:'uppercase', letterSpacing:'.07em' }}>Build · Submit · Get Scored</div>
             </div>
           </div>
@@ -368,7 +494,11 @@ export default function ProjectAssessmentPage() {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, fontWeight:800, color:projectColor, letterSpacing:'.1em', textTransform:'uppercase', marginBottom:5 }}>Project Assessment</div>
+<<<<<<< HEAD
             <div style={{ fontSize:26, fontWeight:900, color: isDark?'#f0f4ff':'#1e293b', marginBottom:6 }}>{projectTitle}</div>
+=======
+            <div style={{ fontSize:26, fontWeight:900, color: isDark?'#f0f4ff':'#1e293b', marginBottom:6 }}>{classProjectContent?.title || projectTitle}</div>
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
             <div style={{ fontSize:13, color: isDark?'#64748b':'#94a3b8' }}>Follow the steps below, open the simulator, build your circuit, then submit for automatic scoring.</div>
           </div>
           {completedProjects.includes(projectName) && (
@@ -502,7 +632,11 @@ export default function ProjectAssessmentPage() {
                   🔄 Try Again in Simulator
                 </button>
                 {result.passed && (
+<<<<<<< HEAD
                   <button onClick={() => navigate('/adventure')} style={{ background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:12, padding:'13px', fontSize:14, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'Nunito,sans-serif', boxShadow:'0 4px 20px rgba(34,197,94,.35)' }}>
+=======
+                  <button onClick={() => navigate(classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure')} style={{ background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:12, padding:'13px', fontSize:14, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'Nunito,sans-serif', boxShadow:'0 4px 20px rgba(34,197,94,.35)' }}>
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
                     🗺️ Back to Adventure Map
                   </button>
                 )}

@@ -29,6 +29,15 @@ import {
   updateClassroom,
 } from "../../services/classroomService.js";
 import { createLiveSimulationSession } from "../../services/simulatorService.js";
+<<<<<<< HEAD
+=======
+import {
+  getClassAdventureConfig,
+  getClassAdventureStudentProgress,
+  updateClassAdventureConfig,
+} from "../../services/classAdventureService.js";
+import { buildFallbackClassAdventureContent } from "../../services/classAdventureAdapter.js";
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
 export default function TeacherClassDetailPage() {
   const { classId } = useParams();
@@ -92,6 +101,15 @@ export default function TeacherClassDetailPage() {
   const [showCodeMenu, setShowCodeMenu] = useState(false);
   const [peopleSearch, setPeopleSearch] = useState("");
   const [previewFile, setPreviewFile] = useState(null);
+<<<<<<< HEAD
+=======
+  const [adventureContent, setAdventureContent] = useState(buildFallbackClassAdventureContent());
+  const [studentAdventureProgress, setStudentAdventureProgress] = useState({
+    students: [],
+    summary: { totalStudents: 0, activeStudents: 0 },
+  });
+  const [savingAdventureConfig, setSavingAdventureConfig] = useState(false);
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
   const classMenuRef = useRef(null);
   const codeMenuRef = useRef(null);
@@ -188,6 +206,61 @@ export default function TeacherClassDetailPage() {
   }, [classId]);
 
   useEffect(() => {
+<<<<<<< HEAD
+=======
+    let cancelled = false;
+    const loadAdventureData = async () => {
+      if (!classId || !classroom || activeTab !== "adventure") return;
+      try {
+        const [configResponse, progressResponse] = await Promise.all([
+          getClassAdventureConfig(classId),
+          getClassAdventureStudentProgress(classId),
+        ]);
+        if (cancelled) return;
+
+        const serverConfig = configResponse?.config;
+        if (serverConfig) {
+          setAdventureContent((current) => {
+            const currentWorlds = current?.worlds || [];
+            const currentProjects = current?.projects || [];
+
+            const serverWorldIds = new Set((serverConfig.worlds || []).map(w => w.id));
+            const serverProjectIds = new Set((serverConfig.projects || []).map(p => p.id));
+
+            const mergedWorlds = [
+              ...(serverConfig.worlds || []),
+              ...currentWorlds.filter(w => !serverWorldIds.has(w.id)),
+            ].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            const mergedProjects = [
+              ...(serverConfig.projects || []),
+              ...currentProjects.filter(p => !serverProjectIds.has(p.id)),
+            ];
+
+            return {
+              ...serverConfig,
+              worlds: mergedWorlds,
+              projects: mergedProjects,
+            };
+          });
+        }
+        // If no serverConfig, keep current state (do nothing)
+
+        setStudentAdventureProgress(progressResponse || { students: [], summary: { totalStudents: 0, activeStudents: 0 } });
+      } catch (loadError) {
+        if (!cancelled) {
+          setError(loadError.message || "Failed to load adventure data");
+        }
+      }
+    };
+    loadAdventureData();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, classId, classroom]);
+
+  useEffect(() => {
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     if (!showComposer) return undefined;
 
     const onEsc = (event) => {
@@ -715,6 +788,114 @@ export default function TeacherClassDetailPage() {
     }
   };
 
+<<<<<<< HEAD
+=======
+  const handleAdventureContentChange = (nextContent) => {
+    setAdventureContent(nextContent);
+  };
+
+  const handleAddWorld = () => {
+    setAdventureContent((current) => {
+      const worlds = current?.worlds || [];
+      const index = worlds.length + 1;
+      return {
+        ...current,
+        worlds: [...worlds, { id: `world-${index}-${Date.now()}`, title: `World ${index}`, theme: "", color: "#3b82f6", icon: "🧭", order: index }],
+      };
+    });
+  };
+
+  const handleMoveWorld = (worldId, delta) => {
+    setAdventureContent((current) => {
+      const worlds = [...(current?.worlds || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+      const index = worlds.findIndex((world) => world.id === worldId);
+      const nextIndex = index + delta;
+      if (index < 0 || nextIndex < 0 || nextIndex >= worlds.length) return current;
+      [worlds[index], worlds[nextIndex]] = [worlds[nextIndex], worlds[index]];
+      return { ...current, worlds: worlds.map((world, idx) => ({ ...world, order: idx + 1 })) };
+    });
+  };
+
+   const handleAddProject = (worldId) => {
+     if (!worldId) return;
+     setAdventureContent((current) => {
+       const projects = current?.projects || [];
+       const index = projects.length + 1;
+       return {
+         ...current,
+         projects: [
+           ...projects,
+           {
+             id: `project-${index}-${Date.now()}`,
+             slug: `custom-project-${index}`,
+             worldId: worldId,
+             order: index,
+             enabled: true,
+             title: `Custom Project ${index}`,
+             prerequisite: null,
+             xpReward: 100,
+             rewardComponents: [],
+             theory: [],
+             quizQuestions: [],
+             nodes: [
+               { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
+               { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
+               { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
+               { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
+             ],
+           },
+         ],
+       };
+     });
+   };
+
+  const handleDeleteWorld = (worldId) => {
+    if (!window.confirm("Delete this world and all its projects?")) return;
+    setAdventureContent((current) => {
+      const worlds = (current?.worlds || []).filter((w) => w.id !== worldId);
+      const projects = (current?.projects || []).filter((p) => p.worldId !== worldId);
+      return { ...current, worlds, projects };
+    });
+  };
+
+   const handleDeleteProject = (projectId) => {
+     if (!window.confirm("Delete this project and all its nodes?")) return;
+     setAdventureContent((current) => ({
+       ...current,
+       projects: (current?.projects || []).filter((p) => p.id !== projectId),
+     }));
+   };
+
+   const handleMoveProject = (projectId, delta) => {
+    setAdventureContent((current) => {
+      const projects = [...(current?.projects || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+      const index = projects.findIndex((project) => project.id === projectId);
+      const nextIndex = index + delta;
+      if (index < 0 || nextIndex < 0 || nextIndex >= projects.length) return current;
+      [projects[index], projects[nextIndex]] = [projects[nextIndex], projects[index]];
+      return { ...current, projects: projects.map((project, idx) => ({ ...project, order: idx + 1 })) };
+    });
+    };
+
+    const handleSaveAdventureConfig = async () => {
+    setSavingAdventureConfig(true);
+    setError("");
+    try {
+      const response = await updateClassAdventureConfig(classId, adventureContent);
+      setAdventureContent(response?.config || adventureContent);
+      setInfo("Adventure configuration updated.");
+    } catch (saveError) {
+      setError(saveError.message || "Failed to save adventure configuration");
+    } finally {
+      setSavingAdventureConfig(false);
+    }
+  };
+
+  const handleOpenProjectEditor = (projectId, projectSlug) => {
+    navigate(`/teacher/classes/${classId}/projects/${projectSlug}/edit`);
+  };
+
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   if (loading) {
     return (
       <TeacherClassDetailSkeleton
@@ -799,7 +980,26 @@ export default function TeacherClassDetailPage() {
               }
               onRemoveStudent={handleRemoveStudent}
               markStats={markStats}
+<<<<<<< HEAD
             />
+=======
+              adventureContent={adventureContent}
+              studentAdventureProgress={studentAdventureProgress}
+              onAdventureContentChange={handleAdventureContentChange}
+               onAddWorld={handleAddWorld}
+               onMoveWorld={handleMoveWorld}
+               onDeleteWorld={handleDeleteWorld}
+               onAddProject={handleAddProject}
+               onMoveProject={handleMoveProject}
+                onDeleteProject={handleDeleteProject}
+                onSaveAdventureConfig={handleSaveAdventureConfig}
+               savingAdventureConfig={savingAdventureConfig}
+               onOpenClassAdventure={() =>
+                 navigate(`/adventure?classId=${encodeURIComponent(classId)}`)
+               }
+               onOpenProjectEditor={handleOpenProjectEditor}
+             />
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
             <TeacherClassSidebar
               codeMenuRef={codeMenuRef}

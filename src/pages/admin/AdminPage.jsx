@@ -477,6 +477,11 @@ export default function AdminPage() {
                     onRefresh={loadData} 
                     addLog={addLog}
                 />;
+<<<<<<< HEAD
+=======
+            case 'adventure-content':
+                return <AdminAdventureContentTab />;
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
             case 'approval':
                 return <ApprovalsTab 
                     pendingComponents={pendingComponents} 

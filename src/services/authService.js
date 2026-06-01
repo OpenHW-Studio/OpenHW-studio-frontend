@@ -5,7 +5,11 @@
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
 
+<<<<<<< HEAD
 // ─── Token & User Storage Helpers ───────────────────────────────────────────
+=======
+// ─── Token & User Storage Helpers ────────────────────────────────────────────
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 
 export const saveToken = (token) => localStorage.setItem('openhw_token', token);
 export const getToken = () => localStorage.getItem('openhw_token');
@@ -22,7 +26,11 @@ export const getUser = () => {
 };
 export const removeUser = () => localStorage.removeItem('openhw_user');
 
+<<<<<<< HEAD
 // ─── Admin session Helpers ───────────────────────────────────────────────────
+=======
+// ─── Admin session Helpers ────────────────────────────────────────────────────
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 export const saveAdminToken = (token) => localStorage.setItem('openhw_admin_token', token)
 export const getAdminToken = () => localStorage.getItem('openhw_admin_token')
 export const removeAdminToken = () => localStorage.removeItem('openhw_admin_token')
@@ -37,7 +45,11 @@ export const getAdminUser = () => {
 }
 export const removeAdminUser = () => localStorage.removeItem('openhw_admin_user')
 
+<<<<<<< HEAD
 // ─── API Calls ───────────────────────────────────────────────────────────────
+=======
+// ─── API Calls ────────────────────────────────────────────────────────────────
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 /**
  * Register a new user
  * Connects to 'signupUser' in userController.js
@@ -57,6 +69,10 @@ export const signupUser = async (userData) => {
       bio: userData.bio,
       image: userData.image
     }),
+<<<<<<< HEAD
+=======
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   });
 
   const data = await response.json();
@@ -86,6 +102,10 @@ export const loginUser = async (credentials, isAdminPortal = false) => {
       password: credentials.password,
       role: credentials.role
     }),
+<<<<<<< HEAD
+=======
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   });
 
   const data = await response.json();
@@ -115,6 +135,10 @@ export const googleLogin = async (accessToken, role, isAdminPortal = false) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ access_token: accessToken, role }),
+<<<<<<< HEAD
+=======
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   });
 
   const data = await response.json();
@@ -142,9 +166,16 @@ export const logout = async () => {
   try {
     const token = getToken();
     // Calls logoutController in userController.js
+<<<<<<< HEAD
     await fetch(`${BASE_URL}/user/logout`, { 
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` }
+=======
+    await fetch(`${BASE_URL}/user/logout`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     });
   } catch (err) {
     console.error("Backend logout failed", err);
@@ -166,14 +197,25 @@ export const fetchProfile = async () => {
   const authUrl = BASE_URL.replace(/\/api$/, '') + '/auth/me';
 
   const response = await fetch(authUrl, {
+<<<<<<< HEAD
     headers: { 
       'Authorization': `Bearer ${token}` // Handled by protectRoute in backend
     },
+=======
+    headers: {
+      'Authorization': `Bearer ${token}` // Handled by protectRoute in backend
+    },
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   });
 
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch profile');
+<<<<<<< HEAD
   
+=======
+
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   return data;
 };
 
@@ -187,7 +229,12 @@ export const updateProfile = async (profileData) => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
+<<<<<<< HEAD
     body: JSON.stringify(profileData)
+=======
+    body: JSON.stringify(profileData),
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   });
 
   const data = await response.json();
@@ -205,6 +252,10 @@ export const forgotPassword = async (email) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
+<<<<<<< HEAD
+=======
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   });
 
   const data = await response.json();
@@ -217,6 +268,10 @@ export const resetPassword = async (token, password) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),
+<<<<<<< HEAD
+=======
+    credentials: 'include'
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
   });
 
   const data = await response.json();

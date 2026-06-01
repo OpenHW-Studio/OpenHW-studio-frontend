@@ -2,6 +2,7 @@ node_modules
 frontend/node_modules
 .env
 dist
+<<<<<<< HEAD
 .DS_Store
 
 # Test artifacts
@@ -12,3 +13,6 @@ html-report/
 # IDE
 .vscode/
 .idea/
+=======
+.DS_Store
+>>>>>>> 4d6e9f5 (component locked feature added successfully)

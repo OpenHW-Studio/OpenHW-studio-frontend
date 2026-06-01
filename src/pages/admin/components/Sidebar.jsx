@@ -23,6 +23,10 @@ const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout, maintenan
         { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
         { id: 'map', icon: Globe, label: 'User Map' },
         { id: 'libraries', icon: Library, label: 'Libraries' },
+<<<<<<< HEAD
+=======
+        { id: 'adventure-content', icon: Activity, label: 'Adventure Content' },
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
         { id: 'approval', icon: Clock, label: 'Approvals' },
         { id: 'components', label: 'Custom Components', icon: Package },
         { id: 'deployments', label: 'CI/CD Workflow', icon: PlayCircle },

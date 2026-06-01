@@ -1,4 +1,9 @@
 
+<<<<<<< HEAD
+=======
+import { PROJECT_DATA, getOpenhwType } from './ProjectData';
+
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 export const PROJECTS = [
   // ── World 1: Circuit Basics ──────────────────────────────────────────────
   {
@@ -848,7 +853,11 @@ export function getEarnedComponents(completedProjects = []) {
 // ── Helper: what components will I earn from completing this project? ─────────
 export function getProjectRewardComponents(projectSlug) {
   const project = PROJECTS.find(p => p.slug === projectSlug);
+<<<<<<< HEAD
   return project?.rewardComponents || [];
+=======
+  return PROJECT_DATA[projectSlug]?.unlockComponents || [];
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 }
 
 export function getLockedProjects(completedProjects = []) {

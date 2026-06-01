@@ -25,18 +25,46 @@ import {
   fetchPublicInstalledComponents,
   fetchComponentsVersion,
   API_BASE_URL,
-  startEsp32Compile,
-  getEsp32CompileStatus
-} from '../../services/simulatorService.js'
-import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
-import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
-import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
-import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
-import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
-import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
-import html2canvas from 'html2canvas'
-import JSZip from 'jszip';
-import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared, extractProjectMetaFromPng } from '../../utils/projectCompilerUtils';
+} from "../../services/simulatorService.js";
+import {
+  getCachedComponents,
+  getCachedServerHash,
+  setCachedComponents,
+  clearComponentCache,
+} from "../../services/componentCache.js";
+import {
+  getMyAssignmentSubmission,
+  submitAssignment,
+} from "../../services/classroomService.js";
+import { getUserUnlockedComponents } from "../../services/adventureService";
+import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
+import StudentAssignmentModal from "../../components/teacher/class-detail/StudentAssignmentModal.jsx";
+import {
+  getCachedHex,
+  setCachedHex,
+  enqueueComponent,
+  getQueuedComponents,
+  dequeueComponent,
+} from "../../services/offlineCache.js";
+import {
+  saveProject,
+  loadProject,
+  listProjects,
+  deleteProject,
+  renameProject,
+  generateProjectId,
+  formatProjectDate,
+} from "../../services/projectStore.js";
+import html2canvas from "html2canvas";
+import JSZip from "jszip";
+import {
+  GENERATED_ROOT_FILE_IDS,
+  fileExt,
+  isFileDisabled,
+  normalizeProjectFiles,
+  getBoardCompileFiles as getBoardCompileFilesShared,
+  extractProjectMetaFromPng,
+} from "../../utils/projectCompilerUtils";
 
 // Modular Imports
 import { TopToolbox } from "./TopToolbox";
@@ -214,13 +242,7 @@ const UNSAFE_DYNAMIC_CODE_PATTERN =
   /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code, label) {
-  const cleanCode = String(code || '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(?:^|[^:])\/\/[^\r\n]*/g, '')
-    .replace(/'(?:[^'\\]|\\.)*'/g, '')
-    .replace(/"(?:[^"\\]|\\.)*"/g, '')
-    .replace(/`(?:[^`\\]|\\.)*`/g, '');
-  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(cleanCode)) {
+  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ""))) {
     throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
   }
 }
@@ -266,48 +288,6 @@ export function SimulatorPage({ gamificationMode = false }) {
   const isAnyAuthenticated = isAuthenticated || isAdminAuthenticated;
   const navigate = useNavigate();
   const { generateAutonomousSetup } = useAutowiring();
-<<<<<<< HEAD
-  const {
-    projectName = "",
-    shareId = "",
-    classId = "",
-    assignmentId = "",
-    liveCode = "",
-  } = useParams();
-  const location = useLocation();
-  const assessmentParams = useMemo(
-    () => new URLSearchParams(location.search),
-    [location.search],
-  );
-  const assessmentMode = assessmentParams.get("mode") === "assessment";
-  const assessmentProjectName = assessmentParams.get("project") || projectName;
-  const assignmentMode = Boolean(classId && assignmentId);
-  const studentAssignmentMode =
-    assignmentMode && activeUser?.role === "student";
-  const liveSessionCode = String(liveCode || "")
-    .trim()
-    .toUpperCase();
-  const currentLiveUserId = String(activeUser?._id || activeUser?.id || "");
-  const liveRoleParam = String(assessmentParams.get("role") || "")
-    .trim()
-    .toLowerCase();
-  const liveMeetingMode = Boolean(liveSessionCode);
-  const isLiveTeacher = liveMeetingMode && liveRoleParam === "teacher";
-  const isLiveStudent = liveMeetingMode && !isLiveTeacher;
-
-  // -- Gamification --
-  const {
-    trackComponentPlaced,
-    trackWireDrawn,
-    trackSimulationRun,
-    isUnlocked,
-    coins = 0,
-    currentLevel,
-    currentLevelData,
-    nextLevel,
-    xpProgress,
-  } = typeof useGamification === "function" ? useGamification() : {};
-=======
   const { projectName = '', shareId = '', classId: routeClassId = '', assignmentId = '', liveCode = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
@@ -338,26 +318,18 @@ export function SimulatorPage({ gamificationMode = false }) {
      xpProgress,
    } = useGamification();
 
-  // Always enforce unlocks — free simulator also respects adventure-map progress
-  const enforcePaletteUnlocks = true;
->>>>>>> 4d6e9f5 (component locked feature added successfully)
+  const enforcePaletteUnlocks = gamificationMode || Boolean(classId);
   const gamProject = useMemo(
     () =>
       gamificationMode && typeof PROJECTS !== "undefined"
         ? (PROJECTS.find((p) => p.slug === projectName) ?? null)
         : null,
     [gamificationMode, projectName],
-<<<<<<< HEAD
-  );
-  const [gamPanelOpen, setGamPanelOpen] = useState(true);
-  const [gamTab, setGamTab] = useState("components");
-=======
 );
   const [gamPanelOpen, setGamPanelOpen] = useState(true);
   const [gamTab, setGamTab] = useState("components");
   const [adventureUnlockedComponents, setAdventureUnlockedComponents] = useState(null);
   const [isUnlocksLoading, setIsUnlocksLoading] = useState(false);
->>>>>>> 4d6e9f5 (component locked feature added successfully)
   const WOKWI_TO_COMP_ID = useMemo(
     () => ({
       "wokwi-led": "led",
@@ -458,41 +430,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       "wokwi-breadboard-half": "breadboard",
       "openhw-breadboard-half": "breadboard",
       "wokwi-breadboard-mini": "breadboard",
-<<<<<<< HEAD
-      "openhw-breadboard-mini": "breadboard",
-      "wokwi-neopixel-matrix": "neopixel",
-      "openhw-neopixel-matrix": "neopixel",
-      "wokwi-neopixel-ring": "neopixel",
-      "openhw-neopixel-ring": "neopixel",
-      "wokwi-arduino-sensor-shield": "shield",
-      "openhw-arduino-sensor-shield": "shield",
-    }),
-    [],
-  );
-
-  const isPaletteItemLocked = useCallback(
-    (itemType) => {
-      if (!gamificationMode) return false;
-      const compId = WOKWI_TO_COMP_ID[itemType];
-      if (!compId) return false;
-      return isUnlocked ? !isUnlocked(compId) : false;
-    },
-    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID],
-  );
-
-  const gamProjectComponents = useMemo(() => {
-    if (!gamProject?.components) return [];
-    return gamProject.components.map((c) => {
-      const compId = WOKWI_TO_COMP_ID[c.type];
-      const compDef =
-        compId && typeof COMPONENT_MAP !== "undefined"
-          ? COMPONENT_MAP[compId]
-          : null;
-      const isLocked = compId && isUnlocked ? !isUnlocked(compId) : false;
-      return { ...c, compId, compDef, isLocked };
-    });
-  }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
-=======
        "wokwi-neopixel-matrix": "neopixel",
        "openhw-neopixel-matrix": "neopixel",
        "wokwi-neopixel-ring": "neopixel",
@@ -509,40 +446,38 @@ export function SimulatorPage({ gamificationMode = false }) {
   );
 
   useEffect(() => {
+    if (!enforcePaletteUnlocks) {
+      setAdventureUnlockedComponents(null);
+      setIsUnlocksLoading(false);
+      return undefined;
+    }
+
     if (!activeUser) {
-      // Not logged in — clear adventure list; context defaults apply
-      setAdventureUnlockedComponents([]);
+      console.log('DEBUG: Auth missing, waiting for user...');
       setIsUnlocksLoading(false);
       return undefined;
     }
 
-    if (!classId) {
-      // Free simulator or adventure mode — GamificationContext (unlockedComponentTypes)
-      // is already loaded from MongoDB.  No extra API call needed.
-      setAdventureUnlockedComponents([]);
-      setIsUnlocksLoading(false);
-      return undefined;
-    }
-
-    // Class mode — fetch unlocks from the class-adventure API
     setIsUnlocksLoading(true);
     let cancelled = false;
     const loadAdventureUnlocks = async () => {
+      console.log('DEBUG: activeUser _id=', activeUser?._id, 'id=', activeUser?.id, 'classId=', classId);
       try {
         const unlocked = await getUserUnlockedComponents({
-          classId,
+          classId: classId || undefined,
           userId: activeUser?._id || activeUser?.id || undefined,
         });
+        console.log('DEBUG: Fetched from API:', unlocked);
         if (!cancelled) {
-          const list = Array.isArray(unlocked) ? unlocked : [];
-          setAdventureUnlockedComponents(list);
-          if (list.length > 0) {
-            await unlockComponentTypes(list);
+          setAdventureUnlockedComponents(Array.isArray(unlocked) ? unlocked : []);
+          // Immediately sync Adventure unlocks to context (no delay for gamProjectComponents)
+          if (Array.isArray(unlocked) && unlocked.length > 0) {
+            await unlockComponentTypes(unlocked);
           }
           setIsUnlocksLoading(false);
         }
       } catch (e) {
-        console.warn('Failed to load class adventure unlocks:', e);
+        console.log('DEBUG: API fetch error:', e);
         if (!cancelled) {
           setAdventureUnlockedComponents([]);
           setIsUnlocksLoading(false);
@@ -550,31 +485,35 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
     };
     loadAdventureUnlocks();
-    return () => { cancelled = true; };
-  }, [classId, activeUser?._id, activeUser?.id, activeUser, unlockComponentTypes]);
+    return () => {
+      cancelled = true;
+    };
+  }, [enforcePaletteUnlocks, classId, activeUser?._id, activeUser?.id, activeUser, unlockComponentTypes]);
 
   const paletteUnlockedComponents = useMemo(() => {
-    // Wildcard — everything unlocked
+    if (!enforcePaletteUnlocks) return null;
+    if (adventureUnlockedComponents === null) return null;
+
+    if (adventureUnlockedComponents.includes("*")) return ["*"];
+
     if (unlockedComponentTypes === "*") return ["*"];
-    if (Array.isArray(adventureUnlockedComponents) && adventureUnlockedComponents.includes("*")) return ["*"];
 
-    // Context types come from GamificationContext (backed by MongoDB via unlockService)
-    const contextTypes  = Array.isArray(unlockedComponentTypes)    ? unlockedComponentTypes    : [];
-    // Adventure types come from the class-adventure API (class mode only)
-    const adventureTypes = Array.isArray(adventureUnlockedComponents) ? adventureUnlockedComponents : [];
+    const contextTypes =
+      gamificationMode && Array.isArray(unlockedComponentTypes)
+        ? unlockedComponentTypes
+        : [];
 
-    // If nothing has loaded yet, return null → PalettePanel shows loading spinner
-    if (contextTypes.length === 0 && adventureTypes.length === 0 && isUnlocksLoading) return null;
-
-    return [...new Set([...contextTypes, ...adventureTypes])];
+    return [...new Set([...adventureUnlockedComponents, ...contextTypes])];
   }, [
+    enforcePaletteUnlocks,
     adventureUnlockedComponents,
+    gamificationMode,
     unlockedComponentTypes,
-    isUnlocksLoading,
   ]);
 
   const gamProjectComponents = useMemo(() => {
     if (!gamProject?.components) return [];
+    console.log('DEBUG: Total components in catalog:', gamProject.components.length, 'vs Unlocked:', adventureUnlockedComponents?.length, 'contextUnlocks:', unlockedComponentTypes?.length);
     return gamProject.components.map((c) => {
       const compDef =
         typeof COMPONENT_MAP !== "undefined" && (c.type.startsWith('openhw-') || c.type.startsWith('wokwi-'))
@@ -594,7 +533,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       return { ...c, compId: c.type.replace('openhw-', '').replace('wokwi-', ''), compDef, isLocked };
     });
   }, [gamProject, isUnlocked, unlockedComponentTypes, adventureUnlockedComponents]);
->>>>>>> 4d6e9f5 (component locked feature added successfully)
 
   const gamLockedCount = gamProjectComponents.filter(
     (c) => c.isLocked && c.compId,
@@ -619,13 +557,6 @@ export function SimulatorPage({ gamificationMode = false }) {
         wires,
         code,
       };
-<<<<<<< HEAD
-      sessionStorage.setItem(
-        `openhw_assessment_submission:${assessmentName}`,
-        JSON.stringify(payload),
-      );
-      navigate(`/${assessmentName}/assessment`);
-=======
       sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
       // Preserve classId when navigating to assessment page to maintain class context
       const targetPath = classId
@@ -637,7 +568,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       } else {
         navigate(targetPath);
       }
->>>>>>> 4d6e9f5 (component locked feature added successfully)
     } finally {
       setIsSubmittingAssessment(false);
     }
@@ -697,22 +627,13 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [blocklyXml, setBlocklyXml] = useState("");
   const [compContextMenu, setCompContextMenu] = useState(null); // { x, y, compId }
   const [renameState, setRenameState] = useState({ id: null, x: 0, y: 0 });
-  const [valueState, setValueState] = useState({ id: null, x: 0, y: 0, key: 'value' });
-  const [showEngineSelector, setShowEngineSelector] = useState(false)
-  const [esp32SimulationMode, setEsp32SimulationMode] = useState(() => {
-    try {
-      return localStorage.getItem('openhw.esp32.simulationMode') || 'qemu';
-    } catch (_) {
-      return 'qemu';
-    }
+  const [valueState, setValueState] = useState({
+    id: null,
+    x: 0,
+    y: 0,
+    key: "value",
   });
-
-  const updateEsp32SimulationMode = useCallback((mode) => {
-    setEsp32SimulationMode(mode);
-    try {
-      localStorage.setItem('openhw.esp32.simulationMode', mode);
-    } catch (_) {}
-  }, []);
+  const [showEngineSelector, setShowEngineSelector] = useState(false);
 
   useEffect(() => {
     if (navigator.gpu) {
@@ -1548,7 +1469,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     isRunning,
     getLiveOopStateSnapshot,
     updateLiveOopStates,
-    esp32SimulationMode
   });
   const applyLiveNeopixelData = useCallback((neopixelState) => {
     liveNeopixelDataRef.current = neopixelState || {};
@@ -2060,34 +1980,17 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => window.removeEventListener("online", drainQueue);
   }, []);
 
-<<<<<<< HEAD
-  // ── Sync backend custom components (cache-first, version-checked) ──────────
-=======
 // ── Sync backend custom components (cache-first, version-checked) ──────────
->>>>>>> 4d6e9f5 (component locked feature added successfully)
   // On every page load:
   //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
   //  2. GET /api/components/version (~40 bytes) → compare hash
   //  3. Only fetch + transpile when the hash actually changed
-<<<<<<< HEAD
-=======
   //  Note: In Adventure/Classroom mode, clear cache to ensure component filtering
   //  is based on fresh unlock data from the API.
->>>>>>> 4d6e9f5 (component locked feature added successfully)
   useEffect(() => {
     let cancelled = false;
 
     const syncBackendComponents = async () => {
-<<<<<<< HEAD
-      // ── Step 1: Serve from cache immediately ──────────────────────────────
-      const cached = await getCachedComponents();
-      if (cached.length > 0 && !cancelled) {
-        injectComponentsIntoRegistry(cached);
-        setCustomCatalogVersion((v) => v + 1);
-        console.log(
-          `[ComponentCache] Injected ${cached.length} components from IDB cache.`,
-        );
-=======
       // ── Step 1: In Adventure mode, clear cache to force fresh component list
       // This prevents "ghost cache" of 107 components from appearing
       if (enforcePaletteUnlocks) {
@@ -2105,7 +2008,6 @@ export function SimulatorPage({ gamificationMode = false }) {
             `[ComponentCache] Injected ${cached.length} components from IDB cache.`,
           );
         }
->>>>>>> 4d6e9f5 (component locked feature added successfully)
       }
 
       // ── Step 2: Lightweight version check ────────────────────────────────
@@ -3915,11 +3817,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       if (item) return { ...item, group: group.group };
     }
     return { type: comp.type, label: comp.label || comp.type, group: "Custom" };
-<<<<<<< HEAD
-  }, [selected, components]);
-=======
   }, [selected, components, CATALOG]);
->>>>>>> 4d6e9f5 (component locked feature added successfully)
 
   // ── Serial auto-scroll ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -4236,7 +4134,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           kind: "code",
           boardId: bc.id,
           boardKind: kind,
-          content: `# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n`,
+          content: libraries.join("\n"),
           dirty: false,
         });
       });
@@ -5186,28 +5084,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     if (isCanvasLockedRef.current) return;
     e.preventDefault();
 
-<<<<<<< HEAD
-    // ─── ZOOM LOGIC (scroll wheel always zooms) ─────────────────────────────
-    const zoomSpeed = 0.002;
-    const delta = -e.deltaY * zoomSpeed;
-    const currentZoom = canvasZoomRef.current;
-    const newZoom = Math.min(3, Math.max(0.25, currentZoom * (1 + delta)));
-
-    if (newZoom === currentZoom) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    const cx = (mx - canvasOffsetRef.current.x) / currentZoom;
-    const cy = (my - canvasOffsetRef.current.y) / currentZoom;
-
-    const newOffsetX = mx - cx * newZoom;
-    const newOffsetY = my - cy * newZoom;
-
-    canvasZoomRef.current = newZoom;
-    canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
-=======
     if (e.ctrlKey) {
       // ─── ZOOM LOGIC ─────────────────────────────────────────────────────────
       const zoomSpeed = 0.002;
@@ -5241,7 +5117,6 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       canvasOffsetRef.current = { x: newOffsetX, y: newOffsetY };
     }
->>>>>>> 4d6e9f5 (component locked feature added successfully)
 
     // Apply directly to DOM for zero-latency 60fps movement
     if (innerCanvasRef.current) {
@@ -6419,62 +6294,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           // Inject libraries if any
           if (payload.libraries && payload.libraries.length > 0) {
-            console.log('[handleAutoCode] Libraries required:', payload.libraries);
-            const libPath = `project/${targetBoardId}/library.txt`;
-            setProjectFiles(prev => {
-              const fileObj = prev.find(f => f.id === libPath);
-              let currentContent = '';
-              if (fileObj) {
-                currentContent = activeCodeFileId === libPath ? code : (fileObj.content || '');
-              } else {
-                currentContent = `# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n`;
-              }
-              const lines = currentContent.split('\n').map(l => l.trim());
-              const existingSet = new Set(
-                lines
-                  .filter(l => l && !l.startsWith('#'))
-                  .map(l => l.split('@')[0].trim().toLowerCase())
-              );
-              const linesToAdd = [];
-              payload.libraries.forEach(lib => {
-                const cleanLib = String(lib).trim();
-                const libNameOnly = cleanLib.split('@')[0].trim().toLowerCase();
-                if (!existingSet.has(libNameOnly)) {
-                  linesToAdd.push(cleanLib);
-                }
-              });
-              if (linesToAdd.length > 0) {
-                const newLines = [...currentContent.split('\n')];
-                linesToAdd.forEach(lib => {
-                  if (newLines.length > 0 && newLines[newLines.length - 1].trim() !== '') {
-                    newLines.push(lib);
-                  } else if (newLines.length > 0 && newLines[newLines.length - 1].trim() === '') {
-                    newLines[newLines.length - 1] = lib;
-                  } else {
-                    newLines.push(lib);
-                  }
-                });
-                const nextContent = newLines.join('\n');
-                if (activeCodeFileId === libPath) {
-                  setCode(nextContent);
-                }
-                if (fileObj) {
-                  return prev.map(f => f.id === libPath ? { ...f, content: nextContent } : f);
-                } else {
-                  return [...prev, {
-                    id: libPath,
-                    path: libPath,
-                    name: 'library.txt',
-                    kind: 'code',
-                    boardId: targetBoardId,
-                    boardKind: boardKind,
-                    content: nextContent,
-                    dirty: true
-                  }];
-                }
-              }
-              return prev;
-            });
+            console.log(
+              "[handleAutoCode] Libraries required:",
+              payload.libraries,
+            );
+            alert(
+              `Note: This component requires libraries: ${payload.libraries.join(", ")}.\nPlease ensure they are installed.`,
+            );
           }
 
           setProjectFiles((prev) => {
@@ -8414,42 +8240,43 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardHex = boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
       if (typeof boardHex === "string" && boardHex.trim()) return boardHex;
 
-    const compileUnit = getBoardCompileFiles(boardComp.id);
-    if (!compileUnit.hasMainFile) {
-      throw new Error(`No enabled .ino file found for ${boardComp.id}. Enable at least one .ino file before uploading.`);
-    }
-    const sourceCode = compileUnit.mainCode || '';
-    const cacheKeyBoard = `${kind}:${boardComp.id}`;
-    const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
-    const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
-
-    const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
-    const librariesTxt = libFile 
-      ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
-      : '';
-
-    const cacheSource = [
-      sourceCode,
-      ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
-      fqbn,
-      buildEngine,
-      librariesTxt,
-    ].join('\n/*__SPLIT__*/\n');
-
-    let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-    if (!compiled) {
-      compiled = await compileCode({
-        code: sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
+      const compileUnit = getBoardCompileFiles(boardComp.id);
+      if (!compileUnit.hasMainFile) {
+        throw new Error(
+          `No enabled .ino file found for ${boardComp.id}. Enable at least one .ino file before uploading.`,
+        );
+      }
+      const sourceCode = compileUnit.mainCode || "";
+      const cacheKeyBoard = `${kind}:${boardComp.id}`;
+      const rp2040Builder =
+        resolveComponentAttrString(
+          boardComp?.attrs,
+          "builder",
+          "arduino-pico",
+        ) || "arduino-pico";
+      const buildEngine = kind === "rp2040" ? rp2040Builder : "arduino-cli";
+      const cacheSource = [
+        sourceCode,
+        ...compileUnit.files.map((f) => `${f.name}\n${f.content || ""}`),
         fqbn,
-        libraries_txt: librariesTxt,
-        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-      });
-      setCachedHex(cacheSource, cacheKeyBoard, compiled);
-    }
-    return compiled.hex;
-  }, [getBoardCompileFiles, projectFiles, activeCodeFileId, code]);
+        buildEngine,
+      ].join("\n/*__SPLIT__*/\n");
+
+      let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
+      if (!compiled) {
+        compiled = await compileCode({
+          code: sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn,
+          ...(kind === "rp2040" ? { builder: rp2040Builder } : {}),
+        });
+        setCachedHex(cacheSource, cacheKeyBoard, compiled);
+      }
+      return compiled.hex;
+    },
+    [getBoardCompileFiles],
+  );
 
   const {
     hardwareAvailablePorts,
@@ -8618,13 +8445,9 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardPythonFilesMap = {};
       const boardRuntimeEnvMap = {};
       const boardBaudMap = {};
-      const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
-      const hasEsp32 = programmableBoards.some(c => normalizeBoardKind(c.type) === 'esp32');
-      if (hasEsp32) {
-        const engineText = esp32SimulationMode === 'frontend' ? 'Frontend Engine' : 'Backend QEMU';
-        console.log(`[SimulatorPage] Selected ESP32 Emulation Engine: ${engineText}`);
-        appendConsoleEntry('info', `Selected ESP32 Emulation Engine: ${engineText}`, 'simulator');
-      }
+      const programmableBoards = components.filter((c) =>
+        /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type),
+      );
 
       const isBackendProxy = await startEsp32Session(programmableBoards);
       const singleProgrammableBoardId =
@@ -8885,11 +8708,6 @@ export function SimulatorPage({ gamificationMode = false }) {
               );
             }
 
-            const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
-            const librariesTxt = libFile 
-              ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
-              : '';
-
             const cacheKeyBoard = `${kind}:${boardComp.id}`;
             const builder = configuredBuilder;
             const cacheSource = [
@@ -8898,9 +8716,8 @@ export function SimulatorPage({ gamificationMode = false }) {
               configuredMode,
               targetFqbn,
               nativeCompileSource,
-              ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
-              librariesTxt,
-            ].join('\n/*__SPLIT__*/\n');
+              ...compileUnit.files.map((f) => `${f.name}\n${f.content || ""}`),
+            ].join("\n/*__SPLIT__*/\n");
 
             appendConsoleEntry(
               "info",
@@ -8919,7 +8736,6 @@ export function SimulatorPage({ gamificationMode = false }) {
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
                   builder,
-                  libraries_txt: librariesTxt,
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
@@ -8953,19 +8769,12 @@ export function SimulatorPage({ gamificationMode = false }) {
             continue;
           }
 
-          const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
-          const librariesTxt = libFile 
-            ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
-            : '';
-
           const cacheKeyBoard = `${kind}:${boardComp.id}`;
           const cacheSource = [
             compileSource,
             targetFqbn,
-            ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
-            librariesTxt,
-            kind === 'esp32' ? esp32SimulationMode : '',
-          ].join('\n/*__SPLIT__*/\n');
+            ...compileUnit.files.map((f) => `${f.name}\n${f.content || ""}`),
+          ].join("\n/*__SPLIT__*/\n");
 
           appendConsoleEntry(
             "info",
@@ -8973,72 +8782,17 @@ export function SimulatorPage({ gamificationMode = false }) {
             "simulator",
           );
           let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-          if (compiled && (kind !== 'esp32' || esp32SimulationMode !== 'frontend' || compiled.hex)) {
+          if (compiled) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
             try {
-              if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
-                const startRes = await startEsp32Compile({
-                  code: compileSource,
-                  libraries_txt: librariesTxt
-                });
-                
-                if (!startRes || (!startRes.jobId && !startRes.buildId)) {
-                  throw new Error('Failed to start ESP32 compilation.');
-                }
-                
-                if (startRes.cache === 'hit') {
-                  logSerial(`Using server-cached compilation for ${boardComp.id}...`);
-                }
-                
-                const jobId = startRes.jobId || startRes.buildId;
-                let pollCount = 0;
-                let lastPrintedProgressLen = 0;
-                
-                while (true) {
-                  await new Promise(resolve => setTimeout(resolve, 500));
-                  const statusRes = await getEsp32CompileStatus(jobId);
-                  
-                  if (!statusRes) continue;
-                  
-                  const progressLines = statusRes.progress || [];
-                  if (progressLines.length > lastPrintedProgressLen) {
-                    for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
-                      logSerial(progressLines[i]);
-                    }
-                    lastPrintedProgressLen = progressLines.length;
-                  }
-                  
-                  if (statusRes.status === 'success') {
-                    if (!statusRes.binary_content) {
-                      throw new Error('Compilation succeeded but no binary content was returned.');
-                    }
-                    compiled = {
-                      hex: statusRes.binary_content,
-                      stdout: statusRes.stdout || '',
-                      stderr: statusRes.stderr || ''
-                    };
-                    break;
-                  } else if (statusRes.status === 'failed') {
-                    const errMsg = statusRes.error || 'ESP32 compilation failed.';
-                    throw new Error(errMsg);
-                  }
-                  
-                  pollCount++;
-                  if (pollCount > 120) {
-                    throw new Error('ESP32 compilation timed out after 60 seconds.');
-                  }
-                }
-              } else {
-                compiled = await compileCode({
-                  code: compileSource,
-                  files: compileUnit.files,
-                  sketchName: compileUnit.sketchName,
-                  fqbn: targetFqbn,
-                  libraries_txt: librariesTxt,
-                });
-              }
+              compiled = await compileCode({
+                code: compileSource,
+                files: compileUnit.files,
+                sketchName: compileUnit.sketchName,
+                fqbn: targetFqbn,
+              });
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
               throw compileErr;
@@ -9070,15 +8824,14 @@ export function SimulatorPage({ gamificationMode = false }) {
       if (!result) {
         const finalCode = useBlocklyCode ? blocklyGeneratedCode : code;
         const fallbackKind = normalizeBoardKind(board);
-        const engine = fallbackKind === 'rp2040' ? 'arduino-pico' : 'arduino-cli';
-
-        const libFile = (projectFiles || []).find(f => f.path.endsWith('/library.txt') || f.name === 'library.txt');
-        const librariesTxt = libFile 
-          ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
-          : '';
-
-        const cacheStr = [finalCode, engine, librariesTxt].join('\n/*__SPLIT__*/\n');
-        appendConsoleEntry('info', `Compiling for ${boardKindToDisplayName(fallbackKind)}...`, 'simulator');
+        const engine =
+          fallbackKind === "rp2040" ? "arduino-pico" : "arduino-cli";
+        const cacheStr = [finalCode, engine].join("\n/*__SPLIT__*/\n");
+        appendConsoleEntry(
+          "info",
+          `Compiling for ${boardKindToDisplayName(fallbackKind)}...`,
+          "simulator",
+        );
 
         const cached = await getCachedHex(cacheStr, board);
         if (cached) {
@@ -9089,8 +8842,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
-            libraries_txt: librariesTxt,
-            ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
+            ...(fallbackKind === "rp2040" ? { builder: "arduino-pico" } : {}),
           });
           setCachedHex(cacheStr, board, result);
           registerGdbArtifact(board || "default", fallbackKind, result);
@@ -9142,37 +8894,6 @@ export function SimulatorPage({ gamificationMode = false }) {
       workerRef.current = worker;
       // Give port2 to the Simulation Worker (it sends DISPLAY_FRAME here)
       worker.postMessage({ type: "SET_RENDER_PORT", port: simPort }, [simPort]);
-
-      // ── Network Worker: isolated WiFi/IP stack ─────────────────────────────
-      // Create a dedicated network worker so DNS/TCP/UDP I/O is completely
-      // isolated from the RP2040 CPU simulation loop — zero-copy frame transfers.
-      try {
-        const netWorker = new Worker(
-          new URL('../../workers/network.worker.ts', import.meta.url),
-          { type: 'module', name: 'OpenHW-NetWorker' }
-        );
-        const { port1: simNetPort, port2: netWorkerPort } = new MessageChannel();
-        // Give the network worker its command port (receives START_BOARD, FRAME_OUT, etc.)
-        netWorker.postMessage({ type: 'SET_NET_PORT', port: netWorkerPort }, [netWorkerPort]);
-        // Give the sim worker a port to forward Ethernet frames to the network worker
-        // and receive FRAME_IN / WIFI_STATUS / PCAP_DATA back
-        worker.postMessage({ type: 'SET_NET_PORT', port: simNetPort }, [simNetPort]);
-        // Announce any WiFi AP components that are already on the canvas
-        const wifiApComponents = components.filter(c => c.type === 'openhw-wifi-ap' || c.type === 'wokwi-wifi-ap');
-        for (const ap of wifiApComponents) {
-          netWorker.postMessage({
-            type: 'ANNOUNCE_AP',
-            componentId: ap.id,
-            ssid:     ap.attrs?.ssid     ?? 'OpenHW-GUEST',
-            password: ap.attrs?.password ?? '',
-            channel:  Number(ap.attrs?.channel  ?? 6),
-            internet: String(ap.attrs?.internet ?? '1') !== '0',
-          });
-        }
-        console.log('[SimPage] Network Worker started and linked to simulation worker');
-      } catch (netErr) {
-        console.warn('[SimPage] Network Worker failed to start (WiFi will be in-process):', netErr);
-      }
 
       worker.onmessage = async (event) => {
         const msg = event.data;
@@ -9400,62 +9121,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           return;
         }
-        // ── Network Worker: real WiFi stack status (from dedicated network worker) ──
-        if (msg.type === 'wifi_status') {
-          const resolvedBoardId = String(msg.boardId || '').trim() || 'default';
-          const status   = String(msg.status   || 'idle');
-          const ssid     = String(msg.ssid     || '');
-          const ip       = String(msg.ip       || '');
-          const packets  = Number(msg.packetCount || 0);
-          const connected = status === 'connected' || status === 'got_ip';
-
-          liveOopStatesRef.current[resolvedBoardId] = {
-            ...(liveOopStatesRef.current[resolvedBoardId] || {}),
-            wirelessMode:      'full',
-            wirelessStatus:    status,
-            wirelessConnected: connected,
-            wirelessSsid:      ssid,
-            wirelessIp:        ip,
-            wirelessPackets:   packets,
-          };
-          notifyLiveOopStateListeners(resolvedBoardId);
-
-          // Log status changes to console (deduplicated)
-          const sig = `${status}:${ssid}:${ip}`;
-          const lastSig = rp2040WirelessLastLogRef.current.get(resolvedBoardId);
-          if (lastSig !== sig) {
-            rp2040WirelessLastLogRef.current.set(resolvedBoardId, sig);
-            const emoji = status === 'got_ip' ? '🌐' : status === 'connected' ? '📶' : '📡';
-            appendConsoleEntry(
-              connected ? 'info' : 'warn',
-              `${emoji} Pico W WiFi [${resolvedBoardId}] status=${status} ssid=${ssid || '-'} ip=${ip || '-'} packets=${packets}`,
-              'debug',
-            );
-          }
-          return;
-        }
-        // ── Network Worker: PCAP file download ────────────────────────────────────
-        if (msg.type === 'wifi_pcap') {
-          const boardId = String(msg.boardId || 'board');
-          const data = msg.data instanceof ArrayBuffer ? new Uint8Array(msg.data) : null;
-          if (data) {
-            let binary = '';
-            for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
-            const url = `data:application/vnd.tcpdump.pcap;base64,${btoa(binary)}`;
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `picow_${boardId}.pcap`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            appendConsoleEntry('info', `📥 PCAP downloaded: picow_${boardId}.pcap (${data.length} bytes)`, 'simulator');
-          }
-          return;
-        }
-        if (msg.type === 'debug' && msg.category === 'rp2040-wireless-stub') {
-          const incomingBoardId = String(msg.boardId || '').trim();
-          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
-          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
+        if (msg.type === "debug" && msg.category === "rp2040-wireless-stub") {
+          const incomingBoardId = String(msg.boardId || "").trim();
+          const hasKnownBoard =
+            incomingBoardId &&
+            boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback =
+            boardComponents.length === 1 ? boardComponents[0]?.id : "";
           const resolvedBoardId = hasKnownBoard
             ? incomingBoardId
             : singleBoardFallback || incomingBoardId || "default";
@@ -9967,23 +9639,12 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       });
 
-      let cleanComponents = components;
-      let cleanWires = wires;
-      try {
-        cleanComponents = JSON.parse(JSON.stringify(components));
-        cleanWires = JSON.parse(JSON.stringify(wires));
-      } catch (e) {
-        console.warn('Failed to stringify components/wires for worker', e);
-      }
-      
-      console.warn(`[SimulatorPage] Sending hex payload to worker. Base64 Length: ${result.hex ? result.hex.length : 0} characters`);
-
       worker.postMessage({
         type: "START",
         hex: result.hex,
         neopixels: neopixelWiring,
-        wires: cleanWires,
-        components: cleanComponents,
+        wires: wires,
+        components: components,
         customLogics: customLogics,
         boardHexMap:
           Object.keys(boardHexMap).length > 0 ? boardHexMap : undefined,
@@ -10008,7 +9669,6 @@ export function SimulatorPage({ gamificationMode = false }) {
         telemetryMode: telemetryMode,
         watchedParamsMap: telemetryWatchedParamsMap,
         deepSilicon: deepSiliconDebuggingEnabled,
-        esp32SimulationMode: esp32SimulationMode,
       });
 
       runStartGuardRef.current = false;
@@ -12344,8 +12004,6 @@ export function SimulatorPage({ gamificationMode = false }) {
           isRunning={isRunning}
           workerRef={workerRef}
           handleStartGDB={handleStartGDB}
-          esp32SimulationMode={esp32SimulationMode}
-          setEsp32SimulationMode={updateEsp32SimulationMode}
         />
 
         <div
@@ -12363,16 +12021,11 @@ export function SimulatorPage({ gamificationMode = false }) {
             handleUploadZip={handleUploadZip}
             openComponentEditor={openComponentEditor}
             showLockToast={showLockToast}
-<<<<<<< HEAD
-            isPaletteItemLocked={isPaletteItemLocked}
-            CATALOG={LOCAL_CATALOG}
-=======
             unlockedComponents={paletteUnlockedComponents}
             enforceUnlocks={enforcePaletteUnlocks}
             hideLockedComponents={false}
             unlocksLoading={isUnlocksLoading}
             CATALOG={CATALOG}
->>>>>>> 4d6e9f5 (component locked feature added successfully)
             GROUP_COLORS={GROUP_COLORS}
             GROUP_ICON_SVG={GROUP_ICON_SVG}
             COMPONENT_REGISTRY={COMPONENT_REGISTRY}

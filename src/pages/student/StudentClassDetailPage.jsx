@@ -23,7 +23,12 @@ import StudentAssignmentModal from '../../components/teacher/class-detail/Studen
 const tabs = [
   { key: 'stream', label: 'Stream' },
   { key: 'classwork', label: 'Classwork' },
+<<<<<<< HEAD
   { key: 'people', label: 'People' }
+=======
+  { key: 'people', label: 'People' },
+  { key: 'adventure', label: 'Adventure' }
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
 ]
 
 const getSubmissionStatus = (assignment) => {
@@ -125,6 +130,10 @@ export default function StudentClassDetailPage() {
   const sidebarLinks = [
     { key: 'home', label: 'Dashboard', icon: Home, isActive: false, onClick: () => navigate('/student/dashboard') },
     { key: 'simulator', label: 'Open Simulator', icon: Monitor, isActive: false, onClick: () => navigate('/simulator') },
+<<<<<<< HEAD
+=======
+    { key: 'adventure', label: 'Class Adventure', icon: ClipboardList, isActive: false, onClick: () => navigate(`/adventure?classId=${encodeURIComponent(classId)}`) },
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
     { key: 'join', label: 'Join class', icon: BookOpen, isActive: false, onClick: () => navigate('/student/dashboard?joinCode=') }
   ]
 
@@ -653,6 +662,24 @@ export default function StudentClassDetailPage() {
                   </section>
                 </section>
               )}
+<<<<<<< HEAD
+=======
+              {activeTab === 'adventure' && (
+                <section className="teacher-list-block">
+                  <div className="teacher-list-block__heading">
+                    <h3>Class Adventure</h3>
+                    <small>Open the class-specific learning path</small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}`)}
+                    className="teacher-assignment-modal__resource-pill"
+                  >
+                    Open Adventure
+                  </button>
+                </section>
+              )}
+>>>>>>> 4d6e9f5 (component locked feature added successfully)
             </section>
 
             <aside className="teacher-class-right">
