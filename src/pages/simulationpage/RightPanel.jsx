@@ -293,9 +293,13 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
     setBlocklyDisabled(prev => {
       const next = !prev;
       try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) { }
+      if (next) {
+        if (setUseBlocklyCode) setUseBlocklyCode(false);
+        if (setCodeTab) setCodeTab('code');
+      }
       return next;
     });
-  }, [setBlocklyDisabled]);
+  }, [setBlocklyDisabled, setUseBlocklyCode, setCodeTab]);
 
 
   React.useEffect(() => {
