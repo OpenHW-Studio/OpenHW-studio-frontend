@@ -25,9 +25,13 @@ export default function BlockEditorView(props) {
     setBlocklyDisabled(prev => {
       const next = !prev;
       try { localStorage.setItem('ohw_blockly_disabled', String(next)); } catch (_) {}
+      if (next) {
+        if (setUseBlocklyCode) setUseBlocklyCode(false);
+        if (setCodeTab) setCodeTab('code');
+      }
       return next;
     });
-  }, [setBlocklyDisabled]);
+  }, [setBlocklyDisabled, setUseBlocklyCode, setCodeTab]);
 
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 140px)', flexDirection: 'column', overflow: 'hidden', position: 'relative', pointerEvents: editingDisabled ? 'none' : 'auto', background: 'var(--bg)' }}>
