@@ -840,10 +840,8 @@ function buildGenerator(B) {
 function generateSketch(gen, ws) {
   const vars = ws.getAllVariables()
   const varDecl = vars.length ? vars.map(v => `int ${v.name} = 0;`).join('\n') + '\n\n' : ''
-  let setupCode = ''
-  gen.usedPins.forEach((mode, pin) => {
-    setupCode += `  pinMode(${pin}, ${mode});\n`
-  })
+  
+  gen.usedPins = new Map() // Reset/initialize used pins Map for the current generation run
 
   let setup = '', loop_ = ''; const extras = []
   ws.getTopBlocks(true).forEach(b => {
@@ -851,12 +849,16 @@ function generateSketch(gen, ws) {
       const code = gen.blockToCode(b)
       if (!code) return
       if (b.type === 'on_start') {
-        // Find the insert point in setup code if we want to merge, but here setup is just the body
         setup += code
       }
       else if (b.type === 'forever') loop_ += code
       else extras.push(code)
     } catch (_) { }
+  })
+
+  let setupCode = ''
+  gen.usedPins.forEach((mode, pin) => {
+    setupCode += `  pinMode(${pin}, ${mode});\n`
   })
 
   const setupFunc = `void setup() {\n${setupCode}${setup}}\n\n`
@@ -1448,6 +1450,19 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       }
     }
     resetBlocklyHistory(captureWorkspaceXml())
+
+    // Generate initial code so the preview pane shows correct code on load
+    try {
+      const initialCode = generateSketch(genRef.current, ws)
+      setGeneratedCode(initialCode)
+      if (onChange) {
+        setTimeout(() => {
+          onChange(initialCode)
+        }, 0)
+      }
+    } catch (err) {
+      console.warn('Failed to generate initial sketch:', err)
+    }
 
     const skipHistoryTypes = new Set([
       B.Events.CLICK,
