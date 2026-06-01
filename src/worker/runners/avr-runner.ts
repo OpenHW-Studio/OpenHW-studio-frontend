@@ -907,14 +907,15 @@ export class AVRRunner {
             port.addListener((value) => {
                 pinNames.forEach((pin, i) => {
                     if (!pin) return;
-                    // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
+                    // Propagate port register changes to the external circuit immediately.
+                    // If the pin is changed to INPUT, it should be treated as HIGH (pulled up)
+                    // unless later overridden by physics solver.
                     const state = port.pinState(i);
-                    const isOutput = state === PinState.Low || state === PinState.High;
-                    if (!isOutput) {
-                        return;
+                    let isHigh = true;
+                    if (state === PinState.Low) {
+                        isHigh = false;
                     }
 
-                    const isHigh = (value & (1 << i)) !== 0;
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
@@ -1016,6 +1017,10 @@ export class AVRRunner {
                 const componentStart = performance.now();
                 let anyStateChanged = false;
                 instArray.forEach(inst => {
+                    if (!(inst as any)._simCpu) {
+                        (inst as any)._simCpu = this.cpu;
+                        (inst as any)._simUpdatePhysics = this.updatePhysics;
+                    }
                     inst.update(this.cpu!.cycles, this.currentWires, instArray);
                     if (inst.stateChanged) {
                         anyStateChanged = true;
