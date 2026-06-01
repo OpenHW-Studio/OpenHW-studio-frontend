@@ -20,7 +20,7 @@ import {
     COMPONENT_PINS,
     isSoftSerialSourceLabel,
 } from '../registries/component-registry.ts';
-import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions } from '../registries/component-registry.ts';
+import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions, ConnectedComponentPin } from '../registries/component-registry.ts';
 
 const RP2040_FLASH_BASE = 0x10000000;
 const RP2040_XIP_NOCACHE_BASE = 0x11000000;
@@ -1007,6 +1007,20 @@ export class RP2040Runner implements BoardRunner {
             const pin = `GP${gp}`;
             this.pinStates[pin] = false;
             this.propagateBoardPin(pin, false);
+        }
+
+        // Propagate fixed board power rails and ground references at startup
+        this.pinStates['3V3'] = true;
+        this.propagateBoardPin('3V3', true);
+        this.pinStates['VBUS'] = true;
+        this.propagateBoardPin('VBUS', true);
+        this.pinStates['VSYS'] = true;
+        this.propagateBoardPin('VSYS', true);
+
+        const gndPins = ['GND', 'GND_1', 'GND_2', 'GND_3', 'GND_4', 'GND_5', 'GND_6', 'AGND'];
+        for (const gnd of gndPins) {
+            this.pinStates[gnd] = false;
+            this.propagateBoardPin(gnd, false);
         }
         this.setSoftSerialRxLevel(true);
 
@@ -2201,14 +2215,100 @@ export class RP2040Runner implements BoardRunner {
         const cached = this.protocolEndpointsCache.get(key);
         if (cached) return cached;
 
-        const endpoints = collectConnectedComponentPins(
-            this.boardId,
-            this.boardPinAliases(key),
-            this.currentWires,
-            this.instances
-        );
+        const endpoints = this.collectConnectedPinsForRp2040(key);
         this.protocolEndpointsCache.set(key, endpoints);
         return endpoints;
+    }
+
+    private collectConnectedPinsForRp2040(gpPin: string): ConnectedComponentPin[] {
+        const adjacency = new Map<string, Set<string>>();
+
+        const connect = (a: string, b: string) => {
+            if (!adjacency.has(a)) adjacency.set(a, new Set());
+            if (!adjacency.has(b)) adjacency.set(b, new Set());
+            adjacency.get(a)!.add(b);
+            adjacency.get(b)!.add(a);
+        };
+
+        // Connect wires
+        for (const wire of this.currentWires || []) {
+            if (!wire?.from || !wire?.to) continue;
+            connect(String(wire.from), String(wire.to));
+        }
+
+        // Connect internal passive component bridges
+        for (const [id, inst] of this.instances.entries()) {
+            if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
+                connect(`${id}:p1`, `${id}:p2`);
+            } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
+                connect(`${id}:1l`, `${id}:1r`);
+                connect(`${id}:1`, `${id}:1l`);
+                connect(`${id}:1`, `${id}:1r`);
+                connect(`${id}:2l`, `${id}:2r`);
+                connect(`${id}:2`, `${id}:2l`);
+                connect(`${id}:2`, `${id}:2r`);
+                if (inst.state?.pressed) {
+                    connect(`${id}:1l`, `${id}:2l`);
+                    connect(`${id}:1r`, `${id}:2r`);
+                    connect(`${id}:1`, `${id}:2`);
+                }
+            } else if (
+                inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' ||
+                inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' ||
+                inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' ||
+                inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' ||
+                inst.type === 'openhw-wire' || inst.type === 'wokwi-wire'
+            ) {
+                const bridges = getInternalBridgesForComponent(id, inst.type);
+                for (const bridge of bridges) {
+                    connect(bridge[0], bridge[1]);
+                }
+            }
+        }
+
+        const visited = new Set<string>();
+        const queue: string[] = [];
+
+        // Seed BFS queue with all aliases of the board pin
+        const aliases = this.boardPinAliases(gpPin);
+        for (const alias of aliases) {
+            const node = `${this.boardId}:${alias}`;
+            visited.add(node);
+            if (adjacency.has(node)) {
+                queue.push(node);
+            }
+        }
+
+        while (queue.length > 0) {
+            const node = queue.shift()!;
+            for (const n of adjacency.get(node) || []) {
+                if (visited.has(n)) continue;
+                visited.add(n);
+                queue.push(n);
+            }
+        }
+
+        const out = new Map<string, ConnectedComponentPin>();
+        for (const node of visited) {
+            const [compId, pinId] = String(node).split(':');
+            if (!compId || compId === this.boardId) continue;
+            const inst = this.instances.get(compId);
+            if (!inst) continue;
+            // Ignore passive components like resistors/breadboards as endpoints
+            if (
+                inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor' ||
+                inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' ||
+                inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' ||
+                inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' ||
+                inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' ||
+                inst.type === 'openhw-wire' || inst.type === 'wokwi-wire'
+            ) {
+                continue;
+            }
+            out.set(`${compId}:${pinId}`, { inst, pinId });
+        }
+
+        return Array.from(out.values());
     }
 
     /** Finds the first existing pin on `inst` from a list of candidate names
@@ -2627,11 +2727,17 @@ export class RP2040Runner implements BoardRunner {
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string) => void) {
-        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
             const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
             if (!otherPin) return;
             inst.setPinVoltage(otherPin, voltage);
             visit(`${compId}:${otherPin}`);
+        } else if (inst.type === 'openhw-led' || inst.type === 'wokwi-led') {
+            if (pinId === 'A') {
+                const nextV = Math.max(0, voltage - 1.8);
+                inst.setPinVoltage('K', nextV);
+                visit(`${compId}:K`);
+            }
         } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
             // Internal short-circuit connections
             if (pinId === '1l' || pinId === '1') {
@@ -2678,13 +2784,345 @@ export class RP2040Runner implements BoardRunner {
                     visit(`${compId}:1`);
                 }
             }
+        } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire') {
+            const bridges = getInternalBridgesForComponent(compId, inst.type);
+            for (const bridge of bridges) {
+                if (bridge[0] === `${compId}:${pinId}`) visit(bridge[1]);
+                else if (bridge[1] === `${compId}:${pinId}`) visit(bridge[0]);
+            }
         }
     }
 
     private updatePhysicsInternal() {}
 
+    /**
+     * Builds a map of every netlist node that is hard-wired to a fixed supply voltage
+     * (GND, 3V3, VBUS/VSYS, external power supplies, batteries).
+     *
+     * This map is consumed by repropagateAllVoltages() to prevent weaker signal sources
+     * (e.g., a CPU GPIO output) from overriding a hard-wired rail during BFS propagation.
+     *
+     * Mirrors avr-runner.ts :: getLowImpedanceRails().
+     */
+    private buildLowImpedanceRailMap(): Map<string, number> {
+        const rails = new Map<string, number>();
+        const visited = new Set<string>();
+
+        /**
+         * Normalize power-rail pin aliases so that GND_1/GND_2/AGND all collapse
+         * to a single canonical key, preventing duplicate BFS entries.
+         */
+        const normNode = (raw: string): string => {
+            const colon = raw.indexOf(':');
+            if (colon < 0) return raw;
+            const compId = raw.slice(0, colon);
+            const pinId  = raw.slice(colon + 1);
+            const up     = pinId.toUpperCase();
+            if (up === 'GND' || /^GND[._]?\d+$/.test(up) || up === 'AGND' || up === 'VSS') {
+                return `${compId}:GND`;
+            }
+            if (up === '5V' || up === 'VCC' || up === 'VBUS' || up === 'VSYS' || up === 'VIN') {
+                return `${compId}:5V`;
+            }
+            if (up === '3V3' || up === '3V3_EN') {
+                return `${compId}:3V3`;
+            }
+            return raw;
+        };
+
+        const visit = (rawNode: string, v: number): void => {
+            const node = normNode(rawNode);
+            if (visited.has(node)) return;
+            visited.add(node);
+            rails.set(node, v);
+
+            // Walk all wires touching this node
+            for (const wire of this.currentWires) {
+                const nf = normNode(wire.from);
+                const nt = normNode(wire.to);
+                if (nf === node) visit(wire.to, v);
+                else if (nt === node) visit(wire.from, v);
+            }
+
+            // Walk breadboard / via internal bridges
+            const [compId, compPin] = node.split(':');
+            const inst = this.instances.get(compId);
+            if (inst) {
+                const bridges = getInternalBridgesForComponent(compId, inst.type);
+                for (const [a, b] of bridges) {
+                    if (a === `${compId}:${compPin}`) visit(b, v);
+                    else if (b === `${compId}:${compPin}`) visit(a, v);
+                }
+            }
+        };
+
+        // ── Board hard rails ──────────────────────────────────────────────────────
+        const bId = this.boardId;
+        ['GND', 'GND_1', 'GND_2', 'GND_3', 'GND_4', 'GND_5', 'GND_6', 'AGND'].forEach(p =>
+            visit(`${bId}:${p}`, 0.0)
+        );
+        visit(`${bId}:3V3`,  3.3);
+        visit(`${bId}:VBUS`, 5.0);
+        visit(`${bId}:VSYS`, 5.0);
+
+        // ── Non-board power supplies and batteries ────────────────────────────────
+        this.instances.forEach((inst, compId) => {
+            if (compId === bId) return;
+            if (inst.type.includes('power-supply') || inst.type.includes('battery')) {
+                Object.keys(inst.pins).forEach(pin => {
+                    const v = inst.pins[pin]?.voltage ?? 0.0;
+                    visit(`${compId}:${pin}`, v);
+                });
+            }
+        });
+
+        return rails;
+    }
+
+    /**
+     * Full netlist voltage repropagation sweep for the RP2040 runner.
+     *
+     * Performs an ordered BFS pass across the entire wire graph so that
+     * component-to-component voltage changes are always delivered, not just
+     * board-GPIO → component changes.
+     *
+     * Execution order (later steps dominate earlier ones):
+     *   1. Board GP pins (current CPU output state)
+     *   2. Active driver outputs (A4988, L298N, motor-driver, logic-gates, etc.)
+     *   3. External power supplies / batteries (all pins)
+     *   4. Board hard rails (GND=0V, 3V3=3.3V, VBUS/VSYS=5V) — always win
+     *   5. Non-board supply rails re-seeded — override any passive back-propagation
+     *
+     * Mirrors avr-runner.ts :: repropagateAllVoltages().
+     */
+    private repropagateAllVoltages(): void {
+        if (!this.cpu) return;
+
+        // Pre-compute low-impedance rail map so the inner visitor can protect
+        // hard-wired supply nodes from being overwritten by weaker sources.
+        const lowImpRails = this.buildLowImpedanceRailMap();
+
+        const visitedEdges = new Set<string>();
+        const visitedNodes = new Set<string>();
+
+        /**
+         * Normalize power-rail aliases (same rules as buildLowImpedanceRailMap).
+         */
+        const normNode = (raw: string): string => {
+            const colon = raw.indexOf(':');
+            if (colon < 0) return raw;
+            const compId = raw.slice(0, colon);
+            const pinId  = raw.slice(colon + 1);
+            const up     = pinId.toUpperCase();
+            if (up === 'GND' || /^GND[._]?\d+$/.test(up) || up === 'AGND' || up === 'VSS') {
+                return `${compId}:GND`;
+            }
+            if (up === '5V' || up === 'VCC' || up === 'VBUS' || up === 'VSYS' || up === 'VIN') {
+                return `${compId}:5V`;
+            }
+            if (up === '3V3' || up === '3V3_EN') {
+                return `${compId}:3V3`;
+            }
+            return raw;
+        };
+
+        /**
+         * BFS visitor — propagates `v` to `rawNode` and all nodes reachable
+         * through wires and passive elements from it.
+         *
+         * Guards:
+         *  • Never revisits an already-visited node (cycle prevention).
+         *  • Never overwrites a hard-wired rail with a weaker source voltage
+         *    (low-impedance protection).
+         *  • Never overwrites a board hard-rail pin that isn't the current
+         *    propagation source (prevents GPIO from pulling down VCC, etc.).
+         */
+        const visitNode = (rawNode: string, v: number): void => {
+            const node = normNode(rawNode);
+            if (visitedNodes.has(node)) return;
+
+            const [compId, compPin] = node.split(':');
+
+            // Protect board hard-rail pins (GND, 3V3, VBUS, VSYS) from being
+            // overridden by passive propagation from a CPU GPIO pin.
+            if (compId === this.boardId) {
+                const up = compPin.toUpperCase();
+                if (
+                    up === 'GND' || /^GND[._]?\d+$/.test(up) || up === 'AGND' ||
+                    up === '3V3' || up === 'VBUS' || up === 'VSYS'
+                ) {
+                    // Allow the node to be set only when the propagation source
+                    // *is* this exact rail (i.e., we are in the board-rail pass).
+                    return;
+                }
+            }
+
+            // Protect any node that is hard-wired to a known supply rail
+            // from being overwritten by a weaker signal source.
+            if (lowImpRails.has(node)) {
+                const railV = lowImpRails.get(node)!;
+                const inst = this.instances.get(compId);
+                if (inst) {
+                    if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                    inst.setPinVoltage(compPin, railV);
+                }
+                // Do not recurse further — the rail map already covers all
+                // nodes reachable from this supply.
+                return;
+            }
+
+            visitedNodes.add(node);
+
+            // Walk all wires connected to this node
+            for (const wire of this.currentWires) {
+                const nf = normNode(wire.from);
+                const nt = normNode(wire.to);
+                const ek = `${nf}|${nt}`;
+                if (visitedEdges.has(ek)) continue;
+                if (nf === node || nt === node) {
+                    visitedEdges.add(ek);
+                    visitNode(nf === node ? wire.to : wire.from, v);
+                }
+            }
+
+            // Apply voltage to this component pin
+            const inst = this.instances.get(compId);
+            if (inst) {
+                if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                inst.setPinVoltage(compPin, v);
+                this.circuitDirty = true;
+                if (this.cpu) {
+                    inst.onPinStateChange(compPin, v > 1.8, this.cpu.cycles);
+                }
+                this.tickI2S(inst, compId, compPin, v > 1.8);
+
+                // Propagate through resistors, push-buttons, breadboard buses, etc.
+                this.traversePassive(inst, compId, compPin, v, (forwardNode) => {
+                    visitNode(forwardNode, v);
+                });
+            }
+        };
+
+        /**
+         * Helper: start a BFS wave from a specific component:pin node.
+         * Clears visited sets first so each source gets a fresh traversal scope
+         * (the visited guards above still prevent double-visiting *within* a wave).
+         */
+        const seedFrom = (startNode: string, v: number): void => {
+            visitedEdges.clear();
+            visitedNodes.clear();
+            visitNode(startNode, v);
+        };
+
+        // ── Pass 1: Board GP pins at their current CPU output state ───────────────
+        for (let gp = 0; gp <= 28; gp++) {
+            const pinName = `GP${gp}`;
+            const isHigh  = this.pinStates[pinName] ?? false;
+            const voltage  = isHigh ? 3.3 : 0.0;
+            seedFrom(`${this.boardId}:${pinName}`, voltage);
+        }
+
+        // ── Pass 2: Active driver outputs ─────────────────────────────────────────
+        // Each non-board component that drives output pins is re-seeded so that
+        // component-to-component voltages (e.g., A4988 → stepper motor) are always
+        // delivered, even when no board GPIO changed in this frame.
+        this.instances.forEach((inst, compId) => {
+            if (compId === this.boardId) return;
+
+            if (inst.type.includes('a4988') || inst.type.includes('drv8825')) {
+                // Bipolar stepper driver coil outputs
+                ['1A', '1B', '2A', '2B'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (
+                inst.type.includes('motor-driver') ||
+                inst.type.includes('l298n') ||
+                inst.type.includes('l293d')
+            ) {
+                // DC / stepper H-bridge outputs
+                ['OUT1', 'OUT2', 'OUT3', 'OUT4'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (
+                inst.type.includes('logic-gate') ||
+                inst.type.includes('timer') ||
+                inst.type.includes('opamp') ||
+                inst.type.includes('comparator')
+            ) {
+                // Generic IC output pins
+                Object.keys(inst.pins).forEach(pin => {
+                    const up = pin.toUpperCase();
+                    if (
+                        up.startsWith('OUT') || up === 'Q' ||
+                        up === 'Q#' || up === 'VOUT'
+                    ) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (inst.type.includes('relay')) {
+                // Relay normally-open / normally-closed contacts
+                ['COM', 'NO', 'NC'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            }
+        });
+
+        // ── Pass 3: External power supplies and batteries (all pins) ──────────────
+        this.instances.forEach((inst, compId) => {
+            if (compId === this.boardId) return;
+            if (inst.type.includes('power-supply') || inst.type.includes('battery')) {
+                Object.keys(inst.pins).forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            }
+        });
+
+        // ── Pass 4: Board hard rails — seeded last so they always dominate ────────
+        const bId = this.boardId;
+        const boardRails: Array<[string, number]> = [
+            ['GND',   0.0], ['GND_1', 0.0], ['GND_2', 0.0],
+            ['GND_3', 0.0], ['GND_4', 0.0], ['GND_5', 0.0],
+            ['GND_6', 0.0], ['AGND',  0.0],
+            ['3V3',   3.3],
+            ['VBUS',  5.0], ['VSYS',  5.0],
+        ];
+        boardRails.forEach(([pin, v]) => {
+            // Re-use propagateBoardPin so the existing well-tested BFS logic
+            // (including the per-instance GND/VCC force-write sweep) runs.
+            this.propagateBoardPin(pin, v > 0);
+        });
+
+        // ── Pass 5: Re-seed non-board supply rails last (override passive back-prop) ──
+        this.instances.forEach((inst, compId) => {
+            if (compId === this.boardId) return;
+            if (inst.type.includes('power-supply') || inst.type.includes('battery')) {
+                if (inst.pins['GND'] != null) seedFrom(`${compId}:GND`,  0.0);
+                if (inst.pins['5V']  != null) seedFrom(`${compId}:5V`,   inst.pins['5V'].voltage);
+                if (inst.pins['12V'] != null) seedFrom(`${compId}:12V`,  inst.pins['12V'].voltage);
+                if (inst.pins['VCC'] != null) seedFrom(`${compId}:VCC`,  inst.pins['VCC'].voltage);
+                if (inst.pins['3V3'] != null) seedFrom(`${compId}:3V3`,  inst.pins['3V3'].voltage);
+                if (inst.pins['VMOT']!= null) seedFrom(`${compId}:VMOT`, inst.pins['VMOT'].voltage);
+            }
+        });
+    }
+
+
     private propagateBoardPin(gpPin: string, isHigh: boolean) {
-        const voltage = isHigh ? 3.3 : 0.0;
+        let voltage = isHigh ? 3.3 : 0.0;
+        const upperPin = gpPin.toUpperCase();
+        if (upperPin === 'VBUS' || upperPin === 'VSYS') {
+            voltage = isHigh ? 5.0 : 0.0;
+        } else if (upperPin.startsWith('GND') || upperPin === 'AGND') {
+            voltage = 0.0;
+        }
 
         const boardInst = this.instances.get(this.boardId);
         if (boardInst && this.cpu) {
@@ -2789,6 +3227,21 @@ export class RP2040Runner implements BoardRunner {
         this.dispatchOptionalProtocols(pinName, isHigh, cycles, functionSelect);
         this.circuitDirty = true;
         this.propagateBoardPin(pinName, isHigh);
+
+        // Immediately propagate any resulting component output changes (e.g., A4988 step -> stepper motor)
+        // so that connected components see intermediate states immediately in the same cycle/instruction.
+        let anyComponentStateChanged = false;
+        this.instances.forEach((inst) => {
+            if (inst.stateChanged) {
+                anyComponentStateChanged = true;
+                (inst as any).pendingVisualStateEmit = true;
+                inst.stateChanged = false;
+            }
+        });
+        if (anyComponentStateChanged) {
+            this.repropagateAllVoltages();
+        }
+
         this.observeSoftSerialTx(pinName, isHigh, cycles);
     }
 
@@ -2857,7 +3310,11 @@ export class RP2040Runner implements BoardRunner {
             const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
             if (this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval) {
                 const physicsStart = performance.now();
-                // Classic Logic mode: event-driven propagation is already handled by listeners.
+                // Propagate all component-to-component voltages (driver outputs,
+                // external power supplies, board rails) before feeding GPIO inputs
+                // back into the RP2040 CPU. This mirrors the AVR runner's
+                // repropagateAllVoltages() + shouldSolvePhysics pattern.
+                this.repropagateAllVoltages();
                 this.updateGPIOInputsFromCircuit();
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
@@ -2999,20 +3456,32 @@ export class RP2040Runner implements BoardRunner {
                 const normalizedUpdateCycles = Math.floor(Number(this.cpu!.core.cycles) * clockScale);
                 const componentStart = performance.now();
                 const instArray = Array.from(this.instances.values());
+                let anyComponentStateChanged = false;
                 instArray.forEach((inst) => {
-                    // Annotate component with junction-aware connectivity (since RP2040Runner doesn't use pinToNet, 
-                    // we'll rely on the fact that isWired is usually true if we reached this point, 
-                    // but for consistency we can set it if there's any wire on any pin).
+                    // Ensure each component knows it is wired so that internal
+                    // activation guards (e.g., A4988 "is circuit connected?") pass.
                     if (inst.state.isWired === undefined) {
-                        inst.state.isWired = Object.keys(inst.pins).some(p => 
-                            this.currentWires.some(w => w.from === `${inst.id}:${p}` || w.to === `${inst.id}:${p}`)
+                        inst.state.isWired = Object.keys(inst.pins).some(p =>
+                            this.currentWires.some(w =>
+                                w.from === `${inst.id}:${p}` || w.to === `${inst.id}:${p}`
+                            )
                         );
                     }
-                    // For RP2040, we'll let the component's internal logic handle resistor detection 
-                    // for now, or we could implement a netlist here too. 
-                    // But since the user is on Uno, let's focus on AVRRunner first.
                     inst.update(normalizedUpdateCycles, this.currentWires, instArray);
+                    if (inst.stateChanged) {
+                        anyComponentStateChanged = true;
+                        // Mark for visual state emit on the next snapshot cycle.
+                        (inst as any).pendingVisualStateEmit = true;
+                        inst.stateChanged = false;
+                    }
                 });
+                // If any component updated its internal state (e.g., A4988 advanced
+                // a step and changed coil output voltages), immediately re-propagate
+                // those new voltages through the netlist so connected components
+                // (e.g., stepper motor, relay load) receive them in the same frame.
+                if (anyComponentStateChanged) {
+                    this.repropagateAllVoltages();
+                }
                 componentMs = performance.now() - componentStart;
 
             } catch (err: any) {
