@@ -2789,6 +2789,24 @@ export class RP2040Runner implements BoardRunner {
             for (const bridge of bridges) {
                 if (bridge[0] === `${compId}:${pinId}`) visit(bridge[1]);
                 else if (bridge[1] === `${compId}:${pinId}`) visit(bridge[0]);
+        } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
+            const isRight = inst.state?.value === "1" || inst.state?.value === 1 || inst.state?.value === true;
+            if (isRight) {
+                if (pinId === '3') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('3', voltage);
+                    visit(`${compId}:3`);
+                }
+            } else {
+                if (pinId === '1') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`);
+                }
             }
         }
     }
