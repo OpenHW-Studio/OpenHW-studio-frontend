@@ -42,7 +42,7 @@ import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/log
 import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
-import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic';
+// import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic';
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
@@ -163,8 +163,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-npn-transistor': NPNTransistorLogic,
     'wokwi-a4988': A4988Logic,
     'openhw-a4988': A4988Logic,
-    'wokwi-cd74hc4067': CD74HC4067Logic,
-    'openhw-cd74hc4067': CD74HC4067Logic,
+    // 'wokwi-cd74hc4067': CD74HC4067Logic,
+    // 'openhw-cd74hc4067': CD74HC4067Logic,
     'wokwi-logic-analyzer': SimulationMonitorLogic,
     'openhw-logic-analyzer': SimulationMonitorLogic,
 
