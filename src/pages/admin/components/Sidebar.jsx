@@ -14,7 +14,8 @@ import {
     Package,
     PlayCircle,
     ShieldCheck,
-    AlertTriangle
+    AlertTriangle,
+    Cpu
 } from 'lucide-react';
 
 const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout, maintenanceMode, onToggleMaintenance }) => {
@@ -27,6 +28,7 @@ const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout, maintenan
         { id: 'components', label: 'Custom Components', icon: Package },
         { id: 'deployments', label: 'CI/CD Workflow', icon: PlayCircle },
         { id: 'docker', label: 'Docker Monitoring', icon: Box },
+        { id: 'resources', label: 'Resource Budget', icon: Cpu },
         { id: 'history', label: 'Security History', icon: ShieldCheck },
         { id: 'logs', label: 'System Logs', icon: Terminal },
     ];

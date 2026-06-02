@@ -69,6 +69,7 @@ function hexKey(code, board) {
  */
 export async function getCachedHex(code, board) {
   try {
+    if (String(board).toLowerCase().includes('esp32')) return null; // FIX: Bypass offline cache for ESP32 because it holds stale unmerged binaries
     const key = hexKey(code, board);
     const row = await tx(HEX_STORE, 'readonly', s => s.get(key));
     if (!row) return null;

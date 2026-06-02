@@ -493,23 +493,40 @@ export class AVRRunner {
                                 // If SEL is queried, and button is pressed, it shorts to GND
                                 forcedLow = true;
                             }
-                            if (inst.type === 'wokwi-membrane-keypad' && !forcedLow) {
-                                const pressedKeys = (inst as any).getPressedKeys?.() || [];
-                                for (const key of pressedKeys) {
-                                    const { row, col } = (inst as any).getKeyRc?.(key) || {};
-                                    if (row && col) {
-                                        let otherPin = null;
-                                        if (compPin === row) otherPin = col;
-                                        else if (compPin === col) otherPin = row;
-                                        
-                                        if (otherPin) {
-                                            const forwardStr = `${compId}:${otherPin}`;
-                                            this.currentWires.forEach(w => {
-                                                if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
-                                                    visitedWires.add(w);
-                                                    checkForGnd(w.from === forwardStr ? w.to : w.from);
-                                                }
-                                            });
+                            if (inst.type === 'wokwi-membrane-keypad' || inst.type === 'openhw-membrane-keypad') {
+                                if (!forcedLow && inst.state?.connectedPair) {
+                                    const [row, col] = inst.state.connectedPair;
+                                    let otherPin = null;
+                                    if (compPin === row) otherPin = col;
+                                    else if (compPin === col) otherPin = row;
+                                    if (otherPin) {
+                                        const forwardStr = `${compId}:${otherPin}`;
+                                        this.currentWires.forEach(w => {
+                                            if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
+                                                visitedWires.add(w);
+                                                checkForGnd(w.from === forwardStr ? w.to : w.from);
+                                            }
+                                        });
+                                    }
+                                }
+                                if (!forcedLow) {
+                                    const pressedKeys = (inst as any).getPressedKeys?.() || [];
+                                    for (const key of pressedKeys) {
+                                        const { row, col } = (inst as any).getKeyRc?.(key) || {};
+                                        if (row && col) {
+                                            let otherPin = null;
+                                            if (compPin === row) otherPin = col;
+                                            else if (compPin === col) otherPin = row;
+                                            
+                                            if (otherPin) {
+                                                const forwardStr = `${compId}:${otherPin}`;
+                                                this.currentWires.forEach(w => {
+                                                    if (!visitedWires.has(w) && (w.from === forwardStr || w.to === forwardStr)) {
+                                                        visitedWires.add(w);
+                                                        checkForGnd(w.from === forwardStr ? w.to : w.from);
+                                                    }
+                                                });
+                                            }
                                         }
                                     }
                                 }

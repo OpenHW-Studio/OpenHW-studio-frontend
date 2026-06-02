@@ -43,6 +43,7 @@ import DeploymentsTab from './components/DeploymentsTab';
 import DockerTab from './components/DockerTab';
 import LogsTab from './components/LogsTab';
 import UserMapTab from './components/UserMapTab';
+import ResourcesTab from './components/ResourcesTab';
 import AdminAdventureContentTab from './components/AdminAdventureContentTab';
 import { LibrarySearchModal, TranspileModal } from './components/Modals';
 
@@ -455,6 +456,8 @@ export default function AdminPage() {
                     onRestart={handleRestartService}
                     onClear={() => setLogs([])} 
                 />;
+            case 'resources':
+                return <ResourcesTab />;
             case 'history':
                 return <HistoryTab logs={auditLogs} />;
             case 'logs':
