@@ -426,3 +426,16 @@ export async function triggerRecalibrate() {
     return response.data;
 }
 
+export async function startEsp32Compile({ code, libraries_txt }) {
+    const response = await axios.post(`${COMPILER_URL}/compile/start`, {
+        code,
+        target: 'esp32',
+        libraries_txt
+    }, getUserAuthConfig());
+    return response.data;
+}
+
+export async function getEsp32CompileStatus(jobId) {
+    const response = await axios.get(`${COMPILER_URL}/compile/status/${jobId}`, getUserAuthConfig());
+    return response.data;
+}

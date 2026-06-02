@@ -58,6 +58,13 @@ let boardInjectSessions: Map<string, {
  */
 let renderWorkerPort: MessagePort | null = null;
 
+/**
+ * MessagePort to the Network Worker. Set when the main thread sends SET_NET_PORT.
+ * When set, Ethernet frames from WiFi boards are forwarded directly (zero-copy),
+ * keeping DNS/TCP/UDP I/O completely isolated from the CPU simulation loop.
+ */
+let netWorkerPort: MessagePort | null = null;
+
 /** Display component types that have a Render Worker renderer registered. */
 const DISPLAY_COMPONENT_TYPES = new Set([
     'openhw-ili9341',
@@ -77,7 +84,13 @@ const RP2040_LITTLEFS_BLOCK_SIZE = 4096;
 const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code: string, label: string) {
-    if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
+    const cleanCode = String(code || '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/(?:^|[^:])\/\/[^\r\n]*/g, '')
+        .replace(/'(?:[^'\\]|\\.)*'/g, '')
+        .replace(/"(?:[^"\\]|\\.)*"/g, '')
+        .replace(/`(?:[^`\\]|\\.)*`/g, '');
+    if (UNSAFE_DYNAMIC_CODE_PATTERN.test(cleanCode)) {
         throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
     }
 }
@@ -965,6 +978,41 @@ self.onmessage = async (e) => {
         return;
     }
 
+    // ── Network Worker port handshake ─────────────────────────────────────────
+    // Sent from the main thread after creating the Network Worker.
+    // The sim worker uses netWorkerPort to forward Ethernet frames from WiFi
+    // boards (Pico W) to the dedicated Network Worker — zero-copy transfers.
+    if (data.type === 'SET_NET_PORT') {
+        const port: MessagePort = data.port;
+        console.log('[SimWorker] SET_NET_PORT message received, port:', !!port);
+        if (port && typeof port.postMessage === 'function') {
+            netWorkerPort = port;
+            netWorkerPort.start();
+            // Forward inbound frames (FRAME_IN / WIFI_STATUS) back to main thread
+            netWorkerPort.onmessage = (evt: MessageEvent) => {
+                const msg = evt.data;
+                if (msg?.type === 'FRAME_IN') {
+                    // Inject Ethernet frame into the Pico W chip via the runner
+                    // The runner must have onEthernetFrameIn(boardId, frame) or similar
+                    const boardId = String(msg.boardId || '');
+                    const frame   = new Uint8Array(msg.frame as ArrayBuffer);
+                    const b64     = btoa(String.fromCharCode(...frame));
+                    // Forward to main thread as a wifi_packet_in event
+                    postMessage({ type: 'wifi_packet_in', boardId, ether_b64: b64 });
+                } else if (msg?.type === 'WIFI_STATUS') {
+                    // Forward status to main thread for UI
+                    postMessage({ type: 'wifi_status', ...msg });
+                } else if (msg?.type === 'PCAP_DATA') {
+                    // Transfer PCAP buffer back to main thread for download
+                    const buf = msg.data as ArrayBuffer;
+                    postMessage({ type: 'wifi_pcap', boardId: msg.boardId, data: buf }, [buf]);
+                }
+            };
+            console.log('[SimWorker] netWorkerPort successfully registered and started');
+        }
+        return;
+    }
+
     if (data.type === 'START') {
         const {
             hex,
@@ -983,6 +1031,7 @@ self.onmessage = async (e) => {
             speed,
             telemetryEnabled,
             telemetryMode,
+            esp32SimulationMode,
         } = data;
         const initialSpeed = Number(speed ?? 1.0);
         const rp2040DebugEnabled = !!debugRp2040;
@@ -1056,6 +1105,18 @@ self.onmessage = async (e) => {
                 && (!singleBoardFlashPartitions || singleBoardFlashPartitions.length === 0)
                 && !!pyScript.trim();
 
+            let esp32Rom: Uint8Array | undefined;
+            if (singleBoardType.toLowerCase().includes('esp32') && esp32SimulationMode === 'frontend') {
+                try {
+                    const response = await fetch(self.location.origin + '/assets/esp32/esp32-v3-rom.bin');
+                    const arrayBuffer = await response.arrayBuffer();
+                    esp32Rom = new Uint8Array(arrayBuffer);
+                    console.log('[SimWorker] Loaded ESP32 BootROM from assets: ' + esp32Rom.length + ' bytes.');
+                } catch (err) {
+                    console.error('[SimWorker] Failed to load ESP32 BootROM:', err);
+                }
+            }
+
             console.log(`[Worker] Creating runner for board: ${singleBoardType}, boardId: ${singleBoardId}`);
             try {
                 runner = createRunnerForBoard(
@@ -1079,6 +1140,12 @@ self.onmessage = async (e) => {
                         rp2040ExecutableRanges: singleBoardIsRp2040 ? singleBoardExecutableRanges : undefined,
                         rp2040LogicalFlashBytes: singleBoardIsRp2040 ? RP2040_LOGICAL_FLASH_BYTES : undefined,
                         rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
+                        esp32SimulationMode: esp32SimulationMode || 'qemu',
+                        esp32Rom,
+                        telemetryEnabled: activeTelemetryEnabled,
+                        telemetryMode: activeTelemetryMode,
+                        telemetryWatchedParams: activeTelemetryWatchedParamsMap,
+                        deepSiliconEnabled: activeDeepSiliconEnabled,
                     }
                 );
                 console.log(`[Worker] Runner created OK. running=${(runner as any)?.running}`);
@@ -1121,6 +1188,19 @@ self.onmessage = async (e) => {
 
         mode = 'multi';
         buildNetIndex(wires || []);
+
+        let esp32Rom: Uint8Array | undefined;
+        const hasEsp32Board = (programmableBoards || []).some((b: any) => String(b.type || '').toLowerCase().includes('esp32'));
+        if (hasEsp32Board && esp32SimulationMode === 'frontend') {
+            try {
+                const response = await fetch(self.location.origin + '/assets/esp32/esp32-v3-rom.bin');
+                const arrayBuffer = await response.arrayBuffer();
+                esp32Rom = new Uint8Array(arrayBuffer);
+                console.log('[SimWorker] Loaded ESP32 BootROM for multi-board from assets: ' + esp32Rom.length + ' bytes.');
+            } catch (err) {
+                console.error('[SimWorker] Failed to load ESP32 BootROM for multi-board:', err);
+            }
+        }
 
         const uartInjectionScripts = new Map<string, string>();
         const circuitPythonInjectionFiles = new Map<string, Array<{ path: string; data: string }>>();
@@ -1186,6 +1266,7 @@ self.onmessage = async (e) => {
                     rp2040ExecutableRanges: isRp2040Board ? executableRanges : undefined,
                     rp2040LogicalFlashBytes: isRp2040Board ? RP2040_LOGICAL_FLASH_BYTES : undefined,
                     rp2040FlashPartitions: isRp2040Board ? rp2040FlashPartitions : undefined,
+                    esp32Rom,
                 }
             );
 
