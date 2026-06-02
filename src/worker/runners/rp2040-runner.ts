@@ -2252,6 +2252,10 @@ export class RP2040Runner implements BoardRunner {
                     connect(`${id}:1r`, `${id}:2r`);
                     connect(`${id}:1`, `${id}:2`);
                 }
+            } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+                if (inst.state?.connectedPair) {
+                    connect(`${id}:${inst.state.connectedPair[0]}`, `${id}:${inst.state.connectedPair[1]}`);
+                }
             } else if (
                 inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' ||
                 inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' ||
@@ -2782,6 +2786,17 @@ export class RP2040Runner implements BoardRunner {
                     visit(`${compId}:1r`);
                     inst.setPinVoltage('1', voltage);
                     visit(`${compId}:1`);
+                }
+            }
+        } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+            if (inst.state?.connectedPair) {
+                const [p1, p2] = inst.state.connectedPair;
+                if (pinId === p1) {
+                    inst.setPinVoltage(p2, voltage);
+                    visit(`${compId}:${p2}`);
+                } else if (pinId === p2) {
+                    inst.setPinVoltage(p1, voltage);
+                    visit(`${compId}:${p1}`);
                 }
             }
         } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire') {

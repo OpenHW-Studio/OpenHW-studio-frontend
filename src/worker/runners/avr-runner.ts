@@ -582,6 +582,17 @@ export class AVRRunner {
                     visit(`${compId}:1`, voltage);
                 }
             }
+        } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+            if (inst.state?.connectedPair) {
+                const [p1, p2] = inst.state.connectedPair;
+                if (pinId === p1) {
+                    inst.setPinVoltage(p2, voltage);
+                    visit(`${compId}:${p2}`, voltage);
+                } else if (pinId === p2) {
+                    inst.setPinVoltage(p1, voltage);
+                    visit(`${compId}:${p1}`, voltage);
+                }
+            }
         } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
             const isRight = inst.state?.value === "1" || inst.state?.value === 1 || inst.state?.value === true;
             if (isRight) {
