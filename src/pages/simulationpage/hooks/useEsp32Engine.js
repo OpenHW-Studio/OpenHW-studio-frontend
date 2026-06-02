@@ -54,7 +54,7 @@ export function useEsp32Engine({
       }
     },
     onNeopixelSync: (channel, pixels) => {
-      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+      const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
       if (esp32Board && workerRef?.current) {
         workerRef.current.postMessage({
           type: 'esp32:neopixel:sync',
@@ -65,7 +65,7 @@ export function useEsp32Engine({
       }
     },
     onPwmSync: (channel, duty_pct) => {
-      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+      const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
       if (esp32Board && workerRef?.current) {
         workerRef.current.postMessage({
           type: 'esp32:pwm:sync',
@@ -76,7 +76,7 @@ export function useEsp32Engine({
       }
     },
     onSpiBatch: (b64) => {
-      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+      const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
       if (esp32Board && workerRef?.current) {
         workerRef.current.postMessage({
           type: 'esp32:spi:batch',
@@ -86,7 +86,7 @@ export function useEsp32Engine({
       }
     },
     onAdcSync: (channel, val) => {
-      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+      const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
       if (esp32Board && workerRef?.current) {
         workerRef.current.postMessage({
           type: 'esp32:adc:sync',
@@ -98,7 +98,7 @@ export function useEsp32Engine({
     },
     onGpioSync: (pin, value) => {
       const pinId = String(pin);
-      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+      const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
       if (esp32Board && workerRef?.current) {
         workerRef.current.postMessage({
           type: 'GPIO_SYNC',
@@ -109,8 +109,20 @@ export function useEsp32Engine({
       }
       setPinStates(prev => ({ ...prev, [pinId]: value === 1 }));
     },
+    onTone: (pin, frequency, duration) => {
+      const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
+      if (esp32Board && workerRef?.current) {
+        workerRef.current.postMessage({
+          type: 'TONE',
+          boardId: esp32Board.id,
+          pin,
+          frequency,
+          duration
+        });
+      }
+    },
     onI2cTransaction: (addr, data) => {
-      const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+      const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
       if (esp32Board && workerRef?.current) {
         workerRef.current.postMessage({
           type: 'esp32:i2c:transaction',
@@ -175,7 +187,7 @@ export function useEsp32Engine({
   const flushESP32Serial = useCallback(() => {
     const lines = serialFlushBufRef.current.splice(0);
     if (!lines.length) return;
-    const esp32Board = componentsRef.current?.find(c => /esp32/i.test(c.type));
+    const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
     const boardId = esp32Board ? esp32Board.id : 'esp32';
     if (pushSerialRxChunkRef.current) {
       lines.forEach(line => pushSerialRxChunkRef.current(line, boardId, 'sim'));
@@ -193,7 +205,7 @@ export function useEsp32Engine({
       const [currCompId, currPin] = current.split(':');
 
       const currComp = (componentsRef.current || components).find(c => c.id === currCompId);
-      if (currComp && /esp32/i.test(currComp.type || '')) {
+      if (currComp && /(esp32|stm32)/i.test(currComp.type || '')) {
         const pinNum = parseInt(currPin.replace(/\D/g, ''), 10);
         if (!isNaN(pinNum)) {
           return pinNum;
@@ -468,6 +480,7 @@ export function useEsp32Engine({
 
   const startEsp32Session = useCallback(async (programmableBoards) => {
     const esp32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'esp32');
+    const stm32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'stm32');
     if (esp32Board) {
       const isMicroPython = esp32Board.attrs?.env === 'micropython';
 
@@ -538,8 +551,36 @@ export function useEsp32Engine({
         alert(esp32Err.message);
       }
       return true; // Handled
+    } else if (stm32Board) {
+      if (serialFlushTimer.current) clearInterval(serialFlushTimer.current);
+      serialFlushTimer.current = setInterval(flushESP32Serial, 120);
+
+      hasAttachedSensorsRef.current = false;
+
+      logSerial('⚙️  Sending STM32 firmware to Renode compile server...');
+      const compileUnit = getBoardCompileFiles(stm32Board.id, '');
+      let compileSource = useBlocklyCode ? blocklyGeneratedCode : (compileUnit.mainCode || getBoardMainCode(stm32Board.id) || code);
+      if (compileSource === '{}') compileSource = code;
+
+      try {
+        const buildId = await esp32Socket.run(compileSource, 'stm32');
+        esp32BuildIdRef.current = buildId;
+        setIsBooting(true);
+        setIsCompiling(false);
+      } catch (stm32Err) {
+        if (serialFlushTimer.current) { clearInterval(serialFlushTimer.current); serialFlushTimer.current = null; }
+        setIsRunning(false);
+        setIsCompiling(false);
+        setIsBooting(false);
+        if (runStartGuardRef && runStartGuardRef.current !== undefined) {
+            runStartGuardRef.current = false;
+        }
+        appendConsoleEntry('error', `STM32 compile failed: ${stm32Err.message}`, 'simulator');
+        alert(stm32Err.message);
+      }
+      return true; // Handled
     }
-    return false; // No ESP32
+    return false; // No ESP32 or STM32
   }, [getBoardCompileFiles, useBlocklyCode, blocklyGeneratedCode, getBoardMainCode, code, flushESP32Serial, esp32Socket, setIsCompiling, setIsRunning, runStartGuardRef, appendConsoleEntry, logSerial, setIsBooting]);
 
   const stopEsp32Session = useCallback(() => {

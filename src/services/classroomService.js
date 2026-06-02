@@ -36,8 +36,7 @@ const parseResponse = async (response, fallbackErrorMessage) => {
 export const getMyClassrooms = async () => {
   const response = await fetch(`${BASE_URL}/classroom`, {
     method: 'GET',
-    headers: authHeaders(),
-    credentials: 'include'
+    headers: authHeaders()
   })
 
   const data = await parseResponse(response, 'Failed to fetch classrooms')
@@ -81,8 +80,7 @@ export const updateClassroom = async (classId, classroomData) => {
 export const deleteClassroom = async (classId) => {
   const response = await fetch(`${BASE_URL}/classroom/${classId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
-    credentials: 'include'
+    headers: authHeaders()
   })
 
   return parseResponse(response, 'Failed to delete classroom')
@@ -92,8 +90,7 @@ export const joinClassroomByCode = async (joinCode) => {
   const response = await fetch(`${BASE_URL}/classroom/join`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ joinCode }),
-    credentials: 'include'
+    body: JSON.stringify({ joinCode })
   })
 
   const data = await parseResponse(response, 'Failed to join classroom')
@@ -284,8 +281,7 @@ export const uploadClassroomAssets = async (payload) => {
   const response = await fetch(`${BASE_URL}/classroom/uploads`, {
     method: 'POST',
     headers: authOnlyHeaders(),
-    body: formData,
-    credentials: 'include'
+    body: formData
   })
 
   const data = await parseResponse(response, 'Failed to upload classroom files')

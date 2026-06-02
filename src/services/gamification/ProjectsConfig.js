@@ -850,7 +850,7 @@ export function getEarnedComponents(completedProjects = []) {
 // ── Helper: what components will I earn from completing this project? ─────────
 export function getProjectRewardComponents(projectSlug) {
   const project = PROJECTS.find(p => p.slug === projectSlug);
-  return PROJECT_DATA[projectSlug]?.unlockComponents || [];
+  return project?.rewardComponents || [];
 }
 
 export function getLockedProjects(completedProjects = []) {
