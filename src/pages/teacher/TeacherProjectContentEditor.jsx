@@ -4,7 +4,7 @@ import { getResolvedClassAdventure } from "../../services/classAdventureService"
 import { updateClassAdventureConfig } from "../../services/classAdventureService";
 import { getProjectFlashcards } from "../../services/gamification/ProjectData";
 import { PROJECTS } from "../../services/gamification/ProjectsConfig";
-import { COMPONENTS } from "../../services/gamification/ComponentsConfig";
+import { COMPONENTS, CATEGORIES } from "../../services/gamification/ComponentsConfig";
 import { extractProjectMetaFromPng } from "../../utils/projectCompilerUtils";
 import { createProjectBankEntry, getMyProjectBank, updateProjectBankEntry, publishProjectBankEntry, unpublishProjectBankEntry } from "../../services/projectBankService";
 import ProjectBankModal from "../../components/teacher/class-detail/ProjectBankModal.jsx";
@@ -30,6 +30,8 @@ export default function TeacherProjectContentEditor() {
   const [theoryCards, setTheoryCards] = useState([]);
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [rewardComponents, setRewardComponents] = useState([]);
+  const [rewardSearchQuery, setRewardSearchQuery] = useState("");
+  const [rewardCategoryFilter, setRewardCategoryFilter] = useState("All");
   const [assessmentNodeContent, setAssessmentNodeContent] = useState({
     passingThreshold: 60,
     refCircuitFile: null,
@@ -46,6 +48,18 @@ export default function TeacherProjectContentEditor() {
   const [savingBank, setSavingBank] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+
+  const rewardCategories = CATEGORIES || ["All", "Input", "Output", "Passive", "Sensor", "Actuator"];
+  const filteredRewardComponents = COMPONENTS.filter((comp) => {
+    const categoryMatches = rewardCategoryFilter === "All" || comp.category === rewardCategoryFilter;
+    const query = rewardSearchQuery.trim().toLowerCase();
+    const searchMatches =
+      !query ||
+      [comp.name, comp.fullName, comp.category, comp.description]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query));
+    return categoryMatches && searchMatches;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -696,7 +710,7 @@ const load = async () => {
       }),
       assessment: assessmentNodeContent.evaluationCriteria
         ? { ...assessmentNodeContent, evaluationCriteria: assessmentNodeContent.evaluationCriteria }
-        : null,
+        : {},
     };
   };
 
@@ -727,7 +741,12 @@ const load = async () => {
       }
       setTimeout(() => setSuccessMsg(""), 3000);
     } catch (e) {
-      setError(e?.message || "Failed to save to project bank");
+      const message =
+        e?.response?.data?.message ||
+        e?.response?.data?.error ||
+        e?.message ||
+        "Failed to save to project bank";
+      setError(message);
     } finally {
       setSavingBank(false);
     }
@@ -1067,7 +1086,44 @@ return (
               <p className="editor-card-label" style={{ fontSize: 14, textAlign: "center", marginBottom: 12 }}>
                 Select components students will unlock after completing this project:
               </p>
-              {COMPONENTS.map((comp) => {
+              <div style={{ display: "grid", gap: 10, marginBottom: 16 }}>
+                <input
+                  type="search"
+                  value={rewardSearchQuery}
+                  onChange={(e) => setRewardSearchQuery(e.target.value)}
+                  className="editor-field"
+                  placeholder="Search components..."
+                  style={{ width: "100%", minWidth: 220 }}
+                />
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {rewardCategories.map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      onClick={() => setRewardCategoryFilter(category)}
+                      className={"btn-filter" + (rewardCategoryFilter === category ? " active" : "")}
+                      style={{
+                        padding: "8px 12px",
+                        borderRadius: 999,
+                        border: rewardCategoryFilter === category ? "1px solid #60a5fa" : "1px solid rgba(148,163,184,.3)",
+                        background: rewardCategoryFilter === category ? "rgba(96,165,250,.12)" : "rgba(255,255,255,.04)",
+                        color: rewardCategoryFilter === category ? "#3b82f6" : "#cbd5e1",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {category}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {filteredRewardComponents.length === 0 && (
+                <div style={{ color: "#94a3b8", fontSize: 13, padding: "14px 12px", border: "1px dashed rgba(148,163,184,.4)", borderRadius: 10, textAlign: "center" }}>
+                  No components match your search or selected category.
+                </div>
+              )}
+              {filteredRewardComponents.map((comp) => {
                 const isSelected = rewardComponents.includes(comp.id);
                 return (
                   <div
