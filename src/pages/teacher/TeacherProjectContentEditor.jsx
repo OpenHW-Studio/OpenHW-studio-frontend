@@ -1,18 +1,26 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext.jsx";
 import { getResolvedClassAdventure } from "../../services/classAdventureService";
 import { updateClassAdventureConfig } from "../../services/classAdventureService";
 import { getProjectFlashcards } from "../../services/gamification/ProjectData";
 import { PROJECTS } from "../../services/gamification/ProjectsConfig";
 import { COMPONENTS, CATEGORIES } from "../../services/gamification/ComponentsConfig";
 import { extractProjectMetaFromPng } from "../../utils/projectCompilerUtils";
-import { createProjectBankEntry, getMyProjectBank, updateProjectBankEntry, publishProjectBankEntry, unpublishProjectBankEntry } from "../../services/projectBankService";
+import { createProjectBankEntry, getMyProjectBank, getProjectBySlug, updateProjectBankEntry, publishProjectBankEntry, unpublishProjectBankEntry } from "../../services/projectBankService";
 import ProjectBankModal from "../../components/teacher/class-detail/ProjectBankModal.jsx";
+
+const getEntityId = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  return value._id || value.id || value.toString?.() || "";
+};
 
 export default function TeacherProjectContentEditor() {
   const { classId, projectSlug } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
 
   const query = new URLSearchParams(location.search);
   const bankMode = location.pathname.includes("/project-bank/");
@@ -20,6 +28,7 @@ export default function TeacherProjectContentEditor() {
   const initialBankVisibility = query.get("visibility") || "personal";
   const [bankVisibility, setBankVisibility] = useState(initialBankVisibility);
   const [bankProjectId, setBankProjectId] = useState(null);
+  const [bankProjectOwnerId, setBankProjectOwnerId] = useState("");
   const [bankLoading, setBankLoading] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [bankModalOpen, setBankModalOpen] = useState(false);
@@ -48,6 +57,8 @@ export default function TeacherProjectContentEditor() {
   const [savingBank, setSavingBank] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const currentUserId = getEntityId(user);
+  const canEditBankProject = isNewBankProject || !bankProjectOwnerId || bankProjectOwnerId === currentUserId;
 
   const rewardCategories = CATEGORIES || ["All", "Input", "Output", "Passive", "Sensor", "Actuator"];
   const filteredRewardComponents = COMPONENTS.filter((comp) => {
@@ -106,13 +117,13 @@ const load = async () => {
         }
 
         try {
-          const data = await getMyProjectBank();
-          const projects = data?.projects || data || [];
-          const project = projects.find((p) => p.slug === projectSlug);
+          const data = await getProjectBySlug(projectSlug);
+          const project = data?.project || data;
           if (cancelled) return;
           if (!project) {
             setError("Project not found in bank.");
             setBankProjectId(null);
+            setBankProjectOwnerId("");
             setBankVisibility(initialBankVisibility);
             setCustomTitle("");
             return;
@@ -158,6 +169,7 @@ const load = async () => {
             return project.assessment;
           });
           setBankProjectId(project._id || project.slug);
+          setBankProjectOwnerId(getEntityId(project.owner));
           setBankVisibility(project.visibility || "personal");
           setCustomTitle(project.title || "");
         } catch (err) {
@@ -728,10 +740,25 @@ const load = async () => {
         throw new Error("Cannot save: project identifier is missing. Please navigate to this page from the Project Bank list.");
       }
 
-      if (isNewBankProject || !bankProjectId) {
+      if (!canEditBankProject && !isNewBankProject) {
+        const copyPayload = {
+          ...payload,
+          slug: `${payload.slug || "project"}-copy-${Date.now()}`,
+          title: `${payload.title || "Project"} (Copy)`,
+          visibility: "personal",
+        };
+        const result = await createProjectBankEntry(copyPayload);
+        const createdProject = result?.project || result;
+        setBankProjectId(createdProject?._id || createdProject?.id || null);
+        setBankProjectOwnerId(currentUserId);
+        setBankVisibility(createdProject?.visibility || "personal");
+        setCustomTitle(createdProject?.title || copyPayload.title);
+        setSuccessMsg("Shared project copied to your bank.");
+      } else if (isNewBankProject || !bankProjectId) {
         const result = await createProjectBankEntry(payload);
         const createdProject = result?.project || result;
         setBankProjectId(createdProject?._id || createdProject?.id || bankProjectId);
+        setBankProjectOwnerId(currentUserId);
         setSuccessMsg("Project created in bank.");
       } else {
         const result = await updateProjectBankEntry(bankProjectId, payload);
@@ -764,6 +791,10 @@ const load = async () => {
 
     if (!bankProjectId) {
       setError("Cannot update visibility: project identifier is missing.");
+      return;
+    }
+    if (!canEditBankProject) {
+      setError("Save a copy to your bank before changing visibility.");
       return;
     }
 
@@ -884,7 +915,7 @@ return (
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           {bankMode && (
             <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: "var(--text2)" }}>
-              <input type="checkbox" checked={bankVisibility === "published"} onChange={handlePublishToggle} disabled={publishing || savingBank} />
+              <input type="checkbox" checked={bankVisibility === "published"} onChange={handlePublishToggle} disabled={publishing || savingBank || !canEditBankProject} />
               Shared / Published
             </label>
           )}
@@ -904,7 +935,7 @@ return (
               className="btn-primary"
               style={{ opacity: savingBank ? 0.6 : 1 }}
             >
-              {savingBank ? "Saving..." : "Save to Bank"}
+              {savingBank ? "Saving..." : canEditBankProject ? "Save to Bank" : "Save a Copy"}
             </button>
           ) : (
             <button
