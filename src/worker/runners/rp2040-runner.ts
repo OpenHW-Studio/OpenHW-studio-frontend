@@ -947,7 +947,7 @@ export class RP2040Runner implements BoardRunner {
         this.cpu.logger = new ConsoleLogger(LogLevel.Error, true);
 
         // -- Patch PIO to use synchronous stepping instead of redundant setTimeout --
-        // This is a critical 'Velxio' optimization that prevents event-loop congestion.
+        // This is a critical 'OpenHW' optimization that prevents event-loop congestion.
         for (const pio of (this.cpu as any).pio) {
             pio.run = function (this: any) {
                 if (this.runTimer) {
@@ -1090,7 +1090,7 @@ export class RP2040Runner implements BoardRunner {
 
         const modeRaw = String(boardCompDef?.attrs?.wirelessMode || 'compat-stub').toLowerCase();
         const mode: 'off' | 'compat-stub' = modeRaw === 'off' ? 'off' : 'compat-stub';
-        const ssid = String(boardCompDef?.attrs?.wirelessSsid || 'Velxio-GUEST').trim() || 'Velxio-GUEST';
+        const ssid = String(boardCompDef?.attrs?.wirelessSsid || 'OpenHW-GUEST').trim() || 'OpenHW-GUEST';
         const ip = String(boardCompDef?.attrs?.wirelessIp || '192.168.4.2').trim() || '192.168.4.2';
         const now = performance.now();
 
@@ -3945,7 +3945,7 @@ export class RP2040Runner implements BoardRunner {
 
     /**
      * Get the current clock divider for the PIO state machines.
-     * Aligned with Velxio: uses the first enabled state machine's divider or defaults to 64.
+     * Aligned with OpenHW: uses the first enabled state machine's divider or defaults to 64.
      */
     /**
      * Get the current clock dividers for PIO blocks 0 and 1.
