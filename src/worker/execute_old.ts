@@ -45,6 +45,7 @@ import { DiodeLogic } from '@openhw/emulator/src/components/wokwi-diode/logic.ts
 import { NPNTransistorLogic } from '@openhw/emulator/src/components/wokwi-npn-transistor/logic.ts';
 import { MAX7219Logic } from '@openhw/emulator/src/components/wokwi-max7219/logic.ts';
 import { A4988Logic } from '@openhw/emulator/src/components/wokwi-a4988/logic.ts';
+import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic.ts';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/wokwi-7segment/logic.ts';
 import { ILI9341Logic } from '@openhw/emulator/src/components/wokwi-ili9341/logic.ts';
 import { CD74HC4067Logic } from '@openhw/emulator/src/components/wokwi-cd74hc4067/logic.ts';
@@ -1993,8 +1994,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-nlsf595': BaseComponent,
     'wokwi-relay-module': BaseComponent,
     'openhw-relay-module': BaseComponent,
-    'wokwi-stepper-motor': BaseComponent,
-    'openhw-stepper-motor': BaseComponent,
+    'wokwi-stepper-motor': StepperMotorLogic,
+    'openhw-stepper-motor': StepperMotorLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
