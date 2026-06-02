@@ -45,6 +45,7 @@ import { DiodeLogic } from '@openhw/emulator/src/components/openhw-diode/logic';
 import { NPNTransistorLogic } from '@openhw/emulator/src/components/openhw-npn-transistor/logic';
 import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/logic';
 import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
+import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
 
@@ -212,8 +213,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-nlsf595': BaseComponent,
     'wokwi-relay-module': BaseComponent,
     'openhw-relay-module': BaseComponent,
-    'wokwi-stepper-motor': BaseComponent,
-    'openhw-stepper-motor': BaseComponent,
+    'wokwi-stepper-motor': StepperMotorLogic,
+    'openhw-stepper-motor': StepperMotorLogic,
     'wokwi-arduino-mega': MegaLogic,
     'openhw-arduino-mega': MegaLogic,
     'wokwi-attiny85': BaseComponent,

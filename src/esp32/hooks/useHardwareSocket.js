@@ -295,7 +295,12 @@ export function useHardwareSocket({
 
             switch (msg.type) {
                 case 'SESSION_REGISTERED':
-                    cbRef.current.onLog?.('🔗 Session registered with server.', 'sys');
+                    cbRef.current.onLog?.(`🔗 Session registered with server (ready: ${msg.ready}).`, 'sys');
+                    console.log(`[useHardwareSocket] SESSION_REGISTERED received. msg:`, msg);
+                    if (msg.ready) {
+                        clearWatchdog();
+                        cbRef.current.onPhaseChange?.('running');
+                    }
                     break;
 
                 case 'COMPILE_SUCCESS':
@@ -434,7 +439,7 @@ export function useHardwareSocket({
                 // ── ePaper SSD168x / UC8159c display frame ────────────────────
                 // Fired by the backend SSD168x or UC8159c slave decoder on every
                 // MASTER_ACTIVATION (0x20) command. The `data` envelope matches
-                // the Velxio `onEpaperUpdate` callback shape exactly.
+                // the OpenHW `onEpaperUpdate` callback shape exactly.
                 case 'EPAPER_UPDATE':
                     if (msg.data && msg.data.component_id) {
                         cbRef.current.onEpaperUpdate?.(msg.data.component_id, {
@@ -873,7 +878,7 @@ export function useHardwareSocket({
      *
      * Inject raw bytes into the ESP32's UART RX FIFO (default UART0).
      * The ESP32 UART RX FIFO is 128 bytes in hardware — this function sends
-     * at most 64 bytes per call to prevent overflow (same constraint as Velxio).
+     * at most 64 bytes per call to prevent overflow (same constraint as OpenHW).
      * Useful for simulating GPS sentence injection, RFID tag reads, etc.
      *
      * @param {number[]} bytes - Array of byte values (0–255).
