@@ -18,7 +18,9 @@ import {
   buildLiveSimulationWsUrl,
   fetchPublicInstalledComponents,
   fetchComponentsVersion,
-  API_BASE_URL
+  API_BASE_URL,
+  startEsp32Compile,
+  getEsp32CompileStatus
 } from '../../services/simulatorService.js'
 import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
@@ -196,7 +198,13 @@ const RP2040_SIM_PROTOCOL_VERSION = 'rp2040-sim-uart0-v4';
 const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code, label) {
-  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
+  const cleanCode = String(code || '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(?:^|[^:])\/\/[^\r\n]*/g, '')
+    .replace(/'(?:[^'\\]|\\.)*'/g, '')
+    .replace(/"(?:[^"\\]|\\.)*"/g, '')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '');
+  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(cleanCode)) {
     throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
   }
 }
@@ -460,6 +468,20 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [renameState, setRenameState] = useState({ id: null, x: 0, y: 0 });
   const [valueState, setValueState] = useState({ id: null, x: 0, y: 0, key: 'value' });
   const [showEngineSelector, setShowEngineSelector] = useState(false)
+  const [esp32SimulationMode, setEsp32SimulationMode] = useState(() => {
+    try {
+      return localStorage.getItem('openhw.esp32.simulationMode') || 'qemu';
+    } catch (_) {
+      return 'qemu';
+    }
+  });
+
+  const updateEsp32SimulationMode = useCallback((mode) => {
+    setEsp32SimulationMode(mode);
+    try {
+      localStorage.setItem('openhw.esp32.simulationMode', mode);
+    } catch (_) {}
+  }, []);
 
 
   useEffect(() => {
@@ -1173,7 +1195,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     blocklyGeneratedCode,
     isRunning,
     getLiveOopStateSnapshot,
-    updateLiveOopStates
+    updateLiveOopStates,
+    esp32SimulationMode
   });
   const applyLiveNeopixelData = useCallback((neopixelState) => {
     liveNeopixelDataRef.current = neopixelState || {};
@@ -6519,6 +6542,12 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardRuntimeEnvMap = {};
       const boardBaudMap = {};
       const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+      const hasEsp32 = programmableBoards.some(c => normalizeBoardKind(c.type) === 'esp32');
+      if (hasEsp32) {
+        const engineText = esp32SimulationMode === 'frontend' ? 'Frontend Engine' : 'Backend QEMU';
+        console.log(`[SimulatorPage] Selected ESP32 Emulation Engine: ${engineText}`);
+        appendConsoleEntry('info', `Selected ESP32 Emulation Engine: ${engineText}`, 'simulator');
+      }
 
       const isBackendProxy = await startEsp32Session(programmableBoards);
       const singleProgrammableBoardId = programmableBoards.length === 1 ? programmableBoards[0]?.id : '';
@@ -6757,22 +6786,77 @@ export function SimulatorPage({ gamificationMode = false }) {
             targetFqbn,
             ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
             librariesTxt,
+            kind === 'esp32' ? esp32SimulationMode : '',
           ].join('\n/*__SPLIT__*/\n');
 
           appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
           let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-          if (compiled) {
+          if (compiled && (kind !== 'esp32' || esp32SimulationMode !== 'frontend' || compiled.hex)) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
             try {
-              compiled = await compileCode({
-                code: compileSource,
-                files: compileUnit.files,
-                sketchName: compileUnit.sketchName,
-                fqbn: targetFqbn,
-                libraries_txt: librariesTxt,
-              });
+              if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
+                const startRes = await startEsp32Compile({
+                  code: compileSource,
+                  libraries_txt: librariesTxt
+                });
+                
+                if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+                  throw new Error('Failed to start ESP32 compilation.');
+                }
+                
+                if (startRes.cache === 'hit') {
+                  logSerial(`Using server-cached compilation for ${boardComp.id}...`);
+                }
+                
+                const jobId = startRes.jobId || startRes.buildId;
+                let pollCount = 0;
+                let lastPrintedProgressLen = 0;
+                
+                while (true) {
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  const statusRes = await getEsp32CompileStatus(jobId);
+                  
+                  if (!statusRes) continue;
+                  
+                  const progressLines = statusRes.progress || [];
+                  if (progressLines.length > lastPrintedProgressLen) {
+                    for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
+                      logSerial(progressLines[i]);
+                    }
+                    lastPrintedProgressLen = progressLines.length;
+                  }
+                  
+                  if (statusRes.status === 'success') {
+                    if (!statusRes.binary_content) {
+                      throw new Error('Compilation succeeded but no binary content was returned.');
+                    }
+                    compiled = {
+                      hex: statusRes.binary_content,
+                      stdout: statusRes.stdout || '',
+                      stderr: statusRes.stderr || ''
+                    };
+                    break;
+                  } else if (statusRes.status === 'failed') {
+                    const errMsg = statusRes.error || 'ESP32 compilation failed.';
+                    throw new Error(errMsg);
+                  }
+                  
+                  pollCount++;
+                  if (pollCount > 120) {
+                    throw new Error('ESP32 compilation timed out after 60 seconds.');
+                  }
+                }
+              } else {
+                compiled = await compileCode({
+                  code: compileSource,
+                  files: compileUnit.files,
+                  sketchName: compileUnit.sketchName,
+                  fqbn: targetFqbn,
+                  libraries_txt: librariesTxt,
+                });
+              }
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
               throw compileErr;
@@ -6862,6 +6946,37 @@ export function SimulatorPage({ gamificationMode = false }) {
       workerRef.current = worker;
       // Give port2 to the Simulation Worker (it sends DISPLAY_FRAME here)
       worker.postMessage({ type: 'SET_RENDER_PORT', port: simPort }, [simPort]);
+
+      // ── Network Worker: isolated WiFi/IP stack ─────────────────────────────
+      // Create a dedicated network worker so DNS/TCP/UDP I/O is completely
+      // isolated from the RP2040 CPU simulation loop — zero-copy frame transfers.
+      try {
+        const netWorker = new Worker(
+          new URL('../../workers/network.worker.ts', import.meta.url),
+          { type: 'module', name: 'OpenHW-NetWorker' }
+        );
+        const { port1: simNetPort, port2: netWorkerPort } = new MessageChannel();
+        // Give the network worker its command port (receives START_BOARD, FRAME_OUT, etc.)
+        netWorker.postMessage({ type: 'SET_NET_PORT', port: netWorkerPort }, [netWorkerPort]);
+        // Give the sim worker a port to forward Ethernet frames to the network worker
+        // and receive FRAME_IN / WIFI_STATUS / PCAP_DATA back
+        worker.postMessage({ type: 'SET_NET_PORT', port: simNetPort }, [simNetPort]);
+        // Announce any WiFi AP components that are already on the canvas
+        const wifiApComponents = components.filter(c => c.type === 'openhw-wifi-ap' || c.type === 'wokwi-wifi-ap');
+        for (const ap of wifiApComponents) {
+          netWorker.postMessage({
+            type: 'ANNOUNCE_AP',
+            componentId: ap.id,
+            ssid:     ap.attrs?.ssid     ?? 'OpenHW-GUEST',
+            password: ap.attrs?.password ?? '',
+            channel:  Number(ap.attrs?.channel  ?? 6),
+            internet: String(ap.attrs?.internet ?? '1') !== '0',
+          });
+        }
+        console.log('[SimPage] Network Worker started and linked to simulation worker');
+      } catch (netErr) {
+        console.warn('[SimPage] Network Worker failed to start (WiFi will be in-process):', netErr);
+      }
 
       worker.onmessage = async (event) => {
         const msg = event.data;
@@ -7030,6 +7145,58 @@ export function SimulatorPage({ gamificationMode = false }) {
             });
           }
 
+          return;
+        }
+        // ── Network Worker: real WiFi stack status (from dedicated network worker) ──
+        if (msg.type === 'wifi_status') {
+          const resolvedBoardId = String(msg.boardId || '').trim() || 'default';
+          const status   = String(msg.status   || 'idle');
+          const ssid     = String(msg.ssid     || '');
+          const ip       = String(msg.ip       || '');
+          const packets  = Number(msg.packetCount || 0);
+          const connected = status === 'connected' || status === 'got_ip';
+
+          liveOopStatesRef.current[resolvedBoardId] = {
+            ...(liveOopStatesRef.current[resolvedBoardId] || {}),
+            wirelessMode:      'full',
+            wirelessStatus:    status,
+            wirelessConnected: connected,
+            wirelessSsid:      ssid,
+            wirelessIp:        ip,
+            wirelessPackets:   packets,
+          };
+          notifyLiveOopStateListeners(resolvedBoardId);
+
+          // Log status changes to console (deduplicated)
+          const sig = `${status}:${ssid}:${ip}`;
+          const lastSig = rp2040WirelessLastLogRef.current.get(resolvedBoardId);
+          if (lastSig !== sig) {
+            rp2040WirelessLastLogRef.current.set(resolvedBoardId, sig);
+            const emoji = status === 'got_ip' ? '🌐' : status === 'connected' ? '📶' : '📡';
+            appendConsoleEntry(
+              connected ? 'info' : 'warn',
+              `${emoji} Pico W WiFi [${resolvedBoardId}] status=${status} ssid=${ssid || '-'} ip=${ip || '-'} packets=${packets}`,
+              'debug',
+            );
+          }
+          return;
+        }
+        // ── Network Worker: PCAP file download ────────────────────────────────────
+        if (msg.type === 'wifi_pcap') {
+          const boardId = String(msg.boardId || 'board');
+          const data = msg.data instanceof ArrayBuffer ? new Uint8Array(msg.data) : null;
+          if (data) {
+            let binary = '';
+            for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
+            const url = `data:application/vnd.tcpdump.pcap;base64,${btoa(binary)}`;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `picow_${boardId}.pcap`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            appendConsoleEntry('info', `📥 PCAP downloaded: picow_${boardId}.pcap (${data.length} bytes)`, 'simulator');
+          }
           return;
         }
         if (msg.type === 'debug' && msg.category === 'rp2040-wireless-stub') {
@@ -7449,12 +7616,23 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       });
 
+      let cleanComponents = components;
+      let cleanWires = wires;
+      try {
+        cleanComponents = JSON.parse(JSON.stringify(components));
+        cleanWires = JSON.parse(JSON.stringify(wires));
+      } catch (e) {
+        console.warn('Failed to stringify components/wires for worker', e);
+      }
+      
+      console.warn(`[SimulatorPage] Sending hex payload to worker. Base64 Length: ${result.hex ? result.hex.length : 0} characters`);
+
       worker.postMessage({
         type: 'START',
         hex: result.hex,
         neopixels: neopixelWiring,
-        wires: wires,
-        components: components,
+        wires: cleanWires,
+        components: cleanComponents,
         customLogics: customLogics,
         boardHexMap: Object.keys(boardHexMap).length > 0 ? boardHexMap : undefined,
         boardPythonMap: Object.keys(boardPythonMap).length > 0 ? boardPythonMap : undefined,
@@ -7469,6 +7647,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         telemetryMode: telemetryMode,
         watchedParamsMap: telemetryWatchedParamsMap,
         deepSilicon: deepSiliconDebuggingEnabled,
+        esp32SimulationMode: esp32SimulationMode,
       });
 
       runStartGuardRef.current = false;
@@ -8939,6 +9118,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           isRunning={isRunning}
           workerRef={workerRef}
           handleStartGDB={handleStartGDB}
+          esp32SimulationMode={esp32SimulationMode}
+          setEsp32SimulationMode={updateEsp32SimulationMode}
         />
 
         <div className="flex flex-1 overflow-hidden" onClick={() => setProjContextMenu(null)}>
