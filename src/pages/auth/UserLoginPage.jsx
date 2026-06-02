@@ -148,7 +148,7 @@ export default function UserLoginPage() {
             <div className="auth-field">
               <span>
                 Email Address{" "}
-                {lastUsedLogin === "google" && (
+                {lastUsedLogin === "email" && (
                   <span
                     style={{
                       marginLeft: "8px",
@@ -251,7 +251,7 @@ export default function UserLoginPage() {
             </button>
           </div>
 
-          <div className="mt-8 pt-8 border-t border-slate-100">
+          <div className="mt-8 pt-8 border-slate-100">
             <button
               type="button"
               onClick={() => navigate("/classroom/signin")}

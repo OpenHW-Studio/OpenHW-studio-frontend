@@ -108,24 +108,120 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
     }
   });
 
+  const isBreadboardRailPin = (pinId) => /^(top|bottom)_(gnd|vcc|3v3|5v)(?:_\d+)?$/i.test(String(pinId || ''));
+  const getPinRole = (pinId) => {
+    const p = String(pinId || '').trim().toLowerCase();
+    if (/^(gnd|ground|vss)(?:[._-]?\d+)?$/.test(p)) return 'gnd';
+    if (/^(3v3|3\.3v)(?:[._-]?\d+)?$/.test(p)) return '3v3';
+    if (/^(5v|vin|vcc|vdd|v\+)(?:[._-]?\d+)?$/.test(p)) return '5v';
+    if (p.includes('gnd') || p.includes('ground') || p.includes('vss')) return 'gnd';
+    if (p.includes('3v3') || p.includes('3.3v')) return '3v3';
+    if (p.includes('5v') || p.includes('vin') || p.includes('vcc') || p.includes('vdd') || p.includes('v+')) return '5v';
+    return null;
+  };
+  const getEndpointParts = (endpoint) => {
+    const [componentId, ...pinParts] = String(endpoint || '').split(':');
+    return { componentId, pinId: pinParts.join(':') };
+  };
+  const getRailGroup = (pinId) => String(pinId || '').toLowerCase().match(/^(top|bottom)_(gnd|vcc|3v3|5v)(?:_\d+)?$/)?.slice(1, 3).join('_') || '';
+  const inferRailSupplyRole = (breadboardId, railPinId) => {
+    const railGroup = getRailGroup(railPinId);
+    if (!breadboardId || !railGroup) return null;
+
+    const wiresToCheck = [
+      ...currentWires,
+      ...addedWires.map(aw => ({
+        from: (aw.from || '').replace('.', ':'),
+        to: (aw.to || '').replace('.', ':')
+      }))
+    ];
+
+    for (const wire of wiresToCheck) {
+      const from = getEndpointParts(wire.from);
+      const to = getEndpointParts(wire.to);
+      const fromIsSameRail = from.componentId === breadboardId && getRailGroup(from.pinId) === railGroup;
+      const toIsSameRail = to.componentId === breadboardId && getRailGroup(to.pinId) === railGroup;
+      if (!fromIsSameRail && !toIsSameRail) continue;
+
+      const otherPin = fromIsSameRail ? to.pinId : from.pinId;
+      const otherRole = getPinRole(otherPin);
+      if (otherRole === '3v3' || otherRole === '5v') return otherRole;
+    }
+
+    return null;
+  };
+  const resolveBreadboardRailPin = (breadboardId, requestedRole, existingPinId) => {
+    if (!breadboardId || !requestedRole) return existingPinId;
+    const pins = pinDefs[finalComponents.find(c => c.id === breadboardId)?.type] || [];
+    const railIndex = String(existingPinId || '').match(/_(\d+)$/)?.[1] || '';
+    const existingRail = String(existingPinId || '').toLowerCase();
+    const preferredPrefix = requestedRole === 'gnd'
+      ? (existingRail.startsWith('bottom_') ? ['bottom_gnd', 'top_gnd'] : ['top_gnd', 'bottom_gnd'])
+      : requestedRole === '3v3'
+        ? ['top_vcc', 'top_3v3']
+        : ['bottom_vcc', 'bottom_5v'];
+
+    for (const prefix of preferredPrefix) {
+      if (railIndex) {
+        const sameColumn = pins.find(p => String(p.id).toLowerCase() === `${prefix}_${railIndex}`);
+        if (sameColumn) return sameColumn.id;
+      }
+      const exact = pins.find(p => String(p.id).toLowerCase() === prefix);
+      if (exact) return exact.id;
+      const numbered = pins.find(p => String(p.id).toLowerCase().startsWith(`${prefix}_`));
+      if (numbered) return numbered.id;
+    }
+    return existingPinId;
+  };
+  const normalizeBreadboardPowerWire = (wire) => {
+    const from = getEndpointParts(wire.from);
+    const to = getEndpointParts(wire.to);
+    const fromComp = finalComponents.find(c => c.id === from.componentId);
+    const toComp = finalComponents.find(c => c.id === to.componentId);
+    const fromIsBreadboardRail = hardwareUtils.isBreadboardType(fromComp?.type) && isBreadboardRailPin(from.pinId);
+    const toIsBreadboardRail = hardwareUtils.isBreadboardType(toComp?.type) && isBreadboardRailPin(to.pinId);
+
+    if (!fromIsBreadboardRail && !toIsBreadboardRail) return wire;
+
+    const rawRole = fromIsBreadboardRail ? getPinRole(to.pinId) : getPinRole(from.pinId);
+    const railRole = fromIsBreadboardRail
+      ? inferRailSupplyRole(from.componentId, from.pinId)
+      : inferRailSupplyRole(to.componentId, to.pinId);
+    const role = rawRole === '5v' && railRole ? railRole : rawRole;
+    if (!role) return wire;
+
+    if (fromIsBreadboardRail) {
+      const pinId = resolveBreadboardRailPin(from.componentId, role, from.pinId);
+      return { ...wire, from: `${from.componentId}:${pinId}`, color: role === 'gnd' ? '#111827' : '#dc2626' };
+    }
+
+    const pinId = resolveBreadboardRailPin(to.componentId, role, to.pinId);
+    return { ...wire, to: `${to.componentId}:${pinId}`, color: role === 'gnd' ? '#111827' : '#dc2626' };
+  };
+
   // 4. Add new wires
   addedWires.forEach(aw => {
-    const from = (aw.from || '').replace('.', ':');
-    const to = (aw.to || '').replace('.', ':');
+    const normalizedAw = normalizeBreadboardPowerWire({
+      ...aw,
+      from: (aw.from || '').replace('.', ':'),
+      to: (aw.to || '').replace('.', ':')
+    });
+    const from = normalizedAw.from;
+    const to = normalizedAw.to;
 
     // Primary Deduplication: by ID
     const existingById = aw.id ? nextWires.find(w => w.id === aw.id) : null;
     if (existingById) {
       existingById.from = from;
       existingById.to = to;
-      existingById.color = (aw.color === '#38bdf8' || !aw.color) ? 'green' : aw.color;
-      existingById.waypoints = aw.waypoints || [];
-      existingById.path = aw.path || null;
-      existingById.isBelow = aw.isBelow || false;
-      existingById.isSocket = aw.isSocket || false;
-      existingById.offset = aw.lane || 0;
+      existingById.color = (normalizedAw.color === '#38bdf8' || !normalizedAw.color) ? 'green' : normalizedAw.color;
+      existingById.waypoints = normalizedAw.waypoints || [];
+      existingById.path = normalizedAw.path || null;
+      existingById.isBelow = normalizedAw.isBelow || false;
+      existingById.isSocket = normalizedAw.isSocket || false;
+      existingById.offset = normalizedAw.lane || 0;
 
-      const oid = aw.ownerId || defaultOwnerId;
+      const oid = normalizedAw.ownerId || defaultOwnerId;
       if (oid) {
         const ids = new Set(existingById.ownerIds || (existingById.ownerId ? [existingById.ownerId] : []));
         ids.add(oid);
@@ -139,7 +235,7 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
 
     if (existingByPins) {
       // Shared Ownership: Append new owner to existing wire
-      const oid = aw.ownerId || defaultOwnerId;
+      const oid = normalizedAw.ownerId || defaultOwnerId;
       if (oid) {
         const ids = new Set(existingByPins.ownerIds || (existingByPins.ownerId ? [existingByPins.ownerId] : []));
         ids.add(oid);
@@ -150,13 +246,13 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
         id: aw.id || 'wire_' + Math.random().toString(36).substr(2, 9),
         from,
         to,
-        color: (aw.color === '#38bdf8' || !aw.color) ? 'green' : aw.color,
-        waypoints: aw.waypoints || [],
-        path: aw.path || null,
-        isBelow: aw.isBelow || false,
-        isSocket: aw.isSocket || false,
-        offset: aw.lane || 0,
-        ownerIds: (aw.ownerId || defaultOwnerId) ? [aw.ownerId || defaultOwnerId] : (aw.ownerIds || [])
+        color: (normalizedAw.color === '#38bdf8' || !normalizedAw.color) ? 'green' : normalizedAw.color,
+        waypoints: normalizedAw.waypoints || [],
+        path: normalizedAw.path || null,
+        isBelow: normalizedAw.isBelow || false,
+        isSocket: normalizedAw.isSocket || false,
+        offset: normalizedAw.lane || 0,
+        ownerIds: (normalizedAw.ownerId || defaultOwnerId) ? [normalizedAw.ownerId || defaultOwnerId] : (normalizedAw.ownerIds || [])
       });
     }
   });
@@ -272,15 +368,43 @@ export function robustSnapComponent(comp, components, pinDefs) {
   return { snappedWires, hasPerfectSnap, snapMatches };
 }
 
+const POWER_PIN_PATTERN = /^(?:3v3|3\.3v|5v|vcc|vdd|vin|gnd|ground|vss|v\+|vbat)(?:[._-]?\d+)?$/i;
+const PIN_API_PATTERN = /\b(?:pinMode|digitalWrite|digitalRead|analogWrite|analogRead|tone|noTone)\s*\(\s*([^,\)]+)/g;
+
+function normalizeArduinoPinToken(token) {
+  return String(token || '')
+    .trim()
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/g, '')
+    .replace(/^['"]|['"]$/g, '')
+    .trim();
+}
+
+function containsPowerPinApiCall(source) {
+  if (!source) return false;
+  PIN_API_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = PIN_API_PATTERN.exec(source)) !== null) {
+    if (POWER_PIN_PATTERN.test(normalizeArduinoPinToken(match[1]))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sanitizeAutocodeSnippet(source) {
+  return containsPowerPinApiCall(source) ? '' : source;
+}
+
 export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
   if (!snippet) return currentCode;
 
   // First, remove any existing block for this component to ensure a clean update
   let code = removeCodeSnippet(currentCode, compId);
 
-  let globalsSnippet = snippet.globals || '';
-  let setupSnippet = snippet.setup || '';
-  let loopSnippet = snippet.loop || '';
+  let globalsSnippet = sanitizeAutocodeSnippet(snippet.globals || '');
+  let setupSnippet = sanitizeAutocodeSnippet(snippet.setup || '');
+  let loopSnippet = sanitizeAutocodeSnippet(snippet.loop || '');
 
   // ── Multi-Bus Renaming Layer ──
   const isI2cBus1 = reasoning.some(r => r.includes('I2C') && r.includes('Bus 1'));
@@ -297,7 +421,13 @@ export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
     loopSnippet = loopSnippet.replace(/\bSerial\./g, 'Serial1.');
   }
 
-  if (!code || !code.trim()) {
+  const isEmptyCode = (str) => {
+    if (!str) return true;
+    const t = str.trim();
+    return t === '' || t === '{}';
+  };
+
+  if (isEmptyCode(code)) {
     let base = '';
     if (globalsSnippet) base += `// autocoding for ${compId} start\n${globalsSnippet}\n// autocoding for ${compId} end\n\n`;
     base += `void setup() {\n`;

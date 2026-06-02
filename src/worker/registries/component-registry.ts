@@ -45,14 +45,16 @@ import { DiodeLogic } from '@openhw/emulator/src/components/openhw-diode/logic';
 import { NPNTransistorLogic } from '@openhw/emulator/src/components/openhw-npn-transistor/logic';
 import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/logic';
 import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
+import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
-import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic';
+
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
+import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -88,6 +90,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-raspberry-pi-pico-w': PicoLogic,
     'wokwi-resistor': ResistorLogic,
     'openhw-resistor': ResistorLogic,
+    'wokwi-slide-switch': SlideSwitchLogic,
+    'openhw-slide-switch': SlideSwitchLogic,
     'wokwi-pushbutton': PushbuttonLogic,
     'openhw-pushbutton': PushbuttonLogic,
     'wokwi-power-supply': PowerSupplyLogic,
@@ -126,7 +130,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-ldr-module': BaseComponent,
     'openhw-ldr-module': BaseComponent,
     'wokwi-7segment': BaseComponent,
-    'openhw-7segment': BaseComponent,
+    'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
     'openhw-ili9341': ILI9341Logic,
     'wokwi-sd-card': SDCardLogic,
@@ -168,8 +172,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-npn-transistor': NPNTransistorLogic,
     'wokwi-a4988': A4988Logic,
     'openhw-a4988': A4988Logic,
-    'wokwi-cd74hc4067': CD74HC4067Logic,
-    'openhw-cd74hc4067': CD74HC4067Logic,
+    'wokwi-cd74hc4067': BaseComponent,
+    'openhw-cd74hc4067': BaseComponent,
     'wokwi-logic-analyzer': SimulationMonitorLogic,
     'openhw-logic-analyzer': SimulationMonitorLogic,
 
@@ -181,10 +185,15 @@ export const LOGIC_REGISTRY: Record<string, any> = {
 
     // Sensors — custom components
     'DHT-22': DHT22Logic,
+    'openhw-dht22': DHT22Logic,
     'MQ-2 Gas Sensor': GasSensorLogic,
+    'openhw-mq2-gas-sensor': GasSensorLogic,
     'wokwi-pir-motion-sensor': PIRLogic,
+    'openhw-pir-motion-sensor': PIRLogic,
     'wokwi-raindrop-module': RaindropModuleLogic,
+    'openhw-raindrop-module': RaindropModuleLogic,
     'wokwi-raindrop-pad': RaindropPadLogic,
+    'openhw-raindrop-pad': RaindropPadLogic,
 
     'wokwi-breadboard': BaseComponent,
     'openhw-breadboard': BaseComponent,
@@ -204,8 +213,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-nlsf595': BaseComponent,
     'wokwi-relay-module': BaseComponent,
     'openhw-relay-module': BaseComponent,
-    'wokwi-stepper-motor': BaseComponent,
-    'openhw-stepper-motor': BaseComponent,
+    'wokwi-stepper-motor': StepperMotorLogic,
+    'openhw-stepper-motor': StepperMotorLogic,
     'wokwi-arduino-mega': MegaLogic,
     'openhw-arduino-mega': MegaLogic,
     'wokwi-attiny85': BaseComponent,
@@ -244,6 +253,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
+    'wokwi-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
+    'openhw-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
     'wokwi-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
     'openhw-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
     'wokwi-buzzer': [{ id: '1' }, { id: '2' }],

@@ -5,8 +5,7 @@ export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan
   const [showSystemLog, setShowSystemLog] = useState(false);
   
   React.useEffect(() => {
-    console.log('[AutofixPreviewPanel] Mounted with status:', autofixStatus);
-    return () => console.log('[AutofixPreviewPanel] Unmounted');
+    return () => {};
   }, []);
 
 
@@ -111,11 +110,10 @@ export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan
             <button 
               onClick={(e) => {
                 e.stopPropagation();
-                console.log('[AutofixPreviewPanel] Apply Plan clicked');
                 if (typeof onApplyPlan === 'function') {
                   onApplyPlan(autofixPlan);
                 } else {
-                  console.warn('[AutofixPreviewPanel] onApplyPlan is not a function');
+                  if (import.meta.env.DEV) console.warn('[AutofixPreviewPanel] onApplyPlan is not a function');
                 }
               }}
               style={{
@@ -135,7 +133,6 @@ export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan
                 <button 
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('[AutofixPreviewPanel] Toggle Reasoning clicked. Current:', showReasoning);
                     setShowReasoning(!showReasoning);
                   }}
                   style={{
@@ -195,7 +192,6 @@ export default function AutofixPreviewPanel({ validationErrors = [], autofixPlan
           <button 
             onClick={(e) => {
               e.stopPropagation();
-              console.log('[AutofixPreviewPanel] Toggle System Log clicked. Current:', showSystemLog);
               setShowSystemLog(!showSystemLog);
             }}
             style={{

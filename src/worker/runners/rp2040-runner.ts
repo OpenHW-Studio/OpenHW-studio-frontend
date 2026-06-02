@@ -20,7 +20,7 @@ import {
     COMPONENT_PINS,
     isSoftSerialSourceLabel,
 } from '../registries/component-registry.ts';
-import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions } from '../registries/component-registry.ts';
+import type { BoardRunner, AVRRunnerOptions as RP2040FirmwareLoadOptions, ConnectedComponentPin } from '../registries/component-registry.ts';
 
 const RP2040_FLASH_BASE = 0x10000000;
 const RP2040_XIP_NOCACHE_BASE = 0x11000000;
@@ -600,25 +600,25 @@ function loadRP2040Firmware(rp2040: RP2040, firmware: string, options: RP2040Fir
 class RP2040MockClock {
     private _micros = 0;
     private timers: Array<{ micros: number; callback: () => void }> = [];
-    
+
     get micros() { return this._micros; }
     get nanos() { return this._micros * 1000; }
-    
+
     pause() { /* Idle */ }
     resume() { /* Idle */ }
-    
+
     createTimer(deltaMicros: number, callback: () => void) {
         const timer = { micros: this._micros + deltaMicros, callback };
         this.timers.push(timer);
         this.timers.sort((a, b) => a.micros - b.micros);
         return timer;
     }
-    
+
     deleteTimer(timer: any) {
         const index = this.timers.indexOf(timer);
         if (index >= 0) this.timers.splice(index, 1);
     }
-    
+
     tick(nanos: number) {
         this.advance(nanos / 1000);
     }
@@ -733,6 +733,43 @@ export class RP2040Runner implements BoardRunner {
     private lastSerialEmitAt: number = 0;
     private lastUsbSerialAt: number = 0;
 
+    // ── Adaptive time-scaling (Wokwi-style) ─────────────────────────────────
+    /** Rolling EMA of how long one runLoop() turn takes (ms). Starts at 2ms. */
+    private avgLoopMs: number = 2.0;
+    /** Current effective speed ratio applied to cyclesPerMs (1.0 = 100%). */
+    private effectiveSpeed: number = 1.0;
+    /** Hard wall-clock budget (ms) for the inner instruction loop per turn. */
+    private static readonly LOOP_BUDGET_MS = 8;
+    /** Speed ratio floor — virtual time never halts entirely. */
+    private static readonly MIN_SPEED_RATIO = 0.05;
+    /**
+     * Maximum cycles executed per runLoop() turn, regardless of deltaTime.
+     * 2,000,000 cycles = 16 ms of virtual time at 125 MHz — one full browser frame.
+     *
+     * Choosing this correctly is critical:
+     *   • Too small (e.g. 500 k = 4 ms): Pi Pico runs at 25% real-time speed
+     *     because every 16ms real frame only advances 4ms virtual.
+     *   • Too large (e.g. 12.5 M = 100 ms): "Spiral of Death" — one slow frame
+     *     causes the next to try 100ms of virtual work synchronously.
+     *   • 2 M (= 16 ms): matches the AVR's proportional cap (1.6 M = 100 ms @ 16 MHz),
+     *     scaled to 125 MHz.  The wall-clock time guard below prevents runaway.
+     */
+    private static readonly MAX_CYCLES_PER_TURN = 2_000_000;
+    /**
+     * Hard wall-clock ceiling (ms) for the inner instruction loop.
+     * If a single runLoop turn burns more than this, we break early and
+     * let the adaptive speed controller scale effectiveSpeed down.
+     * 8ms = half a 16ms browser frame, leaving room for GC and rendering.
+     */
+    private static readonly INNER_LOOP_WALL_MS = 8;
+    // ── Batched netlist propagation ──────────────────────────────────────────
+    /**
+     * Set to true by onPinChange() whenever a GPIO pin fires during the
+     * instruction loop.  The actual BFS (repropagateAllVoltages) runs once
+     * at end-of-frame instead of inline on every pin edge.
+     */
+    private propagationPending: boolean = false;
+
     getSimulatedTimeMs() {
         if (!this.cpu) return 0;
         return Math.floor(((Number(this.cpu.core.cycles) - this.cpuCyclesAtStart) / 125_000_000) * 1000);
@@ -741,7 +778,7 @@ export class RP2040Runner implements BoardRunner {
     writeDirectMemory(address: number, data: Uint8Array) {
         if (!this.cpu) return;
         const targetAddress = address >>> 0;
-        
+
         // Handle SRAM writes (0x20000000 -> 0x20040000)
         if (targetAddress >= 0x20000000 && targetAddress < (0x20000000 + this.cpu.sram.length)) {
             const offset = targetAddress - 0x20000000;
@@ -771,14 +808,14 @@ export class RP2040Runner implements BoardRunner {
     readDirectMemory(address: number, length: number): Uint8Array | null {
         if (!this.cpu) return null;
         const targetAddress = address >>> 0;
-        
+
         // Handle SRAM reads (0x20000000 -> 0x20040000)
         if (targetAddress >= 0x20000000 && targetAddress < (0x20000000 + this.cpu.sram.length)) {
             const offset = targetAddress - 0x20000000;
             const maxLen = Math.min(length, this.cpu.sram.length - offset);
             return new Uint8Array(this.cpu.sram.buffer, this.cpu.sram.byteOffset + offset, maxLen);
         }
-        
+
         // Slow fallback for other memory mapped regions
         const result = new Uint8Array(length);
         for (let i = 0; i < length; i++) {
@@ -912,7 +949,7 @@ export class RP2040Runner implements BoardRunner {
         // -- Patch PIO to use synchronous stepping instead of redundant setTimeout --
         // This is a critical 'OpenHW' optimization that prevents event-loop congestion.
         for (const pio of (this.cpu as any).pio) {
-            pio.run = function(this: any) {
+            pio.run = function (this: any) {
                 if (this.runTimer) {
                     clearTimeout(this.runTimer);
                     this.runTimer = null;
@@ -977,7 +1014,7 @@ export class RP2040Runner implements BoardRunner {
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 (inst as any)._runner = this;
-                
+
                 // Hack: Pass the component attributes so logic can read them
                 if (cDef.attrs) {
                     inst.state = { ...inst.state, ...cDef.attrs };
@@ -1007,6 +1044,20 @@ export class RP2040Runner implements BoardRunner {
             const pin = `GP${gp}`;
             this.pinStates[pin] = false;
             this.propagateBoardPin(pin, false);
+        }
+
+        // Propagate fixed board power rails and ground references at startup
+        this.pinStates['3V3'] = true;
+        this.propagateBoardPin('3V3', true);
+        this.pinStates['VBUS'] = true;
+        this.propagateBoardPin('VBUS', true);
+        this.pinStates['VSYS'] = true;
+        this.propagateBoardPin('VSYS', true);
+
+        const gndPins = ['GND', 'GND_1', 'GND_2', 'GND_3', 'GND_4', 'GND_5', 'GND_6', 'AGND'];
+        for (const gnd of gndPins) {
+            this.pinStates[gnd] = false;
+            this.propagateBoardPin(gnd, false);
         }
         this.setSoftSerialRxLevel(true);
 
@@ -2193,7 +2244,13 @@ export class RP2040Runner implements BoardRunner {
 
     private getRp2040ClockHz(): number {
         const hz = Number(this.cpu?.clkSys || 125_000_000);
-        return Number.isFinite(hz) && hz > 0 ? hz : 125_000_000;
+        const valid = Number.isFinite(hz) && hz > 0 ? hz : 125_000_000;
+        // Clamp to a sane range:
+        //   Lower bound = 16 MHz: prevents the normalization factor (16M/clockHz) from
+        //   exceeding 1.0 during the ring-oscillator boot phase (~6-12 MHz), which would
+        //   make components see inflated cycle counts and jump instantly to their target.
+        //   Upper bound = 250 MHz: reasonable RP2040 overclock ceiling.
+        return Math.max(16_000_000, Math.min(250_000_000, valid));
     }
 
     private getProtocolEndpointsForGpPin(gpPin: string): ConnectedComponentPin[] {
@@ -2201,21 +2258,111 @@ export class RP2040Runner implements BoardRunner {
         const cached = this.protocolEndpointsCache.get(key);
         if (cached) return cached;
 
-        const endpoints = collectConnectedComponentPins(
-            this.boardId,
-            this.boardPinAliases(key),
-            this.currentWires,
-            this.instances
-        );
+        const endpoints = this.collectConnectedPinsForRp2040(key);
         this.protocolEndpointsCache.set(key, endpoints);
         return endpoints;
+    }
+
+    private collectConnectedPinsForRp2040(gpPin: string): ConnectedComponentPin[] {
+        const adjacency = new Map<string, Set<string>>();
+
+        const connect = (a: string, b: string) => {
+            if (!adjacency.has(a)) adjacency.set(a, new Set());
+            if (!adjacency.has(b)) adjacency.set(b, new Set());
+            adjacency.get(a)!.add(b);
+            adjacency.get(b)!.add(a);
+        };
+
+        // Connect wires
+        for (const wire of this.currentWires || []) {
+            if (!wire?.from || !wire?.to) continue;
+            connect(String(wire.from), String(wire.to));
+        }
+
+        // Connect internal passive component bridges
+        for (const [id, inst] of this.instances.entries()) {
+            if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
+                connect(`${id}:p1`, `${id}:p2`);
+            } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
+                connect(`${id}:1l`, `${id}:1r`);
+                connect(`${id}:1`, `${id}:1l`);
+                connect(`${id}:1`, `${id}:1r`);
+                connect(`${id}:2l`, `${id}:2r`);
+                connect(`${id}:2`, `${id}:2l`);
+                connect(`${id}:2`, `${id}:2r`);
+                if (inst.state?.pressed) {
+                    connect(`${id}:1l`, `${id}:2l`);
+                    connect(`${id}:1r`, `${id}:2r`);
+                    connect(`${id}:1`, `${id}:2`);
+                }
+            } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+                if (inst.state?.connectedPair) {
+                    connect(`${id}:${inst.state.connectedPair[0]}`, `${id}:${inst.state.connectedPair[1]}`);
+                }
+            } else if (
+                inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' ||
+                inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' ||
+                inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' ||
+                inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' ||
+                inst.type === 'openhw-wire' || inst.type === 'wokwi-wire'
+            ) {
+                const bridges = getInternalBridgesForComponent(id, inst.type);
+                for (const bridge of bridges) {
+                    connect(bridge[0], bridge[1]);
+                }
+            }
+        }
+
+        const visited = new Set<string>();
+        const queue: string[] = [];
+
+        // Seed BFS queue with all aliases of the board pin
+        const aliases = this.boardPinAliases(gpPin);
+        for (const alias of aliases) {
+            const node = `${this.boardId}:${alias}`;
+            visited.add(node);
+            if (adjacency.has(node)) {
+                queue.push(node);
+            }
+        }
+
+        while (queue.length > 0) {
+            const node = queue.shift()!;
+            for (const n of adjacency.get(node) || []) {
+                if (visited.has(n)) continue;
+                visited.add(n);
+                queue.push(n);
+            }
+        }
+
+        const out = new Map<string, ConnectedComponentPin>();
+        for (const node of visited) {
+            const [compId, pinId] = String(node).split(':');
+            if (!compId || compId === this.boardId) continue;
+            const inst = this.instances.get(compId);
+            if (!inst) continue;
+            // Ignore passive components like resistors/breadboards as endpoints
+            if (
+                inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor' ||
+                inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' ||
+                inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' ||
+                inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' ||
+                inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' ||
+                inst.type === 'openhw-wire' || inst.type === 'wokwi-wire'
+            ) {
+                continue;
+            }
+            out.set(`${compId}:${pinId}`, { inst, pinId });
+        }
+
+        return Array.from(out.values());
     }
 
     /** Finds the first existing pin on `inst` from a list of candidate names
      *  (case-insensitive, lower then UPPER checked). */
     private findI2SPinName(inst: BaseComponent, candidates: string[]): string | null {
         for (const name of candidates) {
-            if (inst.pins[name])               return name;
+            if (inst.pins[name]) return name;
             if (inst.pins[name.toUpperCase()]) return name.toUpperCase();
         }
         return null;
@@ -2226,7 +2373,7 @@ export class RP2040Runner implements BoardRunner {
 
         // Try to identify if the transitioning pin is BCLK or WS
         const isBclk = ['bclk', 'bck', 'sck'].includes(compPin.toLowerCase());
-        const isWs   = ['ws', 'lrck', 'lrc', 'lrclk'].includes(compPin.toLowerCase());
+        const isWs = ['ws', 'lrck', 'lrc', 'lrclk'].includes(compPin.toLowerCase());
         if (!isBclk && !isWs) return;
 
         if (!this.i2sState.has(compId)) {
@@ -2240,10 +2387,10 @@ export class RP2040Runner implements BoardRunner {
                 const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
                 if (state.bitCount >= bpf) {
                     const channel = state.wsLast ? 1 : 0;
-                    const sample  = (state.shiftBuf << (32 - bpf)) | 0; // sign-extend
+                    const sample = (state.shiftBuf << (32 - bpf)) | 0; // sign-extend
                     (inst as any).onI2SFrame(channel, sample, bpf);
                 }
-                state.wsLast   = isHigh;
+                state.wsLast = isHigh;
                 state.shiftBuf = 0;
                 state.bitCount = 0;
             }
@@ -2257,7 +2404,7 @@ export class RP2040Runner implements BoardRunner {
         if (rising) {
             // Sample SDATA (accept several common pin names)
             const sdPin = this.findI2SPinName(inst, ['sdata', 'sdin', 'din', 'sd', 'dout', 'data']);
-            const bit   = sdPin !== null ? (inst.getPinVoltage(sdPin) > 0.5 ? 1 : 0) : 0;
+            const bit = sdPin !== null ? (inst.getPinVoltage(sdPin) > 0.5 ? 1 : 0) : 0;
 
             const bpf = (inst.state?.i2sBitsPerFrame as number | undefined) ?? 16;
             state.shiftBuf = ((state.shiftBuf << 1) | bit) >>> 0;
@@ -2265,7 +2412,7 @@ export class RP2040Runner implements BoardRunner {
 
             if (state.bitCount >= bpf) {
                 const channel = state.wsLast ? 1 : 0;
-                const sample  = (state.shiftBuf << (32 - bpf)) | 0;
+                const sample = (state.shiftBuf << (32 - bpf)) | 0;
                 (inst as any).onI2SFrame(channel, sample, bpf);
                 state.shiftBuf = 0;
                 state.bitCount = 0;
@@ -2627,11 +2774,17 @@ export class RP2040Runner implements BoardRunner {
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string) => void) {
-        if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
             const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
             if (!otherPin) return;
             inst.setPinVoltage(otherPin, voltage);
             visit(`${compId}:${otherPin}`);
+        } else if (inst.type === 'openhw-led' || inst.type === 'wokwi-led') {
+            if (pinId === 'A') {
+                const nextV = Math.max(0, voltage - 1.8);
+                inst.setPinVoltage('K', nextV);
+                visit(`${compId}:K`);
+            }
         } else if (inst.type === 'openhw-pushbutton' || inst.type === 'wokwi-pushbutton') {
             // Internal short-circuit connections
             if (pinId === '1l' || pinId === '1') {
@@ -2678,13 +2831,372 @@ export class RP2040Runner implements BoardRunner {
                     visit(`${compId}:1`);
                 }
             }
+        } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+            if (inst.state?.connectedPair) {
+                const [p1, p2] = inst.state.connectedPair;
+                if (pinId === p1) {
+                    inst.setPinVoltage(p2, voltage);
+                    visit(`${compId}:${p2}`);
+                } else if (pinId === p2) {
+                    inst.setPinVoltage(p1, voltage);
+                    visit(`${compId}:${p1}`);
+                }
+            }
+        } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire') {
+            const bridges = getInternalBridgesForComponent(compId, inst.type);
+            for (const bridge of bridges) {
+                if (bridge[0] === `${compId}:${pinId}`) visit(bridge[1]);
+                else if (bridge[1] === `${compId}:${pinId}`) visit(bridge[0]);
+            }
+        } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
+            const isRight = inst.state?.value === "1" || inst.state?.value === 1 || inst.state?.value === true;
+            if (isRight) {
+                if (pinId === '3') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('3', voltage);
+                    visit(`${compId}:3`);
+                }
+            } else {
+                if (pinId === '1') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`);
+                }
+            }
         }
     }
 
-    private updatePhysicsInternal() {}
+    private updatePhysicsInternal() { }
+
+    /**
+     * Builds a map of every netlist node that is hard-wired to a fixed supply voltage
+     * (GND, 3V3, VBUS/VSYS, external power supplies, batteries).
+     *
+     * This map is consumed by repropagateAllVoltages() to prevent weaker signal sources
+     * (e.g., a CPU GPIO output) from overriding a hard-wired rail during BFS propagation.
+     *
+     * Mirrors avr-runner.ts :: getLowImpedanceRails().
+     */
+    private buildLowImpedanceRailMap(): Map<string, number> {
+        const rails = new Map<string, number>();
+        const visited = new Set<string>();
+
+        /**
+         * Normalize power-rail pin aliases so that GND_1/GND_2/AGND all collapse
+         * to a single canonical key, preventing duplicate BFS entries.
+         */
+        const normNode = (raw: string): string => {
+            const colon = raw.indexOf(':');
+            if (colon < 0) return raw;
+            const compId = raw.slice(0, colon);
+            const pinId = raw.slice(colon + 1);
+            const up = pinId.toUpperCase();
+            if (up === 'GND' || /^GND[._]?\d+$/.test(up) || up === 'AGND' || up === 'VSS') {
+                return `${compId}:GND`;
+            }
+            if (up === '5V' || up === 'VCC' || up === 'VBUS' || up === 'VSYS' || up === 'VIN') {
+                return `${compId}:5V`;
+            }
+            if (up === '3V3' || up === '3V3_EN') {
+                return `${compId}:3V3`;
+            }
+            return raw;
+        };
+
+        const visit = (rawNode: string, v: number): void => {
+            const node = normNode(rawNode);
+            if (visited.has(node)) return;
+            visited.add(node);
+            rails.set(node, v);
+
+            // Walk all wires touching this node
+            for (const wire of this.currentWires) {
+                const nf = normNode(wire.from);
+                const nt = normNode(wire.to);
+                if (nf === node) visit(wire.to, v);
+                else if (nt === node) visit(wire.from, v);
+            }
+
+            // Walk breadboard / via internal bridges
+            const [compId, compPin] = node.split(':');
+            const inst = this.instances.get(compId);
+            if (inst) {
+                const bridges = getInternalBridgesForComponent(compId, inst.type);
+                for (const [a, b] of bridges) {
+                    if (a === `${compId}:${compPin}`) visit(b, v);
+                    else if (b === `${compId}:${compPin}`) visit(a, v);
+                }
+            }
+        };
+
+        // ── Board hard rails ──────────────────────────────────────────────────────
+        const bId = this.boardId;
+        ['GND', 'GND_1', 'GND_2', 'GND_3', 'GND_4', 'GND_5', 'GND_6', 'AGND'].forEach(p =>
+            visit(`${bId}:${p}`, 0.0)
+        );
+        visit(`${bId}:3V3`, 3.3);
+        visit(`${bId}:VBUS`, 5.0);
+        visit(`${bId}:VSYS`, 5.0);
+
+        // ── Non-board power supplies and batteries ────────────────────────────────
+        this.instances.forEach((inst, compId) => {
+            if (compId === bId) return;
+            if (inst.type.includes('power-supply') || inst.type.includes('battery')) {
+                Object.keys(inst.pins).forEach(pin => {
+                    const v = inst.pins[pin]?.voltage ?? 0.0;
+                    visit(`${compId}:${pin}`, v);
+                });
+            }
+        });
+
+        return rails;
+    }
+
+    /**
+     * Full netlist voltage repropagation sweep for the RP2040 runner.
+     *
+     * Performs an ordered BFS pass across the entire wire graph so that
+     * component-to-component voltage changes are always delivered, not just
+     * board-GPIO → component changes.
+     *
+     * Execution order (later steps dominate earlier ones):
+     *   1. Board GP pins (current CPU output state)
+     *   2. Active driver outputs (A4988, L298N, motor-driver, logic-gates, etc.)
+     *   3. External power supplies / batteries (all pins)
+     *   4. Board hard rails (GND=0V, 3V3=3.3V, VBUS/VSYS=5V) — always win
+     *   5. Non-board supply rails re-seeded — override any passive back-propagation
+     *
+     * Mirrors avr-runner.ts :: repropagateAllVoltages().
+     */
+    private repropagateAllVoltages(): void {
+        if (!this.cpu) return;
+
+        // Pre-compute low-impedance rail map so the inner visitor can protect
+        // hard-wired supply nodes from being overwritten by weaker sources.
+        const lowImpRails = this.buildLowImpedanceRailMap();
+
+        const visitedEdges = new Set<string>();
+        const visitedNodes = new Set<string>();
+
+        /**
+         * Normalize power-rail aliases (same rules as buildLowImpedanceRailMap).
+         */
+        const normNode = (raw: string): string => {
+            const colon = raw.indexOf(':');
+            if (colon < 0) return raw;
+            const compId = raw.slice(0, colon);
+            const pinId = raw.slice(colon + 1);
+            const up = pinId.toUpperCase();
+            if (up === 'GND' || /^GND[._]?\d+$/.test(up) || up === 'AGND' || up === 'VSS') {
+                return `${compId}:GND`;
+            }
+            if (up === '5V' || up === 'VCC' || up === 'VBUS' || up === 'VSYS' || up === 'VIN') {
+                return `${compId}:5V`;
+            }
+            if (up === '3V3' || up === '3V3_EN') {
+                return `${compId}:3V3`;
+            }
+            return raw;
+        };
+
+        /**
+         * BFS visitor — propagates `v` to `rawNode` and all nodes reachable
+         * through wires and passive elements from it.
+         *
+         * Guards:
+         *  • Never revisits an already-visited node (cycle prevention).
+         *  • Never overwrites a hard-wired rail with a weaker source voltage
+         *    (low-impedance protection).
+         *  • Never overwrites a board hard-rail pin that isn't the current
+         *    propagation source (prevents GPIO from pulling down VCC, etc.).
+         */
+        const visitNode = (rawNode: string, v: number): void => {
+            const node = normNode(rawNode);
+            if (visitedNodes.has(node)) return;
+
+            const [compId, compPin] = node.split(':');
+
+            // Protect board hard-rail pins (GND, 3V3, VBUS, VSYS) from being
+            // overridden by passive propagation from a CPU GPIO pin.
+            if (compId === this.boardId) {
+                const up = compPin.toUpperCase();
+                if (
+                    up === 'GND' || /^GND[._]?\d+$/.test(up) || up === 'AGND' ||
+                    up === '3V3' || up === 'VBUS' || up === 'VSYS'
+                ) {
+                    // Allow the node to be set only when the propagation source
+                    // *is* this exact rail (i.e., we are in the board-rail pass).
+                    return;
+                }
+            }
+
+            // Protect any node that is hard-wired to a known supply rail
+            // from being overwritten by a weaker signal source.
+            if (lowImpRails.has(node)) {
+                const railV = lowImpRails.get(node)!;
+                const inst = this.instances.get(compId);
+                if (inst) {
+                    if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                    inst.setPinVoltage(compPin, railV);
+                }
+                // Do not recurse further — the rail map already covers all
+                // nodes reachable from this supply.
+                return;
+            }
+
+            visitedNodes.add(node);
+
+            // Walk all wires connected to this node
+            for (const wire of this.currentWires) {
+                const nf = normNode(wire.from);
+                const nt = normNode(wire.to);
+                const ek = `${nf}|${nt}`;
+                if (visitedEdges.has(ek)) continue;
+                if (nf === node || nt === node) {
+                    visitedEdges.add(ek);
+                    visitNode(nf === node ? wire.to : wire.from, v);
+                }
+            }
+
+            // Apply voltage to this component pin
+            const inst = this.instances.get(compId);
+            if (inst) {
+                if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                inst.setPinVoltage(compPin, v);
+                this.circuitDirty = true;
+                if (this.cpu) {
+                    inst.onPinStateChange(compPin, v > 1.8, this.cpu.cycles);
+                }
+                this.tickI2S(inst, compId, compPin, v > 1.8);
+
+                // Propagate through resistors, push-buttons, breadboard buses, etc.
+                this.traversePassive(inst, compId, compPin, v, (forwardNode) => {
+                    visitNode(forwardNode, v);
+                });
+            }
+        };
+
+        /**
+         * Helper: start a BFS wave from a specific component:pin node.
+         * Clears visited sets first so each source gets a fresh traversal scope
+         * (the visited guards above still prevent double-visiting *within* a wave).
+         */
+        const seedFrom = (startNode: string, v: number): void => {
+            visitedEdges.clear();
+            visitedNodes.clear();
+            visitNode(startNode, v);
+        };
+
+        // ── Pass 1: Board GP pins at their current CPU output state ───────────────
+        for (let gp = 0; gp <= 28; gp++) {
+            const pinName = `GP${gp}`;
+            const isHigh = this.pinStates[pinName] ?? false;
+            const voltage = isHigh ? 3.3 : 0.0;
+            seedFrom(`${this.boardId}:${pinName}`, voltage);
+        }
+
+        // ── Pass 2: Active driver outputs ─────────────────────────────────────────
+        // Each non-board component that drives output pins is re-seeded so that
+        // component-to-component voltages (e.g., A4988 → stepper motor) are always
+        // delivered, even when no board GPIO changed in this frame.
+        this.instances.forEach((inst, compId) => {
+            if (compId === this.boardId) return;
+
+            if (inst.type.includes('a4988') || inst.type.includes('drv8825')) {
+                // Bipolar stepper driver coil outputs
+                ['1A', '1B', '2A', '2B'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (
+                inst.type.includes('motor-driver') ||
+                inst.type.includes('l298n') ||
+                inst.type.includes('l293d')
+            ) {
+                // DC / stepper H-bridge outputs
+                ['OUT1', 'OUT2', 'OUT3', 'OUT4'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (
+                inst.type.includes('logic-gate') ||
+                inst.type.includes('timer') ||
+                inst.type.includes('opamp') ||
+                inst.type.includes('comparator')
+            ) {
+                // Generic IC output pins
+                Object.keys(inst.pins).forEach(pin => {
+                    const up = pin.toUpperCase();
+                    if (
+                        up.startsWith('OUT') || up === 'Q' ||
+                        up === 'Q#' || up === 'VOUT'
+                    ) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (inst.type.includes('relay')) {
+                // Relay normally-open / normally-closed contacts
+                ['COM', 'NO', 'NC'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            }
+        });
+
+        // ── Pass 3: External power supplies and batteries (all pins) ──────────────
+        this.instances.forEach((inst, compId) => {
+            if (compId === this.boardId) return;
+            if (inst.type.includes('power-supply') || inst.type.includes('battery')) {
+                Object.keys(inst.pins).forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            }
+        });
+
+        // ── Pass 4: Board hard rails — seeded last so they always dominate ────────
+        const bId = this.boardId;
+        const boardRails: Array<[string, number]> = [
+            ['GND', 0.0], ['GND_1', 0.0], ['GND_2', 0.0],
+            ['GND_3', 0.0], ['GND_4', 0.0], ['GND_5', 0.0],
+            ['GND_6', 0.0], ['AGND', 0.0],
+            ['3V3', 3.3],
+            ['VBUS', 5.0], ['VSYS', 5.0],
+        ];
+        boardRails.forEach(([pin, v]) => {
+            // Re-use propagateBoardPin so the existing well-tested BFS logic
+            // (including the per-instance GND/VCC force-write sweep) runs.
+            this.propagateBoardPin(pin, v > 0);
+        });
+
+        // ── Pass 5: Re-seed non-board supply rails last (override passive back-prop) ──
+        this.instances.forEach((inst, compId) => {
+            if (compId === this.boardId) return;
+            if (inst.type.includes('power-supply') || inst.type.includes('battery')) {
+                if (inst.pins['GND'] != null) seedFrom(`${compId}:GND`, 0.0);
+                if (inst.pins['5V'] != null) seedFrom(`${compId}:5V`, inst.pins['5V'].voltage);
+                if (inst.pins['12V'] != null) seedFrom(`${compId}:12V`, inst.pins['12V'].voltage);
+                if (inst.pins['VCC'] != null) seedFrom(`${compId}:VCC`, inst.pins['VCC'].voltage);
+                if (inst.pins['3V3'] != null) seedFrom(`${compId}:3V3`, inst.pins['3V3'].voltage);
+                if (inst.pins['VMOT'] != null) seedFrom(`${compId}:VMOT`, inst.pins['VMOT'].voltage);
+            }
+        });
+    }
+
 
     private propagateBoardPin(gpPin: string, isHigh: boolean) {
-        const voltage = isHigh ? 3.3 : 0.0;
+        this.propagateBoardPinInternal(gpPin, isHigh ? 3.3 : 0.0, isHigh);
+    }
+
+    private propagateBoardPinInternal(gpPin: string, voltage: number, isHigh: boolean = voltage > 1.8) {
 
         const boardInst = this.instances.get(this.boardId);
         if (boardInst && this.cpu) {
@@ -2743,6 +3255,9 @@ export class RP2040Runner implements BoardRunner {
                 if (upper === '3V3' || upper === 'VCC' || upper.startsWith('3V3.')) {
                     inst.setPinVoltage(pinKey, 3.3);
                 }
+                if (upper === '5V' || upper === 'VBUS') {
+                    inst.setPinVoltage(pinKey, 5.0);
+                }
             });
         });
     }
@@ -2761,7 +3276,7 @@ export class RP2040Runner implements BoardRunner {
             : Number(this.cpu?.core.cycles ?? 0);
         const cycles = rawCycles >= this.pioSignalCycle ? rawCycles : this.pioSignalCycle;
         this.pioSignalCycle = cycles;
-        
+
         const boardInst = this.instances.get(this.boardId);
         const clockScale = 16_000_000 / this.getRp2040ClockHz();
         const normalizedCycles = Math.floor(cycles * clockScale);
@@ -2789,6 +3304,11 @@ export class RP2040Runner implements BoardRunner {
         this.dispatchOptionalProtocols(pinName, isHigh, cycles, functionSelect);
         this.circuitDirty = true;
         this.propagateBoardPin(pinName, isHigh);
+
+        // Mark the netlist dirty; BFS will run once at end-of-frame (see runLoop)
+        // instead of inline on every GPIO edge, which was the primary performance bottleneck.
+        this.propagationPending = true;
+
         this.observeSoftSerialTx(pinName, isHigh, cycles);
     }
 
@@ -2806,6 +3326,17 @@ export class RP2040Runner implements BoardRunner {
 
     private updateGPIOInputsFromCircuit() {
         if (!this.cpu) return;
+
+        // Propagate fixed power rails through the passive network
+        ['GND', 'AGND', 'VSS', 'GND_1', 'GND_2', 'GND_3', 'GND_4', 'GND_5', 'GND_6'].forEach(pin => {
+            this.propagateBoardPinInternal(pin, 0.0, false);
+        });
+        ['3V3', 'VCC'].forEach(pin => {
+            this.propagateBoardPinInternal(pin, 3.3, true);
+        });
+        ['5V', 'VBUS'].forEach(pin => {
+            this.propagateBoardPinInternal(pin, 5.0, true);
+        });
 
         for (let gp = 0; gp < 29; gp++) {
             const gpPin = `GP${gp}`;
@@ -2848,19 +3379,36 @@ export class RP2040Runner implements BoardRunner {
             const clock = (this.cpu as any).clock;
             const F_CPU = 125_000_000;
             const CYCLE_NANOS = 1e9 / F_CPU;
-            const cyclesPerMs = (F_CPU / 1000) * this.speed;
-            const cyclesToRun = deltaTime * cyclesPerMs;
-            const CYCLES_PER_FRAME = Math.floor(Math.min(cyclesToRun, (F_CPU / 10) * Math.max(1, this.speed)));
+
+            // ── Adaptive time-scaling ────────────────────────────────────────────
+            // Use effectiveSpeed (which self-regulates based on loop duration) instead
+            // of the raw user-set speed.  This prevents the "Spiral of Death" where a
+            // slow host would queue up ever-larger catch-up cycle bursts.
+            const cyclesPerMs = (F_CPU / 1000) * this.effectiveSpeed;
+
+            // Clamp deltaTime to 50 ms so a tab that was backgrounded for seconds
+            // doesn't try to simulate minutes of virtual time in one synchronous burst.
+            const clampedDelta = Math.min(deltaTime, 50);
+            const rawCyclesToRun = clampedDelta * cyclesPerMs;
+
+            // Hard cap: never execute more than MAX_CYCLES_PER_TURN (2 M = ~16 ms
+            // virtual) in a single turn. Wall-clock guard inside the loop prevents runaway.
+            const CYCLES_PER_FRAME = Math.floor(Math.min(rawCyclesToRun, RP2040Runner.MAX_CYCLES_PER_TURN));
 
             let cyclesDone = 0;
 
-            const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
+            const physicsInterval = this.effectiveSpeed > 1.0 ? 8 : 12; // ~80-120Hz
             if (this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval) {
                 const physicsStart = performance.now();
-                // Classic Logic mode: event-driven propagation is already handled by listeners.
+                // Propagate all component-to-component voltages (driver outputs,
+                // external power supplies, board rails) before feeding GPIO inputs
+                // back into the RP2040 CPU. This mirrors the AVR runner's
+                // repropagateAllVoltages() + shouldSolvePhysics pattern.
+                this.repropagateAllVoltages();
                 this.updateGPIOInputsFromCircuit();
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
+                this.propagationPending = false; // absorbed by this solve
                 physicsMs = performance.now() - physicsStart;
             }
 
@@ -2873,12 +3421,73 @@ export class RP2040Runner implements BoardRunner {
                     return delta > 0 ? delta : 1;
                 };
 
-                // DETERMINISTIC CYCLE-TARGETED LOOP (OpenHW Pattern)
-                while (cyclesDone < CYCLES_PER_FRAME && this.running && this.cpu) {
-                    const pioDivs = this.getPIOClockDivs();
-                    const pio0Div = pioDivs[0];
-                    const pio1Div = pioDivs[1];
+                // ── WOKWI-STYLE COMPONENT CHUNK UPDATE INTERVAL ────────────────────────
+                // The AVR runner calls inst.update() every 32,000 cycles (= 2ms at 16MHz).
+                // For 125 MHz Pi Pico, the equivalent is 250,000 cycles (= 2ms at 125MHz).
+                // This ensures servo PWM period tracking and stepper step detection get
+                // updated frequently enough to produce smooth real-time animation.
+                const COMPONENT_UPDATE_INTERVAL = 250_000;
 
+                // Wall-clock start for the time-bounded inner loop
+                const innerLoopStart = performance.now();
+                let cyclesAtLastComponentUpdate = 0;
+
+                // ── CRITICAL PERF FIX: Cache these OUTSIDE the while loop ──────────────
+                // getPIOClockDivs() was previously called on EVERY instruction, costing
+                // ~24 million property accesses per 16ms frame. PIO clock divs only
+                // change when firmware writes PIO registers (rare), so caching is safe.
+                // Similarly, Array.from(instances) avoids repeated GC allocations.
+                let pio0Div = 64;
+                let pio1Div = 64;
+                {
+                    const pioDivsCached = this.getPIOClockDivs();
+                    pio0Div = pioDivsCached[0];
+                    pio1Div = pioDivsCached[1];
+                }
+                // Cache the instance array once per frame (reused in chunk updates & end-of-frame)
+                const instArrayCached = Array.from(this.instances.values());
+
+                // Compute stable clock scale once per frame (clockHz won't change mid-frame)
+                const frameClockHz = this.getRp2040ClockHz();
+                const frameClockScale = 16_000_000 / frameClockHz;
+
+                // DETERMINISTIC CYCLE-TARGETED LOOP (Wokwi Pattern)
+                while (cyclesDone < CYCLES_PER_FRAME && this.running && this.cpu) {
+                    // ── Wall-clock time budget guard ──────────────────────────────────
+                    // Check every ~1024 cycles (cheap bitmask). If we've burned our
+                    // wall-clock budget, break early and let the adaptive speed controller
+                    // scale effectiveSpeed down for the next turn.  This replaces the old
+                    // hard cycle cap as the primary overrun prevention mechanism.
+                    if ((cyclesDone & 0x3FF) === 0 && cyclesDone > 0) {
+                        if (performance.now() - innerLoopStart > RP2040Runner.INNER_LOOP_WALL_MS) {
+                            break; // adaptive speed EMA will throttle next turn
+                        }
+                    }
+
+                    // ── Chunked component update (mirrors AVR runner pattern) ──────────
+                    // Call inst.update() every 250k cycles to keep servo/motor state
+                    // tracking fresh inside long instruction runs.
+                    if (cyclesDone - cyclesAtLastComponentUpdate >= COMPONENT_UPDATE_INTERVAL) {
+                        cyclesAtLastComponentUpdate = cyclesDone;
+                        const normalizedChunkCycles = Math.floor(Number(this.cpu!.core.cycles) * frameClockScale);
+                        instArrayCached.forEach((inst) => {
+                            if (inst.state.isWired === undefined) {
+                                inst.state.isWired = Object.keys(inst.pins).some(p =>
+                                    this.currentWires.some(w =>
+                                        w.from === `${inst.id}:${p}` || w.to === `${inst.id}:${p}`
+                                    )
+                                );
+                            }
+                            inst.update(normalizedChunkCycles, this.currentWires, instArrayCached);
+                            if (inst.stateChanged) {
+                                (inst as any).pendingVisualStateEmit = true;
+                                inst.stateChanged = false;
+                                this.propagationPending = true;
+                            }
+                        });
+                    }
+
+                    // ── PIO stepping uses pre-computed divs (cached above) ────────────
                     if (core.waiting && clock) {
                         const rawJumpNanos = Number(clock.nanosToNextAlarm);
                         const jumpNanos = Number.isFinite(rawJumpNanos) ? rawJumpNanos : -1;
@@ -2906,10 +3515,10 @@ export class RP2040Runner implements BoardRunner {
                         // Incremental Jump with PIO Sync
                         const jumpedCycles = Math.ceil(jumpNanos / CYCLE_NANOS);
                         const maxJumpCycles = Math.min(jumpedCycles, CYCLES_PER_FRAME - cyclesDone);
-                        
+
                         // Advance time and sync both PIO units
                         clock.tick(maxJumpCycles * CYCLE_NANOS);
-                        
+
                         this.pio0Accum += maxJumpCycles;
                         while (this.pio0Accum >= pio0Div) {
                             this.pio0Accum -= pio0Div;
@@ -2958,9 +3567,9 @@ export class RP2040Runner implements BoardRunner {
                     this.processSoftSerialDecode(currentTotalCycles);
                 }
 
-                const frameTimeMs = 16.6; 
+                const frameTimeMs = 16.6;
                 const bytesPerMs = this.serialBaudRate / 10000;
-                this.serialByteBudget += frameTimeMs * bytesPerMs; 
+                this.serialByteBudget += frameTimeMs * bytesPerMs;
 
                 const uart0 = this.cpu.uart[0];
                 const uart1 = this.cpu.uart[1];
@@ -2995,24 +3604,41 @@ export class RP2040Runner implements BoardRunner {
                     this.serialByteBudget -= sent;
                 }
 
-                const clockScale = 16_000_000 / this.getRp2040ClockHz();
-                const normalizedUpdateCycles = Math.floor(Number(this.cpu!.core.cycles) * clockScale);
+                // ── End-of-frame component update (final pass) ──────────────────────
+                // Call inst.update() one last time for any cycles since the last
+                // chunk update, and collect final anyComponentStateChanged flag.
+                // Use pre-cached instArrayCached and frameClockScale from before the inner loop.
+                const normalizedUpdateCycles = Math.floor(Number(this.cpu!.core.cycles) * frameClockScale);
                 const componentStart = performance.now();
-                const instArray = Array.from(this.instances.values());
-                instArray.forEach((inst) => {
-                    // Annotate component with junction-aware connectivity (since RP2040Runner doesn't use pinToNet, 
-                    // we'll rely on the fact that isWired is usually true if we reached this point, 
-                    // but for consistency we can set it if there's any wire on any pin).
+                let anyComponentStateChanged = false;
+                instArrayCached.forEach((inst) => {
+                    // Ensure each component knows it is wired so that internal
+                    // activation guards (e.g., A4988 "is circuit connected?") pass.
                     if (inst.state.isWired === undefined) {
-                        inst.state.isWired = Object.keys(inst.pins).some(p => 
-                            this.currentWires.some(w => w.from === `${inst.id}:${p}` || w.to === `${inst.id}:${p}`)
+                        inst.state.isWired = Object.keys(inst.pins).some(p =>
+                            this.currentWires.some(w =>
+                                w.from === `${inst.id}:${p}` || w.to === `${inst.id}:${p}`
+                            )
                         );
                     }
-                    // For RP2040, we'll let the component's internal logic handle resistor detection 
-                    // for now, or we could implement a netlist here too. 
-                    // But since the user is on Uno, let's focus on AVRRunner first.
-                    inst.update(normalizedUpdateCycles, this.currentWires, instArray);
+                    inst.update(normalizedUpdateCycles, this.currentWires, instArrayCached);
+                    if (inst.stateChanged) {
+                        anyComponentStateChanged = true;
+                        // Mark for visual state emit on the next snapshot cycle.
+                        (inst as any).pendingVisualStateEmit = true;
+                        inst.stateChanged = false;
+                    }
                 });
+                // ── End-of-frame netlist resolution ──────────────────────────────────
+                // Run BFS *once* per frame covering both:
+                //   1. GPIO pin changes that fired during the instruction loop
+                //      (previously called inline in onPinChange — the hot-path killer).
+                //   2. Component state changes (e.g. A4988 step → stepper coil voltages).
+                // This single call replaces all the per-edge inline BFS calls.
+                if (this.propagationPending || anyComponentStateChanged) {
+                    this.repropagateAllVoltages();
+                    this.propagationPending = false;
+                }
                 componentMs = performance.now() - componentStart;
 
             } catch (err: any) {
@@ -3028,6 +3654,25 @@ export class RP2040Runner implements BoardRunner {
             this.lastPhysicsMs = physicsMs;
             this.lastComponentUpdateMs = componentMs;
             this.lastRunLoopMs = performance.now() - loopStart;
+
+            // ── Adaptive speed self-regulation ───────────────────────────────────
+            // Measure actual wall time spent this turn (instruction loop + components).
+            // If we consistently exceed INNER_LOOP_WALL_MS, scale effectiveSpeed down
+            // so the next turn runs fewer virtual cycles.
+            // If we have headroom, recover toward the user-set speed (1.0 by default).
+            const loopElapsed = performance.now() - loopStart;
+            this.avgLoopMs = this.avgLoopMs * 0.85 + loopElapsed * 0.15;
+            if (this.avgLoopMs > RP2040Runner.INNER_LOOP_WALL_MS) {
+                // Host is struggling: scale virtual clock down proportionally.
+                this.effectiveSpeed = Math.max(
+                    RP2040Runner.MIN_SPEED_RATIO,
+                    this.effectiveSpeed * (RP2040Runner.INNER_LOOP_WALL_MS / this.avgLoopMs),
+                );
+            } else {
+                // Host has headroom: gradually recover toward the user-set speed.
+                this.effectiveSpeed = Math.min(this.speed, this.effectiveSpeed * 1.02);
+            }
+
             this.lastTime = now;
         }
 
@@ -3221,7 +3866,7 @@ export class RP2040Runner implements BoardRunner {
             const msg: any = { type: 'state', boardId: this.boardId };
             msg.pins = this.pinStates;
             this.pinsChanged = false;
-            
+
             const now = performance.now();
             this.emitWirelessStubStatus('tick');
 
@@ -3229,7 +3874,7 @@ export class RP2040Runner implements BoardRunner {
             for (const inst of this.instances.values()) {
                 if (!inst.stateChanged && !inst.telemetryEnabled) continue;
                 const syncState = getUnifiedComponentSyncState(inst);
-                
+
                 if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
 
                 inst.stateChanged = false;
@@ -3246,7 +3891,7 @@ export class RP2040Runner implements BoardRunner {
             msg._emitSeq = this.statusIntervalEmitCount;
             msg._emitTime = now;
             msg.simTimeMs = this.getSimulatedTimeMs();
-            
+
             this.lastStateEmitCycle = currentCycles;
             this.lastStateEmitTime = now;
             this.onStateUpdate(msg);
@@ -3260,19 +3905,19 @@ export class RP2040Runner implements BoardRunner {
         const msg: any = { type: 'state', boardId: this.boardId };
         msg.pins = this.pinStates;
         this.pinsChanged = false;
-        
+
         const compStates: Array<{ id: string; state: any }> = [];
         for (const inst of this.instances.values()) {
             const pendingEmit = (inst as any).pendingVisualStateEmit;
             if (!inst.stateChanged && !pendingEmit && !inst.telemetryEnabled) continue;
 
             const syncState = getUnifiedComponentSyncState(inst);
-            
+
             if (!this.shouldEmitComponentState(inst.id, syncState, now)) continue;
 
             inst.stateChanged = false;
             (inst as any).pendingVisualStateEmit = false;
-            
+
             compStates.push({
                 id: inst.id,
                 type: inst.type,
@@ -3286,17 +3931,17 @@ export class RP2040Runner implements BoardRunner {
         msg._emitSeq = this.statusIntervalEmitCount;
         msg._emitTime = now;
         msg.simTimeMs = this.getSimulatedTimeMs();
-        
+
         this.lastStateEmitCycle = currentCycles;
         this.lastStateEmitTime = now;
         this.onStateUpdate(msg);
     }
 
-    private initPhysicsWorker() {}
+    private initPhysicsWorker() { }
 
-    private requestPhysicsSolve() {}
+    private requestPhysicsSolve() { }
 
-    private updateTopologyForWorker() {}
+    private updateTopologyForWorker() { }
 
     /**
      * Get the current clock divider for the PIO state machines.
@@ -3337,7 +3982,7 @@ export class RP2040Runner implements BoardRunner {
         this.gdbStatus = 'closed';
         this.emitGdbStatus('stopped', 'Runner stopped');
         if (this.gdbWs) {
-            try { this.gdbWs.close(); } catch (e) {}
+            try { this.gdbWs.close(); } catch (e) { }
             this.gdbWs = null;
         }
         clearInterval(this.statusInterval);
