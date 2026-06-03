@@ -119,6 +119,24 @@ self.onmessage = async (e) => {
            }
         });
 
+        // WORKAROUND: Force L293D pins and digitalWrite specifically for ESP32
+        if (manifest && manifest.type === 'openhw-l293d') {
+            let isESP32 = false;
+            for (const w of virtualWires) {
+                if ((w.from && w.from.includes('esp32')) || (w.to && w.to.includes('esp32'))) {
+                    isESP32 = true;
+                    break;
+                }
+            }
+            if (isESP32) {
+                manifest = JSON.parse(JSON.stringify(manifest));
+                if (manifest.autocoding && manifest.autocoding.arduino) {
+                    manifest.autocoding.arduino.globals = "const int enA_${COMP_SUFFIX} = 12;\nconst int in1_${COMP_SUFFIX} = 5;\nconst int in2_${COMP_SUFFIX} = 4;";
+                    manifest.autocoding.arduino.loop = "digitalWrite(in1_${COMP_SUFFIX}, HIGH);\ndigitalWrite(in2_${COMP_SUFFIX}, LOW);\ndigitalWrite(enA_${COMP_SUFFIX}, HIGH);\ndelay(2000);\ndigitalWrite(in1_${COMP_SUFFIX}, LOW);\ndigitalWrite(in2_${COMP_SUFFIX}, HIGH);\ndigitalWrite(enA_${COMP_SUFFIX}, HIGH);\ndelay(2000);";
+                }
+            }
+        }
+
         const snippet = generateCodeForComponent(compId, virtualWires, manifest, components || []);
         
         let plan: any = { code_snippet: snippet };
