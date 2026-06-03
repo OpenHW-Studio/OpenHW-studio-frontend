@@ -644,6 +644,7 @@ export class RP2040Runner implements BoardRunner {
     gdbWs: WebSocket | null = null;
     running: boolean = false;
     pinStates: Record<string, boolean> = {};
+    pinToggles: Record<string, number> = {};
     currentWires: any[] = [];
     instances: Map<string, BaseComponent> = new Map();
     lastTime: number = 0;
@@ -1002,10 +1003,11 @@ export class RP2040Runner implements BoardRunner {
         this.installRp2040I2cAdapters();
         this.installRp2040SpiAdapters();
 
-        // Seed default pin values as LOW so dependent components can initialize.
+        // Initialize all GPIO states to LOW on startup
         for (let gp = 0; gp <= 28; gp++) {
             const pin = `GP${gp}`;
             this.pinStates[pin] = false;
+            this.pinToggles[pin] = 0;
             this.propagateBoardPin(pin, false);
         }
         this.setSoftSerialRxLevel(true);
@@ -2752,6 +2754,7 @@ export class RP2040Runner implements BoardRunner {
         if (this.pinStates[pinName] === isHigh) return;
 
         this.pinStates[pinName] = isHigh;
+        this.pinToggles[pinName] = (this.pinToggles[pinName] || 0) + 1;
         this.pinsChanged = true;
         this.debugGpioTransitions += 1;
         this.debugLastGpioPin = pinName;
@@ -2826,6 +2829,7 @@ export class RP2040Runner implements BoardRunner {
             this.cpu.gpio[gp].setInputValue(isHigh);
             if (this.pinStates[gpPin] !== isHigh) {
                 this.pinStates[gpPin] = isHigh;
+                this.pinToggles[gpPin] = (this.pinToggles[gpPin] || 0) + 1;
                 this.pinsChanged = true;
             }
 
@@ -3142,6 +3146,7 @@ export class RP2040Runner implements BoardRunner {
         this.solverMode = mode;
         for (const key of Object.keys(this.pinStates)) {
             this.pinStates[key] = false;
+            this.pinToggles[key] = 0;
         }
         for (const inst of this.instances.values()) {
             for (const pinId of Object.keys(inst.pins || {})) {
@@ -3225,6 +3230,7 @@ export class RP2040Runner implements BoardRunner {
         if (cycleDelta >= 2083333 || timeDelta >= 16) {
             const msg: any = { type: 'state', boardId: this.boardId };
             msg.pins = this.pinStates;
+            msg.pinToggles = this.pinToggles;
             this.pinsChanged = false;
             
             const now = performance.now();
@@ -3264,6 +3270,7 @@ export class RP2040Runner implements BoardRunner {
         const currentCycles = Number(this.cpu.core.cycles);
         const msg: any = { type: 'state', boardId: this.boardId };
         msg.pins = this.pinStates;
+        msg.pinToggles = this.pinToggles;
         this.pinsChanged = false;
         
         const compStates: Array<{ id: string; state: any }> = [];

@@ -44,6 +44,7 @@ export class AVRRunner {
     timers: AVRTimer[] = [];
     running: boolean = false;
     pinStates: Record<string, boolean> = {};
+    pinToggles: Record<string, number> = {};
     currentWires: any[] = [];
     instances: Map<string, BaseComponent> = new Map();
     lastTime: number = 0;
@@ -764,6 +765,7 @@ export class AVRRunner {
                         const isHigh = v > 1.8;
                         if (this.pinStates[compPin] !== isHigh) {
                             this.pinStates[compPin] = isHigh;
+                            this.pinToggles[compPin] = (this.pinToggles[compPin] || 0) + 1;
                             this.pinsChanged = true;
                         }
                         if (compPin.startsWith('A')) {
@@ -834,6 +836,9 @@ export class AVRRunner {
             [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
                 const { isDriven, isHigh } = getAvrPinModeState(pin);
                 if (isDriven) {
+                    if (this.pinStates[pin] !== isHigh) {
+                        this.pinToggles[pin] = (this.pinToggles[pin] || 0) + 1;
+                    }
                     this.pinStates[pin] = isHigh;
                     updateOopPin(pin, isHigh);
                 }
@@ -920,6 +925,7 @@ export class AVRRunner {
                     const isHigh = (value & (1 << i)) !== 0;
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
+                        this.pinToggles[pin] = (this.pinToggles[pin] || 0) + 1;
                         this.pinsChanged = true;
                         this.circuitDirty = true;
 
@@ -971,6 +977,7 @@ export class AVRRunner {
         // Initialize all hooked pins to LOW on startup so LED components aren't stuck waiting for a toggle
         [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
             this.pinStates[pin] = false;
+            this.pinToggles[pin] = 0;
             this.circuitDirty = true;
             updateOopPin(pin, false);
         });
@@ -1089,6 +1096,7 @@ export class AVRRunner {
         if (cycleDelta >= 266666 || timeDelta >= 16) {
             const msg: any = { type: 'state', boardId: this.boardId };
             msg.pins = this.pinStates;
+            msg.pinToggles = this.pinToggles;
             this.pinsChanged = false;
             
             if (this.adc) {
@@ -1132,6 +1140,7 @@ export class AVRRunner {
         const now = performance.now();
         const msg: any = { type: 'state', boardId: this.boardId };
         msg.pins = this.pinStates;
+        msg.pinToggles = this.pinToggles;
         this.pinsChanged = false;
         
         if (this.adc) {
@@ -1210,6 +1219,7 @@ export class AVRRunner {
         this.solverMode = mode;
         for (const key of Object.keys(this.pinStates)) {
             this.pinStates[key] = false;
+            this.pinToggles[key] = 0;
         }
         for (const inst of this.instances.values()) {
             for (const pinId of Object.keys(inst.pins || {})) {
