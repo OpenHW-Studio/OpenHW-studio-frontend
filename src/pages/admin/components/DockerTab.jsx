@@ -250,7 +250,7 @@ const DockerTab = ({ infraStatus, onRestart }) => {
                                     <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-widest ${
                                         log.type === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
                                     }`}>
-                                        Docker
+                                        {log.type === 'error' ? 'Error' : (log.type === 'docker' || log.type === 'info' ? 'System' : getDisplayName(log.type))}
                                     </span>
                                     <span className="text-slate-200 font-bold leading-relaxed truncate">{log.msg}</span>
                                 </div>
