@@ -44,7 +44,7 @@ const WorkflowLogViewer = ({ repo, runId, onClose }) => {
                     <X className="w-4 h-4" />
                 </button>
             </div>
-            <div 
+            <div
                 ref={scrollRef}
                 className="p-6 h-80 overflow-y-auto font-mono text-[11px] leading-relaxed custom-scrollbar bg-black/40"
             >
@@ -57,11 +57,10 @@ const WorkflowLogViewer = ({ repo, runId, onClose }) => {
                     logs.map((line, i) => (
                         <div key={i} className="flex gap-4 hover:bg-white/5 py-0.5 px-2 -mx-2 rounded transition-colors group">
                             <span className="text-slate-700 shrink-0 w-8 text-right select-none">{i + 1}</span>
-                            <span className={`break-all ${
-                                line.toLowerCase().includes('error') ? 'text-red-400' : 
-                                line.toLowerCase().includes('warning') ? 'text-amber-400' : 
-                                line.startsWith('>') ? 'text-blue-400 font-bold' : 'text-slate-300'
-                            }`}>
+                            <span className={`break-all ${line.toLowerCase().includes('error') ? 'text-red-400' :
+                                line.toLowerCase().includes('warning') ? 'text-amber-400' :
+                                    line.startsWith('>') ? 'text-blue-400 font-bold' : 'text-slate-300'
+                                }`}>
                                 {line}
                             </span>
                         </div>
@@ -76,11 +75,11 @@ const WorkflowLogViewer = ({ repo, runId, onClose }) => {
     );
 };
 
-const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback, onTriggerBuild }) => {
+const DeploymentsTab = ({ deployments, notifications = [], onApprove, onReject, onRollback, onTriggerBuild, onDismissNotification }) => {
     const [processingIds, setProcessingIds] = useState(new Set());
+    const [processedIds, setProcessedIds] = useState(new Set());
     const [expandedIds, setExpandedIds] = useState(new Set());
     const [activeLog, setActiveLog] = useState(null); // { id: runId, repo: string }
-
 
     const toggleExpand = (id) => {
         setExpandedIds(prev => {
@@ -95,6 +94,8 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
         setProcessingIds(prev => new Set(prev).add(id));
         try {
             await actionFn(arg);
+            // Hide on successful action
+            setProcessedIds(prev => new Set(prev).add(arg.id));
         } finally {
             setProcessingIds(prev => {
                 const next = new Set(prev);
@@ -114,8 +115,15 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                     </div>
                     <div className="grid grid-cols-1 gap-4">
                         {notifications.map((note) => (
-                            <AdminCard key={note.id} className="bg-amber-500/5 border-amber-500/10 hover:bg-amber-500/10 transition-all">
-                                <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+                            <AdminCard key={note.id} className="bg-amber-500/5 border-amber-500/10 hover:bg-amber-500/10 transition-all relative">
+                                <button
+                                    onClick={() => onDismissNotification && onDismissNotification(note.id)}
+                                    className="absolute top-2 right-2 p-2 text-amber-500/40 hover:text-amber-500 hover:bg-amber-500/10 rounded-full transition-all"
+                                    title="Dismiss Notification"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                                <div className="flex flex-col md:flex-row justify-between items-center gap-6 mt-2">
                                     <div className="flex items-start gap-4">
                                         <div className="p-3 bg-amber-500/20 rounded-xl text-amber-500 mt-1">
                                             <RefreshCw className="w-5 h-5" />
@@ -137,7 +145,7 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                                             </div>
                                         </div>
                                     </div>
-                                    <button 
+                                    <button
                                         disabled={processingIds.has(`build-${note.id}`)}
                                         onClick={() => handleAction(`build-${note.id}`, () => onTriggerBuild(note.repo, note.id))}
                                         className="w-full md:w-auto px-8 py-4 bg-amber-500 hover:bg-amber-400 text-black font-black text-sm rounded-xl flex items-center justify-center gap-2 transition-all shadow-xl shadow-amber-900/20"
@@ -158,8 +166,22 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                 </div>
             )}
 
-            {deployments.map(dep => (
-                <AdminCard key={dep.id} className="hover:bg-white/[0.04] shadow-2xl">
+            {deployments.filter(dep => !processedIds.has(dep.id)).map(dep => (
+                <AdminCard key={dep.id} className="hover:bg-white/[0.04] shadow-2xl relative">
+                    {dep.status === 'waiting' && onReject && (
+                        <button
+                            disabled={processingIds.has(`reject-${dep.id}`)}
+                            onClick={() => handleAction(`reject-${dep.id}`, onReject, dep)}
+                            className="absolute top-0 right-1 p-2 text-slate-500 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-all z-10"
+                            title="Reject/Dismiss Deployment"
+                        >
+                            {processingIds.has(`reject-${dep.id}`) ? (
+                                <Loader2 className="w-6 h-6 animate-spin text-red-500" />
+                            ) : (
+                                <X className="w-6 h-6" />
+                            )}
+                        </button>
+                    )}
                     <div className="flex flex-col xl:flex-row justify-between gap-8">
                         <div className="flex-1 space-y-6">
                             <div className="flex items-center gap-4">
@@ -191,12 +213,12 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                             </div>
 
                             <div className="pt-6">
-                                <button 
+                                <button
                                     onClick={() => toggleExpand(dep.id)}
                                     className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-blue-400 hover:text-blue-300 transition-colors group mb-4"
                                 >
-                                    <svg 
-                                        className={`w-4 h-4 transition-transform duration-300 ${expandedIds.has(dep.id) ? 'rotate-180' : ''}`} 
+                                    <svg
+                                        className={`w-4 h-4 transition-transform duration-300 ${expandedIds.has(dep.id) ? 'rotate-180' : ''}`}
                                         viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
                                     >
                                         <polyline points="6 9 12 15 18 9"></polyline>
@@ -210,11 +232,11 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                                 <div className="bg-slate-900/40 border border-white/5 rounded-xl p-6 space-y-4 animate-in slide-in-from-top-2 duration-300">
                                     <div className="flex items-center gap-2 text-slate-400">
                                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
                                         </svg>
                                         <span className="text-[10px] uppercase font-black tracking-[0.2em]">Deployment Payload</span>
                                     </div>
-                                    
+
                                     {dep.commits ? (
                                         <div className="space-y-4">
                                             {dep.commits.map((commit, idx) => (
@@ -259,21 +281,20 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                                     )}
                                 </div>
                             )}
-                            
+
                             {dep.jobs && (
                                 <div className="flex flex-wrap gap-3 pt-4">
                                     {dep.jobs.map((job, idx) => (
                                         <div key={idx} className="flex items-center gap-1 group/job">
-                                            <a href={job.html_url} target="_blank" rel="noreferrer" 
-                                               className={`text-[9px] font-black px-4 py-2 rounded-full border transition-all uppercase tracking-widest ${
-                                                    job.conclusion === 'success' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 
-                                                    job.conclusion === 'failure' ? 'border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]' : 
-                                                    'border-slate-700 text-slate-500 hover:border-slate-500 bg-slate-900/80'
-                                                }`}>
+                                            <a href={job.html_url} target="_blank" rel="noreferrer"
+                                                className={`text-[9px] font-black px-4 py-2 rounded-full border transition-all uppercase tracking-widest ${job.conclusion === 'success' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]' :
+                                                    job.conclusion === 'failure' ? 'border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]' :
+                                                        'border-slate-700 text-slate-500 hover:border-slate-500 bg-slate-900/80'
+                                                    }`}>
                                                 {job.name}: {job.conclusion || job.status}
                                             </a>
                                             {job.status === 'in_progress' && (
-                                                <button 
+                                                <button
                                                     onClick={() => setActiveLog({ id: dep.id, repo: dep.repo })}
                                                     className="p-2 bg-blue-600/20 text-blue-400 rounded-full hover:bg-blue-600/40 transition-all"
                                                     title="View Live Logs"
@@ -287,17 +308,17 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                             )}
 
                             {activeLog && activeLog.id === dep.id && (
-                                <WorkflowLogViewer 
-                                    repo={activeLog.repo} 
-                                    runId={activeLog.id} 
-                                    onClose={() => setActiveLog(null)} 
+                                <WorkflowLogViewer
+                                    repo={activeLog.repo}
+                                    runId={activeLog.id}
+                                    onClose={() => setActiveLog(null)}
                                 />
                             )}
                         </div>
 
                         <div className="flex flex-row xl:flex-col gap-3 min-w-[200px]">
                             {dep.status === 'waiting' && (
-                                <button 
+                                <button
                                     disabled={processingIds.has(dep.id)}
                                     onClick={() => handleAction(dep.id, onApprove, dep)}
                                     className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 disabled:opacity-50 text-white font-black text-sm py-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-xl shadow-emerald-900/30"
@@ -313,13 +334,13 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                                         <>
                                             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" />
-                                            </svg> 
+                                            </svg>
                                             Deploy to Prod
                                         </>
                                     )}
                                 </button>
                             )}
-                            <button 
+                            <button
                                 disabled={processingIds.has(`rollback-${dep.repo}`)}
                                 onClick={() => handleAction(`rollback-${dep.repo}`, onRollback, dep.repo)}
                                 className="flex-1 bg-slate-800 hover:bg-red-600/10 hover:text-red-500 disabled:opacity-30 text-slate-200 font-black text-sm py-4 rounded-xl border border-white/10 flex items-center justify-center gap-2 transition-all"
@@ -335,7 +356,7 @@ const DeploymentsTab = ({ deployments, notifications = [], onApprove, onRollback
                                     <>
                                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                             <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
-                                        </svg> 
+                                        </svg>
                                         Rollback
                                     </>
                                 )}
