@@ -2822,7 +2822,12 @@ export class RP2040Runner implements BoardRunner {
             }
 
             // Sync Digital State
-            this.cpu.gpio[gp].setInputValue(observedVoltage > 1.65);
+            const isHigh = observedVoltage > 1.65;
+            this.cpu.gpio[gp].setInputValue(isHigh);
+            if (this.pinStates[gpPin] !== isHigh) {
+                this.pinStates[gpPin] = isHigh;
+                this.pinsChanged = true;
+            }
 
             // Sync Analog State (only for ADC-capable pins GP26-29)
             if (gp >= 26 && gp <= 29) {
