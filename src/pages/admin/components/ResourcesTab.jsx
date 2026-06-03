@@ -77,27 +77,28 @@ export default function ResourcesTab() {
             {/* Stat Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 md:gap-8">
                 <StatCard 
-                    title="Active Points" 
+                    label="Active Points" 
                     value={`${activePoints} MB`} 
-                    icon={Activity} 
-                    className="border-blue-500/20"
+                    icon={<Activity />} 
+                    color="text-blue-500"
                 />
                 <StatCard 
-                    title="Available Points" 
+                    label="Available Points" 
                     value={`${availablePoints} MB`} 
-                    icon={Cpu} 
-                    className="border-green-500/20"
+                    icon={<Cpu />} 
+                    color="text-green-500"
                 />
                 <StatCard 
-                    title="Total Points Pool" 
+                    label="Total Points Pool" 
                     value={`${totalPoints} MB`} 
-                    icon={Layers} 
+                    icon={<Layers />} 
+                    color="text-blue-500"
                 />
                 <StatCard 
-                    title="Waiting Queue" 
+                    label="Waiting Queue" 
                     value={waitingCount} 
-                    icon={ShieldCheck} 
-                    className={waitingCount > 0 ? "border-amber-500/30 text-amber-500" : ""}
+                    icon={<ShieldCheck />} 
+                    color={waitingCount > 0 ? "text-amber-500" : "text-blue-500"}
                 />
             </div>
 
