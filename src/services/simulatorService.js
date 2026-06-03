@@ -233,6 +233,32 @@ export async function uninstallLibrary(name) {
     return response.data;
 }
 
+export async function fetchLibraryConfig() {
+    const response = await axios.get(`${COMPILER_URL}/admin/lib-config`, getAdminAuthConfig());
+    return {
+        permanent: response.data.permanent || [],
+        totalSize: response.data.totalSize || 0
+    };
+}
+
+export async function uploadLibraryConfig(permanent) {
+    const response = await axios.post(`${COMPILER_URL}/admin/lib-config/upload`, { permanent }, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function fetchLibraryCache() {
+    const response = await axios.get(`${COMPILER_URL}/admin/lib-cache`, getAdminAuthConfig());
+    return response.data.cached || [];
+}
+
+export async function clearLibraryCache(name = null) {
+    const response = await axios.delete(`${COMPILER_URL}/admin/lib-cache`, { 
+        ...getAdminAuthConfig(), 
+        data: name ? { name } : {} 
+    });
+    return response.data;
+}
+
 export async function fetchLibrariesInfo(names) {
     const response = await axios.get(`${COMPILER_URL}/lib-info?names=${encodeURIComponent(names.join(','))}`, getUserAuthConfig());
     return response.data.libraries || {};
@@ -241,6 +267,7 @@ export async function fetchLibrariesInfo(names) {
 /**
  * Custom Components
  */
+
 export async function approveCustomComponent(payload) {
     const response = await axios.post(`${COMPILER_URL}/admin/components/approve`, payload, getAdminAuthConfig());
     return response.data;
@@ -344,6 +371,11 @@ export async function approveDeploymentAction(runId, repo, env) {
     return response.data;
 }
 
+export async function rejectDeploymentAction(runId, repo, env) {
+    const response = await axios.post(`${COMPILER_URL}/admin/deployments/reject`, { run_id: runId, repo, environment: env }, getAdminAuthConfig());
+    return response.data;
+}
+
 export async function rollbackDeploymentAction(repo, branch = 'develop') {
     const response = await axios.post(`${COMPILER_URL}/admin/deployments/rollback`, { repo, branch }, getAdminAuthConfig());
     return response.data;
@@ -352,6 +384,11 @@ export async function rollbackDeploymentAction(repo, branch = 'develop') {
 export async function fetchDeploymentNotifications() {
     const response = await axios.get(`${COMPILER_URL}/admin/deployments/notifications`, getAdminAuthConfig());
     return response.data.notifications || [];
+}
+
+export async function dismissDeploymentNotification(id) {
+    const response = await axios.delete(`${COMPILER_URL}/admin/deployments/notifications/${id}`, getAdminAuthConfig());
+    return response.data;
 }
 
 export async function triggerDeploymentBuild(repo, notificationId = null) {
@@ -371,6 +408,18 @@ export async function fetchInfrastructureStatus() {
 export async function restartInfrastructureService(name) {
     const response = await axios.post(`${COMPILER_URL}/admin/infrastructure/restart`, { name }, getAdminAuthConfig());
     return response.data;
+}
+
+export function buildLiveLogStreamUrl(service) {
+    const adminToken = getAdminToken();
+    const token = adminToken || getToken();
+    const url = new URL('/api/admin/system-logs/stream', `${API_ORIGIN}/`);
+    url.searchParams.set('service', service || 'all');
+    if (token) {
+        // Warning: Sending token in query param is less secure than header, but required for EventSource
+        url.searchParams.set('token', token);
+    }
+    return url.toString();
 }
 
 export async function fetchSystemLogs() {
