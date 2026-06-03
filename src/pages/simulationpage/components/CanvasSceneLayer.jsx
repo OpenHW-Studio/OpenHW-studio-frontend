@@ -581,16 +581,16 @@ function CanvasSceneLayerBase({
                       style={{
                         position: 'absolute',
                         left: pin.x, top: pin.y,
-                        width: 5, height: 5,
+                        width: 8, height: 8,
                         background: pinColor === 'none' ? 'none' : pinColor,
                         border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
-                        borderRadius: '0%',
+                        borderRadius: '2px',
                         cursor: 'crosshair',
                         zIndex: isHovered || isSuggested || isSnapping ? 30 : 20,
-                        transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`,
-                        transition: '0.2s',
+                        transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.8)' : ''}`,
+                        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
                         pointerEvents: 'all',
-                        boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
+                        boxShadow: isHovered ? '0 0 12px rgba(255,255,255,0.8)' : (isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none')),
                       }}
                       onMouseEnter={() => setHoveredPin(pinStrRef)}
                       onMouseLeave={() => setHoveredPin(null)}

@@ -662,7 +662,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [isPinMappingExpanded, setIsPinMappingExpanded] = useState(false);
   const [pendingPinColors, setPendingPinColors] = useState({}); // { [pinIdStr]: color }
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [wiresAlwaysOnTop, setWiresAlwaysOnTop] = useState(false);
+  const [wiresAlwaysOnTop, setWiresAlwaysOnTop] = useState(true);
 
   // Reset Pin Mapping expansion when a new component is selected
   useEffect(() => {
