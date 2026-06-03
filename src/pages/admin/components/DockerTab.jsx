@@ -1,42 +1,44 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Download, Trash2, Terminal, Search, Info, CheckCircle, RefreshCw, Activity, Layers, Zap } from 'lucide-react';
 import AdminCard from './AdminCard';
-import { buildLiveLogStreamUrl } from '../../../services/simulatorService.js';
+import { fetchSystemLogs } from '../../../services/simulatorService.js';
 
 const DockerTab = ({ infraStatus, onRestart }) => {
     const [logs, setLogs] = useState([]);
     const [targetService, setTargetService] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [restarting, setRestarting] = useState(new Set());
-    const streamRef = useRef(null);
+    const pollRef = useRef(null);
+    const seenTimestamps = useRef(new Set());
 
     useEffect(() => {
-        if (streamRef.current) {
-            streamRef.current.close();
-        }
+        // Reset seen timestamps when switching service target
+        seenTimestamps.current = new Set();
+        setLogs([]);
 
-        const url = buildLiveLogStreamUrl(targetService);
-        const eventSource = new EventSource(url);
-        streamRef.current = eventSource;
-
-        eventSource.onmessage = (event) => {
+        const poll = async () => {
             try {
-                const data = JSON.parse(event.data);
-                setLogs(prev => {
-                    const newLogs = [data, ...prev].slice(0, 500);
-                    return newLogs;
-                });
+                const fetched = await fetchSystemLogs();
+                // Filter by targetService if not 'all'
+                const filtered = targetService === 'all'
+                    ? fetched
+                    : fetched.filter(l => l.type === targetService || l.type === 'error');
+
+                const newEntries = filtered.filter(l => !seenTimestamps.current.has(l.time + l.msg));
+                if (newEntries.length > 0) {
+                    newEntries.forEach(l => seenTimestamps.current.add(l.time + l.msg));
+                    setLogs(prev => [...newEntries, ...prev].slice(0, 500));
+                }
             } catch (e) {
-                console.error('Error parsing SSE data', e);
+                // Silent fail — backend may not have new logs
             }
         };
 
-        eventSource.onerror = (err) => {
-            console.error('SSE Error', err);
-        };
+        poll(); // Initial fetch immediately
+        pollRef.current = setInterval(poll, 4000); // Then every 4 seconds
 
         return () => {
-            eventSource.close();
+            clearInterval(pollRef.current);
         };
     }, [targetService]);
     
