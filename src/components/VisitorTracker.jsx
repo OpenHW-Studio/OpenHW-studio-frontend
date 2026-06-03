@@ -1,8 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import axios from 'axios';
 
-// Ensure this matches your backend URL. If running locally, it might be http://localhost:5000/api
-const COMPILER_URL = import.meta.env.VITE_COMPILER_URL || 'http://localhost:5000/api';
+// Ensure this matches your backend URL.
+const COMPILER_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
 
 export default function VisitorTracker({ children }) {
   const sessionIdRef = useRef(`sess_${Math.random().toString(36).substr(2, 9)}`);
