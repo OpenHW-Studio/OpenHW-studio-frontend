@@ -851,6 +851,12 @@ export class AVRRunner {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
+                } else if (inst.type.includes('rotary-encoder')) {
+                    ['CLK', 'DT', 'SW'].forEach(pin => {
+                        if (inst.pins[pin]) {
+                            updateOopPin(pin, inst.pins[pin].voltage, compId);
+                        }
+                    });
                 } else if (inst.type.includes('logic-gate') || inst.type.includes('timer') || inst.type.includes('opamp')) {
                     Object.keys(inst.pins).forEach(pin => {
                         if (pin.startsWith('OUT') || pin.startsWith('out') || pin === 'Q' || pin === 'Q#') {
