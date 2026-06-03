@@ -762,7 +762,10 @@ export class AVRRunner {
                     // Propagate external voltage back to simulated AVR CPU ports
                     if (compId === this.boardId) {
                         const isHigh = v > 1.8;
-                        this.pinStates[compPin] = isHigh;
+                        if (this.pinStates[compPin] !== isHigh) {
+                            this.pinStates[compPin] = isHigh;
+                            this.pinsChanged = true;
+                        }
                         if (compPin.startsWith('A')) {
                             const bit = parseInt(compPin.slice(1), 10);
                             if (!isNaN(bit)) this.portC?.setPin(bit, isHigh);
