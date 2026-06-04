@@ -498,11 +498,12 @@ export async function uploadCalibrationScripts(file) {
     return response.data;
 }
 
-export async function startEsp32Compile({ code, libraries_txt }) {
+export async function startEsp32Compile({ code, libraries_txt, targetEngine }) {
     const response = await axios.post(`${COMPILER_URL}/compile/start`, {
         code,
         target: 'esp32',
-        libraries_txt
+        libraries_txt,
+        targetEngine
     }, getUserAuthConfig());
     return response.data;
 }

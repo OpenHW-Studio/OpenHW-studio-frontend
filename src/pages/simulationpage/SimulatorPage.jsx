@@ -8754,7 +8754,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             "simulator",
           );
           let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-          if (compiled && (kind !== 'esp32' || esp32SimulationMode !== 'frontend' || compiled.hex)) {
+          if (compiled) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
@@ -8762,7 +8762,8 @@ export function SimulatorPage({ gamificationMode = false }) {
               if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
                 const startRes = await startEsp32Compile({
                   code: compileSource,
-                  libraries_txt: librariesTxt
+                  libraries_txt: librariesTxt,
+                  targetEngine: 'frontend'
                 });
                 
                 if (!startRes || (!startRes.jobId && !startRes.buildId)) {
