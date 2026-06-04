@@ -813,13 +813,17 @@ export class ESP32Runner implements BoardRunner {
                     break;
                 }
 
-                // We can run in large chunks to minimize performance.now() checking overhead
                 const chunkTarget = Math.min(this.pendingCycles, 100000);
-                // V8 Optimization: Avoid property lookup `this.cpu.cycles` on every single instruction
-                // Assume average of 4 cycles per instruction for ESP32 Xtensa
                 const startCycles = this.cpu.cycles;
-                const stepsToRun = Math.floor(chunkTarget / 4);
-                for (let i = 0; i < stepsToRun && this.running; i++) {
+                const F_CPU = (this.cpu as any).clock?.frequency || 160_000_000;
+                const targetCycles = startCycles + chunkTarget;
+                const targetNanos = (targetCycles / F_CPU) * 1e9;
+
+                while (this.cpu.cycles < targetCycles && this.running) {
+                    // Wokwi Idle Skipping: Instantly jump simulated time if CPU is waiting
+                    if ((this.cpu as any).coresIdle && (this.cpu as any).clock) {
+                        (this.cpu as any).clock.skipToNextEvent(targetNanos);
+                    }
                     this.cpu.step();
                 }
                 
