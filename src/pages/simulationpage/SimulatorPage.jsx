@@ -3740,10 +3740,12 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // ── Serial auto-scroll ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!serialPaused && serialOutputRef.current) {
+    const activeAutoscroll = boardAutoscrolls[serialBoardFilter] ?? true;
+    const activePaused = boardPausedStates[serialBoardFilter] ?? serialPaused;
+    if (activeAutoscroll && !activePaused && serialOutputRef.current) {
       serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
     }
-  }, [serialHistory, serialPaused]);
+  }, [serialHistory, serialPaused, serialBoardFilter, boardAutoscrolls, boardPausedStates]);
 
   useEffect(() => {
     serialPausedRef.current = serialPaused;
@@ -4796,13 +4798,25 @@ export function SimulatorPage({ gamificationMode = false }) {
 
             // ── Restore Code Merging ──
             if (plan.code_snippet) {
-              setEditorCode(
-                mergeCodeSnippet(
-                  editorCode,
-                  plan.code_snippet,
-                  plan.reasoning || [],
-                ),
+              const snippetOwnerId = mainCompWithPos.id;
+              const nextCode = mergeCodeSnippet(
+                currentCodeRef.current || code,
+                plan.code_snippet,
+                snippetOwnerId,
+                plan.reasoning || [],
               );
+              setCode(nextCode);
+              if (activeCodeFileId) {
+                setProjectFiles((prev) =>
+                  prev.map((f) =>
+                    f.id === activeCodeFileId
+                      ? { ...f, content: nextCode, dirty: true }
+                      : f,
+                  ),
+                );
+              }
+              setCodeTab("code");
+              setIsPanelOpen(true);
             }
 
             // ── Restore Reasoning Logs ──
@@ -6127,7 +6141,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     setShowCodeExplorer(true);
   };
 
-  const handleAutoCode = async (compId) => {
+  const handleAutoCode = async (compId, options = {}) => {
+    const { silent = false, openEditor = true } = options;
     console.log("[handleAutoCode] Triggered for component:", compId);
     const comp = components.find((c) => c.id === compId);
     if (!comp) {
@@ -6168,7 +6183,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         "[handleAutoCode] No target board found for component:",
         compId,
       );
-      alert("Component must be wired to a board first to generate code.");
+      if (!silent) alert("Component must be wired to a board first to generate code.");
       return;
     }
 
@@ -6201,23 +6216,27 @@ export function SimulatorPage({ gamificationMode = false }) {
           // Inject libraries if any
           if (payload.libraries && payload.libraries.length > 0) {
             console.log(
-              "[handleAutoCode] Libraries required:",
-              payload.libraries,
-            );
-            alert(
-              `Note: This component requires libraries: ${payload.libraries.join(", ")}.\nPlease ensure they are installed.`,
-            );
+                "[handleAutoCode] Libraries required:",
+                payload.libraries,
+              );
+            if (!silent) {
+              alert(
+                `Note: This component requires libraries: ${payload.libraries.join(", ")}.\nPlease ensure they are installed.`,
+              );
+            }
           }
 
+          let resolvedTargetFileId = filename;
           setProjectFiles((prev) => {
-            let targetFile = prev.find(
+            let nextFiles = prev;
+            let targetFile = nextFiles.find(
               (f) =>
                 f.boardId === targetBoardId ||
                 f.id === filename ||
                 f.name === filename,
             );
             if (!targetFile) {
-              const codeFiles = prev.filter(
+              const codeFiles = nextFiles.filter(
                 (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
               );
               if (codeFiles.length > 0) {
@@ -6239,15 +6258,16 @@ export function SimulatorPage({ gamificationMode = false }) {
                   }),
                   dirty: false,
                 };
-                prev = [...prev, targetFile];
+                nextFiles = [...nextFiles, targetFile];
               }
             }
+            resolvedTargetFileId = targetFile.id;
 
             console.log(
               "[handleAutoCode] Injecting code into file:",
               targetFile.id,
             );
-            return prev.map((f) => {
+            return nextFiles.map((f) => {
               if (f.id === targetFile.id) {
                 const currentContent =
                   activeCodeFileId === f.id || activeCodeFileId === f.name
@@ -6262,48 +6282,23 @@ export function SimulatorPage({ gamificationMode = false }) {
                 if (activeCodeFileId === targetFile.id) {
                   setCode(newContent);
                 }
-                return { ...f, content: newContent };
+                return { ...f, content: newContent, dirty: true };
               }
               return f;
             });
           });
 
-          setOpenCodeTabs((prevTabs) => {
-            // Re-find the target file ID since state update is asynchronous
-            const targetFile = projectFiles.find(
-              (f) =>
-                f.boardId === targetBoardId ||
-                f.id === filename ||
-                f.name === filename,
-            ) ||
-              projectFiles.filter(
-                (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
-              )[0] || { id: filename };
-            if (!prevTabs.includes(targetFile.id)) {
-              return [...prevTabs, targetFile.id];
-            }
-            return prevTabs;
-          });
-
-          // Re-find to set active
-          setTimeout(() => {
-            const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
-            setActiveCodeFileId((prev) => {
-              const file = (projectFiles || []).find(
-                (f) =>
-                  f.boardId === targetBoardId ||
-                  f.id === filename ||
-                  f.name === filename,
-              ) ||
-                (projectFiles || []).filter(
-                  (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
-                )[0] || { id: filename };
-              return file.id;
-            });
+          if (openEditor) {
+            setOpenCodeTabs((prevTabs) =>
+              prevTabs.includes(resolvedTargetFileId)
+                ? prevTabs
+                : [...prevTabs, resolvedTargetFileId],
+            );
+            setActiveCodeFileId(resolvedTargetFileId);
             setCodeTab("code");
             setIsPanelOpen(true);
             setShowCodeExplorer(true);
-          }, 0);
+          }
         } else {
           console.warn("[handleAutoCode] Worker returned empty snippet.");
         }
@@ -6311,6 +6306,51 @@ export function SimulatorPage({ gamificationMode = false }) {
       worker.terminate();
     };
   };
+
+  useEffect(() => {
+    if (!autoCodingEnabled || isRunning || liveEditingDisabled) return;
+
+    const hasAutocodeSnippet = (compId) =>
+      projectFiles.some((file) =>
+        String(file.content || "").includes(`autocoding for ${compId} start`),
+      );
+
+    const touchesBoard = (compId) => {
+      const visited = new Set();
+      const stack = [compId];
+      while (stack.length > 0) {
+        const current = stack.pop();
+        if (!current || visited.has(current)) continue;
+        visited.add(current);
+        const comp = components.find((c) => c.id === current);
+        if (comp && isProgrammableBoardType(comp.type)) return true;
+        for (const wire of wires) {
+          const [fromComp] = String(wire.from || "").split(":");
+          const [toComp] = String(wire.to || "").split(":");
+          if (fromComp === current && !visited.has(toComp)) stack.push(toComp);
+          if (toComp === current && !visited.has(fromComp)) stack.push(fromComp);
+        }
+      }
+      return false;
+    };
+
+    const timer = window.setTimeout(() => {
+      components
+        .filter((comp) =>
+          !isProgrammableBoardType(comp.type) &&
+          !isBreadboardType(comp.type) &&
+          !isResistorType(comp.type) &&
+          !hasAutocodeSnippet(comp.id) &&
+          touchesBoard(comp.id),
+        )
+        .slice(0, 3)
+        .forEach((comp) => {
+          handleAutoCode(comp.id, { silent: true, openEditor: false });
+        });
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [autoCodingEnabled, components, wires, projectFiles, isRunning, liveEditingDisabled]);
 
   const deleteWire = (id) => {
     if (isRunning || liveEditingDisabled) return;
