@@ -57,6 +57,7 @@ import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
 const GradingPage = React.lazy(() => import("./pages/GradingPage.jsx"));
 import MaintenancePage from "./pages/MaintenancePage.jsx";
 import AboutUsNew from "./pages/AboutUsNewPage.jsx";
+import VisitorTracker from "./components/VisitorTracker.jsx";
 
 import { fetchMaintenanceStatus } from "./services/simulatorService.js";
 import axios from "axios";
@@ -81,8 +82,6 @@ const ResponsiveSimulatorRoute = ({ desktopElement, mobileElement }) => {
       "/mobile-simulator",
       "/simulator",
     );
-    // If it was just /mobile-simulator, it goes to /simulator.
-    // If it was /mobile-simulator/something, it goes to /simulator/something.
     return <Navigate to={newPath === "" ? "/simulator" : newPath} replace />;
   }
 
@@ -111,7 +110,6 @@ const MaintenanceGuard = ({ children }) => {
     check();
     const interval = setInterval(check, 30000); // Check every 30s
 
-    // Global Axios Interceptor for 503 / connection errors AND 401 Session Expiry
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
@@ -145,8 +143,6 @@ const MaintenanceGuard = ({ children }) => {
     };
   }, []);
 
-  // Do not block initial render for maintenance check to fix LCP issues.
-  // We'll optimistically render the app and overlay MaintenancePage if needed.
   if (maintenance && !isAdminPath) {
     return <MaintenancePage />;
   }
@@ -157,22 +153,23 @@ const MaintenanceGuard = ({ children }) => {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <GamificationProvider>
-          <MaintenanceGuard>
-            {/* Global toast notifications (level-up, badge earned, XP) */}
-            <GamificationToasts />
+      <VisitorTracker>
+        <AuthProvider>
+          <GamificationProvider>
+            <MaintenanceGuard>
+              {/* Global toast notifications (level-up, badge earned, XP) */}
+              <GamificationToasts />
 
-            <React.Suspense
-              fallback={
-                <div
-                  style={{
-                    height: "100vh",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
+              <React.Suspense
+                fallback={
+                  <div
+                    style={{
+                      height: "100vh",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
                   <div className="loader"></div>
                 </div>
               }
@@ -422,6 +419,7 @@ export default function App() {
           </MaintenanceGuard>
         </GamificationProvider>
       </AuthProvider>
+      </VisitorTracker>
     </BrowserRouter>
   );
 }

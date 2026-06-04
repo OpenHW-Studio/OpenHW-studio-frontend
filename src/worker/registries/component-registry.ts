@@ -45,6 +45,7 @@ import { DiodeLogic } from '@openhw/emulator/src/components/openhw-diode/logic';
 import { NPNTransistorLogic } from '@openhw/emulator/src/components/openhw-npn-transistor/logic';
 import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/logic';
 import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
+import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
 
@@ -53,6 +54,7 @@ import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/l
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
+import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -88,6 +90,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-raspberry-pi-pico-w': PicoLogic,
     'wokwi-resistor': ResistorLogic,
     'openhw-resistor': ResistorLogic,
+    'wokwi-slide-switch': SlideSwitchLogic,
+    'openhw-slide-switch': SlideSwitchLogic,
     'wokwi-pushbutton': PushbuttonLogic,
     'openhw-pushbutton': PushbuttonLogic,
     'wokwi-power-supply': PowerSupplyLogic,
@@ -209,8 +213,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-nlsf595': BaseComponent,
     'wokwi-relay-module': BaseComponent,
     'openhw-relay-module': BaseComponent,
-    'wokwi-stepper-motor': BaseComponent,
-    'openhw-stepper-motor': BaseComponent,
+    'wokwi-stepper-motor': StepperMotorLogic,
+    'openhw-stepper-motor': StepperMotorLogic,
     'wokwi-arduino-mega': MegaLogic,
     'openhw-arduino-mega': MegaLogic,
     'wokwi-attiny85': BaseComponent,
@@ -249,6 +253,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
+    'wokwi-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
+    'openhw-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
     'wokwi-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
     'openhw-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
     'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
