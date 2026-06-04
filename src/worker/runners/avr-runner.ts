@@ -875,7 +875,7 @@ export class AVRRunner {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
-                } else if (inst.type.includes('motor-driver')) {
+                } else if (inst.type.includes('motor-driver') || inst.type.includes('l293d')) {
                     ['OUT1', 'OUT2', 'OUT3', 'OUT4'].forEach(pin => {
                         if (inst.pins[pin]) {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
