@@ -770,6 +770,44 @@ export class ESP32Runner implements BoardRunner {
             }
         }
     }
+    getSimulatedTimeMs() {
+        if (!this.cpu) return 0;
+        return Math.floor((this.cpu.cycles - this.cpuCyclesAtStart) / ((this.cpu as any).clock?.frequency / 1000 || 160_000));
+    }
+
+    readDirectMemory(address: number, length: number): Uint8Array | null {
+        if (!this.cpu || !this.cpu.cores || !this.cpu.cores[0]) return null;
+        const core = this.cpu.cores[0];
+        
+        if (typeof core.readUint8 === 'function') {
+            const buf = new Uint8Array(length);
+            for (let i = 0; i < length; i++) {
+                try {
+                    buf[i] = core.readUint8(address + i);
+                } catch (e) {
+                    // Memory read error, just return what we have
+                    break;
+                }
+            }
+            return buf;
+        }
+        return null;
+    }
+
+    writeDirectMemory(address: number, data: Uint8Array) {
+        if (!this.cpu || !this.cpu.cores || !this.cpu.cores[0]) return;
+        const core = this.cpu.cores[0];
+
+        if (typeof core.writeUint8 === 'function') {
+            for (let i = 0; i < data.length; i++) {
+                try {
+                    core.writeUint8(address + i, data[i]);
+                } catch (e) {
+                    break;
+                }
+            }
+        }
+    }
 
     private runLoop = () => {
         if (!this.running || !this.cpu) return;
@@ -848,16 +886,23 @@ export class ESP32Runner implements BoardRunner {
                     this.repropagateAllVoltages();
                 }
 
-                // Emit component states to frontend whenever any changed
+                // Emit component states to frontend only for those that changed
                 if (anyStateChanged && instArray.length > 0) {
-                    const compStates = instArray.map(inst => ({
-                        id: inst.id,
-                        type: inst.type,
-                        state: (typeof (inst as any).getState === 'function'
-                            ? (inst as any).getState()
-                            : inst.state) || {},
-                    }));
-                    this.onStateUpdate({ type: 'state', boardId: this.boardId, components: compStates });
+                    const compStates = instArray
+                        .filter(inst => (inst as any).pendingVisualStateEmit)
+                        .map(inst => {
+                            (inst as any).pendingVisualStateEmit = false;
+                            return {
+                                id: inst.id,
+                                type: inst.type,
+                                state: (typeof (inst as any).getState === 'function'
+                                    ? (inst as any).getState()
+                                    : inst.state) || {},
+                            };
+                        });
+                    if (compStates.length > 0) {
+                        this.onStateUpdate({ type: 'state', boardId: this.boardId, components: compStates });
+                    }
                 }
             }
 
