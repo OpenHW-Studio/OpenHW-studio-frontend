@@ -371,6 +371,22 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
     const pair = getBestPowerPins(comp, bb);
     if (!pair) return;
 
+    const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+
+    const makeCleanWaypoints = (compPin, bbPinId) => {
+      const cx = comp.x + getPinX(comp, compPin);
+      const cy = comp.y + getPinY(comp, compPin);
+      const bbPinDef = bbPins.find(p => p.id === bbPinId);
+      const bx = bb.x + (bbPinDef?.x || 0);
+      const by = bb.y + (bbPinDef?.y || 0);
+      // Clean L-shape: go vertically to the breadboard rail Y, then horizontally
+      if (Math.abs(cy - by) > Math.abs(cx - bx)) {
+        return [{ x: cx, y: by, _corner: true }];
+      }
+      // If mostly horizontal, go horizontally first then vertically
+      return [{ x: bx, y: cy, _corner: true }];
+    };
+
     if (pair.vcc) {
       const alreadyWired = newWires.some(w => 
         w.from === `${comp.id}:${pair.vcc.id}` || w.to === `${comp.id}:${pair.vcc.id}`
@@ -381,7 +397,8 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
           from: `${comp.id}:${pair.vcc.id}`,
           to: `${bb.id}:${pair.bbVcc}`,
           color: 'red',
-          isBelow: false
+          isBelow: false,
+          waypoints: makeCleanWaypoints(pair.vcc, pair.bbVcc)
         });
       }
     }
@@ -395,7 +412,8 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
           from: `${comp.id}:${pair.gnd.id}`,
           to: `${bb.id}:${pair.bbGnd}`,
           color: 'black',
-          isBelow: false
+          isBelow: false,
+          waypoints: makeCleanWaypoints(pair.gnd, pair.bbGnd)
         });
       }
     }
