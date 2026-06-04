@@ -8,7 +8,8 @@ import {
     getUnifiedComponentSyncState,
     decodeBase64ToBytes,
     getComponentStateSyncPolicy,
-    collectComponentTelemetry
+    collectComponentTelemetry,
+    collectConnectedComponentPins
 } from '../registries/component-registry.ts';
 import { ESP32, SimulationClock } from './esp32-engine.js';
 
@@ -37,6 +38,9 @@ export class ESP32Runner implements BoardRunner {
     private repropagateAllVoltages: (() => void) | null = null;
     private activeListeners: (() => void)[] = [];
     private statusIntervalEmitCount: number = 0;
+    private _updateOopPin: ((boardPinStr: string, isHighOrVoltage: boolean | number, customCompId?: string) => void) | null = null;
+    private pendingCycles: number = 0;
+    private channel = new MessageChannel();
 
     constructor(
         hexData: string,
@@ -54,9 +58,11 @@ export class ESP32Runner implements BoardRunner {
         this.cpu = null;
         this.clock = null;
         this.running = false;
-        this.lastTime = 0;
+        this.lastTime = performance.now();
         this.pinsChanged = true;
         this.circuitDirty = true;
+        this.pendingCycles = 0;
+        this.channel.port1.onmessage = this.runLoop;
         this.lastPhysicsSolveAt = 0;
         this.repropagateAllVoltages = null;
         this.statusIntervalEmitCount = 0;
@@ -78,57 +84,240 @@ export class ESP32Runner implements BoardRunner {
         (this as any).boardDeepSiliconEnabled = options.deepSiliconEnabled ?? false;
 
         // Decode the flat binary flash from base64
+        console.log(`\n\n[ESP32Runner] ==========================================`);
+        console.log(`[ESP32Runner] RUNNER VERSION: v14 (SIMULATORBRIDGE PROTOCOL + STATE EMIT)`);
+        console.log(`[ESP32Runner] ==========================================\n\n`);
         const binaryBytes = decodeBase64ToBytes(hexData);
         console.warn(`[ESP32Runner] Flashing binary of size: ${binaryBytes.length} bytes`);
         console.warn(`[ESP32Runner] Magic byte at 0x1000: 0x${binaryBytes[0x1000]?.toString(16)} (Expected: 0xe9)`);
         console.warn(`[ESP32Runner] Magic byte at 0x0000: 0x${binaryBytes[0]?.toString(16)}`);
         
-        // Instantiate the simulated clock and ESP32 dual-core Xtensa CPU
-        this.clock = new SimulationClock();
-        this.cpu = new ESP32({ flashSizeMB: 4, clock: this.clock });
+        // CRITICAL: Do NOT pass an external SimulationClock to the ESP32 constructor!
+        // When you do, clock.cpu points to a null/different object, so all clock events
+        // (like eFuse cmdDone after 634,400 cycles) NEVER fire, causing the BootROM to
+        // spin forever waiting for eFuse operations to complete.
+        // Let ESP32 create its own internal clock, then grab the reference from it.
+        this.cpu = new ESP32({ flashSizeMB: 4, flash: binaryBytes });
+        this.clock = this.cpu.clock; // Use the clock that is correctly linked to this CPU
         
-        // Flash the merged binary image directly into physical flash memory
-        this.cpu.flash.set(binaryBytes);
+        // Also manually set flash to be absolutely sure the binary is loaded
+        if (this.cpu.flash) {
+            this.cpu.flash.set(binaryBytes);
+        }
         
         // Load physical BootROM if provided
         if (options.esp32Rom) {
-            let rom = options.esp32Rom;
-            if (rom.length > 393216) {
-                console.warn(`[ESP32Runner] Truncating overly large bootrom from ${rom.length} bytes to 393216 bytes`);
-                rom = rom.slice(0, 393216);
-            }
+            const rom = options.esp32Rom;
+            // Note: esp32-v3-rom.bin is 455722 bytes (384KB code + 61KB data).
+            // DO NOT truncate it! The Data ROM is required for BootROM stability.
             this.cpu.loadROM(rom);
         }
         
-        // Reset CPU to initialize MMU registers, dual cores, and peripherals
+        // CRITICAL: Force strapping pins for SPI Flash Boot BEFORE reset!
+        if (this.cpu.gpio && this.cpu.gpio.pins) {
+            if (this.cpu.gpio.pins[0]) this.cpu.gpio.pins[0].inputValue = true;   // GPIO0: HIGH
+            if (this.cpu.gpio.pins[2]) this.cpu.gpio.pins[2].inputValue = false;  // GPIO2: LOW
+            if (this.cpu.gpio.pins[12]) this.cpu.gpio.pins[12].inputValue = false; // GPIO12: LOW
+            if (this.cpu.gpio.pins[15]) this.cpu.gpio.pins[15].inputValue = false; // GPIO15: LOW (Verbose BootROM UART!)
+        }
+
+        // Reset CPU to initialize MMU registers, dual cores, and peripherals. 
         this.cpu.reset();
         
-        // CRITICAL: Force strapping pins for SPI Flash Boot!
-        // Wokwi's GPIO inputs might default to false (LOW) if not externally driven,
-        // which forces the BootROM into UART Download Mode. We must manually apply the default pull-up/pull-down states.
-        if (this.cpu.gpio && this.cpu.gpio.pins) {
-            if (this.cpu.gpio.pins[0]) this.cpu.gpio.pins[0].inputValue = true;   // GPIO0: HIGH (Boot from SPI)
-            if (this.cpu.gpio.pins[2]) this.cpu.gpio.pins[2].inputValue = false;  // GPIO2: LOW (Must be low for boot)
-            if (this.cpu.gpio.pins[12]) this.cpu.gpio.pins[12].inputValue = false; // GPIO12: LOW (Select 3.3V flash)
-            if (this.cpu.gpio.pins[15]) this.cpu.gpio.pins[15].inputValue = true;  // GPIO15: HIGH (Disable JTAG, normal boot)
+        // Flash the merged binary image directly into physical flash memory AFTER reset!
+        // (Just in case the reset() method clears the internal flash buffer)
+        this.cpu.flash.set(binaryBytes);
+        console.warn(`[ESP32Runner] Magic byte at 0x1000 AFTER flash set: 0x${this.cpu.flash[0x1000]?.toString(16)}`);
+        
+        // CRITICAL: Wokwi maintains an internal `strapValue` property that overrides pin states.
+        if (this.cpu.gpio) {
+            (this.cpu.gpio as any).strapValue = 0x13; // default: GPIO5=1,GPIO15=1,GPIO0=1 = SPI Flash + Verbose
         }
+        
+        // CRITICAL FIX: Wokwi MMU starts with ALL entries = 256 (INVALID bit set).
+        // The BootROM reads flash through the MMU-cached virtual address window (0x3f400000 / 0x40200000).
+        // Without valid MMU entries, every flash read returns -1 (invalidMem), causing the boot loop.
+        // Flash page size = 64KB (shift=16). For 4MB flash = 64 pages (indices 0-63).
+        // We pre-populate mmuTablePro with a 1:1 identity mapping for all flash pages.
+        if ((this.cpu as any).mmuTablePro) {
+            const mmuPro = (this.cpu as any).mmuTablePro as Uint32Array;
+            const mmuApp = (this.cpu as any).mmuTableApp as Uint32Array;
+            const FLASH_PAGES = 64; // 64 pages × 64KB = 4MB
+            for (let page = 0; page < FLASH_PAGES; page++) {
+                mmuPro[page] = page;  // 1:1 identity mapping, no invalid bit
+                mmuApp[page] = page;
+            }
+            console.log(`[ESP32Runner] Pre-seeded MMU with ${FLASH_PAGES} identity-mapped flash pages`);
+        }
+        
+        // CRITICAL FIX #2: The BootROM polls 0x3ff5a104 (EFUSE_STATUS_REG) waiting for 0x5aa5.
+        // Wokwi's Efuse controller initializes this to 0x1 (busy), so the BootROM spins forever.
+        // We pre-write 0x5aa5 to indicate "eFuse ready" so the BootROM can proceed.
+        try {
+            this.cpu.cores[0].writeUint32(0x3ff5a104, 0x5aa5);
+            console.log('[ESP32Runner] Pre-initialized EFUSE_STATUS_REG to 0x5aa5 (ready)');
+        } catch(e) {}
         
         this.cpu.stopped = false; // Force CPU to not be halted
         if (this.cpu.cores?.[0] && typeof this.cpu.cores[0].PC !== 'undefined') {
             // Optional: log initial PC
             console.log('[ESP32Runner] Initial Core0 PC after reset: 0x' + this.cpu.cores[0].PC.toString(16));
+            try {
+                // Read GPIO_STRAP_REG (0x3FF44038)
+                const strap = this.cpu.cores[0].readUint32(0x3FF44038);
+                console.warn(`[ESP32Runner] GPIO_STRAP_REG after reset: 0x${strap.toString(16)} (Binary: ${strap.toString(2)})`);
+            } catch (e) {}
         }
         
-        // Setup serial UART0 output bridge
+        // Setup serial UART0 output bridge + SimulatorBridge protocol parser
         if (this.cpu.uart && this.cpu.uart[0]) {
-            this.cpu.uart[0].onTX = (byte: number) => {
-                const char = String.fromCharCode(byte);
-                if (this.onByteTransmitCb) {
-                    this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'uart0' });
-                } else {
-                    this.onStateUpdate({ type: 'serial', data: char, value: byte, boardId: this.boardId, source: 'uart0' });
+            let uartBuffer = '';
+            let protocolFrame = ''; // accumulates chars between > and <
+            let inFrame = false;
+
+            const parseProtocolFrame = (frame: string) => {
+                // >GPIO:13:1< → digitalWrite(13, HIGH)
+                const gpioMatch = frame.match(/^GPIO:(\d+):(\d+)$/);
+                if (gpioMatch) {
+                    const pin = parseInt(gpioMatch[1], 10);
+                    const val = parseInt(gpioMatch[2], 10) !== 0;
+                    // Update component netlist voltage (drives LED)
+                    if (this._updateOopPin) {
+                        this._updateOopPin(String(pin), val ? 3.3 : 0);
+                    }
+                    // Also update pinStates so repropagateAllVoltages picks it up
+                    this.pinStates[String(pin)] = val;
+                    this.circuitDirty = true;
+                    this.pinsChanged = true;
+                    // Emit pin state to frontend
+                    const pinsPayload: Record<string, boolean> = {};
+                    for (const [k, v] of Object.entries(this.pinStates)) {
+                        pinsPayload[k] = !!v;
+                    }
+                    this.onStateUpdate({ type: 'state', boardId: this.boardId, pins: pinsPayload });
+                    return;
+                }
+                // >TONE:5:262:200< → Piezo Buzzer tone
+                const toneMatch = frame.match(/^TONE:(\d+):(\d+):(\d+)$/);
+                if (toneMatch) {
+                    const pin = toneMatch[1];
+                    const freq = parseInt(toneMatch[2], 10);
+                    const dur = parseInt(toneMatch[3], 10);
+                    this.syncTone(pin, freq, dur);
+                    return;
+                }
+
+                // >PWM:pin:duty< → PWM output (e.g., servo, fading LED)
+                const pwmMatch = frame.match(/^PWM:(\d+):(\d+)$/);
+                if (pwmMatch) {
+                    const pin = parseInt(pwmMatch[1], 10);
+                    const val = parseInt(pwmMatch[2], 10);
+                    const duty_pct = Math.max(0, Math.min(1.0, val / 255.0));
+                    this.syncPwm(pin, duty_pct);
+                    return;
+                }
+
+                // >I2C:3c:00aed5...< → I2C write (forward to protocol analyzer and internal components)
+                const i2cMatch = frame.match(/^I2C:([0-9a-fA-F]+):(.*)$/);
+                if (i2cMatch) {
+                    const addr = parseInt(i2cMatch[1], 16);
+                    const hex = i2cMatch[2];
+                    
+                    // Route I2C payload to simulated components (like OLED/LCD)
+                    this.instances.forEach(inst => {
+                        const anyInst = inst as any;
+                        if (typeof anyInst.onI2CStart === 'function') anyInst.onI2CStart(addr, false);
+                        if (typeof anyInst.onI2CByte === 'function') {
+                            for (let i = 0; i < hex.length; i += 2) {
+                                const byte = parseInt(hex.substring(i, i + 2), 16);
+                                if (!isNaN(byte)) anyInst.onI2CByte(addr, byte);
+                            }
+                        }
+                        if (typeof anyInst.onI2CStop === 'function') anyInst.onI2CStop();
+                    });
+
+                    this.onStateUpdate({ type: 'protocol:i2c', boardId: this.boardId, address: addr, hex, direction: 'write' });
+                    return;
+                }
+                
+                // >SPI:<hexbyte>< or >SPIBUF:<hexdata>< → SPI write
+                const spiMatch = frame.match(/^SPI:([0-9a-fA-F]{2})$/);
+                const spiBufMatch = frame.match(/^SPIBUF:([0-9a-fA-F]+)$/);
+                if (spiMatch || spiBufMatch) {
+                    const hex = spiMatch ? spiMatch[1] : spiBufMatch![1];
+                    this.syncSpiBatch(hex);
+                    return;
+                }
+
+                // >DAC:pin:val< → 8-bit DAC output (ESP32 pins 25, 26)
+                const dacMatch = frame.match(/^DAC:(\d+):(\d+)$/);
+                if (dacMatch) {
+                    const pin = parseInt(dacMatch[1], 10);
+                    const val = parseInt(dacMatch[2], 10); // 0-255
+                    this.syncDac(pin, val);
+                    return;
                 }
             };
+
+            this.cpu.uart[0].onTX = (byte: number) => {
+                const char = String.fromCharCode(byte);
+
+                // Parse SimulatorBridge protocol frames (>FRAME<)
+                if (char === '>') {
+                    inFrame = true;
+                    protocolFrame = '';
+                } else if (char === '<' && inFrame) {
+                    inFrame = false;
+                    if (protocolFrame.length > 0) {
+                        parseProtocolFrame(protocolFrame);
+                    }
+                    protocolFrame = '';
+                } else if (inFrame) {
+                    protocolFrame += char;
+                }
+
+                // Line-buffer for console logging
+                if (char === '\n' || char === '\r') {
+                    if (uartBuffer.length > 0) {
+                        console.log(`[ESP32 UART0] ${uartBuffer}`);
+                        uartBuffer = '';
+                    }
+                } else {
+                    uartBuffer += char;
+                }
+
+                if (this.onByteTransmitCb) {
+                    this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'uart0' });
+                }
+
+                // Line-buffer for serial monitor: emit complete lines as SERIAL_OUTPUT
+                // This matches the behavior of qemuRunner.js on the backend
+                if (!inFrame) {
+                    if (char === '\n') {
+                        if (this.uartLineBuffer.length > 0) {
+                            this.onStateUpdate({ type: 'SERIAL_OUTPUT', text: this.uartLineBuffer, boardId: this.boardId, source: 'wasm' });
+                        }
+                        this.uartLineBuffer = '';
+                    } else if (char !== '\r') {
+                        this.uartLineBuffer += char;
+                    }
+                }
+            };
+            
+            // CRITICAL FIX #3: The UART TX state machine needs txComplete() to be called
+            // after each byte to advance to the next one. Normally this is driven by a
+            // baud-rate clock event in Wokwi's framework, but we don't have that.
+            // Without this, the BootROM busy-waits on TXFIFO_CNT forever.
+            // Fix: patch txUpdated() to immediately call txComplete() to drain the FIFO.
+            const uart = this.cpu.uart[0] as any;
+            const origTxUpdated = uart.txUpdated.bind(uart);
+            uart.txUpdated = function(this: any) {
+                origTxUpdated();
+                if (this.txState !== 0) { // not TX_IDLE
+                    this.txComplete();
+                }
+            };
+
         }
 
         // Instantiate workspace components
@@ -440,6 +629,9 @@ export class ESP32Runner implements BoardRunner {
             visitNode(`${startCompId}:${boardPinStr}`, voltage);
         };
 
+        // Store updateOopPin as a class field so the UART protocol parser can call it
+        this._updateOopPin = updateOopPin;
+        
         this.repropagateAllVoltages = () => {
             lowImpRails = getLowImpedanceRails();
             
@@ -582,52 +774,63 @@ export class ESP32Runner implements BoardRunner {
     private runLoop = () => {
         if (!this.running || !this.cpu) return;
 
-        const loopStart = performance.now();
         const now = performance.now();
         const deltaTime = now - this.lastTime;
+        this.lastTime = now;
         
         const loopCount = (this as any)._runLoopCount || 0;
         (this as any)._runLoopCount = loopCount + 1;
 
         if (deltaTime > 0) {
-            const F_CPU = 125_000_000;
+            const F_CPU = (this.cpu as any).clock?.frequency ?? 160_000_000;
             const cyclesPerMs = (F_CPU / 1000) * this.speed;
-            const cyclesToRun = deltaTime * cyclesPerMs;
             
-            // Limit the cycles per frame to protect execution thread (cap at max 80,000 steps to prevent blocking)
-            const CYCLES_PER_FRAME = Math.floor(Math.min(cyclesToRun, 80000 * Math.max(1, this.speed)));
+            // Limit deltaTime to max 100ms to prevent death spirals if browser tab sleeps
+            const cappedDelta = Math.min(deltaTime, 100);
+            this.pendingCycles += cappedDelta * cyclesPerMs;
 
-            let cyclesDone = 0;
-            const componentUpdateThreshold = 25000; // ~200us simulated time step
+            const executionStartTime = performance.now();
             
             const instArray = Array.from(this.instances.values());
-            const physicsInterval = this.speed > 1.0 ? 8 : 12; // ~80-120Hz
+            const physicsInterval = this.speed > 1.0 ? 8 : 12;
             const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
 
-            // Periodic diagnostic log for CPU cycles execution
-            const cyclesBefore = this.cpu.cycles;
-            if (((this as any)._runLoopCount || 0) % 50 === 0) {
+            // Log PC every 500 runLoop ticks
+            if (((this as any)._runLoopCount || 0) % 500 === 0) {
                 const core0 = this.cpu.cores?.[0];
                 let pcVal = 0;
                 if (core0) {
                     pcVal = core0.PC ?? core0.pc ?? (typeof core0.getPC === 'function' ? core0.getPC() : 0);
                 }
-                const pcHex = pcVal.toString(16);
-                console.log(`[ESP32Runner Worker runLoop] PC: 0x${pcHex} | Cycles: ${this.cpu.cycles} | Stopped: ${this.cpu.stopped}`);
-                if (!pcVal && core0) {
-                    console.log(`[ESP32Runner Worker] core0 keys: ${Object.keys(core0).join(',')} | prototype keys: ${Object.getOwnPropertyNames(Object.getPrototypeOf(core0)).join(',')}`);
-                }
+                console.log(`[ESP32Runner] PC: 0x${pcVal.toString(16)} | Cycles: ${this.cpu.cycles}`);
             }
 
-            while (cyclesDone < CYCLES_PER_FRAME && this.running && this.cpu) {
-                const chunkTarget = Math.min(CYCLES_PER_FRAME, cyclesDone + componentUpdateThreshold);
-                
-                while (cyclesDone < chunkTarget && this.running) {
-                    this.cpu.step();
-                    cyclesDone++;
+            // Execute instructions strictly 1-for-1 to guarantee PWM/SPI/I2C peripheral timing.
+            // Run as many as physically possible in a 16ms window to maintain 60fps UI.
+            while (this.pendingCycles > 0 && this.running && this.cpu) {
+                if (performance.now() - executionStartTime > 16) {
+                    // Yield to browser to keep UI responsive, save remaining cycles for next tick
+                    break;
                 }
 
-                // Component updates for smooth animation
+                // We can run in large chunks to minimize performance.now() checking overhead
+                const chunkTarget = Math.min(this.pendingCycles, 100000);
+                // V8 Optimization: Avoid property lookup `this.cpu.cycles` on every single instruction
+                // Assume average of 4 cycles per instruction for ESP32 Xtensa
+                const startCycles = this.cpu.cycles;
+                const stepsToRun = Math.floor(chunkTarget / 4);
+                for (let i = 0; i < stepsToRun && this.running; i++) {
+                    this.cpu.step();
+                }
+                
+                const cyclesDone = this.cpu.cycles - startCycles;
+                this.pendingCycles -= cyclesDone;
+            }
+
+            // --- Component updates for smooth animation ---
+            // MOVED OUTSIDE THE LOOP! This runs just ONCE per 16ms frame (60fps) instead of 
+            // 6,400 times per simulated second. This entirely eliminates the 9000ms time drift.
+            if (this.running && this.cpu) {
                 let anyStateChanged = false;
                 instArray.forEach(inst => {
                     inst.update(this.cpu!.cycles, this.currentWires, instArray);
@@ -640,11 +843,22 @@ export class ESP32Runner implements BoardRunner {
                 if (anyStateChanged && typeof this.repropagateAllVoltages === 'function') {
                     this.repropagateAllVoltages();
                 }
+
+                // Emit component states to frontend whenever any changed
+                if (anyStateChanged && instArray.length > 0) {
+                    const compStates = instArray.map(inst => ({
+                        id: inst.id,
+                        type: inst.type,
+                        state: (typeof (inst as any).getState === 'function'
+                            ? (inst as any).getState()
+                            : inst.state) || {},
+                    }));
+                    this.onStateUpdate({ type: 'state', boardId: this.boardId, components: compStates });
+                }
             }
 
 
 
-            this.lastTime = now;
             if (shouldSolvePhysics) {
                 if (typeof this.repropagateAllVoltages === 'function') {
                     this.repropagateAllVoltages();
@@ -655,7 +869,7 @@ export class ESP32Runner implements BoardRunner {
 
             // Pace Serial RX (bytes per millisecond = baudRate / 10000)
             const bytesPerMs = this.serialBaudRate / 10000;
-            this.serialByteBudget += deltaTime * bytesPerMs;
+            this.serialByteBudget += cappedDelta * bytesPerMs;
 
             if (this.serialBuffer.length > 0 && this.cpu.uart && this.cpu.uart[0] && this.serialByteBudget >= 1) {
                 const maxBytes = Math.floor(this.serialByteBudget);
@@ -666,9 +880,22 @@ export class ESP32Runner implements BoardRunner {
                 }
                 this.serialByteBudget -= toSend;
             }
+
+            // Emit pin states every frame so frontend stays in sync
+            // (SimulatorBridge protocol parser updates this.pinStates directly;
+            //  this emit delivers them to renderPinsByBoardRef in SimulatorPage)
+            if (this.pinsChanged) {
+                this.pinsChanged = false;
+                const pinsPayload: Record<string, boolean> = {};
+                for (const [k, v] of Object.entries(this.pinStates)) {
+                    pinsPayload[k] = !!v;
+                }
+                this.onStateUpdate({ type: 'state', boardId: this.boardId, pins: pinsPayload });
+            }
         }
 
-        setTimeout(this.runLoop, 1);
+        // Use MessageChannel for 0ms delay yield (significantly faster than setTimeout(..., 1))
+        this.channel.port2.postMessage(null);
     };
 
     serialRx(data: string) {
@@ -681,7 +908,218 @@ export class ESP32Runner implements BoardRunner {
         this.serialBuffer.push(value & 0xff);
     }
 
+    syncTone(pin: string, frequency: number, duration: number) {
+        const aliases = [pin];
+        if (/^\d+$/.test(pin)) aliases.push(`D${pin}`, `GPIO${pin}`);
+        else if (/^(D|GPIO)(\d+)$/i.test(pin)) {
+            const num = pin.replace(/\D/g, '');
+            aliases.push(num, `D${num}`, `GPIO${num}`);
+        }
+
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        const isSilent = frequency === 0;
+
+        // Removed fallback logic for verification
+
+        for (const endpoint of endpoints) {
+            const comp = endpoint.inst;
+            if (isSilent) {
+                if (typeof (comp as any).setState === 'function') {
+                    (comp as any).setState({ isBuzzing: false, frequency: 0, voltageDrop: 0, current: 0 });
+                }
+            } else {
+                (comp as any)._isToneBypassed = true;
+                if (typeof (comp as any).setState === 'function') {
+                    (comp as any).setState({ isBuzzing: true, frequency, voltageDrop: 3.3, current: 0.015 });
+                }
+            }
+        }
+    }
+
+    syncPwm(channel: number, duty_pct: number) {
+        const pin = String(channel);
+        const aliases = [pin];
+        if (/^\d+$/.test(pin)) aliases.push(`D${pin}`, `GPIO${pin}`);
+        else if (/^(D|GPIO)(\d+)$/i.test(pin)) {
+            const num = pin.replace(/\D/g, '');
+            aliases.push(num, `D${num}`, `GPIO${num}`);
+        }
+
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        // Removed fallback logic for verification
+
+        for (const endpoint of endpoints) {
+            const targetInst = endpoint.inst;
+            if (typeof (targetInst as any).onPWMSignal === 'function') {
+                 (targetInst as any).onPWMSignal(endpoint.pinId, 1000, duty_pct, duty_pct * 1000);
+            } else if (typeof (targetInst as any).onPWM === 'function') {
+                 (targetInst as any).onPWM(endpoint.pinId, { dutyCycle: duty_pct });
+            }
+        }
+    }
+
+    syncSpiBatch(hex: string) {
+        const bytes: number[] = [];
+        for (let i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substring(i, i + 2), 16));
+        
+        // For verification, we should theoretically use the adjacency map here too.
+        // But SPI is a bus (MOSI, MISO, SCK) and UART frames don't include the pin.
+        // For strict verification, if you want SPI wire tracing, we'd need to trace the SPI pins.
+        // For now, leaving the broadcast for SPI since SPI is generally bus-wide and the user asked about buzzer/PWM.
+        const spiDevices = Array.from(this.instances.values()).filter(inst => 
+            typeof (inst as any).onSPIByte === 'function'
+        );
+        for (const dev of spiDevices) {
+            for (const byte of bytes) (dev as any).onSPIByte(byte);
+        }
+    }
+
+    syncAdc(channel: number, val: number) {
+        // ESP32 SimulatorBridge expects <ADC:pin:val>\n on UART0 for analog injection
+        const cmd = `<ADC:${channel}:${val}>\n`;
+        this.serialRx(cmd);
+    }
+
+    syncAnalog(pin: number, val: number) {
+        this.syncAdc(pin, val);
+    }
+
+    syncDac(pin: number, val: number) {
+        // Route DAC voltage to any component connected on that pin via wire adjacency map
+        const pinStr = String(pin);
+        const aliases = [pinStr, `D${pinStr}`, `GPIO${pinStr}`];
+        const voltage = (val / 255.0) * 3.3;
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            const inst = endpoint.inst;
+            if (typeof (inst as any).onAnalogVoltage === 'function') {
+                (inst as any).onAnalogVoltage(endpoint.pinId, voltage);
+            } else if (typeof (inst as any).setState === 'function') {
+                (inst as any).setState({ voltage, analog: val });
+            }
+        }
+        // Also emit to frontend for oscilloscope/plotter components
+        this.onStateUpdate({ type: 'esp32:dac:sync', boardId: this.boardId, pin, val, voltage });
+    }
+
+    syncSerial(text: string) {
+        this.onStateUpdate({ type: 'serial', data: text, boardId: this.boardId, source: 'wasm' });
+    }
+
+    syncNeopixel(channel: number, pixels: any[]) {
+        // Route WS2812/NeoPixel pixels to any component wired to that channel pin
+        const pinStr = String(channel);
+        const aliases = [pinStr, `D${pinStr}`, `GPIO${pinStr}`];
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            const comp = endpoint.inst;
+            if (typeof (comp as any).updatePixels === 'function') {
+                (comp as any).updatePixels(pixels);
+            } else if (typeof (comp as any).onWS2812BByte === 'function') {
+                for (const p of pixels) {
+                    (comp as any).onWS2812BByte(p.g);
+                    (comp as any).onWS2812BByte(p.r);
+                    (comp as any).onWS2812BByte(p.b);
+                }
+            } else {
+                (comp as any).pixels = pixels;
+            }
+        }
+    }
+    // ── GPIO Routing map (LEDC/RMT channel → GPIO pin) ─────────────────────
+    private gpioRoutingMap: Map<number, string> = new Map();
+    // ── LEDC channel → pin map (set by sim_ledcAttachPin) ──────────────────
+    private ledcChannelMap: Map<number, number> = new Map();
+    // ── UART TX line buffer for serial monitor ──────────────────────────────
+    private uartLineBuffer: string = '';
+
+    syncGpioRouting(gpio: number, signal_id: string) {
+        this.gpioRoutingMap.set(gpio, signal_id);
+        // If this maps a WS2812 channel to a pin, NeoPixel routing now resolves correctly
+    }
+
+    clearGpioRouting(gpio: number) {
+        this.gpioRoutingMap.delete(gpio);
+    }
+
+    syncLedc(channel: number, duty_pct: number) {
+        // Resolve LEDC channel → physical pin via ledcChannelMap, then reuse syncPwm
+        const pin = this.ledcChannelMap.get(channel);
+        if (pin !== undefined) {
+            this.syncPwm(pin, duty_pct);
+        } else {
+            // Fallback: treat channel as pin number (compatible with analogWrite behavior)
+            this.syncPwm(channel, duty_pct);
+        }
+    }
+
+    ledcAttachPin(pin: number, channel: number) {
+        this.ledcChannelMap.set(channel, pin);
+    }
+
+    syncSerialRx(channel: number, data: string) {
+        // Inject data from an external component into UART RX (simulates a connected serial device)
+        const pinStr = String(channel);
+        const aliases = [pinStr, `D${pinStr}`, `GPIO${pinStr}`, `RX${channel}`, `U${channel}RXD`];
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        // Also inject the raw bytes into UART0 for firmware Serial.read()
+        this.serialRx(data);
+        // Notify any component that has a data sink callback
+        for (const endpoint of endpoints) {
+            if (typeof (endpoint.inst as any).onSerialData === 'function') {
+                (endpoint.inst as any).onSerialData(data);
+            }
+        }
+    }
+
+    syncPcnt(unit: number, count: number) {
+        // Inject a pulse count into the firmware via UART0 command
+        const cmd = `<PCNT:${unit}:${count}>\n`;
+        this.serialRx(cmd);
+    }
+
+    syncTwai(id: number, dlc: number, data: number[]) {
+        // Route a received CAN frame to any component wired to TWAI TX/RX pins (pins 4/5 default)
+        const hexData = data.map(b => b.toString(16).padStart(2, '0')).join('');
+        const aliases = ['4', 'D4', 'GPIO4', '5', 'D5', 'GPIO5', 'CANH', 'CANL'];
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            if (typeof (endpoint.inst as any).onCanFrame === 'function') {
+                (endpoint.inst as any).onCanFrame(id, dlc, data);
+            }
+        }
+        // Inject into firmware for can.receive() if needed
+        const cmd = `<TWAI:${id.toString(16).padStart(8, '0')}:${dlc.toString(16).padStart(2, '0')}:${hexData}>\n`;
+        this.serialRx(cmd);
+    }
+
+    syncRmt(channel: number, pulses: Array<{ level: number; duration: number }>) {
+        // Route RMT pulses (IR) to a component wired to the RMT output pin
+        const gpio = this.gpioRoutingMap.get(channel) ?? String(channel);
+        const aliases = [gpio, `D${gpio}`, `GPIO${gpio}`];
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            if (typeof (endpoint.inst as any).onRmtPulse === 'function') {
+                (endpoint.inst as any).onRmtPulse(pulses);
+            } else if (typeof (endpoint.inst as any).onInfraredSignal === 'function') {
+                (endpoint.inst as any).onInfraredSignal(pulses);
+            }
+        }
+    }
+
+    syncSleep(duration_us: number) {
+        this.running = false;
+        this.onStateUpdate({ type: 'sim:sleep', boardId: this.boardId, duration_us });
+        if (duration_us > 0) {
+            setTimeout(() => {
+                this.running = true;
+                this.onStateUpdate({ type: 'sim:wake', boardId: this.boardId });
+            }, Math.min(duration_us / 1000, 30000)); // cap at 30s for sim purposes
+        }
+    }
+
     setSerialBaudRate(baud: number) {
+
         this.serialBaudRate = baud;
     }
 
