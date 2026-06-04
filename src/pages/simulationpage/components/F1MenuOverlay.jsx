@@ -24,6 +24,8 @@ function F1MenuOverlayBase({
   isRunning,
   workerRef,
   handleStartGDB,
+  esp32SimulationMode = 'qemu',
+  setEsp32SimulationMode,
 }) {
   if (!showF1Menu) return null;
 
@@ -167,6 +169,40 @@ function F1MenuOverlayBase({
 
           <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-wider mt-2 mb-1 px-1">
             System & Emulation Controls
+          </div>
+
+          <div className="flex flex-col gap-1.5 mb-2">
+            <span className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-wider px-1">ESP32 Sim Engine</span>
+            <div className="flex gap-2">
+              <Btn
+                onClick={() => setEsp32SimulationMode?.('qemu')}
+                style={{ 
+                  flex: 1, 
+                  padding: '10px', 
+                  background: esp32SimulationMode === 'qemu' ? 'var(--card)' : 'var(--bg)',
+                  border: esp32SimulationMode === 'qemu' ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  fontSize: '11px',
+                  fontWeight: esp32SimulationMode === 'qemu' ? 'bold' : 'normal'
+                }}
+                className={esp32SimulationMode === 'qemu' ? 'text-[var(--accent)]' : 'text-[var(--text2)]'}
+              >
+                Backend QEMU
+              </Btn>
+              <Btn
+                onClick={() => setEsp32SimulationMode?.('frontend')}
+                style={{ 
+                  flex: 1, 
+                  padding: '10px', 
+                  background: esp32SimulationMode === 'frontend' ? 'var(--card)' : 'var(--bg)',
+                  border: esp32SimulationMode === 'frontend' ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  fontSize: '11px',
+                  fontWeight: esp32SimulationMode === 'frontend' ? 'bold' : 'normal'
+                }}
+                className={esp32SimulationMode === 'frontend' ? 'text-[var(--accent)]' : 'text-[var(--text2)]'}
+              >
+                Frontend Engine
+              </Btn>
+            </div>
           </div>
 
           <Btn

@@ -660,41 +660,7 @@ function TopToolboxInternal(props) {
               setActiveMenu={setActiveMenu}
               theme={theme}
             />
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                setActiveMenu(null);
-                setShowComponentList((v) => !v);
-              }}
-              style={{
-                background: showComponentList
-                  ? "rgba(255,255,255,0.05)"
-                  : "none",
-                border: "none",
-                color: showComponentList ? "var(--text)" : "var(--text3)",
-                fontSize: "14px",
-                fontWeight: "500",
-                padding: "2px 8px",
-                cursor: "pointer",
-                borderRadius: "4px",
-                transition: "background 0.2s, color 0.2s",
-                pointerEvents: "auto",
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.background = "rgba(255,255,255,0.05)";
-                e.target.style.color = "var(--text)";
-              }}
-              onMouseLeave={(e) => {
-                if (!showComponentList) {
-                  e.target.style.background = "none";
-                  e.target.style.color = "var(--text3)";
-                }
-              }}
-              title="Bill of materials for components on the canvas"
-            >
-              Components
-            </button>
+
             <MenuButton
               label="Tool"
               menuKey="tool"
@@ -1071,6 +1037,13 @@ function TopToolboxInternal(props) {
           gap: 8,
         }}
       >
+        <Btn
+          color={showComponentList ? "var(--accent)" : undefined}
+          onClick={() => setShowComponentList((v) => !v)}
+          title="Bill of materials for components on the canvas"
+        >
+          Component List
+        </Btn>
         <div ref={connectPanelRef} style={{ position: "relative" }}>
           <Btn
             color={hardwareConnected ? "var(--green)" : undefined}

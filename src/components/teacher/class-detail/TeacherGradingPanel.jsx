@@ -150,7 +150,7 @@ export default function TeacherGradingPanel({ isEnabled, autogradingKey, onKeyGe
           ignore_pin_changes: false
         },
         config: {
-          compilerUrl: `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001/api'}/compile`
+          compilerUrl: `${import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:5000/api" : "/api")}/compile`
         }
       });
 
