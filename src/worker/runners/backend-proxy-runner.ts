@@ -660,6 +660,30 @@ export class BackendProxyRunner implements BoardRunner {
                     (inst as any).setPinVoltage?.('1', voltage); visit(`${compId}:1`);
                 }
             }
+        } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+            if ((inst as any).state?.connectedPair) {
+                const [p1, p2] = (inst as any).state.connectedPair;
+                if (pinId === p1) {
+                    (inst as any).setPinVoltage?.(p2, voltage); visit(`${compId}:${p2}`);
+                } else if (pinId === p2) {
+                    (inst as any).setPinVoltage?.(p1, voltage); visit(`${compId}:${p1}`);
+                }
+            }
+        } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
+            const isRight = (inst as any).state?.value === "1" || (inst as any).state?.value === 1 || (inst as any).state?.value === true;
+            if (isRight) {
+                if (pinId === '3') {
+                    (inst as any).setPinVoltage?.('2', voltage); visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    (inst as any).setPinVoltage?.('3', voltage); visit(`${compId}:3`);
+                }
+            } else {
+                if (pinId === '1') {
+                    (inst as any).setPinVoltage?.('2', voltage); visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    (inst as any).setPinVoltage?.('1', voltage); visit(`${compId}:1`);
+                }
+            }
         } else if (inst.type.includes('breadboard')) {
             // Wokwi Breadboard routing
             const rowMatch = pinId.match(/^(\d+)([a-j])$/);

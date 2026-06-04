@@ -135,15 +135,16 @@ jobs:
     steps:
       - name: Send Webhook to Backend
         run: |
+          PAYLOAD=$(jq -n \
+            --arg repo "${{ github.event.repository.name }}" \
+            --arg prTitle "Frontend Build Successful: Ready for Approval" \
+            --arg prDesc "Commit: ${{ github.event.head_commit.message }}" \
+            --arg secret "${{ secrets.NOTIFY_SECRET }}" \
+            '{repo: $repo, prTitle: $prTitle, prDescription: $prDesc, secret: $secret, filesChanged: []}')
+            
           curl -X POST https://openhw-studio.fossee.in/api/deploy/notify \
           -H "Content-Type: application/json" \
-          -d '{
-            "repo": "${{ github.event.repository.name }}",
-            "prTitle": "Frontend Build Successful: Ready for Approval",
-            "prDescription": "Commit: ${{ github.event.head_commit.message }}",
-            "secret": "${{ secrets.NOTIFY_SECRET }}",
-            "filesChanged": []
-          }'
+          -d "$PAYLOAD"
 
   notify_telegram:
     name: Notify Telegram

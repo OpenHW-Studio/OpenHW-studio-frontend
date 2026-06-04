@@ -26,7 +26,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
 import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion, startEsp32Compile, getEsp32CompileStatus } from '../../services/simulatorService.js'
 import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
@@ -98,7 +98,13 @@ const EDIT_COPY_PAYLOAD_PREFIX = 'openhw_edit_copy_payload_';
 const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code, label) {
-  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
+  const cleanCode = String(code || '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(?:^|[^:])\/\/[^\r\n]*/g, '')
+    .replace(/'(?:[^'\\]|\\.)*'/g, '')
+    .replace(/"(?:[^"\\]|\\.)*"/g, '')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '');
+  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(cleanCode)) {
     throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
   }
 }
@@ -1516,6 +1522,14 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
   );
 });
 
+const getVisualBounds = (comp, COMPONENT_REGISTRY, getComponentStateAttrs) => {
+  if (!comp) return { x: 0, y: 0, w: 0, h: 0 };
+  const reg = COMPONENT_REGISTRY[comp.type];
+  if (!reg) return { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
+  if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+  return reg.BOUNDS || { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
+};
+
 // ─── Memoized Component Wrapper ──────────────────────────────────────────────
 const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onTouchStart, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
   const rad = ((comp.rotation || 0) * Math.PI) / 180;
@@ -1528,14 +1542,6 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
     return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
   };
   const b = getBounds();
-
-const getVisualBounds = (comp, COMPONENT_REGISTRY, getComponentStateAttrs) => {
-  if (!comp) return { x: 0, y: 0, w: 0, h: 0 };
-  const reg = COMPONENT_REGISTRY[comp.type];
-  if (!reg) return { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-  if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-  return reg.BOUNDS || { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-};
 
   return (
     <React.Fragment>
@@ -2175,6 +2181,55 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const componentsRef = useRef([]);
   const wiresRef = useRef([]);
   const pinDefsRef = useRef({});
+
+  const getComponentStateAttrs = (comp) => {
+    let attrs = { ...comp.attrs };
+
+    if (normalizeBoardKind(comp.type) === 'rp2040') {
+      attrs.env = mapRp2040EnvForLegacyContextMenu(resolveComponentAttrString(attrs, 'env', 'native'));
+    }
+
+    // Remote OOP state takes priority
+    const remoteState = oopStates[comp.id];
+
+    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
+      delete attrs.value; // Let ui.tsx handle it
+    } else if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
+      if (remoteState && remoteState.angle !== undefined) {
+        attrs.angle = remoteState.angle.toString();
+      }
+    } else if (comp.type === 'wokwi-stepper-motor' || comp.type === 'openhw-stepper-motor') {
+      if (remoteState && remoteState.angle !== undefined) {
+        attrs.angle = remoteState.angle.toString();
+      }
+    } else if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
+      if (remoteState && remoteState.isBuzzing) {
+        // Wokwi buzzer visual indicator (if supported) can be driven here
+        attrs.color = "red";
+      }
+    }
+
+    // Pass interactions to the Web Worker
+    attrs.onInteract = (event) => {
+      console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
+
+      // Handle physical board reset button presses
+      if (isProgrammableBoardType(comp.type) && event === 'RESET') {
+        if (isRunning) handleReset();
+        return;
+      }
+
+      if (workerRef.current && isRunning) {
+        workerRef.current.postMessage({
+          type: 'INTERACT',
+          compId: comp.id,
+          event: event
+        });
+      }
+    };
+
+    return attrs;
+  };
 
   // ── Project persistence state ────────────────────────────────────────────────
   const [currentProjectId, setCurrentProjectId] = useState(null);
@@ -6881,21 +6936,75 @@ useEffect(() => {
             compileSource,
             targetFqbn,
             ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+            kind === 'esp32' ? esp32SimulationMode : '',
           ].join('\n/*__SPLIT__*/\n');
 
           appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
           let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-          if (compiled) {
+          if (compiled && (kind !== 'esp32' || esp32SimulationMode !== 'frontend' || compiled.hex)) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
             try {
-              compiled = await compileCode({
-                code: compileSource,
-                files: compileUnit.files,
-                sketchName: compileUnit.sketchName,
-                fqbn: targetFqbn,
-              });
+              if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
+                const startRes = await startEsp32Compile({
+                  code: compileSource
+                });
+                
+                if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+                  throw new Error('Failed to start ESP32 compilation.');
+                }
+                
+                if (startRes.cache === 'hit') {
+                  logSerial(`Using server-cached compilation for ${boardComp.id}...`);
+                }
+                
+                const jobId = startRes.jobId || startRes.buildId;
+                let pollCount = 0;
+                let lastPrintedProgressLen = 0;
+                
+                while (true) {
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  const statusRes = await getEsp32CompileStatus(jobId);
+                  
+                  if (!statusRes) continue;
+                  
+                  const progressLines = statusRes.progress || [];
+                  if (progressLines.length > lastPrintedProgressLen) {
+                    for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
+                      logSerial(progressLines[i]);
+                    }
+                    lastPrintedProgressLen = progressLines.length;
+                  }
+                  
+                  if (statusRes.status === 'success') {
+                    if (!statusRes.binary_content) {
+                      throw new Error('Compilation succeeded but no binary content was returned.');
+                    }
+                    compiled = {
+                      hex: statusRes.binary_content,
+                      stdout: statusRes.stdout || '',
+                      stderr: statusRes.stderr || ''
+                    };
+                    break;
+                  } else if (statusRes.status === 'failed') {
+                    const errMsg = statusRes.error || 'ESP32 compilation failed.';
+                    throw new Error(errMsg);
+                  }
+                  
+                  pollCount++;
+                  if (pollCount > 120) {
+                    throw new Error('ESP32 compilation timed out after 60 seconds.');
+                  }
+                }
+              } else {
+                compiled = await compileCode({
+                  code: compileSource,
+                  files: compileUnit.files,
+                  sketchName: compileUnit.sketchName,
+                  fqbn: targetFqbn,
+                });
+              }
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
               throw compileErr;
@@ -8506,55 +8615,6 @@ useEffect(() => {
 
     if (isPng) reader.readAsArrayBuffer(file);
     else reader.readAsText(file);
-  };
-
-  const getComponentStateAttrs = (comp) => {
-    let attrs = { ...comp.attrs };
-
-    if (normalizeBoardKind(comp.type) === 'rp2040') {
-      attrs.env = mapRp2040EnvForLegacyContextMenu(resolveComponentAttrString(attrs, 'env', 'native'));
-    }
-
-    // Remote OOP state takes priority
-    const remoteState = oopStates[comp.id];
-
-    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
-      delete attrs.value; // Let ui.tsx handle it
-    } else if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
-      if (remoteState && remoteState.angle !== undefined) {
-        attrs.angle = remoteState.angle.toString();
-      }
-    } else if (comp.type === 'wokwi-stepper-motor' || comp.type === 'openhw-stepper-motor') {
-      if (remoteState && remoteState.angle !== undefined) {
-        attrs.angle = remoteState.angle.toString();
-      }
-    } else if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
-      if (remoteState && remoteState.isBuzzing) {
-        // Wokwi buzzer visual indicator (if supported) can be driven here
-        attrs.color = "red";
-      }
-    }
-
-    // Pass interactions to the Web Worker
-    attrs.onInteract = (event) => {
-      console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
-
-      // Handle physical board reset button presses
-      if (isProgrammableBoardType(comp.type) && event === 'RESET') {
-        if (isRunning) handleReset();
-        return;
-      }
-
-      if (workerRef.current && isRunning) {
-        workerRef.current.postMessage({
-          type: 'INTERACT',
-          compId: comp.id,
-          event: event
-        });
-      }
-    };
-
-    return attrs;
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────

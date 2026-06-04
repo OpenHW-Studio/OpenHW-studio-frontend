@@ -23,7 +23,8 @@ export function useEsp32Engine({
   blocklyGeneratedCode,
   isRunning,
   getLiveOopStateSnapshot,
-  updateLiveOopStates
+  updateLiveOopStates,
+  esp32SimulationMode = 'qemu'
 }) {
   const esp32BuildIdRef = useRef(null);
   const serialFlushBufRef = useRef([]);
@@ -482,6 +483,9 @@ export function useEsp32Engine({
     const esp32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'esp32');
     const stm32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'stm32');
     if (esp32Board) {
+      if (esp32SimulationMode === 'frontend') {
+        return false;
+      }
       const isMicroPython = esp32Board.attrs?.env === 'micropython';
 
       if (serialFlushTimer.current) clearInterval(serialFlushTimer.current);
@@ -581,7 +585,7 @@ export function useEsp32Engine({
       return true; // Handled
     }
     return false; // No ESP32 or STM32
-  }, [getBoardCompileFiles, useBlocklyCode, blocklyGeneratedCode, getBoardMainCode, code, flushESP32Serial, esp32Socket, setIsCompiling, setIsRunning, runStartGuardRef, appendConsoleEntry, logSerial, setIsBooting]);
+  }, [getBoardCompileFiles, useBlocklyCode, blocklyGeneratedCode, getBoardMainCode, code, flushESP32Serial, esp32Socket, setIsCompiling, setIsRunning, runStartGuardRef, appendConsoleEntry, logSerial, setIsBooting, esp32SimulationMode]);
 
   const stopEsp32Session = useCallback(() => {
     esp32Socket.stop();

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 
 // ─── Tiny button component ───────────────
-export function Btn({ children, onClick, color, title, disabled, iconOnly }) {
+export function Btn({ children, onClick, color, title, disabled, iconOnly, style = {}, className = '' }) {
   const [hov, setHov] = useState(false)
   const [clicked, setClicked] = useState(false)
   const isInteractive = !disabled && hov;
@@ -19,6 +19,7 @@ export function Btn({ children, onClick, color, title, disabled, iconOnly }) {
       onClick={handleClick}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
+      className={className}
       style={{
         background: disabled ? 'transparent' : (color ? (isInteractive ? color : 'transparent') : isInteractive ? 'var(--border)' : 'var(--card)'),
         border: '1px solid ' + (color || 'var(--border)'),
@@ -32,9 +33,11 @@ export function Btn({ children, onClick, color, title, disabled, iconOnly }) {
         opacity: disabled ? 0.5 : 1,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
         animation: clicked ? 'toolbtn-pop 0.26s ease' : 'none',
+        ...style,
       }}
     >
       {children}
     </button>
+
   )
 }

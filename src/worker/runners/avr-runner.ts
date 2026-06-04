@@ -582,6 +582,36 @@ export class AVRRunner {
                     visit(`${compId}:1`, voltage);
                 }
             }
+        } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+            if (inst.state?.connectedPair) {
+                const [p1, p2] = inst.state.connectedPair;
+                if (pinId === p1) {
+                    inst.setPinVoltage(p2, voltage);
+                    visit(`${compId}:${p2}`, voltage);
+                } else if (pinId === p2) {
+                    inst.setPinVoltage(p1, voltage);
+                    visit(`${compId}:${p1}`, voltage);
+                }
+            }
+        } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
+            const isRight = inst.state?.value === "1" || inst.state?.value === 1 || inst.state?.value === true;
+            if (isRight) {
+                if (pinId === '3') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`, voltage);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('3', voltage);
+                    visit(`${compId}:3`, voltage);
+                }
+            } else {
+                if (pinId === '1') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`, voltage);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`, voltage);
+                }
+            }
         } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire') {
             const bridges = getInternalBridgesForComponent(compId, inst.type);
             for (const bridge of bridges) {
@@ -845,7 +875,7 @@ export class AVRRunner {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
-                } else if (inst.type.includes('motor-driver')) {
+                } else if (inst.type.includes('motor-driver') || inst.type.includes('l293d')) {
                     ['OUT1', 'OUT2', 'OUT3', 'OUT4'].forEach(pin => {
                         if (inst.pins[pin]) {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);

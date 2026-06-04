@@ -41,14 +41,14 @@ const UserMapTab = ({ stats }) => {
                         </div>
                     </div>
 
-                    <div className="flex-1 relative bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]">
-                        {/* SVG World Map Placeholder */}
-                        <svg viewBox="0 0 800 400" className="w-full h-full opacity-20">
-                            <path fill="#1e293b" d="M150,100 L160,100 L160,110 L150,110 Z M300,200 L310,200 L310,210 L300,210 Z M500,150 L510,150 L510,160 L500,160 Z" />
-                            {/* Simple continents outline - Very simplified for demo */}
-                            <path fill="currentColor" className="text-slate-800" d="M120,80 Q150,50 200,80 T300,100 T400,150 T450,250 T300,350 T150,300 T120,200 Z" />
-                            <path fill="currentColor" className="text-slate-800" d="M500,100 Q600,50 700,100 T750,200 T700,300 T600,350 T500,300 Z" />
-                        </svg>
+                    <div className="flex-1 relative bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] overflow-hidden">
+                        {/* Detailed World Map */}
+                        <img 
+                            src="https://upload.wikimedia.org/wikipedia/commons/e/ec/World_map_blank_without_borders.svg" 
+                            alt="World Map"
+                            className="absolute inset-0 w-full h-full object-fill pointer-events-none"
+                            style={{ filter: 'invert(1) opacity(0.15) sepia(1) hue-rotate(180deg) saturate(3) brightness(0.8)' }}
+                        />
 
                         {/* Pulse Points */}
                         {!loading && points.map(point => {
