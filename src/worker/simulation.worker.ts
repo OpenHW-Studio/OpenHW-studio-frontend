@@ -1119,7 +1119,7 @@ self.onmessage = async (e) => {
 
             console.log(`[Worker] Creating runner for board: ${singleBoardType}, boardId: ${singleBoardId}`);
             try {
-                runner = createRunnerForBoard(
+                runner = await createRunnerForBoard(
                     singleBoardType,
                     hex,
                     components,
@@ -1245,7 +1245,7 @@ self.onmessage = async (e) => {
                 circuitPythonInjectionFiles.set(boardComp.id, rp2040RuntimeFiles);
             }
 
-            const boardRunner = createRunnerForBoard(
+            const boardRunner = await createRunnerForBoard(
                 String(boardComp.type || ''),
                 typeof fwHex === 'string' ? fwHex : '',
                 runnerComponents,
@@ -1606,5 +1606,100 @@ self.onmessage = async (e) => {
         if (target && typeof (target as any).syncAdc === 'function') {
             (target as any).syncAdc(data.channel, data.val);
         }
+
+    // ── DAC ──────────────────────────────────────────────────────────────────
+    } else if (data.type === 'DAC_SYNC' || data.type === 'esp32:dac:sync') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncDac === 'function') {
+            (target as any).syncDac(data.pin, data.val);
+        }
+
+    // ── Serial output (QEMU backend → serial monitor) ─────────────────────
+    } else if (data.type === 'SERIAL_OUTPUT') {
+        // Forward raw text to main thread for the serial monitor panel
+        postMessage({ type: 'serial', data: data.text, source: 'backend' });
+
+    // ── GPIO Routing / RMT/LEDC pin mapping ───────────────────────────────
+    } else if (data.type === 'GPIO_ROUTING') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncGpioRouting === 'function') {
+            (target as any).syncGpioRouting(data.gpio, data.signal_id);
+        }
+    } else if (data.type === 'GPIO_ROUTING_CLEAR') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).clearGpioRouting === 'function') {
+            (target as any).clearGpioRouting(data.gpio);
+        }
+
+    // ── LEDC PWM ──────────────────────────────────────────────────────────
+    } else if (data.type === 'LEDC_SYNC') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncLedc === 'function') {
+            (target as any).syncLedc(data.channel, data.duty_pct);
+        }
+
+    } else if (data.type === 'LEDC_ATTACH') {
+        // ledcAttachPin() called — update channel→pin map in runner
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).ledcAttachPin === 'function') {
+            (target as any).ledcAttachPin(data.pin, data.channel);
+        }
+
+    } else if (data.type === 'PCNT_INIT') {
+        // pcntInit() called — store unit→pin mapping via gpioRouting
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncGpioRouting === 'function') {
+            (target as any).syncGpioRouting(data.pin, `pcnt_${data.unit}`);
+        }
+
+    // ── TWAI / CAN Bus ────────────────────────────────────────────────────
+    } else if (data.type === 'TWAI_TX') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncTwai === 'function') {
+            (target as any).syncTwai(data.id, data.dlc, data.data);
+        }
+
+    // ── RMT / IR Pulses ───────────────────────────────────────────────────
+    } else if (data.type === 'RMT_PULSE') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncRmt === 'function') {
+            (target as any).syncRmt(data.channel, data.pulses);
+        }
+
+    // ── Serial RX (component → UART RX) ──────────────────────────────────
+    } else if (data.type === 'esp32:uart:rx') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncSerialRx === 'function') {
+            (target as any).syncSerialRx(data.channel ?? 0, data.data);
+        }
+
+    // ── PCNT pulse count injection ────────────────────────────────────────
+    } else if (data.type === 'esp32:pcnt:sync') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncPcnt === 'function') {
+            (target as any).syncPcnt(data.unit, data.count);
+        }
+
+    // -- I2S Audio (PCM samples from firmware via sim_i2s_write) --------------
+    // Forward raw event to main thread for Web Audio playback in SimulatorPage.jsx.
+    // The worker does NOT play audio (no AudioContext in workers).
+    } else if (data.type === 'I2S_AUDIO') {
+        postMessage({
+            type:       'I2S_AUDIO',
+            boardId:    data.boardId,
+            port:       data.port,
+            sampleRate: data.sampleRate,
+            bits:       data.bits,
+            pcm_b64:    data.pcm_b64,
+        });
+
+    } else if (data.type === 'SLEEP_START') {
+        const target = mode === 'single' ? runner : (data.boardId ? boardRunners.get(data.boardId) : null);
+        if (target && typeof (target as any).syncSleep === 'function') {
+            (target as any).syncSleep(data.duration_us ?? 0);
+        }
+        // Also notify main thread to show sleeping badge
+        postMessage({ type: 'sim:sleep', boardId: data.boardId, duration_us: data.duration_us });
     }
 };
+
