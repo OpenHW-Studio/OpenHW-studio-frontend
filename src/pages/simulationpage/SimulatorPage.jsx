@@ -6359,7 +6359,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             setShowCodeExplorer(true);
           }, 0);
         } else {
-          console.warn("[handleAutoCode] Worker returned empty snippet.");
+          console.warn("[handleAutoCode] Worker returned empty snippet."); setValidationToast({ level: "info", message: "No AutoCode snippet available. This component may be a passive power source (like a battery), or AutoCode is not yet supported for it." });
         }
       }
       worker.terminate();
