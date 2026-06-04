@@ -18,7 +18,6 @@ import {
     fetchPendingDeployments,
     approveDeploymentAction,
     rollbackDeploymentAction,
-    fetchSystemLogs,
     fetchInfrastructureStatus,
     restartInfrastructureService,
     fetchUsageAnalytics,
@@ -26,7 +25,13 @@ import {
     fetchMaintenanceStatus,
     toggleMaintenanceMode,
     fetchDeploymentNotifications,
-    triggerDeploymentBuild
+    triggerDeploymentBuild,
+    dismissDeploymentNotification,
+    rejectDeploymentAction,
+    fetchLibraryConfig,
+    uploadLibraryConfig,
+    fetchLibraryCache,
+    clearLibraryCache
 } from '../../services/simulatorService.js';
 import { useAuth } from '../../context/AuthContext';
 import OverviewTab from './components/OverviewTab';
@@ -43,6 +48,7 @@ import DeploymentsTab from './components/DeploymentsTab';
 import DockerTab from './components/DockerTab';
 import LogsTab from './components/LogsTab';
 import UserMapTab from './components/UserMapTab';
+import ResourcesTab from './components/ResourcesTab';
 import { LibrarySearchModal, TranspileModal } from './components/Modals';
 
 export default function AdminPage() {
@@ -50,6 +56,8 @@ export default function AdminPage() {
     const { adminLogout } = useAuth();
     const [activeTab, setActiveTab] = useState('overview');
     const [libraries, setLibraries] = useState([]);
+    const [libraryConfig, setLibraryConfig] = useState([]);
+    const [libraryCache, setLibraryCache] = useState([]);
     const [pendingComponents, setPendingComponents] = useState([]);
     const [installedComponents, setInstalledComponents] = useState([]);
     const [deployments, setDeployments] = useState([]);
@@ -75,12 +83,13 @@ export default function AdminPage() {
             try { return await fn(); } catch (e) { console.error(e); return fallback; }
         };
 
-        const [libs, pending, installed, deps, serverLogs, infra, stats, history, maint, notes] = await Promise.all([
+        const [libs, libConf, libCache, pending, installed, deps, infra, stats, history, maint, notes] = await Promise.all([
             wrap(fetchInstalledLibraries),
+            wrap(fetchLibraryConfig),
+            wrap(fetchLibraryCache),
             wrap(fetchPendingComponents),
             wrap(getInstalledComponents),
             wrap(fetchPendingDeployments),
-            wrap(fetchSystemLogs),
             wrap(fetchInfrastructureStatus),
             wrap(fetchUsageAnalytics, null),
             wrap(fetchAuditHistory),
@@ -89,6 +98,8 @@ export default function AdminPage() {
         ]);
         
         setLibraries(libs);
+        setLibraryConfig(libConf);
+        setLibraryCache(libCache);
         setPendingComponents(pending);
         setInstalledComponents(installed);
         setDeployments(deps);
@@ -100,14 +111,6 @@ export default function AdminPage() {
             localStorage.setItem('admin_maintenance_mode', maint);
         }
         setNotifications(notes);
-        
-        if (serverLogs && serverLogs.length > 0) {
-            setLogs(prev => {
-                const existingHashes = new Set(prev.map(l => `${l.time}-${l.msg}`));
-                const newLogs = serverLogs.filter(l => !existingHashes.has(`${l.time}-${l.msg}`));
-                return [...newLogs, ...prev].sort((a,b) => b.time.localeCompare(a.time)).slice(0, 500);
-            });
-        }
     };
 
     useEffect(() => {
@@ -116,10 +119,9 @@ export default function AdminPage() {
             const wrap = async (fn, fallback = []) => {
                 try { return await fn(); } catch (e) { return fallback; }
             };
-            const [comps, deps, serverLogs, infra, maint, notes] = await Promise.all([
+            const [comps, deps, infra, maint, notes] = await Promise.all([
                 wrap(fetchPendingComponents),
                 wrap(fetchPendingDeployments),
-                wrap(fetchSystemLogs),
                 wrap(fetchInfrastructureStatus),
                 wrap(fetchMaintenanceStatus, false),
                 wrap(fetchDeploymentNotifications)
@@ -132,13 +134,6 @@ export default function AdminPage() {
                 localStorage.setItem('admin_maintenance_mode', maint);
             }
             setNotifications(notes);
-            if (serverLogs && serverLogs.length > 0) {
-                setLogs(prev => {
-                    const existingHashes = new Set(prev.map(l => `${l.time}-${l.msg}`));
-                    const newLogs = serverLogs.filter(l => !existingHashes.has(`${l.time}-${l.msg}`));
-                    return [...newLogs, ...prev].sort((a,b) => b.time.localeCompare(a.time)).slice(0, 500);
-                });
-            }
         }, 15000);
         return () => clearInterval(poll);
     }, []);
@@ -150,6 +145,15 @@ export default function AdminPage() {
     const handleLogout = () => {
         adminLogout();
         navigate('/admin');
+    };
+
+    const handleDismissNotification = async (id) => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+        try {
+            await dismissDeploymentNotification(id);
+        } catch (e) {
+            console.error('Failed to dismiss notification:', e);
+        }
     };
 
     // Debounced Library Search
@@ -193,13 +197,28 @@ export default function AdminPage() {
     };
 
     const handleApproveDeployment = async (dep) => {
-        addLog(`Approving deployment for ${dep.repo}...`);
+        // Optimistic UI Update
+        setDeployments(prev => prev.filter(d => d.id !== dep.id));
         try {
             await approveDeploymentAction(dep.id, dep.repo, 'production');
-            addLog(`Successfully approved deployment for ${dep.repo}`, 'success');
+            addLog(`Approved deployment for ${dep.repo}`, 'info');
             loadData();
         } catch (e) {
             addLog(`Failed to approve deployment: ${e.message}`, 'error');
+            loadData(); // Revert on failure
+        }
+    };
+
+    const handleRejectDeployment = async (dep) => {
+        // Optimistic UI Update
+        setDeployments(prev => prev.filter(d => d.id !== dep.id));
+        try {
+            await rejectDeploymentAction(dep.id, dep.repo, 'production');
+            addLog(`Rejected deployment for ${dep.repo}`, 'info');
+            loadData();
+        } catch (e) {
+            addLog(`Failed to reject deployment: ${e.message}`, 'error');
+            loadData(); // Revert on failure
         }
     };
 
@@ -391,6 +410,36 @@ export default function AdminPage() {
         e.target.value = null;
     };
 
+    const handleClearLibraryCache = async (name = null) => {
+        try {
+            await clearLibraryCache(name);
+            showToast(name ? `Cleared cache for ${name}` : 'Cleared all library cache');
+            loadData();
+        } catch (e) {
+            showToast('Failed to clear library cache', 'error');
+        }
+    };
+
+    const handleUploadLibraryConfig = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const json = JSON.parse(event.target.result);
+                if (!json.permanent) throw new Error('Invalid format: missing "permanent" array');
+                await uploadLibraryConfig(json.permanent);
+                showToast('Library configuration uploaded and sync started.');
+                loadData();
+            } catch (err) {
+                showToast(`Failed to upload config: ${err.message}`, 'error');
+            }
+            e.target.value = null; // reset
+        };
+        reader.readAsText(file);
+    };
+
     const renderTabContent = () => {
         switch (activeTab) {
             case 'overview':
@@ -399,18 +448,30 @@ export default function AdminPage() {
                 return <UserMapTab stats={analytics} />;
             case 'libraries':
                 return <LibrariesTab 
-                    libraries={libraries} 
+                    libraries={libraries}
+                    libraryConfig={libraryConfig}
+                    libraryCache={libraryCache}
                     searchQuery={libSearchQuery}
                     setSearchQuery={setLibSearchQuery}
                     onAddLibrary={() => setLibraryModal(true)}
                     onUninstall={async (name) => {
-                        showToast(`Uninstalling ${name}...`, 'info');
                         try {
                             await uninstallLibrary(name);
-                            showToast(`${name} uninstalled!`);
-                            loadData();
+                            showToast(`Successfully uninstalled ${name}`);
                         } catch (e) {
                             showToast(`Failed to uninstall: ${e.message}`, 'error');
+                        }
+                        loadData();
+                    }}
+                    onClearCache={handleClearLibraryCache}
+                    onUploadConfig={handleUploadLibraryConfig}
+                    onMakePermanent={async (name) => {
+                        try {
+                            await installLibrary(name);
+                            showToast(`Successfully moved ${name} to permanent`);
+                            loadData();
+                        } catch (e) {
+                            showToast(`Failed to make ${name} permanent: ${e.message}`, 'error');
                         }
                     }}
                     onRefresh={loadData} 
@@ -436,22 +497,22 @@ export default function AdminPage() {
                     onBackup={backupInstalledComponents}
                 />;
             case 'deployments':
-                return <DeploymentsTab
-                    deployments={deployments}
+                return <DeploymentsTab 
+                    deployments={deployments} 
                     notifications={notifications}
-                    onRefresh={loadData}
-                    showToast={showToast}
                     onApprove={handleApproveDeployment}
+                    onReject={handleRejectDeployment}
                     onRollback={handleRollback}
                     onTriggerBuild={handleTriggerBuild}
+                    onDismissNotification={handleDismissNotification}
                 />;
             case 'docker':
                 return <DockerTab 
-                    logs={logs} 
                     infraStatus={infraStatus}
                     onRestart={handleRestartService}
-                    onClear={() => setLogs([])} 
                 />;
+            case 'resources':
+                return <ResourcesTab />;
             case 'history':
                 return <HistoryTab logs={auditLogs} />;
             case 'logs':
