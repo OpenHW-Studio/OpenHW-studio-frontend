@@ -470,16 +470,40 @@ export async function fetchResourceStatus() {
     return response.data;
 }
 
+export async function fetchHostStatus() {
+    const response = await axios.get(`${COMPILER_URL}/admin/host-status`, getAdminAuthConfig());
+    return response.data;
+}
+
+
 export async function triggerRecalibrate() {
     const response = await axios.post(`${COMPILER_URL}/admin/recalibrate`, {}, getAdminAuthConfig());
     return response.data;
 }
 
-export async function startEsp32Compile({ code, libraries_txt }) {
+export async function downloadCalibrationScripts() {
+    const response = await axios.get(`${COMPILER_URL}/admin/recalibrate/scripts`, {
+        ...getAdminAuthConfig(),
+        responseType: 'blob'
+    });
+    return response.data;
+}
+
+export async function uploadCalibrationScripts(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const config = getAdminAuthConfig();
+    config.headers['Content-Type'] = 'multipart/form-data';
+    const response = await axios.put(`${COMPILER_URL}/admin/recalibrate/scripts`, formData, config);
+    return response.data;
+}
+
+export async function startEsp32Compile({ code, libraries_txt, targetEngine }) {
     const response = await axios.post(`${COMPILER_URL}/compile/start`, {
         code,
         target: 'esp32',
-        libraries_txt
+        libraries_txt,
+        targetEngine
     }, getUserAuthConfig());
     return response.data;
 }
