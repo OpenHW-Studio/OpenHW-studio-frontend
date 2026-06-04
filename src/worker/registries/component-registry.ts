@@ -459,6 +459,115 @@ export type ConnectedComponentPin = {
     pinId: string;
 };
 
+/**
+ * ComponentSignalAPI
+ *
+ * Formal TypeScript interface for every signal callback a component can implement.
+ * Runners (esp32-runner, backend-proxy-runner) cast component instances against
+ * this interface before dispatching signals, e.g.:
+ *
+ *   const api = inst as unknown as ComponentSignalAPI;
+ *   if (typeof api.onCanFrame === 'function') api.onCanFrame(id, dlc, data);
+ *
+ * All methods are optional — implement only what your component handles.
+ * Unimplemented callbacks are silently ignored by the runners.
+ */
+export interface ComponentSignalAPI {
+    // ── GPIO ────────────────────────────────────────────────────────────────
+    /** Called when a digital GPIO pin driven by firmware changes state */
+    setState?(state: { voltage?: number; digital?: boolean; value?: number }): void;
+    /** Called per-pin when a voltage level changes (driven by wire physics) */
+    onVoltageChange?(pinId: string, voltage: number): void;
+
+    // ── Analog / DAC ────────────────────────────────────────────────────────
+    /** Called when the firmware sets an analog voltage on a pin (DAC / analogWrite via physics) */
+    onAnalogVoltage?(pinId: string, voltage: number): void;
+
+    // ── PWM / LEDC ──────────────────────────────────────────────────────────
+    /** Called when a PWM duty cycle is applied to a connected pin (0.0 – 1.0) */
+    onPwmDuty?(pinId: string, duty_pct: number): void;
+
+    // ── TONE (buzzer, speaker, piezo) ────────────────────────────────────────
+    /** Called when tone(pin, freq, dur) is invoked. frequency=0 means noTone(). */
+    onTone?(pin: string, frequency: number, duration: number): void;
+
+    // ── I2C ─────────────────────────────────────────────────────────────────
+    /** Called for an I2C write transaction. Return response bytes if any. */
+    onI2CWrite?(addr: number, data: number[]): number[] | void;
+    /** Called for an I2C read request. Return the requested number of bytes. */
+    onI2CRead?(addr: number, qty: number): number[];
+
+    // ── SPI ─────────────────────────────────────────────────────────────────
+    /** Called for each SPI byte transfer. Return the MISO byte (or 0xFF). */
+    onSPIByte?(byte: number): number;
+    /** Called for an SPI buffer transfer (SPIBUF frame). Return response bytes. */
+    onSPIBuffer?(data: number[]): number[] | void;
+
+    // ── Serial / UART ────────────────────────────────────────────────────────
+    /** Called when a connected serial source sends data to the firmware's UART RX */
+    onSerialData?(data: string): void;
+
+    // ── WS2812 / NeoPixel ───────────────────────────────────────────────────
+    /** Called when a NeoPixel strip pixel array is updated */
+    updatePixels?(pixels: Array<{ r: number; g: number; b: number; w?: number }>): void;
+    /** Called for each individual WS2812B bit (used by raw-protocol components) */
+    onWS2812BByte?(byte: number): void;
+
+    // ── TWAI / CAN Bus ───────────────────────────────────────────────────────
+    /** Called when the firmware transmits a CAN frame on the TWAI bus */
+    onCanFrame?(id: number, dlc: number, data: number[]): void;
+
+    // ── RMT / IR ────────────────────────────────────────────────────────────
+    /** Called when the firmware transmits an RMT pulse train */
+    onRmtPulse?(pulses: Array<{ level: number; duration: number }>): void;
+    /** Alias used by IR-specific components (IR receiver, IR blaster) */
+    onInfraredSignal?(pulses: Array<{ level: number; duration: number }>): void;
+
+    // ── PCNT (Pulse Counter) ─────────────────────────────────────────────────
+    /** Called when the firmware reads or resets a pulse counter unit */
+    onPulseCount?(unit: number, count: number): void;
+
+    // ── 1-Wire ──────────────────────────────────────────────────────────────
+    /** Called during a 1-Wire read. Return the data bytes (e.g. temperature). */
+    onOneWireRead?(): number[];
+
+    // ── Deep Sleep / Wake ────────────────────────────────────────────────────
+    /** Called when the firmware enters deep or light sleep */
+    onDeviceSleep?(duration_us: number): void;
+    /** Called when the simulated sleep period expires and the device wakes */
+    onDeviceWake?(): void;
+
+    // ── I2S Audio (PCM5102, MAX98357, INMP441, SPH0645) ───────────────────────
+    /**
+     * Called when firmware writes PCM samples via i2s_write() / sim_i2s_write().
+     * @param samples  Float32 PCM samples, already normalised to [-1, 1]
+     * @param sampleRate  Sample rate in Hz (e.g. 44100, 22050)
+     * @param port  I2S port number (0 or 1)
+     *
+     * Implement on a DAC/amplifier component (PCM5102, MAX98357) to receive audio
+     * frames and play them via Web Audio API.
+     * For microphone components (INMP441, SPH0645) implement onMicrophoneRequest
+     * instead and return PCM bytes for the firmware to receive via i2s_read().
+     */
+    onI2SData?(samples: Float32Array, sampleRate: number, port: number): void;
+
+    /**
+     * Called when the firmware requests microphone data (sim_i2s_read / i2s_read).
+     * Return Int16 PCM bytes that will be injected back to the firmware.
+     * Leave unimplemented to return silence.
+     */
+    onMicrophoneRequest?(sampleCount: number, sampleRate: number): Int16Array | null;
+
+    // ── Camera ───────────────────────────────────────────────────────────────
+    /**
+     * Called when a JPEG camera frame is available (e.g. from device webcam).
+     * Implement on an ESP32-CAM component to display the frame.
+     * Note: currently the webcam stream is pushed directly via useEsp32Engine.js;
+     * this callback is reserved for future wire-routed camera simulation.
+     */
+    onCameraFrame?(jpeg: Uint8Array, width: number, height: number): void;
+}
+
 export type FallbackTelemetryRuntime = {
     createdAtMs: number;
     sampleCount: number;
@@ -1020,7 +1129,8 @@ export function getUnifiedComponentSyncState(inst: BaseComponent): any {
 
 export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?: any): any {
     if (inst?.type === 'openhw-simulation-monitor' && typeof inst.updateMetrics === 'function') {
-        inst.updateMetrics(cpu?.cycles || 0, cpu?.freq || 16000000, inst.telemetryEnabled, inst.telemetryWatchedParams || ['all'], realCanvasFps, realUiBlockedMs);
+        const targetFreq = (cpu as any)?.clock?.frequency || (cpu as any)?.freq || 16_000_000;
+        inst.updateMetrics(cpu?.cycles || 0, targetFreq, inst.telemetryEnabled, inst.telemetryWatchedParams || ['all'], realCanvasFps, realUiBlockedMs);
     }
 
     if (!inst.telemetryEnabled) {
