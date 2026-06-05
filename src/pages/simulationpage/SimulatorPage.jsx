@@ -1369,6 +1369,20 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [notifyLiveOopStateListeners]);
 
   const workerRef = useRef(null);
+  
+  useEffect(() => {
+    const handleDownloadPcap = (e) => {
+      const { componentId } = e.detail;
+      if (isRunning && workerRef.current) {
+        workerRef.current.postMessage({
+          type: 'DOWNLOAD_PCAP',
+          boardId: componentId
+        });
+      }
+    };
+    window.addEventListener('network:download-pcap', handleDownloadPcap);
+    return () => window.removeEventListener('network:download-pcap', handleDownloadPcap);
+  }, [isRunning]);
   const pushSerialRxChunkRef = useRef(null);
   const runStartGuardRef = useRef(false);
   const {
@@ -9579,6 +9593,13 @@ export function SimulatorPage({ gamificationMode = false }) {
           handleTelemetryStateMessageRef.current(msg);
         }
         if (msg.type === "state") {
+          if (msg.wifi && typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("OPENHW_WIFI_STATS", {
+                detail: { boardId: msg.boardId, ...msg.wifi },
+              })
+            );
+          }
           const boardIdKey = String(msg.boardId || "default");
           const boardComp =
             components.find((c) => c.id === boardIdKey) ||
@@ -9978,6 +9999,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
       worker.postMessage({
         type: "START",
+        networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
         hex: result.hex,
         neopixels: neopixelWiring,
         wires: cleanWires,
