@@ -5,6 +5,7 @@ import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
 import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
 import { PicoLogic } from '../pico-logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
+import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
 import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-supply/logic';
 import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic';
@@ -127,8 +128,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     max30102: MAX30102Logic,
     'wokwi-max7219': MAX7219Logic,
     'openhw-max7219': MAX7219Logic,
-    'wokwi-ldr-module': BaseComponent,
-    'openhw-ldr-module': BaseComponent,
+    'wokwi-ldr-module': LdrModuleLogic,
+    'openhw-ldr-module': LdrModuleLogic,
     'wokwi-7segment': BaseComponent,
     'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
@@ -221,7 +222,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-attiny85': BaseComponent,
     'openhw-pico': PicoLogic,
     'openhw-pico-w': PicoLogic,
-    'openhw-photoresistor': BaseComponent,
+    'wokwi-photoresistor': PhotoresistorLogic,
+    'openhw-photoresistor': PhotoresistorLogic,
     'openhw-ntc-thermistor': BaseComponent,
     'openhw-ntc-temperature-sensor': BaseComponent,
     'openhw-charger': BaseComponent,
