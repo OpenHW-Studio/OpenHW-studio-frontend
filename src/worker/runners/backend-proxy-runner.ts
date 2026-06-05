@@ -304,7 +304,10 @@ export class BackendProxyRunner implements BoardRunner {
 
     public syncI2cTransaction(addr: number, data: number[]) {
         console.log(`[BackendProxyRunner] Routing I2C transaction for addr 0x${addr.toString(16)} with ${data.length} bytes`);
-        const i2cDevices = Array.from(this.instances.values()).filter(inst => 
+        // I2C address is the component identifier, not a GPIO pin — route to components that registered the address
+        const i2cDevices = Array.from(this.instances.values()).filter(inst =>
+            (inst as any).i2cAddress === addr ||
+            (inst as any).address === addr ||
             (inst as any).onI2CStart || (inst as any).onI2CByte
         );
         for (const dev of i2cDevices) {
@@ -322,29 +325,42 @@ export class BackendProxyRunner implements BoardRunner {
         }
     }
 
-    public syncPwm(channel: number, duty_pct: number, pins?: number[]) {
+    public syncPwm(channel: number | string, duty_pct: number, pins?: (number | string)[]) {
+        console.log(`[BackendProxyRunner] Routing PWM for channel ${channel}, duty ${duty_pct}`);
         const pwmDuty = Math.max(0, Math.min(1.0, duty_pct));
-        const voltage = 3.3 * pwmDuty;
-
-        // Apply PWM as an analog voltage (averaged duty cycle) to the mapped pins
+        
+        // Treat channel as pin for now as that's what we emitted from backend (>PWM:pin:val<)
+        const aliases = [];
         if (pins && pins.length > 0) {
-            for (const pin of pins) {
-                const pinStr = String(pin);
-                this.proxyPinStates.set(pinStr, pwmDuty > 0.5); // Track logical state roughly
+            for (const p of pins) aliases.push(String(p));
+        } else {
+            const pin = String(channel);
+            aliases.push(pin);
+            if (/^\d+$/.test(pin)) {
+                aliases.push(`D${pin}`, `GPIO${pin}`);
+            } else if (/^(D|GPIO)(\d+)$/i.test(pin)) {
+                const num = pin.replace(/\D/g, '');
+                aliases.push(num, `D${num}`, `GPIO${num}`);
+            }
+        }
 
-                const boardInst = this.instances.get(this.boardId);
-                if (boardInst) {
-                    let actualPin = pinStr;
-                    for (const pv of [pinStr, `D${pinStr}`, `GPIO${pinStr}`]) {
-                        if (this.pinToNet.has(`${this.boardId}:${pv}`)) {
-                            actualPin = pv;
-                            break;
-                        }
-                    }
-                    (boardInst as any).setPinVoltage?.(actualPin, voltage);
-                    // Broadcast voltage to all connected components
-                    this.visitNode(`${this.boardId}:${actualPin}`, voltage);
-                }
+        const endpoints = collectConnectedComponentPins(
+            this.boardId,
+            aliases,
+            this.currentWires,
+            this.instances
+        );
+
+        // Removed fallback broadcast for verification — wire routing only
+
+        for (const endpoint of endpoints) {
+            const targetInst = endpoint.inst;
+            if (typeof (targetInst as any).onPWMSignal === 'function') {
+                 // For generic components implementing onPWMSignal
+                 (targetInst as any).onPWMSignal(endpoint.pinId, 1000, pwmDuty, pwmDuty * 1000);
+            } else if (typeof (targetInst as any).onPWM === 'function') {
+                 // Component expects 0-255 or full meta object
+                 (targetInst as any).onPWM(endpoint.pinId, { dutyCycle: pwmDuty });
             }
         }
     }
@@ -367,15 +383,7 @@ export class BackendProxyRunner implements BoardRunner {
             this.instances
         );
 
-        if (endpoints.length === 0) {
-            // Fallback: if not wired/routed via net but a buzzer exists, control it directly
-            const buzzers = Array.from(this.instances.values()).filter(inst => 
-                inst.type === 'openhw-buzzer' || inst.type === 'wokwi-buzzer'
-            );
-            if (buzzers.length === 1) {
-                endpoints.push({ inst: buzzers[0], pinId: '1' });
-            }
-        }
+        // Removed fallback logic for verification
 
         const isSilent = (frequency === 0);
         const pulseUs = !isSilent ? (1000000 / frequency) / 2 : 0;
@@ -447,10 +455,12 @@ export class BackendProxyRunner implements BoardRunner {
     }
 
     public syncNeopixel(channel: number, pixels: any[]) {
-        const neopixelComps = Array.from(this.instances.values()).filter(inst => 
-            inst.type.toLowerCase().includes('neopixel') || inst.type.toLowerCase().includes('ws2812')
-        );
-        for (const comp of neopixelComps) {
+        // Route WS2812/NeoPixel pixels to the component physically wired to the data pin
+        const pinStr = String(channel);
+        const aliases = [pinStr, `D${pinStr}`, `GPIO${pinStr}`];
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            const comp = endpoint.inst;
             if (typeof (comp as any).updatePixels === 'function') {
                 (comp as any).updatePixels(pixels);
             } else if (typeof (comp as any).onWS2812BByte === 'function') {
@@ -461,15 +471,115 @@ export class BackendProxyRunner implements BoardRunner {
                     (comp as any).onWS2812BByte(p.b);
                 }
             } else {
-                // Direct state injection for basic neopixel components
                 (comp as any).pixels = pixels;
             }
         }
     }
 
     public syncAdc(channel: number, val: number) {
-        // ADC values from backend are often injected directly to the pin
-        // But if needed we can broadcast
+        // Emit to WebSocket so qemuRunner injects <ADC:pin:val>\n into UART0 for firmware analogRead()
+        this.onStateUpdate({ type: 'esp32:adc:sync', boardId: this.boardId, channel, val });
+    }
+
+    public syncDac(pin: number, val: number) {
+        // Route DAC_SYNC from qemuRunner to any component wired to that pin
+        const pinStr = String(pin);
+        const aliases = [pinStr, `D${pinStr}`, `GPIO${pinStr}`];
+        const voltage = (val / 255.0) * 3.3;
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            const inst = endpoint.inst;
+            if (typeof (inst as any).onAnalogVoltage === 'function') {
+                (inst as any).onAnalogVoltage(endpoint.pinId, voltage);
+            } else if (typeof (inst as any).setState === 'function') {
+                (inst as any).setState({ voltage, analog: val });
+            }
+        }
+        this.onStateUpdate({ type: 'esp32:dac:sync', boardId: this.boardId, pin, val, voltage });
+    }
+
+    // ── GPIO Routing (LEDC/RMT channel → GPIO pin) ─────────────────────────
+    private gpioRoutingMap: Map<number, string> = new Map();
+    private ledcChannelMap: Map<number, number> = new Map();
+
+    public syncGpioRouting(gpio: number, signal_id: string) {
+        this.gpioRoutingMap.set(gpio, signal_id);
+    }
+
+    public clearGpioRouting(gpio: number) {
+        this.gpioRoutingMap.delete(gpio);
+    }
+
+    public ledcAttachPin(pin: number, channel: number) {
+        this.ledcChannelMap.set(channel, pin);
+    }
+
+    public syncLedc(channel: number, duty_pct: number) {
+        // Resolve LEDC channel → physical pin, then reuse syncPwm logic
+        const pin = this.ledcChannelMap.get(channel);
+        if (pin !== undefined) {
+            this.syncPwm(String(pin), duty_pct * 255);
+        } else {
+            this.syncPwm(String(channel), duty_pct * 255);
+        }
+    }
+
+    public syncSerialRx(channel: number, data: string) {
+        // Route incoming data from an external component (e.g., GPS module) wired to a UART RX pin
+        const pinStr = String(channel);
+        const aliases = [pinStr, `D${pinStr}`, `GPIO${pinStr}`, `RX${channel}`, `U${channel}RXD`];
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            if (typeof (endpoint.inst as any).onSerialData === 'function') {
+                (endpoint.inst as any).onSerialData(data);
+            }
+        }
+        // Also forward to backend QEMU so the firmware's Serial.read() gets the bytes
+        this.onStateUpdate({ type: 'esp32:uart:rx', boardId: this.boardId, channel, data });
+    }
+
+    public syncPcnt(unit: number, count: number) {
+        // Inject a pulse counter value into QEMU via WebSocket
+        this.onStateUpdate({ type: 'esp32:pcnt:sync', boardId: this.boardId, unit, count });
+    }
+
+    public syncTwai(id: number, dlc: number, data: number[]) {
+        // Route a CAN frame to any component wired to the TWAI TX/RX pins
+        const aliases = ['4', 'D4', 'GPIO4', '5', 'D5', 'GPIO5', 'CANH', 'CANL'];
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            if (typeof (endpoint.inst as any).onCanFrame === 'function') {
+                (endpoint.inst as any).onCanFrame(id, dlc, data);
+            }
+        }
+    }
+
+    public syncRmt(channel: number, pulses: Array<{ level: number; duration: number }>) {
+        // Resolve RMT channel → GPIO pin via gpioRoutingMap, then route to component
+        const gpio = this.gpioRoutingMap.get(channel) ?? String(channel);
+        const aliases = [gpio, `D${gpio}`, `GPIO${gpio}`];
+        const endpoints = collectConnectedComponentPins(this.boardId, aliases, this.currentWires, this.instances);
+        for (const endpoint of endpoints) {
+            if (typeof (endpoint.inst as any).onRmtPulse === 'function') {
+                (endpoint.inst as any).onRmtPulse(pulses);
+            } else if (typeof (endpoint.inst as any).onInfraredSignal === 'function') {
+                (endpoint.inst as any).onInfraredSignal(pulses);
+            }
+        }
+    }
+
+    public syncSleep(duration_us: number) {
+        // Pause the run loop while the firmware is deep sleeping
+        this.running = false;
+        this.onStateUpdate({ type: 'sim:sleep', boardId: this.boardId, duration_us });
+        if (duration_us > 0) {
+            setTimeout(() => {
+                this.running = true;
+                this.lastTime = performance.now();
+                this.runLoop();
+                this.onStateUpdate({ type: 'sim:wake', boardId: this.boardId });
+            }, Math.min(duration_us / 1000, 30000));
+        }
     }
 
     private runLoop = () => {
@@ -665,6 +775,30 @@ export class BackendProxyRunner implements BoardRunner {
                 } else if (pinId.startsWith('2')) {
                     (inst as any).setPinVoltage?.('1l', voltage); visit(`${compId}:1l`);
                     (inst as any).setPinVoltage?.('1r', voltage); visit(`${compId}:1r`);
+                    (inst as any).setPinVoltage?.('1', voltage); visit(`${compId}:1`);
+                }
+            }
+        } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+            if ((inst as any).state?.connectedPair) {
+                const [p1, p2] = (inst as any).state.connectedPair;
+                if (pinId === p1) {
+                    (inst as any).setPinVoltage?.(p2, voltage); visit(`${compId}:${p2}`);
+                } else if (pinId === p2) {
+                    (inst as any).setPinVoltage?.(p1, voltage); visit(`${compId}:${p1}`);
+                }
+            }
+        } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
+            const isRight = (inst as any).state?.value === "1" || (inst as any).state?.value === 1 || (inst as any).state?.value === true;
+            if (isRight) {
+                if (pinId === '3') {
+                    (inst as any).setPinVoltage?.('2', voltage); visit(`${compId}:2`);
+                } else if (pinId === '2') {
+                    (inst as any).setPinVoltage?.('3', voltage); visit(`${compId}:3`);
+                }
+            } else {
+                if (pinId === '1') {
+                    (inst as any).setPinVoltage?.('2', voltage); visit(`${compId}:2`);
+                } else if (pinId === '2') {
                     (inst as any).setPinVoltage?.('1', voltage); visit(`${compId}:1`);
                 }
             }

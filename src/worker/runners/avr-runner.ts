@@ -583,11 +583,76 @@ export class AVRRunner {
                     visit(`${compId}:1`, voltage);
                 }
             }
+        } else if (inst.type === 'openhw-membrane-keypad' || inst.type === 'wokwi-membrane-keypad') {
+            if (inst.state?.connectedPair) {
+                const [p1, p2] = inst.state.connectedPair;
+                if (pinId === p1) {
+                    inst.setPinVoltage(p2, voltage);
+                    visit(`${compId}:${p2}`, voltage);
+                } else if (pinId === p2) {
+                    inst.setPinVoltage(p1, voltage);
+                    visit(`${compId}:${p1}`, voltage);
+                }
+            }
+        } else if (inst.type === 'openhw-slide-switch' || inst.type === 'wokwi-slide-switch') {
+            const isRight = inst.state?.value === "1" || inst.state?.value === 1 || inst.state?.value === true;
+            if (isRight) {
+                if (pinId === '3') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`, voltage);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('3', voltage);
+                    visit(`${compId}:3`, voltage);
+                }
+            } else {
+                if (pinId === '1') {
+                    inst.setPinVoltage('2', voltage);
+                    visit(`${compId}:2`, voltage);
+                } else if (pinId === '2') {
+                    inst.setPinVoltage('1', voltage);
+                    visit(`${compId}:1`, voltage);
+                }
+            }
         } else if (inst.type === 'openhw-breadboard' || inst.type === 'openhw-breadboard-half' || inst.type === 'openhw-breadboard-mini' || inst.type === 'wokwi-breadboard' || inst.type === 'wokwi-breadboard-half' || inst.type === 'wokwi-breadboard-mini' || inst.type === 'via' || inst.type === 'openhw-via' || inst.type === 'wokwi-via' || inst.type === 'openhw-wire' || inst.type === 'wokwi-wire') {
             const bridges = getInternalBridgesForComponent(compId, inst.type);
             for (const bridge of bridges) {
                 if (bridge[0] === `${compId}:${pinId}`) visit(bridge[1], voltage);
                 else if (bridge[1] === `${compId}:${pinId}`) visit(bridge[0], voltage);
+            }
+        } else if (inst.type === 'openhw-analog-joystick' || inst.type === 'wokwi-analog-joystick') {
+            // Joystick is two internal potentiometers (VCC→VRX, VCC→VRY) plus a button (SW→GND).
+            // normalizePin maps VCC→5V, so we must accept both names.
+            const isVccPin = pinId === 'VCC' || pinId === '5V';
+            const isGndPin = pinId === 'GND';
+            const xVal = inst.state?.x ?? 0.5;
+            const yVal = inst.state?.y ?? 0.5;
+            const gndV = inst.getPinVoltage('GND') || 0;
+            if (isVccPin) {
+                const vrxV = gndV + xVal * (voltage - gndV);
+                const vryV = gndV + yVal * (voltage - gndV);
+                inst.setPinVoltage('VRX', vrxV);
+                visit(`${compId}:VRX`, vrxV);
+                inst.setPinVoltage('VRY', vryV);
+                visit(`${compId}:VRY`, vryV);
+            } else if (isGndPin) {
+                // Get VCC voltage from whichever pin name is registered
+                const vccV = inst.getPinVoltage('VCC') || inst.getPinVoltage('5V') || 5.0;
+                const vrxV = voltage + xVal * (vccV - voltage);
+                const vryV = voltage + yVal * (vccV - voltage);
+                inst.setPinVoltage('VRX', vrxV);
+                visit(`${compId}:VRX`, vrxV);
+                inst.setPinVoltage('VRY', vryV);
+                visit(`${compId}:VRY`, vryV);
+            }
+            // SW button: connects SW to GND when pressed
+            if (inst.state?.pressed) {
+                if (pinId === 'SW') {
+                    inst.setPinVoltage('GND', voltage);
+                    visit(`${compId}:GND`, voltage);
+                } else if (isGndPin) {
+                    inst.setPinVoltage('SW', voltage);
+                    visit(`${compId}:SW`, voltage);
+                }
             }
         }
     }
@@ -853,7 +918,7 @@ export class AVRRunner {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
-                } else if (inst.type.includes('motor-driver')) {
+                } else if (inst.type.includes('motor-driver') || inst.type.includes('l293d')) {
                     ['OUT1', 'OUT2', 'OUT3', 'OUT4'].forEach(pin => {
                         if (inst.pins[pin]) {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
@@ -1051,6 +1116,64 @@ export class AVRRunner {
                 this.circuitDirty = false;
             }
 
+            // ── ADC Channel Polling ─────────────────────────────────────────
+            // Poll analog voltages from components connected to Arduino A0–A5
+            // and feed them into the AVR ADC so that analogRead() returns real values.
+            // This was present in execute_old.ts but missing from the new runner.
+            if (this.adc && this.cpu) {
+                for (let i = 0; i < UNO_ANALOG_PINS.length; i++) {
+                    const arduinoPin = UNO_ANALOG_PINS[i];
+                    let voltage = 0;
+
+                    const targetNet = this.pinToNet.get(`${this.boardId}:${arduinoPin}`) ?? 
+                                      this.pinToNet.get(`${this.boardId}:A${i}`);
+
+                    if (targetNet !== undefined) {
+                        for (const [p, n] of this.pinToNet.entries()) {
+                            if (n === targetNet && !p.startsWith(`${this.boardId}:`)) {
+                                const [compId, pinId] = p.split(':');
+                                const inst = this.instances.get(compId);
+                                if (inst && typeof inst.getPinVoltage === 'function') {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(pinId) || 0);
+                                }
+                            }
+                        }
+                    } else {
+                        // Fallback for single wires if netlist is missing
+                        for (const w of this.currentWires) {
+                            const [fromComp, fromPin] = w.from.split(':');
+                            const [toComp, toPin] = w.to.split(':');
+
+                            let isConnectedToPin = false;
+                            let otherCompId = '';
+                            let otherCompPin = '';
+
+                            if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = toComp;
+                                otherCompPin = toPin;
+                            } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = fromComp;
+                                otherCompPin = fromPin;
+                            }
+
+                            if (isConnectedToPin) {
+                                const inst = this.instances.get(otherCompId);
+                                if (inst && typeof inst.getPinVoltage === 'function') {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin) || 0);
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (i === 0 && this._dbgFrameCount % 60 === 0) {
+                        console.log(`[ADC DBG] A0 targetNet=${targetNet} voltage=${voltage} pinToNet.size=${this.pinToNet.size}`);
+                    }
+
+                    this.adc.channelValues[i] = voltage;
+                }
+            }
             // Host/UART receive pacing: bytes per second = baud / 10 (8N1 frame)
             // bytes per ms = baud / 10000. We accumulate fractional budget over time.
             const bytesPerMs = this.serialBaudRate / 10000;

@@ -1,9 +1,11 @@
 import { BaseComponent } from '@openhw/emulator';
 import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
-
+import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
+import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
 import { PicoLogic } from '../pico-logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
+import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
 import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-supply/logic';
 import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic';
@@ -14,7 +16,7 @@ import { ServoLogic } from '@openhw/emulator/src/components/openhw-servo/logic';
 import { MotorDriverLogic } from '@openhw/emulator/src/components/openhw-motor-driver/logic';
 import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-potentiometer/logic';
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic';
-import { HC595Logic as ShiftRegisterLogic } from "@openhw/emulator/src/components/openhw-74hc595/logic";
+import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic';
 import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic';
 import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic';
@@ -32,7 +34,11 @@ import { Lcd2004I2CLogic } from '@openhw/emulator/src/components/openhw-lcd2004-
 import { SSD1306Logic } from '@openhw/emulator/src/components/openhw-ssd1306-oled/logic';
 import { PCA9685Logic } from '@openhw/emulator/src/components/openhw-pca9685/logic';
 import { MAX30102Logic } from '@openhw/emulator/src/components/max30102/logic';
-// custom sensors logic removed as they are missing in emulator package
+import { DHT22Logic } from '@openhw/emulator/src/components/DHT-22/logic';
+import { GasSensorLogic } from '@openhw/emulator/src/components/MQ2-gas-sensor/logic';
+import { PIRLogic } from '@openhw/emulator/src/components/PIR-Motion-Sensor/logic';
+import { RaindropModuleLogic } from '@openhw/emulator/src/components/Raindrop-module/logic';
+import { RaindropPadLogic } from '@openhw/emulator/src/components/Raindrop-pad/logic';
 import { LdrModuleLogic } from '@openhw/emulator/src/components/openhw-ldr-module/logic';
 import { SoilMoistureSensorLogic } from '@openhw/emulator/src/components/openhw-soil-moisture-sensor/logic';
 import { PhotodiodeLogic } from '@openhw/emulator/src/components/openhw-photodiode/logic';
@@ -40,14 +46,16 @@ import { DiodeLogic } from '@openhw/emulator/src/components/openhw-diode/logic';
 import { NPNTransistorLogic } from '@openhw/emulator/src/components/openhw-npn-transistor/logic';
 import { MAX7219Logic } from '@openhw/emulator/src/components/openhw-max7219/logic';
 import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
+import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
-// import { CD74HC4067Logic } from '@openhw/emulator/src/components/openhw-cd74hc4067/logic';
+
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
+import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -73,16 +81,18 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-led': LEDLogic,
     'wokwi-arduino-uno': UnoLogic,
     'openhw-arduino-uno': UnoLogic,
-    'openhw-esp32': BaseComponent,
-    'openhw-esp32-cam': BaseComponent,
-    'wokwi-esp32-cam': BaseComponent,
-    'esp32-cam': BaseComponent,
+    'openhw-esp32': Esp32Logic,
+    'openhw-esp32-cam': Esp32CamLogic,
+    'wokwi-esp32-cam': Esp32CamLogic,
+    'esp32-cam': Esp32CamLogic,
     'wokwi-raspberry-pi-pico': PicoLogic,
     'openhw-raspberry-pi-pico': PicoLogic,
     'wokwi-raspberry-pi-pico-w': PicoLogic,
     'openhw-raspberry-pi-pico-w': PicoLogic,
     'wokwi-resistor': ResistorLogic,
     'openhw-resistor': ResistorLogic,
+    'wokwi-slide-switch': SlideSwitchLogic,
+    'openhw-slide-switch': SlideSwitchLogic,
     'wokwi-pushbutton': PushbuttonLogic,
     'openhw-pushbutton': PushbuttonLogic,
     'wokwi-power-supply': PowerSupplyLogic,
@@ -118,10 +128,10 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     max30102: MAX30102Logic,
     'wokwi-max7219': MAX7219Logic,
     'openhw-max7219': MAX7219Logic,
-    'wokwi-ldr-module': BaseComponent,
-    'openhw-ldr-module': BaseComponent,
+    'wokwi-ldr-module': LdrModuleLogic,
+    'openhw-ldr-module': LdrModuleLogic,
     'wokwi-7segment': BaseComponent,
-    'openhw-7segment': BaseComponent,
+    'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
     'openhw-ili9341': ILI9341Logic,
     'wokwi-sd-card': SDCardLogic,
@@ -163,8 +173,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-npn-transistor': NPNTransistorLogic,
     'wokwi-a4988': A4988Logic,
     'openhw-a4988': A4988Logic,
-    // 'wokwi-cd74hc4067': CD74HC4067Logic,
-    // 'openhw-cd74hc4067': CD74HC4067Logic,
+    'wokwi-cd74hc4067': BaseComponent,
+    'openhw-cd74hc4067': BaseComponent,
     'wokwi-logic-analyzer': SimulationMonitorLogic,
     'openhw-logic-analyzer': SimulationMonitorLogic,
 
@@ -175,16 +185,16 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-sph0645': I2SProtocol,
 
     // Sensors — custom components
-    'DHT-22': BaseComponent,
-    'openhw-dht22': BaseComponent,
-    'MQ-2 Gas Sensor': BaseComponent,
-    'openhw-mq2-gas-sensor': BaseComponent,
-    'wokwi-pir-motion-sensor': BaseComponent,
-    'openhw-pir-motion-sensor': BaseComponent,
-    'wokwi-raindrop-module': BaseComponent,
-    'openhw-raindrop-module': BaseComponent,
-    'wokwi-raindrop-pad': BaseComponent,
-    'openhw-raindrop-pad': BaseComponent,
+    'DHT-22': DHT22Logic,
+    'openhw-dht22': DHT22Logic,
+    'MQ-2 Gas Sensor': GasSensorLogic,
+    'openhw-mq2-gas-sensor': GasSensorLogic,
+    'wokwi-pir-motion-sensor': PIRLogic,
+    'openhw-pir-motion-sensor': PIRLogic,
+    'wokwi-raindrop-module': RaindropModuleLogic,
+    'openhw-raindrop-module': RaindropModuleLogic,
+    'wokwi-raindrop-pad': RaindropPadLogic,
+    'openhw-raindrop-pad': RaindropPadLogic,
 
     'wokwi-breadboard': BaseComponent,
     'openhw-breadboard': BaseComponent,
@@ -204,15 +214,16 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-nlsf595': BaseComponent,
     'wokwi-relay-module': BaseComponent,
     'openhw-relay-module': BaseComponent,
-    'wokwi-stepper-motor': BaseComponent,
-    'openhw-stepper-motor': BaseComponent,
+    'wokwi-stepper-motor': StepperMotorLogic,
+    'openhw-stepper-motor': StepperMotorLogic,
     'wokwi-arduino-mega': MegaLogic,
     'openhw-arduino-mega': MegaLogic,
     'wokwi-attiny85': BaseComponent,
     'openhw-attiny85': BaseComponent,
     'openhw-pico': PicoLogic,
     'openhw-pico-w': PicoLogic,
-    'openhw-photoresistor': BaseComponent,
+    'wokwi-photoresistor': PhotoresistorLogic,
+    'openhw-photoresistor': PhotoresistorLogic,
     'openhw-ntc-thermistor': BaseComponent,
     'openhw-ntc-temperature-sensor': BaseComponent,
     'openhw-charger': BaseComponent,
@@ -244,6 +255,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-raspberry-pi-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'wokwi-resistor': [{ id: 'p1' }, { id: 'p2' }],
     'openhw-resistor': [{ id: 'p1' }, { id: 'p2' }],
+    'wokwi-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
+    'openhw-slide-switch': [{ id: '1' }, { id: '2' }, { id: '3' }],
     'wokwi-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
     'openhw-pushbutton': [{ id: '1l' }, { id: '2l' }, { id: '1r' }, { id: '2r' }, { id: '1' }, { id: '2' }],
     'wokwi-buzzer': [{ id: '1' }, { id: '2' }],
@@ -288,8 +301,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'openhw-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
-    'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
-    'openhw-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'wokwi-analog-joystick': [{ id: 'GND' }, { id: 'VCC' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'openhw-analog-joystick': [{ id: 'GND' }, { id: 'VCC' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
     'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
@@ -447,6 +460,115 @@ export type ConnectedComponentPin = {
     inst: BaseComponent;
     pinId: string;
 };
+
+/**
+ * ComponentSignalAPI
+ *
+ * Formal TypeScript interface for every signal callback a component can implement.
+ * Runners (esp32-runner, backend-proxy-runner) cast component instances against
+ * this interface before dispatching signals, e.g.:
+ *
+ *   const api = inst as unknown as ComponentSignalAPI;
+ *   if (typeof api.onCanFrame === 'function') api.onCanFrame(id, dlc, data);
+ *
+ * All methods are optional — implement only what your component handles.
+ * Unimplemented callbacks are silently ignored by the runners.
+ */
+export interface ComponentSignalAPI {
+    // ── GPIO ────────────────────────────────────────────────────────────────
+    /** Called when a digital GPIO pin driven by firmware changes state */
+    setState?(state: { voltage?: number; digital?: boolean; value?: number }): void;
+    /** Called per-pin when a voltage level changes (driven by wire physics) */
+    onVoltageChange?(pinId: string, voltage: number): void;
+
+    // ── Analog / DAC ────────────────────────────────────────────────────────
+    /** Called when the firmware sets an analog voltage on a pin (DAC / analogWrite via physics) */
+    onAnalogVoltage?(pinId: string, voltage: number): void;
+
+    // ── PWM / LEDC ──────────────────────────────────────────────────────────
+    /** Called when a PWM duty cycle is applied to a connected pin (0.0 – 1.0) */
+    onPwmDuty?(pinId: string, duty_pct: number): void;
+
+    // ── TONE (buzzer, speaker, piezo) ────────────────────────────────────────
+    /** Called when tone(pin, freq, dur) is invoked. frequency=0 means noTone(). */
+    onTone?(pin: string, frequency: number, duration: number): void;
+
+    // ── I2C ─────────────────────────────────────────────────────────────────
+    /** Called for an I2C write transaction. Return response bytes if any. */
+    onI2CWrite?(addr: number, data: number[]): number[] | void;
+    /** Called for an I2C read request. Return the requested number of bytes. */
+    onI2CRead?(addr: number, qty: number): number[];
+
+    // ── SPI ─────────────────────────────────────────────────────────────────
+    /** Called for each SPI byte transfer. Return the MISO byte (or 0xFF). */
+    onSPIByte?(byte: number): number;
+    /** Called for an SPI buffer transfer (SPIBUF frame). Return response bytes. */
+    onSPIBuffer?(data: number[]): number[] | void;
+
+    // ── Serial / UART ────────────────────────────────────────────────────────
+    /** Called when a connected serial source sends data to the firmware's UART RX */
+    onSerialData?(data: string): void;
+
+    // ── WS2812 / NeoPixel ───────────────────────────────────────────────────
+    /** Called when a NeoPixel strip pixel array is updated */
+    updatePixels?(pixels: Array<{ r: number; g: number; b: number; w?: number }>): void;
+    /** Called for each individual WS2812B bit (used by raw-protocol components) */
+    onWS2812BByte?(byte: number): void;
+
+    // ── TWAI / CAN Bus ───────────────────────────────────────────────────────
+    /** Called when the firmware transmits a CAN frame on the TWAI bus */
+    onCanFrame?(id: number, dlc: number, data: number[]): void;
+
+    // ── RMT / IR ────────────────────────────────────────────────────────────
+    /** Called when the firmware transmits an RMT pulse train */
+    onRmtPulse?(pulses: Array<{ level: number; duration: number }>): void;
+    /** Alias used by IR-specific components (IR receiver, IR blaster) */
+    onInfraredSignal?(pulses: Array<{ level: number; duration: number }>): void;
+
+    // ── PCNT (Pulse Counter) ─────────────────────────────────────────────────
+    /** Called when the firmware reads or resets a pulse counter unit */
+    onPulseCount?(unit: number, count: number): void;
+
+    // ── 1-Wire ──────────────────────────────────────────────────────────────
+    /** Called during a 1-Wire read. Return the data bytes (e.g. temperature). */
+    onOneWireRead?(): number[];
+
+    // ── Deep Sleep / Wake ────────────────────────────────────────────────────
+    /** Called when the firmware enters deep or light sleep */
+    onDeviceSleep?(duration_us: number): void;
+    /** Called when the simulated sleep period expires and the device wakes */
+    onDeviceWake?(): void;
+
+    // ── I2S Audio (PCM5102, MAX98357, INMP441, SPH0645) ───────────────────────
+    /**
+     * Called when firmware writes PCM samples via i2s_write() / sim_i2s_write().
+     * @param samples  Float32 PCM samples, already normalised to [-1, 1]
+     * @param sampleRate  Sample rate in Hz (e.g. 44100, 22050)
+     * @param port  I2S port number (0 or 1)
+     *
+     * Implement on a DAC/amplifier component (PCM5102, MAX98357) to receive audio
+     * frames and play them via Web Audio API.
+     * For microphone components (INMP441, SPH0645) implement onMicrophoneRequest
+     * instead and return PCM bytes for the firmware to receive via i2s_read().
+     */
+    onI2SData?(samples: Float32Array, sampleRate: number, port: number): void;
+
+    /**
+     * Called when the firmware requests microphone data (sim_i2s_read / i2s_read).
+     * Return Int16 PCM bytes that will be injected back to the firmware.
+     * Leave unimplemented to return silence.
+     */
+    onMicrophoneRequest?(sampleCount: number, sampleRate: number): Int16Array | null;
+
+    // ── Camera ───────────────────────────────────────────────────────────────
+    /**
+     * Called when a JPEG camera frame is available (e.g. from device webcam).
+     * Implement on an ESP32-CAM component to display the frame.
+     * Note: currently the webcam stream is pushed directly via useEsp32Engine.js;
+     * this callback is reserved for future wire-routed camera simulation.
+     */
+    onCameraFrame?(jpeg: Uint8Array, width: number, height: number): void;
+}
 
 export type FallbackTelemetryRuntime = {
     createdAtMs: number;
@@ -1009,7 +1131,8 @@ export function getUnifiedComponentSyncState(inst: BaseComponent): any {
 
 export function collectComponentTelemetry(inst: any, optionsMode?: string, cpu?: any): any {
     if (inst?.type === 'openhw-simulation-monitor' && typeof inst.updateMetrics === 'function') {
-        inst.updateMetrics(cpu?.cycles || 0, cpu?.freq || 16000000, inst.telemetryEnabled, inst.telemetryWatchedParams || ['all'], realCanvasFps, realUiBlockedMs);
+        const targetFreq = (cpu as any)?.clock?.frequency || (cpu as any)?.freq || 16_000_000;
+        inst.updateMetrics(cpu?.cycles || 0, targetFreq, inst.telemetryEnabled, inst.telemetryWatchedParams || ['all'], realCanvasFps, realUiBlockedMs);
     }
 
     if (!inst.telemetryEnabled) {

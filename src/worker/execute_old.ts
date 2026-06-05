@@ -45,6 +45,7 @@ import { DiodeLogic } from '@openhw/emulator/src/components/wokwi-diode/logic.ts
 import { NPNTransistorLogic } from '@openhw/emulator/src/components/wokwi-npn-transistor/logic.ts';
 import { MAX7219Logic } from '@openhw/emulator/src/components/wokwi-max7219/logic.ts';
 import { A4988Logic } from '@openhw/emulator/src/components/wokwi-a4988/logic.ts';
+import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic.ts';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/wokwi-7segment/logic.ts';
 import { ILI9341Logic } from '@openhw/emulator/src/components/wokwi-ili9341/logic.ts';
 import { CD74HC4067Logic } from '@openhw/emulator/src/components/wokwi-cd74hc4067/logic.ts';
@@ -1993,8 +1994,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-nlsf595': BaseComponent,
     'wokwi-relay-module': BaseComponent,
     'openhw-relay-module': BaseComponent,
-    'wokwi-stepper-motor': BaseComponent,
-    'openhw-stepper-motor': BaseComponent,
+    'wokwi-stepper-motor': StepperMotorLogic,
+    'openhw-stepper-motor': StepperMotorLogic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -3881,31 +3882,49 @@ export class AVRRunner {
                 for (let i = 0; i < UNO_ANALOG_PINS.length; i++) {
                     const arduinoPin = UNO_ANALOG_PINS[i];
                     let voltage = 0;
-                    for (const w of this.currentWires) {
-                        const [fromComp, fromPin] = w.from.split(':');
-                        const [toComp, toPin] = w.to.split(':');
 
-                        let isConnectedToPin = false;
-                        let otherCompId = '';
-                        let otherCompPin = '';
+                    const targetNet = this.pinToNet.get(`${this.boardId}:${arduinoPin}`) ?? 
+                                      this.pinToNet.get(`${this.boardId}:A${i}`);
 
-                        if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
-                            isConnectedToPin = true;
-                            otherCompId = toComp;
-                            otherCompPin = toPin;
-                        } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
-                            isConnectedToPin = true;
-                            otherCompId = fromComp;
-                            otherCompPin = fromPin;
+                    if (targetNet !== undefined) {
+                        for (const [p, n] of this.pinToNet.entries()) {
+                            if (n === targetNet && !p.startsWith(`${this.boardId}:`)) {
+                                const [compId, pinId] = p.split(':');
+                                const inst = this.instances.get(compId);
+                                if (inst && typeof inst.getPinVoltage === 'function') {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(pinId) || 0);
+                                }
+                            }
                         }
+                    } else {
+                        // Fallback for single wires if netlist is somehow stale
+                        for (const w of this.currentWires) {
+                            const [fromComp, fromPin] = w.from.split(':');
+                            const [toComp, toPin] = w.to.split(':');
 
-                        if (isConnectedToPin) {
-                            const inst = this.instances.get(otherCompId);
-                            if (inst) {
-                                voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin));
+                            let isConnectedToPin = false;
+                            let otherCompId = '';
+                            let otherCompPin = '';
+
+                            if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = toComp;
+                                otherCompPin = toPin;
+                            } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = fromComp;
+                                otherCompPin = fromPin;
+                            }
+
+                            if (isConnectedToPin) {
+                                const inst = this.instances.get(otherCompId);
+                                if (inst && typeof inst.getPinVoltage === 'function') {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin) || 0);
+                                }
                             }
                         }
                     }
+
                     this.adc.channelValues[i] = voltage;
                 }
             }
@@ -4521,7 +4540,7 @@ export class RP2040Runner implements BoardRunner {
         this.cpu.logger = new ConsoleLogger(LogLevel.Error, true);
 
         // -- Patch PIO to use synchronous stepping instead of redundant setTimeout --
-        // This is a critical 'Velxio' optimization that prevents event-loop congestion.
+        // This is a critical 'OpenHW' optimization that prevents event-loop congestion.
         for (const pio of (this.cpu as any).pio) {
             pio.run = function(this: any) {
                 if (this.runTimer) {
@@ -4660,7 +4679,7 @@ export class RP2040Runner implements BoardRunner {
 
         const modeRaw = String(boardCompDef?.attrs?.wirelessMode || 'compat-stub').toLowerCase();
         const mode: 'off' | 'compat-stub' = modeRaw === 'off' ? 'off' : 'compat-stub';
-        const ssid = String(boardCompDef?.attrs?.wirelessSsid || 'Velxio-GUEST').trim() || 'Velxio-GUEST';
+        const ssid = String(boardCompDef?.attrs?.wirelessSsid || 'OpenHW-GUEST').trim() || 'OpenHW-GUEST';
         const ip = String(boardCompDef?.attrs?.wirelessIp || '192.168.4.2').trim() || '192.168.4.2';
         const now = performance.now();
 
@@ -6194,7 +6213,7 @@ export class RP2040Runner implements BoardRunner {
                 return delta > 0 ? delta : 1;
             };
 
-            // DETERMINISTIC CYCLE-TARGETED LOOP (Velxio Pattern)
+            // DETERMINISTIC CYCLE-TARGETED LOOP (OpenHW Pattern)
             while (cyclesDone < CYCLES_PER_FRAME && this.running && this.cpu) {
                 const pioDivs = this.getPIOClockDivs();
                 const pio0Div = pioDivs[0];
@@ -6504,7 +6523,7 @@ export class RP2040Runner implements BoardRunner {
 
     /**
      * Get the current clock divider for the PIO state machines.
-     * Aligned with Velxio: uses the first enabled state machine's divider or defaults to 64.
+     * Aligned with OpenHW: uses the first enabled state machine's divider or defaults to 64.
      */
     /**
      * Get the current clock dividers for PIO blocks 0 and 1.
