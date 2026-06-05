@@ -26,7 +26,7 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import { useGamification } from '../../context/GamificationContext.jsx'
 import { PROJECTS } from '../../services/gamification/ProjectsConfig.js'
 import { COMPONENT_MAP } from '../../services/gamification/ComponentsConfig.js'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, createSharedSimulation, fetchSharedSimulation, fetchLiveSimulationSession, buildLiveSimulationWsUrl, fetchPublicInstalledComponents, fetchComponentsVersion, startEsp32Compile, getEsp32CompileStatus } from '../../services/simulatorService.js'
 import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
@@ -98,7 +98,13 @@ const EDIT_COPY_PAYLOAD_PREFIX = 'openhw_edit_copy_payload_';
 const UNSAFE_DYNAMIC_CODE_PATTERN = /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code, label) {
-  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ''))) {
+  const cleanCode = String(code || '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(?:^|[^:])\/\/[^\r\n]*/g, '')
+    .replace(/'(?:[^'\\]|\\.)*'/g, '')
+    .replace(/"(?:[^"\\]|\\.)*"/g, '')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '');
+  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(cleanCode)) {
     throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
   }
 }
@@ -1516,6 +1522,14 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
   );
 });
 
+const getVisualBounds = (comp, COMPONENT_REGISTRY, getComponentStateAttrs) => {
+  if (!comp) return { x: 0, y: 0, w: 0, h: 0 };
+  const reg = COMPONENT_REGISTRY[comp.type];
+  if (!reg) return { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
+  if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
+  return reg.BOUNDS || { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
+};
+
 // ─── Memoized Component Wrapper ──────────────────────────────────────────────
 const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, onTouchStart, onClick, getComponentStateAttrs, COMPONENT_REGISTRY, PIN_DEFS }) => {
   const rad = ((comp.rotation || 0) * Math.PI) / 180;
@@ -1528,14 +1542,6 @@ const CanvasComponent = React.memo(({ comp, isSelected, hasError, onMouseDown, o
     return reg.BOUNDS || { x: 0, y: 0, w: comp.w, h: comp.h };
   };
   const b = getBounds();
-
-const getVisualBounds = (comp, COMPONENT_REGISTRY, getComponentStateAttrs) => {
-  if (!comp) return { x: 0, y: 0, w: 0, h: 0 };
-  const reg = COMPONENT_REGISTRY[comp.type];
-  if (!reg) return { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-  if (typeof reg.BOUNDS === 'function') return reg.BOUNDS(getComponentStateAttrs(comp));
-  return reg.BOUNDS || { x: 0, y: 0, w: comp.w || 0, h: comp.h || 0 };
-};
 
   return (
     <React.Fragment>
@@ -1933,6 +1939,8 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   }, []);
   const [isCompiling, setIsCompiling] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  /** true while firmware is in deep/light sleep — shows a sleeping badge in UI */
+  const [isDeviceSleeping, setIsDeviceSleeping] = useState(false)
   const [protocolLogs, setProtocolLogs] = useState([])
   const [activeConsoleTab, setActiveConsoleTab] = useState('console')
   const [healthScore, setHealthScore] = useState(100)
@@ -2175,6 +2183,55 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const componentsRef = useRef([]);
   const wiresRef = useRef([]);
   const pinDefsRef = useRef({});
+
+  const getComponentStateAttrs = (comp) => {
+    let attrs = { ...comp.attrs };
+
+    if (normalizeBoardKind(comp.type) === 'rp2040') {
+      attrs.env = mapRp2040EnvForLegacyContextMenu(resolveComponentAttrString(attrs, 'env', 'native'));
+    }
+
+    // Remote OOP state takes priority
+    const remoteState = oopStates[comp.id];
+
+    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
+      delete attrs.value; // Let ui.tsx handle it
+    } else if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
+      if (remoteState && remoteState.angle !== undefined) {
+        attrs.angle = remoteState.angle.toString();
+      }
+    } else if (comp.type === 'wokwi-stepper-motor' || comp.type === 'openhw-stepper-motor') {
+      if (remoteState && remoteState.angle !== undefined) {
+        attrs.angle = remoteState.angle.toString();
+      }
+    } else if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
+      if (remoteState && remoteState.isBuzzing) {
+        // Wokwi buzzer visual indicator (if supported) can be driven here
+        attrs.color = "red";
+      }
+    }
+
+    // Pass interactions to the Web Worker
+    attrs.onInteract = (event) => {
+      console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
+
+      // Handle physical board reset button presses
+      if (isProgrammableBoardType(comp.type) && event === 'RESET') {
+        if (isRunning) handleReset();
+        return;
+      }
+
+      if (workerRef.current && isRunning) {
+        workerRef.current.postMessage({
+          type: 'INTERACT',
+          compId: comp.id,
+          event: event
+        });
+      }
+    };
+
+    return attrs;
+  };
 
   // ── Project persistence state ────────────────────────────────────────────────
   const [currentProjectId, setCurrentProjectId] = useState(null);
@@ -6881,21 +6938,75 @@ useEffect(() => {
             compileSource,
             targetFqbn,
             ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+            kind === 'esp32' ? esp32SimulationMode : '',
           ].join('\n/*__SPLIT__*/\n');
 
           appendConsoleEntry('info', `Compiling for ${boardCompToDisplayName(boardComp, kind)}...`, 'simulator');
           let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-          if (compiled) {
+          if (compiled && (kind !== 'esp32' || esp32SimulationMode !== 'frontend' || compiled.hex)) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
             try {
-              compiled = await compileCode({
-                code: compileSource,
-                files: compileUnit.files,
-                sketchName: compileUnit.sketchName,
-                fqbn: targetFqbn,
-              });
+              if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
+                const startRes = await startEsp32Compile({
+                  code: compileSource
+                });
+                
+                if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+                  throw new Error('Failed to start ESP32 compilation.');
+                }
+                
+                if (startRes.cache === 'hit') {
+                  logSerial(`Using server-cached compilation for ${boardComp.id}...`);
+                }
+                
+                const jobId = startRes.jobId || startRes.buildId;
+                let pollCount = 0;
+                let lastPrintedProgressLen = 0;
+                
+                while (true) {
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  const statusRes = await getEsp32CompileStatus(jobId);
+                  
+                  if (!statusRes) continue;
+                  
+                  const progressLines = statusRes.progress || [];
+                  if (progressLines.length > lastPrintedProgressLen) {
+                    for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
+                      logSerial(progressLines[i]);
+                    }
+                    lastPrintedProgressLen = progressLines.length;
+                  }
+                  
+                  if (statusRes.status === 'success') {
+                    if (!statusRes.binary_content) {
+                      throw new Error('Compilation succeeded but no binary content was returned.');
+                    }
+                    compiled = {
+                      hex: statusRes.binary_content,
+                      stdout: statusRes.stdout || '',
+                      stderr: statusRes.stderr || ''
+                    };
+                    break;
+                  } else if (statusRes.status === 'failed') {
+                    const errMsg = statusRes.error || 'ESP32 compilation failed.';
+                    throw new Error(errMsg);
+                  }
+                  
+                  pollCount++;
+                  if (pollCount > 120) {
+                    throw new Error('ESP32 compilation timed out after 60 seconds.');
+                  }
+                }
+              } else {
+                compiled = await compileCode({
+                  code: compileSource,
+                  files: compileUnit.files,
+                  sketchName: compileUnit.sketchName,
+                  fqbn: targetFqbn,
+                });
+              }
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
               throw compileErr;
@@ -7361,13 +7472,83 @@ useEffect(() => {
           pushSerialRxChunk(msg.data, resolvedBoardId, msg.source || 'sim');
         }
 
-        // Handle Protocol Events
+        // ── 8B: SERIAL_OUTPUT from WASM runner ────────────────────────────────────
+        if (msg.type === 'SERIAL_OUTPUT') {
+          const incomingBoardId = String(msg.boardId || '').trim();
+          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
+          const resolvedBoardId = hasKnownBoard ? incomingBoardId : (singleBoardFallback || incomingBoardId || 'default');
+          if (msg.text) pushSerialRxChunk(msg.text + '\n', resolvedBoardId, msg.source || 'wasm');
+          const log = protocolAnalyzerRef.current.processSerial(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+
+        // ── Handle Protocol Events ───────────────────────────────────────────────
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
           setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+
+        // ── 8A: New protocol events → ProtocolAnalyzer ─────────────────────────
+        if (msg.type === 'GPIO_SYNC') {
+          const log = protocolAnalyzerRef.current.processGpio(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'LEDC_SYNC') {
+          const log = protocolAnalyzerRef.current.processLedc(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'DAC_SYNC' || msg.type === 'esp32:dac:sync') {
+          const log = protocolAnalyzerRef.current.processDac(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'esp32:adc:sync') {
+          const log = protocolAnalyzerRef.current.processAdc(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'TONE') {
+          const log = protocolAnalyzerRef.current.processTone(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'esp32:uart:rx') {
+          const log = protocolAnalyzerRef.current.processSerialRx(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'TWAI_TX') {
+          const log = protocolAnalyzerRef.current.processTwai(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'RMT_PULSE') {
+          const log = protocolAnalyzerRef.current.processRmt(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'PCNT_UPDATE') {
+          const log = protocolAnalyzerRef.current.processPcnt(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'state' && msg.neopixels && Object.keys(msg.neopixels).length > 0) {
+          Object.entries(msg.neopixels).forEach(([ch, pixels]) => {
+            const log = protocolAnalyzerRef.current.processNeopixel({ channel: ch, pixels });
+            setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+          });
+        }
+
+        // ── 8C: Deep sleep / wake ─────────────────────────────────────────────
+        if (msg.type === 'sim:sleep') {
+          setIsDeviceSleeping(true);
+          const sec = msg.duration_us ? (msg.duration_us / 1_000_000).toFixed(2) + 's' : '∞';
+          appendConsoleEntry('info', `💤 Device entering deep sleep (${sec})`, 'simulator');
+          const log = protocolAnalyzerRef.current.processSleep(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'sim:wake') {
+          setIsDeviceSleeping(false);
+          appendConsoleEntry('info', '☀️ Device woke from deep sleep', 'simulator');
+          const log = protocolAnalyzerRef.current.processWake(msg);
           setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
       };
@@ -8514,55 +8695,6 @@ useEffect(() => {
 
     if (isPng) reader.readAsArrayBuffer(file);
     else reader.readAsText(file);
-  };
-
-  const getComponentStateAttrs = (comp) => {
-    let attrs = { ...comp.attrs };
-
-    if (normalizeBoardKind(comp.type) === 'rp2040') {
-      attrs.env = mapRp2040EnvForLegacyContextMenu(resolveComponentAttrString(attrs, 'env', 'native'));
-    }
-
-    // Remote OOP state takes priority
-    const remoteState = oopStates[comp.id];
-
-    if (comp.type === 'wokwi-led' || comp.type === 'openhw-led') {
-      delete attrs.value; // Let ui.tsx handle it
-    } else if (comp.type === 'wokwi-servo' || comp.type === 'openhw-servo') {
-      if (remoteState && remoteState.angle !== undefined) {
-        attrs.angle = remoteState.angle.toString();
-      }
-    } else if (comp.type === 'wokwi-stepper-motor' || comp.type === 'openhw-stepper-motor') {
-      if (remoteState && remoteState.angle !== undefined) {
-        attrs.angle = remoteState.angle.toString();
-      }
-    } else if (comp.type === 'wokwi-buzzer' || comp.type === 'openhw-buzzer') {
-      if (remoteState && remoteState.isBuzzing) {
-        // Wokwi buzzer visual indicator (if supported) can be driven here
-        attrs.color = "red";
-      }
-    }
-
-    // Pass interactions to the Web Worker
-    attrs.onInteract = (event) => {
-      console.log(`[SimulatorPage] UI Component ${comp.id} interacted: ${event}. isRunning: ${isRunning}`);
-
-      // Handle physical board reset button presses
-      if (isProgrammableBoardType(comp.type) && event === 'RESET') {
-        if (isRunning) handleReset();
-        return;
-      }
-
-      if (workerRef.current && isRunning) {
-        workerRef.current.postMessage({
-          type: 'INTERACT',
-          compId: comp.id,
-          event: event
-        });
-      }
-    };
-
-    return attrs;
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────

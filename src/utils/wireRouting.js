@@ -96,7 +96,50 @@ export function buildBaseRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0,
       route = orthogonalizePair(p1, p2, overallHorizontalFirst);
     }
   } else {
-    // === START: EXIT SIDE ROUTING ===
+    // === EXIT SIDE ROUTING ===
+
+    // ── SHORT-DISTANCE DETECTION ──────────────────────────────────────
+    // When two pins are very close, the stagger/trunk system overshoots
+    // and creates loops/knots. Detect this and produce a clean minimal
+    // orthogonal path that incorporates the lane offset so parallel
+    // wires naturally space apart (preventing micro-shift interference).
+    const pinDistance = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const SHORT_DISTANCE_THRESHOLD = 150; // pixels — ~10 grid cells
+
+    if (pinDistance < SHORT_DISTANCE_THRESHOLD) {
+      // Extract lane offset from the bundling system so each wire in a
+      // parallel group gets a unique vertical/horizontal turn position.
+      const laneShift = (typeof offset === 'object' && offset !== null)
+        ? (Number(offset.offset) || 0)
+        : (Number(offset) || 0);
+
+      const absDx = Math.abs(p2.x - p1.x);
+      const absDy = Math.abs(p2.y - p1.y);
+
+      if (absDx < 3 && absDy < 3) {
+        // Practically same point
+        route = [p1, p2];
+      } else if (absDy < 3) {
+        // Horizontally aligned — straight line
+        route = [p1, p2];
+      } else if (absDx < 3) {
+        // Vertically aligned — straight line
+        route = [p1, p2];
+      } else if (absDx >= absDy) {
+        // Side-by-side components (horizontal gap is dominant).
+        // Route: p1 → vertical turn at midX → horizontal to p2's Y → into p2.
+        // Each wire's midX is offset by laneShift so they don't overlap.
+        const midX = Math.round(((p1.x + p2.x) / 2 + laneShift) / 15) * 15;
+        route = [p1, { x: midX, y: p1.y }, { x: midX, y: p2.y }, p2];
+      } else {
+        // Stacked components (vertical gap is dominant).
+        // Route: p1 → horizontal turn at midY → vertical to p2's X → into p2.
+        const midY = Math.round(((p1.y + p2.y) / 2 + laneShift) / 15) * 15;
+        route = [p1, { x: p1.x, y: midY }, { x: p2.x, y: midY }, p2];
+      }
+
+    } else {
+    // ── LONG-DISTANCE: ORIGINAL EXIT-SIDE ROUTING (unchanged) ─────────
     let shift = 0, stagger = 0, stagger2 = 0;
     if (typeof offset === 'object' && offset !== null) {
       shift = Number(offset.offset) || 0;
@@ -227,6 +270,7 @@ export function buildBaseRoutePoints(p1, e1, e2, p2, waypoints = [], offset = 0,
 
       route = [...p1Points, { x: currentX1, y: midY }, { x: currentX2, y: midY }, ...p2Points];
     }
+    } // end long-distance else
     // === END: EXIT SIDE ROUTING ===
   }
 
