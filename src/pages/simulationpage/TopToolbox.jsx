@@ -1056,7 +1056,7 @@ function TopToolboxInternal(props) {
             style={{
               position: "absolute",
               top: "calc(100% + 8px)",
-              left: 0,
+              right: 0,
               width: 320,
               background: "var(--bg2)",
               border: "1px solid var(--border)",
