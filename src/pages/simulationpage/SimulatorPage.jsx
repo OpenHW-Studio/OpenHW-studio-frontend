@@ -255,6 +255,22 @@ function syncNextIds(components, wires) {
 const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
   let newWires = [...currentWires];
 
+  const getPinX = (c, p) => {
+    if (!p) return 0;
+    if (p.x !== undefined) return p.x;
+    if (c.type.includes('pico')) {
+      const n = parseInt(p.id);
+      if (!isNaN(n)) return n <= 20 ? 0 : (c.w || 60);
+    }
+    return (c.w || 60) / 2;
+  };
+
+  const getPinY = (c, p) => {
+    if (!p) return 0;
+    if (p.y !== undefined) return p.y;
+    return (c.h || 60) / 2;
+  };
+
   const getBestPowerPins = (comp, bb) => {
     const pins = LOCAL_PIN_DEFS[comp.type] || [];
     const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
@@ -299,21 +315,6 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
     const vccList = vccPins.length > 0 ? vccPins : [null];
     const gndList = gndPins.length > 0 ? gndPins : [null];
 
-    const getPinX = (c, p) => {
-      if (!p) return 0;
-      if (p.x !== undefined) return p.x;
-      if (c.type.includes('pico')) {
-        const n = parseInt(p.id);
-        if (!isNaN(n)) return n <= 20 ? 0 : (c.w || 60);
-      }
-      return (c.w || 60) / 2;
-    };
-    
-    const getPinY = (c, p) => {
-      if (!p) return 0;
-      if (p.y !== undefined) return p.y;
-      return (c.h || 60) / 2;
-    };
 
     vccList.forEach(vcc => {
       const vccX = vcc ? comp.x + getPinX(comp, vcc) : 0;
@@ -392,11 +393,14 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
         w.from === `${comp.id}:${pair.vcc.id}` || w.to === `${comp.id}:${pair.vcc.id}`
       );
       if (!alreadyWired) {
+        // Detect voltage type for wire color: orange for 3.3V, red for 5V
+        const vccIdDesc = ((pair.vcc.id || '') + ' ' + (pair.vcc.description || '')).toUpperCase();
+        const is3v3 = vccIdDesc.includes('3.3') || vccIdDesc.includes('3V3');
         newWires.push({
           id: `w${nextWireId++}`,
           from: `${comp.id}:${pair.vcc.id}`,
           to: `${bb.id}:${pair.bbVcc}`,
-          color: 'red',
+          color: is3v3 ? '#f97316' : 'red',
           isBelow: false,
           waypoints: makeCleanWaypoints(pair.vcc, pair.bbVcc)
         });
