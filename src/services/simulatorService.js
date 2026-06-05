@@ -452,11 +452,12 @@ export async function fetchPublicSystemStatus() {
 
 export async function fetchMaintenanceStatus() {
     try {
-        const response = await axios.get(`${COMPILER_URL}/public/maintenance-status`);
+        const response = await axios.get(`${COMPILER_URL}/public/maintenance-status`, { timeout: 5000 });
         return response.data.enabled || false;
     } catch (e) {
-        // If connection fails (e.g. backend down), consider it maintenance/offline
-        return true; 
+        // Backend unreachable — do not block the UI; simulator can still run in guest/offline mode
+        console.warn('[Maintenance] Backend unreachable, continuing without maintenance lock:', e?.message || e);
+        return false;
     }
 }
 

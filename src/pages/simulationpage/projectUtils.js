@@ -830,8 +830,10 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (type === 'wokwi-led') type = 'openhw-led';
       if (type === 'wokwi-resistor') type = 'openhw-resistor';
       if (type === 'wokwi-pushbutton') type = 'openhw-pushbutton';
+      if (type === 'wokwi-pushbutton-6mm') type = 'openhw-pushbutton-6mm';
       if (type === 'wokwi-potentiometer') type = 'openhw-potentiometer';
       if (type === 'wokwi-slide-potentiometer') type = 'openhw-slide-potentiometer';
+      if (type === 'wokwi-slide-switch') type = 'openhw-slide-switch';
       if (type === 'wokwi-buzzer') type = 'openhw-buzzer';
       if (type === 'wokwi-motor') type = 'openhw-motor';
       if (type === 'wokwi-motor-driver') type = 'openhw-motor-driver';
@@ -870,6 +872,8 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
       if (type === 'wokwi-ds1307-rtc') type = 'openhw-ds1307-rtc';
       if (type === 'wokwi-hc-sr04') type = 'openhw-hc-sr04';
       if (type === 'wokwi-ili9341') type = 'openhw-ili9341';
+      if (type === 'wokwi-lcd1602') type = 'openhw-lcd1602';
+      if (type === 'wokwi-lcd2004') type = 'openhw-lcd2004';
       if (type === 'wokwi-l293d') type = 'openhw-l293d';
       if (type === 'wokwi-lcd1602-i2c') type = 'openhw-lcd1602-i2c';
       if (type === 'wokwi-lcd2004-i2c') type = 'openhw-lcd2004-i2c';
@@ -1037,9 +1041,11 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
             else if (pinId === 'VERT') pinId = 'VRX';
             else if (pinId === 'HORZ') pinId = 'VRY';
             else if (pinId === 'SEL') pinId = 'SW';
-          } else if (type === 'openhw-mpu6050') {
-            if (pinId === 'AD0') pinId = 'ADO';
-          } else if (type === 'openhw-a4988') {
+          } else if (type === 'openhw-lcd1602') {
+            type = 'wokwi-lcd1602';
+          } else if (type === 'openhw-lcd2004') {
+            type = 'wokwi-lcd2004';
+          } else if (type === 'openhw-lcd1602-i2c') {
             if (pinId === 'GND.1') pinId = 'GND_MOT';
             else if (pinId === 'GND.2') pinId = 'GND_LOGIC';
           } else if (type === 'openhw-l293d') {
