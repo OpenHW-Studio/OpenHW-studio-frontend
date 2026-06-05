@@ -102,6 +102,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
       }
     });
 
+
     // One-shot layout after mount to ensure correct initial sizing
     requestAnimationFrame(() => editor.layout());
   }, [activeCodeFileId, onSaveCodeFile, onToggleCodeExplorer, projectFiles]);
