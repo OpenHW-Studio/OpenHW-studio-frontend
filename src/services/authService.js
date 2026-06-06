@@ -8,7 +8,10 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'ht
 // ─── Token & User Storage Helpers ───────────────────────────────────────────
 
 export const saveToken = (token) => localStorage.setItem('openhw_token', token);
-export const getToken = () => localStorage.getItem('openhw_token');
+export const getToken = () => {
+  const t = localStorage.getItem('openhw_token');
+  return t === 'null' ? null : t;
+};
 export const removeToken = () => localStorage.removeItem('openhw_token');
 
 export const saveUser = (user) => localStorage.setItem('openhw_user', JSON.stringify(user));
