@@ -200,6 +200,8 @@ export class WokwiInternetAP {
                 this.status.rxBytes += eth.length;
                 this.status.emitStats();
                 this.onEthernetRx(eth);
+            } else if (typeof event.data === 'string') {
+                console.log(event.data);
             }
         };
         this.socket.onerror = () => {
