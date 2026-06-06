@@ -1028,9 +1028,23 @@ export class RP2040Runner implements BoardRunner {
                     });
                 };
                 this.instances.set(cDef.id, inst);
+                console.log(`[RP2040Runner] Instantiated component: ${cDef.id} of type ${cDef.type}`);
+            } else {
+                console.log(`[RP2040Runner] LogicClass not found for type: ${cDef.type}`);
             }
         });
-        this.initWirelessStub(boardCompDef);
+
+        // Attach PIO hooks for components like PicoWLogic
+        let hookAttached = false;
+        for (const inst of this.instances.values()) {
+            if (typeof (inst as any).attachPioHooks === 'function') {
+                (inst as any).attachPioHooks(this.cpu);
+                hookAttached = true;
+            }
+        }
+        if (!hookAttached) {
+            console.log(`[RP2040Runner] No components with attachPioHooks were found!`);
+        }
 
         this.attachGPIOListeners();
         this.attachUART();
@@ -1070,7 +1084,6 @@ export class RP2040Runner implements BoardRunner {
             console.log(`[RP2040 START] board=${this.boardId} gdb=${this.gdbStatus} spi0=[${spi0Ids.join(', ')}] spi1=[${spi1Ids.join(', ')}]`);
         }
         this.emitDebugSnapshot('start', this.lastTime, true);
-        this.emitWirelessStubStatus('start', true);
         this.runLoop();
     }
 
@@ -1084,82 +1097,7 @@ export class RP2040Runner implements BoardRunner {
         return true;
     }
 
-    private initWirelessStub(boardCompDef: any) {
-        const boardType = String(boardCompDef?.type || '').toLowerCase();
-        if (!(boardType.includes('pico-w') || boardType.includes('picow'))) return;
-
-        const modeRaw = String(boardCompDef?.attrs?.wirelessMode || 'compat-stub').toLowerCase();
-        const mode: 'off' | 'compat-stub' = modeRaw === 'off' ? 'off' : 'compat-stub';
-        const ssid = String(boardCompDef?.attrs?.wirelessSsid || 'OpenHW-GUEST').trim() || 'OpenHW-GUEST';
-        const ip = String(boardCompDef?.attrs?.wirelessIp || '192.168.4.2').trim() || '192.168.4.2';
-        const now = performance.now();
-
-        this.picoWirelessStub = {
-            mode,
-            ssid,
-            ip,
-            status: mode === 'off' ? 'off' : 'booting',
-            startedAtMs: now,
-            lastEmitMs: 0,
-        };
-        this.applyWirelessStubStateToBoard();
-    }
-
-    private applyWirelessStubStateToBoard() {
-        if (!this.picoWirelessStub) return;
-        const boardInst = this.instances.get(this.boardId);
-        if (!boardInst) return;
-
-        const { mode, ssid, ip, status } = this.picoWirelessStub;
-        boardInst.setState({
-            wirelessMode: mode,
-            wirelessStatus: status,
-            wirelessConnected: mode !== 'off' && status === 'connected',
-            wirelessSsid: mode === 'off' ? '' : ssid,
-            wirelessIp: mode === 'off' ? '' : ip,
-            wirelessNote: mode === 'off'
-                ? 'Wireless compatibility stub disabled.'
-                : 'Compatibility stub only. Pico W radio/network emulation is not implemented.',
-        });
-    }
-
-    private emitWirelessStubStatus(reason: 'start' | 'tick' | 'reset' = 'tick', force = false) {
-        if (!this.picoWirelessStub) return;
-
-        const now = performance.now();
-        if (!force && (now - this.picoWirelessStub.lastEmitMs) < RP2040Runner.WIRELESS_STUB_EMIT_INTERVAL_MS) {
-            return;
-        }
-
-        if (this.picoWirelessStub.mode === 'off') {
-            this.picoWirelessStub.status = 'off';
-        } else {
-            const elapsed = now - this.picoWirelessStub.startedAtMs;
-            this.picoWirelessStub.status = elapsed >= 1200 ? 'connected' : 'booting';
-        }
-
-        this.applyWirelessStubStateToBoard();
-
-        const connected = this.picoWirelessStub.mode !== 'off' && this.picoWirelessStub.status === 'connected';
-        this.onStateUpdate({
-            type: 'debug',
-            boardId: this.boardId,
-            category: 'rp2040-wireless-stub',
-            reason,
-            wireless: {
-                mode: this.picoWirelessStub.mode,
-                status: this.picoWirelessStub.status,
-                connected,
-                ssid: this.picoWirelessStub.mode === 'off' ? '' : this.picoWirelessStub.ssid,
-                ip: this.picoWirelessStub.mode === 'off' ? '' : this.picoWirelessStub.ip,
-                note: this.picoWirelessStub.mode === 'off'
-                    ? 'Wireless compatibility stub disabled.'
-                    : 'Compatibility stub only. Pico W radio/network emulation is not implemented.',
-            },
-        });
-
-        this.picoWirelessStub.lastEmitMs = now;
-    }
+    // Wireless stub logic removed since PicoWLogic handles actual Wi-Fi emulation.
 
     private emitGdbStatus(reason: 'connecting' | 'connected' | 'closed' | 'error' | 'stopped', detail = '') {
         this.onStateUpdate({

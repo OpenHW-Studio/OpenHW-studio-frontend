@@ -1013,6 +1013,18 @@ self.onmessage = async (e) => {
         return;
     }
 
+    if (data.type === 'DOWNLOAD_PCAP') {
+        const boardId = data.boardId;
+        const targetRunner = boardRunners.get(boardId) || runner;
+        if (targetRunner && typeof targetRunner.downloadPcap === 'function') {
+            console.log(`[SimWorker] Triggering PCAP download for ${boardId}`);
+            targetRunner.downloadPcap();
+        } else {
+            console.warn(`[SimWorker] PCAP download requested for ${boardId} but runner doesn't support it or isn't active`);
+        }
+        return;
+    }
+
     if (data.type === 'START') {
         const {
             hex,
@@ -1133,6 +1145,7 @@ self.onmessage = async (e) => {
                         speed: initialSpeed,
                         // Pass pyScript metadata so the worker can inject over UART0 after boot.
                         pyScript: typeof pyScript === 'string' ? pyScript : '',
+                        sessionId: data.networkRoomCode || '',
                         onByteTransmit: ({ boardId, value, char, source }) => {
                             appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                             postMessage({ type: 'serial', data: char, boardId, value, source });
@@ -1208,6 +1221,13 @@ self.onmessage = async (e) => {
         for (const boardComp of programmableBoards) {
             const fwHex = boardHexMap?.[boardComp.id] || boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
             const executableRanges = resolveRp2040ExecutableRanges(boardComp, boardExecutableRangesMap);
+            
+            // Inject the sessionId into the board's attrs so the component logic (like PicoWLogic) can access it
+            if (!boardComp.attrs) {
+                boardComp.attrs = {};
+            }
+            boardComp.attrs.sessionId = data.networkRoomCode || '';
+
             if (typeof fwHex !== 'string' || !fwHex.trim()) {
                 console.warn(`[Worker] Skipping board ${boardComp.id}: no board-specific firmware available.`);
                 continue;
@@ -1258,6 +1278,7 @@ self.onmessage = async (e) => {
                     debugIntervalMs: /(rp2040|pico)/i.test(String(boardComp.type || '')) && rp2040DebugEnabled ? 1200 : 0,
                     speed: initialSpeed,
                     pyScript: typeof pyScript === 'string' ? pyScript : '',
+                    sessionId: data.networkRoomCode || '',
                     onByteTransmit: ({ boardId, value, char, source }) => {
                         appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                         postMessage({ type: 'serial', data: char, boardId, value, source });

@@ -4,6 +4,7 @@ import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/log
 import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
 import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
 import { PicoLogic } from '../pico-logic';
+import { PicoWLogic } from '@openhw/emulator/src/components/openhw-pico-w/logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
@@ -56,6 +57,7 @@ import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/log
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
+import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -87,8 +89,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'esp32-cam': Esp32CamLogic,
     'wokwi-raspberry-pi-pico': PicoLogic,
     'openhw-raspberry-pi-pico': PicoLogic,
-    'wokwi-raspberry-pi-pico-w': PicoLogic,
-    'openhw-raspberry-pi-pico-w': PicoLogic,
+    'wokwi-raspberry-pi-pico-w': PicoWLogic,
+    'openhw-raspberry-pi-pico-w': PicoWLogic,
     'wokwi-resistor': ResistorLogic,
     'openhw-resistor': ResistorLogic,
     'wokwi-slide-switch': SlideSwitchLogic,
@@ -221,7 +223,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-attiny85': BaseComponent,
     'openhw-attiny85': BaseComponent,
     'openhw-pico': PicoLogic,
-    'openhw-pico-w': PicoLogic,
+    'openhw-pico-w': PicoWLogic,
     'wokwi-photoresistor': PhotoresistorLogic,
     'openhw-photoresistor': PhotoresistorLogic,
     'openhw-ntc-thermistor': BaseComponent,
