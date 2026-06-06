@@ -113,24 +113,34 @@ const MaintenanceGuard = ({ children }) => {
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response?.status === 401) {
+        const reqUrl = error.config?.url || "";
+
+        if (error.response?.status === 401 && reqUrl.includes("/api")) {
           const isAdm = location.pathname.startsWith("/admin");
           const message = error.response.data?.message || "";
 
           if (
             message.toLowerCase().includes("expired") ||
-            message.toLowerCase().includes("invalid")
+            message.toLowerCase().includes("invalid") ||
+            message.toLowerCase().includes("no token")
           ) {
             if (isMounted) {
               if (isAdm) adminLogout();
               else logout();
 
-              alert("Your session has expired. Please log in again.");
+              if (!window.__sessionExpiredAlertShown) {
+                window.__sessionExpiredAlertShown = true;
+                alert("Your session has expired. Please log in again.");
+                setTimeout(() => { window.__sessionExpiredAlertShown = false; }, 3000);
+              }
               navigate(isAdm ? "/admin/login" : "/login");
             }
           }
         } else if (!error.response || error.response.status === 503) {
-          if (isMounted) setMaintenance(true);
+          // Only trigger maintenance mode for API requests
+          if (isMounted && reqUrl.includes("/api")) {
+             setMaintenance(true);
+          }
         }
         return Promise.reject(error);
       },
