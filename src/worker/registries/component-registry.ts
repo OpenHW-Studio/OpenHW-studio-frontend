@@ -56,6 +56,7 @@ import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/log
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
+import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -222,7 +223,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-attiny85': BaseComponent,
     'openhw-pico': PicoLogic,
     'openhw-pico-w': PicoWLogic,
-    'openhw-photoresistor': BaseComponent,
+    'wokwi-photoresistor': PhotoresistorLogic,
+    'openhw-photoresistor': PhotoresistorLogic,
     'openhw-ntc-thermistor': BaseComponent,
     'openhw-ntc-temperature-sensor': BaseComponent,
     'openhw-charger': BaseComponent,
