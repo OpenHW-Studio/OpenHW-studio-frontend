@@ -10,34 +10,27 @@ export default function AuthSuccess() {
 
   useEffect(() => {
     const handleAuth = async () => {
-      console.log("[AuthSuccess] Starting auth handler");
       try {
         // Extract token from URL hash (e.g. #token=XYZ)
         const hash = location.hash;
-        console.log("[AuthSuccess] Location hash:", hash ? "present" : "missing");
         if (!hash) throw new Error("No token found in URL");
 
         const params = new URLSearchParams(hash.substring(1));
         const token = params.get("token");
 
         if (!token) throw new Error("Invalid token format");
-        console.log("[AuthSuccess] Token extracted successfully");
 
         // Save token immediately so fetchProfile can use it
         saveToken(token);
-        console.log("[AuthSuccess] Token saved to localStorage");
 
         // Fetch user profile from backend
-        console.log("[AuthSuccess] Fetching user profile...");
         const data = await fetchProfile();
-        console.log("[AuthSuccess] Profile fetch response:", data);
         
         if (data && data.user) {
           // Check if there was a saved redirect destination
           const redirectPath = localStorage.getItem("authRedirectPath") || "/user/dashboard";
           // Delay removal so StrictMode's second execution can still read it
           setTimeout(() => localStorage.removeItem("authRedirectPath"), 1000);
-          console.log("[AuthSuccess] Redirect path set to:", redirectPath);
           
           const isAdminPortal = redirectPath.startsWith("/admin");
           
@@ -49,16 +42,14 @@ export default function AuthSuccess() {
           
           login(token, data.user, isAdminPortal);
           localStorage.setItem("lastUsedLogin", "google");
-          console.log("[AuthSuccess] Login successful, navigating to dashboard");
           
           navigate(redirectPath, { replace: true });
         } else {
-          throw new Error("Failed to fetch user profile: No user data in response");
+          throw new Error("Failed to fetch user profile");
         }
       } catch (err) {
-        console.error("[AuthSuccess] OAuth Success Handling Error:", err);
-        console.error("[AuthSuccess] Error Message:", err.message);
-        navigate("/user/login", { replace: true, state: { error: `Google authentication failed: ${err.message}` } });
+        console.error("OAuth Success Handling Error:", err);
+        navigate("/user/login", { replace: true, state: { error: "Google authentication failed. Please try again." } });
       }
     };
 
