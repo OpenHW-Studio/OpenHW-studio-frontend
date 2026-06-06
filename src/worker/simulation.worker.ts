@@ -1221,6 +1221,13 @@ self.onmessage = async (e) => {
         for (const boardComp of programmableBoards) {
             const fwHex = boardHexMap?.[boardComp.id] || boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
             const executableRanges = resolveRp2040ExecutableRanges(boardComp, boardExecutableRangesMap);
+            
+            // Inject the sessionId into the board's attrs so the component logic (like PicoWLogic) can access it
+            if (!boardComp.attrs) {
+                boardComp.attrs = {};
+            }
+            boardComp.attrs.sessionId = data.networkRoomCode || '';
+
             if (typeof fwHex !== 'string' || !fwHex.trim()) {
                 console.warn(`[Worker] Skipping board ${boardComp.id}: no board-specific firmware available.`);
                 continue;
