@@ -483,10 +483,21 @@ export class NativeWiFiBridge {
         const isPrivate = options.privateGateway === 'true' || options.privateGateway === true;
         
         // Always connect to the /api/network-gateway endpoint.
-        // WokwiInternetAP will automatically append ?sessionId=... if provided.
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const url = isPrivate ? 'ws://localhost:5099/api/network-gateway' : `${protocol}//${host}/api/network-gateway`;
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
+        let publicUrl = '';
+        if (isLocalhost) {
+            // Local dev -> explicitly point to server unless overridden
+            const defaultServer = 'wss://openhw-studio.fossee.in';
+            publicUrl = (import.meta.env?.VITE_PUBLIC_GATEWAY_URL || defaultServer) + '/api/network-gateway';
+        } else {
+            // Production -> use same host
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            publicUrl = `${protocol}//${window.location.host}/api/network-gateway`;
+        }
+
+        // Use 127.0.0.1 for private gateway as Chrome explicitly allows mixed-content WSS->WS specifically for 127.0.0.1
+        const url = isPrivate ? 'ws://127.0.0.1:5099/api/network-gateway' : publicUrl;
         
         this.ap = new WokwiInternetAP(clock, url, boardId, {
             ...options,
