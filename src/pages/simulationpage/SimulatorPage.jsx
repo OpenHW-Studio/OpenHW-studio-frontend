@@ -9012,8 +9012,8 @@ export function SimulatorPage({ gamificationMode = false }) {
                   }
                   
                   pollCount++;
-                  if (pollCount > 120) {
-                    throw new Error('ESP32 compilation timed out after 60 seconds.');
+                  if (pollCount > 180) {
+                    throw new Error('ESP32 compilation timed out after 90 seconds.');
                   }
                 }
               } else {

@@ -774,17 +774,28 @@ export class ESP32Runner implements BoardRunner {
                     // Route I2C payload to simulated components (like OLED/LCD)
                     this.instances.forEach(inst => {
                         const anyInst = inst as any;
-                        if (typeof anyInst.onI2CStart === 'function') anyInst.onI2CStart(addr, false);
+                        let updated = false;
+                        if (typeof anyInst.onI2CStart === 'function') {
+                            anyInst.onI2CStart(addr, false);
+                            updated = true;
+                        }
                         if (typeof anyInst.onI2CByte === 'function') {
                             for (let i = 0; i < hex.length; i += 2) {
                                 const byte = parseInt(hex.substring(i, i + 2), 16);
                                 if (!isNaN(byte)) anyInst.onI2CByte(addr, byte);
                             }
+                            updated = true;
                         }
                         if (typeof anyInst.onI2CStop === 'function') anyInst.onI2CStop();
+                        
+                        if (updated) {
+                            inst.stateChanged = true;
+                        }
                     });
 
-                    this.onStateUpdate({ type: 'protocol:i2c', boardId: this.boardId, address: addr, hex, direction: 'write' });
+                    // Truncate the hex string for the frontend logger to prevent freezing the UI with massive OLED display buffers
+                    const displayHex = hex.length > 64 ? hex.substring(0, 64) + '...(truncated)' : hex;
+                    this.onStateUpdate({ type: 'protocol:i2c', boardId: this.boardId, address: addr, hex: displayHex, direction: 'write' });
                     return;
                 }
                 
@@ -827,7 +838,10 @@ export class ESP32Runner implements BoardRunner {
                 // Line-buffer for console logging
                 if (char === '\n' || char === '\r') {
                     if (uartBuffer.length > 0) {
-                        console.log(`[ESP32 UART0] ${uartBuffer}`);
+                        // Suppress massive internal protocol frames from the browser console
+                        if (!uartBuffer.startsWith('>I2C') && !uartBuffer.startsWith('>SPI') && !uartBuffer.startsWith('>ADC') && !uartBuffer.startsWith('>DAC') && !uartBuffer.startsWith('>SIM')) {
+                            console.log(`[ESP32 UART0] ${uartBuffer}`);
+                        }
                         uartBuffer = '';
                     }
                 } else {
@@ -1568,6 +1582,7 @@ export class ESP32Runner implements BoardRunner {
         );
         for (const dev of spiDevices) {
             for (const byte of bytes) (dev as any).onSPIByte(byte);
+            dev.stateChanged = true;
         }
     }
 
