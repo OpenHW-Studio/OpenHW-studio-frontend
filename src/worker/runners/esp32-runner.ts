@@ -200,6 +200,8 @@ export class WokwiInternetAP {
                 this.status.rxBytes += eth.length;
                 this.status.emitStats();
                 this.onEthernetRx(eth);
+            } else if (typeof event.data === 'string') {
+                console.log(event.data);
             }
         };
         this.socket.onerror = () => {
@@ -496,8 +498,8 @@ export class NativeWiFiBridge {
             publicUrl = `${protocol}//${window.location.host}/api/network-gateway`;
         }
 
-        // Use localhost for private gateway as requested
-        const url = isPrivate ? 'ws://localhost:5099/api/network-gateway' : publicUrl;
+        // Use 127.0.0.1 for private gateway because Chrome explicitly allows mixed-content WSS->WS for 127.0.0.1 but NOT localhost
+        const url = isPrivate ? 'ws://127.0.0.1:5099/api/network-gateway' : publicUrl;
         
         this.ap = new WokwiInternetAP(clock, url, boardId, {
             ...options,
