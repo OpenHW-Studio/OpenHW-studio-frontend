@@ -117,7 +117,7 @@ function mapBoardToFqbn(board: string): string {
 }
 
 let engineConfig = {
-    compilerUrl: 'http://localhost:5001/api/compile'
+    compilerUrl: 'http://localhost:5000/api/compile'
 };
 
 async function compileSourceCode(payload: any, board: string): Promise<string> {

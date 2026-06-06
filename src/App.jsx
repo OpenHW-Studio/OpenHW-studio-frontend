@@ -210,7 +210,7 @@ export default function App() {
                 />
                 <Route path="/select-role" element={<RoleSelectPage />} />
 
-                <Route path="/auth/success" element={<AuthSuccess />} />
+                <Route path="/login-success" element={<AuthSuccess />} />
 
                 <Route path="/projects" element={<ProjectsGallery />} />
                 <Route path="/components" element={<ComponentsPage />} />
