@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5001/examples" : "/examples");
+  (import.meta.env.DEV ? "http://localhost:5000/examples" : "/examples");
 const S = {
   page: {
     minHeight: "100vh",
