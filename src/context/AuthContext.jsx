@@ -17,42 +17,15 @@ export function AuthProvider({ children }) {
   // Restore session(s) from localStorage or URL on app load
   useEffect(() => {
     const handleInitialLoad = async () => {
-      // 1. Check if returning from Google OAuth with a token in URL
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-      const hashToken = hashParams.get('token');
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlToken = urlParams.get('token');
-      const oauthToken = hashToken || urlToken;
-
-      if (oauthToken) {
-        // Save token temporarily to fetch profile
-        saveToken(oauthToken);
-        try {
-          // Fetch the user's profile using the new token
-          const data = await fetchProfile();
-          if (data && data.user) {
-            // For OAuth, we assume standard login unless we're on /admin
-            const isAdm = window.location.pathname.startsWith('/admin');
-            login(oauthToken, data.user, isAdm); 
-          }
-        } catch (error) {
-          console.error("Failed to fetch profile with OAuth token:", error);
-          logoutService();
-        } finally {
-          // Clean up the URL
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      } else {
-        // 2. Normal load: Check local storage
+      // 1. Normal load: Check local storage
         const storedUser = getUser()
         const storedToken = getToken()
         if (storedUser && storedToken) {
             setUser(storedUser)
             setToken(storedToken)
         }
-      }
 
-      const storedAdminUser = getAdminUser()
+        const storedAdminUser = getAdminUser()
       const storedAdminToken = getAdminToken()
       if (storedAdminUser && storedAdminToken) {
         setAdminUser(storedAdminUser)

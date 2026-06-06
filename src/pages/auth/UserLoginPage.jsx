@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { useGoogleLogin } from "@react-oauth/google";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { googleLogin, loginUser } from "../../services/authService.js";
 import {
@@ -62,23 +61,14 @@ export default function UserLoginPage() {
     }
   };
 
-  const handleGoogleSuccess = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      setLoading(true);
-      setError("");
-      try {
-        const data = await googleLogin(tokenResponse.access_token);
-        login(data.token, data.user);
-        localStorage.setItem("lastUsedLogin", "google");
-        handleRedirect();
-      } catch (err) {
-        setError(err.message || "Google authentication failed.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    onError: () => setError("Google sign-in was cancelled."),
-  });
+  const handleGoogleRedirect = () => {
+    localStorage.setItem("lastUsedLogin", "google");
+    if (from) {
+      localStorage.setItem("authRedirectPath", from);
+    }
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
+    window.location.href = baseUrl.replace('/api', '') + '/auth/google';
+  };
 
   return (
     <div className="auth-screen">
@@ -211,7 +201,7 @@ export default function UserLoginPage() {
           <div className="grid grid-cols-2 gap-3">
             <button
               type="button"
-              onClick={() => handleGoogleSuccess()}
+              onClick={handleGoogleRedirect}
               disabled={loading}
               className="auth-alt-button flex items-center justify-center gap-2"
             >

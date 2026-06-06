@@ -318,7 +318,7 @@ export async function backupInstalledComponents() {
 }
 
 export async function fetchInstalledComponentsWithFiles() {
-    return backupInstalledComponents();
+    return fetchPublicInstalledComponents();
 }
 
 /**
