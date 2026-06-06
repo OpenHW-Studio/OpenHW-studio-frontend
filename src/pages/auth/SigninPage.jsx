@@ -66,8 +66,9 @@ export default function SigninPage() {
       return;
     }
     localStorage.setItem("lastUsedLogin", "google");
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
-    window.location.href = baseUrl.replace('/api', '') + '/auth/google/signup?role=' + selectedRole;
+    localStorage.setItem("authRedirectPath", `/${selectedRole}/dashboard`);
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+    window.location.href = baseUrl.replace('/api', '') + '/auth/google/signup?role=' + selectedRole + '&origin=' + encodeURIComponent(window.location.origin);
   };
 
   return (
