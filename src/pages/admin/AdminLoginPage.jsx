@@ -21,8 +21,8 @@ export default function AdminLoginPage() {
     const handleGoogleRedirect = () => {
         localStorage.setItem("lastUsedLogin", "google");
         localStorage.setItem("authRedirectPath", "/admin/dashboard");
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
-        window.location.href = baseUrl.replace('/api', '') + '/auth/google';
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+        window.location.href = baseUrl.replace('/api', '') + '/auth/google?origin=' + encodeURIComponent(window.location.origin);
     }
 
     return (
