@@ -3882,31 +3882,49 @@ export class AVRRunner {
                 for (let i = 0; i < UNO_ANALOG_PINS.length; i++) {
                     const arduinoPin = UNO_ANALOG_PINS[i];
                     let voltage = 0;
-                    for (const w of this.currentWires) {
-                        const [fromComp, fromPin] = w.from.split(':');
-                        const [toComp, toPin] = w.to.split(':');
 
-                        let isConnectedToPin = false;
-                        let otherCompId = '';
-                        let otherCompPin = '';
+                    const targetNet = this.pinToNet.get(`${this.boardId}:${arduinoPin}`) ?? 
+                                      this.pinToNet.get(`${this.boardId}:A${i}`);
 
-                        if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
-                            isConnectedToPin = true;
-                            otherCompId = toComp;
-                            otherCompPin = toPin;
-                        } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
-                            isConnectedToPin = true;
-                            otherCompId = fromComp;
-                            otherCompPin = fromPin;
+                    if (targetNet !== undefined) {
+                        for (const [p, n] of this.pinToNet.entries()) {
+                            if (n === targetNet && !p.startsWith(`${this.boardId}:`)) {
+                                const [compId, pinId] = p.split(':');
+                                const inst = this.instances.get(compId);
+                                if (inst && typeof inst.getPinVoltage === 'function') {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(pinId) || 0);
+                                }
+                            }
                         }
+                    } else {
+                        // Fallback for single wires if netlist is somehow stale
+                        for (const w of this.currentWires) {
+                            const [fromComp, fromPin] = w.from.split(':');
+                            const [toComp, toPin] = w.to.split(':');
 
-                        if (isConnectedToPin) {
-                            const inst = this.instances.get(otherCompId);
-                            if (inst) {
-                                voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin));
+                            let isConnectedToPin = false;
+                            let otherCompId = '';
+                            let otherCompPin = '';
+
+                            if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = toComp;
+                                otherCompPin = toPin;
+                            } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = fromComp;
+                                otherCompPin = fromPin;
+                            }
+
+                            if (isConnectedToPin) {
+                                const inst = this.instances.get(otherCompId);
+                                if (inst && typeof inst.getPinVoltage === 'function') {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin) || 0);
+                                }
                             }
                         }
                     }
+
                     this.adc.channelValues[i] = voltage;
                 }
             }

@@ -6,6 +6,7 @@ import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/
 import { PicoLogic } from '../pico-logic';
 import { PicoWLogic } from '@openhw/emulator/src/components/openhw-pico-w/logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
+import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
 import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-supply/logic';
 import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic';
@@ -129,8 +130,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     max30102: MAX30102Logic,
     'wokwi-max7219': MAX7219Logic,
     'openhw-max7219': MAX7219Logic,
-    'wokwi-ldr-module': BaseComponent,
-    'openhw-ldr-module': BaseComponent,
+    'wokwi-ldr-module': LdrModuleLogic,
+    'openhw-ldr-module': LdrModuleLogic,
     'wokwi-7segment': BaseComponent,
     'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
@@ -302,8 +303,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'shift_register': [{ id: 'vcc' }, { id: 'gnd' }, { id: 'ser' }, { id: 'srclk' }, { id: 'rclk' }, { id: 'oe' }, { id: 'srclr' }, { id: 'q0' }, { id: 'q1' }, { id: 'q2' }, { id: 'q3' }, { id: 'q4' }, { id: 'q5' }, { id: 'q6' }, { id: 'q7' }, { id: 'q7s' }],
     'wokwi-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
     'openhw-membrane-keypad': [{ id: 'R1' }, { id: 'R2' }, { id: 'R3' }, { id: 'R4' }, { id: 'C1' }, { id: 'C2' }, { id: 'C3' }, { id: 'C4' }],
-    'wokwi-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
-    'openhw-analog-joystick': [{ id: 'GND' }, { id: '5V' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'wokwi-analog-joystick': [{ id: 'GND' }, { id: 'VCC' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
+    'openhw-analog-joystick': [{ id: 'GND' }, { id: 'VCC' }, { id: 'VRX' }, { id: 'VRY' }, { id: 'SW' }],
     'openhw-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'wokwi-rotary-encoder': [{ id: 'CLK' }, { id: 'DT' }, { id: 'SW' }, { id: 'VCC' }, { id: 'GND' }],
     'logic-ic-74xx': [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }, { id: 'p4' }, { id: 'p5' }, { id: 'p6' }, { id: 'p7' }, { id: 'p8' }, { id: 'p9' }, { id: 'p10' }, { id: 'p11' }, { id: 'p12' }, { id: 'p13' }, { id: 'p14' }],
