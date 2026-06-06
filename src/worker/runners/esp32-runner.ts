@@ -484,7 +484,9 @@ export class NativeWiFiBridge {
         
         // Always connect to the /api/network-gateway endpoint.
         // WokwiInternetAP will automatically append ?sessionId=... if provided.
-        const url = isPrivate ? 'ws://localhost:5099/api/network-gateway' : ((import.meta.env?.VITE_PUBLIC_GATEWAY_URL || 'wss://api.openhw-studio.com:5099') + '/api/network-gateway');
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const host = window.location.host;
+        const url = isPrivate ? 'ws://localhost:5099/api/network-gateway' : `${protocol}//${host}/api/network-gateway`;
         
         this.ap = new WokwiInternetAP(clock, url, boardId, {
             ...options,
@@ -1782,10 +1784,7 @@ export class ESP32Runner implements BoardRunner {
         };
     }
 
-    getSimulatedTimeMs() {
-        if (!this.cpu) return 0;
-        return Math.floor((this.cpu.cycles / 125_000_000) * 1000);
-    }
+
 
     private shouldEmitComponentState(componentId: string, state: any, nowMs: number): boolean {
         const policy = getComponentStateSyncPolicy(state);

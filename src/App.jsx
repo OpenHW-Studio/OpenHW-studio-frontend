@@ -22,6 +22,7 @@ import SigninPage from "./pages/auth/SigninPage.jsx";
 import SignupPage from "./pages/auth/SignupPage.jsx";
 import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage.jsx";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage.jsx";
+import AuthSuccess from "./pages/auth/AuthSuccess.jsx";
 import UserDashboard from "./pages/user/UserDashboard.jsx";
 import StudentDashboard from "./pages/student/StudentDashboard.jsx";
 import StudentProfilePage from "./pages/student/StudentProfilePage.jsx";
@@ -208,6 +209,8 @@ export default function App() {
                   element={<ResetPasswordPage />}
                 />
                 <Route path="/select-role" element={<RoleSelectPage />} />
+
+                <Route path="/auth/success" element={<AuthSuccess />} />
 
                 <Route path="/projects" element={<ProjectsGallery />} />
                 <Route path="/components" element={<ComponentsPage />} />
