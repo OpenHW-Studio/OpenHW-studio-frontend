@@ -496,8 +496,8 @@ export class NativeWiFiBridge {
             publicUrl = `${protocol}//${window.location.host}/api/network-gateway`;
         }
 
-        // Use 127.0.0.1 for private gateway as Chrome explicitly allows mixed-content WSS->WS specifically for 127.0.0.1
-        const url = isPrivate ? 'ws://127.0.0.1:5099/api/network-gateway' : publicUrl;
+        // Use localhost for private gateway as requested
+        const url = isPrivate ? 'ws://localhost:5099/api/network-gateway' : publicUrl;
         
         this.ap = new WokwiInternetAP(clock, url, boardId, {
             ...options,
