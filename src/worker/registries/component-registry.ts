@@ -19,6 +19,13 @@ import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-pote
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic';
 import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic';
 import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic';
+import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic';
+import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic';
+import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic';
+import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic';
+import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic';
+import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic';
+import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic';
 import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic';
@@ -61,9 +68,7 @@ import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photo
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
-import {
-    NotGateLogic, TwoInputGateLogic, AndGateLogic, NandGateLogic, NorGateLogic, XorGateLogic
-} from '../protocol-handlers/gates';
+
 import { KeypadLogic } from '../protocol-handlers/keypad';
 import { SDCardLogic } from '../protocol-handlers/sd-card';
 import { SimulationMonitorLogic } from '../protocol-handlers/simulation-monitor';
@@ -145,6 +150,13 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-analog-joystick': JoystickLogic,
     'openhw-rotary-encoder': RotaryEncoderLogic,
     'wokwi-rotary-encoder': RotaryEncoderLogic,
+    'logic-and-gate': AndGateLogic,
+    'logic-or-gate': OrGateLogic,
+    'logic-not-gate': NotGateLogic,
+    'logic-nand-gate': NandGateLogic,
+    'logic-nor-gate': NorGateLogic,
+    'logic-xor-gate': XorGateLogic,
+    'logic-xnor-gate': XnorGateLogic,
     'logic-ic-74xx': LogicIC74xxLogic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
