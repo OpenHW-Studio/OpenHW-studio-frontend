@@ -203,6 +203,16 @@ export const ComponentContextMenu = ({
       });
     }
 
+    if (comp.type.includes('ntc-temperature-sensor') || comp.type.includes('ntc-thermistor')) {
+      const val = resolveComponentAttrString(comp?.attrs, 'temperature', '25');
+      menus.push({
+        label: 'Temp',
+        icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" /></svg>,
+        valueDisplay: val + ' °C',
+        onClick: () => { onValueEdit?.(comp.id, 'temperature'); onClose(); }
+      });
+    }
+
     if (comp.type === 'wokwi-power-supply' || comp.type === 'openhw-power-supply') {
       const val = resolveComponentAttrString(comp?.attrs, 'voltage', '5.0');
       menus.push({
@@ -931,7 +941,7 @@ export const ComponentValuePanel = ({ x, y, comp, attrKey = 'value', visible, on
   const inputRef = useRef(null);
   const containerRef = useRef(null);
 
-  const unit = attrKey === 'voltage' ? 'V' : 'Ω';
+  const unit = attrKey === 'voltage' ? 'V' : (attrKey === 'temperature' ? '°C' : 'Ω');
 
   useEffect(() => {
     const handleGlobalClick = (e) => {
@@ -992,7 +1002,7 @@ export const ComponentValuePanel = ({ x, y, comp, attrKey = 'value', visible, on
         <input
           ref={inputRef}
           value={value}
-          onChange={(e) => setValue(e.target.value.replace(/[^0-9.kM]/g, ''))}
+          onChange={(e) => setValue(e.target.value.replace(/[^0-9.\-kM]/g, ''))}
           onKeyDown={(e) => {
             if (e.key === 'Escape') onCancel();
           }}

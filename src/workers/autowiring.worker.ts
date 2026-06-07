@@ -68,6 +68,26 @@ self.onmessage = async (e) => {
         
         const snippet = generateCodeForComponent(compId, wires || [], manifest, components || []);
         
+        // ---- FIX FOR divider mode resolving to GND instead of Analog pin ----
+        if (snippet && typeof snippet === 'object') {
+            const hasGndBug = ['setup', 'loop'].some(k => snippet[k] && typeof snippet[k] === 'string' && snippet[k].match(/\b(analogRead|digitalRead)\(GND\)/));
+            if (hasGndBug) {
+                const aWire = (wires || []).find((w: any) => 
+                    (w.from.startsWith(compId + ':') && w.to.match(/:(A\d+)/)) ||
+                    (w.to.startsWith(compId + ':') && w.from.match(/:(A\d+)/))
+                );
+                if (aWire) {
+                    const m = aWire.from.match(/:(A\d+)/) ? aWire.from.split(':')[1] : aWire.to.split(':')[1];
+                    for (const key of ['setup', 'loop']) {
+                        if (snippet[key] && typeof snippet[key] === 'string') {
+                            snippet[key] = snippet[key].replace(/\b(analogRead|digitalRead)\(GND\)/g, `$1(${m})`);
+                        }
+                    }
+                }
+            }
+        }
+        // ---------------------------------------------------------------------
+        
         let plan: any = { code_snippet: snippet };
         if (manifest?.autocoding?.libraries) {
             plan.libraries = manifest.autocoding.libraries;

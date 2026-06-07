@@ -55,6 +55,7 @@ import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/log
 import { MPU6050Logic } from '@openhw/emulator/src/components/openhw-mpu6050/logic';
 import { BMP180Logic } from '@openhw/emulator/src/components/openhw-bmp180/logic';
 import { DS1307RTCLogic } from '@openhw/emulator/src/components/openhw-ds1307-rtc/logic';
+import { NtcLogic } from '@openhw/emulator/src/components/openhw-ntc-temperature-sensor/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -221,7 +222,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-pico-w': PicoLogic,
     'openhw-photoresistor': BaseComponent,
     'openhw-ntc-thermistor': BaseComponent,
-    'openhw-ntc-temperature-sensor': BaseComponent,
+    'openhw-ntc-temperature-sensor': NtcLogic,
     'openhw-charger': BaseComponent,
     'openhw-breadboard-mini': BaseComponent,
     'openhw-neopixel-ring': NeopixelLogic,
@@ -361,9 +362,9 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-attiny85': [{ id: 'PB0' }, { id: 'PB1' }, { id: 'PB2' }, { id: 'PB3' }, { id: 'PB4' }, { id: 'PB5' }, { id: 'VCC' }, { id: 'GND' }],
     'openhw-pico': PICO_BOARD_PINS.map((id: string) => ({ id })),
     'openhw-pico-w': PICO_BOARD_PINS.map((id: string) => ({ id })),
-    'openhw-photoresistor': [{ id: '1' }, { id: '2' }],
-    'openhw-ntc-thermistor': [{ id: '1' }, { id: '2' }],
-    'openhw-ntc-temperature-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
+    'openhw-photoresistor': [{ id: 'p1' }, { id: 'p2' }],
+    'openhw-ntc-thermistor': [{ id: 'A0' }, { id: 'D0' }, { id: 'GND' }, { id: 'VCC' }],
+    'openhw-ntc-temperature-sensor': [{ id: 'p1' }, { id: 'p2' }],
     'wokwi-battery': [{ id: 'VCC' }, { id: 'GND' }],
     'openhw-battery': [{ id: 'VCC' }, { id: 'GND' }],
     'openhw-charger': [{ id: 'VIN+' }, { id: 'VIN-' }, { id: 'BAT+' }, { id: 'BAT-' }],
