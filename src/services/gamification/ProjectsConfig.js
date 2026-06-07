@@ -794,6 +794,379 @@ void loop() {
       rarity: 'legendary',
     },
   },
+
+  // ── World 4: Smart Sensing ───────────────────────────────────────────────
+  {
+    id: 'push-button',
+    slug: 'push-button',
+    number: 11,
+    prerequisite: 'dc-motor',
+    title: 'Push Button',
+    subtitle: 'Read user input!',
+    description:
+      'Buttons are how humans talk to computers! Learn to detect a button press, handle ' +
+      'the "bouncing" problem, and toggle an LED on or off with each press.',
+    difficulty: 'beginner',
+    difficultyLabel: 'Beginner',
+    estimatedTime: '20 min',
+    xpReward: 120,
+    color: '#06b6d4',
+    icon: '🔘',
+    world: 4,
+    tags: ['button', 'debounce', 'digital input', 'INPUT_PULLUP'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
+    rewardComponents: [
+      { type: 'openhw-button', name: 'Push Button', icon: '🔘', description: 'Read button presses — the simplest way for humans to control a circuit!' },
+    ],
+    components: [
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-button', label: 'Push Button', qty: 1 },
+      { type: 'openhw-led', label: 'LED', qty: 1 },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+    ],
+    wiring: [
+      { from: 'Button one side', to: 'Arduino pin 2' },
+      { from: 'Button other side', to: 'Arduino GND' },
+      { from: 'Arduino pin 13', to: 'LED anode (+)' },
+      { from: 'LED cathode (−)', to: '220Ω resistor to GND' },
+    ],
+    starterCode: `const int BTN_PIN = 2;
+const int LED_PIN = 13;
+
+bool ledState = false;
+bool lastBtnState = HIGH;
+unsigned long lastDebounce = 0;
+const int DEBOUNCE_DELAY = 50;
+
+void setup() {
+  pinMode(BTN_PIN, INPUT_PULLUP);
+  pinMode(LED_PIN, OUTPUT);
+  Serial.begin(9600);
+  Serial.println("Button Toggle Ready!");
+}
+
+void loop() {
+  bool reading = digitalRead(BTN_PIN);
+
+  if (reading != lastBtnState) {
+    lastDebounce = millis();
+  }
+
+  if ((millis() - lastDebounce) > DEBOUNCE_DELAY) {
+    if (reading == LOW) {       // Button pressed (INPUT_PULLUP = LOW when pressed)
+      ledState = !ledState;
+      digitalWrite(LED_PIN, ledState);
+      Serial.print("LED: "); Serial.println(ledState ? "ON" : "OFF");
+      delay(200);               // Simple hold debounce
+    }
+  }
+
+  lastBtnState = reading;
+}`,
+    concepts: ['digitalRead()', 'INPUT_PULLUP', 'Debouncing', 'Toggle logic', 'millis()'],
+    kidFriendlyTip: '🔘 Tip: With INPUT_PULLUP, the pin reads HIGH normally and LOW when you press the button. It\'s like a light switch that\'s already "on" — pressing it turns it "off"!',
+    evaluation: {
+      passingThreshold: 70,
+      evaluationCriteria: {
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'button', count: 1 }, { type: 'led', count: 1 }] },
+        wiringAccuracy: { description: 'Correct wiring', weight: 0.3, requiredConnections: [] },
+        codeFunctionality: { description: 'Button toggles LED correctly', weight: 0.4, requiredFunctions: ['setup', 'loop'] },
+      },
+    },
+    badge: {
+      id: 'badge_push_button',
+      name: 'Input Master',
+      description: 'Read a push button and debounced it like a pro!',
+      icon: '🔘',
+      rarity: 'uncommon',
+    },
+  },
+
+  {
+    id: 'ultrasonic-sensor',
+    slug: 'ultrasonic-sensor',
+    number: 12,
+    prerequisite: 'push-button',
+    title: 'Ultrasonic Distance',
+    subtitle: 'Measure distance with sound!',
+    description:
+      'Use the HC-SR04 ultrasonic sensor to measure how far away objects are — just like a bat uses echolocation! ' +
+      'Display the distance on the Serial Monitor and make an LED brightness change with distance.',
+    difficulty: 'intermediate',
+    difficultyLabel: 'Intermediate',
+    estimatedTime: '30 min',
+    xpReward: 200,
+    color: '#3b82f6',
+    icon: '📡',
+    world: 4,
+    tags: ['ultrasonic', 'HC-SR04', 'distance', 'pulseIn', 'sonar'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
+    rewardComponents: [
+      { type: 'openhw-hc-sr04', name: 'HC-SR04 Ultrasonic', icon: '📡', description: 'Measure distances from 2cm to 400cm using ultrasonic sound waves!' },
+    ],
+    components: [
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-hc-sr04', label: 'HC-SR04 Ultrasonic Sensor', qty: 1 },
+      { type: 'openhw-led', label: 'LED (proximity indicator)', qty: 1 },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+    ],
+    wiring: [
+      { from: 'HC-SR04 VCC', to: 'Arduino 5V' },
+      { from: 'HC-SR04 GND', to: 'Arduino GND' },
+      { from: 'HC-SR04 TRIG', to: 'Arduino pin 9' },
+      { from: 'HC-SR04 ECHO', to: 'Arduino pin 10' },
+      { from: 'Arduino pin 11 (PWM)', to: 'LED anode via 220Ω resistor' },
+    ],
+    starterCode: `#define TRIG_PIN 9
+#define ECHO_PIN 10
+#define LED_PIN  11
+
+void setup() {
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LED_PIN, OUTPUT);
+  Serial.begin(9600);
+  Serial.println("Ultrasonic Distance Sensor Ready!");
+}
+
+long measureDistance() {
+  // Send 10µs trigger pulse
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  // Measure echo pulse duration
+  long duration = pulseIn(ECHO_PIN, HIGH);
+
+  // Calculate distance: speed of sound = 343 m/s
+  return duration * 0.0343 / 2;
+}
+
+void loop() {
+  long cm = measureDistance();
+
+  Serial.print("Distance: ");
+  Serial.print(cm);
+  Serial.println(" cm");
+
+  // Brighter LED when object is closer (max 50cm range)
+  int brightness = map(constrain(cm, 5, 50), 50, 5, 0, 255);
+  analogWrite(LED_PIN, brightness);
+
+  delay(200);
+}`,
+    concepts: ['pulseIn()', 'delayMicroseconds()', 'Speed of sound', 'map()', 'constrain()'],
+    kidFriendlyTip: '📡 Tip: Sound travels at 343 m/s. The sensor sends a beep and measures how long until the echo returns. Divide by 2 because sound goes THERE and BACK!',
+    evaluation: {
+      passingThreshold: 70,
+      evaluationCriteria: {
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'hc-sr04', count: 1 }] },
+        wiringAccuracy: { description: 'Correct wiring', weight: 0.3, requiredConnections: [] },
+        codeFunctionality: { description: 'Measures and prints distance', weight: 0.4, requiredFunctions: ['setup', 'loop', 'measureDistance'] },
+      },
+    },
+    badge: {
+      id: 'badge_ultrasonic',
+      name: 'Sonar Ranger',
+      description: 'Measured distances with ultrasonic sound waves!',
+      icon: '📡',
+      rarity: 'rare',
+    },
+  },
+
+  {
+    id: 'dht11-sensor',
+    slug: 'dht11-sensor',
+    number: 13,
+    prerequisite: 'ultrasonic-sensor',
+    title: 'DHT11 Weather Station',
+    subtitle: 'Read temperature & humidity!',
+    description:
+      'Build a mini weather station! The DHT11 sensor measures both temperature and humidity. ' +
+      'Display the readings on the Serial Monitor and learn about digital sensor protocols.',
+    difficulty: 'intermediate',
+    difficultyLabel: 'Intermediate',
+    estimatedTime: '25 min',
+    xpReward: 220,
+    color: '#ef4444',
+    icon: '🌡️',
+    world: 4,
+    tags: ['DHT11', 'temperature', 'humidity', 'sensor', 'library'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-resistor'],
+    rewardComponents: [
+      { type: 'openhw-dht11', name: 'DHT11 Sensor', icon: '🌡️', description: 'Measures temperature (0–50°C) and humidity (20–90% RH) with a single digital wire!' },
+    ],
+    components: [
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-dht11', label: 'DHT11 Temperature & Humidity Sensor', qty: 1 },
+      { type: 'openhw-resistor', label: '10kΩ Pull-up Resistor', qty: 1, attrs: { value: '10000' } },
+    ],
+    wiring: [
+      { from: 'DHT11 VCC (pin 1)', to: 'Arduino 5V' },
+      { from: 'DHT11 DATA (pin 2)', to: 'Arduino pin 2 + 10kΩ to 5V' },
+      { from: 'DHT11 GND (pin 4)', to: 'Arduino GND' },
+    ],
+    starterCode: `#include <DHT.h>
+
+#define DHT_PIN  2
+#define DHT_TYPE DHT11
+
+DHT dht(DHT_PIN, DHT_TYPE);
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+  Serial.println("DHT11 Weather Station Ready!");
+  Serial.println("Reading every 2 seconds...");
+}
+
+void loop() {
+  // Wait 2 seconds between readings (DHT11 max rate: 1Hz)
+  delay(2000);
+
+  float humidity    = dht.readHumidity();
+  float tempC       = dht.readTemperature();       // Celsius
+  float tempF       = dht.readTemperature(true);   // Fahrenheit
+
+  // Check for sensor read failure
+  if (isnan(humidity) || isnan(tempC)) {
+    Serial.println("ERROR: Failed to read DHT11!");
+    return;
+  }
+
+  // Compute heat index (feels-like temperature)
+  float heatIndex = dht.computeHeatIndex(tempF, humidity);
+
+  Serial.println("--- Weather Update ---");
+  Serial.print("Humidity:    "); Serial.print(humidity); Serial.println(" %");
+  Serial.print("Temp (C):    "); Serial.print(tempC);    Serial.println(" °C");
+  Serial.print("Temp (F):    "); Serial.print(tempF);    Serial.println(" °F");
+  Serial.print("Heat Index:  "); Serial.print(heatIndex);Serial.println(" °F");
+}`,
+    concepts: ['DHT library', 'readTemperature()', 'readHumidity()', 'isnan()', 'Heat index'],
+    kidFriendlyTip: '🌡️ Tip: Always wait at least 2 seconds between readings! The DHT11 can only measure once per second, and reading faster gives garbage data.',
+    evaluation: {
+      passingThreshold: 70,
+      evaluationCriteria: {
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'dht11', count: 1 }] },
+        wiringAccuracy: { description: 'Correct wiring with pull-up', weight: 0.3, requiredConnections: [] },
+        codeFunctionality: { description: 'Reads and prints temp + humidity', weight: 0.4, requiredFunctions: ['setup', 'loop'] },
+      },
+    },
+    badge: {
+      id: 'badge_dht11',
+      name: 'Weather Watcher',
+      description: 'Built a working temperature and humidity station!',
+      icon: '🌡️',
+      rarity: 'rare',
+    },
+  },
+
+  {
+    id: 'lcd-display',
+    slug: 'lcd-display',
+    number: 14,
+    prerequisite: 'dht11-sensor',
+    title: 'LCD Display',
+    subtitle: 'Show messages on a screen!',
+    description:
+      'Make your project talk! The I2C LCD display shows text on 2 rows of 16 characters. ' +
+      'Combine it with the DHT11 to build a real weather station with a display!',
+    difficulty: 'advanced',
+    difficultyLabel: 'Advanced',
+    estimatedTime: '35 min',
+    xpReward: 280,
+    color: '#14b8a6',
+    icon: '🖥️',
+    world: 4,
+    tags: ['LCD', 'I2C', 'display', 'LiquidCrystal', 'SDA', 'SCL'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-dht11', 'openhw-resistor'],
+    rewardComponents: [
+      { type: 'openhw-lcd1602', name: 'I2C LCD Display', icon: '🖥️', description: 'A 16×2 character display that connects with just 2 wires using I2C — show any text or numbers!' },
+    ],
+    components: [
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-lcd1602', label: 'I2C 16×2 LCD Display', qty: 1 },
+      { type: 'openhw-dht11', label: 'DHT11 Sensor (optional)', qty: 1 },
+    ],
+    wiring: [
+      { from: 'LCD GND', to: 'Arduino GND' },
+      { from: 'LCD VCC', to: 'Arduino 5V' },
+      { from: 'LCD SDA', to: 'Arduino A4 (SDA)' },
+      { from: 'LCD SCL', to: 'Arduino A5 (SCL)' },
+      { from: 'DHT11 DATA', to: 'Arduino pin 2 + 10kΩ pull-up to 5V' },
+    ],
+    starterCode: `#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+
+// LCD: address 0x27, 16 columns, 2 rows
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+#define DHT_PIN  2
+#define DHT_TYPE DHT11
+DHT dht(DHT_PIN, DHT_TYPE);
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+  dht.begin();
+
+  // Startup message
+  lcd.setCursor(0, 0);
+  lcd.print("Weather Station");
+  lcd.setCursor(0, 1);
+  lcd.print("   Starting...  ");
+  delay(2000);
+}
+
+void loop() {
+  delay(2000);
+
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+  if (isnan(h) || isnan(t)) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Sensor Error!");
+    return;
+  }
+
+  lcd.clear();
+
+  // Row 0: Temperature
+  lcd.setCursor(0, 0);
+  lcd.print("Temp: ");
+  lcd.print(t, 1);   // 1 decimal place
+  lcd.print((char)223); // degree symbol
+  lcd.print("C");
+
+  // Row 1: Humidity
+  lcd.setCursor(0, 1);
+  lcd.print("Hum:  ");
+  lcd.print(h, 1);
+  lcd.print("%");
+}`,
+    concepts: ['LiquidCrystal_I2C', 'I2C protocol', 'lcd.setCursor()', 'lcd.print()', 'Custom characters'],
+    kidFriendlyTip: '🖥️ Tip: I2C uses only 2 wires (SDA + SCL) to talk to the display. On Arduino Uno, SDA = A4 and SCL = A5. If the screen is blank, try adjusting the contrast knob on the back!',
+    evaluation: {
+      passingThreshold: 70,
+      evaluationCriteria: {
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'lcd', count: 1 }] },
+        wiringAccuracy: { description: 'I2C wiring correct (SDA/SCL)', weight: 0.3, requiredConnections: [] },
+        codeFunctionality: { description: 'Text displayed on LCD', weight: 0.4, requiredFunctions: ['setup', 'loop'] },
+      },
+    },
+    badge: {
+      id: 'badge_lcd',
+      name: 'Display Wizard',
+      description: 'Showed live data on an LCD display!',
+      icon: '🖥️',
+      rarity: 'epic',
+    },
+  },
 ];
 
 // Difficulty styling
