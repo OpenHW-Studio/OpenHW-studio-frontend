@@ -8,6 +8,8 @@ const WORLDS = [
   { id: 1, name: 'Circuit Basics',      theme: 'Beginner',     color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '⚡', slugs: ['led-blink','rgb-led','buzzer','potentiometer','ldr'] },
   { id: 2, name: 'Signal Control',      theme: 'Intermediate', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)',  border: 'rgba(59,130,246,0.18)', icon: '🎮', slugs: ['servo-motor','led-strip','button-debounce','temperature-sensor'] },
   { id: 3, name: 'Machines & Sensors',  theme: 'Advanced',     color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🤖', slugs: ['dc-motor'] },
+  { id: 4, name: 'Smart Sensing',       theme: 'Intermediate', color: '#a855f7', bg: 'rgba(168,85,247,0.06)',  border: 'rgba(168,85,247,0.18)', icon: '📡', slugs: ['ultrasonic-sensor','dht11-sensor','lcd-display'] },
+  { id: 5, name: 'Advanced Control',    theme: 'Advanced',     color: '#f43f5e', bg: 'rgba(244,63,94,0.06)',   border: 'rgba(244,63,94,0.18)',  icon: '🏆', slugs: ['joystick-control'] },
 ]
 
 // Winding x-positions
