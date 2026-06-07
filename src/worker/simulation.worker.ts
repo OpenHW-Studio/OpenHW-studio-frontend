@@ -983,6 +983,25 @@ const coreMessageHandler = async (e: MessageEvent) => {
         return;
     }
 
+    // ── Smart Prefetching ─────────────────────────────────────────────────────
+    if (data.type === 'PRELOAD_RUNNERS') {
+        const boards = (data.components || []).filter((c: any) => isProgrammableBoardType(c.type));
+        for (const board of boards) {
+            const type = String(board.type || '');
+            if (/(stm32)/i.test(type)) {
+                import('./runners/backend-proxy-runner.ts').catch(() => {});
+            } else if (/(esp32)/i.test(type)) {
+                import('./runners/backend-proxy-runner.ts').catch(() => {});
+                import('./runners/esp32-runner.ts').catch(() => {});
+            } else if (/pico|rp2040/i.test(type)) {
+                import('./runners/rp2040-runner.ts').catch(() => {});
+            } else {
+                import('./runners/avr-runner.ts').catch(() => {});
+            }
+        }
+        return;
+    }
+
     // ── Network Worker port handshake ─────────────────────────────────────────
     // Sent from the main thread after creating the Network Worker.
     // The sim worker uses netWorkerPort to forward Ethernet frames from WiFi

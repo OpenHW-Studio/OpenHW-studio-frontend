@@ -3753,6 +3753,26 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   }, []);
 
+  // ── Smart Prefetching for Simulation Runners ───────────────────────────────
+  const preloadedBoardsRef = useRef(new Set());
+  useEffect(() => {
+    if (!components) return;
+    const currentBoardTypes = components
+      .filter((c) => /arduino|esp32|stm32|pico|rp2040|attiny/i.test(c.type))
+      .map((c) => c.type);
+    
+    const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
+    if (newTypesToPreload.length > 0) {
+      newTypesToPreload.forEach(t => preloadedBoardsRef.current.add(t));
+      const prefetchWorker = new Worker(new URL("../../worker/simulation.worker.ts", import.meta.url), { type: "module" });
+      const dummyComponents = newTypesToPreload.map(type => ({ type }));
+      prefetchWorker.postMessage({ type: "PRELOAD_RUNNERS", components: dummyComponents });
+      
+      const timer = setTimeout(() => prefetchWorker.terminate(), 5000);
+      return () => { clearTimeout(timer); prefetchWorker.terminate(); };
+    }
+  }, [components]);
+
   // ── Validation toast auto-dismiss ───────────────────────────────────────────
   useEffect(() => {
     if (!validationToast) return undefined;
