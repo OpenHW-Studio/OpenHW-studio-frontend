@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenHW Client-Side ESP32 Test Harness</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #0f0f13;
+      color: #e2e2e9;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      box-sizing: border-box;
+    }
+    h1 {
+      font-size: 24px;
+      margin-top: 0;
+      color: #4f46e5;
+      text-shadow: 0 0 10px rgba(79, 70, 229, 0.3);
+      border-bottom: 1px solid #27273a;
+      padding-bottom: 10px;
+    }
+    .container {
+      display: flex;
+      flex: 1;
+      gap: 20px;
+      min-height: 0;
+    }
+    .panel {
+      flex: 1;
+      background: #181824;
+      border: 1px solid #27273a;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      padding: 15px;
+      box-sizing: border-box;
+      min-height: 0;
+    }
+    .panel-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: #94a3b8;
+      display: flex;
+      justify-between: space-between;
+      align-items: center;
+    }
+    .terminal {
+      flex: 1;
+      background: #09090e;
+      border: 1px solid #1e1e2f;
+      border-radius: 4px;
+      padding: 10px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      color: #10b981;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.8);
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    button {
+      background: #4f46e5;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #4338ca;
+    }
+    button:disabled {
+      background: #27273a;
+      color: #64748b;
+      cursor: not-allowed;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #ef4444;
+    }
+    .status-dot.active {
+      background: #10b981;
+      box-shadow: 0 0 8px #10b981;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>⚡ OpenHW Client-Side ESP32/ESP32-C3 Emulation Harness</h1>
+
+  <div class="controls">
+    <button id="btn-boot">🚀 Boot Simulator</button>
+    <button id="btn-stop" disabled>🛑 Stop</button>
+    <div class="status">
+      <div id="status-dot" class="status-dot"></div>
+      <span id="status-text">Stopped</span>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="panel">
+      <div class="panel-title">📟 Serial Monitor Output (UART0)</div>
+      <div id="serial-terminal" class="terminal">[System Status]: Press "Boot Simulator" to initialize...</div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">📋 Simulator Diagnostics & Registers</div>
+      <div id="diagnostics-terminal" class="terminal">[Diagnostics]: Awaiting startup...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ESP32, SimulationClock } from './esp32-engine.js';
+
+    const btnBoot = document.getElementById('btn-boot');
+    const btnStop = document.getElementById('btn-stop');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const serialTerm = document.getElementById('serial-terminal');
+    const diagTerm = document.getElementById('diagnostics-terminal');
+
+    let clock = null;
+    let esp32 = null;
+    let running = false;
+    let animationId = null;
+
+    function logSerial(msg) {
+      serialTerm.textContent += msg;
+      serialTerm.scrollTop = serialTerm.scrollHeight;
+    }
+
+    function logDiag(msg) {
+      diagTerm.textContent += msg + '\n';
+      diagTerm.scrollTop = diagTerm.scrollHeight;
+    }
+
+    btnBoot.addEventListener('click', async () => {
+      try {
+        serialTerm.textContent = '';
+        diagTerm.textContent = '';
+        logSerial('[System]: Initializing Simulation Clock and Xtensa ESP32 Dual-Core CPU...\n');
+
+        clock = new SimulationClock();
+        esp32 = new ESP32({ flashSizeMB: 4, clock });
+
+        // Expose instances to window console for interactive exploration
+        window.clock = clock;
+        window.esp32 = esp32;
+
+        logDiag('✅ SimulationClock initialized.');
+        logDiag('✅ Xtensa ESP32 dual-core CPU instantiated.');
+        logDiag(`💡 Tip: Open Chrome DevTools and type "esp32" to explore CPU and registers!`);
+        logDiag(`- Total Cores: ${esp32.cores.length}`);
+        logDiag(`- Flash Memory Size: ${esp32.flash.length / (1024 * 1024)} MB`);
+
+        // Check if there is UART interface on the instantiated chip
+        if (esp32.uart && esp32.uart[0]) {
+          logDiag('✅ UART0 Controller detected.');
+          
+          // Hook standard UART0 print callback to catch bootloader strings
+          esp32.uart[0].onTX = (byte) => {
+            logSerial(String.fromCharCode(byte));
+          };
+        } else {
+          logDiag('⚠️ No UART0 configuration found on instance.');
+        }
+
+        // Start step loop
+        running = true;
+        btnBoot.disabled = true;
+        btnStop.disabled = false;
+        statusDot.classList.add('active');
+        statusText.textContent = 'Running';
+
+        logDiag('🚀 Emulation execution loop started.');
+
+        const cyclesPerFrame = 50000; // Step count per animation tick
+        
+        function stepSimulation() {
+          if (!running) return;
+          
+          try {
+            // Step both cores and tick the clock
+            for (let i = 0; i < cyclesPerFrame; i++) {
+              esp32.step();
+            }
+            
+            // Periodically dump PC (Program Counter) state to diagnostics
+            if (Math.random() < 0.05) {
+              diagTerm.textContent = `[Diagnostics]: Active Loop\n- PC: 0x${esp32.cores[0].PC.toString(16).toUpperCase()}\n- Total CPU Cycles: ${esp32.cycles}\n- Frequency: ${clock.frequency / 1e6} MHz\n`;
+            }
+          } catch (err) {
+            logDiag(`❌ Simulation Crash: ${err.message}`);
+            stop();
+            return;
+          }
+          
+          animationId = requestAnimationFrame(stepSimulation);
+        }
+
+        stepSimulation();
+
+      } catch (err) {
+        logSerial(`❌ Initialization Error: ${err.message}\n`);
+        console.error(err);
+      }
+    });
+
+    function stop() {
+      running = false;
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+      }
+      btnBoot.disabled = false;
+      btnStop.disabled = true;
+      statusDot.classList.remove('active');
+      statusText.textContent = 'Stopped';
+      logDiag('🛑 Emulation execution loop stopped.');
+    }
+
+    btnStop.addEventListener('click', stop);
+  </script>
+</body>
+</html>
