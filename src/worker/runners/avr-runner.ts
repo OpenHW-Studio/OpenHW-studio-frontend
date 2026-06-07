@@ -526,7 +526,7 @@ export class AVRRunner {
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string, nextVoltage: number) => void) {
-        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor' || inst.type === 'openhw-photoresistor' || inst.type === 'openhw-ntc-thermistor' || inst.type === 'openhw-ntc-temperature-sensor') {
             const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
             if (!otherPin) return;
             const resistance = Number.parseFloat(String((inst as any).state?.value || (inst as any).state?.resistance || 1000));
@@ -1042,6 +1042,42 @@ export class AVRRunner {
                 if (typeof this.repropagateAllVoltages === 'function') {
                     this.repropagateAllVoltages();
                 }
+
+                if (this.adc && this.cpu) {
+                    const isMega = this.boardId.toLowerCase().includes('mega');
+                    const analogPins = isMega ? ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'] : UNO_ANALOG_PINS;
+                    for (let i = 0; i < analogPins.length; i++) {
+                        const arduinoPin = analogPins[i];
+                        let voltage = 0;
+                        for (const w of this.currentWires) {
+                            const [fromComp, fromPin] = w.from.split(':');
+                            const [toComp, toPin] = w.to.split(':');
+
+                            let isConnectedToPin = false;
+                            let otherCompId = '';
+                            let otherCompPin = '';
+
+                            if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = toComp;
+                                otherCompPin = toPin;
+                            } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = fromComp;
+                                otherCompPin = fromPin;
+                            }
+
+                            if (isConnectedToPin) {
+                                const inst = this.instances.get(otherCompId);
+                                if (inst) {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin));
+                                }
+                            }
+                        }
+                        this.adc.channelValues[i] = voltage;
+                    }
+                }
+
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
             }
@@ -1627,7 +1663,7 @@ export class AVRRunner {
         // Identify nets that contain a resistor pin
         this.netHasResistor.clear();
         for (const [id, inst] of this.instances) {
-            if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
+            if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor' || inst.type === 'openhw-photoresistor' || inst.type === 'openhw-ntc-thermistor' || inst.type === 'openhw-ntc-temperature-sensor') {
                 const n1 = this.pinToNet.get(`${id}:p1`);
                 const n2 = this.pinToNet.get(`${id}:p2`);
                 if (n1 !== undefined) this.netHasResistor.add(n1);
