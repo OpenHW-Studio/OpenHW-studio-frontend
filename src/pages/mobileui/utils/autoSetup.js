@@ -124,22 +124,44 @@ function findFreeBreadboardRow(bb, components, wires, pinDefs) {
 }
 
 // Helper to merge code snippets
-export function mergeCodeSnippet(currentCode, snippet) {
+export function mergeCodeSnippet(currentCode, snippet, compId) {
   if (!snippet) return currentCode;
-  if (!currentCode || currentCode.trim() === '') return `void setup() {\n  ${snippet.setup || ''}\n}\n\nvoid loop() {\n  ${snippet.loop || ''}\n}`;
+
+  let setupStr = snippet.setup || '';
+  let loopStr = snippet.loop || '';
+  let globalsStr = snippet.globals || '';
+
+  if (compId) {
+    const regex = /\$\{COMP_SUFFIX\}/g;
+    setupStr = setupStr.replace(regex, compId);
+    loopStr = loopStr.replace(regex, compId);
+    globalsStr = globalsStr.replace(regex, compId);
+  }
+
+  if (!currentCode || currentCode.trim() === '') {
+    let code = '';
+    if (globalsStr) code += `${globalsStr}\n\n`;
+    code += `void setup() {\n  ${setupStr}\n}\n\nvoid loop() {\n  ${loopStr}\n}`;
+    return code;
+  }
   let newCode = currentCode;
-  if (snippet.setup) {
+
+  if (globalsStr && !newCode.includes(globalsStr)) {
+    newCode = globalsStr + '\n\n' + newCode;
+  }
+
+  if (setupStr) {
     if (newCode.includes('void setup() {')) {
-      newCode = newCode.replace('void setup() {', `void setup() {\n  ${snippet.setup}`);
+      newCode = newCode.replace('void setup() {', `void setup() {\n  ${setupStr}`);
     } else {
-      newCode = `void setup() {\n  ${snippet.setup}\n}\n\n` + newCode;
+      newCode = `void setup() {\n  ${setupStr}\n}\n\n` + newCode;
     }
   }
-  if (snippet.loop) {
+  if (loopStr) {
     if (newCode.includes('void loop() {')) {
-      newCode = newCode.replace('void loop() {', `void loop() {\n  ${snippet.loop}`);
+      newCode = newCode.replace('void loop() {', `void loop() {\n  ${loopStr}`);
     } else {
-      newCode += `\n\nvoid loop() {\n  ${snippet.loop}\n}`;
+      newCode += `\n\nvoid loop() {\n  ${loopStr}\n}`;
     }
   }
   return newCode;
@@ -262,7 +284,7 @@ export function handleAutoSetup({
 
   if (options.autoCoding && autocoding) {
     const snippet = autocoding.arduino;
-    if (snippet) updatedCode = mergeCodeSnippet(updatedCode, snippet);
+    if (snippet) updatedCode = mergeCodeSnippet(updatedCode, snippet, finalComp.id);
   }
 
   return { component: finalComp, components: updatedComponents, wires: updatedWires, code: updatedCode };

@@ -653,6 +653,99 @@ export class AVRRunner {
                     visit(`${compId}:SW`, voltage);
                 }
             }
+        } else if (inst.type === 'openhw-potentiometer' || inst.type === 'wokwi-potentiometer') {
+            // Rotary potentiometer: voltage divider between pin 2 (VCC) and pin 1 (GND)
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === '2') {
+                const gndV = inst.getPinVoltage('1') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            } else if (pinId === '1') {
+                const vccV = inst.getPinVoltage('2') || 5.0;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            }
+        } else if (inst.type === 'openhw-slide-potentiometer') {
+            // Slide potentiometer: voltage divider between VCC and GND
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            } else if (pinId === 'GND') {
+                const vccV = inst.getPinVoltage('VCC') || 5.0;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            }
+        } else if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+            // HC-SR04: VCC is power input, GND is ground, TRIG is input (ignore), ECHO is output
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 0;
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.getPinVoltage('ECHO') || 0;
+                inst.setPinVoltage('ECHO', echoV);
+                visit(`${compId}:ECHO`, echoV);
+            } else if (pinId === 'GND') {
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.getPinVoltage('ECHO') || 0;
+                inst.setPinVoltage('ECHO', echoV);
+                visit(`${compId}:ECHO`, echoV);
+            }
+        } else if (inst.type === 'openhw-ks2e-m-dc5') {
+            // DPDT Relay: internal switch contacts + coil
+            const energised = inst.state?.energised;
+            if (pinId === 'COIL1') {
+                const v2 = inst.getPinVoltage('COIL2');
+                const coilV = Math.min(voltage, 5.0);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL2', nextV);
+                visit(`${compId}:COIL2`, nextV);
+            } else if (pinId === 'COIL2') {
+                const coilV = Math.min(voltage, 5.0);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL1', nextV);
+                visit(`${compId}:COIL1`, nextV);
+            } else if (energised) {
+                // Energised: P1←→NO1, P2←→NO2
+                if (pinId === 'P1') {
+                    inst.setPinVoltage('NO1', voltage);
+                    visit(`${compId}:NO1`, voltage);
+                } else if (pinId === 'NO1') {
+                    inst.setPinVoltage('P1', voltage);
+                    visit(`${compId}:P1`, voltage);
+                } else if (pinId === 'P2') {
+                    inst.setPinVoltage('NO2', voltage);
+                    visit(`${compId}:NO2`, voltage);
+                } else if (pinId === 'NO2') {
+                    inst.setPinVoltage('P2', voltage);
+                    visit(`${compId}:P2`, voltage);
+                }
+            } else {
+                // De-energised: P1←→NC1, P2←→NC2
+                if (pinId === 'P1') {
+                    inst.setPinVoltage('NC1', voltage);
+                    visit(`${compId}:NC1`, voltage);
+                } else if (pinId === 'NC1') {
+                    inst.setPinVoltage('P1', voltage);
+                    visit(`${compId}:P1`, voltage);
+                } else if (pinId === 'P2') {
+                    inst.setPinVoltage('NC2', voltage);
+                    visit(`${compId}:NC2`, voltage);
+                } else if (pinId === 'NC2') {
+                    inst.setPinVoltage('P2', voltage);
+                    visit(`${compId}:P2`, voltage);
+                }
+            }
         }
     }
 
@@ -904,7 +997,21 @@ export class AVRRunner {
             // Re-propagate active driver outputs from non-board helper components (e.g. A4988 motor drivers, logic gates)
             this.instances.forEach((inst, compId) => {
                 if (compId === this.boardId) return;
-                if (inst.type.includes('a4988')) {
+                if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+                    const echoV = (inst as any).echoOutputVoltage !== undefined
+                        ? (inst as any).echoOutputVoltage
+                        : inst.pins['ECHO']?.voltage ?? 0;
+                    if (inst.pins['ECHO']) {
+                        updateOopPin('ECHO', echoV, compId);
+                    }
+                } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
+                    const sdaV = (inst as any).sdaOutputVoltage !== undefined
+                        ? (inst as any).sdaOutputVoltage
+                        : inst.pins['SDA']?.voltage ?? 5.0;
+                    if (inst.pins['SDA']) {
+                        updateOopPin('SDA', sdaV, compId);
+                    }
+                } else if (inst.type.includes('a4988')) {
                     ['1A', '1B', '2A', '2B'].forEach(pin => {
                         if (inst.pins[pin]) {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
@@ -1075,6 +1182,10 @@ export class AVRRunner {
                 const componentStart = performance.now();
                 let anyStateChanged = false;
                 instArray.forEach(inst => {
+                    if (!(inst as any)._simCpu) {
+                        (inst as any)._simCpu = this.cpu;
+                        (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
+                    }
                     inst.update(this.cpu!.cycles, this.currentWires, instArray);
                     if (inst.stateChanged) {
                         anyStateChanged = true;

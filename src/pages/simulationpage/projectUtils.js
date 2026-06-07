@@ -406,9 +406,17 @@ export function mergeCodeSnippet(currentCode, snippet, compId, reasoning = []) {
   let setupSnippet = sanitizeAutocodeSnippet(snippet.setup || '');
   let loopSnippet = sanitizeAutocodeSnippet(snippet.loop || '');
 
+  // Replace any remaining ${COMP_SUFFIX} placeholders with the actual component ID
+  if (compId) {
+    const suffixRegex = /\$\{COMP_SUFFIX\}/g;
+    globalsSnippet = globalsSnippet.replace(suffixRegex, compId);
+    setupSnippet = setupSnippet.replace(suffixRegex, compId);
+    loopSnippet = loopSnippet.replace(suffixRegex, compId);
+  }
+
   // ── Multi-Bus Renaming Layer ──
-  const isI2cBus1 = reasoning.some(r => r.includes('I2C') && r.includes('Bus 1'));
-  const isUartBus1 = reasoning.some(r => r.includes('UART') && r.includes('Bus 1'));
+  const isI2cBus1 = (reasoning || []).some(r => r.includes('I2C') && r.includes('Bus 1'));
+  const isUartBus1 = (reasoning || []).some(r => r.includes('UART') && r.includes('Bus 1'));
 
   if (isI2cBus1) {
     globalsSnippet = globalsSnippet.replace(/\bWire\./g, 'Wire1.');

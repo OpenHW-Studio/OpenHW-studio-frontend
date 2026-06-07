@@ -1308,7 +1308,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         event?.type === "input" &&
         event.value !== undefined
       ) {
-        updateComponentAttr(comp.id, "value", event.value);
+        if (comp.type === "openhw-hc-sr04" || comp.type === "wokwi-hc-sr04") {
+          updateComponentAttr(comp.id, "distance", event.value);
+        } else {
+          updateComponentAttr(comp.id, "value", event.value);
+        }
       }
 
       if (workerRef.current && isRunning) {
@@ -4780,8 +4784,65 @@ export function SimulatorPage({ gamificationMode = false }) {
                   console.log(
                     `[Autonomous] Auto-installing library: ${libName}`,
                   );
-                  await handleInstallLibrary(libName);
+                  try {
+                    await handleInstallLibrary(libName);
+                  } catch (err) {
+                    console.warn(
+                      `[Autonomous] API install failed for ${libName}, falling back to library.txt:`,
+                      err,
+                    );
+                  }
                 }
+              }
+              // Fallback: write libraries to library.txt for runtime resolution
+              const boardComp = result.components.find((c) =>
+                isProgrammableBoardType(c.type),
+              );
+              if (boardComp) {
+                const libPath = `project/${boardComp.id}/library.txt`;
+                setProjectFiles((prev) => {
+                  const fileObj = prev.find((f) => f.id === libPath);
+                  let currentContent = fileObj
+                    ? fileObj.content || ''
+                    : '# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n';
+                  const lines = currentContent.split('\n').map((l) => l.trim());
+                  const existingSet = new Set(
+                    lines
+                      .filter((l) => l && !l.startsWith('#'))
+                      .map((l) => l.split('@')[0].trim().toLowerCase()),
+                  );
+                  const linesToAdd = [];
+                  plan.libraries.forEach((lib) => {
+                    const cleanLib = String(lib).trim();
+                    const libNameOnly = cleanLib
+                      .split('@')[0]
+                      .trim()
+                      .toLowerCase();
+                    if (!existingSet.has(libNameOnly)) {
+                      linesToAdd.push(cleanLib);
+                    }
+                  });
+                  if (linesToAdd.length > 0) {
+                    const newLines = [...currentContent.split('\n')];
+                    linesToAdd.forEach((lib) => {
+                      if (
+                        newLines.length > 0 &&
+                        newLines[newLines.length - 1].trim() !== ''
+                      ) {
+                        newLines.push(lib);
+                      } else {
+                        newLines.splice(newLines.length, 0, lib);
+                      }
+                    });
+                    const nextContent = newLines.join('\n');
+                    return prev.map((f) =>
+                      f.id === libPath
+                        ? { ...f, content: nextContent, dirty: true }
+                        : f,
+                    );
+                  }
+                  return prev;
+                });
               }
             }
 

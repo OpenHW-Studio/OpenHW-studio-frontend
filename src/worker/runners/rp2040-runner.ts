@@ -2867,6 +2867,93 @@ export class RP2040Runner implements BoardRunner {
                     visit(`${compId}:1`);
                 }
             }
+        } else if (inst.type === 'openhw-potentiometer' || inst.type === 'wokwi-potentiometer') {
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === '2') {
+                const gndV = inst.getPinVoltage('1') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`);
+            } else if (pinId === '1') {
+                const vccV = inst.getPinVoltage('2') || 3.3;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`);
+            }
+        } else if (inst.type === 'openhw-slide-potentiometer') {
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`);
+            } else if (pinId === 'GND') {
+                const vccV = inst.getPinVoltage('VCC') || 3.3;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`);
+            }
+        } else if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 
+                0;
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.getPinVoltage('ECHO') || 0;
+                inst.setPinVoltage('ECHO', echoV);
+                visit(`${compId}:ECHO`, echoV);
+            } else if (pinId === 'GND') {
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.getPinVoltage('ECHO') || 0;
+                inst.setPinVoltage('ECHO', echoV);
+                visit(`${compId}:ECHO`, echoV);
+            }
+        } else if (inst.type === 'openhw-ks2e-m-dc5') {
+            const energised = inst.state?.energised;
+            if (pinId === 'COIL1') {
+                const coilV = Math.min(voltage, 3.3);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL2', nextV);
+                visit(`${compId}:COIL2`);
+            } else if (pinId === 'COIL2') {
+                const coilV = Math.min(voltage, 3.3);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL1', nextV);
+                visit(`${compId}:COIL1`);
+            } else if (energised) {
+                if (pinId === 'P1') {
+                    inst.setPinVoltage('NO1', voltage);
+                    visit(`${compId}:NO1`);
+                } else if (pinId === 'NO1') {
+                    inst.setPinVoltage('P1', voltage);
+                    visit(`${compId}:P1`);
+                } else if (pinId === 'P2') {
+                    inst.setPinVoltage('NO2', voltage);
+                    visit(`${compId}:NO2`);
+                } else if (pinId === 'NO2') {
+                    inst.setPinVoltage('P2', voltage);
+                    visit(`${compId}:P2`);
+                }
+            } else {
+                if (pinId === 'P1') {
+                    inst.setPinVoltage('NC1', voltage);
+                    visit(`${compId}:NC1`);
+                } else if (pinId === 'NC1') {
+                    inst.setPinVoltage('P1', voltage);
+                    visit(`${compId}:P1`);
+                } else if (pinId === 'P2') {
+                    inst.setPinVoltage('NC2', voltage);
+                    visit(`${compId}:NC2`);
+                } else if (pinId === 'NC2') {
+                    inst.setPinVoltage('P2', voltage);
+                    visit(`${compId}:P2`);
+                }
+            }
         }
     }
 
@@ -3106,7 +3193,21 @@ export class RP2040Runner implements BoardRunner {
         this.instances.forEach((inst, compId) => {
             if (compId === this.boardId) return;
 
-            if (inst.type.includes('a4988') || inst.type.includes('drv8825')) {
+            if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.pins['ECHO']?.voltage ?? 0;
+                if (inst.pins['ECHO']) {
+                    seedFrom(`${compId}:ECHO`, echoV);
+                }
+            } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
+                const sdaV = (inst as any).sdaOutputVoltage !== undefined
+                    ? (inst as any).sdaOutputVoltage
+                    : inst.pins['SDA']?.voltage ?? 5.0;
+                if (inst.pins['SDA']) {
+                    seedFrom(`${compId}:SDA`, sdaV);
+                }
+            } else if (inst.type.includes('a4988') || inst.type.includes('drv8825')) {
                 // Bipolar stepper driver coil outputs
                 ['1A', '1B', '2A', '2B'].forEach(pin => {
                     if (inst.pins[pin] != null) {
