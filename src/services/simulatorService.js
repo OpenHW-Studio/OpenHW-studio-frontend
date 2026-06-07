@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { getAdminToken, getToken } from './authService.js';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
 const COMPILER_URL = API_BASE_URL;
 const API_ORIGIN = COMPILER_URL.replace(/\/api$/, '');
 
@@ -233,6 +233,32 @@ export async function uninstallLibrary(name) {
     return response.data;
 }
 
+export async function fetchLibraryConfig() {
+    const response = await axios.get(`${COMPILER_URL}/admin/lib-config`, getAdminAuthConfig());
+    return {
+        permanent: response.data.permanent || [],
+        totalSize: response.data.totalSize || 0
+    };
+}
+
+export async function uploadLibraryConfig(permanent) {
+    const response = await axios.post(`${COMPILER_URL}/admin/lib-config/upload`, { permanent }, getAdminAuthConfig());
+    return response.data;
+}
+
+export async function fetchLibraryCache() {
+    const response = await axios.get(`${COMPILER_URL}/admin/lib-cache`, getAdminAuthConfig());
+    return response.data.cached || [];
+}
+
+export async function clearLibraryCache(name = null) {
+    const response = await axios.delete(`${COMPILER_URL}/admin/lib-cache`, { 
+        ...getAdminAuthConfig(), 
+        data: name ? { name } : {} 
+    });
+    return response.data;
+}
+
 export async function fetchLibrariesInfo(names) {
     const response = await axios.get(`${COMPILER_URL}/lib-info?names=${encodeURIComponent(names.join(','))}`, getUserAuthConfig());
     return response.data.libraries || {};
@@ -241,6 +267,7 @@ export async function fetchLibrariesInfo(names) {
 /**
  * Custom Components
  */
+
 export async function approveCustomComponent(payload) {
     const response = await axios.post(`${COMPILER_URL}/admin/components/approve`, payload, getAdminAuthConfig());
     return response.data;
@@ -291,7 +318,7 @@ export async function backupInstalledComponents() {
 }
 
 export async function fetchInstalledComponentsWithFiles() {
-    return backupInstalledComponents();
+    return fetchPublicInstalledComponents();
 }
 
 /**
@@ -344,6 +371,11 @@ export async function approveDeploymentAction(runId, repo, env) {
     return response.data;
 }
 
+export async function rejectDeploymentAction(runId, repo, env) {
+    const response = await axios.post(`${COMPILER_URL}/admin/deployments/reject`, { run_id: runId, repo, environment: env }, getAdminAuthConfig());
+    return response.data;
+}
+
 export async function rollbackDeploymentAction(repo, branch = 'develop') {
     const response = await axios.post(`${COMPILER_URL}/admin/deployments/rollback`, { repo, branch }, getAdminAuthConfig());
     return response.data;
@@ -352,6 +384,11 @@ export async function rollbackDeploymentAction(repo, branch = 'develop') {
 export async function fetchDeploymentNotifications() {
     const response = await axios.get(`${COMPILER_URL}/admin/deployments/notifications`, getAdminAuthConfig());
     return response.data.notifications || [];
+}
+
+export async function dismissDeploymentNotification(id) {
+    const response = await axios.delete(`${COMPILER_URL}/admin/deployments/notifications/${id}`, getAdminAuthConfig());
+    return response.data;
 }
 
 export async function triggerDeploymentBuild(repo, notificationId = null) {
@@ -371,6 +408,18 @@ export async function fetchInfrastructureStatus() {
 export async function restartInfrastructureService(name) {
     const response = await axios.post(`${COMPILER_URL}/admin/infrastructure/restart`, { name }, getAdminAuthConfig());
     return response.data;
+}
+
+export function buildLiveLogStreamUrl(service) {
+    const adminToken = getAdminToken();
+    const token = adminToken || getToken();
+    const url = new URL('/api/admin/system-logs/stream', `${API_ORIGIN}/`);
+    url.searchParams.set('service', service || 'all');
+    if (token) {
+        // Warning: Sending token in query param is less secure than header, but required for EventSource
+        url.searchParams.set('token', token);
+    }
+    return url.toString();
 }
 
 export async function fetchSystemLogs() {
@@ -421,16 +470,40 @@ export async function fetchResourceStatus() {
     return response.data;
 }
 
+export async function fetchHostStatus() {
+    const response = await axios.get(`${COMPILER_URL}/admin/host-status`, getAdminAuthConfig());
+    return response.data;
+}
+
+
 export async function triggerRecalibrate() {
     const response = await axios.post(`${COMPILER_URL}/admin/recalibrate`, {}, getAdminAuthConfig());
     return response.data;
 }
 
-export async function startEsp32Compile({ code, libraries_txt }) {
+export async function downloadCalibrationScripts() {
+    const response = await axios.get(`${COMPILER_URL}/admin/recalibrate/scripts`, {
+        ...getAdminAuthConfig(),
+        responseType: 'blob'
+    });
+    return response.data;
+}
+
+export async function uploadCalibrationScripts(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const config = getAdminAuthConfig();
+    config.headers['Content-Type'] = 'multipart/form-data';
+    const response = await axios.put(`${COMPILER_URL}/admin/recalibrate/scripts`, formData, config);
+    return response.data;
+}
+
+export async function startEsp32Compile({ code, libraries_txt, targetEngine }) {
     const response = await axios.post(`${COMPILER_URL}/compile/start`, {
         code,
         target: 'esp32',
-        libraries_txt
+        libraries_txt,
+        targetEngine
     }, getUserAuthConfig());
     return response.data;
 }

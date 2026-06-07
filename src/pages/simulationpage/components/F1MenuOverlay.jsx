@@ -170,6 +170,26 @@ function F1MenuOverlayBase({
           <div className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-wider mt-2 mb-1 px-1">
             System & Emulation Controls
           </div>
+          
+          <Btn
+            onClick={() => {
+              const currentCode = localStorage.getItem("NETWORK_ROOM_CODE") || "";
+              const code = window.prompt("Enter Multiplayer Room Code (leave blank for private network):", currentCode);
+              if (code !== null) {
+                if (code.trim() === "") {
+                  localStorage.removeItem("NETWORK_ROOM_CODE");
+                  alert("Disconnected from multiplayer room. You are now using an isolated private network. Please restart the simulation to apply.");
+                } else {
+                  localStorage.setItem("NETWORK_ROOM_CODE", code.trim());
+                  alert(`Joined room '${code.trim()}'! Please restart the simulation to connect your boards to this network.`);
+                }
+              }
+              closeMenu();
+            }}
+            style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--accent)', color: 'var(--accent)' }}
+          >
+            Network: Join Multiplayer Room
+          </Btn>
 
           <div className="flex flex-col gap-1.5 mb-2">
             <span className="text-[10px] font-bold text-[var(--text3)] uppercase tracking-wider px-1">ESP32 Sim Engine</span>

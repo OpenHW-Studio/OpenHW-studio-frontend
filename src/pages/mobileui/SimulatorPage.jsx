@@ -507,8 +507,8 @@ function syncNextIds(_comps, ws) {
   }
 }
 
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/examples' : '/examples');
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api')).replace(/\/$/, '');
+const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/examples' : '/examples');
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api')).replace(/\/$/, '');
 
 // ── Palette group visual helpers ─────────────────────────────────────────────
 const GROUP_ICON_SVG = {
@@ -1939,6 +1939,8 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   }, []);
   const [isCompiling, setIsCompiling] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  /** true while firmware is in deep/light sleep — shows a sleeping badge in UI */
+  const [isDeviceSleeping, setIsDeviceSleeping] = useState(false)
   const [protocolLogs, setProtocolLogs] = useState([])
   const [activeConsoleTab, setActiveConsoleTab] = useState('console')
   const [healthScore, setHealthScore] = useState(100)
@@ -7462,13 +7464,83 @@ useEffect(() => {
           pushSerialRxChunk(msg.data, resolvedBoardId, msg.source || 'sim');
         }
 
-        // Handle Protocol Events
+        // ── 8B: SERIAL_OUTPUT from WASM runner ────────────────────────────────────
+        if (msg.type === 'SERIAL_OUTPUT') {
+          const incomingBoardId = String(msg.boardId || '').trim();
+          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
+          const resolvedBoardId = hasKnownBoard ? incomingBoardId : (singleBoardFallback || incomingBoardId || 'default');
+          if (msg.text) pushSerialRxChunk(msg.text + '\n', resolvedBoardId, msg.source || 'wasm');
+          const log = protocolAnalyzerRef.current.processSerial(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+
+        // ── Handle Protocol Events ───────────────────────────────────────────────
         if (msg.type === 'protocol:i2c') {
           const log = protocolAnalyzerRef.current.processI2C(msg);
           setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
         if (msg.type === 'protocol:spi') {
           const log = protocolAnalyzerRef.current.processSPI(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+
+        // ── 8A: New protocol events → ProtocolAnalyzer ─────────────────────────
+        if (msg.type === 'GPIO_SYNC') {
+          const log = protocolAnalyzerRef.current.processGpio(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'LEDC_SYNC') {
+          const log = protocolAnalyzerRef.current.processLedc(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'DAC_SYNC' || msg.type === 'esp32:dac:sync') {
+          const log = protocolAnalyzerRef.current.processDac(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'esp32:adc:sync') {
+          const log = protocolAnalyzerRef.current.processAdc(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'TONE') {
+          const log = protocolAnalyzerRef.current.processTone(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'esp32:uart:rx') {
+          const log = protocolAnalyzerRef.current.processSerialRx(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'TWAI_TX') {
+          const log = protocolAnalyzerRef.current.processTwai(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'RMT_PULSE') {
+          const log = protocolAnalyzerRef.current.processRmt(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'PCNT_UPDATE') {
+          const log = protocolAnalyzerRef.current.processPcnt(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'state' && msg.neopixels && Object.keys(msg.neopixels).length > 0) {
+          Object.entries(msg.neopixels).forEach(([ch, pixels]) => {
+            const log = protocolAnalyzerRef.current.processNeopixel({ channel: ch, pixels });
+            setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+          });
+        }
+
+        // ── 8C: Deep sleep / wake ─────────────────────────────────────────────
+        if (msg.type === 'sim:sleep') {
+          setIsDeviceSleeping(true);
+          const sec = msg.duration_us ? (msg.duration_us / 1_000_000).toFixed(2) + 's' : '∞';
+          appendConsoleEntry('info', `💤 Device entering deep sleep (${sec})`, 'simulator');
+          const log = protocolAnalyzerRef.current.processSleep(msg);
+          setProtocolLogs(prev => [...prev.slice(-199), log.message]);
+        }
+        if (msg.type === 'sim:wake') {
+          setIsDeviceSleeping(false);
+          appendConsoleEntry('info', '☀️ Device woke from deep sleep', 'simulator');
+          const log = protocolAnalyzerRef.current.processWake(msg);
           setProtocolLogs(prev => [...prev.slice(-199), log.message]);
         }
       };

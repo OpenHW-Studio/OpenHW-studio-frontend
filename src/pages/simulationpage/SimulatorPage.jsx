@@ -206,7 +206,7 @@ import "prismjs/themes/prism-tomorrow.css";
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5001/examples" : "/examples");
+  (import.meta.env.DEV ? "http://localhost:5000/examples" : "/examples");
 const EDIT_COPY_KEY = "openhw_edit_copy";
 const EDIT_COPY_PAYLOAD_PREFIX = "openhw_edit_copy_payload_";
 const RP2040_SIM_PROTOCOL_VERSION = "rp2040-sim-uart0-v4";
@@ -251,6 +251,194 @@ function syncNextIds(components, wires) {
   });
   nextWireId = max + 1;
 }
+
+const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
+  let newWires = [...currentWires];
+
+  const getPinX = (c, p) => {
+    if (!p) return 0;
+    if (p.x !== undefined) return p.x;
+    if (c.type.includes('pico')) {
+      const n = parseInt(p.id);
+      if (!isNaN(n)) return n <= 20 ? 0 : (c.w || 60);
+    }
+    return (c.w || 60) / 2;
+  };
+
+  const getPinY = (c, p) => {
+    if (!p) return 0;
+    if (p.y !== undefined) return p.y;
+    return (c.h || 60) / 2;
+  };
+
+  const getBestPowerPins = (comp, bb) => {
+    const pins = LOCAL_PIN_DEFS[comp.type] || [];
+    const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+    
+    const bbVccPins = bbPins.filter(p => p.id.startsWith('top_vcc') || p.id.startsWith('bottom_vcc') || p.id === 't+' || p.id === 'b+' || p.id === 'VCC' || p.id === '5V');
+    const bbGndPins = bbPins.filter(p => p.id.startsWith('top_gnd') || p.id.startsWith('bottom_gnd') || p.id === 't-' || p.id === 'b-' || p.id === 'GND');
+
+    const isOccupied = (pinId) => newWires.some(w => w.from === `${bb.id}:${pinId}` || w.to === `${bb.id}:${pinId}`);
+    
+    const availableBbVccPins = bbVccPins.filter(p => !isOccupied(p.id));
+    const availableBbGndPins = bbGndPins.filter(p => !isOccupied(p.id));
+
+    const finalBbVccPins = availableBbVccPins.length > 0 ? availableBbVccPins : (bbVccPins.length > 0 ? [bbVccPins[0]] : []);
+    const finalBbGndPins = availableBbGndPins.length > 0 ? availableBbGndPins : (bbGndPins.length > 0 ? [bbGndPins[0]] : []);
+
+    if (finalBbVccPins.length === 0 || finalBbGndPins.length === 0) return null;
+
+    const vccPins = [];
+    const gndPins = [];
+    
+    pins.forEach(pin => {
+      const cats = getPinCategory(pin.id, pin.description || '', comp.type) || [];
+      if (cats.includes('POWER') || cats.includes('VIN')) vccPins.push(pin);
+      if (cats.includes('GND')) gndPins.push(pin);
+    });
+
+    // Force Arduino Uno to use 5V by eliminating the 3.3V pin from consideration
+    if (comp.type.includes('arduino-uno')) {
+      for (let i = vccPins.length - 1; i >= 0; i--) {
+        const idAndDesc = ((vccPins[i].id || '') + ' ' + (vccPins[i].description || '')).toUpperCase();
+        if (idAndDesc.includes('3.3') || idAndDesc.includes('3V3')) {
+          vccPins.splice(i, 1);
+        }
+      }
+    }
+
+    if (vccPins.length === 0 && gndPins.length === 0) return null;
+
+    let bestScore = Infinity;
+    let bestPair = { vcc: vccPins[0] || null, gnd: gndPins[0] || null, bbVcc: finalBbVccPins[0].id, bbGnd: finalBbGndPins[0].id };
+
+    const vccList = vccPins.length > 0 ? vccPins : [null];
+    const gndList = gndPins.length > 0 ? gndPins : [null];
+
+
+    vccList.forEach(vcc => {
+      const vccX = vcc ? comp.x + getPinX(comp, vcc) : 0;
+      const vccY = vcc ? comp.y + getPinY(comp, vcc) : 0;
+      
+      let voltageType = null;
+      if (vcc) {
+        const idAndDesc = ((vcc.id || '') + ' ' + (vcc.description || '')).toUpperCase();
+        if (idAndDesc.includes('3.3') || idAndDesc.includes('3V3')) voltageType = '3.3V';
+        else if (idAndDesc.includes('5V')) voltageType = '5V';
+      }
+
+      gndList.forEach(gnd => {
+        const gndX = gnd ? comp.x + getPinX(comp, gnd) : 0;
+        const gndY = gnd ? comp.y + getPinY(comp, gnd) : 0;
+        
+        finalBbVccPins.forEach(bbVcc => {
+          const bbVccX = bb.x + (bbVcc.x || 0);
+          const bbVccY = bb.y + (bbVcc.y || 0);
+          const distToBbVcc = vcc ? Math.hypot(vccX - bbVccX, vccY - bbVccY) : 0;
+
+          finalBbGndPins.forEach(bbGnd => {
+            const bbGndX = bb.x + (bbGnd.x || 0);
+            const bbGndY = bb.y + (bbGnd.y || 0);
+            const distToBbGnd = gnd ? Math.hypot(gndX - bbGndX, gndY - bbGndY) : 0;
+
+            const pinDist = (vcc && gnd) ? Math.hypot(vccX - gndX, vccY - gndY) : 0;
+            
+            let score = (pinDist * 5) + distToBbVcc + distToBbGnd;
+
+            // Offset the wires diagonally so they don't overlap. Always shift in the same direction so consecutive components don't interleave/criss-cross.
+            if (vcc && gnd && bbVccX >= bbGndX) {
+              score += 100;
+            }
+
+            if (voltageType === '3.3V' && (bbVcc.id.startsWith('bottom_') || bbGnd.id.startsWith('bottom_'))) {
+              score += 5000;
+            } else if (voltageType === '5V' && (bbVcc.id.startsWith('top_') || bbGnd.id.startsWith('top_'))) {
+              score += 5000;
+            }
+
+            if (score < bestScore) {
+              bestScore = score;
+              bestPair = { vcc, gnd, bbVcc: bbVcc.id, bbGnd: bbGnd.id };
+            }
+          });
+        });
+      });
+    });
+
+    return bestPair;
+  };
+
+  const connectCompToBb = (comp, bb) => {
+    const pair = getBestPowerPins(comp, bb);
+    if (!pair) return;
+
+    const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+
+    const makeCleanWaypoints = (compPin, bbPinId) => {
+      const cx = comp.x + getPinX(comp, compPin);
+      const cy = comp.y + getPinY(comp, compPin);
+      const bbPinDef = bbPins.find(p => p.id === bbPinId);
+      const bx = bb.x + (bbPinDef?.x || 0);
+      const by = bb.y + (bbPinDef?.y || 0);
+      // Clean L-shape: go vertically to the breadboard rail Y, then horizontally
+      if (Math.abs(cy - by) > Math.abs(cx - bx)) {
+        return [{ x: cx, y: by, _corner: true }];
+      }
+      // If mostly horizontal, go horizontally first then vertically
+      return [{ x: bx, y: cy, _corner: true }];
+    };
+
+    if (pair.vcc) {
+      const alreadyWired = newWires.some(w => 
+        w.from === `${comp.id}:${pair.vcc.id}` || w.to === `${comp.id}:${pair.vcc.id}`
+      );
+      if (!alreadyWired) {
+        // Detect voltage type for wire color: orange for 3.3V, red for 5V
+        const vccIdDesc = ((pair.vcc.id || '') + ' ' + (pair.vcc.description || '')).toUpperCase();
+        const is3v3 = vccIdDesc.includes('3.3') || vccIdDesc.includes('3V3');
+        newWires.push({
+          id: `w${nextWireId++}`,
+          from: `${comp.id}:${pair.vcc.id}`,
+          to: `${bb.id}:${pair.bbVcc}`,
+          color: is3v3 ? '#f97316' : 'red',
+          isBelow: false,
+          waypoints: makeCleanWaypoints(pair.vcc, pair.bbVcc)
+        });
+      }
+    }
+    if (pair.gnd) {
+      const alreadyWired = newWires.some(w => 
+        w.from === `${comp.id}:${pair.gnd.id}` || w.to === `${comp.id}:${pair.gnd.id}`
+      );
+      if (!alreadyWired) {
+        newWires.push({
+          id: `w${nextWireId++}`,
+          from: `${comp.id}:${pair.gnd.id}`,
+          to: `${bb.id}:${pair.bbGnd}`,
+          color: 'black',
+          isBelow: false,
+          waypoints: makeCleanWaypoints(pair.gnd, pair.bbGnd)
+        });
+      }
+    }
+  };
+
+  if (isBreadboardType(newComp.type)) {
+    existingComponents.forEach(comp => {
+      if (!isBreadboardType(comp.type)) {
+        connectCompToBb(comp, newComp);
+      }
+    });
+  } else {
+    // If a new component is added, find the first breadboard and wire to it
+    const bb = existingComponents.find(c => isBreadboardType(c.type));
+    if (bb) {
+      connectCompToBb(newComp, bb);
+    }
+  }
+
+  return newWires;
+};
 
 export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const {
@@ -668,7 +856,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [isPinMappingExpanded, setIsPinMappingExpanded] = useState(false);
   const [pendingPinColors, setPendingPinColors] = useState({}); // { [pinIdStr]: color }
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [wiresAlwaysOnTop, setWiresAlwaysOnTop] = useState(false);
+  const [wiresAlwaysOnTop, setWiresAlwaysOnTop] = useState(true);
 
   // Reset Pin Mapping expansion when a new component is selected
   useEffect(() => {
@@ -845,6 +1033,17 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [isCompiling, setIsCompiling] = useState(false);
   const [isBooting, setIsBooting] = useState(false); // TODO: Declare booting state tracking
   const [isPaused, setIsPaused] = useState(false);
+  /** true while firmware is in deep/light sleep — shows a sleeping badge in UI */
+  const [isDeviceSleeping, setIsDeviceSleeping] = useState(false);
+
+  // ── I2S Audio playback (Web Audio API) ────────────────────────────────────
+  // The AudioContext is lazily created on first I2S_AUDIO message so it starts
+  // inside a user-gesture context (the Run button click).
+  // i2sNextScheduledTimeRef: { [port]: number } — gapless scheduling clock per I2S port.
+  // This mirrors exactly how the Buzzer component works, but for streaming PCM.
+  const i2sAudioCtxRef = useRef(null);
+  const i2sNextScheduledTimeRef = useRef({});
+
   const [protocolLogs, setProtocolLogs] = useState([]);
   const [healthScore, setHealthScore] = useState(100);
   const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
@@ -1364,6 +1563,20 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, [notifyLiveOopStateListeners]);
 
   const workerRef = useRef(null);
+  
+  useEffect(() => {
+    const handleDownloadPcap = (e) => {
+      const { componentId } = e.detail;
+      if (isRunning && workerRef.current) {
+        workerRef.current.postMessage({
+          type: 'DOWNLOAD_PCAP',
+          boardId: componentId
+        });
+      }
+    };
+    window.addEventListener('network:download-pcap', handleDownloadPcap);
+    return () => window.removeEventListener('network:download-pcap', handleDownloadPcap);
+  }, [isRunning]);
   const pushSerialRxChunkRef = useRef(null);
   const runStartGuardRef = useRef(false);
   const {
@@ -4835,9 +5048,11 @@ loadDemoProject();
           }
         } else {
           setComponents((prev) => [...prev, newCompBase]);
+          setWires((prev) => autoConnectPowerRails(newCompBase, components, prev));
         }
       } else {
         setComponents((prev) => [...prev, newCompBase]);
+        setWires((prev) => autoConnectPowerRails(newCompBase, components, prev));
       }
     },
     [
@@ -8777,7 +8992,7 @@ loadDemoProject();
             "simulator",
           );
           let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-          if (compiled && (kind !== 'esp32' || esp32SimulationMode !== 'frontend' || compiled.hex)) {
+          if (compiled) {
             logSerial(`Using cached compilation for ${boardComp.id}...`);
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
@@ -8785,7 +9000,8 @@ loadDemoProject();
               if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
                 const startRes = await startEsp32Compile({
                   code: compileSource,
-                  libraries_txt: librariesTxt
+                  libraries_txt: librariesTxt,
+                  targetEngine: 'frontend'
                 });
                 
                 if (!startRes || (!startRes.jobId && !startRes.buildId)) {
@@ -8830,8 +9046,8 @@ loadDemoProject();
                   }
                   
                   pollCount++;
-                  if (pollCount > 120) {
-                    throw new Error('ESP32 compilation timed out after 60 seconds.');
+                  if (pollCount > 180) {
+                    throw new Error('ESP32 compilation timed out after 90 seconds.');
                   }
                 }
               } else {
@@ -9601,6 +9817,13 @@ loadDemoProject();
           handleTelemetryStateMessageRef.current(msg);
         }
         if (msg.type === "state") {
+          if (msg.wifi && typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("OPENHW_WIFI_STATS", {
+                detail: { boardId: msg.boardId, ...msg.wifi },
+              })
+            );
+          }
           const boardIdKey = String(msg.boardId || "default");
           const boardComp =
             components.find((c) => c.id === boardIdKey) ||
@@ -9699,18 +9922,235 @@ loadDemoProject();
           pushSerialRxChunk(msg.data, resolvedBoardId, msg.source || "sim");
         }
 
-        // Handle Protocol Events
+        // ── 8B: SERIAL_OUTPUT from WASM runner (line-buffered complete lines) ──
+        if (msg.type === "SERIAL_OUTPUT") {
+          const incomingBoardId = String(msg.boardId || "").trim();
+          const hasKnownBoard =
+            incomingBoardId &&
+            boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback =
+            boardComponents.length === 1 ? boardComponents[0]?.id : "";
+          const resolvedBoardId = hasKnownBoard
+            ? incomingBoardId
+            : singleBoardFallback || incomingBoardId || "default";
+          // Feed the complete line to the serial monitor
+          if (msg.text) {
+            pushSerialRxChunk(msg.text + "\n", resolvedBoardId, msg.source || "wasm");
+          }
+          // Also log to protocol analyzer
+          const log = protocolAnalyzerRef.current.processSerial(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // PROTOCOL OBSERVER BLOCK — LOGGING ONLY
+        // ════════════════════════════════════════════════════════════════════
+        // Everything below is OBSERVATION ONLY. The actual signal routing
+        // (buzzer tone, LED color, servo angle, etc.) is already handled
+        // inside simulation.worker.ts → runner → collectConnectedComponentPins.
+        //
+        // These handlers just feed the Protocol Analyzer log panel in the UI.
+        // To disable a specific protocol's logging, delete its if-block below.
+        // To disable ALL protocol logging, delete from here to END PROTOCOL OBSERVER.
+        //
+        // Where to find the log panel UI: search "protocolLogs" in this file.
+        // Where to find ProtocolAnalyzer: src/circuit-validation/protocol-analyzer.js
+        // ════════════════════════════════════════════════════════════════════
+
+        // ── I2C (already hooked up from the original implementation) ──────────
+        // LOG ONLY: actual I2C bus is handled by runner's onI2CWrite/onI2CRead
         if (msg.type === "protocol:i2c") {
           const log = protocolAnalyzerRef.current.processI2C(msg);
           pendingProtocolLogsRef.current.push(log.message);
         }
+        // LOG ONLY: ESP32-specific I2C transaction (different event type from AVR's protocol:i2c)
+        if (msg.type === "esp32:i2c:transaction") {
+          const log = protocolAnalyzerRef.current.processI2C({
+            address: msg.addr, data: msg.data, isWrite: true
+          });
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── SPI (already hooked up from the original implementation) ──────────
+        // LOG ONLY: actual SPI bus is handled by runner's onSPIByte/onSPIBuffer
         if (msg.type === "protocol:spi") {
           const log = protocolAnalyzerRef.current.processSPI(msg);
           pendingProtocolLogsRef.current.push(log.message);
         }
 
+        // ── GPIO ─────────────────────────────────────────────────────────────
+        // LOG ONLY: actual GPIO state is applied by runner's setState()
+        if (msg.type === "GPIO_SYNC") {
+          const log = protocolAnalyzerRef.current.processGpio(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── PWM (analogWrite) ─────────────────────────────────────────────────
+        // LOG ONLY: actual PWM duty is applied by runner's onPwmDuty()
+        if (msg.type === "PWM_SYNC" || (msg.type === "state" && msg.pwm !== undefined)) {
+          const log = protocolAnalyzerRef.current.processPwm(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── LEDC PWM (ESP32 hardware PWM) ─────────────────────────────────────
+        // LOG ONLY: actual LEDC routing is handled by runner's ledcChannelMap + onPwmDuty()
+        if (msg.type === "LEDC_SYNC") {
+          const log = protocolAnalyzerRef.current.processLedc(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── DAC ───────────────────────────────────────────────────────────────
+        // LOG ONLY: actual DAC voltage is applied by runner's onAnalogVoltage()
+        if (msg.type === "DAC_SYNC" || msg.type === "esp32:dac:sync") {
+          const log = protocolAnalyzerRef.current.processDac(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── ADC (analogRead) ──────────────────────────────────────────────────
+        // LOG ONLY: ADC values are injected by useEsp32Engine → esp32Socket.setAdcValue()
+        if (msg.type === "esp32:adc:sync") {
+          const log = protocolAnalyzerRef.current.processAdc(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── TONE (buzzer/speaker/piezo) ───────────────────────────────────────
+        // LOG ONLY: actual TONE is routed via syncTone() → collectConnectedComponentPins → onTone()
+        // Signal path: sim_tone() → >SIM:TONE:< → _handleSimFrame → worker → syncTone → component.onTone()
+        if (msg.type === "TONE") {
+          const log = protocolAnalyzerRef.current.processTone(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── Serial RX (UART component → firmware) ─────────────────────────────
+        // LOG ONLY: actual serial injection is handled by runner's serialRx()
+        if (msg.type === "esp32:uart:rx") {
+          const log = protocolAnalyzerRef.current.processSerialRx(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── TWAI / CAN Bus ────────────────────────────────────────────────────
+        // LOG ONLY: actual CAN frame delivery is handled by runner's onCanFrame()
+        if (msg.type === "TWAI_TX") {
+          const log = protocolAnalyzerRef.current.processTwai(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── RMT / IR pulses ───────────────────────────────────────────────────
+        // LOG ONLY: actual RMT pulse delivery is handled by runner's onRmtPulse() / onInfraredSignal()
+        if (msg.type === "RMT_PULSE") {
+          const log = protocolAnalyzerRef.current.processRmt(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── PCNT (pulse counter) ──────────────────────────────────────────────
+        // LOG ONLY: actual counter value is injected by runner's onPulseCount()
+        if (msg.type === "PCNT_UPDATE") {
+          const log = protocolAnalyzerRef.current.processPcnt(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── WS2812 / NeoPixel ─────────────────────────────────────────────────
+        // LOG ONLY: actual pixel data is applied by runner's updatePixels()
+        if (msg.type === "state" && msg.neopixels && Object.keys(msg.neopixels).length > 0) {
+          Object.entries(msg.neopixels).forEach(([ch, pixels]) => {
+            const log = protocolAnalyzerRef.current.processNeopixel({ channel: ch, pixels });
+            pendingProtocolLogsRef.current.push(log.message);
+          });
+        }
+
+        // ── Deep Sleep / Wake ─────────────────────────────────────────────────
+        // NOTE: sim:sleep/sim:wake are NOT logging-only — they also update isDeviceSleeping state
+        // and print a console banner. Only the protocolAnalyzer.process* call is logging-only.
+        if (msg.type === "sim:sleep") {
+          setIsDeviceSleeping(true);
+          const sec = msg.duration_us ? (msg.duration_us / 1_000_000).toFixed(2) + 's' : '∞';
+          appendConsoleEntry("info", `💤 Device entering deep sleep (${sec})`, "simulator");
+          const log = protocolAnalyzerRef.current.processSleep(msg); // ← LOG ONLY line
+          pendingProtocolLogsRef.current.push(log.message);            // ← LOG ONLY line
+        }
+        if (msg.type === "sim:wake") {
+          setIsDeviceSleeping(false);
+          appendConsoleEntry("info", "☀️ Device woke from deep sleep", "simulator");
+          const log = protocolAnalyzerRef.current.processWake(msg); // ← LOG ONLY line
+          pendingProtocolLogsRef.current.push(log.message);           // ← LOG ONLY line
+        }
+        // ════ END PROTOCOL OBSERVER BLOCK ════════════════════════════════════
+
+        // ── I2S Audio Playback (Web Audio API) ────────────────────────────────
+        // NOT inside the protocol observer — this actually plays audio.
+        // Signal path: sim_i2s_write() → >SIM:I2S:< → qemuRunner → worker → here
+        //
+        // To disable I2S audio: delete from here to "END I2S AUDIO".
+        // The ProtocolAnalyzer log for I2S is handled inside processI2S() below.
+        if (msg.type === "I2S_AUDIO" && msg.pcm_b64) {
+          try {
+            // 1. Lazy-create AudioContext (must be after user gesture; Run button counts)
+            if (!i2sAudioCtxRef.current) {
+              i2sAudioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const ctx = i2sAudioCtxRef.current;
+            if (ctx.state === "suspended") ctx.resume();
+
+            const port       = msg.port ?? 0;
+            const sampleRate = msg.sampleRate || 44100;
+            const bits       = msg.bits || 16;
+
+            // 2. Decode base64 → raw bytes
+            const binStr = atob(msg.pcm_b64);
+            const rawBytes = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) rawBytes[i] = binStr.charCodeAt(i);
+
+            // 3. Interpret as Int16 PCM → Float32 normalised [-1, 1]
+            //    (16-bit signed little-endian is the default from sim_i2s_write)
+            const bytesPerSample = bits === 32 ? 4 : (bits === 24 ? 3 : 2);
+            const sampleCount = Math.floor(rawBytes.length / bytesPerSample);
+            const f32 = new Float32Array(sampleCount);
+            const view = new DataView(rawBytes.buffer);
+            for (let i = 0; i < sampleCount; i++) {
+              const byteOff = i * bytesPerSample;
+              if (bits === 32) {
+                f32[i] = view.getInt32(byteOff, true) / 0x80000000;
+              } else if (bits === 24) {
+                const lo = view.getUint8(byteOff);
+                const mi = view.getUint8(byteOff + 1);
+                const hi = view.getInt8(byteOff + 2);
+                f32[i] = ((hi << 16) | (mi << 8) | lo) / 0x800000;
+              } else {
+                f32[i] = view.getInt16(byteOff, true) / 32768;
+              }
+            }
+
+            // 4. Create AudioBuffer and schedule gaplessly
+            if (sampleCount > 0) {
+              const buf = ctx.createBuffer(1, sampleCount, sampleRate);
+              buf.copyToChannel(f32, 0);
+              const src = ctx.createBufferSource();
+              src.buffer = buf;
+              src.connect(ctx.destination);
+
+              // nextTime per port — schedules chunks back-to-back without gaps
+              const now = ctx.currentTime;
+              const portKey = String(port);
+              const nextTime = i2sNextScheduledTimeRef.current[portKey] ?? now;
+              const startAt = Math.max(now, nextTime);
+              src.start(startAt);
+              i2sNextScheduledTimeRef.current[portKey] = startAt + buf.duration;
+            }
+          } catch (i2sErr) {
+            // Silently swallow — audio errors should not crash the simulation
+            console.warn("[I2S] Web Audio playback error:", i2sErr);
+          }
+
+          // LOG ONLY: record to protocol panel
+          if (protocolAnalyzerRef.current?.processI2S) {
+            const log = protocolAnalyzerRef.current.processI2S(msg);
+            pendingProtocolLogsRef.current.push(log.message);
+          }
+        }
+        // ── END I2S AUDIO ─────────────────────────────────────────────────────
+
+        // ── Batch-flush all pending protocol log entries to the panel ─────────
+        const PROTOCOL_EVENT_TYPES = new Set([
+          "protocol:i2c", "protocol:spi",
+          "SERIAL_OUTPUT", "GPIO_SYNC", "PWM_SYNC",
+          "LEDC_SYNC", "DAC_SYNC", "esp32:dac:sync",
+          "esp32:adc:sync", "TONE", "esp32:uart:rx",
+          "TWAI_TX", "RMT_PULSE", "PCNT_UPDATE",
+          "sim:sleep", "sim:wake",
+          "I2S_AUDIO",  // I2S PCM audio frames from sim_i2s_write
+        ]);
         if (
-          (msg.type === "protocol:i2c" || msg.type === "protocol:spi") &&
+          (PROTOCOL_EVENT_TYPES.has(msg.type) ||
+           (msg.type === "state" && msg.neopixels && Object.keys(msg.neopixels).length > 0)) &&
           !protocolLogsTimerRef.current
         ) {
           protocolLogsTimerRef.current = setTimeout(() => {
@@ -9722,7 +10162,6 @@ loadDemoProject();
             // Limit batch to prevent dropping frames
             const batch = pending.length > 200 ? pending.slice(-200) : pending;
 
-            // Use standard state setting (startTransition might be undefined if not imported, React 18 auto-batches timeouts anyway)
             setProtocolLogs((prev) => {
               const next = [...prev, ...batch];
               return next.length > 200 ? next.slice(-200) : next;
@@ -9784,6 +10223,7 @@ loadDemoProject();
 
       worker.postMessage({
         type: "START",
+        networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
         hex: result.hex,
         neopixels: neopixelWiring,
         wires: cleanWires,

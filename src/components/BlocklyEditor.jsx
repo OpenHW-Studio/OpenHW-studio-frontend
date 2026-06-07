@@ -844,6 +844,7 @@ function generateSketch(gen, ws) {
   }
   gen.usedPins = new Map()
 
+  const vars = ws.getAllVariables() || [];
   const varDecl = vars.length ? vars.map(v => `int ${v.name} = 0;`).join('\n') + '\n\n' : ''
   
   gen.usedPins = new Map() // Reset/initialize used pins Map for the current generation run
