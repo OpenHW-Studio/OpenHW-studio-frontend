@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const mockEspDir = path.join(__dirname, '../Mock-esp');
+const mockEspDir = path.join(__dirname, '../../../Mock-esp');
 
 // Find all chunk files in the Mock-esp folder
 if (!fs.existsSync(mockEspDir)) {
@@ -72,8 +72,8 @@ let bundleContent = `/**
 const moduleDefinitions = {
 `;
 
-// Serialize the main engine module and its trace logger dependency
-const coreModules = ['50722', '11882'];
+// Serialize the main engine module and its trace logger + network dependencies
+const coreModules = ['50722', '11882', '90480', '42685', '88896', '43899', '15851', '61837', '41463'];
 for (const moduleId of coreModules) {
   if (moduleDefinitions[moduleId]) {
     bundleContent += `  "${moduleId}": ${moduleDefinitions[moduleId]},\n`;
@@ -124,6 +124,7 @@ webpackRequire.o = function(obj, prop) {
 
 // Instantiate the core simulator exports
 const engine = webpackRequire("50722");
+const wifiModule = webpackRequire("90480");
 
 // Clean ES6 Exports
 export const {
@@ -147,6 +148,8 @@ export const {
   IOPinState,
   SignalDirection
 } = engine;
+
+export const WiFiManager = wifiModule.L;
 `;
 
 const outputPath = path.join(__dirname, 'esp32-engine.js');

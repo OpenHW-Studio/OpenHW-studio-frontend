@@ -1,6 +1,7 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
 import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
+import { NetworkComponentOverlay } from './NetworkComponentOverlay';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
   const liveState = useSyncExternalStore(
@@ -560,7 +561,13 @@ function CanvasSceneLayerBase({
                   const currentCat = getPinCategory(pin.id, pin.description, comp.type);
 
                   const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                  const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+                  // Only highlight related pins for truly shared-purpose rails (GND, power).
+                  // Do NOT glow for broad GPIO categories (DIGITAL, ANALOG, PWM, etc.)
+                  // as it falsely implies the pins are interconnected.
+                  const SHARED_PURPOSE_CATS = ['GND', 'POWER', 'VIN'];
+                  const hoverHasShared = hoverCat && hoverCat.some(c => SHARED_PURPOSE_CATS.includes(c));
+                  const currentHasShared = currentCat && currentCat.some(c => SHARED_PURPOSE_CATS.includes(c));
+                  const isRelated = hoverHasShared && currentHasShared && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
 
                   const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
                   const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
@@ -596,19 +603,26 @@ function CanvasSceneLayerBase({
                       onMouseLeave={() => setHoveredPin(null)}
                       onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
                     >
-                      {isHovered && (
-                        <div style={{
-                          position: 'absolute', bottom: 18, left: '50%',
-                          transform: 'translateX(-50%)',
-                          background: '#111', color: '#fff',
-                          padding: '4px 8px', borderRadius: 4,
-                          fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                          pointerEvents: 'none', border: '1px solid #444',
-                          boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                        }}>
-                          {pin.description || pin.id}
-                        </div>
-                      )}
+                      {isHovered && (() => {
+                          let label = pin.description || pin.id;
+                          // Show voltage-specific labels for breadboard power rails
+                          if (comp.type.includes('breadboard')) {
+                            label = label.replace(/^top_vcc/, 'top_3.3v').replace(/^bottom_vcc/, 'bottom_5v');
+                          }
+                          return (
+                            <div style={{
+                              position: 'absolute', bottom: 18, left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: '#111', color: '#fff',
+                              padding: '4px 8px', borderRadius: 4,
+                              fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                              pointerEvents: 'none', border: '1px solid #444',
+                              boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                            }}>
+                              {label}
+                            </div>
+                          );
+                        })()}
                     </div>
                   );
                 })}
@@ -643,6 +657,13 @@ function CanvasSceneLayerBase({
           </>
         );
       })()}
+      
+      {/* Dynamic Network Overlay (WiFi Icon & Panel) */}
+      <NetworkComponentOverlay 
+        components={components} 
+        isRunning={isRunning} 
+        updateComponentAttr={updateComponentAttr} 
+      />
     </div>
     </>
   );
