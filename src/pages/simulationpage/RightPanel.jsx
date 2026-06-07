@@ -390,17 +390,19 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
 
   React.useEffect(() => {
     const autoscroll = boardAutoscrolls[serialBoardFilter] ?? true;
-    if (autoscroll && serialOutputRef.current) {
+    const isPaused = boardPausedStates[serialBoardFilter] ?? false;
+    if (autoscroll && !isPaused && serialOutputRef.current) {
       serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
     }
-  }, [filteredSerialHistory, serialBoardFilter, boardAutoscrolls]);
+  }, [filteredSerialHistory, serialBoardFilter, boardAutoscrolls, boardPausedStates]);
 
   React.useEffect(() => {
     const autoscroll = boardAutoscrolls[serialBoardFilter2] ?? true;
-    if (autoscroll && serialOutputRef2.current) {
+    const isPaused = boardPausedStates[serialBoardFilter2] ?? false;
+    if (autoscroll && !isPaused && serialOutputRef2.current) {
       serialOutputRef2.current.scrollTop = serialOutputRef2.current.scrollHeight;
     }
-  }, [filteredSerialHistory2, serialBoardFilter2, boardAutoscrolls]);
+  }, [filteredSerialHistory2, serialBoardFilter2, boardAutoscrolls, boardPausedStates]);
 
   const boardColors = React.useMemo(() => getBoardColors(serialBoardOptions), [serialBoardOptions]);
 
@@ -1605,7 +1607,10 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                           onTogglePause={() => setBoardPausedStates(p => ({ ...p, [serialBoardFilter]: !(p[serialBoardFilter] ?? false) }))}
                           autoscroll={boardAutoscrolls[serialBoardFilter] ?? true}
                           onToggleAutoscroll={(val) => setBoardAutoscrolls(p => ({ ...p, [serialBoardFilter]: val }))}
-                          onClear={() => setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter))}
+                          onClear={() => {
+                            if (serialBoardFilter === 'all') clearSerialMonitor();
+                            else setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter));
+                          }}
                           onToggleSplit={() => setIsSerialSplit(!isSerialSplit)}
                           isSplit={isSerialSplit}
                           boardOptions={serialBoardOptions}
@@ -1678,7 +1683,10 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                             onTogglePause={() => setBoardPausedStates(p => ({ ...p, [serialBoardFilter2]: !(p[serialBoardFilter2] ?? false) }))}
                             autoscroll={boardAutoscrolls[serialBoardFilter2] ?? true}
                             onToggleAutoscroll={(val) => setBoardAutoscrolls(p => ({ ...p, [serialBoardFilter2]: val }))}
-                            onClear={() => setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter2))}
+                            onClear={() => {
+                              if (serialBoardFilter2 === 'all') clearSerialMonitor();
+                              else setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter2));
+                            }}
                             onToggleSplit={() => setIsSerialSplit(false)}
                             isSplit={true}
                             boardOptions={serialBoardOptions}
