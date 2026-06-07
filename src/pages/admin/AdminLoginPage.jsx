@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useGoogleLogin } from '@react-oauth/google'
 import { useAuth } from '../../context/AuthContext.jsx'
 // import { googleLogin } from '../../services/authService.js'
 
@@ -19,46 +18,12 @@ export default function AdminLoginPage() {
     }, [isAdminAuthenticated, adminRole, navigate])
 
 
-    const handleGoogleSuccess = useGoogleLogin({
-        onSuccess: async (tokenResponse) => {
-            setLoading(true)
-            setError('')
-            try {
-                const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                    headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
-                })
-                const googleUser = await res.json()
-
-                // Read allowed emails from env (comma-separated), fallback to empty list
-                const allowedEmails = (import.meta.env.VITE_ADMIN_EMAILS || '')
-                    .split(',')
-                    .map(e => e.trim())
-                    .filter(Boolean);
-
-                if (!allowedEmails.includes(googleUser.email)) {
-                    setError('Access denied. You are not authorized as an admin.')
-                    setLoading(false)
-                    return
-                }
-
-                // Real Backend Login
-                const { googleLogin } = await import('../../services/authService.js');
-                const { token, user } = await googleLogin(tokenResponse.access_token, 'admin', true);
-                login(token, user, true);
-                navigate('/admin/dashboard');
-
-            } catch (err) {
-                setError('Authentication failed. Please try again.')
-                console.error(err)
-            } finally {
-                setLoading(false)
-            }
-        },
-        onError: () => {
-            setError('Google sign-in was cancelled or failed.')
-            setLoading(false)
-        },
-    })
+    const handleGoogleRedirect = () => {
+        localStorage.setItem("lastUsedLogin", "google");
+        localStorage.setItem("authRedirectPath", "/admin/dashboard");
+        const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+        window.location.href = baseUrl.replace('/api', '') + '/auth/google?origin=' + encodeURIComponent(window.location.origin);
+    }
 
     return (
         <div className="auth-page">
@@ -73,7 +38,7 @@ export default function AdminLoginPage() {
 
                 <button
                     className={`google-btn ${loading ? 'loading' : ''}`}
-                    onClick={() => handleGoogleSuccess()}
+                    onClick={handleGoogleRedirect}
                     disabled={loading}
                 >
                     {loading ? (
