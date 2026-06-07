@@ -758,6 +758,11 @@ export class AVRRunner {
             const rails = new Map<string, number>();
             const visited = new Set<string>();
 
+            // Board digital/analog pins should remain drivable by external components,
+            // not locked to power rail voltage even if the breadboard power row is shared.
+            const boardPinNodes = new Set<string>();
+            [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(p => boardPinNodes.add(`${this.boardId}:${p}`));
+
             const normalizePin = (pinStr: string): string => {
                 const parts = pinStr.split(':');
                 if (parts.length >= 2) {
@@ -781,16 +786,23 @@ export class AVRRunner {
                 const node = normalizePin(rawNode);
                 if (visited.has(node)) return;
                 visited.add(node);
-                rails.set(node, v);
+                const isBoardPin = boardPinNodes.has(node);
+                // Don't add board digital/analog pins to the rail map —
+                // they should be driven by their connected external components, not locked by the power rail.
+                if (!isBoardPin) {
+                    rails.set(node, v);
+                }
 
-                // Traverse wires
-                for (const wire of this.currentWires) {
-                    const normFrom = normalizePin(wire.from);
-                    const normTo = normalizePin(wire.to);
-                    if (normFrom === node) {
-                        visit(wire.to, v);
-                    } else if (normTo === node) {
-                        visit(wire.from, v);
+                // Traverse wires — skip if this is a board digital/analog pin (boundary between power rail and signal pins)
+                if (!isBoardPin) {
+                    for (const wire of this.currentWires) {
+                        const normFrom = normalizePin(wire.from);
+                        const normTo = normalizePin(wire.to);
+                        if (normFrom === node) {
+                            visit(wire.to, v);
+                        } else if (normTo === node) {
+                            visit(wire.from, v);
+                        }
                     }
                 }
 
@@ -880,17 +892,30 @@ export class AVRRunner {
                     }
                 }
 
+                // When propagating from a board power rail, do NOT propagate back into board digital/analog pins.
+                // They should be driven by external components, not locked by the power rail.
+                const isPowerRailSrc = ['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
+                if (isPowerRailSrc && compId === this.boardId && rawNode !== `${this.boardId}:${arduinoPinStr}`) {
+                    return;
+                }
+
                 // If this is a passive propagation from a CPU pin, and we encounter a node that has a low-impedance
                 // connection to a board supply rail, do not allow passive propagation to overwrite its fixed reference voltage!
+                // Exception: when a component drives its own output (customCompId matches), it should override the rail.
+                // Exception 2: passive components (resistors, vias, breadboards, wires) must not be locked —
+                // they need to pass through voltages from active component outputs (e.g., MUX driving LOW through a resistor).
                 const isCpuPinProp = !['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
-                if (isCpuPinProp && lowImpRails.has(node)) {
-                    const railVoltage = lowImpRails.get(node)!;
-                    const inst = this.instances.get(compId);
-                    if (inst) {
-                        if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
-                        inst.setPinVoltage(compPin, railVoltage);
+                if (isCpuPinProp && lowImpRails.has(node) && compId !== customCompId) {
+                    const railInst = this.instances.get(compId);
+                    const isPassive = railInst && (railInst.type === 'openhw-breadboard' || railInst.type === 'openhw-breadboard-half' || railInst.type === 'openhw-breadboard-mini' || railInst.type === 'wokwi-breadboard' || railInst.type === 'wokwi-breadboard-half' || railInst.type === 'wokwi-breadboard-mini' || railInst.type === 'via' || railInst.type === 'openhw-via' || railInst.type === 'wokwi-via' || railInst.type === 'openhw-wire' || railInst.type === 'wokwi-wire' || railInst.type === 'openhw-resistor' || railInst.type === 'wokwi-resistor');
+                    if (!isPassive) {
+                        const railVoltage = lowImpRails.get(node)!;
+                        if (railInst) {
+                            if (!railInst.pins[compPin]) railInst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                            railInst.setPinVoltage(compPin, railVoltage);
+                        }
+                        return;
                     }
-                    return;
                 }
 
                 visitedNodes.add(node);
@@ -985,8 +1010,39 @@ export class AVRRunner {
                 return { isDriven: true, isHigh: true };
             };
 
-            // First, re-propagate all digital / analog board pins driven by the CPU or pullups
-            [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(pin => {
+            // First, re-propagate all digital / analog board pins driven by the CPU or pullups.
+            // Process INPUT/INPUT_PULLUP pins BEFORE OUTPUT pins so that strong OUTPUT signals
+            // can override the weak pull-up voltage when a CPU output pin and a pull-up share
+            // the same breadboard row (e.g. MUX:D1=0V from pin 3 must beat 5V from pin 5's pull-up).
+            const allBoardPins = [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS];
+            const inputPins = allBoardPins.filter(p => {
+                const state = getAvrPinModeState(p);
+                if (!state.isDriven) return false;
+                const num = parseInt(p, 10);
+                if (isNaN(num)) return false;
+                let port: AVRIOPort | null = null;
+                if (num >= 8 && num <= 13) port = this.portB;
+                else if (num >= 0 && num <= 7) port = this.portD;
+                else return false;
+                if (!port) return false;
+                const pinState = port.pinState(num);
+                return pinState !== PinState.High && pinState !== PinState.Low;
+            });
+            const outputPins = allBoardPins.filter(p => {
+                const state = getAvrPinModeState(p);
+                if (!state.isDriven) return false;
+                const num = parseInt(p, 10);
+                if (isNaN(num)) return false;
+                let port: AVRIOPort | null = null;
+                if (num >= 8 && num <= 13) port = this.portB;
+                else if (num >= 0 && num <= 7) port = this.portD;
+                else return false;
+                if (!port) return false;
+                const pinState = port.pinState(num);
+                return pinState === PinState.High || pinState === PinState.Low;
+            });
+            const analogPins = allBoardPins.filter(p => p.startsWith('A'));
+            [...inputPins, ...analogPins, ...outputPins].forEach(pin => {
                 const { isDriven, isHigh } = getAvrPinModeState(pin);
                 if (isDriven) {
                     this.pinStates[pin] = isHigh;
@@ -1023,12 +1079,41 @@ export class AVRRunner {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
-                } else if (inst.type.includes('logic-gate') || inst.type.includes('timer') || inst.type.includes('opamp')) {
+                } else if (inst.type.startsWith('logic-') || inst.type.includes('timer') || inst.type.includes('opamp')) {
+                    const allInsts = Array.from(this.instances.values());
+                    if (compId.includes('nd_gate')) {
+                        const gateWires = this.currentWires.filter((w: any) =>
+                            w.from?.startsWith(compId) || w.to?.startsWith(compId)
+                        );
+                        console.log(`[repropagate] Wires for ${compId}:`, JSON.stringify(gateWires));
+                    }
+                    const in1 = inst.getPinVoltage('IN1');
+                    const in2 = inst.getPinVoltage('IN2');
+                    const d0 = inst.getPinVoltage('D0');
+                    const d1 = inst.getPinVoltage('D1');
+                    const sel = inst.getPinVoltage('SEL');
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, allInsts);
+                    const outV = inst.pins['OUT']?.voltage ?? -1;
+                    if (compId.includes('nd_gate')) {
+                        console.log(`[repropagate] IN1=${in1} IN2=${in2} OUT=${outV} pins keys=${Object.keys(inst.pins).join(',')}`);
+                    }
                     Object.keys(inst.pins).forEach(pin => {
-                        if (pin.startsWith('OUT') || pin.startsWith('out') || pin === 'Q' || pin === 'Q#') {
+                        // Propagate all known output pins. The IC 74xx uses non-standard names
+                        // (p1-p14), so we check if the pin mode is OUTPUT or if update() changed it.
+                        const isOutput = pin.startsWith('OUT') || pin.startsWith('out') || pin === 'Q' || pin === 'Q#';
+                        if (isOutput || inst.type === 'logic-ic-74xx') {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
+                    // Log AFTER updateOopPin so PIND reflects the newly propagated value
+                    if (compId.includes('mux')) {
+                        const pindVal = this.cpu ? this.cpu.data[0x29] : -1;
+                        const p2 = (pindVal >> 2) & 1;
+                        const p3 = (pindVal >> 3) & 1;
+                        const p4 = (pindVal >> 4) & 1;
+                        const p5 = (pindVal >> 5) & 1;
+                        console.log(`[repropagate MUX] D0=${d0} D1=${d1} SEL=${sel} OUT=${outV} d0High=${inst.getPinVoltage('D0')>=2.5} d1High=${inst.getPinVoltage('D1')>=2.5} selHigh=${inst.getPinVoltage('SEL')>=2.5} stateOut=${inst.state?.outputHigh} PIND2=${p2} PIND3=${p3} PIND4=${p4} PIND5=${p5} pins=${Object.keys(inst.pins).join(',')}`);
+                    }
                 }
             });
 
@@ -1206,6 +1291,10 @@ export class AVRRunner {
             if (shouldSolvePhysics) {
                 if (typeof this.repropagateAllVoltages === 'function') {
                     this.repropagateAllVoltages();
+                }
+                if (this.cpu) {
+                    const pind = this.cpu.data[0x29];
+                    console.log(`[PhysicsSolve] PIND2=${(pind>>2)&1} PIND3=${(pind>>3)&1} PIND4=${(pind>>4)&1} PIND5=${(pind>>5)&1} DDRD=${this.cpu.data[0x2A]} PORTD=${this.cpu.data[0x2B]}`);
                 }
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;

@@ -6,18 +6,33 @@ let generateCodeForComponent: any;
 
 let isWasmInitialized = false;
 
-// Board type patterns used to identify the MCU board in the components list
+// Board type patterns used to identify the MCU board via component ID or type
 const BOARD_TYPE_PATTERNS = [
   'arduino-uno', 'arduino-nano', 'arduino-mega',
   'rp2040', 'pico', 'raspberry-pi-pico',
   'esp32', 'esp8266',
 ];
 
+// Map types to ID patterns for components whose ID doesn't match (e.g. ID "uno1" type "wokwi-arduino-uno")
+const BOARD_TYPE_TO_PATTERN: Record<string, string> = {};
+for (const p of BOARD_TYPE_PATTERNS) {
+  BOARD_TYPE_TO_PATTERN[p.replace(/[-_]/g, '')] = p;
+}
+
 /**
  * BFS through the wire graph from `compId:pinId` to find the connected board pin.
  * Handles passive components (resistors, breadboards) in the path.
  */
-function resolveBoardPin(compId: string, pinId: string, wires: any[]): string | null {
+function resolveBoardPin(compId: string, pinId: string, wires: any[], components?: any[]): string | null {
+  // Pre-compute board IDs by type if components are available
+  const boardIdsByType = new Set<string>();
+  if (components) {
+    for (const c of components) {
+      const type = (c.type || '').toLowerCase().replace(/[-_]/g, '');
+      if (BOARD_TYPE_TO_PATTERN[type]) boardIdsByType.add(c.id);
+    }
+  }
+
   // Build adjacency from both wire directions
   const adj = new Map<string, string[]>();
   for (const w of wires) {
@@ -42,7 +57,9 @@ function resolveBoardPin(compId: string, pinId: string, wires: any[]): string | 
     const nodePin  = node.slice(colon + 1);
 
     // Board pins are GND, 5V, 3V3, or numeric / A-prefixed pins
-    if (nodeComp !== compId && BOARD_TYPE_PATTERNS.some(p => nodeComp.toLowerCase().includes(p))) {
+    const isBoardByPattern = nodeComp !== compId && BOARD_TYPE_PATTERNS.some(p => nodeComp.toLowerCase().includes(p));
+    const isBoardByType = boardIdsByType.has(nodeComp);
+    if ((nodeComp !== compId && isBoardByPattern) || isBoardByType) {
       const upper = nodePin.toUpperCase();
       if (upper === 'GND' || upper === '5V' || upper === '3V3' || upper === 'VIN') continue;
       return nodePin; // e.g. "13", "A0", "9"
@@ -90,8 +107,31 @@ function resolvePinPlaceholders(snippet: any, compId: string, wires: any[], comp
   for (const key of ['globals', 'setup', 'loop']) {
     if (!snippet[key]) continue;
     snippet[key] = snippet[key].replace(pinPattern, (match: string, pinId: string) => {
-      const resolved = resolveBoardPin(compId, pinId, wires);
+      const resolved = resolveBoardPin(compId, pinId, wires, components);
       return resolved !== null ? resolved : match;
+    });
+  }
+
+  return snippet;
+}
+
+/**
+ * Replace remaining `${ATTR_NAME}` placeholders with values from manifest.attrs.
+ * Runs after pin resolution so already-resolved pins are left alone.
+ * Uses a permissive regex matching any alphanumeric/underscore name so camelCase
+ * attribute names like `icType` are also caught.
+ */
+function resolveAttributePlaceholders(snippet: any, manifest: any): any {
+  const attrs = manifest?.attrs || {};
+  const attrPattern = /\$\{(\w+)\}/g;
+
+  for (const key of ['globals', 'setup', 'loop']) {
+    if (!snippet[key]) continue;
+    snippet[key] = snippet[key].replace(attrPattern, (match: string, attrName: string) => {
+      if (attrs[attrName] !== undefined) {
+        return String(attrs[attrName]);
+      }
+      return match;
     });
   }
 
@@ -157,9 +197,15 @@ self.onmessage = async (e) => {
             }
           });
           resolvePinPlaceholders(plan.code_snippet, newComp.id, wires || [], components || []);
+          console.log('[AutowiringWorker] Before attr resolve:', plan.code_snippet?.setup);
+          resolveAttributePlaceholders(plan.code_snippet, manifest);
+          console.log('[AutowiringWorker] After attr resolve:', plan.code_snippet?.setup);
+          console.log('[AutowiringWorker] manifest.attrs:', JSON.stringify(manifest?.attrs));
         }
 
         console.log('[AutowiringWorker] Generated Plan:', plan);
+        console.log('[AutowiringWorker] Resolved setup:', plan.code_snippet?.setup);
+        console.log('[AutowiringWorker] Resolved loop:', plan.code_snippet?.loop);
         self.postMessage({ type: 'AUTONOMOUS_RESULT', payload: plan });
         break;
       }
@@ -180,6 +226,10 @@ self.onmessage = async (e) => {
             }
           });
           resolvePinPlaceholders(snippet, compId, wires || [], components || []);
+          console.log('[AutowiringWorker] Before attr resolve:', snippet?.setup);
+          resolveAttributePlaceholders(snippet, manifest);
+          console.log('[AutowiringWorker] After attr resolve:', snippet?.setup);
+          console.log('[AutowiringWorker] manifest.attrs:', JSON.stringify(manifest?.attrs));
         }
         
         let plan: any = { code_snippet: snippet };
