@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+.env
+dist
+.DS_Store
+
+# Test artifacts
+playwright-report/
+test-results/
+html-report/
+
+# IDE
+.vscode/
+.idea/

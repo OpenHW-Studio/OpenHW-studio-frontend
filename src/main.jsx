@@ -1,0 +1,20 @@
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+import './index.css'
+import { configureMonaco } from './utils/monacoConfig'
+
+configureMonaco();
+
+const googleClientId =
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+  import.meta.env.VITE_GOOGLE_CLIENTID ||
+  '439925019035-5qicn1624vopg9emh08dfnpu69b9qfc2.apps.googleusercontent.com'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+
+// Legacy cleanup handled in index.html to avoid races.

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.13)
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+project(pico_probe C CXX ASM)
+pico_sdk_init()
+add_executable(firmware main.c)
+target_link_libraries(firmware pico_stdlib)
+pico_add_extra_outputs(firmware)
