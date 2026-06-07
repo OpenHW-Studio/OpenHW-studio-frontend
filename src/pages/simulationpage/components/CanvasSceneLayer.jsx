@@ -525,7 +525,7 @@ function CanvasSceneLayerBase({
                   );
                 })()}
 
-                <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
+                <div style={{ pointerEvents: isRunning ? 'auto' : 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
                   {COMPONENT_REGISTRY[comp.type] ? (
                     <ReactiveComponentUI
                       comp={comp}

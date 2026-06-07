@@ -1,3 +1,4 @@
+// cache bust 1
 // Telemetry serialization worker
 // This worker receives raw state objects, performs heavy JSON.stringify and deep cloning
 // and then posts the serialized strings back to the main simulation worker.
