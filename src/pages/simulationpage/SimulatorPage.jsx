@@ -6450,11 +6450,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           setProjectFiles((prev) => {
             let targetFile = prev.find(
-              (f) =>
-                f.boardId === targetBoardId ||
-                f.id === filename ||
-                f.name === filename,
+              (f) => f.id === filename || f.name === filename
             );
+            if (!targetFile) {
+              targetFile = prev.find(
+                (f) => f.boardId === targetBoardId && f.name !== 'library.txt' && /\.(ino|py|c|cpp)$/i.test(f.name)
+              );
+            }
             if (!targetFile) {
               const codeFiles = prev.filter(
                 (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
@@ -6509,15 +6511,13 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           setOpenCodeTabs((prevTabs) => {
             // Re-find the target file ID since state update is asynchronous
-            const targetFile = projectFiles.find(
-              (f) =>
-                f.boardId === targetBoardId ||
-                f.id === filename ||
-                f.name === filename,
-            ) ||
-              projectFiles.filter(
-                (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
-              )[0] || { id: filename };
+            let targetFile = projectFiles.find((f) => f.id === filename || f.name === filename);
+            if (!targetFile) {
+              targetFile = projectFiles.find((f) => f.boardId === targetBoardId && f.name !== 'library.txt' && /\.(ino|py|c|cpp)$/i.test(f.name));
+            }
+            if (!targetFile) {
+              targetFile = projectFiles.filter((f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name))[0] || { id: filename };
+            }
             if (!prevTabs.includes(targetFile.id)) {
               return [...prevTabs, targetFile.id];
             }
@@ -6528,15 +6528,13 @@ export function SimulatorPage({ gamificationMode = false }) {
           setTimeout(() => {
             const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
             setActiveCodeFileId((prev) => {
-              const file = (projectFiles || []).find(
-                (f) =>
-                  f.boardId === targetBoardId ||
-                  f.id === filename ||
-                  f.name === filename,
-              ) ||
-                (projectFiles || []).filter(
-                  (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
-                )[0] || { id: filename };
+              let file = (projectFiles || []).find((f) => f.id === filename || f.name === filename);
+              if (!file) {
+                file = (projectFiles || []).find((f) => f.boardId === targetBoardId && f.name !== 'library.txt' && /\.(ino|py|c|cpp)$/i.test(f.name));
+              }
+              if (!file) {
+                file = (projectFiles || []).filter((f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name))[0] || { id: filename };
+              }
               return file.id;
             });
             setCodeTab("code");
