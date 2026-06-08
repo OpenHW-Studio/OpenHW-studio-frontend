@@ -1142,6 +1142,22 @@ export class AVRRunner {
                 updateOopPin(pin, 3.3);
             });
 
+            // Re-propagate NPN transistor outputs AFTER power rails so transistor switching
+            // overrides the passive voltage drop through the load (e.g. 5V→LED→Collector path)
+            this.instances.forEach((inst, compId) => {
+                if (compId === this.boardId) return;
+                if (inst.type === 'openhw-npn-transistor') {
+                    const allInsts = Array.from(this.instances.values());
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, allInsts);
+                    if (inst.pins['C']) {
+                        updateOopPin('C', inst.pins['C'].voltage, compId);
+                    }
+                    if (inst.pins['E']) {
+                        updateOopPin('E', inst.pins['E'].voltage, compId);
+                    }
+                }
+            });
+
             // Re-propagate standalone power supply rails LAST so they dominate external power nets
             this.instances.forEach((inst, compId) => {
                 if (compId === this.boardId) return;
