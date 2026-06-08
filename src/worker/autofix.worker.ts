@@ -1,3 +1,4 @@
+// cache bust 1
 if (typeof window === 'undefined') {
     (self as any).window = self;
     (self as any).document = {

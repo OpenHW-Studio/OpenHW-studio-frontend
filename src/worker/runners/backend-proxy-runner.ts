@@ -59,6 +59,10 @@ export class BackendProxyRunner implements BoardRunner {
     private lastStateEmitTime: number = 0;
     private lastPinToggleTime = new Map<string, number>();
 
+    public downloadPcap() {
+        this.onStateUpdate({ type: 'backend_download_pcap', boardId: this.boardId });
+    }
+
     constructor(
         hexData: string,
         componentsDef: any[],
