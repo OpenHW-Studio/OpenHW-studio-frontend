@@ -1,3 +1,4 @@
+// cache bust 1
 import { AVRRunner, LOGIC_REGISTRY, COMPONENT_PINS } from './execute';
 import { BaseComponent } from '@openhw/emulator/src/components/BaseComponent.ts';
 

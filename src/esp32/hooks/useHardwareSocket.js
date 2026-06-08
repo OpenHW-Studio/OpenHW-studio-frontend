@@ -63,7 +63,7 @@ const MAX_RECONNECT_ATTEMPTS = 1;
  * Falls back to ws://localhost:5001 in development.
  */
 function getWsBaseUrl() {
-    const base = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
+    const base = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
     return base.replace(/^https/, 'wss').replace(/^http/, 'ws');
 }
 
