@@ -2,11 +2,10 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { googleLogin, loginUser } from "../../services/authService.js";
-import { useGoogleLogin } from "@react-oauth/google";
 
 const BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5001/api" : "/api");
+  (import.meta.env.DEV ? "http://localhost:5000/api" : "/api");
 
 export default function SigninPage() {
   const navigate = useNavigate();
@@ -61,35 +60,16 @@ export default function SigninPage() {
     }
   };
 
-  const handleGoogleSuccess = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
-      if (!selectedRole) {
-        setError("Please select your role first.");
-        return;
-      }
-
-      setLoading(true);
-      setError("");
-      try {
-        const data = await googleLogin(
-          tokenResponse.access_token,
-          selectedRole,
-        );
-        login(data.token, data.user);
-        const handleRedirect = () => {
-          if (selectedRole === "teacher") navigate("/teacher/dashboard");
-          else if (selectedRole === "student") navigate("/student/dashboard");
-          else navigate("/user/dashboard");
-        };
-        handleRedirect();
-      } catch (err) {
-        setError(err.message || "Google authentication failed.");
-      } finally {
-        setLoading(false);
-      }
-    },
-    onError: () => setError("Google sign-in was cancelled."),
-  });
+  const handleGoogleRedirect = () => {
+    if (!selectedRole) {
+      setError("Please select your role first.");
+      return;
+    }
+    localStorage.setItem("lastUsedLogin", "google");
+    localStorage.setItem("authRedirectPath", `/${selectedRole}/dashboard`);
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+    window.location.href = baseUrl.replace('/api', '') + '/auth/google/signup?role=' + selectedRole + '&origin=' + encodeURIComponent(window.location.origin);
+  };
 
   return (
     <div className="auth-screen auth-screen--signin">
@@ -208,11 +188,7 @@ export default function SigninPage() {
 
           <button
             type="button"
-            onClick={() =>
-              selectedRole
-                ? handleGoogleSuccess()
-                : setError("Please select your role first.")
-            }
+            onClick={handleGoogleRedirect}
             className={`auth-alt-button${selectedRole ? "" : " is-disabled"}`}
             disabled={!selectedRole || loading}
           >

@@ -1,3 +1,4 @@
+// cache bust 1
 if (typeof window === 'undefined') {
     (self as any).window = self;
     (self as any).document = {
@@ -963,7 +964,11 @@ let activeTelemetryMode = 'detail';
 let activeTelemetryWatchedParamsMap: Record<string, string[]> = {};
 let activeDeepSiliconEnabled = false;
 
-self.onmessage = async (e) => {
+// ── Early Hardware Message Queue ─────────────────────────────────────────────
+let isInitializingRunners = false;
+let earlyHardwareMessages: any[] = [];
+
+const coreMessageHandler = async (e: MessageEvent) => {
     const data = e.data;
 
     // ── Render Worker port handshake ──────────────────────────────────────────
@@ -974,6 +979,25 @@ self.onmessage = async (e) => {
             renderWorkerPort = port;
             renderWorkerPort.start();
             console.log('[SimWorker] renderWorkerPort successfully registered and started');
+        }
+        return;
+    }
+
+    // ── Smart Prefetching ─────────────────────────────────────────────────────
+    if (data.type === 'PRELOAD_RUNNERS') {
+        const boards = (data.components || []).filter((c: any) => isProgrammableBoardType(c.type));
+        for (const board of boards) {
+            const type = String(board.type || '');
+            if (/(stm32)/i.test(type)) {
+                import('./runners/backend-proxy-runner.ts').catch(() => {});
+            } else if (/(esp32)/i.test(type)) {
+                import('./runners/backend-proxy-runner.ts').catch(() => {});
+                import('./runners/esp32-runner.ts').catch(() => {});
+            } else if (/pico|rp2040/i.test(type)) {
+                import('./runners/rp2040-runner.ts').catch(() => {});
+            } else {
+                import('./runners/avr-runner.ts').catch(() => {});
+            }
         }
         return;
     }
@@ -1009,6 +1033,18 @@ self.onmessage = async (e) => {
                 }
             };
             console.log('[SimWorker] netWorkerPort successfully registered and started');
+        }
+        return;
+    }
+
+    if (data.type === 'DOWNLOAD_PCAP') {
+        const boardId = data.boardId;
+        const targetRunner = boardRunners.get(boardId) || runner;
+        if (targetRunner && typeof targetRunner.downloadPcap === 'function') {
+            console.log(`[SimWorker] Triggering PCAP download for ${boardId}`);
+            targetRunner.downloadPcap();
+        } else {
+            console.warn(`[SimWorker] PCAP download requested for ${boardId} but runner doesn't support it or isn't active`);
         }
         return;
     }
@@ -1133,6 +1169,7 @@ self.onmessage = async (e) => {
                         speed: initialSpeed,
                         // Pass pyScript metadata so the worker can inject over UART0 after boot.
                         pyScript: typeof pyScript === 'string' ? pyScript : '',
+                        sessionId: data.networkRoomCode || '',
                         onByteTransmit: ({ boardId, value, char, source }) => {
                             appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                             postMessage({ type: 'serial', data: char, boardId, value, source });
@@ -1208,6 +1245,13 @@ self.onmessage = async (e) => {
         for (const boardComp of programmableBoards) {
             const fwHex = boardHexMap?.[boardComp.id] || boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
             const executableRanges = resolveRp2040ExecutableRanges(boardComp, boardExecutableRangesMap);
+            
+            // Inject the sessionId into the board's attrs so the component logic (like PicoWLogic) can access it
+            if (!boardComp.attrs) {
+                boardComp.attrs = {};
+            }
+            boardComp.attrs.sessionId = data.networkRoomCode || '';
+
             if (typeof fwHex !== 'string' || !fwHex.trim()) {
                 console.warn(`[Worker] Skipping board ${boardComp.id}: no board-specific firmware available.`);
                 continue;
@@ -1258,6 +1302,7 @@ self.onmessage = async (e) => {
                     debugIntervalMs: /(rp2040|pico)/i.test(String(boardComp.type || '')) && rp2040DebugEnabled ? 1200 : 0,
                     speed: initialSpeed,
                     pyScript: typeof pyScript === 'string' ? pyScript : '',
+                    sessionId: data.networkRoomCode || '',
                     onByteTransmit: ({ boardId, value, char, source }) => {
                         appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                         postMessage({ type: 'serial', data: char, boardId, value, source });
@@ -1703,3 +1748,48 @@ self.onmessage = async (e) => {
     }
 };
 
+self.onmessage = async (e) => {
+    const data = e.data;
+
+    if (data.type === 'START') {
+        isInitializingRunners = true;
+        try {
+            await coreMessageHandler(e);
+        } finally {
+            isInitializingRunners = false;
+            if (earlyHardwareMessages.length > 0) {
+                console.log(`[SimWorker] Replaying ${earlyHardwareMessages.length} early hardware messages queued during initialization.`);
+                const queue = [...earlyHardwareMessages];
+                earlyHardwareMessages = [];
+                for (const msg of queue) {
+                    await coreMessageHandler({ data: msg } as MessageEvent);
+                }
+            }
+        }
+        return;
+    }
+
+    if (isInitializingRunners && (
+        String(data.type || '').startsWith('esp32:') ||
+        data.type === 'GPIO_SYNC' ||
+        data.type === 'SERIAL_INPUT' ||
+        data.type === 'GDB_INPUT' ||
+        data.type === 'TONE' ||
+        data.type === 'DAC_SYNC' ||
+        data.type === 'SERIAL_SET_BAUD' ||
+        data.type === 'RESET' ||
+        data.type === 'GPIO_ROUTING' ||
+        data.type === 'GPIO_ROUTING_CLEAR' ||
+        data.type === 'LEDC_SYNC' ||
+        data.type === 'LEDC_ATTACH' ||
+        data.type === 'PCNT_INIT' ||
+        data.type === 'TWAI_TX' ||
+        data.type === 'RMT_PULSE' ||
+        data.type === 'SLEEP_START'
+    )) {
+        earlyHardwareMessages.push(data);
+        return;
+    }
+
+    await coreMessageHandler(e);
+};

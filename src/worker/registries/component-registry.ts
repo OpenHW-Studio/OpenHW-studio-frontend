@@ -4,7 +4,9 @@ import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/log
 import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
 import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
 import { PicoLogic } from '../pico-logic';
+import { PicoWLogic } from '@openhw/emulator/src/components/openhw-pico-w/logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
+import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { PushbuttonLogic } from '@openhw/emulator/src/components/openhw-pushbutton/logic';
 import { PowerSupplyLogic } from '@openhw/emulator/src/components/openhw-power-supply/logic';
 import { BatteryLogic } from '@openhw/emulator/src/components/openhw-battery/logic';
@@ -17,6 +19,13 @@ import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-pote
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic';
 import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic';
 import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic';
+import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic';
+import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic';
+import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic';
+import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic';
+import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic';
+import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic';
+import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic';
 import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic';
@@ -55,12 +64,11 @@ import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/log
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
+import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
-import {
-    NotGateLogic, TwoInputGateLogic, AndGateLogic, NandGateLogic, NorGateLogic, XorGateLogic
-} from '../protocol-handlers/gates';
+
 import { KeypadLogic } from '../protocol-handlers/keypad';
 import { SDCardLogic } from '../protocol-handlers/sd-card';
 import { SimulationMonitorLogic } from '../protocol-handlers/simulation-monitor';
@@ -86,8 +94,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'esp32-cam': Esp32CamLogic,
     'wokwi-raspberry-pi-pico': PicoLogic,
     'openhw-raspberry-pi-pico': PicoLogic,
-    'wokwi-raspberry-pi-pico-w': PicoLogic,
-    'openhw-raspberry-pi-pico-w': PicoLogic,
+    'wokwi-raspberry-pi-pico-w': PicoWLogic,
+    'openhw-raspberry-pi-pico-w': PicoWLogic,
     'wokwi-resistor': ResistorLogic,
     'openhw-resistor': ResistorLogic,
     'wokwi-slide-switch': SlideSwitchLogic,
@@ -127,8 +135,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     max30102: MAX30102Logic,
     'wokwi-max7219': MAX7219Logic,
     'openhw-max7219': MAX7219Logic,
-    'wokwi-ldr-module': BaseComponent,
-    'openhw-ldr-module': BaseComponent,
+    'wokwi-ldr-module': LdrModuleLogic,
+    'openhw-ldr-module': LdrModuleLogic,
     'wokwi-7segment': BaseComponent,
     'openhw-7segment': Wokwi7SegmentLogic,
     'wokwi-ili9341': ILI9341Logic,
@@ -142,6 +150,13 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-analog-joystick': JoystickLogic,
     'openhw-rotary-encoder': RotaryEncoderLogic,
     'wokwi-rotary-encoder': RotaryEncoderLogic,
+    'logic-and-gate': AndGateLogic,
+    'logic-or-gate': OrGateLogic,
+    'logic-not-gate': NotGateLogic,
+    'logic-nand-gate': NandGateLogic,
+    'logic-nor-gate': NorGateLogic,
+    'logic-xor-gate': XorGateLogic,
+    'logic-xnor-gate': XnorGateLogic,
     'logic-ic-74xx': LogicIC74xxLogic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
@@ -220,8 +235,9 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-attiny85': BaseComponent,
     'openhw-attiny85': BaseComponent,
     'openhw-pico': PicoLogic,
-    'openhw-pico-w': PicoLogic,
-    'openhw-photoresistor': BaseComponent,
+    'openhw-pico-w': PicoWLogic,
+    'wokwi-photoresistor': PhotoresistorLogic,
+    'openhw-photoresistor': PhotoresistorLogic,
     'openhw-ntc-thermistor': BaseComponent,
     'openhw-ntc-temperature-sensor': BaseComponent,
     'openhw-charger': BaseComponent,
