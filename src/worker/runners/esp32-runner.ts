@@ -13,7 +13,514 @@ import {
 } from '../registries/component-registry.ts';
 import { ESP32, SimulationClock } from './esp32-engine.js';
 
+
+// Fully reverse-engineered Wokwi AP & Gateway Logic
+export enum WifiState {
+    Disconnected = 0,
+    Connecting = 1,
+    Connected = 2,
+    AccessPointNotFound = 3,
+    GatewayError = 4
+}
+
+export class WifiStatus {
+    public state: WifiState = WifiState.Disconnected;
+    public errorMessage: string = '';
+    public rxFrames = 0;
+    public rxBytes = 0;
+    public txFrames = 0;
+    public txBytes = 0;
+    public probeRequestCount = 0;
+    public privateGateway = false;
+
+    constructor(private boardId: string, private onStateUpdate: (msg: any) => void) {}
+
+    reset() {
+        this.state = WifiState.Disconnected;
+        this.errorMessage = '';
+        this.rxFrames = 0;
+        this.rxBytes = 0;
+        this.txFrames = 0;
+        this.txBytes = 0;
+        this.probeRequestCount = 0;
+        this.emitStats();
+    }
+
+    onFrame(type: number, subtype: number, length: number) {
+        if (this.state === WifiState.Disconnected) this.state = WifiState.Connecting;
+        if (type === 0 && subtype === 4) { // Probe Request
+            this.probeRequestCount++;
+        } else if (type === 0 && subtype === 5) { // Probe Response
+            this.probeRequestCount = 0;
+        } else if (type === 2) { // Data
+            this.txFrames++;
+            this.txBytes += length;
+            this.emitStats();
+        }
+    }
+
+    onConnected() {
+        this.state = WifiState.Connected;
+        this.errorMessage = '';
+    }
+    
+    public emitStats() {
+        this.onStateUpdate({
+            type: 'state',
+            boardId: this.boardId,
+            wifi: {
+                status: {
+                    state: this.state,
+                    errorMessage: this.errorMessage,
+                    txBytes: this.txBytes,
+                    rxBytes: this.rxBytes,
+                    privateGateway: this.privateGateway,
+                    gatewayType: this.privateGateway ? 'vscode' : 'public'
+                }
+            }
+        });
+    }
+}
+
+export class WokwiInternetAP {
+    public bssid: Uint8Array;
+    public ssid: string;
+    public password?: string;
+    public channel: number;
+    private seq = 0;
+    private clock: any;
+    public status: WifiStatus;
+    private socket: WebSocket | null = null;
+    private packetBuffer: Uint8Array[] = [];
+    private pcapBuffer: { timeUs: number, data: Uint8Array }[] = [];
+    private onRxCb: ((event: { data: Uint8Array }) => void) | null = null;
+    public connectedClients = 0;
+    private gatewayUrl: string;
+    private boardId: string;
+    private onStateUpdate: (msg: any) => void;
+
+    constructor(clock: any, gatewayUrl: string, boardId: string, options: any, onStateUpdate: (msg: any) => void) {
+        this.clock = clock;
+        this.onStateUpdate = onStateUpdate;
+        this.status = new WifiStatus(boardId, onStateUpdate);
+        
+        let url = gatewayUrl;
+        if (options.sessionId) {
+            url += `?sessionId=${options.sessionId}`;
+        }
+        this.gatewayUrl = url;
+        
+        this.ssid = options.ssid || 'Wokwi-GUEST';
+        this.password = options.password;
+        this.channel = options.channel || 6;
+        this.status.privateGateway = options.privateGateway === 'true' || options.privateGateway === true;
+        
+        if (options.bssid) {
+            const parts = options.bssid.split(':');
+            this.bssid = new Uint8Array(6);
+            for (let i = 0; i < 6; i++) this.bssid[i] = parseInt(parts[i], 16) || 0;
+        } else {
+            this.bssid = new Uint8Array([0x42, 0x13, 0x37, 0x55, 0xaa, 0x01]);
+        }
+
+        // Start broadcasting Beacons every 102.4ms
+        setInterval(() => {
+            if (this.onRxCb) {
+                this.onRxCb({ data: this.buildBeacon() });
+            }
+        }, 102);
+    }
+
+    private buildBeacon(): Uint8Array {
+        const header = new Uint8Array(24);
+        header[0] = 0x80; // Beacon frame subtype
+        header.set([0xff, 0xff, 0xff, 0xff, 0xff, 0xff], 4); // Destination (Broadcast)
+        header.set(this.bssid, 10); // Source
+        header.set(this.bssid, 16); // BSSID
+        const seq = this.nextSeq();
+        header[22] = seq & 0xff;
+        header[23] = (seq >> 8) & 0xff;
+
+        const fixed = new Uint8Array(12);
+        
+        // Bytes 0-7: Timestamp (64-bit microseconds)
+        const nowUs = Math.floor(performance.now() * 1000);
+        let temp = nowUs;
+        for (let i = 0; i < 8; i++) {
+            fixed[i] = temp & 0xff;
+            temp = Math.floor(temp / 256);
+        }
+
+        fixed[8] = 0x64; fixed[9] = 0x00; // Beacon Interval (100 TU)
+        fixed[10] = 0x01; // Capabilities (ESS=1)
+        fixed[11] = 0x04;
+
+        const ssidBytes = new TextEncoder().encode(this.ssid);
+        const ssidIE = new Uint8Array(2 + ssidBytes.length);
+        ssidIE[0] = 0; 
+        ssidIE[1] = ssidBytes.length;
+        ssidIE.set(ssidBytes, 2);
+
+        const ratesIE = new Uint8Array([1, 8, 0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24]);
+        const dsIE = new Uint8Array([3, 1, this.channel]);
+        const timIE = new Uint8Array([5, 4, 0, 1, 0, 0]);
+
+        const out = new Uint8Array(24 + 12 + ssidIE.length + ratesIE.length + dsIE.length + timIE.length);
+        out.set(header, 0);
+        out.set(fixed, 24);
+        out.set(ssidIE, 36);
+        out.set(ratesIE, 36 + ssidIE.length);
+        out.set(dsIE, 36 + ssidIE.length + ratesIE.length);
+        out.set(timIE, 36 + ssidIE.length + ratesIE.length + dsIE.length);
+
+        return out;
+    }
+
+    private nextSeq(): number {
+        this.seq = (this.seq + 1) % 4096;
+        return this.seq << 4;
+    }
+
+    public connectGateway() {
+        if (this.socket) return;
+        this.socket = new WebSocket(this.gatewayUrl);
+        this.socket.binaryType = 'arraybuffer';
+        this.socket.onopen = () => {
+            console.log('[WokwiInternetAP] Gateway Connected');
+            while (this.packetBuffer.length > 0) {
+                this.socket!.send(this.packetBuffer.shift()!);
+            }
+        };
+        this.socket.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) {
+                this.status.onConnected();
+                const eth = new Uint8Array(event.data);
+                this.pcapBuffer.push({ timeUs: performance.now() * 1000, data: eth });
+                this.status.rxFrames++;
+                this.status.rxBytes += eth.length;
+                this.status.emitStats();
+                this.onEthernetRx(eth);
+            } else if (typeof event.data === 'string') {
+                console.log(event.data);
+            }
+        };
+        this.socket.onerror = () => {
+            this.status.state = WifiState.GatewayError;
+            this.status.errorMessage = 'Gateway connection failed';
+        };
+    }
+
+    public onEthernetRx(eth: Uint8Array) {
+        if (eth.length < 14 || !this.onRxCb) return;
+        const da = eth.slice(0, 6);
+        const sa = eth.slice(6, 12);
+        const etherType = eth.slice(12, 14);
+        const payload = eth.slice(14);
+
+        const wifi = new Uint8Array(32 + payload.length);
+        wifi[0] = 0x08; // Data
+        wifi[1] = 0x02; // FromDS=1, ToDS=0
+        wifi.set(da, 4);
+        wifi.set(this.bssid, 10);
+        wifi.set(sa, 16);
+        
+        const seq = this.nextSeq();
+        wifi[22] = seq & 0xff;
+        wifi[23] = (seq >> 8) & 0xff;
+        
+        // LLC SNAP header
+        wifi[24] = 0xaa; wifi[25] = 0xaa; wifi[26] = 0x03;
+        wifi[27] = 0x00; wifi[28] = 0x00; wifi[29] = 0x00;
+        wifi[30] = etherType[0]; wifi[31] = etherType[1];
+        
+        wifi.set(payload, 32);
+        this.onRxCb({ data: wifi });
+    }
+
+    private sendEthernet(eth: Uint8Array) {
+        this.pcapBuffer.push({ timeUs: performance.now() * 1000, data: eth });
+        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            this.socket.send(eth);
+        } else {
+            this.packetBuffer.push(eth);
+        }
+    }
+
+    private buildAck(targetMac: Uint8Array): Uint8Array {
+        const header = new Uint8Array(10);
+        header[0] = 0xd4; // ACK
+        header[1] = 0x00;
+        header.set(targetMac, 4);
+        return header;
+    }
+
+    public handleWifiFrame(frame: Uint8Array, channel?: number) {
+        if (channel && channel !== this.channel) return; // Ignore frames on wrong channel
+        if (frame.length < 24) return;
+        const fc1 = frame[0];
+        const type = (fc1 >> 2) & 3;
+        const subtype = (fc1 >> 4) & 15;
+
+        const da = frame.slice(4, 10);
+        const sa = frame.slice(10, 16);
+
+        this.status.onFrame(type, subtype, frame.length);
+
+        let isBroadcast = true;
+        for (let i = 0; i < 6; i++) {
+            if (da[i] !== 0xff) isBroadcast = false;
+        }
+
+        // Send hardware-level ACK immediately
+        if (!isBroadcast && this.onRxCb) {
+            this.onRxCb({ data: this.buildAck(sa) });
+        }
+
+        if (type === 0) { // Management
+            const scheduleResponse = (response: Uint8Array) => {
+                if (this.onRxCb) this.onRxCb({ data: response });
+            };
+
+            if (subtype === 4) { // Probe Request
+                scheduleResponse(this.buildProbeResponse(sa));
+            } else if (subtype === 11) { // Auth Request
+                scheduleResponse(this.buildAuthResponse(sa));
+            } else if (subtype === 0) { // Assoc Request
+                this.connectedClients++;
+                this.connectGateway(); // Wokwi triggers gateway connection on Assoc!
+                scheduleResponse(this.buildAssocResponse(sa));
+            }
+        } else if (type === 2) { // Data or QoS Data
+            const isQos = (subtype === 8);
+            const macHeaderLen = isQos ? 26 : 24;
+            
+            if (frame.length !== 368) {
+                // Ignore length debug
+            }
+
+            if (frame.length > (macHeaderLen + 8) && frame[macHeaderLen] === 0xaa && frame[macHeaderLen + 1] === 0xaa) {
+                const payload = frame.slice(macHeaderLen + 8);
+                const ethLen = Math.max(60, 14 + payload.length); // Pad to minimum 60 bytes
+                const eth = new Uint8Array(ethLen);
+                
+                // Ethernet Header: DA (6), SA (6), EtherType (2)
+                // In 802.11 Data frame to AP: Address 1 is BSSID (AP), Address 2 is SA (Station), Address 3 is DA (Destination)
+                // Wait! For sending to the gateway, we need the original DA.
+                // In ToDS=1, FromDS=0: Addr1=BSSID, Addr2=SA, Addr3=DA.
+                const realDa = frame.slice(16, 22); // Address 3
+                const realSa = frame.slice(10, 16); // Address 2
+                
+                eth.set(realDa, 0);
+                eth.set(realSa, 6);
+                
+                const ethTypeHigh = frame[macHeaderLen + 6];
+                const ethTypeLow = frame[macHeaderLen + 7];
+                eth[12] = ethTypeHigh;
+                eth[13] = ethTypeLow;
+                
+                // Copy payload
+                eth.set(payload, 14);
+                
+                // --- HOTFIX: ESP32 LwIP sends ARP with Sender MAC 00:00:00:00:00:00 ---
+                // If it's an ARP packet (0x0806), patch the Sender MAC in the ARP payload.
+                if (ethTypeHigh === 0x08 && ethTypeLow === 0x06 && ethLen >= 42) {
+                    // In ARP: HardwareType(2), ProtocolType(2), HwLen(1), ProtoLen(1), Opcode(2), SenderMAC(6)
+                    // Sender MAC is at offset 8 within the ARP payload, which is offset 14+8 = 22 in Ethernet frame.
+                    eth.set(realSa, 22);
+                }
+                
+                this.sendEthernet(eth);
+            }
+        }
+    }
+
+    private buildProbeResponse(clientMac: Uint8Array): Uint8Array {
+        const header = new Uint8Array(24);
+        header[0] = 0x50; // Probe Response
+        header.set(clientMac, 4);
+        header.set(this.bssid, 10);
+        header.set(this.bssid, 16);
+        const seq = this.nextSeq();
+        header[22] = seq & 0xff;
+        header[23] = (seq >> 8) & 0xff;
+
+        const fixed = new Uint8Array(12);
+        fixed[8] = 0x64; fixed[9] = 0x00; // Beacon Interval
+        fixed[10] = 0x01; // Capabilities
+        fixed[11] = 0x04;
+
+        const ssidBytes = new TextEncoder().encode(this.ssid);
+        const ssidIE = new Uint8Array(2 + ssidBytes.length);
+        ssidIE[0] = 0; 
+        ssidIE[1] = ssidBytes.length;
+        ssidIE.set(ssidBytes, 2);
+
+        const ratesIE = new Uint8Array([1, 8, 0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24]);
+        const dsIE = new Uint8Array([3, 1, this.channel]);
+
+        const out = new Uint8Array(header.length + fixed.length + ssidIE.length + ratesIE.length + dsIE.length);
+        let offset = 0;
+        out.set(header, offset); offset += header.length;
+        out.set(fixed, offset); offset += fixed.length;
+        out.set(ssidIE, offset); offset += ssidIE.length;
+        out.set(ratesIE, offset); offset += ratesIE.length;
+        out.set(dsIE, offset);
+        return out;
+    }
+
+    private buildAuthResponse(clientMac: Uint8Array): Uint8Array {
+        const header = new Uint8Array(24);
+        header[0] = 0xb0; // Auth
+        header.set(clientMac, 4);
+        header.set(this.bssid, 10);
+        header.set(this.bssid, 16);
+        const seq = this.nextSeq();
+        header[22] = seq & 0xff;
+        header[23] = (seq >> 8) & 0xff;
+
+        const fixed = new Uint8Array([0, 0, 2, 0, 0, 0]); // Success
+        const out = new Uint8Array(header.length + fixed.length);
+        out.set(header, 0);
+        out.set(fixed, header.length);
+        return out;
+    }
+
+    private buildAssocResponse(clientMac: Uint8Array): Uint8Array {
+        const header = new Uint8Array(24);
+        header[0] = 0x10; // Assoc Response
+        header.set(clientMac, 4);
+        header.set(this.bssid, 10);
+        header.set(this.bssid, 16);
+        const seq = this.nextSeq();
+        header[22] = seq & 0xff;
+        header[23] = (seq >> 8) & 0xff;
+
+        const fixed = new Uint8Array(4);
+        fixed[0] = 0x11; fixed[1] = 0x04;
+        fixed[2] = 0; fixed[3] = 0;
+        const aid = new Uint8Array([1, 192]);
+
+        const ratesIE = new Uint8Array([1, 8, 0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24]);
+
+        const out = new Uint8Array(header.length + fixed.length + aid.length + ratesIE.length);
+        out.set(header, 0);
+        out.set(fixed, header.length);
+        out.set(aid, header.length + fixed.length);
+        out.set(ratesIE, header.length + fixed.length + aid.length);
+        return out;
+    }
+
+    public setRxCb(cb: (event: { data: Uint8Array }) => void) {
+        this.onRxCb = cb;
+    }
+
+    public downloadPcap() {
+        let totalLen = 24; // PCAP Global Header
+        for (const pkt of this.pcapBuffer) {
+            totalLen += 16 + pkt.data.length;
+        }
+
+        const buffer = new ArrayBuffer(totalLen);
+        const view = new DataView(buffer);
+        const u8 = new Uint8Array(buffer);
+        
+        // Global Header (Big-Endian format)
+        view.setUint32(0, 0xa1b2c3d4, false); // Magic 
+        view.setUint16(4, 2, false); // Major
+        view.setUint16(6, 4, false); // Minor
+        view.setInt32(8, 0, false); // Thiszone
+        view.setUint32(12, 0, false); // Sigfigs
+        view.setUint32(16, 65535, false); // Snaplen
+        view.setUint32(20, 1, false); // Network (Ethernet)
+
+        let offset = 24;
+        for (const pkt of this.pcapBuffer) {
+            const sec = Math.floor(pkt.timeUs / 1000000);
+            const usec = Math.floor(pkt.timeUs % 1000000);
+            view.setUint32(offset, sec, false);
+            view.setUint32(offset + 4, usec, false);
+            view.setUint32(offset + 8, pkt.data.length, false);
+            view.setUint32(offset + 12, pkt.data.length, false);
+            u8.set(pkt.data, offset + 16);
+            offset += 16 + pkt.data.length;
+        }
+
+        this.onStateUpdate({
+            type: 'wifi_pcap',
+            boardId: this.boardId,
+            data: buffer
+        });
+    }
+
+    public disconnect() {
+        if (this.socket) {
+            this.socket.close();
+            this.socket = null;
+        }
+    }
+}
+
+class WokwiWifiMedium {
+    public ap: WokwiInternetAP;
+    constructor(ap: WokwiInternetAP) {
+        this.ap = ap;
+    }
+    public transmit(event: { channel: number; data: Uint8Array }) {
+        this.ap.handleWifiFrame(event.data, event.channel);
+    }
+    public listen(cb: (event: { data: Uint8Array }) => void) {
+        this.ap.setRxCb(cb);
+    }
+}
+
+export class NativeWiFiBridge {
+    public medium: WokwiWifiMedium;
+    public ap: WokwiInternetAP;
+    public clock: any;
+    public boardId: string;
+
+    constructor(pcapMode: string, clock: any, boardId: string, options: any, onStateUpdate: (msg: any) => void) {
+        this.clock = clock;
+        this.boardId = boardId;
+        const isPrivate = options.privateGateway === 'true' || options.privateGateway === true;
+        
+        // Always connect to the /api/network-gateway endpoint.
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
+        let publicUrl = '';
+        if (isLocalhost) {
+            // Local dev -> explicitly point to server unless overridden
+            const defaultServer = 'wss://openhw-studio.fossee.in';
+            publicUrl = (import.meta.env?.VITE_PUBLIC_GATEWAY_URL || defaultServer) + '/api/network-gateway';
+        } else {
+            // Production -> use same host
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            publicUrl = `${protocol}//${window.location.host}/api/network-gateway`;
+        }
+
+        // Use 127.0.0.1 for private gateway because Chrome explicitly allows mixed-content WSS->WS for 127.0.0.1 but NOT localhost
+        const url = isPrivate ? 'ws://127.0.0.1:5099/api/network-gateway' : publicUrl;
+        
+        this.ap = new WokwiInternetAP(clock, url, boardId, {
+            ...options,
+            privateGateway: isPrivate
+        }, onStateUpdate);
+        this.medium = new WokwiWifiMedium(this.ap);
+    }
+
+    public disconnect() {
+        this.ap.disconnect();
+    }
+    
+    downloadPcap() {
+        if (this.ap) {
+            this.ap.downloadPcap();
+        }
+    }
+}
+
 export class ESP32Runner implements BoardRunner {
+    wifiManager: NativeWiFiBridge | null = null;
     cpu: ESP32 | null = null;
     clock: SimulationClock | null = null;
     running: boolean = false;
@@ -58,6 +565,9 @@ export class ESP32Runner implements BoardRunner {
         this.cpu = null;
         this.clock = null;
         this.running = false;
+        if (this.wifiManager) {
+            try { this.wifiManager.disconnect(); } catch (e) {}
+        }
         this.lastTime = performance.now();
         this.pinsChanged = true;
         this.circuitDirty = true;
@@ -97,8 +607,61 @@ export class ESP32Runner implements BoardRunner {
         // (like eFuse cmdDone after 634,400 cycles) NEVER fire, causing the BootROM to
         // spin forever waiting for eFuse operations to complete.
         // Let ESP32 create its own internal clock, then grab the reference from it.
-        this.cpu = new ESP32({ flashSizeMB: 4, flash: binaryBytes });
+                this.cpu = new ESP32({ flashSizeMB: 4, flash: binaryBytes });
         this.clock = this.cpu.clock; // Use the clock that is correctly linked to this CPU
+        
+        try {
+            const boardComp = componentsDef.find(c => c.id === this.boardId);
+            const wifiAttrs = boardComp?.attrs || {};
+            this.wifiManager = new NativeWiFiBridge(
+                '', 
+                this.clock, 
+                this.boardId, 
+                {
+                    ssid: wifiAttrs.ssid,
+                    password: wifiAttrs.password,
+                    bssid: wifiAttrs.bssid,
+                    channel: wifiAttrs.channel ? parseInt(wifiAttrs.channel) : 6,
+                    privateGateway: wifiAttrs.privateGateway,
+                    sessionId: options.sessionId
+                },
+                this.onStateUpdate.bind(this)
+            );
+            if (this.cpu.wifi) {
+                let macSeed = Math.floor(Math.random() * 255); // Randomize to prevent collisions across tabs
+                for (let i = 0; i < this.boardId.length; i++) macSeed += this.boardId.charCodeAt(i);
+                macSeed += Math.floor(Math.random() * 10000);
+                const mac = new Uint8Array([0x24, 0x0a, 0xc4, (macSeed >> 16) & 0xff, (macSeed >> 8) & 0xff, macSeed & 0xff]);
+                this.cpu.wifi.setMacAddress(mac);
+                
+                // Program MAC address into eFuse BLK0 (EFUSE_BLK0_RDATA1_REG and EFUSE_BLK0_RDATA2_REG)
+                try {
+                    const macReg1 = ((mac[2] << 24) | (mac[3] << 16) | (mac[4] << 8) | mac[5]) >>> 0;
+                    const macReg2 = ((mac[0] << 8) | mac[1]) >>> 0;
+                    this.cpu.cores[0].writeUint32(0x3ff5a004, macReg1);
+                    this.cpu.cores[0].writeUint32(0x3ff5a008, macReg2);
+                } catch(e) {}
+                
+                this.cpu.wifi.onTX = (frame: Uint8Array) => {
+                    const channel = this.cpu.wifi.channel || 6;
+                    if (frame.length >= 16) {
+                        frame.set(mac, 10);
+                    }
+                    this.wifiManager!.medium.transmit({ channel, data: frame });
+                };
+                this.wifiManager.medium.listen((event: any) => {
+                    if (event.data) {
+                        try {
+                            this.cpu.wifi.sendFrame(event.data, 0);
+                        } catch (e: any) {
+                            console.error(`[ESP32-WIFI-RX] CRITICAL ERROR IN sendFrame for length=${event.data.length}:`, e);
+                        }
+                    }
+                });
+            }
+        } catch (wifiErr) {
+            console.error('[ESP32Runner] Failed to initialize WiFi:', wifiErr);
+        } // Use the clock that is correctly linked to this CPU
         
         // Also manually set flash to be absolutely sure the binary is loaded
         if (this.cpu.flash) {
@@ -226,17 +789,28 @@ export class ESP32Runner implements BoardRunner {
                     // Route I2C payload to simulated components (like OLED/LCD)
                     this.instances.forEach(inst => {
                         const anyInst = inst as any;
-                        if (typeof anyInst.onI2CStart === 'function') anyInst.onI2CStart(addr, false);
+                        let updated = false;
+                        if (typeof anyInst.onI2CStart === 'function') {
+                            anyInst.onI2CStart(addr, false);
+                            updated = true;
+                        }
                         if (typeof anyInst.onI2CByte === 'function') {
                             for (let i = 0; i < hex.length; i += 2) {
                                 const byte = parseInt(hex.substring(i, i + 2), 16);
                                 if (!isNaN(byte)) anyInst.onI2CByte(addr, byte);
                             }
+                            updated = true;
                         }
                         if (typeof anyInst.onI2CStop === 'function') anyInst.onI2CStop();
+                        
+                        if (updated) {
+                            inst.stateChanged = true;
+                        }
                     });
 
-                    this.onStateUpdate({ type: 'protocol:i2c', boardId: this.boardId, address: addr, hex, direction: 'write' });
+                    // Truncate the hex string for the frontend logger to prevent freezing the UI with massive OLED display buffers
+                    const displayHex = hex.length > 64 ? hex.substring(0, 64) + '...(truncated)' : hex;
+                    this.onStateUpdate({ type: 'protocol:i2c', boardId: this.boardId, address: addr, hex: displayHex, direction: 'write' });
                     return;
                 }
                 
@@ -279,7 +853,10 @@ export class ESP32Runner implements BoardRunner {
                 // Line-buffer for console logging
                 if (char === '\n' || char === '\r') {
                     if (uartBuffer.length > 0) {
-                        console.log(`[ESP32 UART0] ${uartBuffer}`);
+                        // Suppress massive internal protocol frames from the browser console
+                        if (!uartBuffer.startsWith('>I2C') && !uartBuffer.startsWith('>SPI') && !uartBuffer.startsWith('>ADC') && !uartBuffer.startsWith('>DAC') && !uartBuffer.startsWith('>SIM')) {
+                            console.log(`[ESP32 UART0] ${uartBuffer}`);
+                        }
                         uartBuffer = '';
                     }
                 } else {
@@ -840,7 +1417,7 @@ export class ESP32Runner implements BoardRunner {
                 if (core0) {
                     pcVal = core0.PC ?? core0.pc ?? (typeof core0.getPC === 'function' ? core0.getPC() : 0);
                 }
-                console.log(`[ESP32Runner] PC: 0x${pcVal.toString(16)} | Cycles: ${this.cpu.cycles}`);
+
             }
 
             // Execute instructions strictly 1-for-1 to guarantee PWM/SPI/I2C peripheral timing.
@@ -1020,6 +1597,7 @@ export class ESP32Runner implements BoardRunner {
         );
         for (const dev of spiDevices) {
             for (const byte of bytes) (dev as any).onSPIByte(byte);
+            dev.stateChanged = true;
         }
     }
 
@@ -1219,10 +1797,7 @@ export class ESP32Runner implements BoardRunner {
         };
     }
 
-    getSimulatedTimeMs() {
-        if (!this.cpu) return 0;
-        return Math.floor((this.cpu.cycles / 125_000_000) * 1000);
-    }
+
 
     private shouldEmitComponentState(componentId: string, state: any, nowMs: number): boolean {
         const policy = getComponentStateSyncPolicy(state);
@@ -1285,6 +1860,12 @@ export class ESP32Runner implements BoardRunner {
         }
 
         msg.components = compStates;
+        if (this.wifiManager) {
+            msg.wifi = {
+                txBytes: this.wifiManager.txBytes || 0,
+                rxBytes: this.wifiManager.rxBytes || 0
+            };
+        }
 
         this.statusIntervalEmitCount++;
         msg._emitSeq = this.statusIntervalEmitCount;
@@ -1298,5 +1879,11 @@ export class ESP32Runner implements BoardRunner {
         this.running = false;
         this.activeListeners.forEach(unsubscribe => unsubscribe());
         this.activeListeners = [];
+    }
+    
+    downloadPcap() {
+        if (this.wifiManager) {
+            this.wifiManager.downloadPcap();
+        }
     }
 }

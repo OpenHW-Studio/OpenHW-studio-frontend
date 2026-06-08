@@ -1,6 +1,7 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
 import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
+import { NetworkComponentOverlay } from './NetworkComponentOverlay';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
   const liveState = useSyncExternalStore(
@@ -524,7 +525,7 @@ function CanvasSceneLayerBase({
                   );
                 })()}
 
-                <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
+                <div style={{ pointerEvents: isRunning ? 'auto' : 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
                   {COMPONENT_REGISTRY[comp.type] ? (
                     <ReactiveComponentUI
                       comp={comp}
@@ -656,6 +657,13 @@ function CanvasSceneLayerBase({
           </>
         );
       })()}
+      
+      {/* Dynamic Network Overlay (WiFi Icon & Panel) */}
+      <NetworkComponentOverlay 
+        components={components} 
+        isRunning={isRunning} 
+        updateComponentAttr={updateComponentAttr} 
+      />
     </div>
     </>
   );

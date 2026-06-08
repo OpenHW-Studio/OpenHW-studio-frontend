@@ -1028,9 +1028,23 @@ export class RP2040Runner implements BoardRunner {
                     });
                 };
                 this.instances.set(cDef.id, inst);
+                console.log(`[RP2040Runner] Instantiated component: ${cDef.id} of type ${cDef.type}`);
+            } else {
+                console.log(`[RP2040Runner] LogicClass not found for type: ${cDef.type}`);
             }
         });
-        this.initWirelessStub(boardCompDef);
+
+        // Attach PIO hooks for components like PicoWLogic
+        let hookAttached = false;
+        for (const inst of this.instances.values()) {
+            if (typeof (inst as any).attachPioHooks === 'function') {
+                (inst as any).attachPioHooks(this.cpu);
+                hookAttached = true;
+            }
+        }
+        if (!hookAttached) {
+            console.log(`[RP2040Runner] No components with attachPioHooks were found!`);
+        }
 
         this.attachGPIOListeners();
         this.attachUART();
@@ -1070,7 +1084,6 @@ export class RP2040Runner implements BoardRunner {
             console.log(`[RP2040 START] board=${this.boardId} gdb=${this.gdbStatus} spi0=[${spi0Ids.join(', ')}] spi1=[${spi1Ids.join(', ')}]`);
         }
         this.emitDebugSnapshot('start', this.lastTime, true);
-        this.emitWirelessStubStatus('start', true);
         this.runLoop();
     }
 
@@ -1084,82 +1097,7 @@ export class RP2040Runner implements BoardRunner {
         return true;
     }
 
-    private initWirelessStub(boardCompDef: any) {
-        const boardType = String(boardCompDef?.type || '').toLowerCase();
-        if (!(boardType.includes('pico-w') || boardType.includes('picow'))) return;
-
-        const modeRaw = String(boardCompDef?.attrs?.wirelessMode || 'compat-stub').toLowerCase();
-        const mode: 'off' | 'compat-stub' = modeRaw === 'off' ? 'off' : 'compat-stub';
-        const ssid = String(boardCompDef?.attrs?.wirelessSsid || 'OpenHW-GUEST').trim() || 'OpenHW-GUEST';
-        const ip = String(boardCompDef?.attrs?.wirelessIp || '192.168.4.2').trim() || '192.168.4.2';
-        const now = performance.now();
-
-        this.picoWirelessStub = {
-            mode,
-            ssid,
-            ip,
-            status: mode === 'off' ? 'off' : 'booting',
-            startedAtMs: now,
-            lastEmitMs: 0,
-        };
-        this.applyWirelessStubStateToBoard();
-    }
-
-    private applyWirelessStubStateToBoard() {
-        if (!this.picoWirelessStub) return;
-        const boardInst = this.instances.get(this.boardId);
-        if (!boardInst) return;
-
-        const { mode, ssid, ip, status } = this.picoWirelessStub;
-        boardInst.setState({
-            wirelessMode: mode,
-            wirelessStatus: status,
-            wirelessConnected: mode !== 'off' && status === 'connected',
-            wirelessSsid: mode === 'off' ? '' : ssid,
-            wirelessIp: mode === 'off' ? '' : ip,
-            wirelessNote: mode === 'off'
-                ? 'Wireless compatibility stub disabled.'
-                : 'Compatibility stub only. Pico W radio/network emulation is not implemented.',
-        });
-    }
-
-    private emitWirelessStubStatus(reason: 'start' | 'tick' | 'reset' = 'tick', force = false) {
-        if (!this.picoWirelessStub) return;
-
-        const now = performance.now();
-        if (!force && (now - this.picoWirelessStub.lastEmitMs) < RP2040Runner.WIRELESS_STUB_EMIT_INTERVAL_MS) {
-            return;
-        }
-
-        if (this.picoWirelessStub.mode === 'off') {
-            this.picoWirelessStub.status = 'off';
-        } else {
-            const elapsed = now - this.picoWirelessStub.startedAtMs;
-            this.picoWirelessStub.status = elapsed >= 1200 ? 'connected' : 'booting';
-        }
-
-        this.applyWirelessStubStateToBoard();
-
-        const connected = this.picoWirelessStub.mode !== 'off' && this.picoWirelessStub.status === 'connected';
-        this.onStateUpdate({
-            type: 'debug',
-            boardId: this.boardId,
-            category: 'rp2040-wireless-stub',
-            reason,
-            wireless: {
-                mode: this.picoWirelessStub.mode,
-                status: this.picoWirelessStub.status,
-                connected,
-                ssid: this.picoWirelessStub.mode === 'off' ? '' : this.picoWirelessStub.ssid,
-                ip: this.picoWirelessStub.mode === 'off' ? '' : this.picoWirelessStub.ip,
-                note: this.picoWirelessStub.mode === 'off'
-                    ? 'Wireless compatibility stub disabled.'
-                    : 'Compatibility stub only. Pico W radio/network emulation is not implemented.',
-            },
-        });
-
-        this.picoWirelessStub.lastEmitMs = now;
-    }
+    // Wireless stub logic removed since PicoWLogic handles actual Wi-Fi emulation.
 
     private emitGdbStatus(reason: 'connecting' | 'connected' | 'closed' | 'error' | 'stopped', detail = '') {
         this.onStateUpdate({
@@ -2867,6 +2805,93 @@ export class RP2040Runner implements BoardRunner {
                     visit(`${compId}:1`);
                 }
             }
+        } else if (inst.type === 'openhw-potentiometer' || inst.type === 'wokwi-potentiometer') {
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === '2') {
+                const gndV = inst.getPinVoltage('1') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`);
+            } else if (pinId === '1') {
+                const vccV = inst.getPinVoltage('2') || 3.3;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`);
+            }
+        } else if (inst.type === 'openhw-slide-potentiometer') {
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`);
+            } else if (pinId === 'GND') {
+                const vccV = inst.getPinVoltage('VCC') || 3.3;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`);
+            }
+        } else if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 
+                0;
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.getPinVoltage('ECHO') || 0;
+                inst.setPinVoltage('ECHO', echoV);
+                visit(`${compId}:ECHO`, echoV);
+            } else if (pinId === 'GND') {
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.getPinVoltage('ECHO') || 0;
+                inst.setPinVoltage('ECHO', echoV);
+                visit(`${compId}:ECHO`, echoV);
+            }
+        } else if (inst.type === 'openhw-ks2e-m-dc5') {
+            const energised = inst.state?.energised;
+            if (pinId === 'COIL1') {
+                const coilV = Math.min(voltage, 3.3);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL2', nextV);
+                visit(`${compId}:COIL2`);
+            } else if (pinId === 'COIL2') {
+                const coilV = Math.min(voltage, 3.3);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL1', nextV);
+                visit(`${compId}:COIL1`);
+            } else if (energised) {
+                if (pinId === 'P1') {
+                    inst.setPinVoltage('NO1', voltage);
+                    visit(`${compId}:NO1`);
+                } else if (pinId === 'NO1') {
+                    inst.setPinVoltage('P1', voltage);
+                    visit(`${compId}:P1`);
+                } else if (pinId === 'P2') {
+                    inst.setPinVoltage('NO2', voltage);
+                    visit(`${compId}:NO2`);
+                } else if (pinId === 'NO2') {
+                    inst.setPinVoltage('P2', voltage);
+                    visit(`${compId}:P2`);
+                }
+            } else {
+                if (pinId === 'P1') {
+                    inst.setPinVoltage('NC1', voltage);
+                    visit(`${compId}:NC1`);
+                } else if (pinId === 'NC1') {
+                    inst.setPinVoltage('P1', voltage);
+                    visit(`${compId}:P1`);
+                } else if (pinId === 'P2') {
+                    inst.setPinVoltage('NC2', voltage);
+                    visit(`${compId}:NC2`);
+                } else if (pinId === 'NC2') {
+                    inst.setPinVoltage('P2', voltage);
+                    visit(`${compId}:P2`);
+                }
+            }
         }
     }
 
@@ -3106,7 +3131,21 @@ export class RP2040Runner implements BoardRunner {
         this.instances.forEach((inst, compId) => {
             if (compId === this.boardId) return;
 
-            if (inst.type.includes('a4988') || inst.type.includes('drv8825')) {
+            if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.pins['ECHO']?.voltage ?? 0;
+                if (inst.pins['ECHO']) {
+                    seedFrom(`${compId}:ECHO`, echoV);
+                }
+            } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
+                const sdaV = (inst as any).sdaOutputVoltage !== undefined
+                    ? (inst as any).sdaOutputVoltage
+                    : inst.pins['SDA']?.voltage ?? 5.0;
+                if (inst.pins['SDA']) {
+                    seedFrom(`${compId}:SDA`, sdaV);
+                }
+            } else if (inst.type.includes('a4988') || inst.type.includes('drv8825')) {
                 // Bipolar stepper driver coil outputs
                 ['1A', '1B', '2A', '2B'].forEach(pin => {
                     if (inst.pins[pin] != null) {
