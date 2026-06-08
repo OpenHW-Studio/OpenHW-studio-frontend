@@ -186,6 +186,7 @@ export class BackendProxyRunner implements BoardRunner {
 
                 // 2. Custom backendDataReceived dashboard state
                 if (!boardInst.state) boardInst.state = {};
+
                 if (!boardInst.state.backendDataReceived) {
                     boardInst.state.backendDataReceived = {
                         digital: { totalToggles: 0, lastActivePin: 'none', lastActiveValue: 0 },
@@ -274,6 +275,7 @@ export class BackendProxyRunner implements BoardRunner {
                 }
             }
         }
+        this.updatePhysicsInternal();
     }
     
     public syncSerial(char: string) {
@@ -676,6 +678,22 @@ export class BackendProxyRunner implements BoardRunner {
                 (boardInst as any).setPinVoltage?.(compPinId, voltage);
                 // Directly propagate from the board pin to all connected endpoints in the net list
                 this.visitNode(`${this.boardId}:${compPinId}`, voltage);
+            }
+        }
+
+        // Propagate Power and generic Output Pins
+        for (const inst of this.instances.values()) {
+            for (const pinId of Object.keys((inst as any).pins || {})) {
+                const pin = (inst as any).pins[pinId];
+                const upper = pinId.toUpperCase();
+                const isPowerOut = upper === '3V3' || upper === 'VCC' || upper === '5V' || upper === 'VIN' || upper.startsWith('3V3.') || upper.startsWith('5V.');
+                
+                if ((pin && pin.mode === 'OUTPUT') || isPowerOut) {
+                    const voltage = pin?.voltage || (isPowerOut && (upper.includes('5V') || upper === 'VIN') ? 5.0 : isPowerOut ? 3.3 : 0);
+                    if (voltage > 0) {
+                        this.visitNode(`${inst.id}:${pinId}`, voltage);
+                    }
+                }
             }
         }
 
