@@ -26,7 +26,7 @@ const AUDIT_STAGES = [
   { id: 'FINALIZING', label: 'Finalizing' }
 ];
 
-export default function StudentGradingPanel({ submissionPngUrl, referenceKeyBase64, onComplete }) {
+export default function StudentGradingPanel({ submissionPngUrl, referenceKeyBase64, onComplete, showScore = true }) {
   const [status, setStatus] = useState('idle'); // idle, running, finished, error
   const [currentStageIdx, setCurrentStageIdx] = useState(-1);
   const [logs, setLogs] = useState([]);
@@ -296,7 +296,7 @@ export default function StudentGradingPanel({ submissionPngUrl, referenceKeyBase
         </div>
       )}
 
-      {status === 'finished' && result && (
+      {status === 'finished' && result && showScore && (
         <div className="student-grading-results">
           <div className="grading-score-card">
             <div className="grading-score-card__circle">
@@ -363,6 +363,16 @@ export default function StudentGradingPanel({ submissionPngUrl, referenceKeyBase
               </ul>
             </div>
           )}
+        </div>
+      )}
+      {status === 'finished' && !showScore && (
+        <div className="student-grading-results">
+          <div className="grading-score-card">
+            <div className="grading-score-card__copy">
+              <h4>Submission Complete</h4>
+              <p>Your solution has been submitted successfully and queued for evaluation.</p>
+            </div>
+          </div>
         </div>
       )}
     </section>

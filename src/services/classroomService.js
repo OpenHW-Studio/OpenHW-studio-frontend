@@ -309,3 +309,16 @@ export const deleteClassComment = async (classId, commentId) => {
 
   return parseResponse(response, 'Failed to delete comment')
 }
+
+export const saveGradeForSubmission = async (classId, assignmentId, gradePayload) => {
+  const response = await fetch(
+    `${BASE_URL}/classroom/${classId}/assignments/${assignmentId}/submission/grade`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(gradePayload)
+    }
+  )
+
+  return parseResponse(response, 'Failed to save grade')
+}
