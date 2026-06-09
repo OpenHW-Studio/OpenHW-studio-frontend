@@ -8,6 +8,7 @@ import {
   getClassroomById,
   getClassroomNotices,
   getClassroomStudents,
+  saveGradeForSubmission,
   submitAssignment
 } from '../../services/classroomService.js'
 import { formatDateTime, getAvatarLetters } from '../../components/common/test.js'
@@ -350,6 +351,22 @@ export default function StudentClassDetailPage() {
       }))
     }
   }
+
+  const handleSaveGrade = async (gradingResult) => {
+    if (!activeAssignmentId) return;
+    try {
+      const score = typeof gradingResult?.score === 'number' ? gradingResult.score : 0;
+      const feedback = gradingResult?.feedback?.join ? gradingResult.feedback.join('\n') : '';
+      await saveGradeForSubmission(classId, activeAssignmentId, {
+        score: Math.round(score),
+        feedback,
+        gradingReport: gradingResult,
+      });
+      console.log('[Dashboard] Grade saved successfully for', activeAssignmentId);
+    } catch (err) {
+      console.error('[Dashboard] Failed to save grade:', err);
+    }
+  };
 
   const handleOpenTemplate = (assignment) => {
     const templateShareId = getAssignmentTemplateShareId(assignment)
@@ -697,6 +714,7 @@ export default function StudentClassDetailPage() {
           onRemoveFile={handleRemoveSubmissionFile}
           onSubmit={() => handleSubmitAssignment(activeAssignmentId)}
           onPreviewFile={setPreviewFile}
+          onSaveGrade={handleSaveGrade}
           isClosed={isAssignmentClosed(assignments.find((assignment) => assignment._id === activeAssignmentId))}
         />
       ) : null}

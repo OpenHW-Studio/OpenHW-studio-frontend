@@ -19,6 +19,7 @@ export default function StudentAssignmentModal({
   onRemoveFile,
   onSubmit,
   onPreviewFile,
+  onSaveGrade,
   isClosed,
 }) {
   const navigate = useNavigate();
@@ -100,6 +101,12 @@ export default function StudentAssignmentModal({
               <StudentGradingPanel 
                 submissionPngUrl={latestPngUrl}
                 referenceKeyBase64={assignment.autogradingKey}
+                showScore={false}
+                onComplete={(result) => {
+                  if (onSaveGrade) {
+                    onSaveGrade(result);
+                  }
+                }}
               />
             </div>
 
