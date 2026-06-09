@@ -354,6 +354,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       "openhw-rgb-led": "rgb-led",
       "wokwi-ntc-temperature-sensor": "dht11",
       "openhw-ntc-temperature-sensor": "dht11",
+      "wokwi-dht22": "dht22",
+      "openhw-dht22": "dht22",
       "wokwi-hc-sr04": "ultrasonic",
       "openhw-hc-sr04": "ultrasonic",
       "wokwi-servo": "servo",
