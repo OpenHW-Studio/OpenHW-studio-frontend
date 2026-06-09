@@ -1,7 +1,7 @@
 import React from 'react';
 import AdminCard from './AdminCard';
 
-const StatCard = ({ label, value, icon, color }) => {
+const StatCard = ({ label, value, icon, color = 'text-blue-500' }) => {
     return (
         <AdminCard className="min-h-[200px] justify-between group relative overflow-hidden">
             {/* Background Glow */}

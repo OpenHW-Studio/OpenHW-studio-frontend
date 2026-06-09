@@ -674,6 +674,134 @@ export class AVRRunner {
                 if (bridge[0] === `${compId}:${pinId}`) visit(bridge[1], voltage);
                 else if (bridge[1] === `${compId}:${pinId}`) visit(bridge[0], voltage);
             }
+        } else if (inst.type === 'openhw-analog-joystick' || inst.type === 'wokwi-analog-joystick') {
+            // Joystick is two internal potentiometers (VCC→VRX, VCC→VRY) plus a button (SW→GND).
+            // normalizePin maps VCC→5V, so we must accept both names.
+            const isVccPin = pinId === 'VCC' || pinId === '5V';
+            const isGndPin = pinId === 'GND';
+            const xVal = inst.state?.x ?? 0.5;
+            const yVal = inst.state?.y ?? 0.5;
+            const gndV = inst.getPinVoltage('GND') || 0;
+            if (isVccPin) {
+                const vrxV = gndV + xVal * (voltage - gndV);
+                const vryV = gndV + yVal * (voltage - gndV);
+                inst.setPinVoltage('VRX', vrxV);
+                visit(`${compId}:VRX`, vrxV);
+                inst.setPinVoltage('VRY', vryV);
+                visit(`${compId}:VRY`, vryV);
+            } else if (isGndPin) {
+                // Get VCC voltage from whichever pin name is registered
+                const vccV = inst.getPinVoltage('VCC') || inst.getPinVoltage('5V') || 5.0;
+                const vrxV = voltage + xVal * (vccV - voltage);
+                const vryV = voltage + yVal * (vccV - voltage);
+                inst.setPinVoltage('VRX', vrxV);
+                visit(`${compId}:VRX`, vrxV);
+                inst.setPinVoltage('VRY', vryV);
+                visit(`${compId}:VRY`, vryV);
+            }
+            // SW button: connects SW to GND when pressed
+            if (inst.state?.pressed) {
+                if (pinId === 'SW') {
+                    inst.setPinVoltage('GND', voltage);
+                    visit(`${compId}:GND`, voltage);
+                } else if (isGndPin) {
+                    inst.setPinVoltage('SW', voltage);
+                    visit(`${compId}:SW`, voltage);
+                }
+            }
+        } else if (inst.type === 'openhw-potentiometer' || inst.type === 'wokwi-potentiometer') {
+            // Rotary potentiometer: voltage divider between pin 2 (VCC) and pin 1 (GND)
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === '2') {
+                const gndV = inst.getPinVoltage('1') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            } else if (pinId === '1') {
+                const vccV = inst.getPinVoltage('2') || 5.0;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            }
+        } else if (inst.type === 'openhw-slide-potentiometer') {
+            // Slide potentiometer: voltage divider between VCC and GND
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            } else if (pinId === 'GND') {
+                const vccV = inst.getPinVoltage('VCC') || 5.0;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            }
+        } else if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+            // HC-SR04: VCC is power input, GND is ground, TRIG is input (ignore), ECHO is output
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 0;
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.getPinVoltage('ECHO') || 0;
+                inst.setPinVoltage('ECHO', echoV);
+                visit(`${compId}:ECHO`, echoV);
+            } else if (pinId === 'GND') {
+                const echoV = (inst as any).echoOutputVoltage !== undefined
+                    ? (inst as any).echoOutputVoltage
+                    : inst.getPinVoltage('ECHO') || 0;
+                inst.setPinVoltage('ECHO', echoV);
+                visit(`${compId}:ECHO`, echoV);
+            }
+        } else if (inst.type === 'openhw-ks2e-m-dc5') {
+            // DPDT Relay: internal switch contacts + coil
+            const energised = inst.state?.energised;
+            if (pinId === 'COIL1') {
+                const v2 = inst.getPinVoltage('COIL2');
+                const coilV = Math.min(voltage, 5.0);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL2', nextV);
+                visit(`${compId}:COIL2`, nextV);
+            } else if (pinId === 'COIL2') {
+                const coilV = Math.min(voltage, 5.0);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL1', nextV);
+                visit(`${compId}:COIL1`, nextV);
+            } else if (energised) {
+                // Energised: P1←→NO1, P2←→NO2
+                if (pinId === 'P1') {
+                    inst.setPinVoltage('NO1', voltage);
+                    visit(`${compId}:NO1`, voltage);
+                } else if (pinId === 'NO1') {
+                    inst.setPinVoltage('P1', voltage);
+                    visit(`${compId}:P1`, voltage);
+                } else if (pinId === 'P2') {
+                    inst.setPinVoltage('NO2', voltage);
+                    visit(`${compId}:NO2`, voltage);
+                } else if (pinId === 'NO2') {
+                    inst.setPinVoltage('P2', voltage);
+                    visit(`${compId}:P2`, voltage);
+                }
+            } else {
+                // De-energised: P1←→NC1, P2←→NC2
+                if (pinId === 'P1') {
+                    inst.setPinVoltage('NC1', voltage);
+                    visit(`${compId}:NC1`, voltage);
+                } else if (pinId === 'NC1') {
+                    inst.setPinVoltage('P1', voltage);
+                    visit(`${compId}:P1`, voltage);
+                } else if (pinId === 'P2') {
+                    inst.setPinVoltage('NC2', voltage);
+                    visit(`${compId}:NC2`, voltage);
+                } else if (pinId === 'NC2') {
+                    inst.setPinVoltage('P2', voltage);
+                    visit(`${compId}:P2`, voltage);
+                }
+            }
         }
     }
 
@@ -734,20 +862,32 @@ export class AVRRunner {
             const rails = new Map<string, number>();
             const visited = new Set<string>();
 
+            // Board digital/analog pins should remain drivable by external components,
+            // not locked to power rail voltage even if the breadboard power row is shared.
+            const boardPinNodes = new Set<string>();
+            [...UNO_DIGITAL_PINS, ...UNO_ANALOG_PINS].forEach(p => boardPinNodes.add(`${this.boardId}:${p}`));
+
             const visit = (rawNode: string, v: number) => {
                 const node = normalizePin(rawNode);
                 if (visited.has(node)) return;
                 visited.add(node);
-                rails.set(node, v);
+                const isBoardPin = boardPinNodes.has(node);
+                // Don't add board digital/analog pins to the rail map —
+                // they should be driven by their connected external components, not locked by the power rail.
+                if (!isBoardPin) {
+                    rails.set(node, v);
+                }
 
-                // Traverse wires
-                for (const wire of this.currentWires) {
-                    const normFrom = normalizePin(wire.from);
-                    const normTo = normalizePin(wire.to);
-                    if (normFrom === node) {
-                        visit(wire.to, v);
-                    } else if (normTo === node) {
-                        visit(wire.from, v);
+                // Traverse wires — skip if this is a board digital/analog pin (boundary between power rail and signal pins)
+                if (!isBoardPin) {
+                    for (const wire of this.currentWires) {
+                        const normFrom = normalizePin(wire.from);
+                        const normTo = normalizePin(wire.to);
+                        if (normFrom === node) {
+                            visit(wire.to, v);
+                        } else if (normTo === node) {
+                            visit(wire.from, v);
+                        }
                     }
                 }
 
@@ -870,17 +1010,30 @@ export class AVRRunner {
                     }
                 }
 
+                // When propagating from a board power rail, do NOT propagate back into board digital/analog pins.
+                // They should be driven by external components, not locked by the power rail.
+                const isPowerRailSrc = ['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
+                if (isPowerRailSrc && compId === this.boardId && rawNode !== `${this.boardId}:${arduinoPinStr}`) {
+                    return;
+                }
+
                 // If this is a passive propagation from a CPU pin, and we encounter a node that has a low-impedance
                 // connection to a board supply rail, do not allow passive propagation to overwrite its fixed reference voltage!
+                // Exception: when a component drives its own output (customCompId matches), it should override the rail.
+                // Exception 2: passive components (resistors, vias, breadboards, wires) must not be locked —
+                // they need to pass through voltages from active component outputs (e.g., MUX driving LOW through a resistor).
                 const isCpuPinProp = !['gnd_1', 'gnd_2', 'gnd_3', 'GND', '5V', 'vin', 'VIN', '3v3', '3V3'].includes(arduinoPinStr);
-                if (isCpuPinProp && lowImpRails.has(node)) {
-                    const railVoltage = lowImpRails.get(node)!;
-                    const inst = this.instances.get(compId);
-                    if (inst) {
-                        if (!inst.pins[compPin]) inst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
-                        inst.setPinVoltage(compPin, railVoltage);
+                if (isCpuPinProp && lowImpRails.has(node) && compId !== customCompId) {
+                    const railInst = this.instances.get(compId);
+                    const isPassive = railInst && (railInst.type === 'openhw-breadboard' || railInst.type === 'openhw-breadboard-half' || railInst.type === 'openhw-breadboard-mini' || railInst.type === 'wokwi-breadboard' || railInst.type === 'wokwi-breadboard-half' || railInst.type === 'wokwi-breadboard-mini' || railInst.type === 'via' || railInst.type === 'openhw-via' || railInst.type === 'wokwi-via' || railInst.type === 'openhw-wire' || railInst.type === 'wokwi-wire' || railInst.type === 'openhw-resistor' || railInst.type === 'wokwi-resistor');
+                    if (!isPassive) {
+                        const railVoltage = lowImpRails.get(node)!;
+                        if (railInst) {
+                            if (!railInst.pins[compPin]) railInst.pins[compPin] = { voltage: 0, mode: 'INPUT' };
+                            railInst.setPinVoltage(compPin, railVoltage);
+                        }
+                        return;
                     }
-                    return;
                 }
 
                 visitedNodes.add(node);
@@ -1012,24 +1165,66 @@ export class AVRRunner {
             // Re-propagate active driver outputs from non-board helper components (e.g. A4988 motor drivers, logic gates) and active sensors
             this.instances.forEach((inst, compId) => {
                 if (compId === this.boardId) return;
-                if (inst.type.includes('a4988')) {
+                if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+                    const echoV = (inst as any).echoOutputVoltage !== undefined
+                        ? (inst as any).echoOutputVoltage
+                        : inst.pins['ECHO']?.voltage ?? 0;
+                    if (inst.pins['ECHO']) {
+                        updateOopPin('ECHO', echoV, compId);
+                    }
+                } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
+                    const sdaV = (inst as any).sdaOutputVoltage !== undefined
+                        ? (inst as any).sdaOutputVoltage
+                        : inst.pins['SDA']?.voltage ?? 5.0;
+                    if (inst.pins['SDA']) {
+                        updateOopPin('SDA', sdaV, compId);
+                    }
+                } else if (inst.type.includes('a4988')) {
                     ['1A', '1B', '2A', '2B'].forEach(pin => {
                         if (inst.pins[pin]) {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
-                } else if (inst.type.includes('motor-driver')) {
+                } else if (inst.type.includes('motor-driver') || inst.type.includes('l293d')) {
                     ['OUT1', 'OUT2', 'OUT3', 'OUT4'].forEach(pin => {
                         if (inst.pins[pin]) {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
-                } else if (inst.type.includes('logic-gate') || inst.type.includes('timer') || inst.type.includes('opamp')) {
+                } else if (inst.type.startsWith('logic-') || inst.type.includes('timer') || inst.type.includes('opamp')) {
+                    const allInsts = Array.from(this.instances.values());
+                    if (compId.includes('nd_gate')) {
+                        const gateWires = this.currentWires.filter((w: any) =>
+                            w.from?.startsWith(compId) || w.to?.startsWith(compId)
+                        );
+                        console.log(`[repropagate] Wires for ${compId}:`, JSON.stringify(gateWires));
+                    }
+                    const in1 = inst.getPinVoltage('IN1');
+                    const in2 = inst.getPinVoltage('IN2');
+                    const d0 = inst.getPinVoltage('D0');
+                    const d1 = inst.getPinVoltage('D1');
+                    const sel = inst.getPinVoltage('SEL');
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, allInsts);
+                    const outV = inst.pins['OUT']?.voltage ?? -1;
+                    if (compId.includes('nd_gate')) {
+                        console.log(`[repropagate] IN1=${in1} IN2=${in2} OUT=${outV} pins keys=${Object.keys(inst.pins).join(',')}`);
+                    }
                     Object.keys(inst.pins).forEach(pin => {
-                        if (pin.startsWith('OUT') || pin.startsWith('out') || pin === 'Q' || pin === 'Q#') {
+                        // Propagate all known output pins. The IC 74xx uses non-standard names
+                        // (p1-p14), so we check if the pin mode is OUTPUT or if update() changed it.
+                        const isOutput = pin.startsWith('OUT') || pin.startsWith('out') || pin === 'Q' || pin === 'Q#';
+                        if (isOutput || inst.type === 'logic-ic-74xx') {
                             updateOopPin(pin, inst.pins[pin].voltage, compId);
                         }
                     });
+                    // Log AFTER updateOopPin so PIND reflects the newly propagated value
+                    if (compId.includes('mux')) {
+                        const pindVal = this.cpu ? this.cpu.data[0x29] : -1;
+                        const p2 = (pindVal >> 2) & 1;
+                        const p3 = (pindVal >> 3) & 1;
+                        const p4 = (pindVal >> 4) & 1;
+                        const p5 = (pindVal >> 5) & 1;
+                        console.log(`[repropagate MUX] D0=${d0} D1=${d1} SEL=${sel} OUT=${outV} d0High=${inst.getPinVoltage('D0')>=2.5} d1High=${inst.getPinVoltage('D1')>=2.5} selHigh=${inst.getPinVoltage('SEL')>=2.5} stateOut=${inst.state?.outputHigh} PIND2=${p2} PIND3=${p3} PIND4=${p4} PIND5=${p5} pins=${Object.keys(inst.pins).join(',')}`);
                 } else if (inst.type.includes('hc-sr04')) {
                     if (inst.pins['ECHO']) {
                         updateOopPin('ECHO', inst.pins['ECHO'].voltage, compId);
@@ -1123,6 +1318,22 @@ export class AVRRunner {
             });
             ['3v3', '3V3'].forEach(pin => {
                 updateOopPin(pin, 3.3);
+            });
+
+            // Re-propagate NPN transistor outputs AFTER power rails so transistor switching
+            // overrides the passive voltage drop through the load (e.g. 5V→LED→Collector path)
+            this.instances.forEach((inst, compId) => {
+                if (compId === this.boardId) return;
+                if (inst.type === 'openhw-npn-transistor') {
+                    const allInsts = Array.from(this.instances.values());
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, allInsts);
+                    if (inst.pins['C']) {
+                        updateOopPin('C', inst.pins['C'].voltage, compId);
+                    }
+                    if (inst.pins['E']) {
+                        updateOopPin('E', inst.pins['E'].voltage, compId);
+                    }
+                }
             });
 
             // Re-propagate standalone power supply rails LAST so they dominate external power nets
@@ -1267,6 +1478,10 @@ export class AVRRunner {
                 const componentStart = performance.now();
                 let anyStateChanged = false;
                 instArray.forEach(inst => {
+                    if (!(inst as any)._simCpu) {
+                        (inst as any)._simCpu = this.cpu;
+                        (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
+                    }
                     inst.update(this.cpu!.cycles, this.currentWires, instArray);
                     if (inst.stateChanged) {
                         anyStateChanged = true;
@@ -1288,10 +1503,72 @@ export class AVRRunner {
                 if (typeof this.repropagateAllVoltages === 'function') {
                     this.repropagateAllVoltages();
                 }
+                if (this.cpu) {
+                    const pind = this.cpu.data[0x29];
+                    console.log(`[PhysicsSolve] PIND2=${(pind>>2)&1} PIND3=${(pind>>3)&1} PIND4=${(pind>>4)&1} PIND5=${(pind>>5)&1} DDRD=${this.cpu.data[0x2A]} PORTD=${this.cpu.data[0x2B]}`);
+                }
                 this.lastPhysicsSolveAt = now;
                 this.circuitDirty = false;
             }
 
+            // ── ADC Channel Polling ─────────────────────────────────────────
+            // Poll analog voltages from components connected to Arduino A0–A5
+            // and feed them into the AVR ADC so that analogRead() returns real values.
+            // This was present in execute_old.ts but missing from the new runner.
+            if (this.adc && this.cpu) {
+                for (let i = 0; i < UNO_ANALOG_PINS.length; i++) {
+                    const arduinoPin = UNO_ANALOG_PINS[i];
+                    let voltage = 0;
+
+                    const targetNet = this.pinToNet.get(`${this.boardId}:${arduinoPin}`) ?? 
+                                      this.pinToNet.get(`${this.boardId}:A${i}`);
+
+                    if (targetNet !== undefined) {
+                        for (const [p, n] of this.pinToNet.entries()) {
+                            if (n === targetNet && !p.startsWith(`${this.boardId}:`)) {
+                                const [compId, pinId] = p.split(':');
+                                const inst = this.instances.get(compId);
+                                if (inst && typeof inst.getPinVoltage === 'function') {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(pinId) || 0);
+                                }
+                            }
+                        }
+                    } else {
+                        // Fallback for single wires if netlist is missing
+                        for (const w of this.currentWires) {
+                            const [fromComp, fromPin] = w.from.split(':');
+                            const [toComp, toPin] = w.to.split(':');
+
+                            let isConnectedToPin = false;
+                            let otherCompId = '';
+                            let otherCompPin = '';
+
+                            if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = toComp;
+                                otherCompPin = toPin;
+                            } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = fromComp;
+                                otherCompPin = fromPin;
+                            }
+
+                            if (isConnectedToPin) {
+                                const inst = this.instances.get(otherCompId);
+                                if (inst && typeof inst.getPinVoltage === 'function') {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin) || 0);
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (i === 0 && this._dbgFrameCount % 60 === 0) {
+                        console.log(`[ADC DBG] A0 targetNet=${targetNet} voltage=${voltage} pinToNet.size=${this.pinToNet.size}`);
+                    }
+
+                    this.adc.channelValues[i] = voltage;
+                }
+            }
             // Host/UART receive pacing: bytes per second = baud / 10 (8N1 frame)
             // bytes per ms = baud / 10000. We accumulate fractional budget over time.
             const bytesPerMs = this.serialBaudRate / 10000;

@@ -22,6 +22,7 @@ import SigninPage from "./pages/auth/SigninPage.jsx";
 import SignupPage from "./pages/auth/SignupPage.jsx";
 import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage.jsx";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage.jsx";
+import AuthSuccess from "./pages/auth/AuthSuccess.jsx";
 import UserDashboard from "./pages/user/UserDashboard.jsx";
 import StudentDashboard from "./pages/student/StudentDashboard.jsx";
 import StudentProfilePage from "./pages/student/StudentProfilePage.jsx";
@@ -57,6 +58,7 @@ import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
 const GradingPage = React.lazy(() => import("./pages/GradingPage.jsx"));
 import MaintenancePage from "./pages/MaintenancePage.jsx";
 import AboutUsNew from "./pages/AboutUsNewPage.jsx";
+import VisitorTracker from "./components/VisitorTracker.jsx";
 
 import { fetchMaintenanceStatus } from "./services/simulatorService.js";
 import axios from "axios";
@@ -81,8 +83,6 @@ const ResponsiveSimulatorRoute = ({ desktopElement, mobileElement }) => {
       "/mobile-simulator",
       "/simulator",
     );
-    // If it was just /mobile-simulator, it goes to /simulator.
-    // If it was /mobile-simulator/something, it goes to /simulator/something.
     return <Navigate to={newPath === "" ? "/simulator" : newPath} replace />;
   }
 
@@ -111,28 +111,37 @@ const MaintenanceGuard = ({ children }) => {
     check();
     const interval = setInterval(check, 30000); // Check every 30s
 
-    // Global Axios Interceptor for 503 / connection errors AND 401 Session Expiry
     const interceptor = axios.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error.response?.status === 401) {
+        const reqUrl = error.config?.url || "";
+
+        if (error.response?.status === 401 && reqUrl.includes("/api")) {
           const isAdm = location.pathname.startsWith("/admin");
           const message = error.response.data?.message || "";
 
           if (
             message.toLowerCase().includes("expired") ||
-            message.toLowerCase().includes("invalid")
+            message.toLowerCase().includes("invalid") ||
+            message.toLowerCase().includes("no token")
           ) {
             if (isMounted) {
               if (isAdm) adminLogout();
               else logout();
 
-              alert("Your session has expired. Please log in again.");
+              if (!window.__sessionExpiredAlertShown) {
+                window.__sessionExpiredAlertShown = true;
+                alert("Your session has expired. Please log in again.");
+                setTimeout(() => { window.__sessionExpiredAlertShown = false; }, 3000);
+              }
               navigate(isAdm ? "/admin/login" : "/login");
             }
           }
         } else if (!error.response || error.response.status === 503) {
-          if (isMounted) setMaintenance(true);
+          // Only trigger maintenance mode for API requests
+          if (isMounted && reqUrl.includes("/api")) {
+             setMaintenance(true);
+          }
         }
         return Promise.reject(error);
       },
@@ -145,8 +154,6 @@ const MaintenanceGuard = ({ children }) => {
     };
   }, []);
 
-  // Do not block initial render for maintenance check to fix LCP issues.
-  // We'll optimistically render the app and overlay MaintenancePage if needed.
   if (maintenance && !isAdminPath) {
     return <MaintenancePage />;
   }
@@ -157,22 +164,23 @@ const MaintenanceGuard = ({ children }) => {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <GamificationProvider>
-          <MaintenanceGuard>
-            {/* Global toast notifications (level-up, badge earned, XP) */}
-            <GamificationToasts />
+      <VisitorTracker>
+        <AuthProvider>
+          <GamificationProvider>
+            <MaintenanceGuard>
+              {/* Global toast notifications (level-up, badge earned, XP) */}
+              <GamificationToasts />
 
-            <React.Suspense
-              fallback={
-                <div
-                  style={{
-                    height: "100vh",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
+              <React.Suspense
+                fallback={
+                  <div
+                    style={{
+                      height: "100vh",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
                   <div className="loader"></div>
                 </div>
               }
@@ -201,6 +209,8 @@ export default function App() {
                   element={<ResetPasswordPage />}
                 />
                 <Route path="/select-role" element={<RoleSelectPage />} />
+
+                <Route path="/login-success" element={<AuthSuccess />} />
 
                 <Route path="/projects" element={<ProjectsGallery />} />
                 <Route path="/components" element={<ComponentsPage />} />
@@ -422,6 +432,7 @@ export default function App() {
           </MaintenanceGuard>
         </GamificationProvider>
       </AuthProvider>
+      </VisitorTracker>
     </BrowserRouter>
   );
 }
