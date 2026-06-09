@@ -348,7 +348,9 @@ export async function fetchLiveSimulationSession(sessionCode) {
 
 export function buildLiveSimulationWsUrl(sessionCode, role = 'student') {
     const token = getToken();
-    const wsOrigin = API_ORIGIN.replace(/^http/i, 'ws');
+    const wsOrigin = API_ORIGIN
+        ? API_ORIGIN.replace(/^http/i, 'ws')
+        : window.location.origin.replace(/^http/i, 'ws');
     const url = new URL('/api/live-simulations/ws', `${wsOrigin}/`);
     url.searchParams.set('sessionCode', sessionCode);
     url.searchParams.set('role', role);
