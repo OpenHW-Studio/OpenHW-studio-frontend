@@ -3,12 +3,15 @@
  * Handles API communication between the frontend and the Node.js backend.
  */
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
 
 // ─── Token & User Storage Helpers ───────────────────────────────────────────
 
 export const saveToken = (token) => localStorage.setItem('openhw_token', token);
-export const getToken = () => localStorage.getItem('openhw_token');
+export const getToken = () => {
+  const t = localStorage.getItem('openhw_token');
+  return t === 'null' ? null : t;
+};
 export const removeToken = () => localStorage.removeItem('openhw_token');
 
 export const saveUser = (user) => localStorage.setItem('openhw_user', JSON.stringify(user));
