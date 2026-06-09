@@ -286,6 +286,10 @@ export const LEVELS = [
       icon: '🌡️',
       rarity: 'rare',
     },
+    unlockedComponents: [
+      'wokwi-dht22',
+      'openhw-dht22',
+    ],
   },
   {
     id: 10,
