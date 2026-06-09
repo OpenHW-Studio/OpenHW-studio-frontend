@@ -2162,6 +2162,14 @@ export class RP2040Runner implements BoardRunner {
         if (/^GPIO\d+$/.test(raw)) return `GP${raw.slice(4)}`;
         if (/^D\d+$/.test(raw)) return `GP${raw.slice(1)}`;
         if (/^\d+$/.test(raw)) return `GP${raw}`;
+        // RP2040 function-name aliases (SPI, I2C, etc.)
+        const ALIAS_MAP: Record<string, string> = {
+            'SCK': 'GP18',
+            'MOSI': 'GP19',
+            'MISO': 'GP16',
+            'SS': 'GP17',
+        };
+        if (ALIAS_MAP[raw]) return ALIAS_MAP[raw];
         return raw;
     }
 
@@ -2170,7 +2178,14 @@ export class RP2040Runner implements BoardRunner {
         const match = /^GP(\d+)$/.exec(gp);
         if (!match) return [pinId, gp];
         const n = match[1];
-        return [pinId, gp, `GPIO${n}`, `D${n}`, n];
+        const BASE_ALIASES: Record<string, string[]> = {
+            '16': ['MISO'],
+            '17': ['SS'],
+            '18': ['SCK'],
+            '19': ['MOSI'],
+        };
+        const extra = BASE_ALIASES[n] || [];
+        return [pinId, gp, `GPIO${n}`, `D${n}`, n, ...extra];
     }
 
     private isBoardPin(wireCoord: string, targetGpPin: string): boolean {
