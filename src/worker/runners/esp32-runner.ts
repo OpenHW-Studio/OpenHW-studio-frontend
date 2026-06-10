@@ -568,6 +568,7 @@ export class ESP32Runner implements BoardRunner {
     private _updateOopPin: ((boardPinStr: string, isHighOrVoltage: boolean | number, customCompId?: string) => void) | null = null;
     private pendingCycles: number = 0;
     private channel = new MessageChannel();
+    private lastStateEmitTime: number = 0;
 
     constructor(
         hexData: string,
@@ -589,6 +590,7 @@ export class ESP32Runner implements BoardRunner {
             try { this.wifiManager.disconnect(); } catch (e) {}
         }
         this.lastTime = performance.now();
+        this.lastStateEmitTime = this.lastTime;
         this.pinsChanged = true;
         this.circuitDirty = true;
         this.pendingCycles = 0;
@@ -1297,6 +1299,133 @@ export class ESP32Runner implements BoardRunner {
                 this.activeListeners.push(unsubscribe);
             }
         }
+
+        // Hook native ESP32 I2C peripherals (I2C0 and I2C1)
+        // IMPORTANT: The ESP32 engine uses a completion-callback model, NOT a return-value model.
+        // Each hook must call the corresponding engine completion method to advance the I2C state machine.
+        // Failing to call completion will stall the engine and cause "I2C software timeout".
+        //
+        // Engine API (from esp32-engine.js source):
+        //   onStart()         → call peripheral.startComplete(true)  for success
+        //   onWrite(byte)     → call peripheral.writeComplete(false) for ACK  (false=ACK, true=NACK)
+        //   onRead(sendAck)   → call peripheral.readComplete(byte)   with data byte
+        //   onStop()          → call peripheral.stopComplete()
+        [0, 1].forEach(i2cIdx => {
+            if (this.cpu.i2c && this.cpu.i2c[i2cIdx]) {
+                const i2cPeripheral = this.cpu.i2c[i2cIdx] as any;
+                let activeI2cAddr = -1;
+                let activeIsRead = false;
+                let i2cBuffer: number[] = [];
+
+                i2cPeripheral.onStart = () => {
+                    console.log(`[I2C${i2cIdx}] onStart - resetting state`);
+                    activeI2cAddr = -1;
+                    activeIsRead = false;
+                    i2cBuffer = [];
+                    // Must call startComplete(true) to allow the transaction to proceed.
+                    // Calling startComplete(false) would signal arbitration lost.
+                    i2cPeripheral.startComplete(true);
+                };
+
+                i2cPeripheral.onWrite = (byte: number) => {
+                    console.log(`[I2C${i2cIdx}] onWrite(0x${byte?.toString(16)})`);
+                    i2cBuffer.push(byte);
+
+                    if (activeI2cAddr === -1) {
+                        // First byte after a START is the 7-bit address + R/W bit
+                        activeI2cAddr = byte >> 1;
+                        activeIsRead = (byte & 1) !== 0;
+                        console.log(`[I2C${i2cIdx}] Address: 0x${activeI2cAddr.toString(16)}, Read: ${activeIsRead}`);
+
+                        this.instances.forEach(inst => {
+                            const anyInst = inst as any;
+                            if (typeof anyInst.onI2CStart === 'function') {
+                                anyInst.onI2CStart(activeI2cAddr, activeIsRead);
+                                inst.stateChanged = true;
+                            }
+                        });
+                    } else {
+                        // Subsequent bytes are data
+                        this.instances.forEach(inst => {
+                            const anyInst = inst as any;
+                            if (typeof anyInst.onI2CByte === 'function') {
+                                anyInst.onI2CByte(activeI2cAddr, byte);
+                                inst.stateChanged = true;
+                            }
+                        });
+                    }
+
+                    // Must call writeComplete(ackReceived) to advance the state machine.
+                    // true  = ACK received from slave (success - transaction continues)
+                    // false = NACK received (no device, triggers ACK_ERR and onStop immediately)
+                    // Engine default is writeComplete(false) = NACK. We must call writeComplete(true) to ACK.
+                    i2cPeripheral.writeComplete(true);
+                };
+
+                i2cPeripheral.onRead = (sendAck: boolean) => {
+                    // Ask component for a byte, default to 0xFF (bus pull-up high)
+                    let byte = 0xFF;
+                    this.instances.forEach(inst => {
+                        const anyInst = inst as any;
+                        if (typeof anyInst.onI2CReadByte === 'function') {
+                            const val = anyInst.onI2CReadByte();
+                            if (val !== undefined && val !== null) byte = val & 0xFF;
+                        }
+                    });
+                    console.log(`[I2C${i2cIdx}] onRead(sendAck=${sendAck}) → 0x${byte.toString(16)}`);
+                    // Must call readComplete(byte) to inject the byte into the engine's RX FIFO.
+                    i2cPeripheral.readComplete(byte);
+                };
+
+                i2cPeripheral.onStop = () => {
+                    console.log(`[I2C${i2cIdx}] onStop - buffer: [${i2cBuffer.map(b => '0x' + b.toString(16)).join(', ')}]`);
+
+                    this.instances.forEach(inst => {
+                        const anyInst = inst as any;
+                        if (typeof anyInst.onI2CStop === 'function') {
+                            anyInst.onI2CStop();
+                            inst.stateChanged = true;
+                        }
+                    });
+
+                    if (i2cBuffer.length > 1) { // >1 because first byte is the address
+                        const dataBytes = i2cBuffer.slice(1);
+                        const hex = dataBytes.map(b => b.toString(16).padStart(2, '0')).join('');
+                        const displayHex = hex.length > 64 ? hex.substring(0, 64) + '...' : hex;
+                        this.onStateUpdate({
+                            type: 'protocol:i2c',
+                            boardId: this.boardId,
+                            address: activeI2cAddr,
+                            hex: displayHex,
+                            direction: activeIsRead ? 'read' : 'write'
+                        });
+                    }
+
+                    // Must call stopComplete() to fire the TRANS_COMPLETE interrupt.
+                    i2cPeripheral.stopComplete();
+                };
+            }
+        });
+
+        // Hook native ESP32 SPI peripherals (HSPI=2, VSPI=3)
+        [2, 3].forEach(spiIdx => {
+            if (this.cpu.spi && this.cpu.spi[spiIdx]) {
+                this.cpu.spi[spiIdx].onTransmit = (data: number) => {
+                    const hex = data.toString(16).padStart(2, '0');
+                    this.syncSpiBatch(hex);
+                };
+            }
+        });
+
+        // Hook native ESP32 ADC peripheral (analogRead)
+        this.cpu.onAnalogRead = (pinNum: number) => {
+            const boardInst = this.instances.get(this.boardId);
+            if (!boardInst) return 0;
+            const voltage = boardInst.pins[String(pinNum)]?.voltage || 0;
+            // Convert 0.0 - 3.3V to 12-bit ADC value (0 - 4095)
+            const adcValue = Math.min(4095, Math.max(0, Math.floor((voltage / 3.3) * 4095)));
+            return adcValue;
+        };
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string, nextVoltage: number) => void) {
@@ -1454,12 +1583,28 @@ export class ESP32Runner implements BoardRunner {
                 const targetCycles = startCycles + chunkTarget;
                 const targetNanos = (targetCycles / F_CPU) * 1e9;
 
+                const cpuAny = this.cpu as any;
+                const clock = cpuAny.clock;
+                
+                // Cache coresIdle getter result if the CPU is running continuously.
+                // Re-evaluate it only every 1024 cycles to prevent massive overhead from Array.every() 
+                // inside the JS engine's tightest simulation loop.
+                let checkIdle = true;
+                
                 while (this.cpu.cycles < targetCycles && this.running) {
-                    // Wokwi Idle Skipping: Instantly jump simulated time if CPU is waiting
-                    if ((this.cpu as any).coresIdle && (this.cpu as any).clock) {
-                        (this.cpu as any).clock.skipToNextEvent(targetNanos);
+                    if (checkIdle) {
+                        if (cpuAny.coresIdle && clock) {
+                            clock.skipToNextEvent(targetNanos);
+                        }
+                        checkIdle = false;
                     }
+                    
                     this.cpu.step();
+                    
+                    // Periodically re-check idle state (e.g. every 1024 cycles)
+                    if ((this.cpu.cycles & 1023) === 0) {
+                        checkIdle = true;
+                    }
                 }
                 
                 const cyclesDone = this.cpu.cycles - startCycles;
@@ -1483,27 +1628,39 @@ export class ESP32Runner implements BoardRunner {
                     this.repropagateAllVoltages();
                 }
 
-                // Emit component states to frontend only for those that changed
-                if (anyStateChanged && instArray.length > 0) {
-                    const compStates = instArray
-                        .filter(inst => (inst as any).pendingVisualStateEmit)
-                        .map(inst => {
-                            (inst as any).pendingVisualStateEmit = false;
-                            return {
-                                id: inst.id,
-                                type: inst.type,
-                                state: (typeof (inst as any).getState === 'function'
-                                    ? (inst as any).getState()
-                                    : inst.state) || {},
-                            };
-                        });
-                    if (compStates.length > 0) {
-                        this.onStateUpdate({ type: 'state', boardId: this.boardId, components: compStates });
+                // Emit component states to frontend only for those that changed, max 60fps
+                if (now - this.lastStateEmitTime >= 16) {
+                    if (anyStateChanged && instArray.length > 0) {
+                        const compStates = instArray
+                            .filter(inst => (inst as any).pendingVisualStateEmit)
+                            .map(inst => {
+                                (inst as any).pendingVisualStateEmit = false;
+                                return {
+                                    id: inst.id,
+                                    type: inst.type,
+                                    state: (typeof (inst as any).getState === 'function'
+                                        ? (inst as any).getState()
+                                        : inst.state) || {},
+                                };
+                            });
+                        if (compStates.length > 0) {
+                            this.onStateUpdate({ type: 'state', boardId: this.boardId, components: compStates });
+                        }
                     }
+
+                    // Emit pin states max 60fps so frontend stays in sync
+                    if (this.pinsChanged) {
+                        this.pinsChanged = false;
+                        const pinsPayload: Record<string, boolean> = {};
+                        for (const [k, v] of Object.entries(this.pinStates)) {
+                            pinsPayload[k] = !!v;
+                        }
+                        this.onStateUpdate({ type: 'state', boardId: this.boardId, pins: pinsPayload });
+                    }
+
+                    this.lastStateEmitTime = now;
                 }
             }
-
-
 
             if (shouldSolvePhysics) {
                 if (typeof this.repropagateAllVoltages === 'function') {
@@ -1525,18 +1682,6 @@ export class ESP32Runner implements BoardRunner {
                     this.cpu.uart[0].feedByte(val);
                 }
                 this.serialByteBudget -= toSend;
-            }
-
-            // Emit pin states every frame so frontend stays in sync
-            // (SimulatorBridge protocol parser updates this.pinStates directly;
-            //  this emit delivers them to renderPinsByBoardRef in SimulatorPage)
-            if (this.pinsChanged) {
-                this.pinsChanged = false;
-                const pinsPayload: Record<string, boolean> = {};
-                for (const [k, v] of Object.entries(this.pinStates)) {
-                    pinsPayload[k] = !!v;
-                }
-                this.onStateUpdate({ type: 'state', boardId: this.boardId, pins: pinsPayload });
             }
         }
 

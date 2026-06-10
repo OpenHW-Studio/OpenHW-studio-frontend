@@ -809,6 +809,33 @@ function resolveRp2040ExecutableRanges(boardComp: any, boardExecutableRangesMap:
 
 let dmaWarned = false;
 
+const serialTxBuffers = new Map<string, { data: string, value: number, source: string }>();
+let serialTxTimer: any = null;
+
+function bufferSerialTx(boardId: string, char: string, value: number, source: string) {
+    const key = `${boardId}:${source}`;
+    let buf = serialTxBuffers.get(key);
+    if (!buf) {
+        buf = { data: '', value: 0, source };
+        serialTxBuffers.set(key, buf);
+    }
+    buf.data += char;
+    buf.value = value;
+    
+    if (!serialTxTimer) {
+        serialTxTimer = setTimeout(() => {
+            for (const [k, b] of serialTxBuffers.entries()) {
+                const bId = k.split(':')[0];
+                if (b.data) {
+                    postMessage({ type: 'serial', data: b.data, boardId: bId, value: b.value, source: b.source });
+                }
+            }
+            serialTxBuffers.clear();
+            serialTxTimer = null;
+        }, 16);
+    }
+}
+
 function routeDisplayFrames(components: any[]): any[] {
     if (!renderWorkerPort || !Array.isArray(components)) return components;
 
@@ -829,9 +856,16 @@ function routeDisplayFrames(components: any[]): any[] {
         let bufferForWorker: ArrayBuffer | null = null;
 
         if (rawBuffer instanceof Uint8Array && rawBuffer.buffer) {
-            // Slice to get a fresh ArrayBuffer we can transfer without detaching the original.
-            bufferForWorker = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength);
-            transferable = bufferForWorker;
+            if (typeof SharedArrayBuffer !== 'undefined' && rawBuffer.buffer instanceof SharedArrayBuffer) {
+                bufferForWorker = rawBuffer.buffer;
+                transferable = null;
+            } else {
+                bufferForWorker = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength);
+                transferable = bufferForWorker;
+            }
+        } else if (typeof SharedArrayBuffer !== 'undefined' && rawBuffer instanceof SharedArrayBuffer) {
+            bufferForWorker = rawBuffer;
+            transferable = null;
         } else if (rawBuffer instanceof ArrayBuffer) {
             bufferForWorker = rawBuffer.slice(0);
             transferable = bufferForWorker;
@@ -1172,7 +1206,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         sessionId: data.networkRoomCode || '',
                         onByteTransmit: ({ boardId, value, char, source }) => {
                             appendBoardSerialOutput(String(boardId || ''), String(char || ''));
-                            postMessage({ type: 'serial', data: char, boardId, value, source });
+                            bufferSerialTx(String(boardId || ''), char, value, source || 'uart0');
                         },
                         rp2040ExecutableRanges: singleBoardIsRp2040 ? singleBoardExecutableRanges : undefined,
                         rp2040LogicalFlashBytes: singleBoardIsRp2040 ? RP2040_LOGICAL_FLASH_BYTES : undefined,
@@ -1305,7 +1339,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     sessionId: data.networkRoomCode || '',
                     onByteTransmit: ({ boardId, value, char, source }) => {
                         appendBoardSerialOutput(String(boardId || ''), String(char || ''));
-                        postMessage({ type: 'serial', data: char, boardId, value, source });
+                        bufferSerialTx(String(boardId || ''), char, value, source || 'uart0');
                         routeUartByte(boardId, value, source || 'uart0');
                     },
                     rp2040ExecutableRanges: isRp2040Board ? executableRanges : undefined,
