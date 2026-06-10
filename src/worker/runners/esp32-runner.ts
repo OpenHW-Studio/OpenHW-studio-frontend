@@ -1498,7 +1498,7 @@ export class ESP32Runner implements BoardRunner {
     }
     getSimulatedTimeMs() {
         if (!this.cpu) return 0;
-        return Math.floor((this.cpu.cycles - this.cpuCyclesAtStart) / ((this.cpu as any).clock?.frequency / 1000 || 160_000));
+        return Math.floor((this.cpu.cycles - this.cpuCyclesAtStart) / ((this.cpu as any).clock?.frequency / 1000 || 125_000)); // SimulationClock defaults to 125MHz
     }
 
     readDirectMemory(address: number, length: number): Uint8Array | null {
@@ -1546,7 +1546,7 @@ export class ESP32Runner implements BoardRunner {
         (this as any)._runLoopCount = loopCount + 1;
 
         if (deltaTime > 0) {
-            const F_CPU = (this.cpu as any).clock?.frequency ?? 160_000_000;
+            const F_CPU = (this.cpu as any).clock?.frequency ?? 125_000_000; // SimulationClock defaults to 125MHz
             const cyclesPerMs = (F_CPU / 1000) * this.speed;
             
             // Limit deltaTime to max 100ms to prevent death spirals if browser tab sleeps
@@ -1559,29 +1559,52 @@ export class ESP32Runner implements BoardRunner {
             const physicsInterval = this.speed > 1.0 ? 8 : 12;
             const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
 
-            // Log PC every 500 runLoop ticks
-            if (((this as any)._runLoopCount || 0) % 500 === 0) {
-                const core0 = this.cpu.cores?.[0];
-                let pcVal = 0;
-                if (core0) {
-                    pcVal = core0.PC ?? core0.pc ?? (typeof core0.getPC === 'function' ? core0.getPC() : 0);
-                }
+            // === PERFORMANCE DIAGNOSTICS ===
+            // Logs key stats every ~1000ms of real time to diagnose simulation speed
+            const diagAny = this as any;
+            if (!diagAny._diagLastLogTime) diagAny._diagLastLogTime = now;
+            if (!diagAny._diagCyclesAtLastLog) diagAny._diagCyclesAtLastLog = this.cpu?.cycles ?? 0;
+            if (!diagAny._diagFrameCount) diagAny._diagFrameCount = 0;
+            diagAny._diagFrameCount++;
 
+            const diagElapsed = now - diagAny._diagLastLogTime;
+            if (diagElapsed >= 1000 && this.cpu) {
+                const realCyclesNow = this.cpu.cycles;
+                const cyclesExecutedInPeriod = realCyclesNow - diagAny._diagCyclesAtLastLog;
+                const actualF_CPU = (this.cpu as any).clock?.frequency ?? 0;
+                const simMsAdvanced = cyclesExecutedInPeriod / (actualF_CPU / 1000);
+                const framesInPeriod = diagAny._diagFrameCount;
+                const pendingNow = this.pendingCycles;
+
+                console.warn(
+                    `[ESP32 Perf] Over last ${diagElapsed.toFixed(0)}ms real-time:\n` +
+                    `  clock.frequency = ${(actualF_CPU / 1e6).toFixed(1)} MHz\n` +
+                    `  Cycles executed = ${(cyclesExecutedInPeriod / 1e6).toFixed(2)}M\n` +
+                    `  Simulated time  = ${simMsAdvanced.toFixed(1)}ms (${(simMsAdvanced / diagElapsed * 100).toFixed(1)}% real-time)\n` +
+                    `  Throughput      = ${(cyclesExecutedInPeriod / diagElapsed / 1000).toFixed(0)}K cycles/ms = ${(cyclesExecutedInPeriod / diagElapsed / 1000000).toFixed(2)}M/ms\n` +
+                    `  runLoop frames  = ${framesInPeriod} (avg ${(diagElapsed / framesInPeriod).toFixed(1)}ms/frame)\n` +
+                    `  pendingCycles   = ${pendingNow.toFixed(0)} (${(pendingNow / (actualF_CPU / 1000)).toFixed(1)}ms simulated debt)`
+                );
+                diagAny._diagLastLogTime = now;
+                diagAny._diagCyclesAtLastLog = realCyclesNow;
+                diagAny._diagFrameCount = 0;
             }
+            // === END DIAGNOSTICS ===
 
             // Execute instructions strictly 1-for-1 to guarantee PWM/SPI/I2C peripheral timing.
             // Run as many as physically possible in a 16ms window to maintain 60fps UI.
+            let cyclesThisFrame = 0;
             while (this.pendingCycles > 0 && this.running && this.cpu) {
                 if (performance.now() - executionStartTime > 16) {
                     // Yield to browser to keep UI responsive, save remaining cycles for next tick
                     break;
                 }
 
-                const chunkTarget = Math.min(this.pendingCycles, 100000);
+                const chunkTarget = Math.min(this.pendingCycles, 500000);
                 const startCycles = this.cpu.cycles;
-                const F_CPU = (this.cpu as any).clock?.frequency || 160_000_000;
+                const F_CPU_inner = (this.cpu as any).clock?.frequency || 125_000_000; // SimulationClock defaults to 125MHz
                 const targetCycles = startCycles + chunkTarget;
-                const targetNanos = (targetCycles / F_CPU) * 1e9;
+                const targetNanos = (targetCycles / F_CPU_inner) * 1e9;
 
                 const cpuAny = this.cpu as any;
                 const clock = cpuAny.clock;
@@ -1608,8 +1631,10 @@ export class ESP32Runner implements BoardRunner {
                 }
                 
                 const cyclesDone = this.cpu.cycles - startCycles;
+                cyclesThisFrame += cyclesDone;
                 this.pendingCycles -= cyclesDone;
             }
+
 
             // --- Component updates for smooth animation ---
             // MOVED OUTSIDE THE LOOP! This runs just ONCE per 16ms frame (60fps) instead of 
