@@ -575,6 +575,7 @@ export class ESP32Runner implements BoardRunner {
     private _wasmStateView: Int32Array | null = null;
     private _wasmDramView: Uint8Array | null = null;
     private _wasmFlashView: Uint8Array | null = null;
+    private _wasmMmuProView: Uint32Array | null = null;
     private static readonly TRAP_TYPE_IDX   = 320 / 4;
     private static readonly TRAP_ADDR_IDX   = 324 / 4;
     private static readonly TRAP_VAL_IDX    = 328 / 4;
@@ -898,7 +899,6 @@ export class ESP32Runner implements BoardRunner {
                 // Line-buffer for console logging
                 if (char === '\n' || char === '\r') {
                     if (uartBuffer.length > 0) {
-                        // Suppress massive internal protocol frames from the browser console
                         if (!uartBuffer.startsWith('>I2C') && !uartBuffer.startsWith('>SPI') && !uartBuffer.startsWith('>ADC') && !uartBuffer.startsWith('>DAC') && !uartBuffer.startsWith('>SIM')) {
                             console.log(`[ESP32 UART0] ${uartBuffer}`);
                         }
@@ -912,13 +912,10 @@ export class ESP32Runner implements BoardRunner {
                     this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'uart0' });
                 }
 
-                // Line-buffer for serial monitor: emit complete lines as SERIAL_OUTPUT
-                // This matches the behavior of qemuRunner.js on the backend
+                // Line-buffer for serial monitor is no longer needed because onByteTransmitCb 
+                // streams character-by-character perfectly.
                 if (!inFrame) {
                     if (char === '\n') {
-                        if (this.uartLineBuffer.length > 0) {
-                            this.onStateUpdate({ type: 'SERIAL_OUTPUT', text: this.uartLineBuffer, boardId: this.boardId, source: 'wasm' });
-                        }
                         this.uartLineBuffer = '';
                     } else if (char !== '\r') {
                         this.uartLineBuffer += char;
@@ -1563,16 +1560,52 @@ export class ESP32Runner implements BoardRunner {
         try {
             const url = new URL('/xtensa-core.wasm', self.location.href);
             const bytes = await fetch(url).then(r => r.arrayBuffer());
-            const { instance } = await WebAssembly.instantiate(bytes, {});
+            
+            const env = {
+                js_read8: (addr: number) => {
+                    try { return this.cpu!.cores[0].readUint8(addr >>> 0) >>> 0; } catch(e) { return 0; }
+                },
+                js_read16: (addr: number) => {
+                    try { return this.cpu!.cores[0].readUint16(addr >>> 0) >>> 0; } catch(e) { return 0; }
+                },
+                js_read32: (addr: number) => {
+                    try { return this.cpu!.cores[0].readUint32(addr >>> 0) >>> 0; } catch(e) { return 0; }
+                },
+                js_write8: (addr: number, val: number) => {
+                    try { this.cpu!.cores[0].writeUint8(addr >>> 0, val >>> 0); } catch(e) {}
+                },
+                js_write16: (addr: number, val: number) => {
+                    try { this.cpu!.cores[0].writeUint16(addr >>> 0, val >>> 0); } catch(e) {}
+                },
+                js_write32: (addr: number, val: number) => {
+                    try { this.cpu!.cores[0].writeUint32(addr >>> 0, val >>> 0); } catch(e) {}
+                }
+            };
+            
+            const { instance } = await WebAssembly.instantiate(bytes, { env });
             this._wasmExports = instance.exports;
             const mem = (instance.exports.memory as WebAssembly.Memory).buffer;
             this._wasmStateView = new Int32Array(mem, 0, 512 / 4);
+            
+            if (instance.exports.get_mmu_pro_offset) {
+                this._wasmMmuProView = new Uint32Array(mem,
+                    (instance.exports.get_mmu_pro_offset as Function)(),
+                    64);
+            }
+            
             this._wasmDramView  = new Uint8Array(mem,
                 (instance.exports.get_dram_offset as Function)(),
                 520 * 1024);
             this._wasmFlashView = new Uint8Array(mem,
                 (instance.exports.get_flash_offset as Function)(),
                 4 * 1024 * 1024);
+                
+            // Wait to sync flash until we know CPU exists
+            if (this.cpu && this.cpu.flash) {
+                this._wasmFlashView.set(this.cpu.flash);
+                console.info('[ESP32] Synced flash to WASM memory');
+            }
+            
             console.info('[ESP32] WASM Xtensa core loaded ✓');
         } catch (e) {
             console.warn('[ESP32] WASM load failed, using JS fallback:', e);
@@ -1630,6 +1663,10 @@ export class ESP32Runner implements BoardRunner {
         
         this._syncToWasm();
         
+        if (this._wasmMmuProView && (this.cpu as any).mmuTablePro) {
+            this._wasmMmuProView.set((this.cpu as any).mmuTablePro.subarray(0, 64));
+        }
+        
         let remaining = targetCycles;
         let totalDone = 0;
         
@@ -1658,6 +1695,12 @@ export class ESP32Runner implements BoardRunner {
                 state[ESP32Runner.TRAP_TYPE_IDX] = 0;
             } else if (trapType === 99 /* UNIMPLEMENTED OPCODE */) {
                 this._syncFromWasm();
+                
+                const opByte = state[ESP32Runner.TRAP_VAL_IDX] & 0xFF;
+                const diagAny = this as any;
+                if (!diagAny._unimplCount) diagAny._unimplCount = {};
+                diagAny._unimplCount[opByte] = (diagAny._unimplCount[opByte] || 0) + 1;
+
                 this.cpu!.step();
                 this._syncToWasm();
                 remaining--;
@@ -1700,7 +1743,7 @@ export class ESP32Runner implements BoardRunner {
             const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
 
             // === PERF DIAGNOSTICS (gated — set PERF_DEBUG=true to enable) ===
-            const PERF_DEBUG = false;
+            const PERF_DEBUG = true;
             if (PERF_DEBUG) {
                 const diagAny = this as any;
                 if (!diagAny._diagLastLogTime) diagAny._diagLastLogTime = now;
@@ -1712,13 +1755,24 @@ export class ESP32Runner implements BoardRunner {
                     const cyclesDelta = this.cpu.cycles - diagAny._diagCyclesAtLastLog;
                     const actualF    = (this.cpu as any).clock?.frequency ?? 0;
                     const simMs      = cyclesDelta / (actualF / 1000);
+                    let unimplStr = '';
+                    if (diagAny._unimplCount) {
+                        const top = Object.entries(diagAny._unimplCount)
+                            .sort((a: any, b: any) => (b[1] as number) - (a[1] as number))
+                            .slice(0, 5)
+                            .map((x: any) => `0x${parseInt(x[0]).toString(16)}=${x[1]}`)
+                            .join(', ');
+                        unimplStr = ` | misses: [${top}]`;
+                        diagAny._unimplCount = {};
+                    }
+
                     console.warn(
                         `[ESP32 Perf] ${diagElapsed.toFixed(0)}ms real | ` +
                         `${(actualF/1e6).toFixed(0)}MHz | ` +
                         `${(cyclesDelta/1e6).toFixed(2)}M cycles | ` +
                         `${(simMs/diagElapsed*100).toFixed(1)}% real-time | ` +
                         `${diagAny._diagFrameCount}fps | ` +
-                        `debt=${(this.pendingCycles/(actualF/1000)).toFixed(0)}ms`
+                        `debt=${(this.pendingCycles/(actualF/1000)).toFixed(0)}ms` + unimplStr
                     );
                     diagAny._diagLastLogTime = now;
                     diagAny._diagCyclesAtLastLog = this.cpu.cycles;
