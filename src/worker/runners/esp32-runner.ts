@@ -570,6 +570,26 @@ export class ESP32Runner implements BoardRunner {
     private channel = new MessageChannel();
     private lastStateEmitTime: number = 0;
 
+    // === WASM Integration ===
+    private _wasmExports: any = null;
+    private _wasmStateView: Int32Array | null = null;
+    private _wasmDramView: Uint8Array | null = null;
+    private _wasmFlashView: Uint8Array | null = null;
+    private static readonly TRAP_TYPE_IDX   = 320 / 4;
+    private static readonly TRAP_ADDR_IDX   = 324 / 4;
+    private static readonly TRAP_VAL_IDX    = 328 / 4;
+    private static readonly TRAP_CYCLES_IDX = 332 / 4;
+    private static readonly PC_IDX          = 256 / 4;
+    private static readonly SAR_IDX         = 260 / 4;
+    private static readonly PS_IDX          = 264 / 4;
+    private static readonly LCOUNT_IDX      = 268 / 4;
+    private static readonly LBEG_IDX        = 272 / 4;
+    private static readonly LEND_IDX        = 276 / 4;
+    private static readonly CCOUNT_IDX      = 280 / 4;
+    private static readonly WBASE_IDX       = 288 / 4;
+    private static readonly WSTART_IDX      = 292 / 4;
+    // ========================
+
     constructor(
         hexData: string,
         componentsDef: any[],
@@ -598,6 +618,9 @@ export class ESP32Runner implements BoardRunner {
         this.lastPhysicsSolveAt = 0;
         this.repropagateAllVoltages = null;
         this.statusIntervalEmitCount = 0;
+
+        // Start async WASM load
+        this.initWasmCore();
 
         this.currentWires = wiresDef || [];
         this.onStateUpdate = onStateUpdate;
@@ -936,6 +959,7 @@ export class ESP32Runner implements BoardRunner {
                     });
                 };
                 this.instances.set(cDef.id, inst);
+                (this as any)._instArrayCache = null; // invalidate cache
             }
         });
 
@@ -1535,104 +1559,214 @@ export class ESP32Runner implements BoardRunner {
         }
     }
 
+    private async initWasmCore() {
+        try {
+            const url = new URL('/xtensa-core.wasm', self.location.href);
+            const bytes = await fetch(url).then(r => r.arrayBuffer());
+            const { instance } = await WebAssembly.instantiate(bytes, {});
+            this._wasmExports = instance.exports;
+            const mem = (instance.exports.memory as WebAssembly.Memory).buffer;
+            this._wasmStateView = new Int32Array(mem, 0, 512 / 4);
+            this._wasmDramView  = new Uint8Array(mem,
+                (instance.exports.get_dram_offset as Function)(),
+                520 * 1024);
+            this._wasmFlashView = new Uint8Array(mem,
+                (instance.exports.get_flash_offset as Function)(),
+                4 * 1024 * 1024);
+            console.info('[ESP32] WASM Xtensa core loaded ✓');
+        } catch (e) {
+            console.warn('[ESP32] WASM load failed, using JS fallback:', e);
+        }
+    }
+
+    private _syncToWasm() {
+        if (!this._wasmStateView || !this.cpu) return;
+        const cpuAny = this.cpu as any;
+        const core = cpuAny.cores?.[0];
+        if (!core) return;
+
+        const state = this._wasmStateView;
+        state[ESP32Runner.PC_IDX] = core.PC;
+        
+        // Map AR physical registers
+        state.set(core.physicalRegisters, 0); // Writes 64 elements starting at offset 0
+        
+        // Map Special registers
+        state[ESP32Runner.SAR_IDX]    = core.specialRegisters[3];
+        state[ESP32Runner.WBASE_IDX]  = core.specialRegisters[72];
+        state[ESP32Runner.WSTART_IDX] = core.specialRegisters[73];
+        state[ESP32Runner.PS_IDX]     = core.specialRegisters[230];
+        state[ESP32Runner.LCOUNT_IDX] = core.specialRegisters[2];
+        state[ESP32Runner.LBEG_IDX]   = core.specialRegisters[0];
+        state[ESP32Runner.LEND_IDX]   = core.specialRegisters[1];
+        state[ESP32Runner.CCOUNT_IDX] = core.specialRegisters[234];
+    }
+
+    private _syncFromWasm() {
+        if (!this._wasmStateView || !this.cpu) return;
+        const core = (this.cpu as any).cores?.[0];
+        if (!core) return;
+
+        const state = this._wasmStateView;
+        core.PC = state[ESP32Runner.PC_IDX] >>> 0;
+        
+        // Map AR physical registers back
+        core.physicalRegisters.set(state.subarray(0, 64));
+        
+        // Map Special registers back
+        core.specialRegisters[3]   = state[ESP32Runner.SAR_IDX];
+        core.specialRegisters[72]  = state[ESP32Runner.WBASE_IDX];
+        core.specialRegisters[73]  = state[ESP32Runner.WSTART_IDX];
+        core.specialRegisters[230] = state[ESP32Runner.PS_IDX];
+        core.specialRegisters[2]   = state[ESP32Runner.LCOUNT_IDX];
+        core.specialRegisters[0]   = state[ESP32Runner.LBEG_IDX];
+        core.specialRegisters[1]   = state[ESP32Runner.LEND_IDX];
+        core.specialRegisters[234] = state[ESP32Runner.CCOUNT_IDX];
+    }
+
+    private _runWasmChunk(targetCycles: number): number {
+        const exports = this._wasmExports!;
+        const state   = this._wasmStateView!;
+        
+        this._syncToWasm();
+        
+        let remaining = targetCycles;
+        let totalDone = 0;
+        
+        while (remaining > 0) {
+            const result: number = (exports.execute as Function)(remaining);
+            
+            if (result >= 0) {
+                totalDone += result;
+                break;
+            }
+            
+            const cyclesDone = -result - 1;
+            totalDone  += cyclesDone;
+            remaining  -= cyclesDone;
+            
+            const trapType = state[ESP32Runner.TRAP_TYPE_IDX];
+            const trapAddr = state[ESP32Runner.TRAP_ADDR_IDX] >>> 0;
+            
+            if (trapType === 1 /* MMIO_READ */) {
+                const val = (this.cpu as any).readUint32(trapAddr);
+                state[ESP32Runner.TRAP_VAL_IDX] = val;
+                (exports.set_mmio_read_result as Function)(val);
+            } else if (trapType === 2 /* MMIO_WRITE */) {
+                const val = state[ESP32Runner.TRAP_VAL_IDX];
+                (this.cpu as any).writeUint32(trapAddr, val);
+                state[ESP32Runner.TRAP_TYPE_IDX] = 0;
+            } else if (trapType === 99 /* UNIMPLEMENTED OPCODE */) {
+                this._syncFromWasm();
+                this.cpu!.step();
+                this._syncToWasm();
+                remaining--;
+                totalDone++;
+            } else {
+                break; // Unknown trap
+            }
+        }
+        
+        this._syncFromWasm();
+        return totalDone;
+    }
+
     private runLoop = () => {
         if (!this.running || !this.cpu) return;
 
         const now = performance.now();
         const deltaTime = now - this.lastTime;
         this.lastTime = now;
-        
-        const loopCount = (this as any)._runLoopCount || 0;
-        (this as any)._runLoopCount = loopCount + 1;
 
         if (deltaTime > 0) {
-            const F_CPU = (this.cpu as any).clock?.frequency ?? 125_000_000; // SimulationClock defaults to 125MHz
+            const F_CPU = (this.cpu as any).clock?.frequency ?? 125_000_000;
             const cyclesPerMs = (F_CPU / 1000) * this.speed;
-            
-            // Limit deltaTime to max 100ms to prevent death spirals if browser tab sleeps
+
+            // Cap deltaTime to 100ms to prevent death spirals when tab sleeps.
+            // Also cap total pending debt to 2 seconds worth of cycles so we never
+            // try to "catch up" from an impossible deficit.
             const cappedDelta = Math.min(deltaTime, 100);
-            this.pendingCycles += cappedDelta * cyclesPerMs;
+            const MAX_DEBT = F_CPU * 2;
+            this.pendingCycles = Math.min(
+                this.pendingCycles + cappedDelta * cyclesPerMs,
+                MAX_DEBT
+            );
 
             const executionStartTime = performance.now();
-            
-            const instArray = Array.from(this.instances.values());
+
+            // Use cached instArray — rebuilt only when instances change (see invalidateInstCache)
+            const instArray = (this as any)._instArrayCache ??= Array.from(this.instances.values());
             const physicsInterval = this.speed > 1.0 ? 8 : 12;
             const shouldSolvePhysics = this.circuitDirty || (now - this.lastPhysicsSolveAt) >= physicsInterval;
 
-            // === PERFORMANCE DIAGNOSTICS ===
-            // Logs key stats every ~1000ms of real time to diagnose simulation speed
-            const diagAny = this as any;
-            if (!diagAny._diagLastLogTime) diagAny._diagLastLogTime = now;
-            if (!diagAny._diagCyclesAtLastLog) diagAny._diagCyclesAtLastLog = this.cpu?.cycles ?? 0;
-            if (!diagAny._diagFrameCount) diagAny._diagFrameCount = 0;
-            diagAny._diagFrameCount++;
-
-            const diagElapsed = now - diagAny._diagLastLogTime;
-            if (diagElapsed >= 1000 && this.cpu) {
-                const realCyclesNow = this.cpu.cycles;
-                const cyclesExecutedInPeriod = realCyclesNow - diagAny._diagCyclesAtLastLog;
-                const actualF_CPU = (this.cpu as any).clock?.frequency ?? 0;
-                const simMsAdvanced = cyclesExecutedInPeriod / (actualF_CPU / 1000);
-                const framesInPeriod = diagAny._diagFrameCount;
-                const pendingNow = this.pendingCycles;
-
-                console.warn(
-                    `[ESP32 Perf] Over last ${diagElapsed.toFixed(0)}ms real-time:\n` +
-                    `  clock.frequency = ${(actualF_CPU / 1e6).toFixed(1)} MHz\n` +
-                    `  Cycles executed = ${(cyclesExecutedInPeriod / 1e6).toFixed(2)}M\n` +
-                    `  Simulated time  = ${simMsAdvanced.toFixed(1)}ms (${(simMsAdvanced / diagElapsed * 100).toFixed(1)}% real-time)\n` +
-                    `  Throughput      = ${(cyclesExecutedInPeriod / diagElapsed / 1000).toFixed(0)}K cycles/ms = ${(cyclesExecutedInPeriod / diagElapsed / 1000000).toFixed(2)}M/ms\n` +
-                    `  runLoop frames  = ${framesInPeriod} (avg ${(diagElapsed / framesInPeriod).toFixed(1)}ms/frame)\n` +
-                    `  pendingCycles   = ${pendingNow.toFixed(0)} (${(pendingNow / (actualF_CPU / 1000)).toFixed(1)}ms simulated debt)`
-                );
-                diagAny._diagLastLogTime = now;
-                diagAny._diagCyclesAtLastLog = realCyclesNow;
-                diagAny._diagFrameCount = 0;
+            // === PERF DIAGNOSTICS (gated — set PERF_DEBUG=true to enable) ===
+            const PERF_DEBUG = false;
+            if (PERF_DEBUG) {
+                const diagAny = this as any;
+                if (!diagAny._diagLastLogTime) diagAny._diagLastLogTime = now;
+                if (!diagAny._diagCyclesAtLastLog) diagAny._diagCyclesAtLastLog = this.cpu?.cycles ?? 0;
+                if (!diagAny._diagFrameCount) diagAny._diagFrameCount = 0;
+                diagAny._diagFrameCount++;
+                const diagElapsed = now - diagAny._diagLastLogTime;
+                if (diagElapsed >= 1000 && this.cpu) {
+                    const cyclesDelta = this.cpu.cycles - diagAny._diagCyclesAtLastLog;
+                    const actualF    = (this.cpu as any).clock?.frequency ?? 0;
+                    const simMs      = cyclesDelta / (actualF / 1000);
+                    console.warn(
+                        `[ESP32 Perf] ${diagElapsed.toFixed(0)}ms real | ` +
+                        `${(actualF/1e6).toFixed(0)}MHz | ` +
+                        `${(cyclesDelta/1e6).toFixed(2)}M cycles | ` +
+                        `${(simMs/diagElapsed*100).toFixed(1)}% real-time | ` +
+                        `${diagAny._diagFrameCount}fps | ` +
+                        `debt=${(this.pendingCycles/(actualF/1000)).toFixed(0)}ms`
+                    );
+                    diagAny._diagLastLogTime = now;
+                    diagAny._diagCyclesAtLastLog = this.cpu.cycles;
+                    diagAny._diagFrameCount = 0;
+                }
             }
             // === END DIAGNOSTICS ===
 
-            // Execute instructions strictly 1-for-1 to guarantee PWM/SPI/I2C peripheral timing.
-            // Run as many as physically possible in a 16ms window to maintain 60fps UI.
-            let cyclesThisFrame = 0;
+            // Execute instructions. Use the full actual frame time minus 3ms overhead
+            // budget instead of a fixed 16ms cap, so we don't waste the 7ms dead zone
+            // between frames caused by MessageChannel + component update overhead.
+            const execBudgetMs = Math.max(16, deltaTime - 3);
+
             while (this.pendingCycles > 0 && this.running && this.cpu) {
-                if (performance.now() - executionStartTime > 16) {
-                    // Yield to browser to keep UI responsive, save remaining cycles for next tick
+                if (performance.now() - executionStartTime > execBudgetMs) {
                     break;
                 }
 
-                const chunkTarget = Math.min(this.pendingCycles, 500000);
+                const chunkTarget = Math.min(this.pendingCycles, 500_000);
                 const startCycles = this.cpu.cycles;
-                const F_CPU_inner = (this.cpu as any).clock?.frequency || 125_000_000; // SimulationClock defaults to 125MHz
+                const F_CPU_inner = (this.cpu as any).clock?.frequency || 125_000_000;
                 const targetCycles = startCycles + chunkTarget;
-                const targetNanos = (targetCycles / F_CPU_inner) * 1e9;
+                const targetNanos  = (targetCycles / F_CPU_inner) * 1e9;
 
                 const cpuAny = this.cpu as any;
-                const clock = cpuAny.clock;
-                
-                // Cache coresIdle getter result if the CPU is running continuously.
-                // Re-evaluate it only every 1024 cycles to prevent massive overhead from Array.every() 
-                // inside the JS engine's tightest simulation loop.
+                const clock  = cpuAny.clock;
+
                 let checkIdle = true;
-                
-                while (this.cpu.cycles < targetCycles && this.running) {
-                    if (checkIdle) {
-                        if (cpuAny.coresIdle && clock) {
-                            clock.skipToNextEvent(targetNanos);
+
+                if (this._wasmExports && this._wasmStateView) {
+                    const done = this._runWasmChunk(chunkTarget);
+                    this.cpu.cycles += done;
+                } else {
+                    while (this.cpu.cycles < targetCycles && this.running) {
+                        if (checkIdle) {
+                            if (cpuAny.coresIdle && clock) {
+                                clock.skipToNextEvent(targetNanos);
+                            }
+                            checkIdle = false;
                         }
-                        checkIdle = false;
-                    }
-                    
-                    this.cpu.step();
-                    
-                    // Periodically re-check idle state (e.g. every 1024 cycles)
-                    if ((this.cpu.cycles & 1023) === 0) {
-                        checkIdle = true;
+                        this.cpu.step();
+                        if ((this.cpu.cycles & 1023) === 0) {
+                            checkIdle = true;
+                        }
                     }
                 }
-                
-                const cyclesDone = this.cpu.cycles - startCycles;
-                cyclesThisFrame += cyclesDone;
-                this.pendingCycles -= cyclesDone;
+
+                this.pendingCycles -= this.cpu.cycles - startCycles;
             }
 
 
