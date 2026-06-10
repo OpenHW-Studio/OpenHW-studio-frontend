@@ -110,7 +110,7 @@ export class WokwiInternetAP {
         }
         this.gatewayUrl = url;
         
-        this.ssid = options.ssid || 'Wokwi-GUEST';
+        this.ssid = options.ssid || 'OpenHW-GUEST';
         this.password = options.password;
         this.channel = options.channel || 6;
         this.status.privateGateway = options.privateGateway === 'true' || options.privateGateway === true;
@@ -282,7 +282,24 @@ export class WokwiInternetAP {
             };
 
             if (subtype === 4) { // Probe Request
-                scheduleResponse(this.buildProbeResponse(sa));
+                // Parse the requested SSID from the probe frame (IE element 0, starts at byte 24)
+                // and mirror it back in the response — this makes the AP respond to ANY SSID
+                // the sketch passes to WiFi.begin(), not just this.ssid.
+                let requestedSsid = this.ssid; // fallback to configured SSID
+                if (frame.length > 26) {
+                    let pos = 24; // Information Elements start after 24-byte MAC header
+                    while (pos + 2 <= frame.length) {
+                        const ieId  = frame[pos];
+                        const ieLen = frame[pos + 1];
+                        if (ieId === 0 && ieLen > 0 && pos + 2 + ieLen <= frame.length) {
+                            // Element ID 0 = SSID
+                            requestedSsid = new TextDecoder().decode(frame.slice(pos + 2, pos + 2 + ieLen));
+                            break;
+                        }
+                        pos += 2 + ieLen;
+                    }
+                }
+                scheduleResponse(this.buildProbeResponse(sa, requestedSsid));
             } else if (subtype === 11) { // Auth Request
                 scheduleResponse(this.buildAuthResponse(sa));
             } else if (subtype === 0) { // Assoc Request
@@ -334,7 +351,7 @@ export class WokwiInternetAP {
         }
     }
 
-    private buildProbeResponse(clientMac: Uint8Array): Uint8Array {
+    private buildProbeResponse(clientMac: Uint8Array, requestedSsid?: string): Uint8Array {
         const header = new Uint8Array(24);
         header[0] = 0x50; // Probe Response
         header.set(clientMac, 4);
@@ -349,7 +366,10 @@ export class WokwiInternetAP {
         fixed[10] = 0x01; // Capabilities
         fixed[11] = 0x04;
 
-        const ssidBytes = new TextEncoder().encode(this.ssid);
+        // Use the SSID the chip requested (from its probe request frame).
+        // This makes the AP a universal AP — any WiFi.begin("any-ssid") will match.
+        const ssidToAdvertise = requestedSsid || this.ssid;
+        const ssidBytes = new TextEncoder().encode(ssidToAdvertise);
         const ssidIE = new Uint8Array(2 + ssidBytes.length);
         ssidIE[0] = 0; 
         ssidIE[1] = ssidBytes.length;
