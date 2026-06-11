@@ -18,6 +18,7 @@ import LandingPage from "./pages/LandingPage.jsx";
 import UserLoginPage from "./pages/auth/UserLoginPage.jsx";
 import RoleSelectPage from "./pages/RoleSelectPage.jsx";
 // Lazy-loaded routes to drastically improve LCP
+import ExamplesPage from "./pages/ExamplesPage.jsx";
 import SigninPage from "./pages/auth/SigninPage.jsx";
 import SignupPage from "./pages/auth/SignupPage.jsx";
 import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage.jsx";
@@ -189,6 +190,7 @@ export default function App() {
                 {/* Public Routes */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/about" element={<AboutUsNew />} />
+                <Route path="/examples" element={<ExamplesPage />} />
                 <Route path="/login" element={<UserLoginPage />} />
                 <Route
                   path="/signin"
