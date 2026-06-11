@@ -400,7 +400,9 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
 
     // Custom sensors
     'DHT-22':                [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
+    'openhw-dht22':          [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
     'MQ-2 Gas Sensor':       [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'openhw-mq2-gas-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
     'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
     'wokwi-raindrop-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }, { id: 'PAD+' }, { id: 'PAD-' }],
     'wokwi-raindrop-pad':    [{ id: 'AOUT' }, { id: 'GND' }],
