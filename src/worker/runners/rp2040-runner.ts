@@ -3096,7 +3096,7 @@ export class RP2040Runner implements BoardRunner {
                 inst.setPinVoltage(compPin, v);
                 this.circuitDirty = true;
                 if (this.cpu) {
-                    inst.onPinStateChange(compPin, v > 1.8, this.cpu.cycles);
+                    inst.onPinStateChange(compPin, v > 1.8, this.cpu.core.cycles);
                 }
                 this.tickI2S(inst, compId, compPin, v > 1.8);
 
@@ -3241,7 +3241,7 @@ export class RP2040Runner implements BoardRunner {
 
         const boardInst = this.instances.get(this.boardId);
         if (boardInst && this.cpu) {
-            boardInst.onPinStateChange(gpPin, isHigh, this.cpu.cycles);
+            boardInst.onPinStateChange(gpPin, isHigh, this.cpu.core.cycles);
         }
 
         const visitedEdges = new Set<string>();
@@ -3268,7 +3268,7 @@ export class RP2040Runner implements BoardRunner {
             inst.setPinVoltage(compPin, voltage);
             this.circuitDirty = true;
             if (this.cpu) {
-                inst.onPinStateChange(compPin, voltage > 1.8, this.cpu.cycles);
+                inst.onPinStateChange(compPin, voltage > 1.8, this.cpu.core.cycles);
             }
             this.tickI2S(inst, compId, compPin, voltage > 1.8);
 
