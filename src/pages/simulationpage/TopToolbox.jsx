@@ -422,6 +422,8 @@ function TopToolboxInternal(props) {
     returnTo,
     navigate,
     code,
+    useBlocklyCode,
+    setUseBlocklyCode,
   } = props;
 
    const viewPanelRef = useRef(null);
@@ -493,9 +495,18 @@ function TopToolboxInternal(props) {
     },
     { label: "Import", onClick: () => importFileRef.current?.click() },
     { label: "Save", shortcut: "Ctrl+S", onClick: handleSave },
+    {
+      label: "Export",
+      submenu: [
+        { label: "PNG", onClick: downloadPng },
+        { label: "JSON", onClick: downloadSimulationJson },
+      ],
+    },
     { label: "Make a copy", onClick: () => handleSave() }, // Placeholder for copy
     { type: "separator" },
-    { label: "Save Local Copy", onClick: handleBackupWorkflow },
+    { label: "Save Local Copy (ZIP)", onClick: handleBackupWorkflow },
+    { type: "separator" },
+    { label: "📂 Examples Gallery", onClick: () => navigate("/examples") },
   ];
 
   const toolMenuItems = [
@@ -508,13 +519,6 @@ function TopToolboxInternal(props) {
     },
     { label: "Alignment Lab", onClick: () => navigate("/alignment-lab") },
     { type: "separator" },
-    {
-      label: "Export",
-      submenu: [
-        { label: "PNG", onClick: downloadPng },
-        { label: "JSON", onClick: downloadSimulationJson },
-      ],
-    },
     { type: "separator" },
     { label: "Connect Hardware", onClick: () => setShowConnectPanel(true) },
   ];
@@ -684,7 +688,7 @@ function TopToolboxInternal(props) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-1 flex-wrap">
+      <div className="flex items-center gap-2 flex-1 flex-wrap" style={{ minWidth: 0, overflowX: 'auto' }}>
         {/* RUN button */}
         <Btn
           color={
@@ -819,6 +823,43 @@ function TopToolboxInternal(props) {
             )}
           </Btn>
         )}
+
+        {/* Code / Blocks toggle */}
+        <div
+  onClick={() => setUseBlocklyCode(!useBlocklyCode)}
+  title={useBlocklyCode ? 'Currently running Blocks — click to switch to Code' : 'Currently running Code — click to switch to Blocks'}
+  style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: 0,
+    borderRadius: 8,
+    border: '1px solid var(--border)',
+    overflow: 'hidden',
+    cursor: 'pointer',
+    flexShrink: 0,
+    fontSize: 12,
+    fontWeight: 700,
+    userSelect: 'none',
+  }}
+>
+  <div style={{
+    padding: '5px 11px',
+    background: !useBlocklyCode ? 'var(--accent)' : 'transparent',
+    color: !useBlocklyCode ? '#000' : 'var(--text3)',
+    transition: 'all 0.15s',
+  }}>
+    &lt;/&gt; Code
+  </div>
+  <div style={{
+    padding: '5px 11px',
+    background: useBlocklyCode ? 'var(--accent)' : 'transparent',
+    color: useBlocklyCode ? '#000' : 'var(--text3)',
+    transition: 'all 0.15s',
+  }}>
+    ⬡ Blocks
+  </div>
+</div>
+
 
         {assessmentMode && (
           <Btn
