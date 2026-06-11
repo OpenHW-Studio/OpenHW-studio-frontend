@@ -1038,13 +1038,13 @@ export class RP2040Runner implements BoardRunner {
         // Attach PIO hooks for components like PicoWLogic
         let hookAttached = false;
         for (const inst of this.instances.values()) {
-            if (typeof (inst as any).attachPioHooks === 'function') {
-                (inst as any).attachPioHooks(this.cpu);
+            if (typeof (inst as any).attachGpioHooks === 'function') {
+                (inst as any).attachGpioHooks(this.cpu);
                 hookAttached = true;
             }
         }
         if (!hookAttached) {
-            console.log(`[RP2040Runner] No components with attachPioHooks were found!`);
+            console.log(`[RP2040Runner] No components with attachGpioHooks were found!`);
         }
 
         this.attachGPIOListeners();
