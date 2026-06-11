@@ -14,14 +14,19 @@ import { formatDateTime, normalizeJoinCode, getAvatarLetters } from '../../compo
 import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 import ClassCard from '../../components/common/ClassCard.jsx'
 import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
+import ProjectIcon from '../../components/common/ProjectIcon.jsx'
 
 const DEMO_PROJECTS = [
   { title: 'LED Blink',          slug: 'led-blink',          board: 'Arduino Uno', difficulty: 'Beginner',     icon: '💡', xp: 100 },
   { title: 'RGB LED',            slug: 'rgb-led',             board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🌈', xp: 150 },
   { title: 'Buzzer',             slug: 'buzzer',              board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🔊', xp: 150 },
   { title: 'Potentiometer',      slug: 'potentiometer',       board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🎛️', xp: 175 },
+  { title: 'Light Sensor',       slug: 'ldr',                 board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🌞', xp: 140 },
   { title: 'Button & Debounce',  slug: 'button-debounce',     board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🔘', xp: 200 },
+  { title: 'Servo Motor',        slug: 'servo-motor',         board: 'Arduino Uno', difficulty: 'Intermediate', icon: '⚙️', xp: 200 },
+  { title: 'LED Strip',          slug: 'led-strip',           board: 'Arduino Uno', difficulty: 'Intermediate', icon: '✨', xp: 220 },
   { title: 'Temperature Sensor', slug: 'temperature-sensor',  board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', xp: 250 },
+  { title: 'DC Motor',           slug: 'dc-motor',            board: 'Arduino Uno', difficulty: 'Advanced',     icon: '🔩', xp: 300 },
 ]
 
 export default function StudentDashboard() {
@@ -341,7 +346,9 @@ export default function StudentDashboard() {
                     onClick={() => navigate(`/${p.slug}/guide`)}
                     style={{ cursor: 'pointer' }}
                   >
-                    <div className="project-icon">{p.icon}</div>
+                    <div className="project-icon" style={{ display: 'flex', alignItems: 'center' }}>
+                      <ProjectIcon slug={p.slug} />
+                    </div>
                     <div className="project-info">
                       <h4>{p.title}</h4>
                       <span className="project-board">{p.board}</span>
