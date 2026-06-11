@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { BookOpen, ClipboardCheck, Home, Microchip, Monitor, X } from 'lucide-react'
+import { BookOpen, ClipboardCheck, Home, Microchip, Monitor, X, User } from 'lucide-react'
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useGamification } from "../../context/GamificationContext.jsx";
 import { PROJECTS } from "../../services/gamification/ProjectsConfig.js";
@@ -184,7 +184,8 @@ export default function StudentDashboard() {
     { key: 'home', label: 'Dashboard', icon: Home, isActive: true, onClick: () => {} },
     { key: 'projects', label: 'Guided Projects', icon: Microchip, isActive: false, onClick: () => setShowGuidedProjects(true) },
     { key: 'simulator', label: 'Open Simulator', icon: Monitor, isActive: false, onClick: () => navigate('/simulator') },
-    { key: 'join', label: 'Join class', icon: BookOpen, isActive: false, onClick: handleOpenJoinModal }
+    { key: 'join', label: 'Join New Class', icon: BookOpen, isActive: false, onClick: handleOpenJoinModal },
+    { key: 'user-dash', label: 'Go to User Dashboard', icon: User, isActive: false, onClick: () => navigate('/user/dashboard') }
   ]
 
   const handlePasteCode = async () => {
@@ -291,7 +292,7 @@ export default function StudentDashboard() {
 
               {!loadingDashboard && !dashboardError && classrooms.length === 0 ? (
                 <div className="empty-state">
-                  <div className="empty-icon">??</div>
+                  <div className="empty-icon"></div>
                   <p>You have not joined any classes yet.</p>
                   <button type="button" className="btn btn-primary" onClick={handleOpenJoinModal}>
                     Join with class code
