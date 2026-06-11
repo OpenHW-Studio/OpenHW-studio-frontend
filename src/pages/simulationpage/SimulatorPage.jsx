@@ -12608,14 +12608,13 @@ loadDemoProject();
           setShowAutofix={setShowAutofix}
           showShortcuts={showShortcuts}
           setShowShortcuts={setShowShortcuts}
+          useBlocklyCode={useBlocklyCode}
+          setUseBlocklyCode={setUseBlocklyCode}
           onStartTour={() => {
             localStorage.removeItem("openhw-tour-completed");
             setShowTour(true);
           }}
           returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
-          navigate={navigate}
-          components={components}
-          wires={wires}
           code={code}
         />
 
