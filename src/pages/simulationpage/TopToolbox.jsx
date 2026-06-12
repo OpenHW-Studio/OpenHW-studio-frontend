@@ -706,7 +706,7 @@ function TopToolboxInternal(props) {
                   : isPaused
                     ? "Paused"
                     : "Running"
-              : "Run"
+              : "Run (Shift+Q)"
           }
         >
           {isRunning || isCompiling || isBooting ? (
@@ -778,7 +778,7 @@ function TopToolboxInternal(props) {
           onClick={
             isRunning || isCompiling || isBooting ? handleStop : undefined
           }
-          title="Stop"
+          title="Stop (Shift+Q)"
           iconOnly
         >
           <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
@@ -1806,7 +1806,7 @@ function TopToolboxInternal(props) {
             {
               group: "General",
               shortcuts: [
-                { key: "F5 / ⌘ Enter", desc: "Run / Stop" },
+                { key: "⇧ Q / F5 / ⌘ Enter", desc: "Run / Stop" },
                 { key: "Esc", desc: "Cancel / Clear / Stop" },
                 { key: "⌘ + S", desc: "Save Project" },
                 { key: "⌘ + O", desc: "Toggle Projects" },

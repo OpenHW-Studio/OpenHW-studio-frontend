@@ -52,7 +52,7 @@ export function useSimulatorShortcuts({
       }
 
       // Simulation Control
-      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key === 'Enter')) {
+      if (e.key === 'F5' || ((e.ctrlKey || e.metaKey) && e.key === 'Enter') || (e.shiftKey && e.key.toLowerCase() === 'q')) {
         e.preventDefault();
         if (!isRunning) handleRun();
         else handleStop();
