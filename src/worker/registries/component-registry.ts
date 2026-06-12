@@ -3,6 +3,7 @@ import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
 import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
 import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
+import { HCSR04Logic } from '@openhw/emulator/src/components/openhw-hc-sr04/logic';
 import { PicoLogic } from '../pico-logic';
 import { PicoWLogic } from '@openhw/emulator/src/components/openhw-pico-w/logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
@@ -220,8 +221,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-bmp180-breakout': BaseComponent,
     'wokwi-ds1307-rtc': BaseComponent,
     'openhw-ds1307-rtc': BaseComponent,
-    'wokwi-hc-sr04': BaseComponent,
-    'openhw-hc-sr04': BaseComponent,
+    'wokwi-hc-sr04': HCSR04Logic,
+    'openhw-hc-sr04': HCSR04Logic,
     'wokwi-mpu6050': BaseComponent,
     'openhw-mpu6050': BaseComponent,
     'wokwi-nlsf595': BaseComponent,
@@ -400,7 +401,9 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
 
     // Custom sensors
     'DHT-22':                [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
+    'openhw-dht22':          [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
     'MQ-2 Gas Sensor':       [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'openhw-mq2-gas-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
     'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
     'wokwi-raindrop-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }, { id: 'PAD+' }, { id: 'PAD-' }],
     'wokwi-raindrop-pad':    [{ id: 'AOUT' }, { id: 'GND' }],
