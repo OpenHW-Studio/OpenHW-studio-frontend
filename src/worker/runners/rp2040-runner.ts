@@ -1133,6 +1133,17 @@ export class RP2040Runner implements BoardRunner {
         }
         this.setSoftSerialRxLevel(true);
 
+        // Call onSimulationStart on all instantiated components
+        for (const inst of this.instances.values()) {
+            if (typeof (inst as any).onSimulationStart === 'function') {
+                try {
+                    (inst as any).onSimulationStart();
+                } catch (err) {
+                    console.error(`Error calling onSimulationStart on component ${inst.id}:`, err);
+                }
+            }
+        }
+
         this.running = true;
         this.lastTime = performance.now();
         this.lastStateEmitTime = this.lastTime;
@@ -3534,7 +3545,7 @@ export class RP2040Runner implements BoardRunner {
                         cyclesDone += cycles;
                         this.debugStepCount += 1;
                         if (this.debugStepCount % 1000000 === 0) {
-                            console.log(`[CPU HANG CHECK] PC: 0x${this.cpu!.core.PC.toString(16)}`);
+                            // console.log(`[CPU HANG CHECK] PC: 0x${this.cpu!.core.PC.toString(16)}`);
                         }
 
                         // Synchronous PIO stepping
@@ -4064,6 +4075,18 @@ export class RP2040Runner implements BoardRunner {
         if (neopixelStates.length > 0) {
             this.onStateUpdate({ type: 'state', boardId: this.boardId, components: neopixelStates });
         }
+
+        // Call onSimulationStop on all instantiated components to clean up resources
+        for (const inst of this.instances.values()) {
+            if (typeof (inst as any).onSimulationStop === 'function') {
+                try {
+                    (inst as any).onSimulationStop();
+                } catch (err) {
+                    console.error(`Error calling onSimulationStop on component ${inst.id}:`, err);
+                }
+            }
+        }
+
         this.running = false;
         this.clearPendingUartLedTimers();
         this.gdbStatus = 'closed';
@@ -4081,6 +4104,21 @@ export class RP2040Runner implements BoardRunner {
             }
         });
         this.gpioUnsubscribers = [];
+    }
+
+    public downloadPcap() {
+        for (const inst of this.instances.values()) {
+            if (typeof (inst as any).getPcapBuffer === 'function') {
+                const buffer = (inst as any).getPcapBuffer();
+                if (buffer) {
+                    this.onStateUpdate({
+                        type: 'wifi_pcap',
+                        boardId: this.boardId,
+                        data: buffer
+                    });
+                }
+            }
+        }
     }
 }
 
