@@ -77,6 +77,79 @@ self.onmessage = async (e) => {
         // Dynamic Iterative Loop
         while (currentViolations.length > 0 && limit < MACRO_LIMIT) {
           console.group(`[AutofixWorker] Iteration ${limit + 1}`);
+          
+          // --- CUSTOM JS INTERCEPT FOR NTC MODULE ---
+          const ntcViolation = currentViolations.find(v => {
+            const rawIds = v.componentIds || v.compIds || [];
+            const compId = Array.isArray(rawIds) ? rawIds[0] : rawIds;
+            const comp = currentDiagram.components.find(c => c.id === compId);
+            return comp && comp.type === 'openhw-ntc-thermistor';
+          });
+
+          if (ntcViolation) {
+            const rawIds = ntcViolation.componentIds || ntcViolation.compIds || [];
+            const compId = Array.isArray(rawIds) ? rawIds[0] : rawIds;
+            const board = currentDiagram.components.find(c => c.type.includes('arduino'));
+            const boardId = board ? board.id : 'uno1';
+            
+            // Generate direct wire connections
+            const iterPlan = {
+              description: 'Auto-wiring NTC Module (VCC, GND, A0)',
+              targetRuleId: ntcViolation.ruleId || ntcViolation.id || 'ntc-auto-wire',
+              addedComponents: [],
+              addedWires: [
+                { id: `w_autofix_ntc_vcc_${limit}`, from: `${compId}:VCC`, to: `${boardId}:5V`, color: 'red', isNew: true, path: null },
+                { id: `w_autofix_ntc_gnd_${limit}`, from: `${compId}:GND`, to: `${boardId}:GND.1`, color: 'black', isNew: true, path: null },
+                { id: `w_autofix_ntc_a0_${limit}`, from: `${compId}:A0`, to: `${boardId}:A0`, color: 'green', isNew: true, path: null }
+              ],
+              removedWires: [],
+              transformations: [],
+              reasoning: ['The NTC Module has an internal voltage divider. Connected VCC to 5V, GND to GND, and A0 to Arduino A0.']
+            };
+            
+            // Remove any existing incorrect wires connected to NTC pins if they existed
+            currentDiagram.connections.forEach(w => {
+              if (w.from === `${compId}:A0` || w.to === `${compId}:A0` || 
+                  w.from === `${compId}:VCC` || w.to === `${compId}:VCC` ||
+                  w.from === `${compId}:GND` || w.to === `${compId}:GND`) {
+                iterPlan.removedWires.push({ from: w.from, to: w.to });
+              }
+            });
+
+            console.log('[AutofixWorker] Applied Custom JS Autofix for NTC Module:', iterPlan);
+            totalSuggestions.push(iterPlan);
+            
+            // Apply patch
+            try {
+              const result = calculateProjectPlanApplication(
+                iterPlan, 
+                currentDiagram.components, 
+                currentDiagram.connections, 
+                {} 
+              );
+              currentDiagram.components = result.components;
+              currentDiagram.connections = result.wires;
+            } catch(e) { console.error(e); break; }
+
+            const { safe: isSafe, errors: iterationErrors } = runUnifiedValidation({ 
+              components: currentDiagram.components, 
+              connections: currentDiagram.connections 
+            }, { profile: 'balanced', registry: EmulatorComponents });
+
+            if (isSafe || iterationErrors.length === 0) {
+              console.log('[AutofixWorker] Circuit is now completely fixed via Custom JS!');
+              console.groupEnd();
+              break;
+            } else {
+              currentViolations = iterationErrors;
+              console.log('[AutofixWorker] Remaining issues after custom NTC fix:', currentViolations);
+            }
+            console.groupEnd();
+            limit++;
+            continue; // Skip Rust engine for this iteration
+          }
+          // --- END CUSTOM JS INTERCEPT ---
+
           console.log('[AutofixWorker] Feeding violations to Rust Engine:', currentViolations);
           
           self.postMessage({ type: 'status', payload: `Analyzing iteration ${limit + 1} (Rust)...` });
