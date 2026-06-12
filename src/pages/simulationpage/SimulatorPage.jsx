@@ -298,8 +298,8 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
       if (cats.includes('GND')) gndPins.push(pin);
     });
 
-    // Force Arduino Uno to use 5V by eliminating the 3.3V pin from consideration
-    if (comp.type.includes('arduino-uno')) {
+    // Force all Arduino boards (Uno, Mega, Nano, etc.) to use 5V by eliminating the 3.3V pin from consideration
+    if (comp.type.includes('arduino')) {
       for (let i = vccPins.length - 1; i >= 0; i--) {
         const idAndDesc = ((vccPins[i].id || '') + ' ' + (vccPins[i].description || '')).toUpperCase();
         if (idAndDesc.includes('3.3') || idAndDesc.includes('3V3')) {
@@ -5263,16 +5263,34 @@ export function SimulatorPage({ gamificationMode = false }) {
     [liveEditingDisabled, addComponentInternal],
   );
 
-  // ── Palette click to add (adds to canvas center) ────────────────────────────
+  // ── Palette click to add (adds to canvas center, offset if overlapping) ──────
   const addComponentAtCenter = useCallback(
     async (item) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const cx =
+      let cx =
         (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
-      const cy =
+      let cy =
         (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
+
+      // Nudge position so new components don't stack exactly on top of existing ones
+      const OFFSET_STEP = 30; // px diagonal offset per overlap
+      const OVERLAP_THRESHOLD = 20; // px — consider "same spot" if within this range
+      const currentComps = componentsRef.current || [];
+      let attempts = 0;
+      while (attempts < 15) {
+        const overlapping = currentComps.some(c => {
+          const compCx = c.x + (c.w || 60) / 2;
+          const compCy = c.y + (c.h || 60) / 2;
+          return Math.abs(compCx - cx) < OVERLAP_THRESHOLD && Math.abs(compCy - cy) < OVERLAP_THRESHOLD;
+        });
+        if (!overlapping) break;
+        cx += OFFSET_STEP;
+        cy += OFFSET_STEP;
+        attempts++;
+      }
+
       await addComponentAt(item, cx, cy);
     },
     [addComponentAt],
@@ -5582,11 +5600,21 @@ export function SimulatorPage({ gamificationMode = false }) {
               newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newX };
             }
           }
+          const finalWaypoints = [];
+          if (newPts[0] && sd.startPts[0] && (newPts[0].x !== sd.startPts[0].x || newPts[0].y !== sd.startPts[0].y)) {
+            finalWaypoints.push({ x: newPts[0].x, y: newPts[0].y, _corner: true });
+          }
+          for (let i = 1; i < newPts.length - 1; i++) {
+            if (newPts[i]) finalWaypoints.push({ x: newPts[i].x, y: newPts[i].y, _corner: true });
+          }
+          const lastIdx = newPts.length - 1;
+          if (lastIdx > 0 && newPts[lastIdx] && sd.startPts[lastIdx] && (newPts[lastIdx].x !== sd.startPts[lastIdx].x || newPts[lastIdx].y !== sd.startPts[lastIdx].y)) {
+            finalWaypoints.push({ x: newPts[lastIdx].x, y: newPts[lastIdx].y, _corner: true });
+          }
+
           wireUpdate = {
             wireId: sd.wireId,
-            cornerWaypoints: newPts
-              .slice(1, -1)
-              .map((pt) => ({ x: pt.x, y: pt.y, _corner: true })),
+            cornerWaypoints: finalWaypoints.filter(pt => pt && isFinite(pt.x) && isFinite(pt.y)),
           };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
@@ -6313,8 +6341,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Logic: If the second pin has a more "specific" color (comms, power, etc.)
         // and the first is generic green, use the specific color.
         const isGeneric = (c) => c === "#2ecc71" || c === "#10b981";
-        const finalColor =
-          !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        let finalColor = !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        if (color1 === 'black' || color2 === 'black') finalColor = 'black';
 
         const newWire = {
           id: `w${nextWireId++}`,
