@@ -42,41 +42,28 @@ export default defineConfig(({ mode }) => {
       cssMinify: true,
     },
     resolve: {
-      alias: resolvedEmulatorPath ? {
+      alias: useAlias ? {
         '@openhw/emulator': resolvedEmulatorPath,
       } : {},
     },
     optimizeDeps: {
-      include: ['@openhw/emulator'],
+      exclude: ['@openhw/emulator'],
       esbuildOptions: {
-         plugins: [
-           {
-             name: 'raw-html',
-             setup(build) {
-               build.onResolve({ filter: /\.html\?raw$/ }, (args) => ({
-                 path: path.resolve(path.dirname(args.importer), args.path.replace(/\?raw$/, '')),
-                 namespace: 'raw-html',
-               }))
-               build.onLoad({ filter: /.*/, namespace: 'raw-html' }, (args) => ({
-                 contents: `export default ${JSON.stringify(fs.readFileSync(args.path, 'utf8'))}`,
-                 loader: 'js',
-               }))
-             },
-           },
-           {
-             name: 'raw-ts',
-             setup(build) {
-               build.onResolve({ filter: /\.(ts|tsx)\?raw$/ }, (args) => ({
-                 path: path.resolve(path.dirname(args.importer), args.path.replace(/\?raw$/, '')),
-                 namespace: 'raw-ts',
-               }))
-               build.onLoad({ filter: /.*/, namespace: 'raw-ts' }, (args) => ({
-                 contents: `export default ${JSON.stringify(fs.readFileSync(args.path, 'utf8'))}`,
-                 loader: 'js',
-               }))
-             },
-           },
-         ],
+        plugins: [
+          {
+            name: 'raw-html',
+            setup(build) {
+              build.onResolve({ filter: /\.html\?raw$/ }, (args) => ({
+                path: path.resolve(path.dirname(args.importer), args.path.replace(/\?raw$/, '')),
+                namespace: 'raw-html',
+              }))
+              build.onLoad({ filter: /.*/, namespace: 'raw-html' }, (args) => ({
+                contents: `export default ${JSON.stringify(fs.readFileSync(args.path, 'utf8'))}`,
+                loader: 'js',
+              }))
+            },
+          },
+        ],
       },
     },
     ssr: {
@@ -92,7 +79,7 @@ export default defineConfig(({ mode }) => {
       fs: {
         allow: [
           path.resolve(__dirname, '..'),
-          ...(resolvedEmulatorPath ? [resolvedEmulatorPath] : []),
+          ...(useAlias ? [resolvedEmulatorPath] : []),
         ],
       },
     },

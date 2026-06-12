@@ -1,6 +1,4 @@
 
-import { PROJECT_DATA, getOpenhwType } from './ProjectData';
-
 export const PROJECTS = [
   // ── World 1: Circuit Basics ──────────────────────────────────────────────
   {

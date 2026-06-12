@@ -3,7 +3,10 @@ import { test, expect } from '@playwright/test';
 test.describe('AutofixPreviewPanel E2E', () => {
   test('should display preview plan and apply fixes', async ({ page }) => {
     // Navigate to simulator page
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/');
+    
+    // Wait for page to load
+    await page.waitForLoadState('networkidle');
     
     // Look for the AutofixPreviewPanel or related UI element
     // This might be on a specific page or modal - adjust selector based on actual app structure
@@ -53,7 +56,8 @@ test.describe('AutofixPreviewPanel E2E', () => {
   });
 
   test('should handle empty validation errors gracefully', async ({ page }) => {
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
     
     // If no errors, the panel should show "No issues detected" or similar
     const noIssuesText = await page.locator('text=/No issues detected|Click "Preview fixes"/').first();

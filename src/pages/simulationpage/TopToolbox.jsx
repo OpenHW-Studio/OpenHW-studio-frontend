@@ -419,16 +419,13 @@ function TopToolboxInternal(props) {
     showShortcuts,
     setShowShortcuts,
     onStartTour,
-    returnTo,
-    navigate,
-    code,
   } = props;
+  const navigate = useNavigate();
 
-   const viewPanelRef = useRef(null);
-   const connectPanelRef = useRef(null);
-   const projectsDropdownRef = useRef(null);
-   const importedFromSimulatorRef = useRef(false);
-   const [showConnectPanel, setShowConnectPanel] = useState(false);
+  const viewPanelRef = useRef(null);
+  const connectPanelRef = useRef(null);
+  const projectsDropdownRef = useRef(null);
+  const [showConnectPanel, setShowConnectPanel] = useState(false);
   const [showAdvancedFlash, setShowAdvancedFlash] = useState(false);
   const [activeMenu, setActiveMenu] = useState(null);
   const [showSchematic, setShowSchematic] = useState(false);
@@ -1032,51 +1029,6 @@ function TopToolboxInternal(props) {
       </div>
 
       {/* RIGHT SIDE — right to left: Sign In/User, My Projects, Save, Export, Import */}
-      {returnTo && (
-        <button
-          type="button"
-          onClick={() => {
-            const payload = {
-              board: board,
-              code: typeof code === "function" ? "" : (code || ""),
-              components: (components || []).map((c) => ({
-                id: c.id,
-                type: c.type,
-                name: c.name,
-                x: c.x,
-                y: c.y,
-                rotation: c.rotation,
-              })),
-              connections: (wires || []).map((w) => ({
-                from: w.from,
-                to: w.to,
-              })),
-             };
-             // Flag that we're preparing to import criteria from simulator
-             importedFromSimulatorRef.current = true;
-             try {
-               localStorage.setItem("bankProjectCriteria", JSON.stringify(payload));
-             } catch (e) {
-               console.warn("Failed to store bankProjectCriteria", e);
-             }
-            setTimeout(() => {
-              navigate(returnTo);
-            }, 0);
-          }}
-          style={{
-            padding: "8px 14px",
-            borderRadius: 8,
-            border: "1px solid var(--accent)",
-            background: "var(--accent)",
-            color: "#fff",
-            fontWeight: 700,
-            cursor: "pointer",
-            fontSize: 13,
-          }}
-        >
-          ⬇ Extract Criteria
-        </button>
-      )}
       <div
         style={{
           marginLeft: "auto",
