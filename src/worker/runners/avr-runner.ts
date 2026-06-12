@@ -1166,7 +1166,6 @@ export class AVRRunner {
                 } else if (inst.type.includes('potentiometer') || inst.type.includes('pot')) {
                     if (inst.pins['SIG']) updateOopPin('SIG', inst.pins['SIG'].voltage, compId);
                 }
-                }
             });
 
             // Re-propagate non-board power supplies and batteries
