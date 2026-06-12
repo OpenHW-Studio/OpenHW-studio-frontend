@@ -8,13 +8,10 @@ import { STARTING_COMPONENTS } from '../services/gamification/GamificationConfig
 
 // ── Which project unlocks which component? ────────────────────────────────────
 function findUnlockProject(componentType) {
-  // Normalize the component type (remove both prefixes for comparison)
-  const norm = (t) => String(t || '').replace('openhw-', '').replace('wokwi-', '');
+  const norm = (t) => String(t || '').replace('openhw-', 'wokwi-');
   for (const project of PROJECTS) {
     for (const reward of (project.rewardComponents || [])) {
-      if (reward.type === '*') return project;
-      // Compare both normalized forms
-      if (norm(reward.type) === norm(componentType)) {
+      if (reward.type === '*' || norm(reward.type) === norm(componentType)) {
         return project;
       }
     }
@@ -180,7 +177,7 @@ const S = {
 }
 
 export default function ComponentsPage() {
-  const navigate = useNavigate('/adventure')
+  const navigate = useNavigate()
   const { unlockedComponentTypes, completedProjects, currentLevel, xp } = useGamification()
   const [expandedCard, setExpandedCard] = useState(null)
 
@@ -189,13 +186,7 @@ export default function ComponentsPage() {
 
   const isOwned = (wokwiType) => {
     if (isAllUnlocked) return true
-    // Check both openhw-* and wokwi-* formats
-    const altType = wokwiType?.startsWith('openhw-')
-      ? `wokwi-${wokwiType.slice(7)}`
-      : wokwiType?.startsWith('wokwi-')
-        ? `openhw-${wokwiType.slice(6)}`
-        : null
-    return unlockedSet?.has(wokwiType) || unlockedSet?.has(altType)
+    return unlockedSet?.has(wokwiType) || STARTING_COMPONENTS.includes(wokwiType)
   }
 
   // Which project will unlock this component next?
@@ -206,15 +197,15 @@ export default function ComponentsPage() {
     (!p.prerequisite || completedProjects.includes(p.prerequisite)))
 
   // Categorize components
-  const ownedComponents = COMPONENTS.filter(c => isOwned(c.wokwiType))
+  const ownedComponents = COMPONENTS.filter(c => isOwned(c.wokwiType || `wokwi-${c.id}`))
   const nextComponents = COMPONENTS.filter(c => {
-    if (isOwned(c.wokwiType)) return false
-    const unlocker = getUnlocker(c.wokwiType)
+    if (isOwned(c.wokwiType || `wokwi-${c.id}`)) return false
+    const unlocker = getUnlocker(c.wokwiType || `wokwi-${c.id}`)
     return unlocker && unlocker.slug === nextProject?.slug
   })
   const lockedComponents = COMPONENTS.filter(c => {
-    if (isOwned(c.wokwiType)) return false
-    const unlocker = getUnlocker(c.wokwiType)
+    if (isOwned(c.wokwiType || `wokwi-${c.id}`)) return false
+    const unlocker = getUnlocker(c.wokwiType || `wokwi-${c.id}`)
     return !unlocker || unlocker.slug !== nextProject?.slug
   })
 
@@ -272,10 +263,10 @@ export default function ComponentsPage() {
               key={comp.id}
               comp={comp}
               status="owned"
-              isStarting={isOwned(comp.wokwiType) && STARTING_COMPONENTS.some(s => s === comp.wokwiType || s === `wokwi-${comp.id}` || s === `openhw-${comp.id}`)}
+              isStarting={STARTING_COMPONENTS.includes(comp.wokwiType || `wokwi-${comp.id}`)}
               expanded={expandedCard === comp.id}
               onToggle={() => setExpandedCard(expandedCard === comp.id ? null : comp.id)}
-              onLearn={() => navigate('/adventure')}
+              onLearn={() => navigate(`/components/${comp.id}/theory`)}
             />
           ))}
         </div>
@@ -317,7 +308,7 @@ export default function ComponentsPage() {
           </div>
           <div style={S.grid}>
             {lockedComponents.map(comp => {
-              const unlocker = getUnlocker(comp.wokwiType)
+              const unlocker = getUnlocker(comp.wokwiType || `wokwi-${comp.id}`)
               return (
                 <ComponentCard
                   key={comp.id}

@@ -24,8 +24,7 @@ import StudentAssignmentModal from '../../components/teacher/class-detail/Studen
 const tabs = [
   { key: 'stream', label: 'Stream' },
   { key: 'classwork', label: 'Classwork' },
-  { key: 'people', label: 'People' },
-  { key: 'adventure', label: 'Adventure' }
+  { key: 'people', label: 'People' }
 ]
 
 const getSubmissionStatus = (assignment) => {
@@ -127,7 +126,6 @@ export default function StudentClassDetailPage() {
   const sidebarLinks = [
     { key: 'home', label: 'Dashboard', icon: Home, isActive: false, onClick: () => navigate('/student/dashboard') },
     { key: 'simulator', label: 'Open Simulator', icon: Monitor, isActive: false, onClick: () => navigate('/simulator') },
-    { key: 'adventure', label: 'Class Adventure', icon: ClipboardList, isActive: false, onClick: () => navigate(`/adventure?classId=${encodeURIComponent(classId)}`) },
     { key: 'join', label: 'Join class', icon: BookOpen, isActive: false, onClick: () => navigate('/student/dashboard?joinCode=') }
   ]
 
@@ -670,21 +668,6 @@ export default function StudentClassDetailPage() {
                         ))}
                     </div>
                   </section>
-                </section>
-              )}
-              {activeTab === 'adventure' && (
-                <section className="teacher-list-block">
-                  <div className="teacher-list-block__heading">
-                    <h3>Class Adventure</h3>
-                    <small>Open the class-specific learning path</small>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}`)}
-                    className="teacher-assignment-modal__resource-pill"
-                  >
-                    Open Adventure
-                  </button>
                 </section>
               )}
             </section>

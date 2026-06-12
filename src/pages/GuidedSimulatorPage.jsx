@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 
 const THEMES = {
@@ -15,8 +15,6 @@ const css = `
 export default function GuidedSimulatorPage() {
   const navigate = useNavigate()
   const { projectName = '' } = useParams()
-  const [searchParams] = useSearchParams()
-  const classId = searchParams.get('classId')
   const location = useLocation()
   const { xp = 0, coins = 0 } = useGamification?.() || {}
 
@@ -32,9 +30,7 @@ export default function GuidedSimulatorPage() {
     document.documentElement.setAttribute('data-theme', next)
   }
 
-  const simUrl = classId
-    ? `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}&classId=${encodeURIComponent(classId)}`
-    : `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}`
+  const simUrl = `/simulator?guided=1&mode=assessment&project=${encodeURIComponent(projectName)}`
   const projectTitle = projectName.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
 
   return (
@@ -51,7 +47,7 @@ export default function GuidedSimulatorPage() {
       }}>
 
         <button
-          onClick={() => navigate(classId ? `/${projectName}/assessment?classId=${encodeURIComponent(classId)}` : `/${projectName}/assessment`, { state:{ projectColor } })}
+          onClick={() => navigate(`/${projectName}/assessment`, { state:{ projectColor } })}
           style={{
             background: theme==='dark' ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.08)',
             border:`1px solid ${colors.borderAlt}`,

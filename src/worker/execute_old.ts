@@ -51,7 +51,6 @@ import { ILI9341Logic } from '@openhw/emulator/src/components/wokwi-ili9341/logi
 import { CD74HC4067Logic } from '@openhw/emulator/src/components/wokwi-cd74hc4067/logic.ts';
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/wokwi-logic-analyzer/logic.ts';
 import { MegaLogic } from '@openhw/emulator/src/components/wokwi-arduino-mega/logic.ts';
-import { HCSR04Logic } from '@openhw/emulator/src/components/openhw-hc-sr04/logic.ts';
 
 function gateVoltage(isHigh: boolean): number {
     return isHigh ? 5.0 : 0.0;
@@ -1987,8 +1986,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-bmp180-breakout': BaseComponent,
     'wokwi-ds1307-rtc': BaseComponent,
     'openhw-ds1307-rtc': BaseComponent,
-    'wokwi-hc-sr04': HCSR04Logic,
-    'openhw-hc-sr04': HCSR04Logic,
+    'wokwi-hc-sr04': BaseComponent,
+    'openhw-hc-sr04': BaseComponent,
     'wokwi-mpu6050': BaseComponent,
     'openhw-mpu6050': BaseComponent,
     'wokwi-nlsf595': BaseComponent,

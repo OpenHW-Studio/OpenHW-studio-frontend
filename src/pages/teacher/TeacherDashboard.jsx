@@ -17,19 +17,16 @@ import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 import ClassCard from '../../components/common/ClassCard.jsx'
 import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
-import { useLocation } from 'react-router-dom'
 
 const sidebarLinks = [
-  { key: 'home', label: 'Home', icon: Home, route: '/teacher/dashboard' },
-  { key: 'simulator', label: 'Open Simulator', icon: Monitor, route: '/simulator' },
-  { key: 'projectBank', label: 'Project Bank', icon: FolderKanban, route: '/teacher/project-bank' },
-  { key: 'settings', label: 'Settings', icon: Settings },
+  { key: 'home', label: 'Home', icon: Home },
+  { key: 'simulator', label: 'Open Simulator', icon: Monitor },
+  { key: 'settings', label: 'Settings', icon: Settings }
 ]
 
 export default function TeacherDashboard() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation()
 
   const [classrooms, setClassrooms] = useState([])
   const [loading, setLoading] = useState(true)
@@ -93,9 +90,9 @@ export default function TeacherDashboard() {
 
   const navLinks = sidebarLinks.map((item) => ({
     ...item,
-    isActive: item.route ? location.pathname.startsWith(item.route) : item.key === 'home',
+    isActive: item.key === 'home',
     onClick: () => {
-      if (item.route) navigate(item.route)
+      if (item.key === 'simulator') navigate('/simulator')
     }
   }))
 
