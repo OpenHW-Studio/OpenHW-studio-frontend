@@ -43,6 +43,7 @@ export class AVRRunner {
     repropagateAllVoltages: (() => void) | null = null;
     _updateOopPin: ((arduinoPinStr: string, isHighOrVoltage: boolean | number, customCompId?: string) => void) | null = null;
     timers: AVRTimer[] = [];
+    _directAvrPinSetter: ((boardPin: string, isHigh: boolean) => void) | null = null;
     running: boolean = false;
     pinStates: Record<string, boolean> = {};
     currentWires: any[] = [];
@@ -185,10 +186,16 @@ export class AVRRunner {
                 const inst = new LogicClass(cDef.id, manifest);
                 if (cDef.attrs) inst.state = { ...inst.state, ...cDef.attrs };
                 (inst as any)._simCpu = this.cpu;
+                // Expose runner reference on cpu so DHT22 can resolve wires
+                if (this.cpu) (this.cpu as any)._avrRunner = this;
                 (inst as any)._simUpdatePhysics = () => {
                     if (typeof this.repropagateAllVoltages === 'function') {
                         this.repropagateAllVoltages();
                     }
+                };
+                // Direct AVR pin writer: uses a late-bound setter assigned once setAvrPin is in scope
+                (inst as any)._setAvrPinDirect = (boardPin: string, isHigh: boolean) => {
+                    if (this._directAvrPinSetter) this._directAvrPinSetter(boardPin, isHigh);
                 };
                 inst.onTelemetryFinding = (finding: any) => {
                     this.onStateUpdate({
@@ -929,6 +936,12 @@ export class AVRRunner {
                         const v = inst.pins[pin]?.voltage ?? 0.0;
                         visit(`${compId}:${pin}`, v);
                     });
+                } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
+                    // Provide an internal pull-up for the DATA line to support auto-wiring without a physical resistor
+                    const isDrivingLow = !!(inst as any)._drivingBus;
+                    if (inst.pins['DATA']) {
+                        visit(`${compId}:DATA`, isDrivingLow ? 0.0 : 5.0);
+                    }
                 }
             });
 
@@ -983,6 +996,13 @@ export class AVRRunner {
             if (port) {
                 port.setPin(bit, isHigh);
             }
+        };
+
+        // Allow DHT22 and other components to write directly to AVR port registers
+        // without triggering the full repropagateAllVoltages cascade.
+        this._directAvrPinSetter = (boardPin: string, isHigh: boolean) => {
+            this.pinStates[boardPin] = isHigh;
+            setAvrPin(boardPin, isHigh);
         };
 
         const updateOopPin = (arduinoPinStr: string, isHighOrVoltage: boolean | number, customCompId?: string) => {
@@ -1050,6 +1070,23 @@ export class AVRRunner {
                     if (normFrom === node || normTo === node) {
                         visitedEdges.add(edgeKey);
                         visitNode(normFrom === node ? wire.to : wire.from, v);
+                    }
+                }
+
+                const instForBridges = this.instances.get(compId);
+                // Traverse breadboard/vias bridges
+                if (instForBridges && (instForBridges.type === 'openhw-breadboard' || instForBridges.type === 'openhw-breadboard-half' || instForBridges.type === 'openhw-breadboard-mini' || instForBridges.type === 'wokwi-breadboard' || instForBridges.type === 'wokwi-breadboard-half' || instForBridges.type === 'wokwi-breadboard-mini' || instForBridges.type === 'via' || instForBridges.type === 'openhw-via' || instForBridges.type === 'wokwi-via' || instForBridges.type === 'openhw-wire' || instForBridges.type === 'wokwi-wire')) {
+                    const bridges = getInternalBridgesForComponent(compId, instForBridges.type);
+                    for (const bridge of bridges) {
+                        const edgeKey = `bridge|${bridge[0]}|${bridge[1]}`;
+                        if (visitedEdges.has(edgeKey)) continue;
+                        if (bridge[0] === `${compId}:${compPin}`) {
+                            visitedEdges.add(edgeKey);
+                            visitNode(bridge[1], v);
+                        } else if (bridge[1] === `${compId}:${compPin}`) {
+                            visitedEdges.add(edgeKey);
+                            visitNode(bridge[0], v);
+                        }
                     }
                 }
 
@@ -1173,11 +1210,10 @@ export class AVRRunner {
                         updateOopPin('ECHO', echoV, compId);
                     }
                 } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
-                    const sdaV = (inst as any).sdaOutputVoltage !== undefined
-                        ? (inst as any).sdaOutputVoltage
-                        : inst.pins['SDA']?.voltage ?? 5.0;
-                    if (inst.pins['SDA']) {
-                        updateOopPin('SDA', sdaV, compId);
+                    const isDrivingLow = !!(inst as any)._drivingBus;
+                    const dataV = isDrivingLow ? 0.0 : 5.0;
+                    if (inst.pins['DATA']) {
+                        updateOopPin('DATA', dataV, compId);
                     }
                 } else if (inst.type.includes('a4988')) {
                     ['1A', '1B', '2A', '2B'].forEach(pin => {
@@ -1225,6 +1261,7 @@ export class AVRRunner {
                         const p4 = (pindVal >> 4) & 1;
                         const p5 = (pindVal >> 5) & 1;
                         console.log(`[repropagate MUX] D0=${d0} D1=${d1} SEL=${sel} OUT=${outV} d0High=${inst.getPinVoltage('D0')>=2.5} d1High=${inst.getPinVoltage('D1')>=2.5} selHigh=${inst.getPinVoltage('SEL')>=2.5} stateOut=${inst.state?.outputHigh} PIND2=${p2} PIND3=${p3} PIND4=${p4} PIND5=${p5} pins=${Object.keys(inst.pins).join(',')}`);
+                    }
                 } else if (inst.type.includes('hc-sr04')) {
                     if (inst.pins['ECHO']) {
                         updateOopPin('ECHO', inst.pins['ECHO'].voltage, compId);
@@ -1247,15 +1284,17 @@ export class AVRRunner {
                                 const normTo = wire.to;
                                 const dhtNode = `${compId}:${pin}`;
                                 let boardPin: string | null = null;
-                                if (normFrom === dhtNode && normTo.startsWith(`${this.boardId}:`)) {
-                                    boardPin = normTo.split(':')[1];
-                                } else if (normTo === dhtNode && normFrom.startsWith(`${this.boardId}:`)) {
-                                    boardPin = normFrom.split(':')[1];
-                                }
-                                if (boardPin) {
-                                    const isHigh = dhtVoltage > 1.8;
-                                    this.pinStates[boardPin] = isHigh;
-                                    setAvrPin(boardPin, isHigh);
+                                if (wire.from === dhtNode || wire.to === dhtNode) {
+                                    const boardNode = wire.from.startsWith(this.boardId) ? wire.from : (wire.to.startsWith(this.boardId) ? wire.to : null);
+                                    if (boardNode) {
+                                        const boardPin = boardNode.split(':')[1];
+                                        const isHigh = dhtVoltage > 1.8;
+                                        this.pinStates[boardPin] = isHigh;
+                                        setAvrPin(boardPin, isHigh);
+                                        if (currentVisitedNodes) {
+                                            currentVisitedNodes.add(normalizePin(boardNode));
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1388,11 +1427,33 @@ export class AVRRunner {
                         }
                     } else if (isInputPullUp || isInput) {
                         // Pin just switched from OUTPUT to INPUT (open-drain release).
-                        // The bus is now pulled HIGH by the pull-up. Notify connected
-                        // components (e.g. DHT22 waiting for WAKE_WAIT rising edge).
+                        // Check if any external component is actively driving the bus LOW.
+                        let busDrivenLow = false;
+                        const boardNode = `${this.boardId}:${pin}`;
+                        const netId = this.pinToNet.get(boardNode);
+                        if (netId !== undefined) {
+                            for (const [otherNode, otherNet] of this.pinToNet.entries()) {
+                                if (otherNet === netId && otherNode !== boardNode) {
+                                    const [compId, compPin] = otherNode.split(':');
+                                    const inst = this.instances.get(compId);
+                                    if (inst && inst.pins[compPin]) {
+                                        let isDrivingLow = inst.pins[compPin].voltage < 1.8;
+                                        if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
+                                            // DHT22 is open-drain; ignore its pin voltage which gets overwritten by Arduino
+                                            isDrivingLow = !!(inst as any)._drivingBus && inst.pins[compPin].voltage < 1.8;
+                                        }
+                                        if (isDrivingLow) {
+                                            busDrivenLow = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         const prevHigh = this.pinStates[pin];
-                        if (prevHigh === false) {
-                            // Was LOW (output driven), now released HIGH.
+                        if (prevHigh === false && !busDrivenLow) {
+                            // Was LOW (output driven), now released HIGH and nobody else is holding it LOW.
                             this.pinStates[pin] = true;
                             this.circuitDirty = true;
 
@@ -1480,7 +1541,12 @@ export class AVRRunner {
                 instArray.forEach(inst => {
                     if (!(inst as any)._simCpu) {
                         (inst as any)._simCpu = this.cpu;
+                        if (this.cpu) (this.cpu as any)._avrRunner = this;
                         (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
+                        (inst as any)._setAvrPinDirect = (boardPin: string, isHigh: boolean) => {
+                            this.pinStates[boardPin] = isHigh;
+                            setAvrPin(boardPin, isHigh);
+                        };
                     }
                     inst.update(this.cpu!.cycles, this.currentWires, instArray);
                     if (inst.stateChanged) {

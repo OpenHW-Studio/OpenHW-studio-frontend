@@ -12613,9 +12613,6 @@ loadDemoProject();
             setShowTour(true);
           }}
           returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
-          navigate={navigate}
-          components={components}
-          wires={wires}
           code={code}
         />
 
