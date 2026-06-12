@@ -7676,7 +7676,7 @@ loadDemoProject();
     setCurrentProjectName("Untitled");
     setBoard("arduino_uno");
     setCode(
-      "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n",
+      "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(15000);\n  digitalWrite(13, LOW);\n  delay(15000);\n}\n",
     );
     setComponents([]);
     setWires([]);
