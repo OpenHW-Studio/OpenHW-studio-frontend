@@ -1,32 +1,52 @@
 // ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
 export function renderRoundedPath(pts) {
-  if (!pts || pts.length < 2) return '';
-  const r = 10;
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const prev = pts[i - 1], curr = pts[i], next = pts[i + 1];
-    const distPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
-    const distNext = Math.hypot(next.x - curr.x, next.y - curr.y);
-    const cornerR = Math.min(r, distPrev / 2, distNext / 2);
-    if (cornerR < 0.5) {
-      d += ` L ${curr.x} ${curr.y}`;
-      continue;
+  try {
+    if (!pts || pts.length < 2) return '';
+    const validPts = pts.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number' && isFinite(p.x) && isFinite(p.y));
+    if (validPts.length < 2) return '';
+    const r = 10;
+    let d = `M ${validPts[0].x} ${validPts[0].y}`;
+    for (let i = 1; i < validPts.length - 1; i++) {
+      const prev = validPts[i - 1], curr = validPts[i], next = validPts[i + 1];
+      if (!prev || !curr || !next) { if (curr) d += ` L ${curr.x} ${curr.y}`; continue; }
+      const distPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+      const distNext = Math.hypot(next.x - curr.x, next.y - curr.y);
+      if (distPrev < 0.1 || distNext < 0.1 || !isFinite(distPrev) || !isFinite(distNext)) {
+        d += ` L ${curr.x} ${curr.y}`;
+        continue;
+      }
+      const cornerR = Math.min(r, distPrev / 2, distNext / 2);
+      if (cornerR < 0.5) {
+        d += ` L ${curr.x} ${curr.y}`;
+        continue;
+      }
+      const ps = { x: curr.x + (prev.x - curr.x) * (cornerR / distPrev), y: curr.y + (prev.y - curr.y) * (cornerR / distPrev) };
+      const pe = { x: curr.x + (next.x - curr.x) * (cornerR / distNext), y: curr.y + (next.y - curr.y) * (cornerR / distNext) };
+      if (!isFinite(ps.x) || !isFinite(ps.y) || !isFinite(pe.x) || !isFinite(pe.y)) {
+        d += ` L ${curr.x} ${curr.y}`;
+        continue;
+      }
+      d += ` L ${ps.x} ${ps.y} Q ${curr.x} ${curr.y} ${pe.x} ${pe.y}`;
     }
-    const ps = { x: curr.x + (prev.x - curr.x) * (cornerR / distPrev), y: curr.y + (prev.y - curr.y) * (cornerR / distPrev) };
-    const pe = { x: curr.x + (next.x - curr.x) * (cornerR / distNext), y: curr.y + (next.y - curr.y) * (cornerR / distNext) };
-    d += ` L ${ps.x} ${ps.y} Q ${curr.x} ${curr.y} ${pe.x} ${pe.y}`;
+    const lastPt = validPts[validPts.length - 1];
+    d += ` L ${lastPt.x} ${lastPt.y}`;
+    return d;
+  } catch (e) {
+    return '';
   }
-  d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
-  return d;
 }
 
-// ─── INTERNAL: ENSURE STRICT ORTHOGONALITY ────────────────────────────────
 function makeOrthogonal(pts) {
-  if (pts.length < 2) return pts;
-  const result = [pts[0]];
+  if (!pts || pts.length < 2) return pts || [];
+  const result = [];
+  if (pts[0]) result.push(pts[0]);
   for (let i = 1; i < pts.length; i++) {
     const prev = result[result.length - 1];
     const curr = pts[i];
+    if (!prev || !curr) {
+      if (curr) result.push(curr);
+      continue;
+    }
     if (Math.abs(prev.x - curr.x) > 0.1 && Math.abs(prev.y - curr.y) > 0.1) {
       const lastSegWasVert = result.length > 1 && Math.abs(result[result.length - 2].x - prev.x) < 0.1;
       if (lastSegWasVert) {
@@ -42,17 +62,15 @@ function makeOrthogonal(pts) {
 
 // ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
 export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
+  try {
+  if (!p1 || !e1 || !e2 || !p2) return p1 && p2 ? [p1, p2] : [];
   if (waypoints.length > 0) {
-    // If manual waypoints (canvas clicks) or interactive corners exist, 
-    // we follow them strictly and skip the automatic Manhattan routing logic.
     const pts = [p1, e1, ...waypoints, e2, p2].filter((pt, i, arr) => 
-      i === 0 || Math.abs(pt.x - arr[i - 1].x) > 0.1 || Math.abs(pt.y - arr[i - 1].y) > 0.1
+      pt && (i === 0 || Math.abs(pt.x - arr[i - 1].x) > 0.1 || Math.abs(pt.y - arr[i - 1].y) > 0.1)
     );
     return makeOrthogonal(pts);
   }
 
-  // offset is now a laneIndex (0-6). trunkShift centres the bundle symmetrically.
-  // 7px inter-wire spacing with a 10px "Safety Offset" to prevent overlaps with pin centers.
   const laneIndex = offset;
   const trunkShift = (laneIndex - 3) * 7 + (laneIndex < 3 ? -10 : 10); 
 
@@ -74,7 +92,6 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
       const base = dir1 > 0 ? Math.max(se1.x, se2.x) : Math.min(se1.x, se2.x);
       midX = base + dir1 * (25 + Math.abs(trunkShift));
     }
-    // We add extra points to ensure the "trunk" is staggered away from the pin X
     midPts = [
       { x: se1.x, y: se1.y },
       { x: midX, y: se1.y },
@@ -92,7 +109,6 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
       const base = dir1 > 0 ? Math.max(se1.y, se2.y) : Math.min(se1.y, se2.y);
       midY = base + dir1 * (25 + Math.abs(trunkShift));
     }
-    // We add extra points to ensure the "trunk" is staggered away from the pin Y
     midPts = [
       { x: se1.x, y: se1.y },
       { x: se1.x, y: midY },
@@ -101,33 +117,38 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
     ];
 
   } else if (e1Horiz && !e2Horiz) {
-    // Mixed: E1 Horiz, E2 Vert. 
     const midX = se2.x + trunkShift;
     const midY = se1.y + trunkShift;
     midPts = [{ x: midX, y: se1.y }, { x: midX, y: midY }];
 
   } else {
-    // Mixed: E1 Vert, E2 Horiz.
     const midX = se1.x + trunkShift;
     const midY = se2.y + trunkShift;
     midPts = [{ x: se1.x, y: midY }, { x: midX, y: midY }];
   }
 
   return makeOrthogonal([p1, se1, ...midPts, se2, p2]);
+  } catch (e) {
+    return p1 && p2 ? [p1, p2] : [];
+  }
 }
 
 // ─── BUILD FULL WIRE PATH STRING ───────────────────────────────────────────
 export function buildWirePath(p1, e1, e2, p2, waypoints = [], pathOverride = null, offset = 0) {
-  // If we have a pathOverride (from Autowiring), we still want to apply staggering 
-  // to prevent overlapping. We do this by passing it through our computeWireOrthoPoints
-  // unless it's a completely freeform custom path.
-  const pts = computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
-  return renderRoundedPath(pts);
+  try {
+    const pts = computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
+    return renderRoundedPath(pts);
+  } catch (e) {
+    return '';
+  }
 }
 
-// ─── GET WIRE POINTS FOR DRAGGING ──────────────────────────────────────────
 export function getWirePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
-  return computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
+  try {
+    return computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
+  } catch (e) {
+    return p1 && p2 ? [p1, p2] : [];
+  }
 }
 
 // ─── PREVIEW WIRE ROUTER (Drawing mode) ───────────────────────────────────
