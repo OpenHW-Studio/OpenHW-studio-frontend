@@ -964,7 +964,11 @@ let activeTelemetryMode = 'detail';
 let activeTelemetryWatchedParamsMap: Record<string, string[]> = {};
 let activeDeepSiliconEnabled = false;
 
-self.onmessage = async (e) => {
+// ── Early Hardware Message Queue ─────────────────────────────────────────────
+let isInitializingRunners = false;
+let earlyHardwareMessages: any[] = [];
+
+const coreMessageHandler = async (e: MessageEvent) => {
     const data = e.data;
 
     // ── Render Worker port handshake ──────────────────────────────────────────
@@ -975,6 +979,25 @@ self.onmessage = async (e) => {
             renderWorkerPort = port;
             renderWorkerPort.start();
             console.log('[SimWorker] renderWorkerPort successfully registered and started');
+        }
+        return;
+    }
+
+    // ── Smart Prefetching ─────────────────────────────────────────────────────
+    if (data.type === 'PRELOAD_RUNNERS') {
+        const boards = (data.components || []).filter((c: any) => isProgrammableBoardType(c.type));
+        for (const board of boards) {
+            const type = String(board.type || '');
+            if (/(stm32)/i.test(type)) {
+                import('./runners/backend-proxy-runner.ts').catch(() => {});
+            } else if (/(esp32)/i.test(type)) {
+                import('./runners/backend-proxy-runner.ts').catch(() => {});
+                import('./runners/esp32-runner.ts').catch(() => {});
+            } else if (/pico|rp2040/i.test(type)) {
+                import('./runners/rp2040-runner.ts').catch(() => {});
+            } else {
+                import('./runners/avr-runner.ts').catch(() => {});
+            }
         }
         return;
     }
@@ -1725,3 +1748,48 @@ self.onmessage = async (e) => {
     }
 };
 
+self.onmessage = async (e) => {
+    const data = e.data;
+
+    if (data.type === 'START') {
+        isInitializingRunners = true;
+        try {
+            await coreMessageHandler(e);
+        } finally {
+            isInitializingRunners = false;
+            if (earlyHardwareMessages.length > 0) {
+                console.log(`[SimWorker] Replaying ${earlyHardwareMessages.length} early hardware messages queued during initialization.`);
+                const queue = [...earlyHardwareMessages];
+                earlyHardwareMessages = [];
+                for (const msg of queue) {
+                    await coreMessageHandler({ data: msg } as MessageEvent);
+                }
+            }
+        }
+        return;
+    }
+
+    if (isInitializingRunners && (
+        String(data.type || '').startsWith('esp32:') ||
+        data.type === 'GPIO_SYNC' ||
+        data.type === 'SERIAL_INPUT' ||
+        data.type === 'GDB_INPUT' ||
+        data.type === 'TONE' ||
+        data.type === 'DAC_SYNC' ||
+        data.type === 'SERIAL_SET_BAUD' ||
+        data.type === 'RESET' ||
+        data.type === 'GPIO_ROUTING' ||
+        data.type === 'GPIO_ROUTING_CLEAR' ||
+        data.type === 'LEDC_SYNC' ||
+        data.type === 'LEDC_ATTACH' ||
+        data.type === 'PCNT_INIT' ||
+        data.type === 'TWAI_TX' ||
+        data.type === 'RMT_PULSE' ||
+        data.type === 'SLEEP_START'
+    )) {
+        earlyHardwareMessages.push(data);
+        return;
+    }
+
+    await coreMessageHandler(e);
+};

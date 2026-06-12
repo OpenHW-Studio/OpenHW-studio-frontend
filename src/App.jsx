@@ -14,54 +14,51 @@ import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { GamificationProvider } from "./context/GamificationContext.jsx";
 import { GamificationToasts } from "./services/gamification/Gamificationpanel.jsx";
 // Pages
-import LandingPage from "./pages/LandingPage.jsx";
-import UserLoginPage from "./pages/auth/UserLoginPage.jsx";
-import RoleSelectPage from "./pages/RoleSelectPage.jsx";
+import LandingPage from './pages/LandingPage.jsx'
+import UserLoginPage from './pages/auth/UserLoginPage.jsx'
+import RoleSelectPage from './pages/RoleSelectPage.jsx'
+import ProjectTheoryPage from './pages/ProjectTheoryPage.jsx'
+import ProjectQuizPage from './pages/ProjectQuizPage.jsx'
+import ProjectComponentUnlockPage from './pages/ProjectComponentUnlockPage.jsx'
+import TeacherProjectContentEditor from './pages/teacher/TeacherProjectContentEditor.jsx'
+import TeacherProjectBankPage from './pages/teacher/TeacherProjectBankPage.jsx'
 // Lazy-loaded routes to drastically improve LCP
-import SigninPage from "./pages/auth/SigninPage.jsx";
-import SignupPage from "./pages/auth/SignupPage.jsx";
-import ForgotPasswordPage from "./pages/auth/ForgotPasswordPage.jsx";
-import ResetPasswordPage from "./pages/auth/ResetPasswordPage.jsx";
+import SigninPage from './pages/auth/SigninPage.jsx';
+import SignupPage from './pages/auth/SignupPage.jsx';
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage.jsx';
+import ResetPasswordPage from './pages/auth/ResetPasswordPage.jsx';
+import UserDashboard from './pages/user/UserDashboard.jsx';
+import StudentDashboard from './pages/student/StudentDashboard.jsx';
+import StudentProfilePage from './pages/student/StudentProfilePage.jsx';
+import TeacherDashboard from './pages/teacher/TeacherDashboard.jsx';
+import TeacherProfilePage from './pages/teacher/TeacherProfilePage.jsx';
+import TeacherClassDetailPage from './pages/teacher/TeacherClassDetailPage.jsx';
+import StudentClassDetailPage from './pages/student/StudentClassDetailPage.jsx';
+const SimulatorPage = React.lazy(() => import('./pages/simulationpage/SimulatorPage.jsx'));
+import AdminPage from './pages/admin/AdminPage.jsx';
+import AdminLoginPage from './pages/admin/AdminLoginPage.jsx';
+import AdminLandingPage from './pages/admin/AdminLandingPage.jsx';
+import ProjectAssessmentPage from './pages/ProjectAssessmentPage.jsx';
+import ProjectsGallery from './pages/ProjectsGallery.jsx';
+import ComponentsPage from './pages/ComponentsPage.jsx';
+import ComponentEditorPage from './pages/ComponentEditorPage.jsx';
+
+//const GamificationSimulatorPage = React.lazy(() => import('./pages/GamificationSimulatorPage.jsx'));
+import AdventureMapPage from './pages/AdventureMapPage.jsx';
+import ProjectGuidePage from './pages/ProjectGuidePage.jsx';
+//import GamifiedProjectGuidePage from './pages/GamifiedProjectGuidePage.jsx';
+const GuidedSimulatorPage = React.lazy(() => import('./pages/GuidedSimulatorPage.jsx'));
+const MobileSimulatorPage = React.lazy(() => import('./pages/mobileui/SimulatorPage.jsx'));
+import ComponentLab from './pages/simulationpage/ComponentLab.jsx';
+const GradingPage = React.lazy(() => import('./pages/GradingPage.jsx'));
+import MaintenancePage from './pages/MaintenancePage.jsx';
+import AboutUsNew from './pages/AboutUsNewPage.jsx';
 import AuthSuccess from "./pages/auth/AuthSuccess.jsx";
-import UserDashboard from "./pages/user/UserDashboard.jsx";
-import StudentDashboard from "./pages/student/StudentDashboard.jsx";
-import StudentProfilePage from "./pages/student/StudentProfilePage.jsx";
-import TeacherDashboard from "./pages/teacher/TeacherDashboard.jsx";
-import TeacherProfilePage from "./pages/teacher/TeacherProfilePage.jsx";
-import TeacherClassDetailPage from "./pages/teacher/TeacherClassDetailPage.jsx";
-import StudentClassDetailPage from "./pages/student/StudentClassDetailPage.jsx";
-const SimulatorPage = React.lazy(
-  () => import("./pages/simulationpage/SimulatorPage.jsx"),
-);
-import AdminPage from "./pages/admin/AdminPage.jsx";
-import AdminLoginPage from "./pages/admin/AdminLoginPage.jsx";
-import AdminLandingPage from "./pages/admin/AdminLandingPage.jsx";
-import ProjectAssessmentPage from "./pages/ProjectAssessmentPage.jsx";
-import ProjectsGallery from "./pages/ProjectsGallery.jsx";
-import ComponentsPage from "./pages/ComponentsPage.jsx";
-import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
-import TheoryPage from "./pages/TheoryPage.jsx";
-import QuizPage from "./pages/QuizPage.jsx";
-const GamificationSimulatorPage = React.lazy(
-  () => import("./pages/GamificationSimulatorPage.jsx"),
-);
-import AdventureMapPage from "./pages/AdventureMapPage.jsx";
-import ProjectGuidePage from "./pages/ProjectGuidePage.jsx";
-import GamifiedProjectGuidePage from "./pages/GamifiedProjectGuidePage.jsx";
-const GuidedSimulatorPage = React.lazy(
-  () => import("./pages/GuidedSimulatorPage.jsx"),
-);
-const MobileSimulatorPage = React.lazy(
-  () => import("./pages/mobileui/SimulatorPage.jsx"),
-);
-import ComponentLab from "./pages/simulationpage/ComponentLab.jsx";
-const GradingPage = React.lazy(() => import("./pages/GradingPage.jsx"));
-import MaintenancePage from "./pages/MaintenancePage.jsx";
-import AboutUsNew from "./pages/AboutUsNewPage.jsx";
 import VisitorTracker from "./components/VisitorTracker.jsx";
 
-import { fetchMaintenanceStatus } from "./services/simulatorService.js";
-import axios from "axios";
+import { fetchMaintenanceStatus } from './services/simulatorService.js';
+import axios from 'axios';
+
 
 const ResponsiveSimulatorRoute = ({ desktopElement, mobileElement }) => {
   const isMobile = useIsMobile();
@@ -212,51 +209,23 @@ export default function App() {
 
                 <Route path="/login-success" element={<AuthSuccess />} />
 
-                <Route path="/projects" element={<ProjectsGallery />} />
-                <Route path="/components" element={<ComponentsPage />} />
-                <Route
-                  path="/component-editor"
-                  element={<ComponentEditorPage />}
-                />
-                <Route path="/alignment-lab" element={<ComponentLab />} />
-                <Route
-                  path="/components/:componentId/theory"
-                  element={<TheoryPage />}
-                />
-                <Route
-                  path="/components/:componentId/quiz"
-                  element={<QuizPage />}
-                />
-                <Route path="/adventure" element={<AdventureMapPage />} />
-                <Route path="/grade" element={<GradingPage />} />
-                <Route
-                  path="/gamification-simulator"
-                  element={<GamificationSimulatorPage />}
-                />
+                <Route path="/login-success" element={<AuthSuccess />} />
 
-                <Route
-                  path="/gamification-simulator/:projectName"
-                  element={<GamificationSimulatorPage />}
-                />
-                {/* Guest accessible simulator */}
-                <Route
-                  path="/simulator"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
-                <Route
-                  path="/mobile-simulator"
-                  element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage />}
-                      mobileElement={<MobileSimulatorPage />}
-                    />
-                  }
-                />
+<Route path="/projects" element={<ProjectsGallery />} />
+            <Route path="/components" element={<ComponentsPage />} />
+            <Route path="/component-editor" element={<ComponentEditorPage />} />
+            <Route path="/alignment-lab" element={<ComponentLab />} />
+            {/* <Route path="/components/:componentId/theory" element={<TheoryPage />} />
+            <Route path="/components/:componentId/quiz" element={<QuizPage />} /> */}
+            <Route path="/adventure" element={<AdventureMapPage />} />
+            <Route path="/grade" element={<GradingPage />} />
+            {/* <Route path="/gamification-simulator" element={<GamificationSimulatorPage />} />
+
+
+                        <Route path="/gamification-simulator/:projectName" element={<GamificationSimulatorPage />} /> */}
+            {/* Guest accessible simulator */}
+            <Route path="/simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
+            <Route path="/mobile-simulator" element={<ResponsiveSimulatorRoute desktopElement={<SimulatorPage />} mobileElement={<MobileSimulatorPage />} />} />
 
                 <Route
                   path="/simulator/live/:liveCode"
@@ -334,22 +303,12 @@ export default function App() {
                   }
                 />
 
-                <Route
-                  path="/:projectName/guide"
-                  element={<ProjectGuidePage />}
-                />
-                <Route
-                  path="/:projectName/gamified-guide"
-                  element={<GamifiedProjectGuidePage />}
-                />
-                <Route
-                  path="/:projectName/assessment"
-                  element={<ProjectAssessmentPage />}
-                />
-                <Route
-                  path="/:projectName/guided"
-                  element={<GuidedSimulatorPage />}
-                />
+            <Route path="/:projectName/guide" element={<ProjectGuidePage />} />
+            <Route path="/:projectName/reading" element={<ProjectTheoryPage />} />
+            <Route path="/:projectName/quiz" element={<ProjectQuizPage />} />
+            <Route path="/:projectName/components" element={<ProjectComponentUnlockPage />} />
+            <Route path="/:projectName/assessment" element={<ProjectAssessmentPage />} />
+            <Route path="/:projectName/guided" element={<GuidedSimulatorPage />} />
 
                 {/* Protected: General User */}
                 <Route
@@ -387,31 +346,63 @@ export default function App() {
                   }
                 />
 
-                {/* Protected: Teacher */}
-                <Route
-                  path="/teacher/dashboard"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherDashboard />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/teacher/classes/:classId"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherClassDetailPage />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="/teacher/profile"
-                  element={
-                    <ProtectedRoute allowedRole="teacher">
-                      <TeacherProfilePage />
-                    </ProtectedRoute>
-                  }
-                />
+            {/* Protected: Teacher */}
+            <Route
+              path="/teacher/dashboard"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/classes/:classId"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherClassDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/profile"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherProfilePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/classes/:classId/projects/:projectSlug/edit"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherProjectContentEditor />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/project-bank"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  {React.createElement(React.lazy(() => import('./pages/teacher/TeacherProjectBankPage.jsx')))}
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/project-bank/new"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherProjectContentEditor />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/teacher/project-bank/:projectSlug/edit"
+              element={
+                <ProtectedRoute allowedRole="teacher">
+                  <TeacherProjectContentEditor />
+                </ProtectedRoute>
+              }
+            />
 
                 {/* Admin */}
                 <Route path="/admin" element={<AdminLandingPage />} />

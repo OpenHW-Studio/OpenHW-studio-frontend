@@ -1,15 +1,6 @@
 
-// ── Starting components (always available from Day 1) ─────────────────────────
-export const STARTING_COMPONENTS = [
-  'wokwi-arduino-uno',
-  'openhw-arduino-uno',
-  'wokwi-led',
-  'openhw-led',
-  'wokwi-resistor',
-  'openhw-resistor',
-  'wokwi-breadboard',
-  'openhw-breadboard',
-];
+// ── Starting components (none - all unlocked via adventure) ───────────────────
+export const STARTING_COMPONENTS = [];
 
 // ── Level config (XP-based titles / badges, separate from component unlocking) ─
 export const LEVELS = [
@@ -286,6 +277,10 @@ export const LEVELS = [
       icon: '🌡️',
       rarity: 'rare',
     },
+    unlockedComponents: [
+      'wokwi-dht22',
+      'openhw-dht22',
+    ],
   },
   {
     id: 10,
