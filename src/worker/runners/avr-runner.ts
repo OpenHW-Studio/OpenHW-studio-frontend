@@ -529,7 +529,7 @@ export class AVRRunner {
             const nextVoltage = Math.max(0, voltage - drop);
             inst.setPinVoltage(otherPin, nextVoltage);
             visit(`${compId}:${otherPin}`, nextVoltage);
-        } else if (inst.type === 'openhw-led' || inst.type === 'openhw-led') {
+        } else if (inst.type === 'openhw-led' || inst.type === 'wokwi-led') {
             // Forward bias: Anode to Cathode
             if (pinId === 'A') {
                 const nextV = Math.max(0, voltage - 1.8);
