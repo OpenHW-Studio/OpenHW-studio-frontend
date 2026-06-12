@@ -53,6 +53,7 @@ import ComponentLab from './pages/simulationpage/ComponentLab.jsx';
 const GradingPage = React.lazy(() => import('./pages/GradingPage.jsx'));
 import MaintenancePage from './pages/MaintenancePage.jsx';
 import AboutUsNew from './pages/AboutUsNewPage.jsx';
+import ExamplesPage from './pages/ExamplesPage.jsx';
 import AuthSuccess from "./pages/auth/AuthSuccess.jsx";
 import VisitorTracker from "./components/VisitorTracker.jsx";
 
@@ -186,6 +187,7 @@ export default function App() {
                 {/* Public Routes */}
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/about" element={<AboutUsNew />} />
+                <Route path="/examples" element={<ExamplesPage />} />
                 <Route path="/login" element={<UserLoginPage />} />
                 <Route
                   path="/signin"
