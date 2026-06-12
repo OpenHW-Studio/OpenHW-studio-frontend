@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, ExternalLink, FileText, Link2, NotebookPen, X } from "lucide-react";
+import { Award, ChevronRight, ExternalLink, FileText, Link2, NotebookPen, X } from "lucide-react";
 import ClassroomAttachmentBlock from "../../common/ClassroomAttachmentBlock.jsx";
 import { formatDateTime } from "../../common/test.js";
 import { pickAttachments, pickLinks } from "./helpers.js";
@@ -129,6 +129,17 @@ export default function TeacherAssignmentSubmissionsModal({
                             <span>{attachmentCount} files</span>
                             <span>{linkCount} links</span>
                           </div>
+                          {submission.score !== undefined && submission.score !== null && (
+                            <div className={`ml-auto text-xs font-bold px-2 py-0.5 rounded-full ${
+                              submission.score >= 80 
+                                ? 'text-green-400 bg-green-400/10' 
+                                : submission.score >= 50 
+                                  ? 'text-amber-400 bg-amber-400/10' 
+                                  : 'text-red-400 bg-red-400/10'
+                            }`}>
+                              {submission.score}/100
+                            </div>
+                          )}
                         </button>
                       );
                     })}
@@ -165,6 +176,17 @@ export default function TeacherAssignmentSubmissionsModal({
                             files
                           </span>
                           <span>{selectedSimulationUrl ? 1 : selectedSubmissionLinks.length} links</span>
+                          {selectedSubmission.score !== undefined && selectedSubmission.score !== null && (
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                              selectedSubmission.score >= 80 
+                                ? 'text-green-400 bg-green-400/10' 
+                                : selectedSubmission.score >= 50 
+                                  ? 'text-amber-400 bg-amber-400/10' 
+                                  : 'text-red-400 bg-red-400/10'
+                            }`}>
+                              Score: {selectedSubmission.score}/100
+                            </span>
+                          )}
                         </div>
                       </div>
 
@@ -234,6 +256,37 @@ export default function TeacherAssignmentSubmissionsModal({
                             </div>
                           )}
                         </div>
+
+                        {(assignment.isAutogradingEnabled || assignment.autogradingKey) && (
+                          <div className="teacher-assignment-modal__section">
+                            <h4>Autograde Result</h4>
+                            {selectedSubmission.score !== undefined && selectedSubmission.score !== null ? (
+                              <div className="flex items-start gap-3 p-3 rounded-xl border border-[var(--border)] bg-[var(--card)]">
+                                <div className={`flex items-center gap-3 ${
+                                  selectedSubmission.score >= 80 
+                                    ? 'text-green-400' 
+                                    : selectedSubmission.score >= 50 
+                                      ? 'text-amber-400' 
+                                      : 'text-red-400'
+                                }`}>
+                                  <Award size={24} />
+                                  <div>
+                                    <strong className="text-lg">{selectedSubmission.score}/100</strong>
+                                    <small className="block text-xs text-[var(--text3)]">Auto-graded score</small>
+                                  </div>
+                                </div>
+                                {selectedSubmission.feedback ? (
+                                  <p className="text-sm text-[var(--text2)] mt-2">{selectedSubmission.feedback}</p>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <div className="teacher-review-empty">
+                                <Award size={16} />
+                                <span>Grading pending or not yet available.</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </>
                   ) : null}
