@@ -440,7 +440,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
   return newWires;
 };
 
-export function SimulatorPage({ gamificationMode = false }) {
+export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const {
     isAuthenticated,
     isAdminAuthenticated,
@@ -521,6 +521,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       "openhw-rgb-led": "rgb-led",
       "wokwi-ntc-temperature-sensor": "dht11",
       "openhw-ntc-temperature-sensor": "dht11",
+      "wokwi-dht22": "dht22",
+      "openhw-dht22": "dht22",
       "wokwi-hc-sr04": "ultrasonic",
       "openhw-hc-sr04": "ultrasonic",
       "wokwi-servo": "servo",
@@ -660,11 +662,17 @@ export function SimulatorPage({ gamificationMode = false }) {
         wires,
         code,
       };
-      sessionStorage.setItem(
-        `openhw_assessment_submission:${assessmentName}`,
-        JSON.stringify(payload),
-      );
-      navigate(`/${assessmentName}/assessment`);
+      sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
+      // Preserve classId when navigating to assessment page to maintain class context
+      const targetPath = classId
+        ? `/${assessmentName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
     } finally {
       setIsSubmittingAssessment(false);
     }
@@ -2084,15 +2092,41 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
     };
 
-    loadDemoProject();
-    return () => {
-      cancelled = true;
-      if (deferTimer !== null) window.clearTimeout(deferTimer);
-    };
-  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+loadDemoProject();
+     return () => {
+       cancelled = true;
+       if (deferTimer !== null) window.clearTimeout(deferTimer);
+     };
+   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Offline component queue: flush to backend when connectivity restores ──
-  useEffect(() => {
+// ── Load circuit data from bankProjectCriteria (opened from Project Bank Editor) ──
+    useEffect(() => {
+      if (!returnTo) return;
+
+      // Check if we have circuit data from Project Bank Editor
+      const stored = localStorage.getItem("bankProjectCriteria");
+      if (!stored) return;
+
+      try {
+        const parsed = JSON.parse(stored);
+        // Only load if it has the full payload format (components/connections)
+        if (parsed && Array.isArray(parsed.components) && Array.isArray(parsed.connections)) {
+          const { components: normalizedComponents, wires: normalizedConnections } =
+            normalizeImportedCircuitData(parsed.components, parsed.connections);
+
+          setBoard(parsed.board || "arduino_uno");
+          setComponents(normalizedComponents);
+          setWires(normalizedConnections);
+          setCode(parsed.code || "");
+          syncNextIds(normalizedComponents, normalizedConnections);
+        }
+      } catch (e) {
+        console.warn("[BankProjectCriteria] Failed to parse circuit data:", e);
+      }
+    }, [returnTo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Offline component queue: flush to backend when connectivity restores ──
+    useEffect(() => {
     const drainQueue = async () => {
       const queued = await getQueuedComponents();
       if (!queued.length) return;
@@ -2116,11 +2150,13 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => window.removeEventListener("online", drainQueue);
   }, []);
 
-  // ── Sync backend custom components (cache-first, version-checked) ──────────
+// ── Sync backend custom components (cache-first, version-checked) ──────────
   // On every page load:
   //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
   //  2. GET /api/components/version (~40 bytes) → compare hash
   //  3. Only fetch + transpile when the hash actually changed
+  //  Note: In Adventure/Classroom mode, clear cache to ensure component filtering
+  //  is based on fresh unlock data from the API.
   useEffect(() => {
     let cancelled = false;
 
@@ -3756,6 +3792,26 @@ export function SimulatorPage({ gamificationMode = false }) {
       document.head.appendChild(s);
     }
   }, []);
+
+  // ── Smart Prefetching for Simulation Runners ───────────────────────────────
+  const preloadedBoardsRef = useRef(new Set());
+  useEffect(() => {
+    if (!components) return;
+    const currentBoardTypes = components
+      .filter((c) => /arduino|esp32|stm32|pico|rp2040|attiny/i.test(c.type))
+      .map((c) => c.type);
+    
+    const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
+    if (newTypesToPreload.length > 0) {
+      newTypesToPreload.forEach(t => preloadedBoardsRef.current.add(t));
+      const prefetchWorker = new Worker(new URL("../../worker/simulation.worker.ts", import.meta.url), { type: "module" });
+      const dummyComponents = newTypesToPreload.map(type => ({ type }));
+      prefetchWorker.postMessage({ type: "PRELOAD_RUNNERS", components: dummyComponents });
+      
+      const timer = setTimeout(() => prefetchWorker.terminate(), 5000);
+      return () => { clearTimeout(timer); prefetchWorker.terminate(); };
+    }
+  }, [components]);
 
   // ── Validation toast auto-dismiss ───────────────────────────────────────────
   useEffect(() => {
@@ -12556,6 +12612,11 @@ export function SimulatorPage({ gamificationMode = false }) {
             localStorage.removeItem("openhw-tour-completed");
             setShowTour(true);
           }}
+          returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
+          navigate={navigate}
+          components={components}
+          wires={wires}
+          code={code}
         />
 
         <SimulatorStatusBanners
