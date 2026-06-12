@@ -22,15 +22,17 @@ for (const p of BOARD_TYPE_PATTERNS) {
 
 /**
  * BFS through the wire graph from `compId:pinId` to find the connected board pin.
- * Handles passive components (resistors, breadboards) in the path.
+ * Handles passive components (resistors, LEDs, breadboards) in the path.
  */
 function resolveBoardPin(compId: string, pinId: string, wires: any[], components?: any[]): string | null {
   // Pre-compute board IDs by type if components are available
   const boardIdsByType = new Set<string>();
+  const compTypeById = new Map<string, string>();
   if (components) {
     for (const c of components) {
       const type = (c.type || '').toLowerCase().replace(/[-_]/g, '');
       if (BOARD_TYPE_TO_PATTERN[type]) boardIdsByType.add(c.id);
+      compTypeById.set(c.id, c.type || '');
     }
   }
 
@@ -44,6 +46,16 @@ function resolveBoardPin(compId: string, pinId: string, wires: any[], components
     if (!adj.has(t)) adj.set(t, []);
     adj.get(t)!.push(f);
   }
+
+  // Passive components that internally connect their pins (e.g. resistor p1↔p2, LED A↔K)
+  const PASSIVE_THROUGH: Record<string, [string, string][]> = {
+    'openhw-resistor': [['p1', 'p2']],
+    'wokwi-resistor': [['p1', 'p2']],
+    'openhw-led': [['A', 'K']],
+    'wokwi-led': [['A', 'K']],
+    'openhw-pushbutton': [['1l', '1r'], ['2l', '2r']],
+    'wokwi-pushbutton': [['1l', '1r'], ['2l', '2r']],
+  };
 
   const start = `${compId}:${pinId}`;
   const visited = new Set<string>();
@@ -66,11 +78,32 @@ function resolveBoardPin(compId: string, pinId: string, wires: any[], components
       return nodePin; // e.g. "13", "A0", "9"
     }
 
+    // Follow wired connections
     const neighbors = adj.get(node) || [];
     for (const nb of neighbors) {
       if (!visited.has(nb)) {
         visited.add(nb);
         queue.push(nb);
+      }
+    }
+
+    // Follow passive component internal connections (e.g. resistor p1→p2, LED A→K)
+    const compType = compTypeById.get(nodeComp);
+    if (compType) {
+      const pairs = PASSIVE_THROUGH[compType];
+      if (pairs) {
+        for (const [a, b] of pairs) {
+          let otherPin: string | null = null;
+          if (a === nodePin) otherPin = b;
+          else if (b === nodePin) otherPin = a;
+          if (otherPin) {
+            const otherNode = `${nodeComp}:${otherPin}`;
+            if (!visited.has(otherNode)) {
+              visited.add(otherNode);
+              queue.push(otherNode);
+            }
+          }
+        }
       }
     }
   }

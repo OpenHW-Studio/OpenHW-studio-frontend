@@ -348,7 +348,10 @@ export async function fetchLiveSimulationSession(sessionCode) {
 
 export function buildLiveSimulationWsUrl(sessionCode, role = 'student') {
     const token = getToken();
-    const wsOrigin = API_ORIGIN.replace(/^http/i, 'ws');
+    // In production with a relative /api path, API_ORIGIN is empty.
+    // Fall back to window.location.origin so the WebSocket URL is always absolute.
+    const resolvedOrigin = API_ORIGIN || window.location.origin;
+    const wsOrigin = resolvedOrigin.replace(/^http/i, 'ws');
     const url = new URL('/api/live-simulations/ws', `${wsOrigin}/`);
     url.searchParams.set('sessionCode', sessionCode);
     url.searchParams.set('role', role);
@@ -413,7 +416,10 @@ export async function restartInfrastructureService(name) {
 export function buildLiveLogStreamUrl(service) {
     const adminToken = getAdminToken();
     const token = adminToken || getToken();
-    const url = new URL('/api/admin/system-logs/stream', `${API_ORIGIN}/`);
+    // In production with a relative /api path, API_ORIGIN is empty.
+    // Fall back to window.location.origin so the URL is always absolute.
+    const resolvedOrigin = API_ORIGIN || window.location.origin;
+    const url = new URL('/api/admin/system-logs/stream', `${resolvedOrigin}/`);
     url.searchParams.set('service', service || 'all');
     if (token) {
         // Warning: Sending token in query param is less secure than header, but required for EventSource
@@ -510,5 +516,22 @@ export async function startEsp32Compile({ code, libraries_txt, targetEngine }) {
 
 export async function getEsp32CompileStatus(jobId) {
     const response = await axios.get(`${COMPILER_URL}/compile/status/${jobId}`, getUserAuthConfig());
+    return response.data;
+}
+
+export async function startStm32Compile({ code, files, target, fqbn, libraries_txt, targetEngine }) {
+    const response = await axios.post(`${COMPILER_URL}/compile/stm32/start`, {
+        code,
+        files,
+        target,
+        fqbn,
+        libraries_txt,
+        targetEngine
+    }, getUserAuthConfig());
+    return response.data;
+}
+
+export async function getStm32CompileStatus(jobId) {
+    const response = await axios.get(`${COMPILER_URL}/compile/stm32/status/${jobId}`, getUserAuthConfig());
     return response.data;
 }
