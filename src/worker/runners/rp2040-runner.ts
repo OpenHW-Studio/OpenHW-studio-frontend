@@ -916,7 +916,44 @@ export class RP2040Runner implements BoardRunner {
         ) >>> 0;
         this.flashPartitions = normalizeRp2040FlashPartitions(options.rp2040FlashPartitions);
 
+        this.rp2040 = new RP2040();
+        (globalThis as any).rp2040 = this.rp2040;
         this.cpu = new RP2040(new RP2040MockClock() as any);
+
+        // Hack to fix TXSTALL bug in rp2040js PIO emulator
+        for (const pio of (this.cpu as any).pio) {
+            for (const machine of pio.machines) {
+                const originalStep = machine.step;
+                machine.step = function() {
+                    originalStep.call(this);
+                    if (this.waiting) {
+                        if (this.waitType === 3 /* txFIFO */ || this.waitType === 5 /* Out */) {
+                            if (this.txFIFO.empty) {
+                                this.pio.fdebug |= (1 << 24) /* FDEBUG_TXSTALL */ << this.index;
+                            }
+                        } else if (this.waitType === 2 /* rxFIFO */) {
+                            if (this.rxFIFO.full) {
+                                this.pio.fdebug |= (1 << 0) /* FDEBUG_RXSTALL */ << this.index;
+                            }
+                        }
+                    }
+                };
+            }
+        }
+        
+        // Debug FDEBUG reads
+        const originalReadUint32 = this.cpu.readUint32.bind(this.cpu);
+        let fdebugReadCount = 0;
+        this.cpu.readUint32 = (address: number) => {
+            const val = originalReadUint32(address);
+            if (address === 0x50200028 || address === 0x50300028) { // PIO0 or PIO1 FDEBUG
+                fdebugReadCount++;
+                if (fdebugReadCount % 10000 === 0) {
+                    console.log(`[FDEBUG READ] address=0x${address.toString(16)}, val=0x${val.toString(16)}`);
+                }
+            }
+            return val;
+        };
         const wrapFlashAliasAddressMethod = (methodName: string) => {
             const original = (this.cpu as any)?.[methodName];
             if (typeof original !== 'function') return;
@@ -924,6 +961,26 @@ export class RP2040Runner implements BoardRunner {
             (this.cpu as any)[methodName] = (rawAddress: number, ...args: any[]) => {
                 const sourceAddress = Number(rawAddress) >>> 0;
                 const mappedAddress = normalizeRp2040FlashAliasAddress(sourceAddress);
+                
+                if (!((this as any)._loggedPio)) {
+                    (this as any)._loggedPio = true;
+                    setTimeout(() => {
+                        try {
+                            const insts = [];
+                            for (let i = 0; i < 32; i++) {
+                                insts.push(this.rp2040.pio[1].instructions[i].toString(16).padStart(4, '0'));
+                            }
+                            console.log(`[PIO1] Instructions: ${insts.join(', ')}`);
+                            
+                            const insts0 = [];
+                            for (let i = 0; i < 32; i++) {
+                                insts0.push(this.rp2040.pio[0].instructions[i].toString(16).padStart(4, '0'));
+                            }
+                            console.log(`[PIO0] Instructions: ${insts0.join(', ')}`);
+                        } catch (e) {}
+                    }, 500);
+                }
+                
                 try {
                     return original.call(this.cpu, mappedAddress, ...args);
                 } catch (err: any) {
@@ -1232,6 +1289,7 @@ export class RP2040Runner implements BoardRunner {
         this.running = false;
         this.clearPendingUartLedTimers();
         clearInterval(this.statusInterval);
+        console.error(`[RP2040 RUNTIME FAULT] pc: 0x${pc.toString(16)}, reason: ${reason}`);
         this.emitDebugSnapshot('fault', performance.now(), true, reason, pc >>> 0);
         this.onStateUpdate({
             type: 'fault',
@@ -3475,6 +3533,9 @@ export class RP2040Runner implements BoardRunner {
                         if (clock) clock.tick(cycles * CYCLE_NANOS);
                         cyclesDone += cycles;
                         this.debugStepCount += 1;
+                        if (this.debugStepCount % 1000000 === 0) {
+                            console.log(`[CPU HANG CHECK] PC: 0x${this.cpu!.core.PC.toString(16)}`);
+                        }
 
                         // Synchronous PIO stepping
                         this.pio0Accum += cycles;
