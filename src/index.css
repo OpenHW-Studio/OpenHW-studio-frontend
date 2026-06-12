@@ -523,8 +523,9 @@ body {
 }
 
 .difficulty.advanced {
-  background: rgba(0, 212, 255, 0.15);
-  color: var(--accent);
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .points {
@@ -10546,3 +10547,5 @@ body {
   border-radius: 8px;
   text-align: center;
 }
+
+
