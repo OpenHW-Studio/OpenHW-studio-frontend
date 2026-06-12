@@ -44,9 +44,7 @@ export default function LandingPage() {
           <button className="btn btn-ghost" onClick={() => navigate("/about")}>
             About Us
           </button>
-<button className="btn btn-ghost" onClick={() => navigate("/examples")}>
-            Examples
-          </button>
+
           <button
             className="btn btn-ghost"
             onClick={toggleTheme}
@@ -360,7 +358,7 @@ export default function LandingPage() {
           <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
             Documentation
           </a>
-          <a href="/examples">Examples</a>
+          <a href="#">Examples</a>
         </div>
       </footer>
     </div>
