@@ -1225,7 +1225,6 @@ export class AVRRunner {
                         const p4 = (pindVal >> 4) & 1;
                         const p5 = (pindVal >> 5) & 1;
                         console.log(`[repropagate MUX] D0=${d0} D1=${d1} SEL=${sel} OUT=${outV} d0High=${inst.getPinVoltage('D0')>=2.5} d1High=${inst.getPinVoltage('D1')>=2.5} selHigh=${inst.getPinVoltage('SEL')>=2.5} stateOut=${inst.state?.outputHigh} PIND2=${p2} PIND3=${p3} PIND4=${p4} PIND5=${p5} pins=${Object.keys(inst.pins).join(',')}`);
-                    }
                 } else if (inst.type.includes('hc-sr04')) {
                     if (inst.pins['ECHO']) {
                         updateOopPin('ECHO', inst.pins['ECHO'].voltage, compId);
