@@ -99,6 +99,7 @@ import { SimulatorRuntimePanel } from "./components/SimulatorRuntimePanel";
 import { CanvasBottomControls } from "./components/CanvasBottomControls";
 import { F1MenuOverlay } from "./components/F1MenuOverlay";
 import AutofixPreviewPanel from "../../components/AutofixPreviewPanel.jsx";
+import GuidedProjectPopup from "../../components/student/GuidedProjectPopup.jsx";
 
 import * as EmulatorComponents from "@openhw/emulator";
 
@@ -462,6 +463,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     liveCode = "",
   } = useParams();
   const location = useLocation();
+  const [guidedProjectState, setGuidedProjectState] = useState(() => {
+    if (location.state?.guidedProject) return { project: location.state.guidedProject, levelColor: location.state.levelColor || '#22c55e' }
+    return null
+  })
+  const [activeBoard, setActiveBoard] = useState('arduino')
   const assessmentParams = useMemo(
     () => new URLSearchParams(location.search),
     [location.search],
@@ -713,6 +719,45 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [wiringStartPin, setWiringStartPin] = useState(null);
   const [components, setComponents] = useState([]);
   const [wires, setWires] = useState([]);
+
+  const [isLoadingGuidedSchema, setIsLoadingGuidedSchema] = useState(false)
+
+  const doLoadGuidedSchema = (schema, label) => {
+    setIsLoadingGuidedSchema(true)
+    applyImportedProjectMeta(schema, label)
+    setTimeout(() => setIsLoadingGuidedSchema(false), 800)
+  }
+
+  const initialLoadRef = useRef(false)
+  useEffect(() => {
+    const project = guidedProjectState?.project
+    if (!project || initialLoadRef.current) return
+    initialLoadRef.current = true
+
+    const loadFromSchema = () => {
+      if (project?.schemas?.arduino) {
+        doLoadGuidedSchema(project.schemas.arduino, 'Guided Project')
+      } else {
+        setIsLoadingGuidedSchema(false)
+      }
+    }
+
+    const tryLoadFromPng = async () => {
+      const slug = project.slug || projectName
+      if (!slug) throw new Error('no slug')
+      const pngUrl = `${EXAMPLES_BASE_URL}/${slug}/circuit.png`
+      const res = await fetch(pngUrl)
+      if (!res.ok) throw new Error('PNG not found')
+      const buf = await res.arrayBuffer()
+      const meta = extractProjectMetaFromPng(new Uint8Array(buf))
+      applyImportedProjectMeta(meta, 'Guided Project')
+    }
+
+    setIsLoadingGuidedSchema(true)
+    tryLoadFromPng()
+      .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
+      .catch(() => loadFromSchema())
+  }, [guidedProjectState])
 
   const [history, setHistory] = useState({ past: [], future: [] });
   const [selected, setSelected] = useState(null); // comp or wire id
@@ -2058,6 +2103,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   useEffect(() => {
     if (gamificationMode) return;
+    if (guidedProjectState) {
+      loadLibraries();
+      return;
+    }
 
     let cancelled = false;
     let deferTimer = null;
@@ -12613,9 +12662,6 @@ loadDemoProject();
             setShowTour(true);
           }}
           returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
-          navigate={navigate}
-          components={components}
-          wires={wires}
           code={code}
         />
 
@@ -13787,7 +13833,58 @@ loadDemoProject();
             }
             theme={theme}
           />
+          {guidedProjectState && (
+            <GuidedProjectPopup
+              project={guidedProjectState.project}
+              levelColor={guidedProjectState.levelColor}
+              onClose={() => setGuidedProjectState(null)}
+              readOnly
+              schemas={guidedProjectState.project.schemas}
+              activeBoard={activeBoard}
+              onBoardChange={(boardKey, schema) => {
+                setActiveBoard(boardKey)
+                if (schema) doLoadGuidedSchema(schema, 'Guided Project')
+              }}
+            />
+          )}
         </div>
+
+        {/* Guided project schema loading overlay */}
+        {isLoadingGuidedSchema && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9999,
+              background: 'rgba(15,23,42,0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(2px)',
+            }}
+          >
+            <div
+              style={{
+                background: '#ffffff', borderRadius: 16,
+                padding: '32px 40px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              }}
+            >
+              <div
+                style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  border: '3px solid #e2e8f0',
+                  borderTopColor: '#2563eb',
+                  animation: 'guided-spin 0.7s linear infinite',
+                }}
+              />
+              <style>{`@keyframes guided-spin{to{transform:rotate(360deg)}}`}</style>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                Loading circuit...
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                Placing components and wiring connections
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
