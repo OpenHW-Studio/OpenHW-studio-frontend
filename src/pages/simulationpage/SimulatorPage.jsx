@@ -499,6 +499,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     currentLevelData,
     nextLevel,
     xpProgress,
+    unlockedComponents,
   } = typeof useGamification === "function" ? useGamification() : {};
   const gamProject = useMemo(
     () =>
@@ -627,7 +628,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       if (activeUser?.role !== 'student') return false;
       const compId = WOKWI_TO_COMP_ID[itemType];
       if (!compId) return false;
-      return isUnlocked ? !isUnlocked(compId) : false;
+      return isUnlocked ? !isUnlocked(itemType) : false;
     },
     [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID, activeUser?.role],
   );
@@ -640,7 +641,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         compId && typeof COMPONENT_MAP !== "undefined"
           ? COMPONENT_MAP[compId]
           : null;
-      const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(compId) : false;
+      const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(c.type) : false;
       return { ...c, compId, compDef, isLocked };
     });
   }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
@@ -648,7 +649,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   const gamLockedCount = gamProjectComponents.filter(
     (c) => c.isLocked && c.compId,
   ).length;
-  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : true;
+  const gamAllUnlockedGlobally = unlockedComponents === '*';
+  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : gamAllUnlockedGlobally;
 
   const handleAssessmentSubmit = async () => {
     if (!assessmentMode && !gamificationMode) return;
@@ -13232,7 +13234,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             setProjContextMenu={setProjContextMenu}
           />
 
-          {gamificationMode && gamPanelOpen && (
+          {gamificationMode && gamPanelOpen && (gamProject || activeUser?.role === 'student') && (
             <GamificationGuidePanel
               gamTab={gamTab}
               setGamTab={setGamTab}
