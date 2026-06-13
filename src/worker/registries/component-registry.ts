@@ -57,6 +57,8 @@ import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
+import { Ks2eLogic } from '@openhw/emulator/src/components/openhw-ks2e-m-dc5/logic';
+import { RelayModuleLogic } from '@openhw/emulator/src/components/openhw-relay-module/logic';
 
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
@@ -191,6 +193,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-cd74hc4067': BaseComponent,
     'wokwi-logic-analyzer': SimulationMonitorLogic,
     'openhw-logic-analyzer': SimulationMonitorLogic,
+    'openhw-ks2e-m-dc5': Ks2eLogic,
 
     // I2S Audio Components
     'openhw-pcm5102': I2SProtocol,
@@ -226,8 +229,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-mpu6050': BaseComponent,
     'wokwi-nlsf595': BaseComponent,
     'openhw-nlsf595': BaseComponent,
-    'wokwi-relay-module': BaseComponent,
-    'openhw-relay-module': BaseComponent,
+    'wokwi-relay-module': RelayModuleLogic,
+    'openhw-relay-module': RelayModuleLogic,
     'wokwi-stepper-motor': StepperMotorLogic,
     'openhw-stepper-motor': StepperMotorLogic,
     'wokwi-arduino-mega': MegaLogic,
@@ -396,6 +399,11 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
     'openhw-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
     'wokwi-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
+    'openhw-ks2e-m-dc5': [
+  { id: 'COIL1' }, { id: 'COIL2' },
+  { id: 'P1' }, { id: 'NC1' }, { id: 'NO1' },
+  { id: 'P2' }, { id: 'NC2' }, { id: 'NO2' }
+],
     'openhw-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
 
     // Custom sensors

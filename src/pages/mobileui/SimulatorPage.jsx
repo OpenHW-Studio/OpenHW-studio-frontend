@@ -8058,7 +8058,11 @@ useEffect(() => {
 
       // 4. Append metadata bytes after PNG IEND → still renders fine in all image viewers
       const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-').replace(':', '-');
-      const filename = `circuit_${board}_${dateStr}.png`;
+      const safeName = (currentProjectName && currentProjectName !== "Untitled")
+  ? currentProjectName.replace(/[^a-z0-9_\-]/gi, "_")
+  : `circuit_${board}`;
+      const filename = `${safeName}_${dateStr}.png`;
+
       out.toBlob(async (blob) => {
         const t_blob_start = performance.now();
         const pngBuf = await blob.arrayBuffer();
