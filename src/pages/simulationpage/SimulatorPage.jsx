@@ -441,7 +441,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
   return newWires;
 };
 
-export function SimulatorPage({ gamificationMode = false }) {
+export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const {
     isAuthenticated,
     isAdminAuthenticated,
@@ -528,6 +528,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       "openhw-rgb-led": "rgb-led",
       "wokwi-ntc-temperature-sensor": "dht11",
       "openhw-ntc-temperature-sensor": "dht11",
+      "wokwi-dht22": "dht22",
+      "openhw-dht22": "dht22",
       "wokwi-hc-sr04": "ultrasonic",
       "openhw-hc-sr04": "ultrasonic",
       "wokwi-servo": "servo",
@@ -670,11 +672,17 @@ export function SimulatorPage({ gamificationMode = false }) {
         wires,
         code,
       };
-      sessionStorage.setItem(
-        `openhw_assessment_submission:${assessmentName}`,
-        JSON.stringify(payload),
-      );
-      navigate(`/${assessmentName}/assessment`);
+      sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
+      // Preserve classId when navigating to assessment page to maintain class context
+      const targetPath = classId
+        ? `/${assessmentName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
     } finally {
       setIsSubmittingAssessment(false);
     }
@@ -724,11 +732,13 @@ export function SimulatorPage({ gamificationMode = false }) {
     setTimeout(() => setIsLoadingGuidedSchema(false), 800)
   }
 
-  const initialLoadRef = useRef(false)
+  const lastLoadedSlugRef = useRef(null)
   useEffect(() => {
     const project = guidedProjectState?.project
-    if (!project || initialLoadRef.current) return
-    initialLoadRef.current = true
+    const slug = project?.slug || (gamificationMode ? projectName : null)
+
+    if (!slug || lastLoadedSlugRef.current === slug) return
+    lastLoadedSlugRef.current = slug
 
     const loadFromSchema = () => {
       if (project?.schemas?.arduino) {
@@ -739,8 +749,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
 
     const tryLoadFromPng = async () => {
-      const slug = project.slug || projectName
-      if (!slug) throw new Error('no slug')
       const pngUrl = `${EXAMPLES_BASE_URL}/${slug}/circuit.png`
       const res = await fetch(pngUrl)
       if (!res.ok) throw new Error('PNG not found')
@@ -753,7 +761,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     tryLoadFromPng()
       .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
       .catch(() => loadFromSchema())
-  }, [guidedProjectState])
+  }, [guidedProjectState, gamificationMode, projectName])
 
   const [history, setHistory] = useState({ past: [], future: [] });
   const [selected, setSelected] = useState(null); // comp or wire id
@@ -2137,15 +2145,41 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
     };
 
-    loadDemoProject();
-    return () => {
-      cancelled = true;
-      if (deferTimer !== null) window.clearTimeout(deferTimer);
-    };
-  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+loadDemoProject();
+     return () => {
+       cancelled = true;
+       if (deferTimer !== null) window.clearTimeout(deferTimer);
+     };
+   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Offline component queue: flush to backend when connectivity restores ──
-  useEffect(() => {
+// ── Load circuit data from bankProjectCriteria (opened from Project Bank Editor) ──
+    useEffect(() => {
+      if (!returnTo) return;
+
+      // Check if we have circuit data from Project Bank Editor
+      const stored = localStorage.getItem("bankProjectCriteria");
+      if (!stored) return;
+
+      try {
+        const parsed = JSON.parse(stored);
+        // Only load if it has the full payload format (components/connections)
+        if (parsed && Array.isArray(parsed.components) && Array.isArray(parsed.connections)) {
+          const { components: normalizedComponents, wires: normalizedConnections } =
+            normalizeImportedCircuitData(parsed.components, parsed.connections);
+
+          setBoard(parsed.board || "arduino_uno");
+          setComponents(normalizedComponents);
+          setWires(normalizedConnections);
+          setCode(parsed.code || "");
+          syncNextIds(normalizedComponents, normalizedConnections);
+        }
+      } catch (e) {
+        console.warn("[BankProjectCriteria] Failed to parse circuit data:", e);
+      }
+    }, [returnTo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Offline component queue: flush to backend when connectivity restores ──
+    useEffect(() => {
     const drainQueue = async () => {
       const queued = await getQueuedComponents();
       if (!queued.length) return;
@@ -2169,11 +2203,13 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => window.removeEventListener("online", drainQueue);
   }, []);
 
-  // ── Sync backend custom components (cache-first, version-checked) ──────────
+// ── Sync backend custom components (cache-first, version-checked) ──────────
   // On every page load:
   //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
   //  2. GET /api/components/version (~40 bytes) → compare hash
   //  3. Only fetch + transpile when the hash actually changed
+  //  Note: In Adventure/Classroom mode, clear cache to ensure component filtering
+  //  is based on fresh unlock data from the API.
   useEffect(() => {
     let cancelled = false;
 
