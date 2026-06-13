@@ -732,11 +732,13 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setTimeout(() => setIsLoadingGuidedSchema(false), 800)
   }
 
-  const initialLoadRef = useRef(false)
+  const lastLoadedSlugRef = useRef(null)
   useEffect(() => {
     const project = guidedProjectState?.project
-    if (!project || initialLoadRef.current) return
-    initialLoadRef.current = true
+    const slug = project?.slug || (gamificationMode ? projectName : null)
+
+    if (!slug || lastLoadedSlugRef.current === slug) return
+    lastLoadedSlugRef.current = slug
 
     const loadFromSchema = () => {
       if (project?.schemas?.arduino) {
@@ -747,8 +749,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     }
 
     const tryLoadFromPng = async () => {
-      const slug = project.slug || projectName
-      if (!slug) throw new Error('no slug')
       const pngUrl = `${EXAMPLES_BASE_URL}/${slug}/circuit.png`
       const res = await fetch(pngUrl)
       if (!res.ok) throw new Error('PNG not found')
@@ -761,7 +761,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     tryLoadFromPng()
       .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
       .catch(() => loadFromSchema())
-  }, [guidedProjectState])
+  }, [guidedProjectState, gamificationMode, projectName])
 
   const [history, setHistory] = useState({ past: [], future: [] });
   const [selected, setSelected] = useState(null); // comp or wire id
