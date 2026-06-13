@@ -23,6 +23,7 @@ const Sidebar = ({ isOpen, onClose, activeTab, setActiveTab, onLogout, maintenan
         { id: 'overview', icon: LayoutDashboard, label: 'Overview' },
         { id: 'map', icon: Globe, label: 'User Map' },
         { id: 'libraries', icon: Library, label: 'Libraries' },
+        { id: 'adventure-content', icon: Activity, label: 'Adventure Content' },
         { id: 'approval', icon: Clock, label: 'Approvals' },
         { id: 'components', label: 'Custom Components', icon: Package },
         { id: 'deployments', label: 'CI/CD Workflow', icon: PlayCircle },

@@ -90,18 +90,18 @@ function SimulatorChromeOverlaysBase({
       {gamificationMode && gamProject && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
-          background: 'rgba(7,8,15,0.97)', borderBottom: `2px solid ${gamProject.color || '#22c55e'}44`,
+          background: 'var(--bg2)', borderBottom: `1px solid var(--border)`,
           fontFamily: "'Space Grotesk', sans-serif", flexShrink: 0, flexWrap: 'wrap', zIndex: 50,
         }}>
           <button
             onClick={() => navigate('/projects')}
-            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,.12)', color: 'rgba(255,255,255,.55)', borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
           >← Projects</button>
 
           <span style={{ fontSize: 18, flexShrink: 0 }}>{gamProject.icon}</span>
           <div style={{ flexShrink: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1 }}>{gamProject.title}</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,.4)', marginTop: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', lineHeight: 1 }}>{gamProject.title}</div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
               Project {String(gamProject.number).padStart(2, '0')} ·{' '}
               <span style={{ color: gamProject.color || '#22c55e' }}>{gamProject.difficultyLabel}</span>
               {' '}· ⏱ {gamProject.estimatedTime}
@@ -119,10 +119,10 @@ function SimulatorChromeOverlaysBase({
               fontSize: 10, fontWeight: 800, color: currentLevelData?.color || '#22c55e',
             }}>{currentLevel}</div>
             <div style={{ width: 90 }}>
-              <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,.1)', overflow: 'hidden' }}>
+              <div style={{ height: 3, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
                 <div style={{ height: '100%', borderRadius: 999, width: `${xpProgress}%`, background: `${currentLevelData?.color || '#22c55e'}` }} />
               </div>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,.3)', marginTop: 2 }}>{xpProgress}% to Lvl {nextLevel?.id ?? '—'}</div>
+              <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{xpProgress}% to Lvl {nextLevel?.id ?? '—'}</div>
             </div>
           </div>
 
@@ -147,9 +147,9 @@ function SimulatorChromeOverlaysBase({
           <button
             onClick={() => setGamPanelOpen((p) => !p)}
             style={{
-              background: gamPanelOpen ? 'rgba(0,180,255,.1)' : 'transparent',
-              border: `1px solid ${gamPanelOpen ? 'rgba(0,180,255,.3)' : 'rgba(255,255,255,.12)'}`,
-              color: gamPanelOpen ? '#00b4ff' : 'rgba(255,255,255,.5)',
+              background: gamPanelOpen ? 'var(--bg1)' : 'transparent',
+              border: `1px solid ${gamPanelOpen ? 'var(--accent)' : 'var(--border)'}`,
+              color: gamPanelOpen ? 'var(--accent)' : 'var(--text2)',
               borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 700,
               cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
             }}
