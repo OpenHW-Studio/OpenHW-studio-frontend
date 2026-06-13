@@ -46,14 +46,8 @@ import ProjectAssessmentPage from "./pages/ProjectAssessmentPage.jsx";
 import ProjectsGallery from "./pages/ProjectsGallery.jsx";
 import ComponentsPage from "./pages/ComponentsPage.jsx";
 import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
-import TheoryPage from "./pages/TheoryPage.jsx";
-import QuizPage from "./pages/QuizPage.jsx";
-const GamificationSimulatorPage = React.lazy(
-  () => import("./pages/GamificationSimulatorPage.jsx"),
-);
 import AdventureMapPage from "./pages/AdventureMapPage.jsx";
 import ProjectGuidePage from "./pages/ProjectGuidePage.jsx";
-import GamifiedProjectGuidePage from "./pages/GamifiedProjectGuidePage.jsx";
 const GuidedSimulatorPage = React.lazy(
   () => import("./pages/GuidedSimulatorPage.jsx"),
 );
@@ -226,25 +220,10 @@ export default function App() {
                   element={<ComponentEditorPage />}
                 />
                 <Route path="/alignment-lab" element={<ComponentLab />} />
-                <Route
-                  path="/components/:componentId/theory"
-                  element={<TheoryPage />}
-                />
-                <Route
-                  path="/components/:componentId/quiz"
-                  element={<QuizPage />}
-                />
+
                 <Route path="/adventure" element={<AdventureMapPage />} />
                 <Route path="/grade" element={<GradingPage />} />
-                <Route
-                  path="/gamification-simulator"
-                  element={<GamificationSimulatorPage />}
-                />
 
-                <Route
-                  path="/gamification-simulator/:projectName"
-                  element={<GamificationSimulatorPage />}
-                />
                 {/* Guest accessible simulator */}
                 <Route
                   path="/simulator"
@@ -345,10 +324,7 @@ export default function App() {
                   path="/:projectName/guide"
                   element={<ProjectGuidePage />}
                 />
-                <Route
-                  path="/:projectName/gamified-guide"
-                  element={<GamifiedProjectGuidePage />}
-                />
+
                 <Route
                   path="/:projectName/assessment"
                   element={<ProjectAssessmentPage />}
