@@ -1001,7 +1001,7 @@ export class RP2040Runner implements BoardRunner {
         this.patchClockSelectedReads();
         this.patchSioFifoAccess();
         this.cpu.loadBootrom(bootromB1);
-        this.cpu.logger = new ConsoleLogger(LogLevel.Error, true);
+        this.cpu.logger = new ConsoleLogger(LogLevel.Error, false);
 
         // -- Patch PIO to use synchronous stepping instead of redundant setTimeout --
         // This is a critical 'OpenHW' optimization that prevents event-loop congestion.
