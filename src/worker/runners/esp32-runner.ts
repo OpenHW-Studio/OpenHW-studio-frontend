@@ -1558,7 +1558,7 @@ export class ESP32Runner implements BoardRunner {
 
     private async initWasmCore() {
         try {
-            const url = new URL('/xtensa-core.wasm', self.location.href);
+            const url = new URL(`/xtensa-core.wasm?v=${Date.now()}`, self.location.href);
             const bytes = await fetch(url).then(r => r.arrayBuffer());
             
             const env = {
@@ -1606,7 +1606,13 @@ export class ESP32Runner implements BoardRunner {
                 console.info('[ESP32] Synced flash to WASM memory');
             }
             
-            console.info('[ESP32] WASM Xtensa core loaded ✓');
+            let wasmVersion = 0;
+            if (this._wasmExports && this._wasmExports.get_wasm_version) {
+                wasmVersion = this._wasmExports.get_wasm_version();
+            }
+            console.warn(`[ESP32] ==========================================`);
+            console.warn(`[ESP32] WASM XTENSA CORE LOADED ✓ (v${wasmVersion})`);
+            console.warn(`[ESP32] ==========================================`);
         } catch (e) {
             console.warn('[ESP32] WASM load failed, using JS fallback:', e);
         }
@@ -1696,15 +1702,24 @@ export class ESP32Runner implements BoardRunner {
             } else if (trapType === 99 /* UNIMPLEMENTED OPCODE */) {
                 this._syncFromWasm();
                 
-                const opByte = state[ESP32Runner.TRAP_VAL_IDX] & 0xFF;
+                const opByte = state[ESP32Runner.TRAP_VAL_IDX];
                 const diagAny = this as any;
                 if (!diagAny._unimplCount) diagAny._unimplCount = {};
                 diagAny._unimplCount[opByte] = (diagAny._unimplCount[opByte] || 0) + 1;
 
-                this.cpu!.step();
-                this._syncToWasm();
-                remaining--;
-                totalDone++;
+                // --- FALLBACK DISABLED ---
+                // We are commenting out the JS fallback so that the simulator crashes
+                // when WASM encounters an unimplemented instruction or memory write.
+                //
+                // this.cpu!.step();
+                // this._syncToWasm();
+                // remaining--;
+                // totalDone++;
+
+                const pcHex = state[ESP32Runner.TRAP_ADDR_IDX].toString(16).padStart(8, '0');
+                const valHex = opByte.toString(16).padStart(8, '0');
+                console.error(`[ESP32 CRASH] WASM encountered TRAP 99 (Unimplemented)! PC: 0x${pcHex}, Value: 0x${valHex}`);
+                throw new Error(`WASM TRAP 99 at PC 0x${pcHex} with Value 0x${valHex}`);
             } else {
                 break; // Unknown trap
             }
