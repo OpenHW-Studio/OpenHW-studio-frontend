@@ -8732,7 +8732,7 @@ loadDemoProject();
         "hardware",
       );
       await disconnectHardwareSerial();
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 3500));
     }
 
     await uploadToHardware();
