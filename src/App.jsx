@@ -17,6 +17,11 @@ import { GamificationToasts } from "./services/gamification/Gamificationpanel.js
 import LandingPage from "./pages/LandingPage.jsx";
 import UserLoginPage from "./pages/auth/UserLoginPage.jsx";
 import RoleSelectPage from "./pages/RoleSelectPage.jsx";
+import ProjectTheoryPage from "./pages/ProjectTheoryPage.jsx";
+import ProjectQuizPage from "./pages/ProjectQuizPage.jsx";
+import ProjectComponentUnlockPage from "./pages/ProjectComponentUnlockPage.jsx";
+import TeacherProjectContentEditor from "./pages/teacher/TeacherProjectContentEditor.jsx";
+import TeacherProjectBankPage from "./pages/teacher/TeacherProjectBankPage.jsx";
 // Lazy-loaded routes to drastically improve LCP
 import ExamplesPage from "./pages/ExamplesPage.jsx";
 import SigninPage from "./pages/auth/SigninPage.jsx";
@@ -349,6 +354,18 @@ export default function App() {
                   element={<ProjectAssessmentPage />}
                 />
                 <Route
+                  path="/:projectName/reading"
+                  element={<ProjectTheoryPage />}
+                />
+                <Route
+                  path="/:projectName/quiz"
+                  element={<ProjectQuizPage />}
+                />
+                <Route
+                  path="/:projectName/components"
+                  element={<ProjectComponentUnlockPage />}
+                />
+                <Route
                   path="/:projectName/guided"
                   element={<GuidedSimulatorPage />}
                 />
@@ -411,6 +428,30 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRole="teacher">
                       <TeacherProfilePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/teacher/project-bank"
+                  element={
+                    <ProtectedRoute allowedRole="teacher">
+                      <TeacherProjectBankPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/teacher/project-bank/new"
+                  element={
+                    <ProtectedRoute allowedRole="teacher">
+                      <TeacherProjectContentEditor />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/teacher/project-bank/:projectSlug/edit"
+                  element={
+                    <ProtectedRoute allowedRole="teacher">
+                      <TeacherProjectContentEditor />
                     </ProtectedRoute>
                   }
                 />
