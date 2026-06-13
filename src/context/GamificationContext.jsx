@@ -1,18 +1,10 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LEVELS, getUnlockedComponents, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
-import { PROJECTS } from '../services/gamification/ProjectsConfig.js';
+import { LEVELS, STARTING_COMPONENTS, getUnlockedComponents, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
+import { PROJECTS, getProjectStatus, getEarnedComponents } from '../services/gamification/ProjectsConfig.js';
 import { useAuth } from './AuthContext.jsx';
 
 const getStorageKey = (email) => `openhw_gamification_v3_${email || 'guest'}`;
-const STARTING_COMPONENTS = [
-  'wokwi-arduino-uno',
-  'openhw-arduino-uno',
-  'wokwi-led',
-  'openhw-led',
-  'wokwi-resistor',
-  'openhw-resistor'
-];
 const DEFAULT_STATE = {
   xp: 0,
   currentLevel: 1,
@@ -275,9 +267,9 @@ export function GamificationProvider({ children }) {
 
   // ── isUnlocked: checks unlockedComponentTypes in state ────────────────────
   const isUnlocked = useCallback((componentType) => {
-    // Check level-based unlocks OR manual/purchased unlocks
-    return isComponentUnlocked(componentType, state.currentLevel) || (state.unlockedComponents || []).includes(componentType);
-  }, [state.currentLevel, state.unlockedComponents]);
+    // Pass the actual unlockedComponentTypes array/set (not currentLevel)
+    return isComponentUnlocked(componentType, state.unlockedComponentTypes);
+  }, [state.unlockedComponentTypes]);
 
   // ── isProjectUnlocked: sequential prerequisite chain ─────────────────────
   const isProjectUnlocked = useCallback((projectSlug) => {
