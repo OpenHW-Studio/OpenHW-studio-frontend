@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Home, Monitor, Settings } from 'lucide-react'
+import { Home, Monitor, Settings, GraduationCap } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 
 const sidebarLinks = [
   { key: 'home', label: 'Home', icon: Home },
   { key: 'simulator', label: 'Open Simulator', icon: Monitor },
-  { key: 'settings', label: 'Settings', icon: Settings }
+  { key: 'student-dash', label: 'Go to Student Dashboard', icon: GraduationCap }
 ]
 
 export default function UserDashboard() {
@@ -26,6 +26,8 @@ export default function UserDashboard() {
     isActive: item.key === 'home',
     onClick: () => {
       if (item.key === 'simulator') navigate('/simulator')
+      if (item.key === 'student-dash') navigate('/student/dashboard') // <-- Add this line
+
     }
   }))
 
