@@ -3,8 +3,10 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
 import { configureMonaco } from './utils/monacoConfig'
+import { enableBackgroundThrottlingHack } from './utils/keepAlive.js'
 
 configureMonaco();
+enableBackgroundThrottlingHack();
 
 const googleClientId =
   import.meta.env.VITE_GOOGLE_CLIENT_ID ||

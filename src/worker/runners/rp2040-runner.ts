@@ -1,4 +1,18 @@
 import { RP2040, GPIOPinState, ConsoleLogger, LogLevel, USBCDC, GDBServer, GDBConnection } from 'rp2040js';
+import { WebUSBAdapter } from './webusb-adapter';
+
+// Suppress unaligned memory warnings emitted directly by rp2040js internal classes
+const originalConsoleWarn = console.warn;
+console.warn = (...args: any[]) => {
+    if (typeof args[0] === 'string' && args[0].includes('which is not 32 bit aligned')) return;
+    originalConsoleWarn.apply(console, args);
+};
+const originalConsoleError = console.error;
+console.error = (...args: any[]) => {
+    if (typeof args[0] === 'string' && args[0].includes('which is not 32 bit aligned')) return;
+    originalConsoleError.apply(console, args);
+};
+
 import { bootromB1 } from '../rp2040-bootrom.ts';
 import { BaseComponent } from '@openhw/emulator';
 import {
@@ -962,24 +976,6 @@ export class RP2040Runner implements BoardRunner {
                 const sourceAddress = Number(rawAddress) >>> 0;
                 const mappedAddress = normalizeRp2040FlashAliasAddress(sourceAddress);
                 
-                if (!((this as any)._loggedPio)) {
-                    (this as any)._loggedPio = true;
-                    setTimeout(() => {
-                        try {
-                            const insts = [];
-                            for (let i = 0; i < 32; i++) {
-                                insts.push(this.rp2040.pio[1].instructions[i].toString(16).padStart(4, '0'));
-                            }
-                            console.log(`[PIO1] Instructions: ${insts.join(', ')}`);
-                            
-                            const insts0 = [];
-                            for (let i = 0; i < 32; i++) {
-                                insts0.push(this.rp2040.pio[0].instructions[i].toString(16).padStart(4, '0'));
-                            }
-                            console.log(`[PIO0] Instructions: ${insts0.join(', ')}`);
-                        } catch (e) {}
-                    }, 500);
-                }
                 
                 try {
                     return original.call(this.cpu, mappedAddress, ...args);
@@ -1002,7 +998,16 @@ export class RP2040Runner implements BoardRunner {
         this.patchSioFifoAccess();
         this.cpu.loadBootrom(bootromB1);
         this.cpu.logger = new ConsoleLogger(LogLevel.Error, false);
-
+        const originalLoggerError = this.cpu.logger.error.bind(this.cpu.logger);
+        this.cpu.logger.error = (msg: string, ...args: any[]) => {
+            if (typeof msg === 'string' && msg.includes('which is not 32 bit aligned')) return;
+            originalLoggerError(msg, ...args);
+        };
+        const originalLoggerWarn = this.cpu.logger.warn.bind(this.cpu.logger);
+        this.cpu.logger.warn = (msg: string, ...args: any[]) => {
+            if (typeof msg === 'string' && msg.includes('which is not 32 bit aligned')) return;
+            originalLoggerWarn(msg, ...args);
+        };
         // -- Patch PIO to use synchronous stepping instead of redundant setTimeout --
         // This is a critical 'OpenHW' optimization that prevents event-loop congestion.
         for (const pio of (this.cpu as any).pio) {
