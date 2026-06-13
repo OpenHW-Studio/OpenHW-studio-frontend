@@ -616,12 +616,14 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const isPaletteItemLocked = useCallback(
     (itemType) => {
+      // Only lock components for students in gamification mode
       if (!gamificationMode) return false;
+      if (activeUser?.role !== 'student') return false;
       const compId = WOKWI_TO_COMP_ID[itemType];
       if (!compId) return false;
       return isUnlocked ? !isUnlocked(compId) : false;
     },
-    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID],
+    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID, activeUser?.role],
   );
 
   const gamProjectComponents = useMemo(() => {
@@ -632,7 +634,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         compId && typeof COMPONENT_MAP !== "undefined"
           ? COMPONENT_MAP[compId]
           : null;
-      const isLocked = compId && isUnlocked ? !isUnlocked(compId) : false;
+      const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(compId) : false;
       return { ...c, compId, compDef, isLocked };
     });
   }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
@@ -12969,6 +12971,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           <QuickAddPortal
             catalog={LOCAL_CATALOG}
             onAddComponentRef={addComponentAtRef}
+            isPaletteItemLocked={isPaletteItemLocked}
+            showLockToast={showLockToast}
           />
 
           {/* RIGHT PANEL */}

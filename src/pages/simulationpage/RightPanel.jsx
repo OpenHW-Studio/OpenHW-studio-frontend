@@ -469,10 +469,11 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
       data-tour-step="ide"
       className="relative bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden"
       style={{
-        width: isDragging ? 'var(--panel-width)' : (isPanelOpen ? panelWidth : 21),
+        width: isDragging ? 'var(--panel-width)' : (isPanelOpen ? panelWidth : 0),
         transition: isDragging ? 'none' : 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         willChange: isDragging ? 'width' : 'auto',
-        contain: isDragging ? 'size layout paint' : 'none'
+        contain: isDragging ? 'size layout paint' : 'none',
+        borderLeft: isPanelOpen ? undefined : 'none',
       }}
       onDoubleClick={(e) => e.stopPropagation()}
     >
@@ -493,30 +494,31 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
         />
       )}
 
-      {/* Toggle Button */}
+      {/* Toggle Button — floats outside panel edge so always clickable */}
       <button
         type="button"
         onClick={() => setIsPanelOpen(!isPanelOpen)}
         title={isPanelOpen ? 'Hide panel' : 'Show panel'}
         aria-label={isPanelOpen ? 'Hide panel' : 'Show panel'}
         style={{
-          position: 'absolute',
-          left: 0,
+          position: 'fixed',
+          right: isPanelOpen ? panelWidth : 0,
           top: '50%',
           transform: 'translateY(-50%)',
           height: 48,
           width: 20,
           background: 'var(--card)',
           border: '1px solid var(--border)',
-          borderLeft: 'none',
-          borderRadius: '0 8px 8px 0',
+          borderRight: 'none',
+          borderRadius: '8px 0 0 8px',
           color: 'var(--text3)',
           cursor: 'pointer',
-          zIndex: 11,
+          zIndex: 1200,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.2)',
+          boxShadow: '-2px 0 8px rgba(0,0,0,0.2)',
+          transition: isDragging ? 'none' : 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         {isPanelOpen ? (
