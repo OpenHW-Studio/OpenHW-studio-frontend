@@ -17,7 +17,7 @@ function GamificationGuidePanelBase({
       fontFamily: "'Space Grotesk', sans-serif",
     }}>
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        {[{ id: 'components', label: '🔧 Parts' }, { id: 'wiring', label: '〰 Wiring' }, { id: 'concepts', label: '📚 Code' }].map(tab => (
+        {[{ id: 'components', label: 'Components' }, { id: 'wiring', label: '〰 Wiring' }, { id: 'concepts', label: '📚 Code' }].map(tab => (
           <button key={tab.id} onClick={() => setGamTab(tab.id)} style={{
             flex: 1, padding: '9px 4px', background: 'none', border: 'none',
             borderBottom: `2px solid ${gamTab === tab.id ? 'var(--accent)' : 'transparent'}`,
@@ -39,8 +39,8 @@ function GamificationGuidePanelBase({
               color: gamAllUnlocked ? '#22c55e' : '#ef4444',
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
-              {gamAllUnlocked 
-                ? '✅ All components unlocked' 
+              {gamAllUnlocked
+                ? '✅ All components unlocked'
                 : (gamProject ? `⚠️ ${gamLockedCount} need unlocking` : '⚠️ Some components are locked')}
             </div>
 
