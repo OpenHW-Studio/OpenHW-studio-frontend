@@ -1,5 +1,79 @@
 export const COMPONENTS = [
   {
+    id: 'arduino-uno',
+    wokwiType: 'wokwi-arduino-uno',
+    name: 'Arduino Uno',
+    fullName: 'Arduino Uno R3',
+    icon: '♾️',
+    color: '#0ea5e9',
+    category: 'IC',
+    levelRequired: 1,
+    xpReward: 0,
+    coinReward: 0,
+    description: 'The brain of your projects! A microcontroller board based on the ATmega328P.',
+    usedInProjects: ['all'],
+    theory: {
+      readTime: '3 min',
+      sections: [
+        {
+          title: 'What is an Arduino?',
+          content: `The Arduino Uno is a microcontroller board. Think of it as a tiny computer that can read inputs (like light on a sensor or a button press) and turn it into an output (like turning on a motor or an LED).`
+        }
+      ]
+    },
+    quiz: { passingScore: 80, questions: [] }
+  },
+  {
+    id: 'breadboard',
+    wokwiType: 'wokwi-breadboard',
+    name: 'Breadboard',
+    fullName: 'Solderless Breadboard',
+    icon: '🧮',
+    color: '#d1d5db',
+    category: 'Passive',
+    levelRequired: 1,
+    xpReward: 0,
+    coinReward: 0,
+    description: 'Used for prototyping electronics. Allows you to plug in components without soldering.',
+    usedInProjects: ['all'],
+    theory: {
+      readTime: '2 min',
+      sections: [
+        {
+          title: 'How a Breadboard Works',
+          content: `Breadboards have hidden metal clips underneath the holes. 
+• The two long rails on the sides are for Power (+, red) and Ground (-, blue/black). They run vertically.
+• The rows in the middle are connected horizontally. Components plugged into the same row are electrically connected.`
+        }
+      ]
+    },
+    quiz: { passingScore: 80, questions: [] }
+  },
+  {
+    id: 'wire',
+    wokwiType: 'wire',
+    name: 'Jumper Wire',
+    fullName: 'Jumper Wire',
+    icon: '〰️',
+    color: '#34d399',
+    category: 'Passive',
+    levelRequired: 1,
+    xpReward: 0,
+    coinReward: 0,
+    description: 'Conductive wires used to connect components on a breadboard or to the Arduino.',
+    usedInProjects: ['all'],
+    theory: {
+      readTime: '1 min',
+      sections: [
+        {
+          title: 'Making Connections',
+          content: `Wires allow electricity to flow between components. In diagrams, red is typically used for Power (5V/3.3V) and black for Ground (GND), while other colors are used for signal data.`
+        }
+      ]
+    },
+    quiz: { passingScore: 80, questions: [] }
+  },
+  {
     id: 'led',
     name: 'LED',
     fullName: 'Light-Emitting Diode',
