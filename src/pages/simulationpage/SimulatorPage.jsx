@@ -12598,6 +12598,9 @@ export function SimulatorPage({ gamificationMode = false }) {
           handleRestoreWorkflow={handleRestoreWorkflow}
           handleSyncToCloud={handleSyncToCloud}
           user={activeUser}
+          gamPanelOpen={gamPanelOpen}
+          setGamPanelOpen={setGamPanelOpen}
+          gamificationMode={gamificationMode}
           navigate={navigate}
           isAuthenticated={isAnyAuthenticated}
           myProjects={myProjects}
@@ -13234,7 +13237,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             setProjContextMenu={setProjContextMenu}
           />
 
-          {gamificationMode && gamPanelOpen && (gamProject || activeUser?.role === 'student') && (
+          {gamificationMode && gamPanelOpen && gamProject && (
             <GamificationGuidePanel
               gamTab={gamTab}
               setGamTab={setGamTab}
