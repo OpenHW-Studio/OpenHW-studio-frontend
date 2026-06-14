@@ -8764,6 +8764,7 @@ loadDemoProject();
         "hardware",
       );
       await disconnectHardwareSerial();
+      await new Promise(r => setTimeout(r, 3500));
     }
 
     await uploadToHardware();
