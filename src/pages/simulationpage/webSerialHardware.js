@@ -49,8 +49,13 @@ export function useWebSerialHardware({
 
     try {
       if (hardwarePortRef.current) {
-        lastPortRef.current = hardwarePortRef.current;
-        try { await hardwarePortRef.current.close(); } catch (e) { }
+        const portToRelease = hardwarePortRef.current;
+        lastPortRef.current = portToRelease;
+        try { await portToRelease.close(); } catch (e) { }
+        // forget() tells Chrome to completely release its OS-level exclusive
+        // claim on the serial port. Without this, Chrome keeps a ghost handle
+        // that blocks arduino-cli / Node.js from accessing the port.
+        try { await portToRelease.forget(); lastPortRef.current = null; } catch (e) { }
       }
     } finally {
       hardwarePortRef.current = null;
