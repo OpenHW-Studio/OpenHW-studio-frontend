@@ -1,6 +1,7 @@
 import { useState, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
+import ProjectIcon from "../components/common/ProjectIcon.jsx";
 const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs/";
 
@@ -43,7 +44,9 @@ export default function LandingPage() {
           <button className="btn btn-ghost" onClick={() => navigate("/about")}>
             About Us
           </button>
-
+<button className="btn btn-ghost" onClick={() => navigate("/examples")}>
+            Examples
+          </button>
           <button
             className="btn btn-ghost"
             onClick={toggleTheme}
@@ -208,12 +211,36 @@ export default function LandingPage() {
               xp: 175,
             },
             {
+              icon: "🌞",
+              title: "Light Sensor",
+              slug: "ldr",
+              board: "Arduino Uno",
+              difficulty: "Beginner",
+              xp: 140,
+            },
+            {
               icon: "🔘",
               title: "Button & Debounce",
               slug: "button-debounce",
               board: "Arduino Uno",
               difficulty: "Beginner",
               xp: 200,
+            },
+            {
+              icon: "⚙️",
+              title: "Servo Motor",
+              slug: "servo-motor",
+              board: "Arduino Uno",
+              difficulty: "Intermediate",
+              xp: 200,
+            },
+            {
+              icon: "✨",
+              title: "LED Strip",
+              slug: "led-strip",
+              board: "Arduino Uno",
+              difficulty: "Intermediate",
+              xp: 220,
             },
             {
               icon: "🌡️",
@@ -223,6 +250,14 @@ export default function LandingPage() {
               difficulty: "Intermediate",
               xp: 250,
             },
+            {
+              icon: "🔩",
+              title: "DC Motor",
+              slug: "dc-motor",
+              board: "Arduino Uno",
+              difficulty: "Advanced",
+              xp: 300,
+            },
           ].map((p) => (
             <div
               className="feature-card"
@@ -230,7 +265,9 @@ export default function LandingPage() {
               onClick={() => handleNavigate(`/${p.slug}/guide`)}
               style={{ cursor: "pointer", textAlign: "left" }}
             >
-              <div className="feature-icon">{p.icon}</div>
+              <div className="feature-icon" style={{ display: 'flex', alignItems: 'center' }}>
+                <ProjectIcon slug={p.slug} />
+              </div>
               <h3 style={{ marginBottom: 4 }}>{p.title}</h3>
               <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.6 }}>
                 {p.board}
@@ -245,9 +282,22 @@ export default function LandingPage() {
                     background:
                       p.difficulty === "Beginner"
                         ? "rgba(34,197,94,.15)"
+                        : p.difficulty === "Advanced"
+                        ? "rgba(239,68,68,.15)"
                         : "rgba(251,191,36,.15)",
-                    color: p.difficulty === "Beginner" ? "#22c55e" : "#fbbf24",
-                    border: `1px solid ${p.difficulty === "Beginner" ? "rgba(34,197,94,.3)" : "rgba(251,191,36,.3)"}`,
+                    color: 
+                      p.difficulty === "Beginner" 
+                        ? "#22c55e" 
+                        : p.difficulty === "Advanced" 
+                        ? "#ef4444" 
+                        : "#fbbf24",
+                    border: `1px solid ${
+                      p.difficulty === "Beginner" 
+                        ? "rgba(34,197,94,.3)" 
+                        : p.difficulty === "Advanced"
+                        ? "rgba(239,68,68,.3)"
+                        : "rgba(251,191,36,.3)"
+                    }`,
                   }}
                 >
                   {p.difficulty}
@@ -310,7 +360,7 @@ export default function LandingPage() {
           <a href={DOCS_URL} target="_blank" rel="noopener noreferrer">
             Documentation
           </a>
-          <a href="#">Examples</a>
+          <a href="/examples">Examples</a>
         </div>
       </footer>
     </div>

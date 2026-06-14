@@ -1493,7 +1493,7 @@ const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onM
       <path id={`wire-path-ui-${wire.id}`} d={wirePath} stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={isSelected ? (wire.isBelow ? 2.5 : 2.3) : (wire.isBelow ? 1.5 : 1.3)} fill="none" strokeDasharray={isSelected ? "6 4" : "none"} strokeLinecap="round" opacity={wire.isBelow ? 0.6 : 0.9} />
       <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
       <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : wire.color} opacity={wire.isBelow ? 0.6 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, _, i, arr) => {
+      {isSelected && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, _, i, arr) => {
         if (i < 1 || i >= arr.length - 2) return acc;
         const a = arr[i], b = arr[i + 1];
         const segLen = Math.hypot(b.x - a.x, b.y - a.y);
@@ -1903,9 +1903,12 @@ export function MobileSimulatorPage({ gamificationMode = false }) {
   const [pendingPinColors, setPendingPinColors] = useState({}) // { [pinIdStr]: color }
   const [isFullscreen, setIsFullscreen] = useState(false)
 
+  const [hideWireMenu, setHideWireMenu] = useState(false);
+
   // Reset Pin Mapping expansion when a new component is selected
   useEffect(() => {
     setIsPinMappingExpanded(false)
+    setHideWireMenu(false)
   }, [selected])
   const [quickAdd, setQuickAdd] = useState(null)   // { screenX, screenY, canvasX, canvasY }
   const [quickAddSearch, setQuickAddSearch] = useState('')
@@ -4446,13 +4449,31 @@ useEffect(() => {
     addComponentInternal(item, x, y);
   }, [liveEditingDisabled, addComponentInternal])
 
-  // ── Palette click to add (adds to canvas center) ────────────────────────────
+  // ── Palette click to add (adds to canvas center, offset if overlapping) ──────
   const addComponentAtCenter = useCallback((item) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const cx = (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
-    const cy = (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
+    let cx = (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
+    let cy = (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
+
+    // Nudge position so new components don't stack exactly on top of existing ones
+    const OFFSET_STEP = 30;
+    const OVERLAP_THRESHOLD = 20;
+    const currentComps = componentsRef.current || [];
+    let attempts = 0;
+    while (attempts < 15) {
+      const overlapping = currentComps.some(c => {
+        const compCx = c.x + (c.w || 60) / 2;
+        const compCy = c.y + (c.h || 60) / 2;
+        return Math.abs(compCx - cx) < OVERLAP_THRESHOLD && Math.abs(compCy - cy) < OVERLAP_THRESHOLD;
+      });
+      if (!overlapping) break;
+      cx += OFFSET_STEP;
+      cy += OFFSET_STEP;
+      attempts++;
+    }
+
     addComponentAt(item, cx, cy);
     setSelectedPaletteItem(item);
   }, [addComponentAt]);
@@ -4697,7 +4718,19 @@ useEffect(() => {
             newPts[segIdx] = { ...newPts[segIdx], x: newPts[segIdx].x + ddx };
             newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newPts[segIdx + 1].x + ddx };
           }
-          wireUpdate = { wireId: sd.wireId, cornerWaypoints: newPts.slice(1, -1).map(pt => ({ x: pt.x, y: pt.y, _corner: true })) };
+          const finalWaypoints = [];
+          if (newPts[0] && sd.startPts[0] && (newPts[0].x !== sd.startPts[0].x || newPts[0].y !== sd.startPts[0].y)) {
+            finalWaypoints.push({ x: newPts[0].x, y: newPts[0].y, _corner: true });
+          }
+          for (let i = 1; i < newPts.length - 1; i++) {
+            if (newPts[i]) finalWaypoints.push({ x: newPts[i].x, y: newPts[i].y, _corner: true });
+          }
+          const lastIdx = newPts.length - 1;
+          if (lastIdx > 0 && newPts[lastIdx] && sd.startPts[lastIdx] && (newPts[lastIdx].x !== sd.startPts[lastIdx].x || newPts[lastIdx].y !== sd.startPts[lastIdx].y)) {
+            finalWaypoints.push({ x: newPts[lastIdx].x, y: newPts[lastIdx].y, _corner: true });
+          }
+
+          wireUpdate = { wireId: sd.wireId, cornerWaypoints: finalWaypoints.filter(pt => pt && isFinite(pt.x) && isFinite(pt.y)) };
         }
       } else {
         if (isPanningRef.current && !isCanvasLockedRef.current) {
@@ -5040,13 +5073,19 @@ useEffect(() => {
         return
       }
       saveHistory();
-      const newWire = {
-        id: `w${nextWireId++}`,
-        from: `${wireStart.compId}:${wireStart.pinId}`,
-        to: `${compId}:${pinId}`,
-        fromLabel: wireStart.pinLabel,
-        toLabel: pinLabel,
-        color: wireColor(wireStart.pinLabel),
+        const color1 = wireColor(wireStart.pinLabel);
+        const color2 = wireColor(pinLabel);
+        const isGeneric = (c) => c === "#2ecc71" || c === "#10b981";
+        let finalColor = !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        if (color1 === 'black' || color2 === 'black') finalColor = 'black';
+
+        const newWire = {
+          id: `w${nextWireId++}`,
+          from: `${wireStart.compId}:${wireStart.pinId}`,
+          to: `${compId}:${pinId}`,
+          fromLabel: wireStart.pinLabel,
+          toLabel: pinLabel,
+          color: finalColor,
         waypoints: wireStart.waypoints || [],
         isBelow: false // Add z-index configuration
       }
@@ -8058,7 +8097,11 @@ useEffect(() => {
 
       // 4. Append metadata bytes after PNG IEND → still renders fine in all image viewers
       const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-').replace(':', '-');
-      const filename = `circuit_${board}_${dateStr}.png`;
+      const safeName = (currentProjectName && currentProjectName !== "Untitled")
+  ? currentProjectName.replace(/[^a-z0-9_\-]/gi, "_")
+  : `circuit_${board}`;
+      const filename = `${safeName}_${dateStr}.png`;
+
       out.toBlob(async (blob) => {
         const t_blob_start = performance.now();
         const pngBuf = await blob.arrayBuffer();
@@ -9609,10 +9652,12 @@ useEffect(() => {
                     onSelect={(e) => {
                       e.stopPropagation();
                       setSelected(w.id);
+                      setHideWireMenu(false);
                       const rect = canvasRef.current.getBoundingClientRect();
                       setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
                     }}
                     onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                      setHideWireMenu(true);
                       if (selected !== wire.id) { setSelected(wire.id); return; }
                       const rect = canvasRef.current.getBoundingClientRect();
                       const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
@@ -9622,6 +9667,7 @@ useEffect(() => {
                       setSegDrag(dragData);
                     }}
                     onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
+                      setHideWireMenu(true);
                       if (ev.cancelable) ev.preventDefault();
                       if (selected !== wire.id) { setSelected(wire.id); return; }
                       const t = ev.touches[0];
@@ -9665,10 +9711,12 @@ useEffect(() => {
                     onSelect={(e) => {
                       e.stopPropagation();
                       setSelected(w.id);
+                      setHideWireMenu(false);
                       const rect = canvasRef.current.getBoundingClientRect();
                       setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
                     }}
                     onMouseDownSegment={(ev, wire, i, isHoriz, arr) => {
+                      setHideWireMenu(true);
                       if (selected !== wire.id) { setSelected(wire.id); return; }
                       const rect = canvasRef.current.getBoundingClientRect();
                       const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
@@ -9678,6 +9726,7 @@ useEffect(() => {
                       setSegDrag(dragData);
                     }}
                     onTouchStartSegment={(ev, wire, i, isHoriz, arr) => {
+                      setHideWireMenu(true);
                       if (ev.cancelable) ev.preventDefault();
                       if (selected !== wire.id) { setSelected(wire.id); return; }
                       const t = ev.touches[0];
@@ -9745,7 +9794,7 @@ useEffect(() => {
             {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
             {(() => {
               const w = wires.find(w => w.id === selected);
-              if (!w || isRunning) return null;
+              if (!w || isRunning || hideWireMenu) return null;
 
               const fromParts = w.from.split(':')
               const toParts = w.to.split(':')
@@ -10984,8 +11033,8 @@ updateWireColor(connectedWire.id, newColor);
                     onClick={() => {
                       if (activeUser?.role === 'teacher') navigate('/teacher/dashboard')
                       else if (activeUser?.role === 'student') navigate('/student/dashboard')
-                      else if (activeUser?.role === 'admin') navigate('/admin/dashboard')
-                      else navigate('/user/dashboard')
+                      else if (activeUser?.role === 'admin') navigate(`/${activeUser?.role}/dashboard`)
+                        else navigate(`${activeUser?.role || 'user'}/dashboard`)
                     }}
                     title="Go to dashboard"
                   >

@@ -529,7 +529,7 @@ export class AVRRunner {
             const nextVoltage = Math.max(0, voltage - drop);
             inst.setPinVoltage(otherPin, nextVoltage);
             visit(`${compId}:${otherPin}`, nextVoltage);
-        } else if (inst.type === 'openhw-led' || inst.type === 'openhw-led') {
+        } else if (inst.type === 'openhw-led' || inst.type === 'wokwi-led') {
             // Forward bias: Anode to Cathode
             if (pinId === 'A') {
                 const nextV = Math.max(0, voltage - 1.8);
@@ -1114,6 +1114,57 @@ export class AVRRunner {
                         const p5 = (pindVal >> 5) & 1;
                         console.log(`[repropagate MUX] D0=${d0} D1=${d1} SEL=${sel} OUT=${outV} d0High=${inst.getPinVoltage('D0')>=2.5} d1High=${inst.getPinVoltage('D1')>=2.5} selHigh=${inst.getPinVoltage('SEL')>=2.5} stateOut=${inst.state?.outputHigh} PIND2=${p2} PIND3=${p3} PIND4=${p4} PIND5=${p5} pins=${Object.keys(inst.pins).join(',')}`);
                     }
+                } else if (inst.type.includes('hc-sr04')) {
+                    if (inst.pins['ECHO']) {
+                        updateOopPin('ECHO', inst.pins['ECHO'].voltage, compId);
+                    }
+                } else if (inst.type.includes('pir')) {
+                    if (inst.pins['OUT']) {
+                        updateOopPin('OUT', inst.pins['OUT'].voltage, compId);
+                    }
+                } else if (inst.type.includes('dht')) {
+                    ['SDA', 'DATA'].forEach(pin => {
+                        if (inst.pins[pin]) {
+                            const dhtVoltage = inst.pins[pin].voltage;
+                            updateOopPin(pin, dhtVoltage, compId);
+                            for (const wire of this.currentWires) {
+                                const normFrom = wire.from;
+                                const normTo = wire.to;
+                                const dhtNode = `${compId}:${pin}`;
+                                let boardPin: string | null = null;
+                                if (normFrom === dhtNode && normTo.startsWith(`${this.boardId}:`)) {
+                                    boardPin = normTo.split(':')[1];
+                                } else if (normTo === dhtNode && normFrom.startsWith(`${this.boardId}:`)) {
+                                    boardPin = normFrom.split(':')[1];
+                                }
+                                if (boardPin) {
+                                    const isHigh = dhtVoltage > 1.8;
+                                    this.pinStates[boardPin] = isHigh;
+                                    setAvrPin(boardPin, isHigh);
+                                }
+                            }
+                        }
+                    });
+                } else if (inst.type.includes('gas-sensor') || inst.type.includes('mq')) {
+                    ['DO', 'AO'].forEach(pin => {
+                        if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
+                    });
+                } else if (inst.type.includes('soil-moisture-sensor') || inst.type.includes('soil')) {
+                    if (inst.pins['SIG']) updateOopPin('SIG', inst.pins['SIG'].voltage, compId);
+                } else if (inst.type.includes('raindrop')) {
+                    ['DO', 'AO'].forEach(pin => {
+                        if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
+                    });
+                } else if (inst.type.includes('ldr')) {
+                    ['DO', 'AO'].forEach(pin => {
+                        if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
+                    });
+                } else if (inst.type.includes('rotary-encoder')) {
+                    ['CLK', 'DT', 'SW'].forEach(pin => {
+                        if (inst.pins[pin]) updateOopPin(pin, inst.pins[pin].voltage, compId);
+                    });
+                } else if (inst.type.includes('potentiometer') || inst.type.includes('pot')) {
+                    if (inst.pins['SIG']) updateOopPin('SIG', inst.pins['SIG'].voltage, compId);
                 }
             });
 

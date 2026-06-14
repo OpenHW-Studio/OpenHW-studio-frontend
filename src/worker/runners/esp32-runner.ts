@@ -1251,6 +1251,20 @@ export class ESP32Runner implements BoardRunner {
                     if (inst.pins['5V']) updateOopPin('5V', inst.pins['5V'].voltage, compId);
                     if (inst.pins['VCC']) updateOopPin('VCC', inst.pins['VCC'].voltage, compId);
                     if (inst.pins['3V3']) updateOopPin('3V3', inst.pins['3V3'].voltage, compId);
+                } else if (inst.type.includes('a4988') || inst.type.includes('drv8825')) {
+                    ['1A', '1B', '2A', '2B'].forEach(pin => {
+                        if (inst.pins[pin] != null) updateOopPin(pin, inst.pins[pin].voltage, compId);
+                    });
+                } else if (inst.type.includes('motor-driver') || inst.type.includes('l298n') || inst.type.includes('l293d')) {
+                    ['OUT1', 'OUT2', 'OUT3', 'OUT4'].forEach(pin => {
+                        if (inst.pins[pin] != null) updateOopPin(pin, inst.pins[pin].voltage, compId);
+                    });
+                } else if (inst.type === 'openhw-hc-sr04' || inst.type === 'wokwi-hc-sr04') {
+                    const echoV = (inst as any).echoOutputVoltage !== undefined ? (inst as any).echoOutputVoltage : inst.pins['ECHO']?.voltage ?? 0;
+                    if (inst.pins['ECHO']) updateOopPin('ECHO', echoV, compId);
+                } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
+                    const sdaV = (inst as any).sdaOutputVoltage !== undefined ? (inst as any).sdaOutputVoltage : inst.pins['SDA']?.voltage ?? 5.0;
+                    if (inst.pins['SDA']) updateOopPin('SDA', sdaV, compId);
                 }
             });
         };
@@ -1338,6 +1352,68 @@ export class ESP32Runner implements BoardRunner {
                     inst.setPinVoltage('1', voltage);
                     visit(`${compId}:1`, voltage);
                 }
+            }
+        } else if (inst.type === 'openhw-potentiometer' || inst.type === 'wokwi-potentiometer') {
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === '2' || pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('1') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            } else if (pinId === '1' || pinId === 'GND') {
+                const vccV = inst.getPinVoltage('2') || 3.3;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            }
+        } else if (inst.type === 'openhw-slide-potentiometer' || inst.type === 'wokwi-slide-potentiometer') {
+            const potVal = Number(inst.state?.value) ?? 50;
+            const ratio = Math.max(0, Math.min(1, potVal / 100));
+            if (pinId === 'VCC') {
+                const gndV = inst.getPinVoltage('GND') || 0;
+                const sigV = gndV + (voltage - gndV) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            } else if (pinId === 'GND') {
+                const vccV = inst.getPinVoltage('VCC') || 3.3;
+                const sigV = voltage + (vccV - voltage) * ratio;
+                inst.setPinVoltage('SIG', sigV);
+                visit(`${compId}:SIG`, sigV);
+            }
+        } else if (inst.type === 'openhw-ks2e-m-dc5') {
+            const energised = inst.state?.energised;
+            if (pinId === 'COIL1') {
+                const coilV = Math.min(voltage, 3.3);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL2', nextV);
+                visit(`${compId}:COIL2`, nextV);
+            } else if (pinId === 'COIL2') {
+                const coilV = Math.min(voltage, 3.3);
+                const drop = coilV * 0.01;
+                const nextV = Math.max(0, coilV - drop);
+                inst.setPinVoltage('COIL1', nextV);
+                visit(`${compId}:COIL1`, nextV);
+            } else if (energised) {
+                if (pinId === 'P1') { inst.setPinVoltage('NO1', voltage); visit(`${compId}:NO1`, voltage); }
+                else if (pinId === 'NO1') { inst.setPinVoltage('P1', voltage); visit(`${compId}:P1`, voltage); }
+                else if (pinId === 'P2') { inst.setPinVoltage('NO2', voltage); visit(`${compId}:NO2`, voltage); }
+                else if (pinId === 'NO2') { inst.setPinVoltage('P2', voltage); visit(`${compId}:P2`, voltage); }
+            } else {
+                if (pinId === 'P1') { inst.setPinVoltage('NC1', voltage); visit(`${compId}:NC1`, voltage); }
+                else if (pinId === 'NC1') { inst.setPinVoltage('P1', voltage); visit(`${compId}:P1`, voltage); }
+                else if (pinId === 'P2') { inst.setPinVoltage('NC2', voltage); visit(`${compId}:NC2`, voltage); }
+                else if (pinId === 'NC2') { inst.setPinVoltage('P2', voltage); visit(`${compId}:P2`, voltage); }
+            }
+        } else if (inst.type === 'openhw-relay-module' || inst.type === 'wokwi-relay-module') {
+            const energised = inst.state?.energised;
+            if (energised) {
+                if (pinId === 'COM') { inst.setPinVoltage('NO', voltage); visit(`${compId}:NO`, voltage); }
+                else if (pinId === 'NO') { inst.setPinVoltage('COM', voltage); visit(`${compId}:COM`, voltage); }
+            } else {
+                if (pinId === 'COM') { inst.setPinVoltage('NC', voltage); visit(`${compId}:NC`, voltage); }
+                else if (pinId === 'NC') { inst.setPinVoltage('COM', voltage); visit(`${compId}:COM`, voltage); }
             }
         } else if (inst.type.includes('breadboard') || inst.type.includes('via') || inst.type.includes('wire')) {
             const bridges = getInternalBridgesForComponent(compId, inst.type);
