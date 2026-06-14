@@ -47,7 +47,8 @@ export function useHardwareFlashing({
     refreshHardwarePorts();
   }, [refreshHardwarePorts]);
 
-  const uploadToHardware = useCallback(async () => {
+  const uploadToHardware = useCallback(async (opts = {}) => {
+    const { wasConnected, disconnectFn, connectFn } = opts;
     if (!hardwareBoardId) {
       alert('Please select a target board on canvas.');
       return;
@@ -57,6 +58,16 @@ export function useHardwareFlashing({
     if (!cleanPort) {
       alert('No serial port detected. Connect your board, then refresh ports or enable Show all serial ports.');
       return;
+    }
+
+    if (wasConnected && disconnectFn) {
+      setHardwareStatus('Disconnecting serial monitor for upload...');
+      await disconnectFn();
+      // Chrome on Windows takes a surprisingly long time to fully release
+      // the exclusive OS-level lock on a COM port after port.close() resolves.
+      // 2 seconds is NOT enough. 4 seconds reliably lets the driver release.
+      setHardwareStatus('Waiting for port to be released...');
+      await new Promise(r => setTimeout(r, 4000));
     }
 
     setIsUploadingHardware(true);
@@ -88,10 +99,22 @@ export function useHardwareFlashing({
       setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${cleanPort}`);
     } catch (err) {
       console.error('[BootloaderFlash] upload failed:', err);
-      setHardwareStatus(`Flash failed: ${err?.message || 'Unknown error'}`);
-      alert(err?.message || 'Hardware upload failed.');
+      const backendDetails = err?.response?.data?.details || err?.response?.data?.error;
+      const displayMsg = backendDetails ? `${err.message}\n\n${backendDetails}` : (err?.message || 'Unknown error');
+      setHardwareStatus(`Flash failed: ${err?.message}`);
+      alert(`Hardware upload failed:\n${displayMsg}`);
     } finally {
       setIsUploadingHardware(false);
+      
+      if (wasConnected && connectFn) {
+        setTimeout(async () => {
+          try {
+            await connectFn(true); // useLastPort = true
+          } catch (e) {
+            console.warn('[BootloaderFlash] Auto-reconnect failed', e);
+          }
+        }, 1200); // Give bootloader time to restart user application before reconnecting
+      }
     }
   }, [
     hardwareBoardId,

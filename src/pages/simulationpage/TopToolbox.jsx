@@ -1437,7 +1437,11 @@ function TopToolboxInternal(props) {
 
                   <Btn
                     color="var(--green)"
-                    onClick={uploadToHardware}
+                    onClick={() => uploadToHardware({
+                      wasConnected: hardwareConnected,
+                      disconnectFn: disconnectHardwareSerial,
+                      connectFn: connectHardwareSerial,
+                    })}
                     disabled={
                       !hardwareBoardId ||
                       isUploadingHardware ||
