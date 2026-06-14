@@ -30,6 +30,7 @@ export function useWebSerialHardware({
   const [hardwareConnecting, setHardwareConnecting] = useState(false);
 
   const hardwarePortRef = useRef(null);
+  const lastPortRef = useRef(null);
   const hardwareReaderRef = useRef(null);
   const hardwareReadAbortRef = useRef(false);
   const hardwareDecoderRef = useRef(new TextDecoder());
@@ -48,6 +49,7 @@ export function useWebSerialHardware({
 
     try {
       if (hardwarePortRef.current) {
+        lastPortRef.current = hardwarePortRef.current;
         try { await hardwarePortRef.current.close(); } catch (e) { }
       }
     } finally {
@@ -93,7 +95,7 @@ export function useWebSerialHardware({
     }
   }, [pushSerialRxChunk]);
 
-  const connectHardwareSerial = useCallback(async () => {
+  const connectHardwareSerial = useCallback(async (useLastPort = false) => {
     if (!('serial' in navigator)) {
       alert('Web Serial is not supported in this browser. Use Chromium-based browsers like Chrome or Edge.');
       return;
@@ -104,16 +106,22 @@ export function useWebSerialHardware({
     }
 
     setHardwareConnecting(true);
-    setHardwareStatus('Waiting for serial device permission...');
+    setHardwareStatus(useLastPort === true ? 'Auto-reconnecting serial...' : 'Waiting for serial device permission...');
     try {
       const boardComp = boardComponents.find((b) => b.id === hardwareBoardId);
       const kind = normalizeBoardKind(boardComp?.type || board);
       const baudRate = Number(hardwareBaudRate || boardDefaultBaud[kind] || boardDefaultBaud.arduino_uno);
 
-      const requestOptions = showAllHardwarePorts
-        ? {}
-        : { filters: DEFAULT_SERIAL_USB_FILTERS };
-      const port = await navigator.serial.requestPort(requestOptions);
+      let port;
+      if (useLastPort === true && lastPortRef.current) {
+        port = lastPortRef.current;
+      } else {
+        const requestOptions = showAllHardwarePorts
+          ? {}
+          : { filters: DEFAULT_SERIAL_USB_FILTERS };
+        port = await navigator.serial.requestPort(requestOptions);
+      }
+      
       await port.open({ baudRate });
       hardwarePortRef.current = port;
 
