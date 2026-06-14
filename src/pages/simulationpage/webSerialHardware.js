@@ -50,6 +50,12 @@ export function useWebSerialHardware({
     try {
       if (hardwarePortRef.current) {
         lastPortRef.current = hardwarePortRef.current;
+        try {
+          // Explicitly de-assert DTR and RTS so the Arduino's auto-reset capacitor discharges.
+          // This ensures that when avrdude opens the port later, it generates a proper falling edge to reset the board.
+          await hardwarePortRef.current.setSignals({ dataTerminalReady: false, requestToSend: false });
+          await new Promise(r => setTimeout(r, 50));
+        } catch (e) { }
         try { await hardwarePortRef.current.close(); } catch (e) { }
       }
     } finally {

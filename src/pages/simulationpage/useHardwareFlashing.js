@@ -63,8 +63,10 @@ export function useHardwareFlashing({
     if (wasConnected && disconnectFn) {
       setHardwareStatus('Disconnecting serial monitor for upload...');
       await disconnectFn();
-      // Brief delay to let the OS release the COM port completely
-      await new Promise(r => setTimeout(r, 600));
+      // Wait 2 seconds to let the OS release the COM port completely 
+      // AND to let the Arduino finish its auto-reset bootloader cycle 
+      // before avrdude triggers it again.
+      await new Promise(r => setTimeout(r, 2000));
     }
 
     setIsUploadingHardware(true);
@@ -96,8 +98,10 @@ export function useHardwareFlashing({
       setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${cleanPort}`);
     } catch (err) {
       console.error('[BootloaderFlash] upload failed:', err);
-      setHardwareStatus(`Flash failed: ${err?.message || 'Unknown error'}`);
-      alert(err?.message || 'Hardware upload failed.');
+      const backendDetails = err?.response?.data?.details || err?.response?.data?.error;
+      const displayMsg = backendDetails ? `${err.message}\n\n${backendDetails}` : (err?.message || 'Unknown error');
+      setHardwareStatus(`Flash failed: ${err?.message}`);
+      alert(`Hardware upload failed:\n${displayMsg}`);
     } finally {
       setIsUploadingHardware(false);
       
