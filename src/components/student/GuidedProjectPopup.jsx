@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { X, GripHorizontal, Microchip, CircuitBoard, Code, FlaskConical, Lightbulb, Cpu } from 'lucide-react'
+import { X, GripHorizontal, Microchip, CircuitBoard, FlaskConical, Lightbulb, Cpu } from 'lucide-react'
 
 const BOARD_OPTIONS = [
   { key: 'arduino', label: 'Arduino Uno', icon: CircuitBoard },
@@ -81,7 +81,7 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
         }}>
           <Microchip size={16} color="#fff" strokeWidth={2.5} />
         </div>
-        <span style={{ flex: 1, fontSize: 15, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em' }}>
+        <span style={{ flex: 1, fontSize: 17, fontWeight: 700, color: '#0f172a', letterSpacing: '-0.01em' }}>
           {readOnly ? 'Mission Brief' : 'Project Details'}
         </span>
         <button
@@ -114,10 +114,10 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
             <Microchip size={22} color="#2563eb" strokeWidth={2} />
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+            <div style={{           fontSize: 13, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
               {readOnly ? 'Mission Objective' : 'Project'}
             </div>
-            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0f172a', lineHeight: 1.3, letterSpacing: '-0.02em' }}>
+            <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0f172a', lineHeight: 1.3, letterSpacing: '-0.02em' }}>
               {project.title}
             </h3>
           </div>
@@ -130,10 +130,10 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
           padding: '14px 16px',
           marginBottom: 16,
         }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
             <Lightbulb size={13} strokeWidth={2.5} /> How It Works
           </div>
-          <p style={{ margin: 0, fontSize: 13, color: '#475569', lineHeight: 1.7 }}>
+          <p style={{ margin: 0, fontSize: 15, color: '#475569', lineHeight: 1.7 }}>
             {project.description}
           </p>
         </div>
@@ -141,7 +141,7 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
         {/* Board Selector */}
         {schemas && (
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Target Board
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -158,7 +158,7 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
                     style={{
                       display: 'flex', alignItems: 'center', gap: 6,
                       padding: '7px 14px', borderRadius: 8,
-                      fontSize: 12, fontWeight: 600,
+                      fontSize: 14, fontWeight: 600,
                       border: isActive ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
                       background: isActive ? '#eff6ff' : '#ffffff',
                       color: isActive ? '#2563eb' : hasSchema ? '#475569' : '#cbd5e1',
@@ -182,7 +182,7 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
         <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 5,
-            fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 100,
+            fontSize: 13, fontWeight: 600, padding: '5px 12px', borderRadius: 100,
             color: '#2563eb', background: '#eff6ff',
           }}>
             <CircuitBoard size={12} strokeWidth={2.5} />
@@ -190,7 +190,7 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
           </div>
           <div style={{
             display: 'flex', alignItems: 'center', gap: 5,
-            fontSize: 11, fontWeight: 600, padding: '5px 12px', borderRadius: 100,
+            fontSize: 13, fontWeight: 600, padding: '5px 12px', borderRadius: 100,
             color: '#64748b', background: '#f1f5f9',
           }}>
             <FlaskConical size={12} strokeWidth={2.5} />
@@ -200,13 +200,13 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
 
         {/* Components */}
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
             <CircuitBoard size={13} strokeWidth={2.5} /> Required Components
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {project.components.map((comp, i) => (
               <span key={i} style={{
-                fontSize: 11, fontWeight: 500, padding: '5px 12px', borderRadius: 8,
+                fontSize: 13, fontWeight: 500, padding: '5px 12px', borderRadius: 8,
                 background: '#f8fafc', border: '1px solid #f1f5f9',
                 color: '#475569',
               }}>
@@ -224,32 +224,15 @@ export default function GuidedProjectPopup({ project, levelColor, onClose, readO
             padding: '14px 16px',
             marginBottom: 16,
           }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
               <Lightbulb size={13} strokeWidth={2.5} /> Code Explanation
             </div>
-            <p style={{ margin: 0, fontSize: 12, color: '#475569', lineHeight: 1.7 }}>
+            <p style={{ margin: 0, fontSize: 14, color: '#475569', lineHeight: 1.7 }}>
               {explanation}
             </p>
           </div>
         )}
 
-        {/* Source Code */}
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Code size={13} strokeWidth={2.5} /> Source Code
-          </div>
-          <pre style={{
-            fontSize: 11, lineHeight: 1.7, fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-            background: '#0f172a', borderRadius: 12, padding: 16,
-            overflowX: 'auto', color: '#94a3b8',
-            maxHeight: 180,
-            whiteSpace: 'pre',
-            tabSize: 2,
-            margin: 0,
-          }}>
-            <code>{project.code}</code>
-          </pre>
-        </div>
       </div>
     </div>
   )
