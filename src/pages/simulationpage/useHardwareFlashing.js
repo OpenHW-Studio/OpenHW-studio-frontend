@@ -63,10 +63,11 @@ export function useHardwareFlashing({
     if (wasConnected && disconnectFn) {
       setHardwareStatus('Disconnecting serial monitor for upload...');
       await disconnectFn();
-      // Wait 2 seconds to let the OS release the COM port completely 
-      // AND to let the Arduino finish its auto-reset bootloader cycle 
-      // before avrdude triggers it again.
-      await new Promise(r => setTimeout(r, 2000));
+      // Chrome on Windows takes a surprisingly long time to fully release
+      // the exclusive OS-level lock on a COM port after port.close() resolves.
+      // 2 seconds is NOT enough. 4 seconds reliably lets the driver release.
+      setHardwareStatus('Waiting for port to be released...');
+      await new Promise(r => setTimeout(r, 4000));
     }
 
     setIsUploadingHardware(true);
