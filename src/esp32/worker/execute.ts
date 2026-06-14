@@ -18,7 +18,7 @@ import { MembraneKeypadLogic } from '@openhw/emulator/src/components/wokwi-membr
 import { LCD1602Logic } from '@openhw/emulator/src/components/wokwi-LCD1602/logic.ts';
 import { PIRLogic } from '@openhw/emulator/src/components/PIR-Motion-Sensor/logic.ts';
 import { GasSensorLogic } from '@openhw/emulator/src/components/wokwi-gas-sensor/logic.ts';
-import { HCSR04Logic } from '@openhw/emulator/src/components/wokwi-hc-sr04/logic.ts';
+import { HCSR04Logic } from '@openhw/emulator/src/components/openhw-hc-sr04/logic.ts';
 import { SoilMoistureSensorLogic } from '@openhw/emulator/src/components/wokwi-soil-moisture-sensor/logic.ts';
 import { AnalogJoystickLogic } from '@openhw/emulator/src/components/wokwi-analog-joystick/logic.ts';
 import { DHT22Logic } from '@openhw/emulator/src/components/wokwi-dht22/logic.ts';
@@ -69,6 +69,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-pir-motion-sensor': PIRLogic,
     'wokwi-gas-sensor': GasSensorLogic,
     'wokwi-hc-sr04': HCSR04Logic,
+    'openhw-hc-sr04': HCSR04Logic,
     'wokwi-soil-moisture-sensor': SoilMoistureSensorLogic,
     'wokwi-analog-joystick': AnalogJoystickLogic,
     'wokwi-dht22': DHT22Logic,
@@ -93,6 +94,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
     'wokwi-gas-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
     'wokwi-hc-sr04': [{ id: 'VCC' }, { id: 'GND' }, { id: 'TRIG' }, { id: 'ECHO' }],
+    'openhw-hc-sr04': [{ id: 'VCC' }, { id: 'GND' }, { id: 'TRIG' }, { id: 'ECHO' }],
     'wokwi-soil-moisture-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'SIG' }],
     'wokwi-analog-joystick': [{ id: 'VCC' }, { id: 'GND' }, { id: 'HOR' }, { id: 'VER' }, { id: 'SEL' }],
     'wokwi-dht22': [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
@@ -475,7 +477,7 @@ export class AVRRunner {
                             }
 
                             const v = inst.getPinVoltage(compPin);
-                            if (isArduinoLow || (v === 0 && (isGndNode || inst.type === 'wokwi-pir-motion-sensor' || inst.type === 'wokwi-gas-sensor' || (inst.type === 'wokwi-hc-sr04' && compPin === 'ECHO') || (inst.type === 'wokwi-dht22' && compPin === 'SDA')))) {
+                            if (isArduinoLow || (v === 0 && (isGndNode || inst.type === 'wokwi-pir-motion-sensor' || inst.type === 'wokwi-gas-sensor' || ((inst.type === 'wokwi-hc-sr04' || inst.type === 'openhw-hc-sr04') && compPin === 'ECHO') || (inst.type === 'wokwi-dht22' && compPin === 'SDA') || (inst.type === 'openhw-dht22' && compPin === 'DATA')))) {
                                 forcedLow = true;
                             }
 

@@ -1014,6 +1014,17 @@ export class RP2040Runner implements BoardRunner {
                 const manifest = { type: cDef.type, attrs: cDef.attrs || {}, pins };
                 const inst = new LogicClass(cDef.id, manifest);
                 (inst as any)._runner = this;
+                (inst as any)._simCpu = {
+                    addClockEvent: (cb: () => void, avrCycles: number) => {
+                        const us = avrCycles / 16;
+                        this.cpu.clock.createTimer(us, cb);
+                    }
+                };
+                (inst as any)._simUpdatePhysics = () => {
+                    if (typeof this.repropagateAllVoltages === 'function') {
+                        this.repropagateAllVoltages();
+                    }
+                };
 
                 // Hack: Pass the component attributes so logic can read them
                 if (cDef.attrs) {
@@ -1027,6 +1038,19 @@ export class RP2040Runner implements BoardRunner {
                         ...finding
                     });
                 };
+
+                // Hook component sendPulse to immediately propagate start (rising) edge of pulse
+                if (typeof inst.sendPulse === 'function') {
+                    const originalSendPulse = inst.sendPulse.bind(inst);
+                    inst.sendPulse = (pinId: string, isHigh: boolean, durationUs: number, idleVoltage: number = 0) => {
+                        originalSendPulse(pinId, isHigh, durationUs, idleVoltage);
+                        this.circuitDirty = true;
+                        this.propagationPending = true;
+                        this.repropagateAllVoltages();
+                        this.updateGPIOInputsFromCircuit();
+                    };
+                }
+
                 this.instances.set(cDef.id, inst);
                 console.log(`[RP2040Runner] Instantiated component: ${cDef.id} of type ${cDef.type}`);
             } else {
@@ -3117,6 +3141,15 @@ export class RP2040Runner implements BoardRunner {
                 this.traversePassive(inst, compId, compPin, v, (forwardNode) => {
                     visitNode(forwardNode, v);
                 });
+            } else if (compId === this.boardId) {
+                // If it's the board itself, sync the pin state directly back to the CPU
+                // so the sketch's digitalRead() sees the level immediately.
+                if (compPin.startsWith('GP') && this.cpu) {
+                    const gpNum = parseInt(compPin.slice(2), 10);
+                    if (!isNaN(gpNum) && gpNum >= 0 && gpNum <= 28) {
+                        this.cpu.gpio[gpNum].setInputValue(v > 1.65);
+                    }
+                }
             }
         };
 
@@ -3201,6 +3234,52 @@ export class RP2040Runner implements BoardRunner {
                         seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
                     }
                 });
+            } else if (inst.type.includes('hc-sr04')) {
+                if (inst.pins['ECHO'] != null) {
+                    seedFrom(`${compId}:ECHO`, inst.pins['ECHO'].voltage);
+                }
+            } else if (inst.type.includes('pir')) {
+                if (inst.pins['OUT'] != null) {
+                    seedFrom(`${compId}:OUT`, inst.pins['OUT'].voltage);
+                }
+            } else if (inst.type.includes('dht')) {
+                ['SDA', 'DATA'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (inst.type.includes('gas-sensor') || inst.type.includes('mq')) {
+                ['DO', 'AO'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (inst.type.includes('soil-moisture-sensor') || inst.type.includes('soil')) {
+                if (inst.pins['SIG'] != null) {
+                    seedFrom(`${compId}:SIG`, inst.pins['SIG'].voltage);
+                }
+            } else if (inst.type.includes('raindrop')) {
+                ['DO', 'AO'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (inst.type.includes('ldr')) {
+                ['DO', 'AO'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (inst.type.includes('rotary-encoder')) {
+                ['CLK', 'DT', 'SW'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
+            } else if (inst.type.includes('potentiometer') || inst.type.includes('pot')) {
+                if (inst.pins['SIG'] != null) {
+                    seedFrom(`${compId}:SIG`, inst.pins['SIG'].voltage);
+                }
             }
         });
 
@@ -3371,7 +3450,13 @@ export class RP2040Runner implements BoardRunner {
 
         for (let gp = 0; gp <= 28; gp++) {
             const unsubscribe = this.cpu.gpio[gp].addListener((state: GPIOPinState) => {
-                const isHigh = state === GPIOPinState.High || state === GPIOPinState.InputPullUp;
+                // Treat Input (floating) as HIGH to external components. This correctly
+                // simulates an open-drain release where the external pull-up resistor
+                // (e.g. on the DHT22) pulls the line HIGH, firing a rising edge.
+                const isHigh = state === GPIOPinState.High || 
+                               state === GPIOPinState.InputPullUp || 
+                               state === GPIOPinState.Input;
+                
                 this.onPinChange(gp, isHigh);
             });
             this.gpioUnsubscribers.push(unsubscribe);
@@ -3475,12 +3560,16 @@ export class RP2040Runner implements BoardRunner {
                     return delta > 0 ? delta : 1;
                 };
 
+                // Cache the instance array once per frame (reused in chunk updates & end-of-frame)
+                const instArrayCached = Array.from(this.instances.values());
+
                 // ── WOKWI-STYLE COMPONENT CHUNK UPDATE INTERVAL ────────────────────────
                 // The AVR runner calls inst.update() every 32,000 cycles (= 2ms at 16MHz).
                 // For 125 MHz Pi Pico, the equivalent is 250,000 cycles (= 2ms at 125MHz).
                 // This ensures servo PWM period tracking and stepper step detection get
                 // updated frequently enough to produce smooth real-time animation.
-                const COMPONENT_UPDATE_INTERVAL = 250_000;
+                const hasPendingPulse = instArrayCached.some(inst => (inst as any).pendingPulses && (inst as any).pendingPulses.length > 0);
+                const COMPONENT_UPDATE_INTERVAL = hasPendingPulse ? 1000 : 250_000;
 
                 // Wall-clock start for the time-bounded inner loop
                 const innerLoopStart = performance.now();
@@ -3498,8 +3587,6 @@ export class RP2040Runner implements BoardRunner {
                     pio0Div = pioDivsCached[0];
                     pio1Div = pioDivsCached[1];
                 }
-                // Cache the instance array once per frame (reused in chunk updates & end-of-frame)
-                const instArrayCached = Array.from(this.instances.values());
 
                 // Compute stable clock scale once per frame (clockHz won't change mid-frame)
                 const frameClockHz = this.getRp2040ClockHz();
@@ -3537,6 +3624,8 @@ export class RP2040Runner implements BoardRunner {
                                 (inst as any).pendingVisualStateEmit = true;
                                 inst.stateChanged = false;
                                 this.propagationPending = true;
+                                this.repropagateAllVoltages();
+                                this.updateGPIOInputsFromCircuit();
                             }
                         });
                     }

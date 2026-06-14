@@ -298,8 +298,8 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
       if (cats.includes('GND')) gndPins.push(pin);
     });
 
-    // Force Arduino Uno to use 5V by eliminating the 3.3V pin from consideration
-    if (comp.type.includes('arduino-uno')) {
+    // Force all Arduino boards (Uno, Mega, Nano, etc.) to use 5V by eliminating the 3.3V pin from consideration
+    if (comp.type.includes('arduino')) {
       for (let i = vccPins.length - 1; i >= 0; i--) {
         const idAndDesc = ((vccPins[i].id || '') + ' ' + (vccPins[i].description || '')).toUpperCase();
         if (idAndDesc.includes('3.3') || idAndDesc.includes('3V3')) {
@@ -441,7 +441,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
   return newWires;
 };
 
-export function SimulatorPage({ gamificationMode = false }) {
+export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const {
     isAuthenticated,
     isAdminAuthenticated,
@@ -499,6 +499,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     currentLevelData,
     nextLevel,
     xpProgress,
+    unlockedComponents,
   } = typeof useGamification === "function" ? useGamification() : {};
   const gamProject = useMemo(
     () =>
@@ -527,6 +528,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       "openhw-rgb-led": "rgb-led",
       "wokwi-ntc-temperature-sensor": "dht11",
       "openhw-ntc-temperature-sensor": "dht11",
+      "wokwi-dht22": "dht22",
+      "openhw-dht22": "dht22",
       "wokwi-hc-sr04": "ultrasonic",
       "openhw-hc-sr04": "ultrasonic",
       "wokwi-servo": "servo",
@@ -622,12 +625,14 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const isPaletteItemLocked = useCallback(
     (itemType) => {
+      // Only lock components for students in gamification mode
       if (!gamificationMode) return false;
+      if (activeUser?.role !== 'student') return false;
       const compId = WOKWI_TO_COMP_ID[itemType];
       if (!compId) return false;
-      return isUnlocked ? !isUnlocked(compId) : false;
+      return isUnlocked ? !isUnlocked(itemType) : false;
     },
-    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID],
+    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID, activeUser?.role],
   );
 
   const gamProjectComponents = useMemo(() => {
@@ -638,7 +643,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         compId && typeof COMPONENT_MAP !== "undefined"
           ? COMPONENT_MAP[compId]
           : null;
-      const isLocked = compId && isUnlocked ? !isUnlocked(compId) : false;
+      const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(c.type) : false;
       return { ...c, compId, compDef, isLocked };
     });
   }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
@@ -646,7 +651,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   const gamLockedCount = gamProjectComponents.filter(
     (c) => c.isLocked && c.compId,
   ).length;
-  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : true;
+  const gamAllUnlockedGlobally = unlockedComponents === '*';
+  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : gamAllUnlockedGlobally;
 
   const handleAssessmentSubmit = async () => {
     if (!assessmentMode && !gamificationMode) return;
@@ -666,11 +672,17 @@ export function SimulatorPage({ gamificationMode = false }) {
         wires,
         code,
       };
-      sessionStorage.setItem(
-        `openhw_assessment_submission:${assessmentName}`,
-        JSON.stringify(payload),
-      );
-      navigate(`/${assessmentName}/assessment`);
+      sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
+      // Preserve classId when navigating to assessment page to maintain class context
+      const targetPath = classId
+        ? `/${assessmentName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
     } finally {
       setIsSubmittingAssessment(false);
     }
@@ -720,11 +732,13 @@ export function SimulatorPage({ gamificationMode = false }) {
     setTimeout(() => setIsLoadingGuidedSchema(false), 800)
   }
 
-  const initialLoadRef = useRef(false)
+  const lastLoadedSlugRef = useRef(null)
   useEffect(() => {
     const project = guidedProjectState?.project
-    if (!project || initialLoadRef.current) return
-    initialLoadRef.current = true
+    const slug = project?.slug || (gamificationMode ? projectName : null)
+
+    if (!slug || lastLoadedSlugRef.current === slug) return
+    lastLoadedSlugRef.current = slug
 
     const loadFromSchema = () => {
       if (project?.schemas?.arduino) {
@@ -735,8 +749,6 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
 
     const tryLoadFromPng = async () => {
-      const slug = project.slug || projectName
-      if (!slug) throw new Error('no slug')
       const pngUrl = `${EXAMPLES_BASE_URL}/${slug}/circuit.png`
       const res = await fetch(pngUrl)
       if (!res.ok) throw new Error('PNG not found')
@@ -749,7 +761,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     tryLoadFromPng()
       .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
       .catch(() => loadFromSchema())
-  }, [guidedProjectState])
+  }, [guidedProjectState, gamificationMode, projectName])
 
   const [history, setHistory] = useState({ past: [], future: [] });
   const [selected, setSelected] = useState(null); // comp or wire id
@@ -2133,15 +2145,41 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
     };
 
-    loadDemoProject();
-    return () => {
-      cancelled = true;
-      if (deferTimer !== null) window.clearTimeout(deferTimer);
-    };
-  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+loadDemoProject();
+     return () => {
+       cancelled = true;
+       if (deferTimer !== null) window.clearTimeout(deferTimer);
+     };
+   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Offline component queue: flush to backend when connectivity restores ──
-  useEffect(() => {
+// ── Load circuit data from bankProjectCriteria (opened from Project Bank Editor) ──
+    useEffect(() => {
+      if (!returnTo) return;
+
+      // Check if we have circuit data from Project Bank Editor
+      const stored = localStorage.getItem("bankProjectCriteria");
+      if (!stored) return;
+
+      try {
+        const parsed = JSON.parse(stored);
+        // Only load if it has the full payload format (components/connections)
+        if (parsed && Array.isArray(parsed.components) && Array.isArray(parsed.connections)) {
+          const { components: normalizedComponents, wires: normalizedConnections } =
+            normalizeImportedCircuitData(parsed.components, parsed.connections);
+
+          setBoard(parsed.board || "arduino_uno");
+          setComponents(normalizedComponents);
+          setWires(normalizedConnections);
+          setCode(parsed.code || "");
+          syncNextIds(normalizedComponents, normalizedConnections);
+        }
+      } catch (e) {
+        console.warn("[BankProjectCriteria] Failed to parse circuit data:", e);
+      }
+    }, [returnTo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Offline component queue: flush to backend when connectivity restores ──
+    useEffect(() => {
     const drainQueue = async () => {
       const queued = await getQueuedComponents();
       if (!queued.length) return;
@@ -2165,11 +2203,13 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => window.removeEventListener("online", drainQueue);
   }, []);
 
-  // ── Sync backend custom components (cache-first, version-checked) ──────────
+// ── Sync backend custom components (cache-first, version-checked) ──────────
   // On every page load:
   //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
   //  2. GET /api/components/version (~40 bytes) → compare hash
   //  3. Only fetch + transpile when the hash actually changed
+  //  Note: In Adventure/Classroom mode, clear cache to ensure component filtering
+  //  is based on fresh unlock data from the API.
   useEffect(() => {
     let cancelled = false;
 
@@ -5263,16 +5303,34 @@ export function SimulatorPage({ gamificationMode = false }) {
     [liveEditingDisabled, addComponentInternal],
   );
 
-  // ── Palette click to add (adds to canvas center) ────────────────────────────
+  // ── Palette click to add (adds to canvas center, offset if overlapping) ──────
   const addComponentAtCenter = useCallback(
     async (item) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const cx =
+      let cx =
         (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
-      const cy =
+      let cy =
         (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
+
+      // Nudge position so new components don't stack exactly on top of existing ones
+      const OFFSET_STEP = 30; // px diagonal offset per overlap
+      const OVERLAP_THRESHOLD = 20; // px — consider "same spot" if within this range
+      const currentComps = componentsRef.current || [];
+      let attempts = 0;
+      while (attempts < 15) {
+        const overlapping = currentComps.some(c => {
+          const compCx = c.x + (c.w || 60) / 2;
+          const compCy = c.y + (c.h || 60) / 2;
+          return Math.abs(compCx - cx) < OVERLAP_THRESHOLD && Math.abs(compCy - cy) < OVERLAP_THRESHOLD;
+        });
+        if (!overlapping) break;
+        cx += OFFSET_STEP;
+        cy += OFFSET_STEP;
+        attempts++;
+      }
+
       await addComponentAt(item, cx, cy);
     },
     [addComponentAt],
@@ -5582,11 +5640,21 @@ export function SimulatorPage({ gamificationMode = false }) {
               newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newX };
             }
           }
+          const finalWaypoints = [];
+          if (newPts[0] && sd.startPts[0] && (newPts[0].x !== sd.startPts[0].x || newPts[0].y !== sd.startPts[0].y)) {
+            finalWaypoints.push({ x: newPts[0].x, y: newPts[0].y, _corner: true });
+          }
+          for (let i = 1; i < newPts.length - 1; i++) {
+            if (newPts[i]) finalWaypoints.push({ x: newPts[i].x, y: newPts[i].y, _corner: true });
+          }
+          const lastIdx = newPts.length - 1;
+          if (lastIdx > 0 && newPts[lastIdx] && sd.startPts[lastIdx] && (newPts[lastIdx].x !== sd.startPts[lastIdx].x || newPts[lastIdx].y !== sd.startPts[lastIdx].y)) {
+            finalWaypoints.push({ x: newPts[lastIdx].x, y: newPts[lastIdx].y, _corner: true });
+          }
+
           wireUpdate = {
             wireId: sd.wireId,
-            cornerWaypoints: newPts
-              .slice(1, -1)
-              .map((pt) => ({ x: pt.x, y: pt.y, _corner: true })),
+            cornerWaypoints: finalWaypoints.filter(pt => pt && isFinite(pt.x) && isFinite(pt.y)),
           };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
@@ -6313,8 +6381,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Logic: If the second pin has a more "specific" color (comms, power, etc.)
         // and the first is generic green, use the specific color.
         const isGeneric = (c) => c === "#2ecc71" || c === "#10b981";
-        const finalColor =
-          !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        let finalColor = !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        if (color1 === 'black' || color2 === 'black') finalColor = 'black';
 
         const newWire = {
           id: `w${nextWireId++}`,
@@ -8696,6 +8764,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         "hardware",
       );
       await disconnectHardwareSerial();
+      await new Promise(r => setTimeout(r, 3500));
     }
 
     await uploadToHardware();
@@ -12566,6 +12635,9 @@ export function SimulatorPage({ gamificationMode = false }) {
           handleRestoreWorkflow={handleRestoreWorkflow}
           handleSyncToCloud={handleSyncToCloud}
           user={activeUser}
+          gamPanelOpen={gamPanelOpen}
+          setGamPanelOpen={setGamPanelOpen}
+          gamificationMode={gamificationMode}
           navigate={navigate}
           isAuthenticated={isAnyAuthenticated}
           myProjects={myProjects}
@@ -12621,10 +12693,14 @@ export function SimulatorPage({ gamificationMode = false }) {
           setShowAutofix={setShowAutofix}
           showShortcuts={showShortcuts}
           setShowShortcuts={setShowShortcuts}
+          useBlocklyCode={useBlocklyCode}
+          setUseBlocklyCode={setUseBlocklyCode}
           onStartTour={() => {
             localStorage.removeItem("openhw-tour-completed");
             setShowTour(true);
           }}
+          returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
+          code={code}
         />
 
         <SimulatorStatusBanners
@@ -13038,6 +13114,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           <QuickAddPortal
             catalog={LOCAL_CATALOG}
             onAddComponentRef={addComponentAtRef}
+            isPaletteItemLocked={isPaletteItemLocked}
+            showLockToast={showLockToast}
           />
 
           {/* RIGHT PANEL */}
@@ -13196,7 +13274,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             setProjContextMenu={setProjContextMenu}
           />
 
-          {gamificationMode && gamPanelOpen && (
+          {gamificationMode && gamPanelOpen && gamProject && (
             <GamificationGuidePanel
               gamTab={gamTab}
               setGamTab={setGamTab}
