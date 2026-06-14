@@ -725,6 +725,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [wires, setWires] = useState([]);
 
   const [isLoadingGuidedSchema, setIsLoadingGuidedSchema] = useState(false)
+    const [showComingSoon, setShowComingSoon] = useState(false)
 
   const doLoadGuidedSchema = (schema, label) => {
     setIsLoadingGuidedSchema(true)
@@ -757,10 +758,18 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       applyImportedProjectMeta(meta, 'Guided Project')
     }
 
+    setShowComingSoon(false)
     setIsLoadingGuidedSchema(true)
     tryLoadFromPng()
       .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
-      .catch(() => loadFromSchema())
+      .catch(() => {
+        if (project?.schemas?.arduino) {
+          loadFromSchema()
+        } else {
+          setIsLoadingGuidedSchema(false)
+          setShowComingSoon(true)
+        }
+      })
   }, [guidedProjectState, gamificationMode, projectName])
 
   const [history, setHistory] = useState({ past: [], future: [] });
@@ -2480,6 +2489,18 @@ loadDemoProject();
         setRestoreProjectPrompt(latest);
       }
     });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load project from dashboard card click ────────────────────
+  useEffect(() => {
+    const loadId = location.state?.loadProjectId;
+    if (!loadId) return;
+    import('../../services/projectStore.js').then(({ loadProject }) => {
+      loadProject(loadId).then((proj) => {
+        if (proj) handleLoadProject(proj);
+      });
+    });
+    window.history.replaceState({}, document.title);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -13921,6 +13942,68 @@ loadDemoProject();
               </div>
               <div style={{ fontSize: 12, color: '#64748b' }}>
                 Placing components and wiring connections
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showComingSoon && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9999,
+              background: 'rgba(15,23,42,0.6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            <div
+              style={{
+                background: '#ffffff', borderRadius: 16,
+                padding: '40px 48px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                maxWidth: 400,
+                textAlign: 'center',
+              }}
+            >
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>
+                Coming Soon
+              </div>
+              <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.5 }}>
+                This guided project is under development and will be available soon.
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button
+                  onClick={() => navigate(-1)}
+                  style={{
+                    padding: '10px 28px',
+                    border: 'none',
+                    borderRadius: 8,
+                    background: '#2563eb',
+                    color: '#fff',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Go Back
+                </button>
+                <button
+                  onClick={() => setShowComingSoon(false)}
+                  style={{
+                    padding: '10px 28px',
+                    border: '1px solid var(--border, rgba(255,255,255,0.2))',
+                    borderRadius: 8,
+                    background: 'transparent',
+                    color: 'var(--text, #e2e8f0)',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Open Simulator
+                </button>
               </div>
             </div>
           </div>
