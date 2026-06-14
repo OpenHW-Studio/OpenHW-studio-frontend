@@ -47,7 +47,8 @@ export function useHardwareFlashing({
     refreshHardwarePorts();
   }, [refreshHardwarePorts]);
 
-  const uploadToHardware = useCallback(async () => {
+  const uploadToHardware = useCallback(async (opts = {}) => {
+    const { wasConnected, disconnectFn, connectFn } = opts;
     if (!hardwareBoardId) {
       alert('Please select a target board on canvas.');
       return;
@@ -57,6 +58,13 @@ export function useHardwareFlashing({
     if (!cleanPort) {
       alert('No serial port detected. Connect your board, then refresh ports or enable Show all serial ports.');
       return;
+    }
+
+    if (wasConnected && disconnectFn) {
+      setHardwareStatus('Disconnecting serial monitor for upload...');
+      await disconnectFn();
+      // Brief delay to let the OS release the COM port completely
+      await new Promise(r => setTimeout(r, 600));
     }
 
     setIsUploadingHardware(true);
@@ -92,6 +100,16 @@ export function useHardwareFlashing({
       alert(err?.message || 'Hardware upload failed.');
     } finally {
       setIsUploadingHardware(false);
+      
+      if (wasConnected && connectFn) {
+        setTimeout(async () => {
+          try {
+            await connectFn(true); // useLastPort = true
+          } catch (e) {
+            console.warn('[BootloaderFlash] Auto-reconnect failed', e);
+          }
+        }, 1200); // Give bootloader time to restart user application before reconnecting
+      }
     }
   }, [
     hardwareBoardId,
