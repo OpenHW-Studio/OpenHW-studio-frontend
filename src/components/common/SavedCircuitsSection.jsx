@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listProjects, saveProject } from '../../services/projectStore.js'
-import { generateCircuitThumbnail } from '../../utils/circuitThumbnail.js'
+import { listProjects, deleteProject } from '../../services/projectStore.js'
 import { getToken } from '../../services/authService.js'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
@@ -53,17 +52,7 @@ export default function SavedCircuitsSection({ user }) {
     try {
       const owner = getOwner(user)
       const list = await listProjects(owner)
-      const withThumbs = await Promise.all(
-        list.map(async (p) => {
-          if (p.thumbnail) return p
-          const thumb = generateCircuitThumbnail(p.components, p.connections || p.wires)
-          try {
-            await saveProject({ ...p, thumbnail: thumb })
-          } catch {}
-          return { ...p, thumbnail: thumb }
-        })
-      )
-      setProjects(withThumbs.slice(0, 20))
+      setProjects(list.slice(0, 20))
     } catch {
       setProjects([])
     } finally {
@@ -122,6 +111,15 @@ export default function SavedCircuitsSection({ user }) {
       setMenuProject(null)
       setTimeout(() => setPublishMsg(''), 3000)
     }
+  }
+
+  const handleDelete = async (proj) => {
+    if (!window.confirm(`Delete "${proj.name || 'Untitled'}"? This cannot be undone.`)) return
+    try {
+      await deleteProject(proj.id)
+      setProjects((prev) => prev.filter((p) => p.id !== proj.id))
+    } catch {}
+    setMenuProject(null)
   }
 
   if (!loading && projects.length === 0) return null
@@ -214,6 +212,14 @@ export default function SavedCircuitsSection({ user }) {
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                         {publishing ? 'Publishing...' : 'Publish'}
+                      </button>
+                      <button
+                        type="button"
+                        className="saved-circuit-card__menu-item saved-circuit-card__menu-item--danger"
+                        onClick={(e) => { e.stopPropagation(); handleDelete(proj) }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        Delete
                       </button>
                     </div>
                   )}

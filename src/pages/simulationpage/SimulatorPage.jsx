@@ -1439,6 +1439,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   };
 
   const lastCompiledRef = useRef(null);
+  const captureThumbnailRef = useRef(null);
   const micropythonUf2PayloadRef = useRef(null);
   const circuitPythonUf2PayloadRef = useRef(null);
   const rp2040DebugLastLogRef = useRef(new Map());
@@ -5117,6 +5118,114 @@ loadDemoProject();
             setComponents(result.components);
             setWires(result.wires);
 
+            // ── JS Fallback: manually wire if WASM left component unwired ──
+            const autowiringConns = manifest?.autowiring?.connections;
+            if (autowiringConns && autowiringConns.length > 0) {
+              const compId = mainCompWithPos.id;
+              const hasAnyWire = result.wires.some(
+                w => (w.from || '').startsWith(compId + ':') || (w.to || '').startsWith(compId + ':')
+              );
+              if (!hasAnyWire) {
+                const boardComp = result.components.find(c => isProgrammableBoardType(c.type));
+                if (boardComp) {
+                  const newComponents = [...result.components];
+                  const newWires = [...result.wires];
+                  const bb = result.components.find(c => isBreadboardType(c.type));
+                  const boardPins = LOCAL_PIN_DEFS[boardComp.type] || [];
+
+                  for (let ci = 0; ci < autowiringConns.length; ci++) {
+                    const conn = autowiringConns[ci];
+                    let target = conn.to || '';
+                    let fromPin = conn.from;
+
+                    if (target.startsWith('arduino:')) {
+                      const pinId = target.split(':')[1];
+                      const match = boardPins.find(p => p.id.toLowerCase().startsWith(pinId.toLowerCase()));
+                      if (match) target = `${boardComp.id}:${match.id}`;
+                      else target = `${boardComp.id}:${pinId}`;
+                    }
+
+                    const fromEndpoint = `${compId}:${fromPin}`;
+
+                    if (conn.via) {
+                      const viaId = `${conn.via}_${Date.now()}_${ci}`;
+                      const viaType = conn.via;
+                      const viaComp = {
+                        id: viaId,
+                        type: viaType,
+                        label: 'Resistor',
+                        x: mainCompWithPos.x + 60 + ci * 30,
+                        y: mainCompWithPos.y + 20 + ci * 20,
+                        w: 60,
+                        h: 12,
+                        attrs: conn.attrs || {},
+                      };
+
+                      if (bb) {
+                        const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+                        const viaHole = bbPins.find(p => p.id.endsWith('f'));
+                        if (viaHole) {
+                          const vWorld = getRotatedPoint(
+                            bb.x + viaHole.x, bb.y + viaHole.y,
+                            bb.rotation || 0, bb.x + bb.w / 2, bb.y + bb.h / 2
+                          );
+                          viaComp.x = vWorld.x - 30;
+                          viaComp.y = vWorld.y - 6;
+                        }
+                      }
+
+                      newComponents.push(viaComp);
+
+                      const needsResistorToGnd = target.toLowerCase().includes('gnd');
+                      const midX = viaComp.x + viaComp.w / 2;
+                      const midY = viaComp.y + viaComp.h / 2;
+
+                      if (bb) {
+                        const sourceHole = `${bb.id}:${ci === 0 ? 'top_f' : 'top_e'}`;
+                        newWires.push({
+                          id: `w_via_in_${Date.now()}_${ci}`,
+                          from: sourceHole,
+                          to: `${viaId}:p1`,
+                          color: 'green',
+                          isSocket: true,
+                        });
+                        newWires.push({
+                          id: `w_via_out_${Date.now()}_${ci}`,
+                          from: `${viaId}:p2`,
+                          to: target,
+                          color: needsResistorToGnd ? 'black' : 'blue',
+                        });
+                      } else {
+                        newWires.push({
+                          id: `w_manual_${Date.now()}_${ci}_a`,
+                          from: fromEndpoint,
+                          to: `${viaId}:p1`,
+                          color: 'green',
+                          waypoints: [{ x: midX, y: mainCompWithPos.y + 20 }],
+                        });
+                        newWires.push({
+                          id: `w_manual_${Date.now()}_${ci}_b`,
+                          from: `${viaId}:p2`,
+                          to: target,
+                          color: needsResistorToGnd ? 'black' : 'blue',
+                        });
+                      }
+                    } else {
+                      newWires.push({
+                        id: `w_manual_${Date.now()}_${ci}`,
+                        from: fromEndpoint,
+                        to: target,
+                        color: target.toLowerCase().includes('gnd') ? 'black' : 'green',
+                      });
+                    }
+                  }
+
+                  setComponents(newComponents);
+                  setWires(newWires);
+                }
+              }
+            }
+
             // ── Restore Library Installation ──
             if (plan.libraries && plan.libraries.length > 0) {
               for (const libName of plan.libraries) {
@@ -5216,6 +5325,58 @@ loadDemoProject();
             if (plan.reasoning) {
               console.log("[Autonomous] Reasoning:", plan.reasoning);
             }
+          } else {
+            // WASM returned no plan — fallback: place component and wire manually
+            const boardComp = components.find(c => isProgrammableBoardType(c.type));
+            let fallbackComps = [newCompBase];
+            let fallbackWires = [...wires];
+
+            const autowiringConns = manifest?.autowiring?.connections;
+            if (autowiringConns && autowiringConns.length > 0 && boardComp) {
+              const boardPins = LOCAL_PIN_DEFS[boardComp.type] || [];
+              const bb = components.find(c => isBreadboardType(c.type));
+              for (let ci = 0; ci < autowiringConns.length; ci++) {
+                const conn = autowiringConns[ci];
+                let target = conn.to || '';
+                if (target.startsWith('arduino:')) {
+                  const pinId = target.split(':')[1];
+                  const match = boardPins.find(p => p.id.toLowerCase().startsWith(pinId.toLowerCase()));
+                  target = match ? `${boardComp.id}:${match.id}` : `${boardComp.id}:${pinId}`;
+                }
+                if (conn.via) {
+                  const viaId = `${conn.via}_${Date.now()}_${ci}`;
+                  const viaComp = {
+                    id: viaId, type: conn.via, label: 'Resistor',
+                    x: newCompBase.x + 60 + ci * 30, y: newCompBase.y + 20 + ci * 20,
+                    w: 60, h: 12, attrs: conn.attrs || {},
+                  };
+                  if (bb) {
+                    const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+                    const viaHole = bbPins.find(p => p.id.endsWith('f'));
+                    if (viaHole) {
+                      const vWorld = getRotatedPoint(bb.x + viaHole.x, bb.y + viaHole.y, bb.rotation || 0, bb.x + bb.w / 2, bb.y + bb.h / 2);
+                      viaComp.x = vWorld.x - 30; viaComp.y = vWorld.y - 6;
+                    }
+                  }
+                  fallbackComps.push(viaComp);
+                  fallbackWires.push({ id: `w_via_in_${Date.now()}_${ci}`, from: `${newCompBase.id}:${conn.from}`, to: `${viaId}:p1`, color: 'green' });
+                  fallbackWires.push({ id: `w_via_out_${Date.now()}_${ci}`, from: `${viaId}:p2`, to: target, color: target.toLowerCase().includes('gnd') ? 'black' : 'blue' });
+                } else {
+                  fallbackWires.push({ id: `w_manual_${Date.now()}_${ci}`, from: `${newCompBase.id}:${conn.from}`, to: target, color: target.toLowerCase().includes('gnd') ? 'black' : 'green' });
+                }
+              }
+            } else {
+              fallbackWires = autoConnectPowerRails(newCompBase, components, wires);
+            }
+
+            setComponents(prev => {
+              const merged = [...prev];
+              for (const fc of fallbackComps) {
+                if (!merged.find(c => c.id === fc.id)) merged.push(fc);
+              }
+              return merged;
+            });
+            setWires(fallbackWires);
           }
         } else {
           setComponents((prev) => [...prev, newCompBase]);
@@ -7760,6 +7921,7 @@ loadDemoProject();
     });
     setCurrentProjectName(finalName || name);
     setShowSaveDialog(false);
+    setTimeout(() => captureThumbnailRef.current?.(), 1500);
   };
 
   /** Create a brand-new blank project. */
@@ -7823,6 +7985,7 @@ loadDemoProject();
     setHistory({ past: [], future: [] });
     lastCompiledRef.current = null;
     setShowProjectsSidebar(false);
+    setTimeout(() => captureThumbnailRef.current?.(), 1500);
   };
 
   /** Delete a project from the My Projects modal. */
@@ -11003,7 +11166,7 @@ loadDemoProject();
         const idoc = iframe.contentDocument || iframe.contentWindow.document;
         idoc.open();
         idoc.write(
-          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#070b14;"></body></html>',
+          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>',
         );
         idoc.close();
 
@@ -11228,7 +11391,7 @@ loadDemoProject();
 
         const t_html2c_start = performance.now();
         circuitCanvas = await h2c(idoc.body, {
-          backgroundColor: "#070b14",
+          backgroundColor: "#ffffff",
           scale: SCALE,
           useCORS: true,
           allowTaint: false,
@@ -11237,24 +11400,24 @@ loadDemoProject();
           skipFonts: true,
           width: actualW,
           height: actualH,
-          onclone: (_clonedDoc, clonedEl) => {
-            // Selective color fix: Target graphics but SPARE the text
-            clonedEl
-              .querySelectorAll("path, rect, circle, polygon")
-              .forEach((el) => {
-                const fill = el.getAttribute("fill");
-                if (fill && fill.includes("color("))
-                  el.setAttribute("fill", "#777");
-                const stroke = el.getAttribute("stroke");
-                if (stroke && stroke.includes("color("))
-                  el.setAttribute("stroke", "#777");
+            onclone: (_clonedDoc, clonedEl) => {
+              // Selective color fix: Target graphics but SPARE the text
+              clonedEl
+                .querySelectorAll("path, rect, circle, polygon")
+                .forEach((el) => {
+                  const fill = el.getAttribute("fill");
+                  if (fill && fill.includes("color("))
+                    el.setAttribute("fill", "#777");
+                  const stroke = el.getAttribute("stroke");
+                  if (stroke && stroke.includes("color("))
+                    el.setAttribute("stroke", "#777");
+                });
+              // Ensure labels are visible on white bg
+              clonedEl.querySelectorAll("text, span, div").forEach((el) => {
+                if (el.style.color && el.style.color.includes("color("))
+                  el.style.color = "#1e293b";
               });
-            // Ensure labels are visible
-            clonedEl.querySelectorAll("text, span, div").forEach((el) => {
-              if (el.style.color && el.style.color.includes("color("))
-                el.style.color = "#ccc";
-            });
-          },
+            },
         });
 
         // Memory Flush: Clear the iframe content immediately to free RAM
@@ -11286,7 +11449,7 @@ loadDemoProject();
       out.height = CH;
       const ctx = out.getContext("2d");
 
-      ctx.fillStyle = "#070b14";
+      ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(circuitCanvas, 0, 0);
 
@@ -11392,6 +11555,82 @@ loadDemoProject();
       setIsExporting(false);
     }
   };
+
+  // ── Captures a small thumbnail (320×180) and saves to IndexedDB ───────
+  const captureThumbnail = useCallback(async () => {
+    if (!components.length) return;
+    const { saveProject, loadProject } = await import('../../services/projectStore.js');
+    const id = currentProjectIdRef.current;
+    if (!id) return;
+    const THUMB_W = 320;
+    const THUMB_H = 180;
+    const PAD = 20;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    components.forEach((c) => {
+      const reg = COMPONENT_REGISTRY[c.type];
+      const b = typeof reg?.BOUNDS === 'function' ? reg.BOUNDS(getComponentStateAttrs(c)) : reg?.BOUNDS || { x: 0, y: 0, w: c.w, h: c.h };
+      minX = Math.min(minX, c.x + b.x);
+      minY = Math.min(minY, c.y + b.y);
+      maxX = Math.max(maxX, c.x + b.x + b.w);
+      maxY = Math.max(maxY, c.y + b.y + b.h + 20);
+      (PIN_DEFS[c.type] || []).forEach((pin) => {
+        const pp = getPinPos(c.id, pin.id);
+        if (pp) { minX = Math.min(minX, pp.x - 4); minY = Math.min(minY, pp.y - 4); maxX = Math.max(maxX, pp.x + 4); maxY = Math.max(maxY, pp.y + 4); }
+      });
+    });
+    wires.forEach((w) => {
+      (w.waypoints || []).forEach((wp) => { minX = Math.min(minX, wp.x); minY = Math.min(minY, wp.y); maxX = Math.max(maxX, wp.x); maxY = Math.max(maxY, wp.y); });
+      [w.from, w.to].forEach((ref) => {
+        if (!ref) return;
+        const [cId, pId] = ref.split(':');
+        const pp = getPinPos(cId, pId);
+        if (pp) { minX = Math.min(minX, pp.x); minY = Math.min(minY, pp.y); maxX = Math.max(maxX, pp.x); maxY = Math.max(maxY, pp.y); }
+      });
+    });
+    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+    minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+    const bboxW = maxX - minX;
+    const bboxH = maxY - minY;
+
+    const z = canvasZoomRef.current;
+    const off = canvasOffsetRef.current;
+    const wrapperRect = innerCanvasRef.current?.getBoundingClientRect();
+    if (!wrapperRect) return;
+
+    const screenMinX = minX * z + off.x;
+    const screenMinY = minY * z + off.y;
+    const screenW = bboxW * z;
+    const screenH = bboxH * z;
+
+    try {
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const h2c = await getHtml2canvas();
+      const thumbCanvas = await h2c(document.body, {
+        backgroundColor: '#ffffff',
+        scale: 1,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        x: wrapperRect.left + (minX * z + off.x),
+        y: wrapperRect.top + (minY * z + off.y),
+        width: screenW,
+        height: screenH,
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight,
+      });
+
+      const dataUrl = thumbCanvas.toDataURL('image/png', 0.7);
+      const existing = await loadProject(id);
+      if (existing) {
+        await saveProject({ ...existing, thumbnail: dataUrl });
+      } else {
+        await saveProject({ id, thumbnail: dataUrl });
+      }
+    } catch (err) {
+      console.warn('[Thumbnail] capture failed:', err);
+    }
+  }, [components, wires, board, currentProjectIdRef]);
+  captureThumbnailRef.current = captureThumbnail;
 
   // ── View Panel helpers — SVG Schematic Generator ─────────────────────────
   const generateSchematic = useCallback(() => {
