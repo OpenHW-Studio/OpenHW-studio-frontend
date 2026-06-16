@@ -725,7 +725,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [wires, setWires] = useState([]);
 
   const [isLoadingGuidedSchema, setIsLoadingGuidedSchema] = useState(false)
-    const [showComingSoon, setShowComingSoon] = useState(false)
+  const [showComingSoon, setShowComingSoon] = useState(false)
 
   const doLoadGuidedSchema = (schema, label) => {
     setIsLoadingGuidedSchema(true)
@@ -3049,18 +3049,8 @@ loadDemoProject();
     // Don't trigger auto-save if disabled or if waiting on toaster
     if (!autoSaveEnabled || restoreProjectPrompt) return;
 
-    // Don't trigger an empty-project save on initial render
-    const isCodeEmptyOrDefault =
-      code.trim() === "" ||
-      code.trim() ===
-        "void setup() {\\n  // put your setup code here, to run once:\\n\\n}\\n\\nvoid loop() {\\n  // put your main code here, to run repeatedly:\\n\\n}";
-    if (
-      !currentProjectIdRef.current &&
-      components.length === 0 &&
-      wires.length === 0 &&
-      isCodeEmptyOrDefault
-    )
-      return;
+    // Don't save if nothing is on the canvas
+    if (components.length === 0 && wires.length === 0) return;
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -3089,6 +3079,7 @@ loadDemoProject();
       if (finalName && finalName !== currentProjectName) {
         setCurrentProjectName(finalName);
       }
+      setTimeout(() => captureThumbnailRef.current?.(), 1500);
     }, 2500);
 
     return () => clearTimeout(autoSaveTimerRef.current);
@@ -7991,8 +7982,7 @@ loadDemoProject();
   /** Delete a project from the My Projects modal. */
   const handleDeleteProject = async (id) => {
     if (!window.confirm("Delete this project? This cannot be undone.")) return;
-    await deleteProject(id);
-    // If the active project was deleted, clear current id
+    await deleteProject(id, getOwner());
     if (currentProjectIdRef.current === id) {
       currentProjectIdRef.current = null;
       setCurrentProjectId(null);
@@ -8013,7 +8003,7 @@ loadDemoProject();
       return;
     }
     const newName = renameValue.trim() || "Untitled";
-    const finalName = await renameProject(id, newName);
+    const finalName = await renameProject(id, newName, getOwner());
     if (currentProjectIdRef.current === id)
       setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
@@ -11565,6 +11555,8 @@ loadDemoProject();
     const THUMB_W = 320;
     const THUMB_H = 180;
     const PAD = 20;
+
+    // 1. Calculate bounding box of all components + wire waypoints (canvas-space)
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     components.forEach((c) => {
       const reg = COMPONENT_REGISTRY[c.type];
@@ -11592,34 +11584,142 @@ loadDemoProject();
     const bboxW = maxX - minX;
     const bboxH = maxY - minY;
 
-    const z = canvasZoomRef.current;
-    const off = canvasOffsetRef.current;
-    const wrapperRect = innerCanvasRef.current?.getBoundingClientRect();
-    if (!wrapperRect) return;
-
-    const screenMinX = minX * z + off.x;
-    const screenMinY = minY * z + off.y;
-    const screenW = bboxW * z;
-    const screenH = bboxH * z;
-
     try {
+      // 2. Use the same isolated iframe + style teleportation approach as PNG export
+      const zoomWrapper = innerCanvasRef.current;
+      if (!zoomWrapper) return;
+
+      let tagCount = 0;
+      const elementMap = new Map();
+      const deepTag = (root) => {
+        [root, ...Array.from(root.querySelectorAll("*"))].forEach((el) => {
+          if (!el.getAttribute) return;
+          const tid = `thumb-p-${tagCount++}`;
+          el.setAttribute("data-thumb-id", tid);
+          elementMap.set(tid, el);
+          if (el.shadowRoot) deepTag(el.shadowRoot);
+        });
+      };
+      deepTag(zoomWrapper);
+      const shadowHostEls = Array.from(elementMap.values()).filter((el) => !!el.shadowRoot);
+
+      const iframe = document.createElement("iframe");
+      Object.assign(iframe.style, { position: "fixed", left: "-10000px", top: "-10000px", width: bboxW + "px", height: bboxH + "px" });
+      document.body.appendChild(iframe);
+      const idoc = iframe.contentDocument || iframe.contentWindow.document;
+      idoc.open();
+      idoc.write('<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>');
+      idoc.close();
+
+      const styleReset = idoc.createElement("style");
+      styleReset.textContent = '* { box-sizing: border-box; filter: none !important; box-shadow: none !important; } text, span, div { font-family: sans-serif; }';
+      idoc.head.appendChild(styleReset);
+
+      const circuitClone = idoc.importNode(zoomWrapper, true);
+      idoc.body.appendChild(circuitClone);
+
+      // Inline shadow DOM
+      shadowHostEls.forEach((liveEl) => {
+        const dataId = liveEl.getAttribute("data-thumb-id");
+        const clonedHost = idoc.querySelector(`[data-thumb-id="${dataId}"]`);
+        if (!clonedHost) return;
+        if (liveEl.shadowRoot.adoptedStyleSheets) {
+          liveEl.shadowRoot.adoptedStyleSheets.forEach((sheet) => {
+            const se = idoc.createElement("style");
+            se.textContent = getSerializedShadowSheet(sheet);
+            clonedHost.appendChild(se);
+          });
+        }
+        for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
+          clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
+        }
+      });
+
+      // Teleport computed styles
+      const propsToCopy = ["display","position","left","top","width","height","transform","transformOrigin","color","fontSize","fontWeight","fontFamily","textAlign","visibility","opacity","backgroundColor","zIndex","border","borderWidth","borderStyle","borderColor","borderRadius","padding","margin","lineHeight","overflow","boxSizing","clipPath","mask","filter","mixBlendMode","outline","boxShadow","textShadow","cursor"];
+      const svgProps = ["fill","stroke","stroke-width","stroke-linecap","stroke-linejoin","stroke-miterlimit","stroke-dasharray","stroke-dashoffset","stroke-opacity","fill-opacity","fill-rule","marker-start","marker-mid","marker-end"];
+
+      [idoc.body, ...Array.from(idoc.body.querySelectorAll("*"))].forEach((cloned) => {
+        const dataId = cloned.getAttribute("data-thumb-id");
+        if (!dataId) return;
+        const liveEl = elementMap.get(dataId);
+        if (!liveEl) return;
+        const s = window.getComputedStyle(liveEl);
+        propsToCopy.forEach((p) => {
+          if (p === "fontSize" && (cloned.tagName === "text" || cloned.tagName === "tspan")) return;
+          cloned.style.setProperty(p, s.getPropertyValue(p), "important");
+        });
+        if (["path","circle","rect","line","polygon","text","ellipse","g","svg"].includes(cloned.tagName)) {
+          svgProps.forEach((attr) => {
+            const val = liveEl.getAttribute(attr) || s.getPropertyValue(attr);
+            if (val) {
+              const fv = val.includes("color(") ? "#777" : val;
+              cloned.setAttribute(attr, fv);
+              if (["fill","stroke","stroke-width","opacity","visibility"].includes(attr)) cloned.style.setProperty(attr, fv, "important");
+            }
+          });
+          const w = s.getPropertyValue("width");
+          const h = s.getPropertyValue("height");
+          if (w && w !== "auto" && w !== "100%") { cloned.setAttribute("width", w.replace("px","")); cloned.style.setProperty("width", w, "important"); }
+          if (h && h !== "auto" && h !== "100%") { cloned.setAttribute("height", h.replace("px","")); cloned.style.setProperty("height", h, "important"); }
+        }
+        cloned.style.setProperty("visibility", "visible", "important");
+        cloned.style.setProperty("opacity", s.opacity || "1", "important");
+        if (liveEl.shadowRoot) cloned.style.setProperty("overflow", "visible", "important");
+      });
+      elementMap.clear();
+
+      idoc.body.style.overflow = "visible";
+      circuitClone.style.overflow = "visible";
+      Object.assign(circuitClone.style, {
+        transform: `translate(${-minX}px, ${-minY}px) scale(1)`,
+        transformOrigin: "0 0",
+        width: bboxW + "px",
+        height: bboxH + "px",
+        display: "block", margin: "0", padding: "0",
+      });
+
+      // 3. Capture at full resolution then shrink to thumbnail size
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const h2c = await getHtml2canvas();
-      const thumbCanvas = await h2c(document.body, {
-        backgroundColor: '#ffffff',
+      const rawCanvas = await h2c(idoc.body, {
+        backgroundColor: "#ffffff",
         scale: 1,
         useCORS: true,
         allowTaint: false,
         logging: false,
-        x: wrapperRect.left + (minX * z + off.x),
-        y: wrapperRect.top + (minY * z + off.y),
-        width: screenW,
-        height: screenH,
-        windowWidth: window.innerWidth,
-        windowHeight: window.innerHeight,
+        imageTimeout: 5000,
+        skipFonts: true,
+        width: bboxW,
+        height: bboxH,
+        onclone: (_d, el) => {
+          el.querySelectorAll("path, rect, circle, polygon").forEach((e) => {
+            const fill = e.getAttribute("fill");
+            if (fill && fill.includes("color(")) e.setAttribute("fill", "#777");
+            const stroke = e.getAttribute("stroke");
+            if (stroke && stroke.includes("color(")) e.setAttribute("stroke", "#777");
+          });
+          el.querySelectorAll("text, span, div").forEach((e) => {
+            if (e.style.color && e.style.color.includes("color(")) e.style.color = "#1e293b";
+          });
+        },
       });
 
-      const dataUrl = thumbCanvas.toDataURL('image/png', 0.7);
+      // Clean up iframe
+      idoc.body.innerHTML = "";
+      idoc.head.innerHTML = "";
+      document.body.removeChild(iframe);
+
+      // 4. Shrink to thumbnail dimensions
+      const out = document.createElement("canvas");
+      out.width = THUMB_W;
+      out.height = THUMB_H;
+      const ctx = out.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, THUMB_W, THUMB_H);
+      ctx.drawImage(rawCanvas, 0, 0, rawCanvas.width, rawCanvas.height, 0, 0, THUMB_W, THUMB_H);
+
+      const dataUrl = out.toDataURL("image/png", 0.7);
       const existing = await loadProject(id);
       if (existing) {
         await saveProject({ ...existing, thumbnail: dataUrl });
@@ -11627,7 +11727,7 @@ loadDemoProject();
         await saveProject({ id, thumbnail: dataUrl });
       }
     } catch (err) {
-      console.warn('[Thumbnail] capture failed:', err);
+      console.warn("[Thumbnail] capture failed:", err);
     }
   }, [components, wires, board, currentProjectIdRef]);
   captureThumbnailRef.current = captureThumbnail;
