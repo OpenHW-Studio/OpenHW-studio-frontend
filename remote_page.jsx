@@ -18,7 +18,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, startEsp32Compile, getEsp32CompileStatus } from '../../services/simulatorService.js'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
@@ -128,10 +128,8 @@ const BACKEND_INJECTED_TYPES = new Set();
 let nextId = 1
 let nextWireId = 1
 
-// ─── SYNC ID COUNTERS AFTER LOADING EXTERNAL DATA ──────────────────────────
-// Prevents duplicate keys when a saved project has IDs higher than the
-// current module-level counter (e.g. loading "wokwi-ili9341_2" with nextId=1
-// would let a subsequent add generate the same key again).
+// syncs the module-level id counters after loading external data
+// prevents duplicate keys when saved projects have higher IDs than the current counter
 function syncNextIds(comps, ws) {
   for (const c of (comps || [])) {
     const m = c.id && c.id.match(/_(\d+)$/);
@@ -433,6 +431,7 @@ export default function SimulatorPage() {
   const { projectName = '' } = useParams()
   const location = useLocation()
   const assessmentParams = useMemo(() => new URLSearchParams(location.search), [location.search])
+  const classId = assessmentParams.get('classId') || ''
   const assessmentMode = assessmentParams.get('mode') === 'assessment'
   const assessmentProjectName = assessmentParams.get('project') || projectName
 
@@ -2398,7 +2397,15 @@ export default function SimulatorPage() {
         code,
       };
       sessionStorage.setItem(`openhw_assessment_submission:${assessmentProjectName}`, JSON.stringify(payload));
-      navigate(`/${assessmentProjectName}/assessment`);
+      const targetPath = classId
+        ? `/${assessmentProjectName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentProjectName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
     } finally {
       setIsSubmittingAssessment(false);
     }
@@ -2517,16 +2524,50 @@ export default function SimulatorPage() {
       compileUnit.mainCode || sourceCode,
       ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
       BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      compiled = await compileCode({
-        code: compileUnit.mainCode || sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
-        fqbn: BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
-      });
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: compileUnit.mainCode || sourceCode,
+          targetEngine: 'hardware'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
+        compiled = await compileCode({
+          code: compileUnit.mainCode || sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn: BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+          target: kind,
+        });
+      }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -2650,6 +2691,7 @@ export default function SimulatorPage() {
               code: compileUnit.mainCode || sourceCode,
               files: compileUnit.files,
               sketchName: compileUnit.sketchName,
+              target: kind,
             });
             setCachedHex(cacheSource, cacheKeyBoard, compiled);
           }

@@ -1,10 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Download, Trash2, Terminal, Search, Info, CheckCircle, RefreshCw, Activity, Layers, Zap } from 'lucide-react';
 import AdminCard from './AdminCard';
+import { fetchSystemLogs } from '../../../services/simulatorService.js';
 
-const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
+const DockerTab = ({ infraStatus, onRestart }) => {
+    const [logs, setLogs] = useState([]);
+    const [targetService, setTargetService] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [restarting, setRestarting] = useState(new Set());
+    const pollRef = useRef(null);
+    const seenTimestamps = useRef(new Set());
+
+    useEffect(() => {
+        // Reset seen timestamps when switching service target
+        seenTimestamps.current = new Set();
+        setLogs([]);
+
+        const poll = async () => {
+            try {
+                const fetched = await fetchSystemLogs();
+                // Filter by targetService if not 'all'
+                const filtered = targetService === 'all'
+                    ? fetched
+                    : fetched.filter(l => l.type === targetService || l.type === 'error');
+
+                const newEntries = filtered.filter(l => !seenTimestamps.current.has(l.time + l.msg));
+                if (newEntries.length > 0) {
+                    newEntries.forEach(l => seenTimestamps.current.add(l.time + l.msg));
+                    setLogs(prev => [...newEntries, ...prev].slice(0, 500));
+                }
+            } catch (e) {
+                // Silent fail — backend may not have new logs
+            }
+        };
+
+        poll(); // Initial fetch immediately
+        pollRef.current = setInterval(poll, 4000); // Then every 4 seconds
+
+        return () => {
+            clearInterval(pollRef.current);
+        };
+    }, [targetService]);
     
     const handleRestart = async (name) => {
         setRestarting(prev => new Set(prev).add(name));
@@ -44,6 +80,18 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
         URL.revokeObjectURL(url);
     };
 
+    const getDisplayName = (name) => {
+        switch (name) {
+            case 'backend': return 'Backend Main';
+            case 'frontend': return 'Frontend Client';
+            case 'mongodb': return 'Database (MongoDB)';
+            case 'esp32-worker': return 'ESP32 Worker';
+            case 'stm32-worker': return 'STM32 Worker';
+            case 'health-agent': return 'Health Agent';
+            default: return name;
+        }
+    };
+
     return (
         <div className="space-y-12 animate-in fade-in duration-500 pb-20">
             {/* Core Services Section */}
@@ -65,7 +113,7 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                             <div className="space-y-8 relative z-10">
                                 <div className="flex justify-between items-start">
                                     <div className="space-y-2">
-                                        <h3 className="text-3xl font-black text-white capitalize tracking-tighter">{service.name}</h3>
+                                        <h3 className="text-3xl font-black text-white capitalize tracking-tighter">{getDisplayName(service.name)}</h3>
                                         <div className="flex items-center gap-3">
                                             <div className={`w-2.5 h-2.5 rounded-full ${service.status === 'running' ? 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.8)]' : 'bg-red-500'} animate-pulse`}></div>
                                             <span className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">{service.status}</span>
@@ -99,7 +147,7 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                                         {restarting.has(service.name) ? 'Restarting...' : 'Restart'}
                                     </button>
                                     <button 
-                                        onClick={() => setSearchQuery(service.name)}
+                                        onClick={() => setTargetService(service.name)}
                                         className="flex-1 flex items-center justify-center gap-3 py-4 bg-blue-600/10 hover:bg-blue-600/20 rounded-2xl text-xs font-black uppercase tracking-widest text-blue-400 transition-all border border-blue-500/10"
                                     >
                                         <Activity className="w-4 h-4" /> Logs
@@ -120,7 +168,7 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                                             </div>
                                             <div className="flex flex-col items-end">
                                                 <span className="text-[8px] font-black uppercase text-slate-600">RAM</span>
-                                                <span className="text-xs font-black text-white">{service.resources?.memPerc || '0%'}</span>
+                                                <span className="text-xs font-black text-white">{service.resources?.mem ? service.resources.mem.split(' / ')[0].replace('MiB', ' MB').replace('GiB', ' GB') : '0 MB'}</span>
                                             </div>
                                             <div className="flex flex-col items-end">
                                                 <span className="text-[8px] font-black uppercase text-slate-600">Load</span>
@@ -128,7 +176,7 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                                             </div>
                                             <div className="flex flex-col items-end">
                                                 <span className="text-[8px] font-black uppercase text-slate-600">Storage</span>
-                                                <span className="text-xs font-black text-white">{service.resources?.storage || '0B'}</span>
+                                                <span className="text-xs font-black text-white">{service.resources?.storage === '0B' ? '0 MB' : (service.resources?.storage || '0 MB')}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -149,43 +197,6 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                 </div>
             </div>
 
-            {/* Header / Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <AdminCard className="bg-blue-600/10 border-blue-500/20">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-blue-600/20 rounded-xl text-blue-500">
-                            <Box className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <p className="text-[10px] uppercase font-black tracking-widest text-blue-400 opacity-60">Status</p>
-                            <h3 className="text-xl font-black text-white">Running</h3>
-                        </div>
-                    </div>
-                </AdminCard>
-                <AdminCard className="bg-emerald-600/10 border-emerald-500/20">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-emerald-600/20 rounded-xl text-emerald-500">
-                            <CheckCircle className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <p className="text-[10px] uppercase font-black tracking-widest text-emerald-400 opacity-60">Health</p>
-                            <h3 className="text-xl font-black text-white">Healthy</h3>
-                        </div>
-                    </div>
-                </AdminCard>
-                <AdminCard className="bg-amber-600/10 border-amber-500/20">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-amber-600/20 rounded-xl text-amber-500">
-                            <Info className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <p className="text-[10px] uppercase font-black tracking-widest text-amber-400 opacity-60">Events</p>
-                            <h3 className="text-xl font-black text-white">{dockerLogs.length} Records</h3>
-                        </div>
-                    </div>
-                </AdminCard>
-            </div>
-
             <div className="bg-[#0d1525] rounded-3xl border border-white/5 flex flex-col h-[calc(100vh-400px)] shadow-2xl overflow-hidden">
                 <div className="p-6 border-b border-white/5 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/5">
                     <div className="flex items-center gap-4 w-full md:w-auto">
@@ -202,6 +213,19 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                     </div>
                     
                     <div className="flex items-center gap-3 w-full md:w-auto">
+                        <select
+                            value={targetService}
+                            onChange={(e) => { setTargetService(e.target.value); setLogs([]); }}
+                            className="bg-slate-800 text-slate-300 border border-white/5 rounded-xl py-3 px-4 text-xs font-black uppercase tracking-widest focus:outline-none focus:border-blue-500"
+                        >
+                            <option value="all">All Services</option>
+                            <option value="frontend">Frontend Client</option>
+                            <option value="backend">Backend Main</option>
+                            <option value="mongodb">Database (MongoDB)</option>
+                            <option value="esp32-worker">ESP32 Worker</option>
+                            <option value="stm32-worker">STM32 Worker</option>
+                            <option value="health-agent">Health Agent</option>
+                        </select>
                         <button 
                             onClick={handleDownload}
                             className="flex-1 md:flex-none px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all border border-white/5 flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest"
@@ -209,7 +233,7 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                             <Download className="w-4 h-4" /> Export
                         </button>
                         <button 
-                            onClick={onClear}
+                            onClick={() => setLogs([])}
                             className="flex-1 md:flex-none px-6 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-red-500/20 flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest"
                         >
                             <Trash2 className="w-4 h-4" /> Clear
@@ -228,7 +252,7 @@ const DockerTab = ({ logs, infraStatus, onRestart, onClear }) => {
                                     <span className={`text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-widest ${
                                         log.type === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
                                     }`}>
-                                        Docker
+                                        {log.type === 'error' ? 'Error' : (log.type === 'docker' || log.type === 'info' ? 'System' : getDisplayName(log.type))}
                                     </span>
                                     <span className="text-slate-200 font-bold leading-relaxed truncate">{log.msg}</span>
                                 </div>

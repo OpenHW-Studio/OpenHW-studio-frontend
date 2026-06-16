@@ -1,6 +1,6 @@
 import { getToken } from './authService.js'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/api' : '/api');
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
 
 const authHeaders = () => {
   const token = getToken()
@@ -308,4 +308,17 @@ export const deleteClassComment = async (classId, commentId) => {
   })
 
   return parseResponse(response, 'Failed to delete comment')
+}
+
+export const saveGradeForSubmission = async (classId, assignmentId, gradePayload) => {
+  const response = await fetch(
+    `${BASE_URL}/classroom/${classId}/assignments/${assignmentId}/submission/grade`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(gradePayload)
+    }
+  )
+
+  return parseResponse(response, 'Failed to save grade')
 }

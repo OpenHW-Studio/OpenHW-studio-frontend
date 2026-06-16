@@ -5,6 +5,7 @@ export function normalizeBoardKind(source) {
   if (s.includes('esp32')) return 'esp32';
   if (s.includes('stm32')) return 'stm32';
   if (s.includes('rp2040') || s.includes('pico')) return 'rp2040';
+  if (s.includes('nano')) return 'arduino_nano';
   return 'arduino_uno';
 }
 

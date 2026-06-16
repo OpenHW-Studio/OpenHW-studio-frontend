@@ -1,6 +1,7 @@
 import React, { useSyncExternalStore, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { CanvasWire, CanvasComponent } from './CanvasPrimitives';
 import { calculateWireBundleOffsets } from '../../../utils/wireRouting.js';
+import { NetworkComponentOverlay } from './NetworkComponentOverlay';
 
 const ReactiveComponentUI = React.memo(({ comp, COMPONENT_REGISTRY, getComponentStateAttrs, isRunning, getLiveOopStateSnapshot, subscribeLiveOopState }) => {
   const liveState = useSyncExternalStore(
@@ -96,6 +97,11 @@ function CanvasSceneLayerBase({
   setWireStart,
   respectExitSide = true,
 }) {
+
+  const [hideWireMenu, setHideWireMenu] = useState(false);
+  useEffect(() => {
+    setHideWireMenu(false);
+  }, [selected]);
 
   const wireOffsetMap = useMemo(() => calculateWireBundleOffsets(wires, (wire) => {
     const fromParts = wire.from.split(':');
@@ -199,10 +205,12 @@ function CanvasSceneLayerBase({
               onSelect={(e) => {
                 e.stopPropagation();
                 setSelected(w.id);
+                setHideWireMenu(false);
                 const rect = canvasRef.current.getBoundingClientRect();
                 setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
               }}
               onMouseDownSegment={(ev, wire, i, isHoriz, arr, mode) => {
+                setHideWireMenu(true);
                 if (selected !== wire.id) { setSelected(wire.id); return; }
                 const rect = canvasRef.current.getBoundingClientRect();
                 const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
@@ -293,10 +301,12 @@ function CanvasSceneLayerBase({
               onSelect={(e) => {
                 e.stopPropagation();
                 setSelected(w.id);
+                setHideWireMenu(false);
                 const rect = canvasRef.current.getBoundingClientRect();
                 setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
               }}
               onMouseDownSegment={(ev, wire, i, isHoriz, arr, mode) => {
+                setHideWireMenu(true);
                 if (selected !== wire.id) { setSelected(wire.id); return; }
                 const rect = canvasRef.current.getBoundingClientRect();
                 const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
@@ -364,7 +374,7 @@ function CanvasSceneLayerBase({
       {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
       {(() => {
         const w = wires.find(w => w.id === selected);
-        if (!w || isRunning) return null;
+        if (!w || isRunning || hideWireMenu) return null;
 
         const fromParts = w.from.split(':');
         const toParts = w.to.split(':');
@@ -524,7 +534,7 @@ function CanvasSceneLayerBase({
                   );
                 })()}
 
-                <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
+                <div style={{ pointerEvents: isRunning ? 'auto' : 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
                   {COMPONENT_REGISTRY[comp.type] ? (
                     <ReactiveComponentUI
                       comp={comp}
@@ -560,7 +570,13 @@ function CanvasSceneLayerBase({
                   const currentCat = getPinCategory(pin.id, pin.description, comp.type);
 
                   const isSuggested = startCat && currentCat && hasCategoryIntersection(startCat, currentCat) && !isWireStartPin;
-                  const isRelated = hoverCat && currentCat && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
+                  // Only highlight related pins for truly shared-purpose rails (GND, power).
+                  // Do NOT glow for broad GPIO categories (DIGITAL, ANALOG, PWM, etc.)
+                  // as it falsely implies the pins are interconnected.
+                  const SHARED_PURPOSE_CATS = ['GND', 'POWER', 'VIN'];
+                  const hoverHasShared = hoverCat && hoverCat.some(c => SHARED_PURPOSE_CATS.includes(c));
+                  const currentHasShared = currentCat && currentCat.some(c => SHARED_PURPOSE_CATS.includes(c));
+                  const isRelated = hoverHasShared && currentHasShared && hasCategoryIntersection(hoverCat, currentCat) && !isHovered;
 
                   const isHighlight = isWireStartPin || isHovered || isSuggested || isRelated || isSnapping;
                   const connectedWire = wires.find(w => w.from === pinStrRef || w.to === pinStrRef);
@@ -581,34 +597,41 @@ function CanvasSceneLayerBase({
                       style={{
                         position: 'absolute',
                         left: pin.x, top: pin.y,
-                        width: 5, height: 5,
+                        width: 8, height: 8,
                         background: pinColor === 'none' ? 'none' : pinColor,
                         border: pinBorder === 'none' ? 'none' : `1px solid ${pinBorder}`,
-                        borderRadius: '0%',
+                        borderRadius: '2px',
                         cursor: 'crosshair',
                         zIndex: isHovered || isSuggested || isSnapping ? 30 : 20,
-                        transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.5)' : ''}`,
-                        transition: '0.2s',
+                        transform: `translate(-50%, -50%)${isHovered || isSuggested || isSnapping ? ' scale(1.8)' : ''}`,
+                        transition: 'all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
                         pointerEvents: 'all',
-                        boxShadow: isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none'),
+                        boxShadow: isHovered ? '0 0 12px rgba(255,255,255,0.8)' : (isSnapping ? '0 0 10px #2ecc71' : (isSuggested ? '0 0 8px #f1c40f' : 'none')),
                       }}
                       onMouseEnter={() => setHoveredPin(pinStrRef)}
                       onMouseLeave={() => setHoveredPin(null)}
                       onClick={e => onPinClick(e, comp.id, pin.id, pin.description || pin.id)}
                     >
-                      {isHovered && (
-                        <div style={{
-                          position: 'absolute', bottom: 18, left: '50%',
-                          transform: 'translateX(-50%)',
-                          background: '#111', color: '#fff',
-                          padding: '4px 8px', borderRadius: 4,
-                          fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
-                          pointerEvents: 'none', border: '1px solid #444',
-                          boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
-                        }}>
-                          {pin.description || pin.id}
-                        </div>
-                      )}
+                      {isHovered && (() => {
+                          let label = pin.description || pin.id;
+                          // Show voltage-specific labels for breadboard power rails
+                          if (comp.type.includes('breadboard')) {
+                            label = label.replace(/^top_vcc/, 'top_3.3v').replace(/^bottom_vcc/, 'bottom_5v');
+                          }
+                          return (
+                            <div style={{
+                              position: 'absolute', bottom: 18, left: '50%',
+                              transform: 'translateX(-50%)',
+                              background: '#111', color: '#fff',
+                              padding: '4px 8px', borderRadius: 4,
+                              fontSize: 10, whiteSpace: 'nowrap', zIndex: 9999,
+                              pointerEvents: 'none', border: '1px solid #444',
+                              boxShadow: '0 2px 5px rgba(0,0,0,0.5)',
+                            }}>
+                              {label}
+                            </div>
+                          );
+                        })()}
                     </div>
                   );
                 })}
@@ -643,6 +666,13 @@ function CanvasSceneLayerBase({
           </>
         );
       })()}
+      
+      {/* Dynamic Network Overlay (WiFi Icon & Panel) */}
+      <NetworkComponentOverlay 
+        components={components} 
+        isRunning={isRunning} 
+        updateComponentAttr={updateComponentAttr} 
+      />
     </div>
     </>
   );
