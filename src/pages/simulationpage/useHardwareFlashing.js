@@ -60,6 +60,20 @@ export function useHardwareFlashing({
       return;
     }
 
+    // Ensure Web Serial is authorized NOW during the click event, so auto-reconnect works later
+    if ('serial' in navigator && connectFn) {
+      try {
+        const ports = await navigator.serial.getPorts();
+        if (ports.length === 0) {
+          // No authorized ports. Prompt the user now while we are still in the user gesture context!
+          await navigator.serial.requestPort();
+        }
+      } catch (e) {
+        console.warn('Web Serial authorization prompt skipped or cancelled:', e);
+        // We can still proceed with backend flash, but auto-reconnect will fail later.
+      }
+    }
+
     if (wasConnected && disconnectFn) {
       setHardwareStatus('Disconnecting serial monitor for upload...');
       await disconnectFn();
@@ -97,16 +111,10 @@ export function useHardwareFlashing({
         pushSerialRxChunk(`${flashResult.output}\n`, hardwareBoardId, 'hw');
       }
       setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${cleanPort}`);
-    } catch (err) {
-      console.error('[BootloaderFlash] upload failed:', err);
-      const backendDetails = err?.response?.data?.details || err?.response?.data?.error;
-      const displayMsg = backendDetails ? `${err.message}\n\n${backendDetails}` : (err?.message || 'Unknown error');
-      setHardwareStatus(`Flash failed: ${err?.message}`);
-      alert(`Hardware upload failed:\n${displayMsg}`);
-    } finally {
-      setIsUploadingHardware(false);
+      alert(`Code successfully uploaded to ${hardwareBoardId} on ${cleanPort}!`);
       
-      if (wasConnected && connectFn) {
+      // Auto-connect after successful flash
+      if (connectFn) {
         setTimeout(async () => {
           try {
             await connectFn(true); // useLastPort = true
@@ -115,6 +123,14 @@ export function useHardwareFlashing({
           }
         }, 1200); // Give bootloader time to restart user application before reconnecting
       }
+    } catch (err) {
+      console.error('[BootloaderFlash] upload failed:', err);
+      const backendDetails = err?.response?.data?.details || err?.response?.data?.error;
+      const displayMsg = backendDetails ? `${err.message}\n\n${backendDetails}` : (err?.message || 'Unknown error');
+      setHardwareStatus(`Flash failed: ${err?.message}`);
+      alert(`Hardware upload failed:\n${displayMsg}`);
+    } finally {
+      setIsUploadingHardware(false);
     }
   }, [
     hardwareBoardId,
