@@ -2524,6 +2524,7 @@ export default function SimulatorPage() {
       compileUnit.mainCode || sourceCode,
       ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
       BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
@@ -2531,7 +2532,7 @@ export default function SimulatorPage() {
       if (kind === 'esp32') {
         const startRes = await startEsp32Compile({
           code: compileUnit.mainCode || sourceCode,
-          targetEngine: 'frontend'
+          targetEngine: 'hardware'
         });
         if (!startRes || (!startRes.jobId && !startRes.buildId)) {
           throw new Error('Failed to start ESP32 compilation.');
