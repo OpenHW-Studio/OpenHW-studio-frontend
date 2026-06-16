@@ -6745,8 +6745,12 @@ useEffect(() => {
       await disconnectHardwareSerial();
     }
 
-    await uploadToHardware();
-  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry, runCircuitValidation]);
+    await uploadToHardware({
+      wasConnected: hardwareConnected,
+      disconnectFn: disconnectHardwareSerial,
+      connectFn: connectHardwareSerial,
+    });
+  }, [hardwareConnected, disconnectHardwareSerial, connectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry, runCircuitValidation]);
 
   const handleRun = async () => {
     try {

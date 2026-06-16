@@ -8802,10 +8802,15 @@ loadDemoProject();
       await new Promise(r => setTimeout(r, 3500));
     }
 
-    await uploadToHardware();
+    await uploadToHardware({
+      wasConnected: hardwareConnected,
+      disconnectFn: disconnectHardwareSerial,
+      connectFn: connectHardwareSerial,
+    });
   }, [
     hardwareConnected,
     disconnectHardwareSerial,
+    connectHardwareSerial,
     uploadToHardware,
     setHardwareStatus,
     appendConsoleEntry,
