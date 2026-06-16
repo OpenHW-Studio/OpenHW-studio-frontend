@@ -97,6 +97,7 @@ export function useHardwareFlashing({
         pushSerialRxChunk(`${flashResult.output}\n`, hardwareBoardId, 'hw');
       }
       setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${cleanPort}`);
+      alert(`Code successfully uploaded to ${hardwareBoardId} on ${cleanPort}!`);
     } catch (err) {
       console.error('[BootloaderFlash] upload failed:', err);
       const backendDetails = err?.response?.data?.details || err?.response?.data?.error;
