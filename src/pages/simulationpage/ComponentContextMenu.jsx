@@ -92,12 +92,22 @@ export const ComponentContextMenu = ({
       const currentEnv = resolveComponentAttrString(comp?.attrs, 'env', 'native');
       const isEsp32Cam = comp.type.includes('esp32-cam') || comp.type.includes('esp32_cam') || comp.id.includes('esp32-cam') || comp.id.includes('esp32_cam');
       const currentCamSource = resolveComponentAttrString(comp?.attrs, 'cameraSource', 'webcam');
+      const currentBuilder = resolveComponentAttrString(comp?.attrs, 'builder', 'arduino-cli');
 
       menus.push({
         label: 'Env',
         icon: <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>,
         options: [
-          { label: 'Arduino (None)', active: currentEnv === 'native' || currentEnv === 'ino', onClick: () => updateComponentAttr?.(comp.id, 'env', 'native') },
+          {
+            label: 'Arduino',
+            active: currentEnv === 'native' || currentEnv === 'ino',
+            onClick: () => updateComponentAttr?.(comp.id, 'env', 'native'),
+            submenuHeader: 'BUILDER',
+            submenu: [
+              { label: 'Arduino CLI', active: currentBuilder === 'arduino-cli', onClick: () => updateComponentAttr?.(comp.id, 'builder', 'arduino-cli') },
+              { label: 'ESP-IDF (CMake)', active: currentBuilder === 'esp-idf', onClick: () => updateComponentAttr?.(comp.id, 'builder', 'esp-idf') },
+            ]
+          },
           { label: 'MicroPython', active: currentEnv === 'micropython', onClick: () => updateComponentAttr?.(comp.id, 'env', 'micropython') }
         ]
       });

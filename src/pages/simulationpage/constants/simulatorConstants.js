@@ -2,6 +2,7 @@ import { API_BASE_URL } from '../../../services/simulatorService';
 
 export const BOARD_BAUD_PRESETS = {
   arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
+  arduino_nano: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
   stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
   rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
@@ -9,6 +10,7 @@ export const BOARD_BAUD_PRESETS = {
 
 export const BOARD_DEFAULT_BAUD = {
   arduino_uno: '9600',
+  arduino_nano: '9600',
   esp32: '115200',
   stm32: '115200',
   rp2040: '115200',
@@ -23,6 +25,7 @@ export const SERIAL_LINE_ENDINGS = {
 
 export const BOARD_FQBN = {
   arduino_uno: 'arduino:avr:uno',
+  arduino_nano: 'arduino:avr:nano:cpu=atmega328old',
   esp32: 'esp32:esp32:esp32',
   stm32: 'STMicroelectronics:stm32:GenF1',
   rp2040: 'rp2040:rp2040:rpipico',
@@ -30,6 +33,7 @@ export const BOARD_FQBN = {
 
 export const BOARD_DISPLAY_NAME = {
   arduino_uno: 'Arduino Uno',
+  arduino_nano: 'Arduino Nano (Old Bootloader)',
   esp32: 'ESP32',
   stm32: 'STM32',
   rp2040: 'Raspberry Pi Pico',

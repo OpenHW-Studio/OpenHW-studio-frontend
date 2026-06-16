@@ -11,7 +11,7 @@ const samePoint = (prev, next) => (
   )
 );
 
-const areCanvasWirePropsEqual = (prev, next) => (
+const canvasWirePropsEqual = (prev, next) => (
   prev.wire === next.wire &&
   samePoint(prev.p1, next.p1) &&
   samePoint(prev.p2, next.p2) &&
@@ -21,36 +21,85 @@ const areCanvasWirePropsEqual = (prev, next) => (
   prev.wirepointsEnabled === next.wirepointsEnabled &&
   prev.offset === next.offset &&
   prev.wiresAlwaysOnTop === next.wiresAlwaysOnTop &&
-  prev.isDragging === next.isDragging
+  prev.isDragging === next.isDragging &&
+  prev.theme === next.theme &&
+  prev.isGhost === next.isGhost
 );
 
+const getGlowColor = (color) => {
+  if (!color) return color;
+  const c = color.toLowerCase();
+  if (c === 'black' || c === '#000' || c === '#000000' || c === '#111' || c === '#111111' || c === '#222' || c === '#222222' || c.startsWith('rgb(0') || c === 'brown') {
+    return 'rgba(255, 255, 255, 1)';
+  }
+  if (c.startsWith('#')) {
+    const hex = c.replace('#', '');
+    let r, g, b;
+    if (hex.length === 3) {
+      r = parseInt(hex[0]+hex[0], 16);
+      g = parseInt(hex[1]+hex[1], 16);
+      b = parseInt(hex[2]+hex[2], 16);
+    } else if (hex.length === 6) {
+      r = parseInt(hex.slice(0, 2), 16);
+      g = parseInt(hex.slice(2, 4), 16);
+      b = parseInt(hex.slice(4, 6), 16);
+    }
+    if (r !== undefined && g !== undefined && b !== undefined) {
+      const luminance = (0.299 * r + 0.587 * g + 0.114 * b);
+      if (luminance < 60) return 'rgba(255, 255, 255, 1)';
+    }
+  }
+  return color;
+};
+
 export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false, isDragging = false }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions), [p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions]);
-  const isOrphaned = p1.isFallback || p2.isFallback;
+  const wirePath = useMemo(() => {
+    try {
+      return buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions);
+    } catch (e) {
+      return '';
+    }
+  }, [p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions]);
+  const isOrphaned = p1?.isFallback || p2?.isFallback;
 
   // Logic:
   // - If forced to top: non-selected wires use 0.6 opacity/1.5px (Feedback)
   // - If at bottom: non-selected wires use 1.0 opacity/2.0px (Normal)
   const useFeedback = wiresAlwaysOnTop && !isSelected;
+  const strokeColor = isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color));
+  const glowColor = getGlowColor(strokeColor);
+
+  // Safely compute wire points for handles
+  const wirePointsForHandles = useMemo(() => {
+    if (!isSelected) return [];
+    try {
+      const pts = getWirePoints(p1, e1, e2, p2, wire.waypoints, offset);
+      return Array.isArray(pts) ? pts.filter(pt => pt && typeof pt.x === 'number' && typeof pt.y === 'number' && isFinite(pt.x) && isFinite(pt.y)) : [];
+    } catch (e) {
+      return [];
+    }
+  }, [isSelected, p1, e1, e2, p2, wire.waypoints, offset]);
 
   return (
     <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
       <path id={`wire-path-hit-${wire.id}`} d={wirePath} stroke="transparent" strokeWidth={16} fill="none" style={{ pointerEvents: 'stroke' }} />
       <path id={`wire-path-ui-${wire.id}`} d={wirePath}
-        stroke={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))}
+        stroke={strokeColor}
         strokeWidth={isSelected ? 2.5 : (useFeedback ? 1.8 : 2.0)}
         fill="none"
         strokeDasharray={isSelected || wire.isNew || isOrphaned ? "6 4" : "none"}
         strokeLinecap="round"
         opacity={useFeedback ? 0.75 : 1.0}
-        style={{ animation: (wire.isNew || isOrphaned) ? 'autofixWirePulse 1.5s infinite linear' : 'none' }}
+        style={{ 
+          animation: (wire.isNew || isOrphaned) ? 'autofixWirePulse 1.5s infinite linear' : 'none',
+          filter: theme === 'dark' ? `drop-shadow(0 0 2px ${glowColor}) drop-shadow(0 0 6px ${glowColor})` : 'none'
+        }}
       />
-      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
-      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color))} opacity={useFeedback ? 0.8 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, pt, i, arr) => {
+      <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={strokeColor} opacity={useFeedback ? 0.8 : 1} />
+      <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={strokeColor} opacity={useFeedback ? 0.8 : 1} />
+      {isSelected && wirePointsForHandles.reduce((acc, pt, i, arr) => {
         // Waypoint Handles (Corners)
         if (i > 0 && i < arr.length - 1) {
-          const isCorner = i > 1 && i < arr.length - 2; // Simple heuristic for now
           acc.push(
             <circle key={`wp-${i}`} cx={pt.x} cy={pt.y} r={isSelected ? 5 : 3}
               fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
@@ -69,28 +118,30 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
         // Segment Handles (Middles)
         if (i < arr.length - 1) {
           const a = arr[i], b = arr[i + 1];
-          const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-          if (segLen >= 20) {
-            const isHoriz = Math.abs(b.y - a.y) < 1;
-            const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-            acc.push(
-              <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
-                fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
-                stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
-                opacity={isSelected ? 1 : 0.55}
-                style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-                title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-                onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr, 'segment')}
-                onClick={ev => ev.stopPropagation()}
-              />
-            );
+          if (a && b) {
+            const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+            if (segLen >= 20 && isFinite(segLen)) {
+              const isHoriz = Math.abs(b.y - a.y) < 1;
+              const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+              acc.push(
+                <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
+                  fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
+                  stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
+                  opacity={isSelected ? 1 : 0.55}
+                  style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
+                  title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
+                  onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr, 'segment')}
+                  onClick={ev => ev.stopPropagation()}
+                />
+              );
+            }
           }
         }
         return acc;
       }, [])}
     </g>
   );
-}, areCanvasWirePropsEqual);
+}, canvasWirePropsEqual);
 
 const areCanvasComponentPropsEqual = (prev, next) => (
   prev.comp === next.comp &&

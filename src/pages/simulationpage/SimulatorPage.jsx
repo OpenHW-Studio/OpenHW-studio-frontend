@@ -25,45 +25,18 @@ import {
   fetchPublicInstalledComponents,
   fetchComponentsVersion,
   API_BASE_URL,
-} from "../../services/simulatorService.js";
-import {
-  getCachedComponents,
-  getCachedServerHash,
-  setCachedComponents,
-  clearComponentCache,
-} from "../../services/componentCache.js";
-import {
-  getMyAssignmentSubmission,
-  submitAssignment,
-} from "../../services/classroomService.js";
-import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
-import StudentAssignmentModal from "../../components/teacher/class-detail/StudentAssignmentModal.jsx";
-import {
-  getCachedHex,
-  setCachedHex,
-  enqueueComponent,
-  getQueuedComponents,
-  dequeueComponent,
-} from "../../services/offlineCache.js";
-import {
-  saveProject,
-  loadProject,
-  listProjects,
-  deleteProject,
-  renameProject,
-  generateProjectId,
-  formatProjectDate,
-} from "../../services/projectStore.js";
-import html2canvas from "html2canvas";
-import JSZip from "jszip";
-import {
-  GENERATED_ROOT_FILE_IDS,
-  fileExt,
-  isFileDisabled,
-  normalizeProjectFiles,
-  getBoardCompileFiles as getBoardCompileFilesShared,
-  extractProjectMetaFromPng,
-} from "../../utils/projectCompilerUtils";
+  startEsp32Compile,
+  getEsp32CompileStatus
+} from '../../services/simulatorService.js'
+import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
+import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
+import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
+import StudentAssignmentModal from '../../components/teacher/class-detail/StudentAssignmentModal.jsx'
+import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
+import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
+import html2canvas from 'html2canvas'
+import JSZip from 'jszip';
+import { GENERATED_ROOT_FILE_IDS, fileExt, isFileDisabled, normalizeProjectFiles, getBoardCompileFiles as getBoardCompileFilesShared, extractProjectMetaFromPng } from '../../utils/projectCompilerUtils';
 
 // Modular Imports
 import { TopToolbox } from "./TopToolbox";
@@ -126,6 +99,7 @@ import { SimulatorRuntimePanel } from "./components/SimulatorRuntimePanel";
 import { CanvasBottomControls } from "./components/CanvasBottomControls";
 import { F1MenuOverlay } from "./components/F1MenuOverlay";
 import AutofixPreviewPanel from "../../components/AutofixPreviewPanel.jsx";
+import GuidedProjectPopup from "../../components/student/GuidedProjectPopup.jsx";
 
 import * as EmulatorComponents from "@openhw/emulator";
 
@@ -234,7 +208,7 @@ import "prismjs/themes/prism-tomorrow.css";
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5001/examples" : "/examples");
+  (import.meta.env.DEV ? "http://localhost:5000/examples" : "/examples");
 const EDIT_COPY_KEY = "openhw_edit_copy";
 const EDIT_COPY_PAYLOAD_PREFIX = "openhw_edit_copy_payload_";
 const RP2040_SIM_PROTOCOL_VERSION = "rp2040-sim-uart0-v4";
@@ -242,7 +216,13 @@ const UNSAFE_DYNAMIC_CODE_PATTERN =
   /\b(?:importScripts|XMLHttpRequest|WebSocket|EventSource|SharedWorker|Worker|navigator\.sendBeacon|document\.cookie|localStorage|sessionStorage|indexedDB)\b|(?:\bfetch\s*\()|(?:\beval\s*\()|(?:\bnew\s+Function\b)/i;
 
 function assertSafeDynamicModule(code, label) {
-  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(String(code || ""))) {
+  const cleanCode = String(code || '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(?:^|[^:])\/\/[^\r\n]*/g, '')
+    .replace(/'(?:[^'\\]|\\.)*'/g, '')
+    .replace(/"(?:[^"\\]|\\.)*"/g, '')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '');
+  if (UNSAFE_DYNAMIC_CODE_PATTERN.test(cleanCode)) {
     throw new Error(`${label} uses blocked browser APIs in sandbox mode`);
   }
 }
@@ -267,7 +247,195 @@ function syncNextIds(components, wires) {
   nextWireId = max + 1;
 }
 
-export function SimulatorPage({ gamificationMode = false }) {
+const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
+  let newWires = [...currentWires];
+
+  const getPinX = (c, p) => {
+    if (!p) return 0;
+    if (p.x !== undefined) return p.x;
+    if (c.type.includes('pico')) {
+      const n = parseInt(p.id);
+      if (!isNaN(n)) return n <= 20 ? 0 : (c.w || 60);
+    }
+    return (c.w || 60) / 2;
+  };
+
+  const getPinY = (c, p) => {
+    if (!p) return 0;
+    if (p.y !== undefined) return p.y;
+    return (c.h || 60) / 2;
+  };
+
+  const getBestPowerPins = (comp, bb) => {
+    const pins = LOCAL_PIN_DEFS[comp.type] || [];
+    const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+    
+    const bbVccPins = bbPins.filter(p => p.id.startsWith('top_vcc') || p.id.startsWith('bottom_vcc') || p.id === 't+' || p.id === 'b+' || p.id === 'VCC' || p.id === '5V');
+    const bbGndPins = bbPins.filter(p => p.id.startsWith('top_gnd') || p.id.startsWith('bottom_gnd') || p.id === 't-' || p.id === 'b-' || p.id === 'GND');
+
+    const isOccupied = (pinId) => newWires.some(w => w.from === `${bb.id}:${pinId}` || w.to === `${bb.id}:${pinId}`);
+    
+    const availableBbVccPins = bbVccPins.filter(p => !isOccupied(p.id));
+    const availableBbGndPins = bbGndPins.filter(p => !isOccupied(p.id));
+
+    const finalBbVccPins = availableBbVccPins.length > 0 ? availableBbVccPins : (bbVccPins.length > 0 ? [bbVccPins[0]] : []);
+    const finalBbGndPins = availableBbGndPins.length > 0 ? availableBbGndPins : (bbGndPins.length > 0 ? [bbGndPins[0]] : []);
+
+    if (finalBbVccPins.length === 0 || finalBbGndPins.length === 0) return null;
+
+    const vccPins = [];
+    const gndPins = [];
+    
+    pins.forEach(pin => {
+      const cats = getPinCategory(pin.id, pin.description || '', comp.type) || [];
+      if (cats.includes('POWER') || cats.includes('VIN')) vccPins.push(pin);
+      if (cats.includes('GND')) gndPins.push(pin);
+    });
+
+    // Force all Arduino boards (Uno, Mega, Nano, etc.) to use 5V by eliminating the 3.3V pin from consideration
+    if (comp.type.includes('arduino')) {
+      for (let i = vccPins.length - 1; i >= 0; i--) {
+        const idAndDesc = ((vccPins[i].id || '') + ' ' + (vccPins[i].description || '')).toUpperCase();
+        if (idAndDesc.includes('3.3') || idAndDesc.includes('3V3')) {
+          vccPins.splice(i, 1);
+        }
+      }
+    }
+
+    if (vccPins.length === 0 && gndPins.length === 0) return null;
+
+    let bestScore = Infinity;
+    let bestPair = { vcc: vccPins[0] || null, gnd: gndPins[0] || null, bbVcc: finalBbVccPins[0].id, bbGnd: finalBbGndPins[0].id };
+
+    const vccList = vccPins.length > 0 ? vccPins : [null];
+    const gndList = gndPins.length > 0 ? gndPins : [null];
+
+
+    vccList.forEach(vcc => {
+      const vccX = vcc ? comp.x + getPinX(comp, vcc) : 0;
+      const vccY = vcc ? comp.y + getPinY(comp, vcc) : 0;
+      
+      let voltageType = null;
+      if (vcc) {
+        const idAndDesc = ((vcc.id || '') + ' ' + (vcc.description || '')).toUpperCase();
+        if (idAndDesc.includes('3.3') || idAndDesc.includes('3V3')) voltageType = '3.3V';
+        else if (idAndDesc.includes('5V')) voltageType = '5V';
+      }
+
+      gndList.forEach(gnd => {
+        const gndX = gnd ? comp.x + getPinX(comp, gnd) : 0;
+        const gndY = gnd ? comp.y + getPinY(comp, gnd) : 0;
+        
+        finalBbVccPins.forEach(bbVcc => {
+          const bbVccX = bb.x + (bbVcc.x || 0);
+          const bbVccY = bb.y + (bbVcc.y || 0);
+          const distToBbVcc = vcc ? Math.hypot(vccX - bbVccX, vccY - bbVccY) : 0;
+
+          finalBbGndPins.forEach(bbGnd => {
+            const bbGndX = bb.x + (bbGnd.x || 0);
+            const bbGndY = bb.y + (bbGnd.y || 0);
+            const distToBbGnd = gnd ? Math.hypot(gndX - bbGndX, gndY - bbGndY) : 0;
+
+            const pinDist = (vcc && gnd) ? Math.hypot(vccX - gndX, vccY - gndY) : 0;
+            
+            let score = (pinDist * 5) + distToBbVcc + distToBbGnd;
+
+            // Offset the wires diagonally so they don't overlap. Always shift in the same direction so consecutive components don't interleave/criss-cross.
+            if (vcc && gnd && bbVccX >= bbGndX) {
+              score += 100;
+            }
+
+            if (voltageType === '3.3V' && (bbVcc.id.startsWith('bottom_') || bbGnd.id.startsWith('bottom_'))) {
+              score += 5000;
+            } else if (voltageType === '5V' && (bbVcc.id.startsWith('top_') || bbGnd.id.startsWith('top_'))) {
+              score += 5000;
+            }
+
+            if (score < bestScore) {
+              bestScore = score;
+              bestPair = { vcc, gnd, bbVcc: bbVcc.id, bbGnd: bbGnd.id };
+            }
+          });
+        });
+      });
+    });
+
+    return bestPair;
+  };
+
+  const connectCompToBb = (comp, bb) => {
+    const pair = getBestPowerPins(comp, bb);
+    if (!pair) return;
+
+    const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+
+    const makeCleanWaypoints = (compPin, bbPinId) => {
+      const cx = comp.x + getPinX(comp, compPin);
+      const cy = comp.y + getPinY(comp, compPin);
+      const bbPinDef = bbPins.find(p => p.id === bbPinId);
+      const bx = bb.x + (bbPinDef?.x || 0);
+      const by = bb.y + (bbPinDef?.y || 0);
+      // Clean L-shape: go vertically to the breadboard rail Y, then horizontally
+      if (Math.abs(cy - by) > Math.abs(cx - bx)) {
+        return [{ x: cx, y: by, _corner: true }];
+      }
+      // If mostly horizontal, go horizontally first then vertically
+      return [{ x: bx, y: cy, _corner: true }];
+    };
+
+    if (pair.vcc) {
+      const alreadyWired = newWires.some(w => 
+        w.from === `${comp.id}:${pair.vcc.id}` || w.to === `${comp.id}:${pair.vcc.id}`
+      );
+      if (!alreadyWired) {
+        // Detect voltage type for wire color: orange for 3.3V, red for 5V
+        const vccIdDesc = ((pair.vcc.id || '') + ' ' + (pair.vcc.description || '')).toUpperCase();
+        const is3v3 = vccIdDesc.includes('3.3') || vccIdDesc.includes('3V3');
+        newWires.push({
+          id: `w${nextWireId++}`,
+          from: `${comp.id}:${pair.vcc.id}`,
+          to: `${bb.id}:${pair.bbVcc}`,
+          color: is3v3 ? '#f97316' : 'red',
+          isBelow: false,
+          waypoints: makeCleanWaypoints(pair.vcc, pair.bbVcc)
+        });
+      }
+    }
+    if (pair.gnd) {
+      const alreadyWired = newWires.some(w => 
+        w.from === `${comp.id}:${pair.gnd.id}` || w.to === `${comp.id}:${pair.gnd.id}`
+      );
+      if (!alreadyWired) {
+        newWires.push({
+          id: `w${nextWireId++}`,
+          from: `${comp.id}:${pair.gnd.id}`,
+          to: `${bb.id}:${pair.bbGnd}`,
+          color: 'black',
+          isBelow: false,
+          waypoints: makeCleanWaypoints(pair.gnd, pair.bbGnd)
+        });
+      }
+    }
+  };
+
+  if (isBreadboardType(newComp.type)) {
+    existingComponents.forEach(comp => {
+      if (!isBreadboardType(comp.type)) {
+        connectCompToBb(comp, newComp);
+      }
+    });
+  } else {
+    // If a new component is added, find the first breadboard and wire to it
+    const bb = existingComponents.find(c => isBreadboardType(c.type));
+    if (bb) {
+      connectCompToBb(newComp, bb);
+    }
+  }
+
+  return newWires;
+};
+
+export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const {
     isAuthenticated,
     isAdminAuthenticated,
@@ -289,6 +457,11 @@ export function SimulatorPage({ gamificationMode = false }) {
     liveCode = "",
   } = useParams();
   const location = useLocation();
+  const [guidedProjectState, setGuidedProjectState] = useState(() => {
+    if (location.state?.guidedProject) return { project: location.state.guidedProject, levelColor: location.state.levelColor || '#22c55e' }
+    return null
+  })
+  const [activeBoard, setActiveBoard] = useState('arduino')
   const assessmentParams = useMemo(
     () => new URLSearchParams(location.search),
     [location.search],
@@ -320,6 +493,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     currentLevelData,
     nextLevel,
     xpProgress,
+    unlockedComponents,
   } = typeof useGamification === "function" ? useGamification() : {};
   const gamProject = useMemo(
     () =>
@@ -348,6 +522,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       "openhw-rgb-led": "rgb-led",
       "wokwi-ntc-temperature-sensor": "dht11",
       "openhw-ntc-temperature-sensor": "dht11",
+      "wokwi-dht22": "dht22",
+      "openhw-dht22": "dht22",
       "wokwi-hc-sr04": "ultrasonic",
       "openhw-hc-sr04": "ultrasonic",
       "wokwi-servo": "servo",
@@ -443,12 +619,14 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   const isPaletteItemLocked = useCallback(
     (itemType) => {
+      // Only lock components for students in gamification mode
       if (!gamificationMode) return false;
+      if (activeUser?.role !== 'student') return false;
       const compId = WOKWI_TO_COMP_ID[itemType];
       if (!compId) return false;
-      return isUnlocked ? !isUnlocked(compId) : false;
+      return isUnlocked ? !isUnlocked(itemType) : false;
     },
-    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID],
+    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID, activeUser?.role],
   );
 
   const gamProjectComponents = useMemo(() => {
@@ -459,7 +637,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         compId && typeof COMPONENT_MAP !== "undefined"
           ? COMPONENT_MAP[compId]
           : null;
-      const isLocked = compId && isUnlocked ? !isUnlocked(compId) : false;
+      const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(c.type) : false;
       return { ...c, compId, compDef, isLocked };
     });
   }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
@@ -467,7 +645,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   const gamLockedCount = gamProjectComponents.filter(
     (c) => c.isLocked && c.compId,
   ).length;
-  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : true;
+  const gamAllUnlockedGlobally = unlockedComponents === '*';
+  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : gamAllUnlockedGlobally;
 
   const handleAssessmentSubmit = async () => {
     if (!assessmentMode && !gamificationMode) return;
@@ -487,11 +666,17 @@ export function SimulatorPage({ gamificationMode = false }) {
         wires,
         code,
       };
-      sessionStorage.setItem(
-        `openhw_assessment_submission:${assessmentName}`,
-        JSON.stringify(payload),
-      );
-      navigate(`/${assessmentName}/assessment`);
+      sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
+      // Preserve classId when navigating to assessment page to maintain class context
+      const targetPath = classId
+        ? `/${assessmentName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
     } finally {
       setIsSubmittingAssessment(false);
     }
@@ -533,6 +718,45 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [components, setComponents] = useState([]);
   const [wires, setWires] = useState([]);
 
+  const [isLoadingGuidedSchema, setIsLoadingGuidedSchema] = useState(false)
+
+  const doLoadGuidedSchema = (schema, label) => {
+    setIsLoadingGuidedSchema(true)
+    applyImportedProjectMeta(schema, label)
+    setTimeout(() => setIsLoadingGuidedSchema(false), 800)
+  }
+
+  const lastLoadedSlugRef = useRef(null)
+  useEffect(() => {
+    const project = guidedProjectState?.project
+    const slug = project?.slug || (gamificationMode ? projectName : null)
+
+    if (!slug || lastLoadedSlugRef.current === slug) return
+    lastLoadedSlugRef.current = slug
+
+    const loadFromSchema = () => {
+      if (project?.schemas?.arduino) {
+        doLoadGuidedSchema(project.schemas.arduino, 'Guided Project')
+      } else {
+        setIsLoadingGuidedSchema(false)
+      }
+    }
+
+    const tryLoadFromPng = async () => {
+      const pngUrl = `${EXAMPLES_BASE_URL}/${slug}/circuit.png`
+      const res = await fetch(pngUrl)
+      if (!res.ok) throw new Error('PNG not found')
+      const buf = await res.arrayBuffer()
+      const meta = extractProjectMetaFromPng(new Uint8Array(buf))
+      applyImportedProjectMeta(meta, 'Guided Project')
+    }
+
+    setIsLoadingGuidedSchema(true)
+    tryLoadFromPng()
+      .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
+      .catch(() => loadFromSchema())
+  }, [guidedProjectState, gamificationMode, projectName])
+
   const [history, setHistory] = useState({ past: [], future: [] });
   const [selected, setSelected] = useState(null); // comp or wire id
   const [wireStart, setWireStart] = useState(null); // { compId, pinId, pinLabel, x, y }
@@ -551,13 +775,22 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [blocklyXml, setBlocklyXml] = useState("");
   const [compContextMenu, setCompContextMenu] = useState(null); // { x, y, compId }
   const [renameState, setRenameState] = useState({ id: null, x: 0, y: 0 });
-  const [valueState, setValueState] = useState({
-    id: null,
-    x: 0,
-    y: 0,
-    key: "value",
+  const [valueState, setValueState] = useState({ id: null, x: 0, y: 0, key: 'value' });
+  const [showEngineSelector, setShowEngineSelector] = useState(false)
+  const [esp32SimulationMode, setEsp32SimulationMode] = useState(() => {
+    try {
+      return localStorage.getItem('openhw.esp32.simulationMode') || 'qemu';
+    } catch (_) {
+      return 'qemu';
+    }
   });
-  const [showEngineSelector, setShowEngineSelector] = useState(false);
+
+  const updateEsp32SimulationMode = useCallback((mode) => {
+    setEsp32SimulationMode(mode);
+    try {
+      localStorage.setItem('openhw.esp32.simulationMode', mode);
+    } catch (_) {}
+  }, []);
 
   useEffect(() => {
     if (navigator.gpu) {
@@ -668,7 +901,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [isPinMappingExpanded, setIsPinMappingExpanded] = useState(false);
   const [pendingPinColors, setPendingPinColors] = useState({}); // { [pinIdStr]: color }
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [wiresAlwaysOnTop, setWiresAlwaysOnTop] = useState(false);
+  const [wiresAlwaysOnTop, setWiresAlwaysOnTop] = useState(true);
 
   // Reset Pin Mapping expansion when a new component is selected
   useEffect(() => {
@@ -845,6 +1078,17 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [isCompiling, setIsCompiling] = useState(false);
   const [isBooting, setIsBooting] = useState(false); // TODO: Declare booting state tracking
   const [isPaused, setIsPaused] = useState(false);
+  /** true while firmware is in deep/light sleep — shows a sleeping badge in UI */
+  const [isDeviceSleeping, setIsDeviceSleeping] = useState(false);
+
+  // ── I2S Audio playback (Web Audio API) ────────────────────────────────────
+  // The AudioContext is lazily created on first I2S_AUDIO message so it starts
+  // inside a user-gesture context (the Run button click).
+  // i2sNextScheduledTimeRef: { [port]: number } — gapless scheduling clock per I2S port.
+  // This mirrors exactly how the Buzzer component works, but for streaming PCM.
+  const i2sAudioCtxRef = useRef(null);
+  const i2sNextScheduledTimeRef = useRef({});
+
   const [protocolLogs, setProtocolLogs] = useState([]);
   const [healthScore, setHealthScore] = useState(100);
   const protocolAnalyzerRef = useRef(new SharedProtocolAnalyzer());
@@ -1314,7 +1558,11 @@ export function SimulatorPage({ gamificationMode = false }) {
         event?.type === "input" &&
         event.value !== undefined
       ) {
-        updateComponentAttr(comp.id, "value", event.value);
+        if (comp.type === "openhw-hc-sr04" || comp.type === "wokwi-hc-sr04") {
+          updateComponentAttr(comp.id, "distance", event.value);
+        } else {
+          updateComponentAttr(comp.id, "value", event.value);
+        }
       }
 
       if (workerRef.current && isRunning) {
@@ -1364,6 +1612,20 @@ export function SimulatorPage({ gamificationMode = false }) {
   }, [notifyLiveOopStateListeners]);
 
   const workerRef = useRef(null);
+  
+  useEffect(() => {
+    const handleDownloadPcap = (e) => {
+      const { componentId } = e.detail;
+      if (isRunning && workerRef.current) {
+        workerRef.current.postMessage({
+          type: 'DOWNLOAD_PCAP',
+          boardId: componentId
+        });
+      }
+    };
+    window.addEventListener('network:download-pcap', handleDownloadPcap);
+    return () => window.removeEventListener('network:download-pcap', handleDownloadPcap);
+  }, [isRunning]);
   const pushSerialRxChunkRef = useRef(null);
   const runStartGuardRef = useRef(false);
   const {
@@ -1393,6 +1655,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     isRunning,
     getLiveOopStateSnapshot,
     updateLiveOopStates,
+    esp32SimulationMode
   });
   const applyLiveNeopixelData = useCallback((neopixelState) => {
     liveNeopixelDataRef.current = neopixelState || {};
@@ -1838,6 +2101,10 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   useEffect(() => {
     if (gamificationMode) return;
+    if (guidedProjectState) {
+      loadLibraries();
+      return;
+    }
 
     let cancelled = false;
     let deferTimer = null;
@@ -1872,15 +2139,41 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
     };
 
-    loadDemoProject();
-    return () => {
-      cancelled = true;
-      if (deferTimer !== null) window.clearTimeout(deferTimer);
-    };
-  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+loadDemoProject();
+     return () => {
+       cancelled = true;
+       if (deferTimer !== null) window.clearTimeout(deferTimer);
+     };
+   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Offline component queue: flush to backend when connectivity restores ──
-  useEffect(() => {
+// ── Load circuit data from bankProjectCriteria (opened from Project Bank Editor) ──
+    useEffect(() => {
+      if (!returnTo) return;
+
+      // Check if we have circuit data from Project Bank Editor
+      const stored = localStorage.getItem("bankProjectCriteria");
+      if (!stored) return;
+
+      try {
+        const parsed = JSON.parse(stored);
+        // Only load if it has the full payload format (components/connections)
+        if (parsed && Array.isArray(parsed.components) && Array.isArray(parsed.connections)) {
+          const { components: normalizedComponents, wires: normalizedConnections } =
+            normalizeImportedCircuitData(parsed.components, parsed.connections);
+
+          setBoard(parsed.board || "arduino_uno");
+          setComponents(normalizedComponents);
+          setWires(normalizedConnections);
+          setCode(parsed.code || "");
+          syncNextIds(normalizedComponents, normalizedConnections);
+        }
+      } catch (e) {
+        console.warn("[BankProjectCriteria] Failed to parse circuit data:", e);
+      }
+    }, [returnTo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Offline component queue: flush to backend when connectivity restores ──
+    useEffect(() => {
     const drainQueue = async () => {
       const queued = await getQueuedComponents();
       if (!queued.length) return;
@@ -1904,11 +2197,13 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => window.removeEventListener("online", drainQueue);
   }, []);
 
-  // ── Sync backend custom components (cache-first, version-checked) ──────────
+// ── Sync backend custom components (cache-first, version-checked) ──────────
   // On every page load:
   //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
   //  2. GET /api/components/version (~40 bytes) → compare hash
   //  3. Only fetch + transpile when the hash actually changed
+  //  Note: In Adventure/Classroom mode, clear cache to ensure component filtering
+  //  is based on fresh unlock data from the API.
   useEffect(() => {
     let cancelled = false;
 
@@ -3545,6 +3840,26 @@ export function SimulatorPage({ gamificationMode = false }) {
     }
   }, []);
 
+  // ── Smart Prefetching for Simulation Runners ───────────────────────────────
+  const preloadedBoardsRef = useRef(new Set());
+  useEffect(() => {
+    if (!components) return;
+    const currentBoardTypes = components
+      .filter((c) => /arduino|esp32|stm32|pico|rp2040|attiny/i.test(c.type))
+      .map((c) => c.type);
+    
+    const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
+    if (newTypesToPreload.length > 0) {
+      newTypesToPreload.forEach(t => preloadedBoardsRef.current.add(t));
+      const prefetchWorker = new Worker(new URL("../../worker/simulation.worker.ts", import.meta.url), { type: "module" });
+      const dummyComponents = newTypesToPreload.map(type => ({ type }));
+      prefetchWorker.postMessage({ type: "PRELOAD_RUNNERS", components: dummyComponents });
+      
+      const timer = setTimeout(() => prefetchWorker.terminate(), 5000);
+      return () => { clearTimeout(timer); prefetchWorker.terminate(); };
+    }
+  }, [components]);
+
   // ── Validation toast auto-dismiss ───────────────────────────────────────────
   useEffect(() => {
     if (!validationToast) return undefined;
@@ -3734,10 +4049,12 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   // ── Serial auto-scroll ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!serialPaused && serialOutputRef.current) {
+    const activeAutoscroll = boardAutoscrolls[serialBoardFilter] ?? true;
+    const activePaused = boardPausedStates[serialBoardFilter] ?? serialPaused;
+    if (activeAutoscroll && !activePaused && serialOutputRef.current) {
       serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
     }
-  }, [serialHistory, serialPaused]);
+  }, [serialHistory, serialPaused, serialBoardFilter, boardAutoscrolls, boardPausedStates]);
 
   useEffect(() => {
     serialPausedRef.current = serialPaused;
@@ -4047,7 +4364,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           kind: "code",
           boardId: bc.id,
           boardKind: kind,
-          content: libraries.join("\n"),
+          content: `# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n`,
           dirty: false,
         });
       });
@@ -4783,20 +5100,89 @@ export function SimulatorPage({ gamificationMode = false }) {
                   console.log(
                     `[Autonomous] Auto-installing library: ${libName}`,
                   );
-                  await handleInstallLibrary(libName);
+                  try {
+                    await handleInstallLibrary(libName);
+                  } catch (err) {
+                    console.warn(
+                      `[Autonomous] API install failed for ${libName}, falling back to library.txt:`,
+                      err,
+                    );
+                  }
                 }
+              }
+              // Fallback: write libraries to library.txt for runtime resolution
+              const boardComp = result.components.find((c) =>
+                isProgrammableBoardType(c.type),
+              );
+              if (boardComp) {
+                const libPath = `project/${boardComp.id}/library.txt`;
+                setProjectFiles((prev) => {
+                  const fileObj = prev.find((f) => f.id === libPath);
+                  let currentContent = fileObj
+                    ? fileObj.content || ''
+                    : '# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n';
+                  const lines = currentContent.split('\n').map((l) => l.trim());
+                  const existingSet = new Set(
+                    lines
+                      .filter((l) => l && !l.startsWith('#'))
+                      .map((l) => l.split('@')[0].trim().toLowerCase()),
+                  );
+                  const linesToAdd = [];
+                  plan.libraries.forEach((lib) => {
+                    const cleanLib = String(lib).trim();
+                    const libNameOnly = cleanLib
+                      .split('@')[0]
+                      .trim()
+                      .toLowerCase();
+                    if (!existingSet.has(libNameOnly)) {
+                      linesToAdd.push(cleanLib);
+                    }
+                  });
+                  if (linesToAdd.length > 0) {
+                    const newLines = [...currentContent.split('\n')];
+                    linesToAdd.forEach((lib) => {
+                      if (
+                        newLines.length > 0 &&
+                        newLines[newLines.length - 1].trim() !== ''
+                      ) {
+                        newLines.push(lib);
+                      } else {
+                        newLines.splice(newLines.length, 0, lib);
+                      }
+                    });
+                    const nextContent = newLines.join('\n');
+                    return prev.map((f) =>
+                      f.id === libPath
+                        ? { ...f, content: nextContent, dirty: true }
+                        : f,
+                    );
+                  }
+                  return prev;
+                });
               }
             }
 
             // ── Restore Code Merging ──
             if (plan.code_snippet) {
-              setEditorCode(
-                mergeCodeSnippet(
-                  editorCode,
-                  plan.code_snippet,
-                  plan.reasoning || [],
-                ),
+              const snippetOwnerId = mainCompWithPos.id;
+              const nextCode = mergeCodeSnippet(
+                currentCodeRef.current || code,
+                plan.code_snippet,
+                snippetOwnerId,
+                plan.reasoning || [],
               );
+              setCode(nextCode);
+              if (activeCodeFileId) {
+                setProjectFiles((prev) =>
+                  prev.map((f) =>
+                    f.id === activeCodeFileId
+                      ? { ...f, content: nextCode, dirty: true }
+                      : f,
+                  ),
+                );
+              }
+              setCodeTab("code");
+              setIsPanelOpen(true);
             }
 
             // ── Restore Reasoning Logs ──
@@ -4806,9 +5192,11 @@ export function SimulatorPage({ gamificationMode = false }) {
           }
         } else {
           setComponents((prev) => [...prev, newCompBase]);
+          setWires((prev) => autoConnectPowerRails(newCompBase, components, prev));
         }
       } else {
         setComponents((prev) => [...prev, newCompBase]);
+        setWires((prev) => autoConnectPowerRails(newCompBase, components, prev));
       }
     },
     [
@@ -4909,16 +5297,34 @@ export function SimulatorPage({ gamificationMode = false }) {
     [liveEditingDisabled, addComponentInternal],
   );
 
-  // ── Palette click to add (adds to canvas center) ────────────────────────────
+  // ── Palette click to add (adds to canvas center, offset if overlapping) ──────
   const addComponentAtCenter = useCallback(
     async (item) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const cx =
+      let cx =
         (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
-      const cy =
+      let cy =
         (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
+
+      // Nudge position so new components don't stack exactly on top of existing ones
+      const OFFSET_STEP = 30; // px diagonal offset per overlap
+      const OVERLAP_THRESHOLD = 20; // px — consider "same spot" if within this range
+      const currentComps = componentsRef.current || [];
+      let attempts = 0;
+      while (attempts < 15) {
+        const overlapping = currentComps.some(c => {
+          const compCx = c.x + (c.w || 60) / 2;
+          const compCy = c.y + (c.h || 60) / 2;
+          return Math.abs(compCx - cx) < OVERLAP_THRESHOLD && Math.abs(compCy - cy) < OVERLAP_THRESHOLD;
+        });
+        if (!overlapping) break;
+        cx += OFFSET_STEP;
+        cy += OFFSET_STEP;
+        attempts++;
+      }
+
       await addComponentAt(item, cx, cy);
     },
     [addComponentAt],
@@ -5228,11 +5634,21 @@ export function SimulatorPage({ gamificationMode = false }) {
               newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newX };
             }
           }
+          const finalWaypoints = [];
+          if (newPts[0] && sd.startPts[0] && (newPts[0].x !== sd.startPts[0].x || newPts[0].y !== sd.startPts[0].y)) {
+            finalWaypoints.push({ x: newPts[0].x, y: newPts[0].y, _corner: true });
+          }
+          for (let i = 1; i < newPts.length - 1; i++) {
+            if (newPts[i]) finalWaypoints.push({ x: newPts[i].x, y: newPts[i].y, _corner: true });
+          }
+          const lastIdx = newPts.length - 1;
+          if (lastIdx > 0 && newPts[lastIdx] && sd.startPts[lastIdx] && (newPts[lastIdx].x !== sd.startPts[lastIdx].x || newPts[lastIdx].y !== sd.startPts[lastIdx].y)) {
+            finalWaypoints.push({ x: newPts[lastIdx].x, y: newPts[lastIdx].y, _corner: true });
+          }
+
           wireUpdate = {
             wireId: sd.wireId,
-            cornerWaypoints: newPts
-              .slice(1, -1)
-              .map((pt) => ({ x: pt.x, y: pt.y, _corner: true })),
+            cornerWaypoints: finalWaypoints.filter(pt => pt && isFinite(pt.x) && isFinite(pt.y)),
           };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
@@ -5959,8 +6375,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Logic: If the second pin has a more "specific" color (comms, power, etc.)
         // and the first is generic green, use the specific color.
         const isGeneric = (c) => c === "#2ecc71" || c === "#10b981";
-        const finalColor =
-          !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        let finalColor = !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        if (color1 === 'black' || color2 === 'black') finalColor = 'black';
 
         const newWire = {
           id: `w${nextWireId++}`,
@@ -6121,7 +6537,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     setShowCodeExplorer(true);
   };
 
-  const handleAutoCode = async (compId) => {
+  const handleAutoCode = async (compId, options = {}) => {
+    const { silent = false, openEditor = true } = options;
     console.log("[handleAutoCode] Triggered for component:", compId);
     const comp = components.find((c) => c.id === compId);
     if (!comp) {
@@ -6162,7 +6579,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         "[handleAutoCode] No target board found for component:",
         compId,
       );
-      alert("Component must be wired to a board first to generate code.");
+      if (!silent) alert("Component must be wired to a board first to generate code.");
       return;
     }
 
@@ -6194,24 +6611,75 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           // Inject libraries if any
           if (payload.libraries && payload.libraries.length > 0) {
-            console.log(
-              "[handleAutoCode] Libraries required:",
-              payload.libraries,
-            );
-            alert(
-              `Note: This component requires libraries: ${payload.libraries.join(", ")}.\nPlease ensure they are installed.`,
-            );
+            console.log('[handleAutoCode] Libraries required:', payload.libraries);
+            const libPath = `project/${targetBoardId}/library.txt`;
+            setProjectFiles(prev => {
+              const fileObj = prev.find(f => f.id === libPath);
+              let currentContent = '';
+              if (fileObj) {
+                currentContent = activeCodeFileId === libPath ? code : (fileObj.content || '');
+              } else {
+                currentContent = `# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n`;
+              }
+              const lines = currentContent.split('\n').map(l => l.trim());
+              const existingSet = new Set(
+                lines
+                  .filter(l => l && !l.startsWith('#'))
+                  .map(l => l.split('@')[0].trim().toLowerCase())
+              );
+              const linesToAdd = [];
+              payload.libraries.forEach(lib => {
+                const cleanLib = String(lib).trim();
+                const libNameOnly = cleanLib.split('@')[0].trim().toLowerCase();
+                if (!existingSet.has(libNameOnly)) {
+                  linesToAdd.push(cleanLib);
+                }
+              });
+              if (linesToAdd.length > 0) {
+                const newLines = [...currentContent.split('\n')];
+                linesToAdd.forEach(lib => {
+                  if (newLines.length > 0 && newLines[newLines.length - 1].trim() !== '') {
+                    newLines.push(lib);
+                  } else if (newLines.length > 0 && newLines[newLines.length - 1].trim() === '') {
+                    newLines[newLines.length - 1] = lib;
+                  } else {
+                    newLines.push(lib);
+                  }
+                });
+                const nextContent = newLines.join('\n');
+                if (activeCodeFileId === libPath) {
+                  setCode(nextContent);
+                }
+                if (fileObj) {
+                  return prev.map(f => f.id === libPath ? { ...f, content: nextContent } : f);
+                } else {
+                  return [...prev, {
+                    id: libPath,
+                    path: libPath,
+                    name: 'library.txt',
+                    kind: 'code',
+                    boardId: targetBoardId,
+                    boardKind: boardKind,
+                    content: nextContent,
+                    dirty: true
+                  }];
+                }
+              }
+              return prev;
+            });
           }
 
+          let resolvedTargetFileId = filename;
           setProjectFiles((prev) => {
-            let targetFile = prev.find(
+            let nextFiles = prev;
+            let targetFile = nextFiles.find(
               (f) =>
                 f.boardId === targetBoardId ||
                 f.id === filename ||
                 f.name === filename,
             );
             if (!targetFile) {
-              const codeFiles = prev.filter(
+              const codeFiles = nextFiles.filter(
                 (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
               );
               if (codeFiles.length > 0) {
@@ -6233,15 +6701,16 @@ export function SimulatorPage({ gamificationMode = false }) {
                   }),
                   dirty: false,
                 };
-                prev = [...prev, targetFile];
+                nextFiles = [...nextFiles, targetFile];
               }
             }
+            resolvedTargetFileId = targetFile.id;
 
             console.log(
               "[handleAutoCode] Injecting code into file:",
               targetFile.id,
             );
-            return prev.map((f) => {
+            return nextFiles.map((f) => {
               if (f.id === targetFile.id) {
                 const currentContent =
                   activeCodeFileId === f.id || activeCodeFileId === f.name
@@ -6256,48 +6725,23 @@ export function SimulatorPage({ gamificationMode = false }) {
                 if (activeCodeFileId === targetFile.id) {
                   setCode(newContent);
                 }
-                return { ...f, content: newContent };
+                return { ...f, content: newContent, dirty: true };
               }
               return f;
             });
           });
 
-          setOpenCodeTabs((prevTabs) => {
-            // Re-find the target file ID since state update is asynchronous
-            const targetFile = projectFiles.find(
-              (f) =>
-                f.boardId === targetBoardId ||
-                f.id === filename ||
-                f.name === filename,
-            ) ||
-              projectFiles.filter(
-                (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
-              )[0] || { id: filename };
-            if (!prevTabs.includes(targetFile.id)) {
-              return [...prevTabs, targetFile.id];
-            }
-            return prevTabs;
-          });
-
-          // Re-find to set active
-          setTimeout(() => {
-            const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
-            setActiveCodeFileId((prev) => {
-              const file = (projectFiles || []).find(
-                (f) =>
-                  f.boardId === targetBoardId ||
-                  f.id === filename ||
-                  f.name === filename,
-              ) ||
-                (projectFiles || []).filter(
-                  (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
-                )[0] || { id: filename };
-              return file.id;
-            });
+          if (openEditor) {
+            setOpenCodeTabs((prevTabs) =>
+              prevTabs.includes(resolvedTargetFileId)
+                ? prevTabs
+                : [...prevTabs, resolvedTargetFileId],
+            );
+            setActiveCodeFileId(resolvedTargetFileId);
             setCodeTab("code");
             setIsPanelOpen(true);
             setShowCodeExplorer(true);
-          }, 0);
+          }
         } else {
           console.warn("[handleAutoCode] Worker returned empty snippet.");
         }
@@ -6305,6 +6749,51 @@ export function SimulatorPage({ gamificationMode = false }) {
       worker.terminate();
     };
   };
+
+  useEffect(() => {
+    if (!autoCodingEnabled || isRunning || liveEditingDisabled) return;
+
+    const hasAutocodeSnippet = (compId) =>
+      projectFiles.some((file) =>
+        String(file.content || "").includes(`autocoding for ${compId} start`),
+      );
+
+    const touchesBoard = (compId) => {
+      const visited = new Set();
+      const stack = [compId];
+      while (stack.length > 0) {
+        const current = stack.pop();
+        if (!current || visited.has(current)) continue;
+        visited.add(current);
+        const comp = components.find((c) => c.id === current);
+        if (comp && isProgrammableBoardType(comp.type)) return true;
+        for (const wire of wires) {
+          const [fromComp] = String(wire.from || "").split(":");
+          const [toComp] = String(wire.to || "").split(":");
+          if (fromComp === current && !visited.has(toComp)) stack.push(toComp);
+          if (toComp === current && !visited.has(fromComp)) stack.push(fromComp);
+        }
+      }
+      return false;
+    };
+
+    const timer = window.setTimeout(() => {
+      components
+        .filter((comp) =>
+          !isProgrammableBoardType(comp.type) &&
+          !isBreadboardType(comp.type) &&
+          !isResistorType(comp.type) &&
+          !hasAutocodeSnippet(comp.id) &&
+          touchesBoard(comp.id),
+        )
+        .slice(0, 3)
+        .forEach((comp) => {
+          handleAutoCode(comp.id, { silent: true, openEditor: false });
+        });
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [autoCodingEnabled, components, wires, projectFiles, isRunning, liveEditingDisabled]);
 
   const deleteWire = (id) => {
     if (isRunning || liveEditingDisabled) return;
@@ -7262,7 +7751,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     setCurrentProjectName("Untitled");
     setBoard("arduino_uno");
     setCode(
-      "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n",
+      "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(15000);\n  digitalWrite(13, LOW);\n  delay(15000);\n}\n",
     );
     setComponents([]);
     setWires([]);
@@ -8140,43 +8629,77 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardHex = boardComp?.attrs?.firmwareHex || boardComp?.attrs?.hex;
       if (typeof boardHex === "string" && boardHex.trim()) return boardHex;
 
-      const compileUnit = getBoardCompileFiles(boardComp.id);
-      if (!compileUnit.hasMainFile) {
-        throw new Error(
-          `No enabled .ino file found for ${boardComp.id}. Enable at least one .ino file before uploading.`,
-        );
-      }
-      const sourceCode = compileUnit.mainCode || "";
-      const cacheKeyBoard = `${kind}:${boardComp.id}`;
-      const rp2040Builder =
-        resolveComponentAttrString(
-          boardComp?.attrs,
-          "builder",
-          "arduino-pico",
-        ) || "arduino-pico";
-      const buildEngine = kind === "rp2040" ? rp2040Builder : "arduino-cli";
-      const cacheSource = [
-        sourceCode,
-        ...compileUnit.files.map((f) => `${f.name}\n${f.content || ""}`),
-        fqbn,
-        buildEngine,
-      ].join("\n/*__SPLIT__*/\n");
+    const compileUnit = getBoardCompileFiles(boardComp.id);
+    if (!compileUnit.hasMainFile) {
+      throw new Error(`No enabled .ino file found for ${boardComp.id}. Enable at least one .ino file before uploading.`);
+    }
+    const sourceCode = compileUnit.mainCode || '';
+    const cacheKeyBoard = `${kind}:${boardComp.id}`;
+    const rp2040Builder = resolveComponentAttrString(boardComp?.attrs, 'builder', 'arduino-pico') || 'arduino-pico';
+    const buildEngine = kind === 'rp2040' ? rp2040Builder : 'arduino-cli';
 
-      let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
-      if (!compiled) {
+    const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
+    const librariesTxt = libFile 
+      ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+      : '';
+
+    const cacheSource = [
+      sourceCode,
+      ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+      fqbn,
+      buildEngine,
+      librariesTxt,
+      'targetEngine:hardware'
+    ].join('\n/*__SPLIT__*/\n');
+
+    let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
+    if (!compiled) {
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: sourceCode,
+          libraries_txt: librariesTxt,
+          targetEngine: 'hardware'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
         compiled = await compileCode({
           code: sourceCode,
           files: compileUnit.files,
           sketchName: compileUnit.sketchName,
           fqbn,
-          ...(kind === "rp2040" ? { builder: rp2040Builder } : {}),
+          target: kind,
+          libraries_txt: librariesTxt,
+          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
         });
-        setCachedHex(cacheSource, cacheKeyBoard, compiled);
       }
-      return compiled.hex;
-    },
-    [getBoardCompileFiles],
-  );
+      setCachedHex(cacheSource, cacheKeyBoard, compiled);
+    }
+    return compiled.hex;
+  }, [getBoardCompileFiles, projectFiles, activeCodeFileId, code]);
 
   const {
     hardwareAvailablePorts,
@@ -8270,12 +8793,18 @@ export function SimulatorPage({ gamificationMode = false }) {
         "hardware",
       );
       await disconnectHardwareSerial();
+      await new Promise(r => setTimeout(r, 3500));
     }
 
-    await uploadToHardware();
+    await uploadToHardware({
+      wasConnected: hardwareConnected,
+      disconnectFn: disconnectHardwareSerial,
+      connectFn: connectHardwareSerial,
+    });
   }, [
     hardwareConnected,
     disconnectHardwareSerial,
+    connectHardwareSerial,
     uploadToHardware,
     setHardwareStatus,
     appendConsoleEntry,
@@ -8345,9 +8874,13 @@ export function SimulatorPage({ gamificationMode = false }) {
       const boardPythonFilesMap = {};
       const boardRuntimeEnvMap = {};
       const boardBaudMap = {};
-      const programmableBoards = components.filter((c) =>
-        /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type),
-      );
+      const programmableBoards = components.filter(c => /(arduino|esp32|stm32|rp2040|pico)/i.test(c.type));
+      const hasEsp32 = programmableBoards.some(c => normalizeBoardKind(c.type) === 'esp32');
+      if (hasEsp32) {
+        const engineText = esp32SimulationMode === 'frontend' ? 'Frontend Engine' : 'Backend QEMU';
+        console.log(`[SimulatorPage] Selected ESP32 Emulation Engine: ${engineText}`);
+        appendConsoleEntry('info', `Selected ESP32 Emulation Engine: ${engineText}`, 'simulator');
+      }
 
       const isBackendProxy = await startEsp32Session(programmableBoards);
       const singleProgrammableBoardId =
@@ -8608,6 +9141,11 @@ export function SimulatorPage({ gamificationMode = false }) {
               );
             }
 
+            const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
+            const librariesTxt = libFile 
+              ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+              : '';
+
             const cacheKeyBoard = `${kind}:${boardComp.id}`;
             const builder = configuredBuilder;
             const cacheSource = [
@@ -8616,8 +9154,9 @@ export function SimulatorPage({ gamificationMode = false }) {
               configuredMode,
               targetFqbn,
               nativeCompileSource,
-              ...compileUnit.files.map((f) => `${f.name}\n${f.content || ""}`),
-            ].join("\n/*__SPLIT__*/\n");
+              ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+              librariesTxt,
+            ].join('\n/*__SPLIT__*/\n');
 
             appendConsoleEntry(
               "info",
@@ -8643,7 +9182,10 @@ export function SimulatorPage({ gamificationMode = false }) {
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   builder,
+                  target: kind,
+                  libraries_txt: librariesTxt,
                   ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
@@ -8678,12 +9220,19 @@ export function SimulatorPage({ gamificationMode = false }) {
             continue;
           }
 
+          const libFile = (projectFiles || []).find(f => f.path === `project/${boardComp.id}/library.txt`);
+          const librariesTxt = libFile 
+            ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+            : '';
+
           const cacheKeyBoard = `${kind}:${boardComp.id}`;
           const cacheSource = [
             compileSource,
             targetFqbn,
-            ...compileUnit.files.map((f) => `${f.name}\n${f.content || ""}`),
-          ].join("\n/*__SPLIT__*/\n");
+            ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
+            librariesTxt,
+            kind === 'esp32' ? esp32SimulationMode : '',
+          ].join('\n/*__SPLIT__*/\n');
 
           appendConsoleEntry(
             "info",
@@ -8709,7 +9258,9 @@ export function SimulatorPage({ gamificationMode = false }) {
                 files: compileUnit.files,
                 sketchName: compileUnit.sketchName,
                 fqbn: targetFqbn,
-                ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
+                target: kind,
+                  libraries_txt: librariesTxt,
+                  ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
               });
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
@@ -8742,14 +9293,15 @@ export function SimulatorPage({ gamificationMode = false }) {
       if (!result) {
         const finalCode = useBlocklyCode ? blocklyGeneratedCode : code;
         const fallbackKind = normalizeBoardKind(board);
-        const engine =
-          fallbackKind === "rp2040" ? "arduino-pico" : "arduino-cli";
-        const cacheStr = [finalCode, engine].join("\n/*__SPLIT__*/\n");
-        appendConsoleEntry(
-          "info",
-          `Compiling for ${boardKindToDisplayName(fallbackKind)}...`,
-          "simulator",
-        );
+        const engine = fallbackKind === 'rp2040' ? 'arduino-pico' : 'arduino-cli';
+
+        const libFile = (projectFiles || []).find(f => f.path.endsWith('/library.txt') || f.name === 'library.txt');
+        const librariesTxt = libFile 
+          ? (libFile.id === activeCodeFileId ? code : (libFile.content || '')) 
+          : '';
+
+        const cacheStr = [finalCode, engine, librariesTxt].join('\n/*__SPLIT__*/\n');
+        appendConsoleEntry('info', `Compiling for ${boardKindToDisplayName(fallbackKind)}...`, 'simulator');
 
         const cached = await getCachedHex(cacheStr, board);
         if (cached) {
@@ -8760,7 +9312,9 @@ export function SimulatorPage({ gamificationMode = false }) {
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
-            ...(fallbackKind === "rp2040" ? { builder: "arduino-pico" } : {}),
+            target: fallbackKind,
+            libraries_txt: librariesTxt,
+            ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
           });
           setCachedHex(cacheStr, board, result);
           registerGdbArtifact(board || "default", fallbackKind, result);
@@ -8812,6 +9366,37 @@ export function SimulatorPage({ gamificationMode = false }) {
       workerRef.current = worker;
       // Give port2 to the Simulation Worker (it sends DISPLAY_FRAME here)
       worker.postMessage({ type: "SET_RENDER_PORT", port: simPort }, [simPort]);
+
+      // ── Network Worker: isolated WiFi/IP stack ─────────────────────────────
+      // Create a dedicated network worker so DNS/TCP/UDP I/O is completely
+      // isolated from the RP2040 CPU simulation loop — zero-copy frame transfers.
+      try {
+        const netWorker = new Worker(
+          new URL('../../workers/network.worker.ts', import.meta.url),
+          { type: 'module', name: 'OpenHW-NetWorker' }
+        );
+        const { port1: simNetPort, port2: netWorkerPort } = new MessageChannel();
+        // Give the network worker its command port (receives START_BOARD, FRAME_OUT, etc.)
+        netWorker.postMessage({ type: 'SET_NET_PORT', port: netWorkerPort }, [netWorkerPort]);
+        // Give the sim worker a port to forward Ethernet frames to the network worker
+        // and receive FRAME_IN / WIFI_STATUS / PCAP_DATA back
+        worker.postMessage({ type: 'SET_NET_PORT', port: simNetPort }, [simNetPort]);
+        // Announce any WiFi AP components that are already on the canvas
+        const wifiApComponents = components.filter(c => c.type === 'openhw-wifi-ap' || c.type === 'wokwi-wifi-ap');
+        for (const ap of wifiApComponents) {
+          netWorker.postMessage({
+            type: 'ANNOUNCE_AP',
+            componentId: ap.id,
+            ssid:     ap.attrs?.ssid     ?? 'OpenHW-GUEST',
+            password: ap.attrs?.password ?? '',
+            channel:  Number(ap.attrs?.channel  ?? 6),
+            internet: String(ap.attrs?.internet ?? '1') !== '0',
+          });
+        }
+        console.log('[SimPage] Network Worker started and linked to simulation worker');
+      } catch (netErr) {
+        console.warn('[SimPage] Network Worker failed to start (WiFi will be in-process):', netErr);
+      }
 
       worker.onmessage = async (event) => {
         const msg = event.data;
@@ -9039,13 +9624,62 @@ export function SimulatorPage({ gamificationMode = false }) {
 
           return;
         }
-        if (msg.type === "debug" && msg.category === "rp2040-wireless-stub") {
-          const incomingBoardId = String(msg.boardId || "").trim();
-          const hasKnownBoard =
-            incomingBoardId &&
-            boardComponents.some((b) => b.id === incomingBoardId);
-          const singleBoardFallback =
-            boardComponents.length === 1 ? boardComponents[0]?.id : "";
+        // ── Network Worker: real WiFi stack status (from dedicated network worker) ──
+        if (msg.type === 'wifi_status') {
+          const resolvedBoardId = String(msg.boardId || '').trim() || 'default';
+          const status   = String(msg.status   || 'idle');
+          const ssid     = String(msg.ssid     || '');
+          const ip       = String(msg.ip       || '');
+          const packets  = Number(msg.packetCount || 0);
+          const connected = status === 'connected' || status === 'got_ip';
+
+          liveOopStatesRef.current[resolvedBoardId] = {
+            ...(liveOopStatesRef.current[resolvedBoardId] || {}),
+            wirelessMode:      'full',
+            wirelessStatus:    status,
+            wirelessConnected: connected,
+            wirelessSsid:      ssid,
+            wirelessIp:        ip,
+            wirelessPackets:   packets,
+          };
+          notifyLiveOopStateListeners(resolvedBoardId);
+
+          // Log status changes to console (deduplicated)
+          const sig = `${status}:${ssid}:${ip}`;
+          const lastSig = rp2040WirelessLastLogRef.current.get(resolvedBoardId);
+          if (lastSig !== sig) {
+            rp2040WirelessLastLogRef.current.set(resolvedBoardId, sig);
+            const emoji = status === 'got_ip' ? '🌐' : status === 'connected' ? '📶' : '📡';
+            appendConsoleEntry(
+              connected ? 'info' : 'warn',
+              `${emoji} Pico W WiFi [${resolvedBoardId}] status=${status} ssid=${ssid || '-'} ip=${ip || '-'} packets=${packets}`,
+              'debug',
+            );
+          }
+          return;
+        }
+        // ── Network Worker: PCAP file download ────────────────────────────────────
+        if (msg.type === 'wifi_pcap') {
+          const boardId = String(msg.boardId || 'board');
+          const data = msg.data instanceof ArrayBuffer ? new Uint8Array(msg.data) : null;
+          if (data) {
+            let binary = '';
+            for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
+            const url = `data:application/vnd.tcpdump.pcap;base64,${btoa(binary)}`;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `picow_${boardId}.pcap`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            appendConsoleEntry('info', `📥 PCAP downloaded: picow_${boardId}.pcap (${data.length} bytes)`, 'simulator');
+          }
+          return;
+        }
+        if (msg.type === 'debug' && msg.category === 'rp2040-wireless-stub') {
+          const incomingBoardId = String(msg.boardId || '').trim();
+          const hasKnownBoard = incomingBoardId && boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback = boardComponents.length === 1 ? boardComponents[0]?.id : '';
           const resolvedBoardId = hasKnownBoard
             ? incomingBoardId
             : singleBoardFallback || incomingBoardId || "default";
@@ -9387,6 +10021,13 @@ export function SimulatorPage({ gamificationMode = false }) {
           handleTelemetryStateMessageRef.current(msg);
         }
         if (msg.type === "state") {
+          if (msg.wifi && typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("OPENHW_WIFI_STATS", {
+                detail: { boardId: msg.boardId, ...msg.wifi },
+              })
+            );
+          }
           const boardIdKey = String(msg.boardId || "default");
           const boardComp =
             components.find((c) => c.id === boardIdKey) ||
@@ -9485,18 +10126,235 @@ export function SimulatorPage({ gamificationMode = false }) {
           pushSerialRxChunk(msg.data, resolvedBoardId, msg.source || "sim");
         }
 
-        // Handle Protocol Events
+        // ── 8B: SERIAL_OUTPUT from WASM runner (line-buffered complete lines) ──
+        if (msg.type === "SERIAL_OUTPUT") {
+          const incomingBoardId = String(msg.boardId || "").trim();
+          const hasKnownBoard =
+            incomingBoardId &&
+            boardComponents.some((b) => b.id === incomingBoardId);
+          const singleBoardFallback =
+            boardComponents.length === 1 ? boardComponents[0]?.id : "";
+          const resolvedBoardId = hasKnownBoard
+            ? incomingBoardId
+            : singleBoardFallback || incomingBoardId || "default";
+          // Feed the complete line to the serial monitor
+          if (msg.text) {
+            pushSerialRxChunk(msg.text + "\n", resolvedBoardId, msg.source || "wasm");
+          }
+          // Also log to protocol analyzer
+          const log = protocolAnalyzerRef.current.processSerial(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+
+        // ════════════════════════════════════════════════════════════════════
+        // PROTOCOL OBSERVER BLOCK — LOGGING ONLY
+        // ════════════════════════════════════════════════════════════════════
+        // Everything below is OBSERVATION ONLY. The actual signal routing
+        // (buzzer tone, LED color, servo angle, etc.) is already handled
+        // inside simulation.worker.ts → runner → collectConnectedComponentPins.
+        //
+        // These handlers just feed the Protocol Analyzer log panel in the UI.
+        // To disable a specific protocol's logging, delete its if-block below.
+        // To disable ALL protocol logging, delete from here to END PROTOCOL OBSERVER.
+        //
+        // Where to find the log panel UI: search "protocolLogs" in this file.
+        // Where to find ProtocolAnalyzer: src/circuit-validation/protocol-analyzer.js
+        // ════════════════════════════════════════════════════════════════════
+
+        // ── I2C (already hooked up from the original implementation) ──────────
+        // LOG ONLY: actual I2C bus is handled by runner's onI2CWrite/onI2CRead
         if (msg.type === "protocol:i2c") {
           const log = protocolAnalyzerRef.current.processI2C(msg);
           pendingProtocolLogsRef.current.push(log.message);
         }
+        // LOG ONLY: ESP32-specific I2C transaction (different event type from AVR's protocol:i2c)
+        if (msg.type === "esp32:i2c:transaction") {
+          const log = protocolAnalyzerRef.current.processI2C({
+            address: msg.addr, data: msg.data, isWrite: true
+          });
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── SPI (already hooked up from the original implementation) ──────────
+        // LOG ONLY: actual SPI bus is handled by runner's onSPIByte/onSPIBuffer
         if (msg.type === "protocol:spi") {
           const log = protocolAnalyzerRef.current.processSPI(msg);
           pendingProtocolLogsRef.current.push(log.message);
         }
 
+        // ── GPIO ─────────────────────────────────────────────────────────────
+        // LOG ONLY: actual GPIO state is applied by runner's setState()
+        if (msg.type === "GPIO_SYNC") {
+          const log = protocolAnalyzerRef.current.processGpio(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── PWM (analogWrite) ─────────────────────────────────────────────────
+        // LOG ONLY: actual PWM duty is applied by runner's onPwmDuty()
+        if (msg.type === "PWM_SYNC" || (msg.type === "state" && msg.pwm !== undefined)) {
+          const log = protocolAnalyzerRef.current.processPwm(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── LEDC PWM (ESP32 hardware PWM) ─────────────────────────────────────
+        // LOG ONLY: actual LEDC routing is handled by runner's ledcChannelMap + onPwmDuty()
+        if (msg.type === "LEDC_SYNC") {
+          const log = protocolAnalyzerRef.current.processLedc(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── DAC ───────────────────────────────────────────────────────────────
+        // LOG ONLY: actual DAC voltage is applied by runner's onAnalogVoltage()
+        if (msg.type === "DAC_SYNC" || msg.type === "esp32:dac:sync") {
+          const log = protocolAnalyzerRef.current.processDac(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── ADC (analogRead) ──────────────────────────────────────────────────
+        // LOG ONLY: ADC values are injected by useEsp32Engine → esp32Socket.setAdcValue()
+        if (msg.type === "esp32:adc:sync") {
+          const log = protocolAnalyzerRef.current.processAdc(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── TONE (buzzer/speaker/piezo) ───────────────────────────────────────
+        // LOG ONLY: actual TONE is routed via syncTone() → collectConnectedComponentPins → onTone()
+        // Signal path: sim_tone() → >SIM:TONE:< → _handleSimFrame → worker → syncTone → component.onTone()
+        if (msg.type === "TONE") {
+          const log = protocolAnalyzerRef.current.processTone(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── Serial RX (UART component → firmware) ─────────────────────────────
+        // LOG ONLY: actual serial injection is handled by runner's serialRx()
+        if (msg.type === "esp32:uart:rx") {
+          const log = protocolAnalyzerRef.current.processSerialRx(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── TWAI / CAN Bus ────────────────────────────────────────────────────
+        // LOG ONLY: actual CAN frame delivery is handled by runner's onCanFrame()
+        if (msg.type === "TWAI_TX") {
+          const log = protocolAnalyzerRef.current.processTwai(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── RMT / IR pulses ───────────────────────────────────────────────────
+        // LOG ONLY: actual RMT pulse delivery is handled by runner's onRmtPulse() / onInfraredSignal()
+        if (msg.type === "RMT_PULSE") {
+          const log = protocolAnalyzerRef.current.processRmt(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── PCNT (pulse counter) ──────────────────────────────────────────────
+        // LOG ONLY: actual counter value is injected by runner's onPulseCount()
+        if (msg.type === "PCNT_UPDATE") {
+          const log = protocolAnalyzerRef.current.processPcnt(msg);
+          pendingProtocolLogsRef.current.push(log.message);
+        }
+        // ── WS2812 / NeoPixel ─────────────────────────────────────────────────
+        // LOG ONLY: actual pixel data is applied by runner's updatePixels()
+        if (msg.type === "state" && msg.neopixels && Object.keys(msg.neopixels).length > 0) {
+          Object.entries(msg.neopixels).forEach(([ch, pixels]) => {
+            const log = protocolAnalyzerRef.current.processNeopixel({ channel: ch, pixels });
+            pendingProtocolLogsRef.current.push(log.message);
+          });
+        }
+
+        // ── Deep Sleep / Wake ─────────────────────────────────────────────────
+        // NOTE: sim:sleep/sim:wake are NOT logging-only — they also update isDeviceSleeping state
+        // and print a console banner. Only the protocolAnalyzer.process* call is logging-only.
+        if (msg.type === "sim:sleep") {
+          setIsDeviceSleeping(true);
+          const sec = msg.duration_us ? (msg.duration_us / 1_000_000).toFixed(2) + 's' : '∞';
+          appendConsoleEntry("info", `💤 Device entering deep sleep (${sec})`, "simulator");
+          const log = protocolAnalyzerRef.current.processSleep(msg); // ← LOG ONLY line
+          pendingProtocolLogsRef.current.push(log.message);            // ← LOG ONLY line
+        }
+        if (msg.type === "sim:wake") {
+          setIsDeviceSleeping(false);
+          appendConsoleEntry("info", "☀️ Device woke from deep sleep", "simulator");
+          const log = protocolAnalyzerRef.current.processWake(msg); // ← LOG ONLY line
+          pendingProtocolLogsRef.current.push(log.message);           // ← LOG ONLY line
+        }
+        // ════ END PROTOCOL OBSERVER BLOCK ════════════════════════════════════
+
+        // ── I2S Audio Playback (Web Audio API) ────────────────────────────────
+        // NOT inside the protocol observer — this actually plays audio.
+        // Signal path: sim_i2s_write() → >SIM:I2S:< → qemuRunner → worker → here
+        //
+        // To disable I2S audio: delete from here to "END I2S AUDIO".
+        // The ProtocolAnalyzer log for I2S is handled inside processI2S() below.
+        if (msg.type === "I2S_AUDIO" && msg.pcm_b64) {
+          try {
+            // 1. Lazy-create AudioContext (must be after user gesture; Run button counts)
+            if (!i2sAudioCtxRef.current) {
+              i2sAudioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            const ctx = i2sAudioCtxRef.current;
+            if (ctx.state === "suspended") ctx.resume();
+
+            const port       = msg.port ?? 0;
+            const sampleRate = msg.sampleRate || 44100;
+            const bits       = msg.bits || 16;
+
+            // 2. Decode base64 → raw bytes
+            const binStr = atob(msg.pcm_b64);
+            const rawBytes = new Uint8Array(binStr.length);
+            for (let i = 0; i < binStr.length; i++) rawBytes[i] = binStr.charCodeAt(i);
+
+            // 3. Interpret as Int16 PCM → Float32 normalised [-1, 1]
+            //    (16-bit signed little-endian is the default from sim_i2s_write)
+            const bytesPerSample = bits === 32 ? 4 : (bits === 24 ? 3 : 2);
+            const sampleCount = Math.floor(rawBytes.length / bytesPerSample);
+            const f32 = new Float32Array(sampleCount);
+            const view = new DataView(rawBytes.buffer);
+            for (let i = 0; i < sampleCount; i++) {
+              const byteOff = i * bytesPerSample;
+              if (bits === 32) {
+                f32[i] = view.getInt32(byteOff, true) / 0x80000000;
+              } else if (bits === 24) {
+                const lo = view.getUint8(byteOff);
+                const mi = view.getUint8(byteOff + 1);
+                const hi = view.getInt8(byteOff + 2);
+                f32[i] = ((hi << 16) | (mi << 8) | lo) / 0x800000;
+              } else {
+                f32[i] = view.getInt16(byteOff, true) / 32768;
+              }
+            }
+
+            // 4. Create AudioBuffer and schedule gaplessly
+            if (sampleCount > 0) {
+              const buf = ctx.createBuffer(1, sampleCount, sampleRate);
+              buf.copyToChannel(f32, 0);
+              const src = ctx.createBufferSource();
+              src.buffer = buf;
+              src.connect(ctx.destination);
+
+              // nextTime per port — schedules chunks back-to-back without gaps
+              const now = ctx.currentTime;
+              const portKey = String(port);
+              const nextTime = i2sNextScheduledTimeRef.current[portKey] ?? now;
+              const startAt = Math.max(now, nextTime);
+              src.start(startAt);
+              i2sNextScheduledTimeRef.current[portKey] = startAt + buf.duration;
+            }
+          } catch (i2sErr) {
+            // Silently swallow — audio errors should not crash the simulation
+            console.warn("[I2S] Web Audio playback error:", i2sErr);
+          }
+
+          // LOG ONLY: record to protocol panel
+          if (protocolAnalyzerRef.current?.processI2S) {
+            const log = protocolAnalyzerRef.current.processI2S(msg);
+            pendingProtocolLogsRef.current.push(log.message);
+          }
+        }
+        // ── END I2S AUDIO ─────────────────────────────────────────────────────
+
+        // ── Batch-flush all pending protocol log entries to the panel ─────────
+        const PROTOCOL_EVENT_TYPES = new Set([
+          "protocol:i2c", "protocol:spi",
+          "SERIAL_OUTPUT", "GPIO_SYNC", "PWM_SYNC",
+          "LEDC_SYNC", "DAC_SYNC", "esp32:dac:sync",
+          "esp32:adc:sync", "TONE", "esp32:uart:rx",
+          "TWAI_TX", "RMT_PULSE", "PCNT_UPDATE",
+          "sim:sleep", "sim:wake",
+          "I2S_AUDIO",  // I2S PCM audio frames from sim_i2s_write
+        ]);
         if (
-          (msg.type === "protocol:i2c" || msg.type === "protocol:spi") &&
+          (PROTOCOL_EVENT_TYPES.has(msg.type) ||
+           (msg.type === "state" && msg.neopixels && Object.keys(msg.neopixels).length > 0)) &&
           !protocolLogsTimerRef.current
         ) {
           protocolLogsTimerRef.current = setTimeout(() => {
@@ -9508,7 +10366,6 @@ export function SimulatorPage({ gamificationMode = false }) {
             // Limit batch to prevent dropping frames
             const batch = pending.length > 200 ? pending.slice(-200) : pending;
 
-            // Use standard state setting (startTransition might be undefined if not imported, React 18 auto-batches timeouts anyway)
             setProtocolLogs((prev) => {
               const next = [...prev, ...batch];
               return next.length > 200 ? next.slice(-200) : next;
@@ -9557,12 +10414,24 @@ export function SimulatorPage({ gamificationMode = false }) {
         }
       });
 
+      let cleanComponents = components;
+      let cleanWires = wires;
+      try {
+        cleanComponents = JSON.parse(JSON.stringify(components));
+        cleanWires = JSON.parse(JSON.stringify(wires));
+      } catch (e) {
+        console.warn('Failed to stringify components/wires for worker', e);
+      }
+      
+      console.warn(`[SimulatorPage] Sending hex payload to worker. Base64 Length: ${result.hex ? result.hex.length : 0} characters`);
+
       worker.postMessage({
         type: "START",
+        networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
         hex: result.hex,
         neopixels: neopixelWiring,
-        wires: wires,
-        components: components,
+        wires: cleanWires,
+        components: cleanComponents,
         customLogics: customLogics,
         boardHexMap:
           Object.keys(boardHexMap).length > 0 ? boardHexMap : undefined,
@@ -9587,6 +10456,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         telemetryMode: telemetryMode,
         watchedParamsMap: telemetryWatchedParamsMap,
         deepSilicon: deepSiliconDebuggingEnabled,
+        esp32SimulationMode: esp32SimulationMode,
       });
 
       runStartGuardRef.current = false;
@@ -11766,6 +12636,9 @@ export function SimulatorPage({ gamificationMode = false }) {
           handleRestoreWorkflow={handleRestoreWorkflow}
           handleSyncToCloud={handleSyncToCloud}
           user={activeUser}
+          gamPanelOpen={gamPanelOpen}
+          setGamPanelOpen={setGamPanelOpen}
+          gamificationMode={gamificationMode}
           navigate={navigate}
           isAuthenticated={isAnyAuthenticated}
           myProjects={myProjects}
@@ -11821,10 +12694,14 @@ export function SimulatorPage({ gamificationMode = false }) {
           setShowAutofix={setShowAutofix}
           showShortcuts={showShortcuts}
           setShowShortcuts={setShowShortcuts}
+          useBlocklyCode={useBlocklyCode}
+          setUseBlocklyCode={setUseBlocklyCode}
           onStartTour={() => {
             localStorage.removeItem("openhw-tour-completed");
             setShowTour(true);
           }}
+          returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
+          code={code}
         />
 
         <SimulatorStatusBanners
@@ -11922,6 +12799,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           isRunning={isRunning}
           workerRef={workerRef}
           handleStartGDB={handleStartGDB}
+          esp32SimulationMode={esp32SimulationMode}
+          setEsp32SimulationMode={updateEsp32SimulationMode}
         />
 
         <div
@@ -12236,6 +13115,8 @@ export function SimulatorPage({ gamificationMode = false }) {
           <QuickAddPortal
             catalog={LOCAL_CATALOG}
             onAddComponentRef={addComponentAtRef}
+            isPaletteItemLocked={isPaletteItemLocked}
+            showLockToast={showLockToast}
           />
 
           {/* RIGHT PANEL */}
@@ -12394,7 +13275,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             setProjContextMenu={setProjContextMenu}
           />
 
-          {gamificationMode && gamPanelOpen && (
+          {gamificationMode && gamPanelOpen && gamProject && (
             <GamificationGuidePanel
               gamTab={gamTab}
               setGamTab={setGamTab}
@@ -12993,7 +13874,58 @@ export function SimulatorPage({ gamificationMode = false }) {
             }
             theme={theme}
           />
+          {guidedProjectState && (
+            <GuidedProjectPopup
+              project={guidedProjectState.project}
+              levelColor={guidedProjectState.levelColor}
+              onClose={() => setGuidedProjectState(null)}
+              readOnly
+              schemas={guidedProjectState.project.schemas}
+              activeBoard={activeBoard}
+              onBoardChange={(boardKey, schema) => {
+                setActiveBoard(boardKey)
+                if (schema) doLoadGuidedSchema(schema, 'Guided Project')
+              }}
+            />
+          )}
         </div>
+
+        {/* Guided project schema loading overlay */}
+        {isLoadingGuidedSchema && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9999,
+              background: 'rgba(15,23,42,0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(2px)',
+            }}
+          >
+            <div
+              style={{
+                background: '#ffffff', borderRadius: 16,
+                padding: '32px 40px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              }}
+            >
+              <div
+                style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  border: '3px solid #e2e8f0',
+                  borderTopColor: '#2563eb',
+                  animation: 'guided-spin 0.7s linear infinite',
+                }}
+              />
+              <style>{`@keyframes guided-spin{to{transform:rotate(360deg)}}`}</style>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                Loading circuit...
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                Placing components and wiring connections
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

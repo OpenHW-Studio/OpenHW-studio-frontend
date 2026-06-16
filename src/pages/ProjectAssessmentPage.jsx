@@ -2,28 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS } from '../services/gamification/ProjectsConfig'
-
-const EXAMPLES_BASE_URL = import.meta.env.VITE_EXAMPLES_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5001/examples' : '/examples');
-
-// ─── Per-project guided steps (shown as flashcards) ───────────────────────
-const PROJECT_STEPS = {
-  'led-blink': [
-    { id: 0, phase: 'wire', icon: '🟩', color: '#22c55e', title: 'Place Arduino Uno',      instruction: 'Find "Arduino Uno" in the left panel and drag it onto the canvas.',                                                                      tip: 'The big blue board is your brain! Place it roughly in the centre-left area.' },
-    { id: 1, phase: 'wire', icon: '💡', color: '#22c55e', title: 'Place the LED',           instruction: 'Drag an LED from the parts panel onto the canvas to the right of the Arduino.',                                                           tip: 'LEDs have a long leg (+) and a short leg (−). Keep the long leg on top.' },
-    { id: 2, phase: 'wire', icon: '🟤', color: '#22c55e', title: 'Add a 220Ω Resistor',    instruction: "Drag a Resistor from the parts panel. Connect it between Pin 13 on Arduino and the LED's long leg (+).",                                  tip: 'Set the resistance to 220Ω (Red-Red-Brown colour code).' },
-    { id: 3, phase: 'wire', icon: '〰️', color: '#22c55e', title: 'Connect GND Wire',       instruction: "Draw a wire from the LED's short leg (−) to any GND pin on the Arduino.",                                                               tip: 'GND = Ground = the negative return path. Electricity NEEDS a complete loop to flow.' },
-    { id: 4, phase: 'code', icon: '💻', color: '#3b82f6', title: 'Write the Blink Code',   instruction: 'Click the code editor (right panel) and type or paste the blink sketch.',                                                                  tip: 'Make sure the pin number in code matches where you connected the LED!',
-      code: `void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH); // LED ON\n  delay(1000);             // wait 1 second\n  digitalWrite(13, LOW);  // LED OFF\n  delay(1000);             // wait 1 second\n}` },
-    { id: 5, phase: 'run',  icon: '▶️', color: '#f59e0b', title: 'Run the Simulation!',    instruction: "Click the green ▶ Run button in the toolbar. Your LED should blink once per second!",                                                     tip: "If it doesn't blink, check your wiring and make sure pin 13 is used everywhere." },
-  ],
-  'rgb-led': [
-    { id: 0, phase: 'wire', icon: '🌈', color: '#a855f7', title: 'Place the RGB LED',      instruction: 'Drag an RGB LED from the parts panel. It has 4 legs — the longest is the common GND.',                                                    tip: 'RGB LED = 3 LEDs in one package! Red, Green, Blue. Common cathode = longest pin goes to GND.' },
-    { id: 1, phase: 'wire', icon: '🟤', color: '#a855f7', title: 'Add 3 Resistors',        instruction: 'Add one 220Ω resistor to EACH of the 3 color pins (R, G, B). Connect: R→Pin 9, G→Pin 10, B→Pin 11.',                                    tip: 'Each color needs its own current-limiting resistor or it burns out!' },
-    { id: 2, phase: 'code', icon: '💻', color: '#3b82f6', title: 'Write the RGB Code',     instruction: 'Use analogWrite() to mix colors! Paste the code below into the editor.',                                                                   tip: 'analogWrite() accepts 0–255. Mix values to create any colour!',
-      code: `void setup() {\n  pinMode(9, OUTPUT);   // Red\n  pinMode(10, OUTPUT);  // Green\n  pinMode(11, OUTPUT);  // Blue\n}\n\nvoid loop() {\n  analogWrite(9, 200); analogWrite(10, 0); analogWrite(11, 200);\n  delay(1000);\n  analogWrite(9, 0); analogWrite(10, 200); analogWrite(11, 200);\n  delay(1000);\n}` },
-    { id: 3, phase: 'run',  icon: '▶️', color: '#f59e0b', title: 'Run & See the Colors!',  instruction: 'Click ▶ Run. The LED should cycle through colors you defined!',                                                                             tip: 'Try changing the analogWrite values (0-255) to create your own color mix.' },
-  ],
-}
+import { getProjectGuidedSteps } from '../services/classAdventureAdapter'
+import {
+  getAdventureProjectContent,
+  markAdventureStepComplete,
+  postProjectCompleted,
+} from '../services/adventureService'
 
 const PHASE_LABEL = { wire: 'Wiring', code: 'Coding', run: 'Run' }
 const PHASE_COLOR = { wire: '#22c55e', code: '#3b82f6', run: '#f59e0b' }
@@ -90,9 +74,7 @@ function evaluateAssessment(config, components, wires, code) {
       const fIE = !fT ? conn.from.component : null, tIE = !tT ? conn.to.component : null
       const fTo = fC && fT ? isTypeMatch(fC.type, fT) : false, tTo = tC && tT ? isTypeMatch(tC.type, tT) : false
       const fIo = fC && fIE ? fC.id === fIE : false, tIo = tC && tIE ? tC.id === tIE : false
-      const d = (fTo||fIo) && (tTo||tIo) && endpointMatches(fC, fPin, wire.fromLabel, conn.from) && endpointMatches(tC, tPin, wire.toLabel, conn.to)
-      const r = fC && tC && ((tT && isTypeMatch(fC.type, tT))||(tIE && fC.id===tIE)) && ((fT && isTypeMatch(tC.type, fT))||(fIE && tC.id===fIE)) && endpointMatches(fC, fPin, wire.fromLabel, conn.to) && endpointMatches(tC, tPin, wire.toLabel, conn.from)
-      return d || r
+      return (fTo||fIo) && (tTo||tIo) && endpointMatches(fC, fPin, wire.fromLabel, conn.from) && endpointMatches(tC, tPin, wire.toLabel, conn.to)
     }
     requiredConnections.forEach(conn => {
       if (wires.some(w => wm(w, conn))) ok++
@@ -221,10 +203,10 @@ function StepCard({ step, index, total, isActive, onClick }) {
         </div>
       </div>
 
-      {/* Expanded content */}
+{/* Expanded content */}
       {isActive && (
         <div style={{ animation:'fadeUp .25s ease' }}>
-          <div style={{ fontSize:14, color:'#cbd5e1', lineHeight:1.75, marginBottom:12 }}>{step.instruction}</div>
+          <div style={{ fontSize:14, color:'#cbd5e1', lineHeight:1.75, marginBottom:12, whiteSpace:'pre-line' }}>{step.instruction}</div>
           {step.code && <CodeSnippet code={step.code} />}
           <div style={{
             display:'flex', gap:8, alignItems:'flex-start', marginTop:12,
@@ -265,43 +247,79 @@ export default function ProjectAssessmentPage() {
   const navigate  = useNavigate()
   const { projectName = '' } = useParams()
   const location  = useLocation()
+  const classId = new URLSearchParams(location.search).get('classId')
   const { completedProjects = [], completeProject, awardXP, xp = 0, coins = 0 } = useGamification?.() || {}
+  const [classProjectContent, setClassProjectContent] = useState(null)
 
   const projectTitle  = useMemo(() => titleFromSlug(projectName), [projectName])
-  const projectColor  = location.state?.projectColor || '#22c55e'
-  const steps         = PROJECT_STEPS[projectName] || []
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const { project } = await getAdventureProjectContent(classId, projectName)
+        if (cancelled) return
+        setClassProjectContent(project)
+      } catch {
+        if (!cancelled) setClassProjectContent(null)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [classId, projectName])
+
+const projectColor  = location.state?.projectColor || '#22c55e'
+
+  const steps         = useMemo(() => getProjectGuidedSteps(classProjectContent, projectName), [classProjectContent, projectName])
 
   const [theme,            setTheme]           = useState('dark')
   const [activeStep,       setActiveStep]       = useState(0)
-  const [evalConfig,       setEvalConfig]       = useState(null)
-  const [loadError,        setLoadError]        = useState(null)
   const [submission,       setSubmission]       = useState(null)
   const [evalResult,       setEvalResult]       = useState(null)
   const [evaluating,       setEvaluating]       = useState(false)
 
-  // Load evaluation config
+  // Assessment config: class (MongoDB) assessment object | built-in PROJECTS.fallback
+  const assessmentConfig = useMemo(() => {
+    if (classProjectContent) {
+      const assessment = classProjectContent.assessment || {}
+      return {
+        passingThreshold: assessment.passingThreshold ?? 0,
+        evaluationCriteria: assessment.evaluationCriteria || {},
+        scoring:              assessment.scoring || {},
+      }
+    }
+    // Non-class fallback: built-in PROJECTS data
+    const project = PROJECTS.find(p => p.slug === projectName)
+    const evaluation = project?.evaluation || {}
+    return {
+      passingThreshold: evaluation.passingThreshold ?? 0,
+      evaluationCriteria: evaluation.evaluationCriteria || {},
+      scoring:              evaluation.scoring || {},
+    }
+  }, [classProjectContent, projectName])
+
+  // ─── Submission state key ──────────────────────────────────────────────────
+  const SUB_KEY = `openhw_assessment_submission:${projectName}`
   useEffect(() => {
     let cancelled = false
-    setEvalConfig(null); setLoadError(null)
-    fetch(`${EXAMPLES_BASE_URL}/${projectName}/evaluation.json`)
-      .then(r => { if (!r.ok) throw new Error(); return r.json() })
-      .then(d => { if (!cancelled) setEvalConfig(d) })
-      .catch(() => { if (!cancelled) setLoadError('Could not load evaluation criteria.') })
-    return () => { cancelled = true }
-  }, [projectName])
-
-  // Load any existing submission
-  useEffect(() => {
-    const raw = sessionStorage.getItem(`openhw_assessment_submission:${projectName}`)
-    if (!raw) { setSubmission(null); setEvalResult(null); return }
-    try { setSubmission(JSON.parse(raw)) } catch (e) { setSubmission(null) }
+    const refresh = () => {
+      if (cancelled) return
+      const raw = sessionStorage.getItem(SUB_KEY)
+      if (!raw) { setSubmission(null); setEvalResult(null); return }
+      try { setSubmission(JSON.parse(raw)) } catch { setSubmission(null) }
+    }
+    refresh()
+    const handler = () => { refresh() }
+    window.addEventListener('focus', handler)
+    window.addEventListener('storage', handler)
+    return () => { window.removeEventListener('focus', handler); window.removeEventListener('storage', handler) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectName])
 
   // Auto-evaluate when both are ready
   useEffect(() => {
-    if (!evalConfig || !submission) return
+    if (!assessmentConfig || !submission) return
     setEvaluating(true)
-    const result = evaluateAssessment(evalConfig, submission.components || [], submission.wires || [], submission.code || '')
+    const result = evaluateAssessment(assessmentConfig, submission.components || [], submission.wires || [], submission.code || '')
     const payload = { projectName, submittedAt: submission.submittedAt, result }
     setEvalResult(payload)
     sessionStorage.setItem(`openhw_assessment_result:${projectName}`, JSON.stringify(payload))
@@ -309,8 +327,20 @@ export default function ProjectAssessmentPage() {
     if (result.passed) {
       if (!completedProjects.includes(projectName)) completeProject?.(projectName)
       else { const proj = PROJECTS.find(p => p.slug === projectName); awardXP?.(Math.round((proj?.xpReward || 100) * 0.25), 'Re-submission bonus') }
+      markAdventureStepComplete({
+        classId,
+        projectSlug: projectName,
+        stepKey: 'sim',
+        stepOrder: 4,
+      }).catch(() => {})
+      if (classId) {
+        const proj = PROJECTS.find(p => p.slug === projectName)
+        postProjectCompleted(classId, projectName, {
+          xpEarned: classProjectContent?.xpReward || proj?.xpReward || 0,
+        }).catch(() => {})
+      }
     }
-  }, [evalConfig, submission])
+  }, [assessmentConfig, submission, classId, completedProjects, completeProject, awardXP, projectName, classProjectContent])
 
   const clearResult = () => {
     sessionStorage.removeItem(`openhw_assessment_result:${projectName}`)
@@ -318,7 +348,10 @@ export default function ProjectAssessmentPage() {
     setSubmission(null); setEvalResult(null)
   }
 
-  const openSimulator = () => navigate(`/${projectName}/guided`, { state: { projectColor } })
+   const openSimulator = () => {
+     const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+     navigate(`/${projectName}/guided${suffix}`, { state: { projectColor } })
+   }
 
   const result = evalResult?.result
   const isDark = theme === 'dark'
@@ -341,12 +374,12 @@ export default function ProjectAssessmentPage() {
         padding: '0 20px',
       }}>
         <div style={{ maxWidth: 900, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12, height: 56 }}>
-          <button onClick={() => navigate(`/adventure/${projectName}/guide`)} style={{ background: isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.07)', border: `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'}`, borderRadius: 8, padding: '6px 12px', color: isDark ? '#94a3b8' : '#64748b', cursor: 'pointer', fontSize: 12, fontWeight: 800, fontFamily: 'Nunito,sans-serif', flexShrink: 0 }}>← Guide</button>
+          <button onClick={() => navigate(classId ? `/adventure?classId=${encodeURIComponent(classId)}` : `/adventure`)} style={{ background: isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.07)', border: `1px solid ${isDark ? 'rgba(255,255,255,.1)' : 'rgba(0,0,0,.12)'}`, borderRadius: 8, padding: '6px 12px', color: isDark ? '#94a3b8' : '#64748b', cursor: 'pointer', fontSize: 12, fontWeight: 800, fontFamily: 'Nunito,sans-serif', flexShrink: 0 }}>← Map</button>
 
           <div style={{ flex:1, display:'flex', alignItems:'center', gap:10 }}>
             <div style={{ width:30, height:30, borderRadius:8, background:`${projectColor}20`, border:`1px solid ${projectColor}40`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>📋</div>
             <div>
-              <div style={{ fontSize:14, fontWeight:900, color: isDark ? '#f0f4ff' : '#1e293b' }}>{projectTitle} — Assessment</div>
+              <div style={{ fontSize:14, fontWeight:900, color: isDark ? '#f0f4ff' : '#1e293b' }}>{classProjectContent?.title || projectTitle} — Assessment</div>
               <div style={{ fontSize:10, fontWeight:700, color: isDark ? '#475569' : '#94a3b8', textTransform:'uppercase', letterSpacing:'.07em' }}>Build · Submit · Get Scored</div>
             </div>
           </div>
@@ -368,7 +401,7 @@ export default function ProjectAssessmentPage() {
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, fontWeight:800, color:projectColor, letterSpacing:'.1em', textTransform:'uppercase', marginBottom:5 }}>Project Assessment</div>
-            <div style={{ fontSize:26, fontWeight:900, color: isDark?'#f0f4ff':'#1e293b', marginBottom:6 }}>{projectTitle}</div>
+            <div style={{ fontSize:26, fontWeight:900, color: isDark?'#f0f4ff':'#1e293b', marginBottom:6 }}>{classProjectContent?.title || projectTitle}</div>
             <div style={{ fontSize:13, color: isDark?'#64748b':'#94a3b8' }}>Follow the steps below, open the simulator, build your circuit, then submit for automatic scoring.</div>
           </div>
           {completedProjects.includes(projectName) && (
@@ -502,7 +535,7 @@ export default function ProjectAssessmentPage() {
                   🔄 Try Again in Simulator
                 </button>
                 {result.passed && (
-                  <button onClick={() => navigate('/adventure')} style={{ background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:12, padding:'13px', fontSize:14, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'Nunito,sans-serif', boxShadow:'0 4px 20px rgba(34,197,94,.35)' }}>
+                  <button onClick={() => navigate(classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure')} style={{ background:'linear-gradient(135deg,#22c55e,#16a34a)', border:'none', borderRadius:12, padding:'13px', fontSize:14, fontWeight:800, color:'#fff', cursor:'pointer', fontFamily:'Nunito,sans-serif', boxShadow:'0 4px 20px rgba(34,197,94,.35)' }}>
                     🗺️ Back to Adventure Map
                   </button>
                 )}

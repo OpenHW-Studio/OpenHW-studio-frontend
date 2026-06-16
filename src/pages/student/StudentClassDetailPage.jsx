@@ -8,6 +8,7 @@ import {
   getClassroomById,
   getClassroomNotices,
   getClassroomStudents,
+  saveGradeForSubmission,
   submitAssignment
 } from '../../services/classroomService.js'
 import { formatDateTime, getAvatarLetters } from '../../components/common/test.js'
@@ -23,7 +24,8 @@ import StudentAssignmentModal from '../../components/teacher/class-detail/Studen
 const tabs = [
   { key: 'stream', label: 'Stream' },
   { key: 'classwork', label: 'Classwork' },
-  { key: 'people', label: 'People' }
+  { key: 'people', label: 'People' },
+  { key: 'adventure', label: 'Adventure' }
 ]
 
 const getSubmissionStatus = (assignment) => {
@@ -125,6 +127,7 @@ export default function StudentClassDetailPage() {
   const sidebarLinks = [
     { key: 'home', label: 'Dashboard', icon: Home, isActive: false, onClick: () => navigate('/student/dashboard') },
     { key: 'simulator', label: 'Open Simulator', icon: Monitor, isActive: false, onClick: () => navigate('/simulator') },
+    { key: 'adventure', label: 'Class Adventure', icon: ClipboardList, isActive: false, onClick: () => navigate(`/adventure?classId=${encodeURIComponent(classId)}`) },
     { key: 'join', label: 'Join class', icon: BookOpen, isActive: false, onClick: () => navigate('/student/dashboard?joinCode=') }
   ]
 
@@ -350,6 +353,22 @@ export default function StudentClassDetailPage() {
       }))
     }
   }
+
+  const handleSaveGrade = async (gradingResult) => {
+    if (!activeAssignmentId) return;
+    try {
+      const score = typeof gradingResult?.score === 'number' ? gradingResult.score : 0;
+      const feedback = gradingResult?.feedback?.join ? gradingResult.feedback.join('\n') : '';
+      await saveGradeForSubmission(classId, activeAssignmentId, {
+        score: Math.round(score),
+        feedback,
+        gradingReport: gradingResult,
+      });
+      console.log('[Dashboard] Grade saved successfully for', activeAssignmentId);
+    } catch (err) {
+      console.error('[Dashboard] Failed to save grade:', err);
+    }
+  };
 
   const handleOpenTemplate = (assignment) => {
     const templateShareId = getAssignmentTemplateShareId(assignment)
@@ -653,6 +672,21 @@ export default function StudentClassDetailPage() {
                   </section>
                 </section>
               )}
+              {activeTab === 'adventure' && (
+                <section className="teacher-list-block">
+                  <div className="teacher-list-block__heading">
+                    <h3>Class Adventure</h3>
+                    <small>Open the class-specific learning path</small>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}`)}
+                    className="teacher-assignment-modal__resource-pill"
+                  >
+                    Open Adventure
+                  </button>
+                </section>
+              )}
             </section>
 
             <aside className="teacher-class-right">
@@ -697,6 +731,7 @@ export default function StudentClassDetailPage() {
           onRemoveFile={handleRemoveSubmissionFile}
           onSubmit={() => handleSubmitAssignment(activeAssignmentId)}
           onPreviewFile={setPreviewFile}
+          onSaveGrade={handleSaveGrade}
           isClosed={isAssignmentClosed(assignments.find((assignment) => assignment._id === activeAssignmentId))}
         />
       ) : null}
