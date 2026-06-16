@@ -116,7 +116,7 @@ export default function SavedCircuitsSection({ user }) {
   const handleDelete = async (proj) => {
     if (!window.confirm(`Delete "${proj.name || 'Untitled'}"? This cannot be undone.`)) return
     try {
-      await deleteProject(proj.id)
+      await deleteProject(proj.id, getOwner(user))
       setProjects((prev) => prev.filter((p) => p.id !== proj.id))
     } catch {}
     setMenuProject(null)
