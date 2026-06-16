@@ -47,7 +47,8 @@ export function useHardwareFlashing({
     refreshHardwarePorts();
   }, [refreshHardwarePorts]);
 
-  const uploadToHardware = useCallback(async () => {
+  const uploadToHardware = useCallback(async (opts = {}) => {
+    const { wasConnected, disconnectFn, connectFn } = opts;
     if (!hardwareBoardId) {
       alert('Please select a target board on canvas.');
       return;
@@ -57,6 +58,27 @@ export function useHardwareFlashing({
     if (!cleanPort) {
       alert('No serial port detected. Connect your board, then refresh ports or enable Show all serial ports.');
       return;
+    }
+
+    // Ensure Web Serial is authorized NOW during the click event, so auto-reconnect works later
+    if ('serial' in navigator && connectFn) {
+      try {
+        const ports = await navigator.serial.getPorts();
+        if (ports.length === 0) {
+          // No authorized ports. Prompt the user now while we are still in the user gesture context!
+          await navigator.serial.requestPort();
+        }
+      } catch (e) {
+        console.warn('Web Serial authorization prompt skipped or cancelled:', e);
+        // We can still proceed with backend flash, but auto-reconnect will fail later.
+      }
+    }
+
+    if (wasConnected && disconnectFn) {
+      setHardwareStatus('Disconnecting serial monitor for upload...');
+      await disconnectFn();
+      setHardwareStatus('Waiting for port to be released...');
+      await new Promise(r => setTimeout(r, 4000));
     }
 
     setIsUploadingHardware(true);
@@ -87,6 +109,16 @@ export function useHardwareFlashing({
       }
       setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${cleanPort}`);
       alert(`Code successfully uploaded to ${hardwareBoardId} on ${cleanPort}!`);
+      
+      if (connectFn) {
+        setTimeout(async () => {
+          try {
+            await connectFn(true); // useLastPort = true
+          } catch (e) {
+            console.warn('[BootloaderFlash] Auto-reconnect failed', e);
+          }
+        }, 1200); // Give bootloader time to restart user application before reconnecting
+      }
     } catch (err) {
       console.error('[BootloaderFlash] upload failed:', err);
       setHardwareStatus(`Flash failed: ${err?.message || 'Unknown error'}`);
