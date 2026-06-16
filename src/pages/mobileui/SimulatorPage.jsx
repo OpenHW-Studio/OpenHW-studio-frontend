@@ -6615,6 +6615,7 @@ useEffect(() => {
       ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
       fqbn,
       buildEngine,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
@@ -6622,7 +6623,7 @@ useEffect(() => {
       if (kind === 'esp32') {
         const startRes = await startEsp32Compile({
           code: sourceCode,
-          targetEngine: 'frontend'
+          targetEngine: 'hardware'
         });
         if (!startRes || (!startRes.jobId && !startRes.buildId)) {
           throw new Error('Failed to start ESP32 compilation.');

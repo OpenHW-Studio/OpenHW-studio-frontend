@@ -8655,6 +8655,7 @@ loadDemoProject();
       fqbn,
       buildEngine,
       librariesTxt,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
@@ -8663,7 +8664,7 @@ loadDemoProject();
         const startRes = await startEsp32Compile({
           code: sourceCode,
           libraries_txt: librariesTxt,
-          targetEngine: 'frontend'
+          targetEngine: 'hardware'
         });
         if (!startRes || (!startRes.jobId && !startRes.buildId)) {
           throw new Error('Failed to start ESP32 compilation.');
