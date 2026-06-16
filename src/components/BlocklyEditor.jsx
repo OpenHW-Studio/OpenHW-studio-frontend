@@ -29,6 +29,7 @@ const CATEGORIES = [
   { id: 'control', label: 'Control', color: '#e8861e' },
   { id: 'output', label: 'Output', color: '#3a7de0' },
   { id: 'math', label: 'Math', color: '#28b463' },
+  { id: 'text', label: 'Text', color: '#5b67a5' },
   { id: 'input', label: 'Input', color: '#9b59b6' },
   { id: 'variables', label: 'Variables', color: '#e84393' },
 ]
@@ -47,6 +48,8 @@ const VALUE_TYPES = new Set([
   'light_level', 'temperature', 'compass_heading', 'analog_pitch_vol_read',
   'button_pressed_bool', 'digital_pin_is', 'gesture_is',
   'logic_operation', 'logic_negate', 'logic_boolean', 'math_number',
+  'text', 'text_join', 'text_length', 'text_isEmpty',
+  'text_changeCase', 'text_getSubstring', 'number_to_text',
 ])
 const getShapeKind = (type) =>
   HAT_TYPES.has(type) ? 'hat' : VALUE_TYPES.has(type) ? 'value' : 'statement'
@@ -158,10 +161,128 @@ const CATEGORY_BLOCKS = {
     { type: 'gesture_is', label: 'gesture is ?' },
     { type: 'set_accel_range', label: 'set accel range' },
   ],
+  text: [
+    { type: 'text', label: '" abc "' },
+    { type: 'text_join', label: 'create text with' },
+    { type: 'text_length', label: 'length of' },
+    { type: 'text_getSubstring', label: 'get part of text' },
+    { type: 'number_to_text', label: 'number to text' },
+    { type: 'text_isEmpty', label: 'is empty' },
+    { type: 'text_changeCase', label: 'to UPPER / lower' },
+  ],
 }
 
 // ─── Custom block JSON definitions ───────────────────────────────────────────
 const BLOCK_DEFS = [
+  // ── Typed Variables ───────────────────────────────────────────────────────
+  {
+    type: 'variables_get_number', message0: '%1',
+    args0: [{ type: 'field_variable', name: 'VAR', variable: 'item', variableTypes: ['Number'], defaultType: 'Number' }],
+    output: 'Number', colour: '#e84393',
+    tooltip: 'Returns the value of this number variable.', helpUrl: ''
+  },
+  {
+    type: 'variables_set_number', message0: 'set number %1 to %2',
+    args0: [
+      { type: 'field_variable', name: 'VAR', variable: 'item', variableTypes: ['Number'], defaultType: 'Number' },
+      { type: 'input_value', name: 'VALUE', check: 'Number' }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e84393',
+    tooltip: 'Sets this number variable to be equal to the input.', helpUrl: ''
+  },
+  {
+    type: 'variables_get_string', message0: '%1',
+    args0: [{ type: 'field_variable', name: 'VAR', variable: 'item', variableTypes: ['String'], defaultType: 'String' }],
+    output: 'String', colour: '#e84393',
+    tooltip: 'Returns the value of this text variable.', helpUrl: ''
+  },
+  {
+    type: 'variables_set_string', message0: 'set text %1 to %2',
+    args0: [
+      { type: 'field_variable', name: 'VAR', variable: 'item', variableTypes: ['String'], defaultType: 'String' },
+      { type: 'input_value', name: 'VALUE', check: 'String' }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e84393',
+    tooltip: 'Sets this text variable to be equal to the input.', helpUrl: ''
+  },
+  {
+    type: 'variables_get_boolean', message0: '%1',
+    args0: [{ type: 'field_variable', name: 'VAR', variable: 'item', variableTypes: ['Boolean'], defaultType: 'Boolean' }],
+    output: 'Boolean', colour: '#e84393',
+    tooltip: 'Returns the value of this boolean variable.', helpUrl: ''
+  },
+  {
+    type: 'variables_set_boolean', message0: 'set boolean %1 to %2',
+    args0: [
+      { type: 'field_variable', name: 'VAR', variable: 'item', variableTypes: ['Boolean'], defaultType: 'Boolean' },
+      { type: 'input_value', name: 'VALUE', check: 'Boolean' }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#e84393',
+    tooltip: 'Sets this boolean variable to be equal to the input.', helpUrl: ''
+  },
+
+  // ── Text blocks ─────────────────────────────────────────────────────────────
+  {
+    type: 'text', message0: '" %1 "',
+    args0: [{ type: 'field_input', name: 'TEXT', text: 'abc' }],
+    output: 'String', colour: '#5b67a5',
+    tooltip: 'A text (string) value.'
+  },
+  {
+    type: 'text_join', message0: 'create text with %1 %2',
+    args0: [
+      { type: 'input_value', name: 'ADD0', check: ['String', 'Number'] },
+      { type: 'input_value', name: 'ADD1', check: ['String', 'Number'] },
+    ],
+    output: 'String', colour: '#5b67a5', inputsInline: false,
+    tooltip: 'Join two or more pieces of text together.'
+  },
+  {
+    type: 'text_length', message0: 'length of %1',
+    args0: [{ type: 'input_value', name: 'VALUE', check: 'String' }],
+    output: 'Number', colour: '#5b67a5', inputsInline: true,
+    tooltip: 'Returns the number of characters in the text.'
+  },
+  {
+    type: 'text_getSubstring',
+    message0: 'get part of text %1 value %2 separating character %3 position %4',
+    args0: [
+      { type: 'input_dummy' },
+      { type: 'input_value', name: 'VALUE', check: 'String' },
+      { type: 'field_input', name: 'DELIM', text: ',' },
+      { type: 'input_value', name: 'POSITION', check: 'Number' },
+    ],
+    output: 'String', colour: '#5b67a5', inputsInline: false,
+    tooltip: 'Split text by a separator and get the part at the given position (1-based).'
+  },
+  {
+    type: 'number_to_text',
+    message0: 'decimal places %1 number to text %2',
+    args0: [
+      { type: 'input_value', name: 'DECIMALS', check: 'Number' },
+      { type: 'input_value', name: 'NUM', check: 'Number' },
+    ],
+    output: 'String', colour: '#5b67a5', inputsInline: false,
+    tooltip: 'Convert a number to text with specified decimal places.'
+  },
+  {
+    type: 'text_isEmpty', message0: '" %1 " is empty',
+    args0: [{ type: 'input_value', name: 'VALUE', check: 'String' }],
+    output: 'Boolean', colour: '#5b67a5', inputsInline: true,
+    tooltip: 'Returns true if the text is empty.'
+  },
+  {
+    type: 'text_changeCase', message0: 'to %1 %2',
+    args0: [
+      { type: 'field_dropdown', name: 'CASE', options: [
+        ['UPPER CASE', 'UPPERCASE'], ['lower case', 'LOWERCASE'],
+      ]},
+      { type: 'input_value', name: 'TEXT', check: 'String' },
+    ],
+    output: 'String', colour: '#5b67a5', inputsInline: true,
+    tooltip: 'Change text to upper case or lower case.'
+  },
+
   // ── Shared / Basic ─────────────────────────────────────────────────────────
   {
     type: 'clear_screen', message0: 'clear screen',
@@ -829,10 +950,55 @@ function buildGenerator(B) {
   gen.forBlock['gesture_is'] = b => [`isGesture(GESTURE_${b.getFieldValue('GESTURE')})`, gen.ORDER_ATOMIC]
   gen.forBlock['set_accel_range'] = b => `setAccelRange(${b.getFieldValue('RANGE')});\n`
 
+  // Text blocks
+  gen.forBlock['text'] = b => [`"${b.getFieldValue('TEXT')}"`, gen.ORDER_ATOMIC]
+  gen.forBlock['text_join'] = b => {
+    const a = vc(b, 'ADD0', gen.ORDER_ATOMIC) || '""'
+    const c = vc(b, 'ADD1', gen.ORDER_ATOMIC) || '""'
+    return [`String(${a}) + String(${c})`, gen.ORDER_ADDITION]
+  }
+  gen.forBlock['text_length'] = b => {
+    const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'
+    return [`String(${val}).length()`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['text_getSubstring'] = b => {
+    const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'
+    const delim = b.getFieldValue('DELIM') || ','
+    const pos = vc(b, 'POSITION', gen.ORDER_ATOMIC) || '1'
+    return [`getSubstringByDelim(String(${val}), '${delim}', ${pos})`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['number_to_text'] = b => {
+    const num = vc(b, 'NUM', gen.ORDER_ATOMIC) || '0'
+    const dec = vc(b, 'DECIMALS', gen.ORDER_ATOMIC) || '2'
+    return [`String(${num}, ${dec})`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['text_isEmpty'] = b => {
+    const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'
+    return [`(String(${val}).length() == 0)`, gen.ORDER_EQUALITY]
+  }
+  gen.forBlock['text_changeCase'] = b => {
+    const txt = vc(b, 'TEXT', gen.ORDER_ATOMIC) || '""'
+    const mode = b.getFieldValue('CASE')
+    if (mode === 'UPPERCASE') {
+      return [`toUpperCase(String(${txt}))`, gen.ORDER_ATOMIC]
+    }
+    return [`toLowerCase(String(${txt}))`, gen.ORDER_ATOMIC]
+  }
+
   // Variable blocks
   gen.forBlock['variables_get'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
   gen.forBlock['variables_set'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC)};\n` }
   gen.forBlock['math_change'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} += ${vc(b, 'DELTA', gen.ORDER_ADDITION)};\n` }
+
+  // Typed Variable blocks
+  gen.forBlock['variables_get_number'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_number'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '0'};\n` }
+  
+  gen.forBlock['variables_get_string'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_string'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'};\n` }
+  
+  gen.forBlock['variables_get_boolean'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_boolean'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false'};\n` }
 
   return gen
 }
@@ -844,8 +1010,14 @@ function generateSketch(gen, ws) {
   }
   gen.usedPins = new Map()
 
-  const vars = ws.getAllVariables() || [];
-  const varDecl = vars.length ? vars.map(v => `int ${v.name} = 0;`).join('\n') + '\n\n' : ''
+  const vars = (ws.getAllVariables() || []).filter(v => v.type === 'Number' || v.type === 'String' || v.type === 'Boolean');
+  const varDecl = vars.length ? vars.map(v => {
+    let type = 'int';
+    let def = '0';
+    if (v.type === 'String') { type = 'String'; def = '""'; }
+    else if (v.type === 'Boolean') { type = 'bool'; def = 'false'; }
+    return `${type} ${v.name} = ${def};`;
+  }).join('\n') + '\n\n' : ''
   
   gen.usedPins = new Map() // Reset/initialize used pins Map for the current generation run
 
@@ -878,7 +1050,33 @@ function generateSketch(gen, ws) {
 
   const setupFunc = `void setup() {\n${setupCode}${setup}}\n\n`
   const loopFunc = loop_ ? `void loop() {\n${loop_}}\n\n` : 'void loop() {\n  // loop\n}\n\n'
-  const code = `// Generated by OpenHW Studio Block Editor\n\n${varDecl}${extras.join('\n')}${extras.length ? '\n' : ''}${setupFunc}${loopFunc}`
+
+  // Collect helper functions needed by text blocks
+  const allCode = extras.join('\n') + setup + loop_
+  let helpers = ''
+  if (allCode.includes('getSubstringByDelim(')) {
+    helpers += `String getSubstringByDelim(String data, char separator, int index) {
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int maxIndex = data.length() - 1;
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}\n\n`
+  }
+  if (allCode.includes('toUpperCase(String(')) {
+    helpers += `String toUpperCase(String str) {\n  str.toUpperCase();\n  return str;\n}\n\n`
+  }
+  if (allCode.includes('toLowerCase(String(')) {
+    helpers += `String toLowerCase(String str) {\n  str.toLowerCase();\n  return str;\n}\n\n`
+  }
+
+  const code = `// Generated by OpenHW Studio Block Editor\n\n${varDecl}${helpers}${extras.join('\n')}${extras.length ? '\n' : ''}${setupFunc}${loopFunc}`
   return typeof gen.finish === 'function' ? gen.finish(code) : code
 }
 
@@ -1007,7 +1205,7 @@ function layoutBlockPreview(host, previewWs, block, containerWidth, B) {
 }
 
 // ─── Live Blockly previews in category panel ─────────────────────────────────
-const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, onDragEnd, varId, isDark, blocklyReady }) {
+const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, onDragEnd, varId, varName, varType, isDark, blocklyReady }) {
   const wrapperRef = useRef(null)
   const hostRef = useRef(null)
   const wsRef = useRef(null)
@@ -1064,6 +1262,10 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, onDra
     wsRef.current = previewWs
 
     try {
+      // Create the variable in the preview workspace so field_variable shows the correct name
+      if (varId && varName) {
+        previewWs.createVariable(varName, varType || '', varId)
+      }
       const block = previewWs.newBlock(type)
       if (varId && block.getField('VAR')) block.getField('VAR').setValue(varId)
       block.initSvg()
@@ -1084,7 +1286,7 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, onDra
       }
       if (host) host.innerHTML = ''
     }
-  }, [type, varId, isDark, blocklyReady])
+  }, [type, varId, varName, varType, isDark, blocklyReady])
 
   useEffect(() => {
     if (!blocklyReady || !wsRef.current || !blockRef.current || !hostRef.current || containerWidth < 1) return
@@ -1552,17 +1754,53 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     if (!ws || !window.Blockly) return
     const block = ws.newBlock(type)
     if (block.getField('VAR')) block.getField('VAR').setValue(variable.getId())
+
+    // Clean up auto-created 'item' variable that Blockly generates from field_variable defaults
+    const allVars = ws.getAllVariables() || []
+    allVars.forEach(v => {
+      if (v.name === 'item' && v.getId() !== variable.getId()) {
+        try { ws.deleteVariableById(v.getId()) } catch (_) { /* in use */ }
+      }
+    })
+
+    // For typed set blocks, auto-attach a default value block (like ElectroBlocks)
+    if (type === 'variables_set_number' && block.getInput('VALUE')) {
+      try {
+        const valBlock = ws.newBlock('math_number')
+        valBlock.setFieldValue('10', 'NUM')
+        valBlock.initSvg(); valBlock.render()
+        block.getInput('VALUE').connection.connect(valBlock.outputConnection)
+      } catch (_) { /* ignore if connection fails */ }
+    } else if (type === 'variables_set_string' && block.getInput('VALUE')) {
+      try {
+        const valBlock = ws.newBlock('text')
+        valBlock.setFieldValue('abc', 'TEXT')
+        valBlock.initSvg(); valBlock.render()
+        block.getInput('VALUE').connection.connect(valBlock.outputConnection)
+      } catch (_) { /* ignore if connection fails */ }
+    } else if (type === 'variables_set_boolean' && block.getInput('VALUE')) {
+      try {
+        const valBlock = ws.newBlock('logic_boolean')
+        valBlock.initSvg(); valBlock.render()
+        block.getInput('VALUE').connection.connect(valBlock.outputConnection)
+      } catch (_) { /* ignore if connection fails */ }
+    }
+
     block.initSvg(); block.render()
     const n = (blockCountRef.current++ % 10) * 18
     block.moveTo(new window.Blockly.utils.Coordinate(30 + n, 30 + n))
     syncGeneratedCode({ notifyParent: true, emitXml: true })
   }, [syncGeneratedCode])
 
-  const handleNewVariable = useCallback(() => {
+  const handleNewVariable = useCallback((type = '') => {
     const ws = workspaceRef.current
     if (!ws) return
-    const name = window.prompt('Variable name:')
-    if (name && name.trim()) ws.createVariable(name.trim())
+    const typeLabel = type === 'String' ? 'Text' : type || 'Any'
+    const name = window.prompt(`${typeLabel} variable name:`)
+    if (name && name.trim()) {
+      ws.createVariable(name.trim(), type || '')
+      setVariables([...ws.getAllVariables()])
+    }
   }, [])
 
   /** Remove drag preview without deleting blocks that were snapped below it. */
@@ -2171,34 +2409,51 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             {/* Variables category */}
             {activeCat === 'variables' && (
               <>
-                {/* New variable button — styled as a hat-like block */}
-                <div
-                  onClick={handleNewVariable}
-                  style={{ cursor: 'pointer' }}
-                  title="Create a new variable"
-                >
-                  <div style={{
-                    background: '#e84393',
-                    color: '#fff', fontSize: 11, fontWeight: 700,
-                    padding: '7px 12px', borderRadius: 6,
-                    textAlign: 'center', userSelect: 'none',
-                  }}>
-                    + Make a Variable
-                  </div>
+                {/* New variable buttons — styled like ElectroBlocks */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  {[
+                    { type: 'Number', label: 'Create Number Variable' },
+                    { type: 'String', label: 'Create Text Variable' },
+                    { type: 'Boolean', label: 'Create Boolean Variable' },
+                  ].map(btn => (
+                    <div
+                      key={btn.type}
+                      onClick={() => handleNewVariable(btn.type)}
+                      style={{ cursor: 'pointer' }}
+                      title={btn.label}
+                    >
+                      <div style={{
+                        background: isDark ? '#2a2a2a' : '#f5f5f5',
+                        color: isDark ? '#ddd' : '#333',
+                        fontSize: 12, fontWeight: 600,
+                        padding: '8px 14px', borderRadius: 6,
+                        textAlign: 'center', userSelect: 'none',
+                        border: `1.5px solid ${isDark ? '#555' : '#ccc'}`,
+                        transition: 'all .15s',
+                      }}>
+                        {btn.label}
+                      </div>
+                    </div>
+                  ))}
                 </div>
 
-                {variables.length === 0 && (
+                {variables.filter(v => v.type === 'Number' || v.type === 'String' || v.type === 'Boolean').length === 0 && (
                   <div style={{ fontSize: 11, color: tok.textMuted, padding: '8px 4px', textAlign: 'center', lineHeight: 1.6 }}>
                     No variables yet.<br />Create one above.
                   </div>
                 )}
 
-                {variables.map(v => (
-                  <div key={v.getId()} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {variables.filter(v => v.type === 'Number' || v.type === 'String' || v.type === 'Boolean').map(v => {
+                  const t = v.type;
+                  const getType = `variables_get_${t.toLowerCase()}`;
+                  const setType = `variables_set_${t.toLowerCase()}`;
+                  return (
+                  <div key={v.getId()} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 12, borderBottom: `1px solid ${isDark ? '#333' : '#eee'}` }}>
+                    <div style={{ fontSize: 11, color: tok.textMuted, fontWeight: 600 }}>{v.name} ({t})</div>
                     {/* Variable reporter (get) */}
-                    <div onClick={() => addVariableBlock('variables_get', v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Use "${v.name}"`}>
+                    <div onClick={() => addVariableBlock(getType, v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Use "${v.name}"`}>
                       <BlockPreview
-                        type="variables_get" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'}
+                        type={getType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
                         onDragStart={(info) => { draggingRef.current = info }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
@@ -2211,9 +2466,9 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                       />
                     </div>
                     {/* set */}
-                    <div onClick={() => addVariableBlock('variables_set', v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`set ${v.name}`}>
+                    <div onClick={() => addVariableBlock(setType, v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`set ${v.name}`}>
                       <BlockPreview
-                        type="variables_set" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'}
+                        type={setType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
                         onDragStart={(info) => { draggingRef.current = info }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
@@ -2226,9 +2481,10 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                       />
                     </div>
                     {/* change */}
+                    {(!t || t === 'Number') && (
                     <div onClick={() => addVariableBlock('math_change', v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`change ${v.name}`}>
                       <BlockPreview
-                        type="math_change" varId={v.getId()} isDark={isDark} blocklyReady={loadStatus === 'ready'}
+                        type="math_change" varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
                         onDragStart={(info) => { draggingRef.current = info }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
@@ -2240,8 +2496,9 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                         }}
                       />
                     </div>
+                    )}
                   </div>
-                ))}
+                )})}
               </>
             )}
           </div>
