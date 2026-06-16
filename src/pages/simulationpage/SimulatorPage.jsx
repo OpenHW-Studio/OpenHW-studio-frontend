@@ -8655,18 +8655,53 @@ loadDemoProject();
       fqbn,
       buildEngine,
       librariesTxt,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      compiled = await compileCode({
-        code: sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
-        fqbn,
-        libraries_txt: librariesTxt,
-        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-      });
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: sourceCode,
+          libraries_txt: librariesTxt,
+          targetEngine: 'hardware'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
+        compiled = await compileCode({
+          code: sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn,
+          target: kind,
+          libraries_txt: librariesTxt,
+          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+        });
+      }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -8767,10 +8802,15 @@ loadDemoProject();
       await new Promise(r => setTimeout(r, 3500));
     }
 
-    await uploadToHardware();
+    await uploadToHardware({
+      wasConnected: hardwareConnected,
+      disconnectFn: disconnectHardwareSerial,
+      connectFn: connectHardwareSerial,
+    });
   }, [
     hardwareConnected,
     disconnectHardwareSerial,
+    connectHardwareSerial,
     uploadToHardware,
     setHardwareStatus,
     appendConsoleEntry,
@@ -9140,6 +9180,7 @@ loadDemoProject();
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   builder,
                   libraries_txt: librariesTxt,
                 });
@@ -9259,6 +9300,7 @@ loadDemoProject();
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   libraries_txt: librariesTxt,
                 });
               }
@@ -9312,6 +9354,7 @@ loadDemoProject();
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            target: fallbackKind,
             libraries_txt: librariesTxt,
             ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
           });
