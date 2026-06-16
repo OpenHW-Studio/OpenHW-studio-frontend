@@ -6619,13 +6619,46 @@ useEffect(() => {
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      compiled = await compileCode({
-        code: sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
-        fqbn,
-        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-      });
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: sourceCode,
+          targetEngine: 'frontend'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
+        compiled = await compileCode({
+          code: sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn,
+          target: kind,
+          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+        });
+      }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -6953,6 +6986,7 @@ useEffect(() => {
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   builder,
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
@@ -7044,6 +7078,7 @@ useEffect(() => {
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                 });
               }
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
@@ -7089,6 +7124,7 @@ useEffect(() => {
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            target: fallbackKind,
             ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
           });
           setCachedHex(cacheStr, board, result);
