@@ -1820,6 +1820,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
   const [generatedCode, setGeneratedCode] = useState('')
   const [showCode, setShowCode] = useState(false)
   const [activeCat, setActiveCat] = useState('basic')
+  const [showAllCategories, setShowAllCategories] = useState(false)
   const [variables, setVariables] = useState([])
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -2697,7 +2698,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             flexShrink: 0,
             minHeight: 124,
           }}>
-            {CATEGORIES.map(cat => {
+            {(showAllCategories ? CATEGORIES : CATEGORIES.slice(0, 6)).map(cat => {
               const active = activeCat === cat.id
               return (
                 <button
@@ -2725,6 +2726,52 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                 </button>
               )
             })}
+            {!showAllCategories && CATEGORIES.length > 6 && (
+              <button
+                onClick={() => setShowAllCategories(true)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  padding: isMobile ? '7px 10px' : '6px 10px',
+                  borderRadius: isMobile ? 12 : 20,
+                  border: `1px solid ${tok.border}`,
+                  background: isMobile ? 'var(--bg3)' : 'transparent',
+                  color: tok.textMuted,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: isMobile ? 10 : 12,
+                  fontWeight: 400,
+                  textTransform: isMobile ? 'uppercase' : 'none',
+                  letterSpacing: isMobile ? '.05em' : 'normal',
+                  transition: 'all .2s', whiteSpace: 'nowrap', overflow: 'hidden',
+                  gridColumn: '1 / -1', // span full width if desired, or just sit in flow
+                }}
+                title="Show more categories"
+              >
+                More...
+              </button>
+            )}
+            {showAllCategories && CATEGORIES.length > 6 && (
+              <button
+                onClick={() => setShowAllCategories(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  padding: isMobile ? '7px 10px' : '6px 10px',
+                  borderRadius: isMobile ? 12 : 20,
+                  border: `1px solid ${tok.border}`,
+                  background: isMobile ? 'var(--bg3)' : 'transparent',
+                  color: tok.textMuted,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: isMobile ? 10 : 12,
+                  fontWeight: 400,
+                  textTransform: isMobile ? 'uppercase' : 'none',
+                  letterSpacing: isMobile ? '.05em' : 'normal',
+                  transition: 'all .2s', whiteSpace: 'nowrap', overflow: 'hidden',
+                  gridColumn: '1 / -1',
+                }}
+                title="Show fewer categories"
+              >
+                Less...
+              </button>
+            )}
           </div>
 
           {/* Block list */}
