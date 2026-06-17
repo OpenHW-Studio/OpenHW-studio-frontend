@@ -3612,7 +3612,7 @@ useEffect(() => {
     if (!customElements.get('wokwi-7segment') && !document.getElementById('wokwi-bundle')) {
       const s = document.createElement('script')
       s.id = 'wokwi-bundle'
-      s.src = 'https://unpkg.com/@wokwi/elements@0.48.3/dist/wokwi-elements.bundle.js'
+      s.src = '/wokwi-elements.bundle.js'
       document.head.appendChild(s)
     }
   }, [])
