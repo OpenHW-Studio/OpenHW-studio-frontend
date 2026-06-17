@@ -32,6 +32,8 @@ const CATEGORIES = [
   { id: 'text', label: 'Text', color: '#5b67a5' },
   { id: 'input', label: 'Input', color: '#9b59b6' },
   { id: 'variables', label: 'Variables', color: '#e84393' },
+  { id: 'list', label: 'List', color: '#ff99cc' },
+  { id: 'color', label: 'Color', color: '#5463ff' },
 ]
 
 // ─── Block shape kinds ────────────────────────────────────────────────────────
@@ -49,7 +51,8 @@ const VALUE_TYPES = new Set([
   'button_pressed_bool', 'digital_pin_is', 'gesture_is',
   'logic_operation', 'logic_negate', 'logic_boolean', 'math_number',
   'text', 'text_join', 'text_length', 'text_isEmpty',
-  'text_changeCase', 'text_getSubstring', 'number_to_text',
+  'text_changeCase', 'parse_string_block', 'number_to_text',
+  'colour_picker', 'colour_random', 'colour_rgb',
 ])
 const getShapeKind = (type) =>
   HAT_TYPES.has(type) ? 'hat' : VALUE_TYPES.has(type) ? 'value' : 'statement'
@@ -140,6 +143,11 @@ const CATEGORY_BLOCKS = {
     { type: 'logic_boolean', label: 'true / false' },
     { type: 'math_number', label: 'number' },
   ],
+  color: [
+    { type: 'colour_picker', label: 'color' },
+    { type: 'colour_random', label: 'random color' },
+    { type: 'colour_rgb', label: 'color with red green blue' },
+  ],
   input: [
     { type: 'read_digital_pin', label: 'digital read pin' },
     { type: 'read_analog_pin', label: 'analog read pin' },
@@ -165,7 +173,7 @@ const CATEGORY_BLOCKS = {
     { type: 'text', label: '" abc "' },
     { type: 'text_join', label: 'create text with' },
     { type: 'text_length', label: 'length of' },
-    { type: 'text_getSubstring', label: 'get part of text' },
+    { type: 'parse_string_block', label: 'get part of text' },
     { type: 'number_to_text', label: 'number to text' },
     { type: 'text_isEmpty', label: 'is empty' },
     { type: 'text_changeCase', label: 'to UPPER / lower' },
@@ -221,6 +229,84 @@ const BLOCK_DEFS = [
     tooltip: 'Sets this boolean variable to be equal to the input.', helpUrl: ''
   },
 
+  // ── List ─────────────────────────────────────────────────────────────
+  {
+    type: 'list_store_number', message0: 'Store number %1 in %2 at position %3',
+    args0: [
+      { type: 'input_value', name: 'VALUE', check: 'Number' },
+      { type: 'field_variable', name: 'VAR', variable: 'numlist', variableTypes: ['List Number'], defaultType: 'List Number' },
+      { type: 'input_value', name: 'POS', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#ff99cc',
+    tooltip: 'Store a number in the list.', helpUrl: ''
+  },
+  {
+    type: 'list_get_number', message0: 'Get number from %1 at position %2',
+    args0: [
+      { type: 'field_variable', name: 'VAR', variable: 'numlist', variableTypes: ['List Number'], defaultType: 'List Number' },
+      { type: 'input_value', name: 'POS', check: 'Number' },
+    ],
+    output: 'Number', colour: '#ff99cc', inputsInline: true,
+    tooltip: 'Get a number from the list.', helpUrl: ''
+  },
+  {
+    type: 'list_store_text', message0: 'Store text %1 in %2 at position %3',
+    args0: [
+      { type: 'input_value', name: 'VALUE', check: 'String' },
+      { type: 'field_variable', name: 'VAR', variable: 'stringlist', variableTypes: ['List String'], defaultType: 'List String' },
+      { type: 'input_value', name: 'POS', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#ff99cc',
+    tooltip: 'Store text in the list.', helpUrl: ''
+  },
+  {
+    type: 'list_get_text', message0: 'Get text from %1 at position %2',
+    args0: [
+      { type: 'field_variable', name: 'VAR', variable: 'stringlist', variableTypes: ['List String'], defaultType: 'List String' },
+      { type: 'input_value', name: 'POS', check: 'Number' },
+    ],
+    output: 'String', colour: '#ff99cc', inputsInline: true,
+    tooltip: 'Get text from the list.', helpUrl: ''
+  },
+  {
+    type: 'list_store_boolean', message0: 'Store boolean %1 in %2 at position %3',
+    args0: [
+      { type: 'input_value', name: 'VALUE', check: 'Boolean' },
+      { type: 'field_variable', name: 'VAR', variable: 'boollist', variableTypes: ['List Boolean'], defaultType: 'List Boolean' },
+      { type: 'input_value', name: 'POS', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#ff99cc',
+    tooltip: 'Store a boolean in the list.', helpUrl: ''
+  },
+  {
+    type: 'list_get_boolean', message0: 'Get boolean from %1 at position %2',
+    args0: [
+      { type: 'field_variable', name: 'VAR', variable: 'boollist', variableTypes: ['List Boolean'], defaultType: 'List Boolean' },
+      { type: 'input_value', name: 'POS', check: 'Number' },
+    ],
+    output: 'Boolean', colour: '#ff99cc', inputsInline: true,
+    tooltip: 'Get a boolean from the list.', helpUrl: ''
+  },
+  {
+    type: 'list_store_color', message0: 'Store color %1 in %2 at position %3',
+    args0: [
+      { type: 'input_value', name: 'VALUE', check: 'Colour' },
+      { type: 'field_variable', name: 'VAR', variable: 'colorlist', variableTypes: ['List Colour'], defaultType: 'List Colour' },
+      { type: 'input_value', name: 'POS', check: 'Number' },
+    ],
+    previousStatement: null, nextStatement: null, colour: '#ff99cc',
+    tooltip: 'Store a color in the list.', helpUrl: ''
+  },
+  {
+    type: 'list_get_color', message0: 'Get color from %1 at position %2',
+    args0: [
+      { type: 'field_variable', name: 'VAR', variable: 'colorlist', variableTypes: ['List Colour'], defaultType: 'List Colour' },
+      { type: 'input_value', name: 'POS', check: 'Number' },
+    ],
+    output: 'Colour', colour: '#ff99cc', inputsInline: true,
+    tooltip: 'Get a color from the list.', helpUrl: ''
+  },
+
   // ── Text blocks ─────────────────────────────────────────────────────────────
   {
     type: 'text', message0: '" %1 "',
@@ -244,13 +330,16 @@ const BLOCK_DEFS = [
     tooltip: 'Returns the number of characters in the text.'
   },
   {
-    type: 'text_getSubstring',
+    type: 'parse_string_block',
     message0: 'get part of text %1 value %2 separating character %3 position %4',
     args0: [
       { type: 'input_dummy' },
-      { type: 'input_value', name: 'VALUE', check: 'String' },
-      { type: 'field_input', name: 'DELIM', text: ',' },
-      { type: 'input_value', name: 'POSITION', check: 'Number' },
+      { type: 'input_value', name: 'VALUE', check: 'String', align: 'RIGHT' },
+      { type: 'field_dropdown', name: 'DELIM', options: [
+        [',', ','], ['-', '-'], ['*', '*'], [':', ':'], ['#', '#'],
+        ['$', '$'], ['^', '^'], ['|', '|'], ['@', '@']
+      ]},
+      { type: 'input_value', name: 'POSITION', check: 'Number', align: 'RIGHT' },
     ],
     output: 'String', colour: '#5b67a5', inputsInline: false,
     tooltip: 'Split text by a separator and get the part at the given position (1-based).'
@@ -911,6 +1000,15 @@ function buildGenerator(B) {
     return [`(${vc(b, 'A', ord)} ${op} ${vc(b, 'B', ord)})`, ord]
   }
 
+  gen.forBlock['colour_picker'] = b => [`0x${String(b.getFieldValue('COLOUR')).replace('#', '')}`, gen.ORDER_ATOMIC]
+  gen.forBlock['colour_random'] = () => ['random(0, 0xFFFFFF)', gen.ORDER_ATOMIC]
+  gen.forBlock['colour_rgb'] = b => {
+    const r = vc(b, 'RED', gen.ORDER_BITWISE_SHIFT) || '0'
+    const g = vc(b, 'GREEN', gen.ORDER_BITWISE_SHIFT) || '0'
+    const bl = vc(b, 'BLUE', gen.ORDER_BITWISE_SHIFT) || '0'
+    return [`((${r} & 0xFF) << 16 | (${g} & 0xFF) << 8 | (${bl} & 0xFF))`, gen.ORDER_BITWISE_OR]
+  }
+
   // Input
   gen.forBlock['read_digital_pin'] = b => {
     const pin = b.getFieldValue('PIN')
@@ -961,7 +1059,7 @@ function buildGenerator(B) {
     const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'
     return [`String(${val}).length()`, gen.ORDER_ATOMIC]
   }
-  gen.forBlock['text_getSubstring'] = b => {
+  gen.forBlock['parse_string_block'] = b => {
     const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'
     const delim = b.getFieldValue('DELIM') || ','
     const pos = vc(b, 'POSITION', gen.ORDER_ATOMIC) || '1'
@@ -1000,6 +1098,37 @@ function buildGenerator(B) {
   gen.forBlock['variables_get_boolean'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
   gen.forBlock['variables_set_boolean'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false'};\n` }
 
+  // List blocks
+  const genListGet = (b) => {
+    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
+    return [`${listName}[(${pos}) - 1]`, gen.ORDER_ATOMIC];
+  };
+  const genListSet = (b) => {
+    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '0';
+    const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
+    return `${listName}[(${pos}) - 1] = ${val};\n`;
+  };
+  gen.forBlock['list_get_number'] = genListGet;
+  gen.forBlock['list_store_number'] = genListSet;
+  gen.forBlock['list_get_text'] = genListGet;
+  gen.forBlock['list_store_text'] = b => {
+    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""';
+    const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
+    return `${listName}[(${pos}) - 1] = ${val};\n`;
+  };
+  gen.forBlock['list_get_boolean'] = genListGet;
+  gen.forBlock['list_store_boolean'] = b => {
+    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false';
+    const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
+    return `${listName}[(${pos}) - 1] = ${val};\n`;
+  };
+  gen.forBlock['list_get_color'] = genListGet;
+  gen.forBlock['list_store_color'] = genListSet;
+
   return gen
 }
 
@@ -1017,6 +1146,15 @@ function generateSketch(gen, ws) {
     if (v.type === 'String') { type = 'String'; def = '""'; }
     else if (v.type === 'Boolean') { type = 'bool'; def = 'false'; }
     return `${type} ${v.name} = ${def};`;
+  }).join('\n') + '\n\n' : ''
+  
+  const listVars = (ws.getAllVariables() || []).filter(v => v.type.startsWith('List '));
+  const listVarDecl = listVars.length ? listVars.map(v => {
+    let type = 'int';
+    if (v.type === 'List String') type = 'String';
+    else if (v.type === 'List Boolean') type = 'bool';
+    else if (v.type === 'List Colour') type = 'long';
+    return `${type} ${v.name}[10];`; // Default to size 10
   }).join('\n') + '\n\n' : ''
   
   gen.usedPins = new Map() // Reset/initialize used pins Map for the current generation run
@@ -1076,8 +1214,45 @@ function generateSketch(gen, ws) {
     helpers += `String toLowerCase(String str) {\n  str.toLowerCase();\n  return str;\n}\n\n`
   }
 
-  const code = `// Generated by OpenHW Studio Block Editor\n\n${varDecl}${helpers}${extras.join('\n')}${extras.length ? '\n' : ''}${setupFunc}${loopFunc}`
+  const code = `// Generated by OpenHW Studio Block Editor\n\n${varDecl}${listVarDecl}${helpers}${extras.join('\n')}${extras.length ? '\n' : ''}${setupFunc}${loopFunc}`
   return typeof gen.finish === 'function' ? gen.finish(code) : code
+}
+
+function attachDefaultShadows(ws, block, type) {
+  try {
+    if (type === 'parse_string_block') {
+      if (block.getInput('VALUE')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('blue,red,green', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('VALUE').connection.connect(valBlock.outputConnection);
+      }
+      if (block.getInput('POSITION')) {
+        const posBlock = ws.newBlock('math_number'); posBlock.setFieldValue('1', 'NUM');
+        posBlock.initSvg(); posBlock.render(); posBlock.setShadow(true);
+        block.getInput('POSITION').connection.connect(posBlock.outputConnection);
+      }
+    } else if (type === 'number_to_text') {
+      if (block.getInput('DECIMALS')) {
+        const decBlock = ws.newBlock('math_number'); decBlock.setFieldValue('2', 'NUM');
+        decBlock.initSvg(); decBlock.render(); decBlock.setShadow(true);
+        block.getInput('DECIMALS').connection.connect(decBlock.outputConnection);
+      }
+      if (block.getInput('NUM')) {
+        const numBlock = ws.newBlock('math_number'); numBlock.setFieldValue('5.23', 'NUM');
+        numBlock.initSvg(); numBlock.render(); numBlock.setShadow(true);
+        block.getInput('NUM').connection.connect(numBlock.outputConnection);
+      }
+    } else if (type === 'colour_rgb') {
+      const attachNum = (name, val) => {
+        if (block.getInput(name)) {
+          const num = ws.newBlock('math_number'); num.setFieldValue(val, 'NUM');
+          num.initSvg(); num.render(); num.setShadow(true);
+          block.getInput(name).connection.connect(num.outputConnection);
+        }
+      }
+      attachNum('RED', '100'); attachNum('GREEN', '50'); attachNum('BLUE', '0');
+    }
+  } catch (err) { console.error('Failed to attach shadow blocks:', err) }
 }
 
 // ─── Blockly theme ────────────────────────────────────────────────────────────
@@ -1270,6 +1445,7 @@ const BlockPreview = React.memo(function BlockPreview({ type, onDragStart, onDra
       if (varId && block.getField('VAR')) block.getField('VAR').setValue(varId)
       block.initSvg()
       block.render()
+      attachDefaultShadows(previewWs, block, type)
       blockRef.current = block
       if (!disposed) setRenderReady(true)
     } catch (err) {
@@ -1737,6 +1913,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     const block = ws.newBlock(type)
     block.initSvg()
     block.render()
+    attachDefaultShadows(ws, block, type)
     const fallback = (blockCountRef.current++ % 10) * 18
     block.moveTo(new window.Blockly.utils.Coordinate(
       wsX !== undefined ? wsX : 30 + fallback,
@@ -1933,6 +2110,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     if (varId && block.getField('VAR')) block.getField('VAR').setValue(varId)
     block.initSvg()
     block.render()
+    attachDefaultShadows(ws, block, type)
     block.moveTo(wsCoord)
 
     const snap = findSnapConnection(block)
@@ -2380,7 +2558,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
           <div className="panel-scroll" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
 
             {/* Standard categories */}
-            {activeCat !== 'variables' && (CATEGORY_BLOCKS[activeCat] || []).map(item => {
+            {activeCat !== 'variables' && activeCat !== 'list' && (CATEGORY_BLOCKS[activeCat] || []).map(item => {
               return (
                 <div
                   key={item.type}
@@ -2499,6 +2677,90 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     )}
                   </div>
                 )})}
+              </>
+            )}
+
+            {/* List category */}
+            {activeCat === 'list' && (
+              <>
+                {/* New list buttons */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  {[
+                    { type: 'List Number', label: 'Create a list of number' },
+                    { type: 'List String', label: 'Create a list of string' },
+                    { type: 'List Boolean', label: 'Create a list of boolean' },
+                    { type: 'List Colour', label: 'Create a list of colors' },
+                  ].map(btn => (
+                    <div
+                      key={btn.type}
+                      onClick={() => handleNewVariable(btn.type)}
+                      style={{ cursor: 'pointer' }}
+                      title={btn.label}
+                    >
+                      <div style={{
+                        background: isDark ? '#2a2a2a' : '#f5f5f5',
+                        color: isDark ? '#ddd' : '#333',
+                        fontSize: 12, fontWeight: 600,
+                        padding: '8px 14px', borderRadius: 6,
+                        textAlign: 'center', userSelect: 'none',
+                        border: `1.5px solid ${isDark ? '#555' : '#ccc'}`,
+                        transition: 'all .15s',
+                      }}>
+                        {btn.label}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {variables.filter(v => v.type.startsWith('List ')).length === 0 && (
+                  <div style={{ fontSize: 11, color: tok.textMuted, padding: '8px 4px', textAlign: 'center', lineHeight: 1.6 }}>
+                    No lists yet.<br />Create one above.
+                  </div>
+                )}
+
+                {variables.filter(v => v.type.startsWith('List ')).map(v => {
+                  const t = v.type.split(' ')[1].toLowerCase();
+                  const t2 = t === 'string' ? 'text' : t === 'colour' ? 'color' : t;
+                  const getType = `list_get_${t2}`;
+                  const setType = `list_store_${t2}`;
+                  return (
+                  <div key={v.getId()} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 12, borderBottom: `1px solid ${isDark ? '#333' : '#eee'}` }}>
+                    <div style={{ fontSize: 11, color: tok.textMuted, fontWeight: 600 }}>{v.name} ({v.type})</div>
+                    
+                    {/* Store block */}
+                    <div onClick={() => addVariableBlock(setType, v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Store in "${v.name}"`}>
+                      <BlockPreview
+                        type={setType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
+                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragEnd={() => {
+                          if (markerManagerRef.current) {
+                            markerManagerRef.current.dispose()
+                            markerManagerRef.current = null
+                          }
+                          safeDisposePreviewBlock()
+                          draggingRef.current = null
+                        }}
+                      />
+                    </div>
+
+                    {/* Get block */}
+                    <div onClick={() => addVariableBlock(getType, v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Get from "${v.name}"`}>
+                      <BlockPreview
+                        type={getType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
+                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragEnd={() => {
+                          if (markerManagerRef.current) {
+                            markerManagerRef.current.dispose()
+                            markerManagerRef.current = null
+                          }
+                          safeDisposePreviewBlock()
+                          draggingRef.current = null
+                        }}
+                      />
+                    </div>
+                  </div>
+                  )
+                })}
               </>
             )}
           </div>

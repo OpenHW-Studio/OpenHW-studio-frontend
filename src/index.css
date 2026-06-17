@@ -10548,4 +10548,11 @@ body {
   text-align: center;
 }
 
+/* ─── BLOCKLY FIXES ──────────────────────────────────────────────────────── */
+.blocklyHtmlInput {
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  font-family: inherit !important;
+}
 
