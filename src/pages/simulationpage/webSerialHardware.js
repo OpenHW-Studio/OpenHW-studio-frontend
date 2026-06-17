@@ -118,8 +118,22 @@ export function useWebSerialHardware({
       const baudRate = Number(hardwareBaudRate || boardDefaultBaud[kind] || boardDefaultBaud.arduino_uno);
 
       let port;
-      if (useLastPort === true && lastPortRef.current) {
-        port = lastPortRef.current;
+      if (useLastPort === true) {
+        if (lastPortRef.current) {
+          port = lastPortRef.current;
+        } else {
+          // We are trying to auto-connect but don't have a cached port.
+          // Try to find an already-authorized port via getPorts() since
+          // we are likely outside a user gesture here.
+          const ports = await navigator.serial.getPorts();
+          if (ports.length > 0) {
+            // For now, just grab the first authorized port.
+            // Ideally we'd match by VID/PID, but often there's only 1.
+            port = ports[0];
+          } else {
+            throw new Error("No authorized serial ports found. Please connect manually first.");
+          }
+        }
       } else {
         const requestOptions = showAllHardwarePorts
           ? {}
