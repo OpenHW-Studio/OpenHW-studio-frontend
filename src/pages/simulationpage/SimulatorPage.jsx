@@ -3841,7 +3841,7 @@ loadDemoProject();
       const s = document.createElement("script");
       s.id = "wokwi-bundle";
       s.src =
-        "https://unpkg.com/@wokwi/elements@0.48.3/dist/wokwi-elements.bundle.js";
+        "/wokwi-elements.bundle.js";
       document.head.appendChild(s);
     }
   }, []);
