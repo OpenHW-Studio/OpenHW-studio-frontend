@@ -34,6 +34,9 @@ const CATEGORIES = [
   { id: 'variables', label: 'Variables', color: '#e84393' },
   { id: 'list', label: 'List', color: '#ff99cc' },
   { id: 'color', label: 'Color', color: '#5463ff' },
+  { id: 'message', label: 'Message', color: '#a256c7' },
+  { id: 'time', label: 'Time', color: '#a256c7' },
+  { id: 'code', label: 'Code', color: '#a256c7' },
 ]
 
 // ─── Block shape kinds ────────────────────────────────────────────────────────
@@ -42,6 +45,7 @@ const HAT_TYPES = new Set([
   'on_start', 'forever',
   'on_button_pressed', 'on_shake', 'on_pin_pressed',
   'on_pin_changed', 'on_radio_number', 'on_radio_string', 'on_radio_key_value',
+  'create_block', 'setup_runs_once',
 ])
 const VALUE_TYPES = new Set([
   'math_arithmetic_openhw', 'math_compare', 'pick_random', 'map_value',
@@ -96,6 +100,7 @@ const CATEGORY_BLOCKS = {
     { type: 'on_button_pressed', label: 'on button pressed' },
     { type: 'on_shake', label: 'on shake' },
     { type: 'on_pin_pressed', label: 'on pin pressed' },
+    { type: 'create_block', label: 'create block' },
   ],
   control: [
     { type: 'on_start', label: 'on start' },
@@ -105,6 +110,7 @@ const CATEGORY_BLOCKS = {
     { type: 'repeat_while', label: 'repeat while' },
     { type: 'if_then', label: 'if then' },
     { type: 'if_then_else', label: 'if then else' },
+    { type: 'loop_with_for', label: 'loop with' },
   ],
   output: [
     { type: 'clear_screen', label: 'clear screen' },
@@ -177,6 +183,20 @@ const CATEGORY_BLOCKS = {
     { type: 'number_to_text', label: 'number to text' },
     { type: 'text_isEmpty', label: 'is empty' },
     { type: 'text_changeCase', label: 'to UPPER / lower' },
+  ],
+  message: [
+    { type: 'message_setup', label: 'Message Setup' },
+    { type: 'send_message', label: 'Send message' },
+    { type: 'get_message', label: 'Get message' },
+    { type: 'message_received', label: 'Message received?' },
+  ],
+  time: [
+    { type: 'setup_time', label: 'Setup Time' },
+    { type: 'wait_for_time', label: 'wait for' },
+    { type: 'seconds_arduino_on', label: 'seconds arduino been on' },
+  ],
+  code: [
+    { type: 'setup_runs_once', label: 'Setup (runs once)' },
   ],
 }
 
@@ -447,6 +467,23 @@ const BLOCK_DEFS = [
     colour: 0, tooltip: 'Run on touch pin press.'
   },
 
+  {
+    type: 'create_block', message0: 'create block %1 %2 %3',
+    args0: [
+      { type: 'field_input', name: 'NAME', text: 'do something' },
+      { type: 'input_dummy' },
+      { type: 'input_statement', name: 'DO' },
+    ],
+    colour: '#a256c7', tooltip: 'Create a custom block'
+  },
+
+  // ── Code ─────────────────────────────────────────────────────────────────
+  {
+    type: 'setup_runs_once', message0: 'Setup (runs once) %1 %2',
+    args0: [{ type: 'input_dummy' }, { type: 'input_statement', name: 'DO' }],
+    colour: '#a256c7', tooltip: 'Runs once at startup.'
+  },
+
   // ── Control ─────────────────────────────────────────────────────────────────
   {
     type: 'on_start', message0: 'on start %1 %2',
@@ -467,8 +504,23 @@ const BLOCK_DEFS = [
       { type: 'input_dummy' },
       { type: 'input_statement', name: 'DO' },
     ],
-    previousStatement: null, nextStatement: null, colour: 33,
+    previousStatement: null, nextStatement: null, colour: '#a256c7',
     tooltip: 'Repeat N times.'
+  },
+
+  {
+    type: 'loop_with_for',
+    message0: 'loop with %1 from %2 to %3 by adding %4 %5 %6',
+    args0: [
+      { type: 'field_variable', name: 'VAR', variable: 'i' },
+      { type: 'input_value', name: 'FROM', check: 'Number' },
+      { type: 'input_value', name: 'TO', check: 'Number' },
+      { type: 'field_number', name: 'BY', value: 1 },
+      { type: 'input_dummy' },
+      { type: 'input_statement', name: 'DO' }
+    ],
+    previousStatement: null, nextStatement: null, colour: '#a256c7',
+    tooltip: 'Loop from a starting number to an ending number.'
   },
 
   {
@@ -888,6 +940,75 @@ const BLOCK_DEFS = [
     previousStatement: null, nextStatement: null, colour: 270,
     tooltip: 'Set accelerometer measurement range.'
   },
+
+  // ── Message ─────────────────────────────────────────────────────────────────
+  {
+    type: 'message_setup',
+    message0: 'Message Setup %1 Loop %2 %3 Receiving Message? %4 %5 Message: %6 %7 Copy All: %8',
+    args0: [
+      { type: 'input_dummy' },
+      { type: 'field_dropdown', name: 'LOOP', options: [['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['5', '5']] },
+      { type: 'input_dummy' },
+      { type: 'field_checkbox', name: 'RECEIVING', checked: true },
+      { type: 'input_dummy' },
+      { type: 'field_input', name: 'MESSAGE', text: 'Hello World :)' },
+      { type: 'input_dummy' },
+      { type: 'field_checkbox', name: 'COPY_ALL', checked: false }
+    ],
+    colour: '#a256c7', tooltip: 'Setup message properties'
+  },
+  {
+    type: 'send_message',
+    message0: 'Send message %1',
+    args0: [
+      { type: 'input_value', name: 'MESSAGE', check: 'String' }
+    ],
+    previousStatement: null,
+    nextStatement: null,
+    colour: '#a256c7',
+    tooltip: 'Send a message'
+  },
+  {
+    type: 'get_message',
+    message0: 'Get message',
+    output: 'String',
+    colour: '#a256c7',
+    tooltip: 'Get the received message'
+  },
+  {
+    type: 'message_received',
+    message0: 'Message received?',
+    output: 'Boolean',
+    colour: '#a256c7',
+    tooltip: 'Check if a message was received'
+  },
+
+  // ── Time ────────────────────────────────────────────────────────────────────
+  {
+    type: 'setup_time',
+    message0: 'Setup Time %1 How many seconds per loop %2',
+    args0: [
+      { type: 'input_dummy' },
+      { type: 'field_input', name: 'SECONDS', text: '0.1' }
+    ],
+    colour: '#a256c7', tooltip: 'Setup time'
+  },
+  {
+    type: 'wait_for_time',
+    message0: 'wait for %1 seconds',
+    args0: [
+      { type: 'input_value', name: 'TIME', check: 'Number' }
+    ],
+    previousStatement: null,
+    nextStatement: null,
+    colour: '#a256c7', tooltip: 'Wait for specified seconds'
+  },
+  {
+    type: 'seconds_arduino_on',
+    message0: 'seconds arduino been on',
+    output: 'Number',
+    colour: '#a256c7', tooltip: 'Get seconds since Arduino has been on'
+  }
 ]
 
 // ─── Arduino C++ code generator ───────────────────────────────────────────────
@@ -922,6 +1043,13 @@ function buildGenerator(B) {
     return `delay(${ms});\n`
   }
   gen.forBlock['on_pin_pressed'] = b => `void onPinPressed_${b.getFieldValue('PIN')}() {\n${sc(b, 'DO')}}\n\n`
+  gen.forBlock['create_block'] = b => {
+    const name = (b.getFieldValue('NAME') || '').replace(/[^a-zA-Z0-9_]/g, '_');
+    return `void custom_${name}() {\n${sc(b, 'DO')}}\n\n`;
+  }
+
+  // Code
+  gen.forBlock['setup_runs_once'] = b => sc(b, 'DO')
 
   // Control
   gen.forBlock['on_start'] = b => sc(b, 'DO')
@@ -930,6 +1058,13 @@ function buildGenerator(B) {
   gen.forBlock['repeat_while'] = b => `while (${vc(b, 'COND', gen.ORDER_NONE)}) {\n${sc(b, 'DO')}}\n`
   gen.forBlock['if_then'] = b => `if (${vc(b, 'COND', gen.ORDER_NONE)}) {\n${sc(b, 'DO')}}\n`
   gen.forBlock['if_then_else'] = b => `if (${vc(b, 'COND', gen.ORDER_NONE)}) {\n${sc(b, 'DO')}} else {\n${sc(b, 'ELSE')}}\n`
+  gen.forBlock['loop_with_for'] = b => {
+    const varName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const fromVal = vc(b, 'FROM', gen.ORDER_ATOMIC) || '1';
+    const toVal = vc(b, 'TO', gen.ORDER_ATOMIC) || '10';
+    const byVal = b.getFieldValue('BY') || '1';
+    return `for (int ${varName} = ${fromVal}; ${varName} <= ${toVal}; ${varName} += ${byVal}) {\n${sc(b, 'DO')}}\n`;
+  }
 
   // Output
   gen.forBlock['plot_x_y'] = b => `plot(${vc(b, 'X', gen.ORDER_ATOMIC)}, ${vc(b, 'Y', gen.ORDER_ATOMIC)});\n`
@@ -1129,6 +1264,15 @@ function buildGenerator(B) {
   gen.forBlock['list_get_color'] = genListGet;
   gen.forBlock['list_store_color'] = genListSet;
 
+  gen.forBlock['message_setup'] = b => '// Message setup\n'
+  gen.forBlock['send_message'] = b => `// Send message: ${vc(b, 'MESSAGE', gen.ORDER_ATOMIC)}\n`
+  gen.forBlock['get_message'] = b => ['"Received message"', gen.ORDER_ATOMIC]
+  gen.forBlock['message_received'] = b => ['true', gen.ORDER_ATOMIC]
+
+  gen.forBlock['setup_time'] = b => '// Setup time\n'
+  gen.forBlock['wait_for_time'] = b => `delay(${vc(b, 'TIME', gen.ORDER_ATOMIC)} * 1000);\n`
+  gen.forBlock['seconds_arduino_on'] = b => ['(millis() / 1000.0)', gen.ORDER_ATOMIC]
+
   return gen
 }
 
@@ -1167,7 +1311,7 @@ function generateSketch(gen, ws) {
     try {
       const code = gen.blockToCode(b)
       if (!code) return
-      if (b.type === 'on_start') {
+      if (b.type === 'on_start' || b.type === 'setup_runs_once') {
         setup += code
       } else if (b.type === 'forever') {
         loop_ += code
@@ -1251,6 +1395,35 @@ function attachDefaultShadows(ws, block, type) {
         }
       }
       attachNum('RED', '100'); attachNum('GREEN', '50'); attachNum('BLUE', '0');
+    } else if (type === 'send_message') {
+      if (block.getInput('MESSAGE')) {
+        const valBlock = ws.newBlock('text'); valBlock.setFieldValue('Hi', 'TEXT');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('MESSAGE').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'wait_for_time') {
+      if (block.getInput('TIME')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('0.2', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('TIME').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'repeat_times') {
+      if (block.getInput('TIMES')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('10', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('TIMES').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'loop_with_for') {
+      if (block.getInput('FROM')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('1', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('FROM').connection.connect(valBlock.outputConnection);
+      }
+      if (block.getInput('TO')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('10', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('TO').connection.connect(valBlock.outputConnection);
+      }
     }
   } catch (err) { console.error('Failed to attach shadow blocks:', err) }
 }
