@@ -8,7 +8,7 @@ const formatBytes = (bytes) => {
 };
 
 // Main Panel Component that exactly mimics the mockup image
-const NetworkPanel = ({ comp, networkStatus, onClose, onToggleGateway, onDownloadPcap, gatewayIp }) => {
+const NetworkPanel = ({ comp, networkStatus, onClose, onToggleGateway, onDownloadPcap }) => {
   const panelRef = useRef(null);
 
   // Close on click outside
@@ -90,7 +90,12 @@ const NetworkPanel = ({ comp, networkStatus, onClose, onToggleGateway, onDownloa
         borderTop: '1px solid #454545',
         fontFamily: 'monospace'
       }}>
-        Gateway: {gatewayIp}
+        {networkStatus.ip ? `Board IP: ${networkStatus.ip}` : 'Board IP: resolving...'}
+        {networkStatus.portForward && (
+          <div style={{ marginTop: '4px' }}>
+            Port Forward: <a href={networkStatus.portForward} target="_blank" rel="noopener noreferrer" style={{ color: '#4FC3F7' }}>{networkStatus.portForward}</a>
+          </div>
+        )}
       </div>
       {/* Gateway Toggle Button */}
       <div style={{ padding: '16px' }}>
@@ -173,7 +178,10 @@ export const NetworkComponentOverlay = ({
 }) => {
   const [activeMenuCompId, setActiveMenuCompId] = useState(null);
   const [boardStats, setBoardStats] = useState({});
-  const [gatewayIp, setGatewayIp] = useState('Resolving...');
+
+  useEffect(() => {
+    setBoardStats({});
+  }, [isRunning]);
 
   useEffect(() => {
     const handleStats = (e) => {
@@ -183,41 +191,16 @@ export const NetworkComponentOverlay = ({
         setBoardStats(prev => ({
           ...prev,
           [boardId]: {
-            txBytes: stats.txBytes || prev[boardId]?.txBytes || 0,
-            rxBytes: stats.rxBytes || prev[boardId]?.rxBytes || 0,
+            txBytes: stats.txBytes ?? prev[boardId]?.txBytes ?? 0,
+            rxBytes: stats.rxBytes ?? prev[boardId]?.rxBytes ?? 0,
+            ip: stats.ip ?? prev[boardId]?.ip ?? '',
+            portForward: stats.portForward ?? prev[boardId]?.portForward ?? '',
           }
         }));
       }
     };
     window.addEventListener('OPENHW_WIFI_STATS', handleStats);
     return () => window.removeEventListener('OPENHW_WIFI_STATS', handleStats);
-  }, []);
-
-  useEffect(() => {
-    const isPrivate = false; // Simplified for logic consistency
-    const wsUrl = !isPrivate ? 'ws://localhost:5099' : (import.meta.env.VITE_PUBLIC_GATEWAY_URL || 'wss://api.openhw-studio.com:5099');
-    try {
-      const urlObj = new URL(wsUrl);
-      const host = urlObj.hostname;
-      if (host === 'localhost' || host === '127.0.0.1') {
-        setGatewayIp(`127.0.0.1:${urlObj.port || 5099}`);
-      } else {
-        fetch(`https://cloudflare-dns.com/dns-query?name=${host}&type=A`, {
-          headers: { 'accept': 'application/dns-json' }
-        })
-        .then(res => res.json())
-        .then(data => {
-          if (data.Answer && data.Answer.length > 0) {
-            setGatewayIp(`${data.Answer[0].data}:${urlObj.port || 5099}`);
-          } else {
-            setGatewayIp(host);
-          }
-        })
-        .catch(() => setGatewayIp(host));
-      }
-    } catch (e) {
-      setGatewayIp(wsUrl);
-    }
   }, []);
 
   if (!isRunning) return null;
@@ -289,10 +272,11 @@ export const NetworkComponentOverlay = ({
             {isMenuOpen && (
               <NetworkPanel
                 comp={comp}
-                gatewayIp={gatewayIp}
                 networkStatus={{
                   txBytes: boardStats[comp.id]?.txBytes || 0,
                   rxBytes: boardStats[comp.id]?.rxBytes || 0,
+                  ip: boardStats[comp.id]?.ip || '',
+                  portForward: boardStats[comp.id]?.portForward || '',
                   isPrivate: comp.attrs?.privateGateway === 'true'
                 }}
                 onClose={() => setActiveMenuCompId(null)}

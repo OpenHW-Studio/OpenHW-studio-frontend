@@ -1090,6 +1090,10 @@ export class RP2040Runner implements BoardRunner {
                     });
                 };
                 this.instances.set(cDef.id, inst);
+                if (typeof cDef.x === 'number' && typeof cDef.y === 'number') {
+                    (inst as any)._posX = cDef.x;
+                    (inst as any)._posY = cDef.y;
+                }
                 console.log(`[RP2040Runner] Instantiated component: ${cDef.id} of type ${cDef.type}`);
             } else {
                 console.log(`[RP2040Runner] LogicClass not found for type: ${cDef.type}`);
@@ -3990,6 +3994,7 @@ export class RP2040Runner implements BoardRunner {
             }
             msg.components = compStates;
 
+            this._collectWifiStats(msg);
             this.statusIntervalEmitCount++;
             msg._emitSeq = this.statusIntervalEmitCount;
             msg._emitTime = now;
@@ -4030,6 +4035,7 @@ export class RP2040Runner implements BoardRunner {
         }
         msg.components = compStates;
 
+        this._collectWifiStats(msg);
         this.statusIntervalEmitCount++;
         msg._emitSeq = this.statusIntervalEmitCount;
         msg._emitTime = now;
@@ -4038,6 +4044,23 @@ export class RP2040Runner implements BoardRunner {
         this.lastStateEmitCycle = currentCycles;
         this.lastStateEmitTime = now;
         this.onStateUpdate(msg);
+    }
+
+    private _collectWifiStats(msg: any) {
+        let totalTx = 0, totalRx = 0;
+        let wifiIp = '', wifiPortForward = '';
+        for (const inst of this.instances.values()) {
+            const s = inst.state;
+            if (s) {
+                if (typeof s.txBytes === 'number') totalTx += s.txBytes;
+                if (typeof s.rxBytes === 'number') totalRx += s.rxBytes;
+                if (s.boardIp && !wifiIp) wifiIp = s.boardIp;
+                if (s.portForward && !wifiPortForward) wifiPortForward = s.portForward;
+            }
+        }
+        if (totalTx > 0 || totalRx > 0 || wifiIp) {
+            msg.wifi = { txBytes: totalTx, rxBytes: totalRx, ip: wifiIp, portForward: wifiPortForward };
+        }
     }
 
     private initPhysicsWorker() { }
