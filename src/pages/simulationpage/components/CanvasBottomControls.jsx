@@ -110,6 +110,7 @@ function CanvasBottomControlsBase({
         height={consoleHeight}
         entries={consoleEntries}
         protocolLogs={protocolLogs}
+        components={components}
         componentTelemetryEnabled={componentTelemetryEnabled}
         setComponentTelemetryEnabled={setComponentTelemetryEnabled}
         telemetryMode={telemetryMode}
