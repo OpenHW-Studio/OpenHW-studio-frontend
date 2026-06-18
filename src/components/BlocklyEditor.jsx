@@ -58,9 +58,9 @@ const GET_DIGITAL_PINS = () => {
     return Array.from({ length: 29 }, (_, i) => [i === 25 ? `GP25 (LED)` : `GP${i}`, String(i)])
   }
   return [
-    ['P0', '0'], ['P1', '1'], ['P2', '2'], ['P3', '3'], ['P4', '4'], ['P5', '5'],
-    ['P6', '6'], ['P7', '7'], ['P8', '8'], ['P9', '9'], ['P10', '10'],
-    ['P11', '11'], ['P12', '12'], ['P13', '13'],
+    ['D0', '0'], ['D1', '1'], ['D2', '2'], ['D3', '3'], ['D4', '4'], ['D5', '5'],
+    ['D6', '6'], ['D7', '7'], ['D8', '8'], ['D9', '9'], ['D10', '10'],
+    ['D11', '11'], ['D12', '12'], ['D13', '13'],
     ['A0', 'A0'], ['A1', 'A1'], ['A2', 'A2'], ['A3', 'A3'], ['A4', 'A4'], ['A5', 'A5'],
   ]
 }
@@ -1933,20 +1933,13 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
       {/* ── Toolbar ── */}
       <div style={{
         display: 'flex', alignItems: 'center',
-        gap: isMobile ? 6 : 8,
+        gap: isMobile ? 6 : 4,
         padding: isMobile ? '8px 12px' : '6px 10px',
         flexShrink: 0, background: tok.toolbar, borderBottom: `1px solid ${tok.border}`,
-        height: isMobile ? 48 : 'auto'
+        height: isMobile ? 48 : 'auto',
+        overflow: 'hidden', minWidth: 0,
       }}>
-        <span style={{
-          fontSize: 11,
-          fontWeight: isMobile ? 800 : 700,
-          textTransform: 'uppercase',
-          letterSpacing: isMobile ? '.1em' : '.08em',
-          color: tok.textMuted
-        }}>
-          {isMobile ? 'Blocks' : 'Block Editor'}
-        </span>
+
 
         <button
           type="button"
@@ -2034,15 +2027,13 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
           Use Blocks
         </button>
 
-        <div style={{ flex: 1 }} />
-
         <button
-          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px' }}
+          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px', marginLeft: 'auto', flexShrink: 0 }}
           onClick={() => importFileRef.current?.click()}
         >Import</button>
 
         <button
-          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px' }}
+          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px', flexShrink: 0 }}
           onClick={handleExportPng}
         >Export</button>
 
@@ -2056,7 +2047,8 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             background: showCode ? 'rgba(0,255,255,0.05)' : 'transparent',
             fontSize: isMobile ? 10 : 11,
             padding: isMobile ? '4px 8px' : '3px 10px',
-            marginRight: isMobile ? 2 : 0
+            marginRight: isMobile ? 2 : 0,
+            flexShrink: 0,
           }}
           onClick={() => setShowCode(v => !v)}
         >Preview</button>
@@ -2070,7 +2062,8 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             fontWeight: 800,
             fontSize: isMobile ? 11 : 11,
             padding: isMobile ? '5px 12px' : '3px 10px',
-            boxShadow: isMobile ? '0 2px 8px rgba(0,255,255,0.2)' : 'none'
+            boxShadow: isMobile ? '0 2px 8px rgba(0,255,255,0.2)' : 'none',
+            flexShrink: 0,
           }}
           onClick={handleExport} disabled={loadStatus !== 'ready'}
         >Use Code</button>

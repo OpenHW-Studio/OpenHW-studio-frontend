@@ -523,8 +523,9 @@ body {
 }
 
 .difficulty.advanced {
-  background: rgba(0, 212, 255, 0.15);
-  color: var(--accent);
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .points {
@@ -2813,8 +2814,8 @@ body {
   bottom: 48px;
   left: 0;
   width: 100%;
-  background: #fff;
-  border: 1px solid #dbe6f2;
+  background: var(--bg2);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 6px;
   box-shadow: 0 16px 32px rgba(15, 23, 42, 0.1);
@@ -2827,7 +2828,7 @@ body {
   text-align: left;
   border-radius: 8px;
   padding: 8px;
-  color: #334155;
+  color: var(--text);
   font-size: 0.82rem;
   cursor: pointer;
 }
@@ -10546,3 +10547,5 @@ body {
   border-radius: 8px;
   text-align: center;
 }
+
+

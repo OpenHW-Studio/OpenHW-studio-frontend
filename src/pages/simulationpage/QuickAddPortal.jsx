@@ -18,7 +18,7 @@ import ReactDOM from 'react-dom';
  * Theme: all colours use CSS custom properties so the panel automatically
  * follows light / dark mode without needing a theme prop.
  */
-const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddComponentRef }) {
+const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddComponentRef, isPaletteItemLocked, showLockToast }) {
   const [quickAdd, setQuickAdd] = useState(null); // { screenX, screenY, canvasX, canvasY }
   const [search, setSearch]     = useState('');
   const [selIdx, setSelIdx]     = useState(0);
@@ -96,6 +96,12 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
   const top  = quickAdd.screenY + approxH > VH ? quickAdd.screenY - approxH - 4 : quickAdd.screenY + 4;
 
   const addItem = (item) => {
+    const locked = isPaletteItemLocked?.(item.type);
+    if (locked) {
+      showLockToast?.(item.label || item.name, null);
+      setQuickAdd(null);
+      return;
+    }
     onAddComponentRef.current?.(item, quickAdd.canvasX, quickAdd.canvasY);
     setQuickAdd(null);
   };
@@ -160,26 +166,31 @@ const QuickAddPortal = React.memo(function QuickAddPortal({ catalog, onAddCompon
       </div>
 
       {/* Results */}
-      {results.map((item, i) => (
-        <div
-          key={`${item.type}-${i}`}
-          className="canvas-menu-item"
-          data-quickadd="true"
-          onMouseEnter={() => setSelIdx(i)}
-          onMouseDown={e => { e.preventDefault(); addItem(item); }}
-          style={{
-            background: i === clampedIdx ? 'var(--accent)' : 'transparent',
-            color:      i === clampedIdx ? '#fff' : 'var(--text)',
-            borderRadius: 8,
-            margin: '2px 5px',
-            width: 'calc(100% - 10px)',
-            userSelect: 'none',
-          }}
-        >
-          <span style={{ fontWeight: i === clampedIdx ? 700 : 500, flex: 1 }}>{item.label}</span>
-          {i === clampedIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
-        </div>
-      ))}
+      {results.map((item, i) => {
+        const locked = isPaletteItemLocked?.(item.type) ?? false;
+        return (
+          <div
+            key={`${item.type}-${i}`}
+            className="canvas-menu-item"
+            data-quickadd="true"
+            onMouseEnter={() => setSelIdx(i)}
+            onMouseDown={e => { e.preventDefault(); addItem(item); }}
+            style={{
+              background: i === clampedIdx ? (locked ? 'rgba(239,68,68,0.15)' : 'var(--accent)') : 'transparent',
+              color:      i === clampedIdx ? (locked ? '#ef4444' : '#fff') : (locked ? 'var(--text3)' : 'var(--text)'),
+              borderRadius: 8,
+              margin: '2px 5px',
+              width: 'calc(100% - 10px)',
+              userSelect: 'none',
+              opacity: locked ? 0.65 : 1,
+            }}
+          >
+            <span style={{ fontWeight: i === clampedIdx ? 700 : 500, flex: 1 }}>{item.label}</span>
+            {locked && <span style={{ fontSize: 11 }}>🔒</span>}
+            {!locked && i === clampedIdx && <span style={{ fontSize: 10, opacity: 0.75 }}>↵</span>}
+          </div>
+        );
+      })}
 
       {/* Empty / hint states */}
       {q && results.length === 0 && (
