@@ -99,6 +99,7 @@ import { SimulatorRuntimePanel } from "./components/SimulatorRuntimePanel";
 import { CanvasBottomControls } from "./components/CanvasBottomControls";
 import { F1MenuOverlay } from "./components/F1MenuOverlay";
 import AutofixPreviewPanel from "../../components/AutofixPreviewPanel.jsx";
+import GuidedProjectPopup from "../../components/student/GuidedProjectPopup.jsx";
 
 import * as EmulatorComponents from "@openhw/emulator";
 
@@ -297,8 +298,8 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
       if (cats.includes('GND')) gndPins.push(pin);
     });
 
-    // Force Arduino Uno to use 5V by eliminating the 3.3V pin from consideration
-    if (comp.type.includes('arduino-uno')) {
+    // Force all Arduino boards (Uno, Mega, Nano, etc.) to use 5V by eliminating the 3.3V pin from consideration
+    if (comp.type.includes('arduino')) {
       for (let i = vccPins.length - 1; i >= 0; i--) {
         const idAndDesc = ((vccPins[i].id || '') + ' ' + (vccPins[i].description || '')).toUpperCase();
         if (idAndDesc.includes('3.3') || idAndDesc.includes('3V3')) {
@@ -462,6 +463,11 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     liveCode = "",
   } = useParams();
   const location = useLocation();
+  const [guidedProjectState, setGuidedProjectState] = useState(() => {
+    if (location.state?.guidedProject) return { project: location.state.guidedProject, levelColor: location.state.levelColor || '#22c55e' }
+    return null
+  })
+  const [activeBoard, setActiveBoard] = useState('arduino')
   const assessmentParams = useMemo(
     () => new URLSearchParams(location.search),
     [location.search],
@@ -493,6 +499,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     currentLevelData,
     nextLevel,
     xpProgress,
+    unlockedComponents,
   } = typeof useGamification === "function" ? useGamification() : {};
   const gamProject = useMemo(
     () =>
@@ -618,12 +625,14 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const isPaletteItemLocked = useCallback(
     (itemType) => {
+      // Only lock components for students in gamification mode
       if (!gamificationMode) return false;
+      if (activeUser?.role !== 'student') return false;
       const compId = WOKWI_TO_COMP_ID[itemType];
       if (!compId) return false;
-      return isUnlocked ? !isUnlocked(compId) : false;
+      return isUnlocked ? !isUnlocked(itemType) : false;
     },
-    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID],
+    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID, activeUser?.role],
   );
 
   const gamProjectComponents = useMemo(() => {
@@ -634,7 +643,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         compId && typeof COMPONENT_MAP !== "undefined"
           ? COMPONENT_MAP[compId]
           : null;
-      const isLocked = compId && isUnlocked ? !isUnlocked(compId) : false;
+      const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(c.type) : false;
       return { ...c, compId, compDef, isLocked };
     });
   }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
@@ -642,7 +651,8 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const gamLockedCount = gamProjectComponents.filter(
     (c) => c.isLocked && c.compId,
   ).length;
-  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : true;
+  const gamAllUnlockedGlobally = unlockedComponents === '*';
+  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : gamAllUnlockedGlobally;
 
   const handleAssessmentSubmit = async () => {
     if (!assessmentMode && !gamificationMode) return;
@@ -713,6 +723,45 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [wiringStartPin, setWiringStartPin] = useState(null);
   const [components, setComponents] = useState([]);
   const [wires, setWires] = useState([]);
+
+  const [isLoadingGuidedSchema, setIsLoadingGuidedSchema] = useState(false)
+
+  const doLoadGuidedSchema = (schema, label) => {
+    setIsLoadingGuidedSchema(true)
+    applyImportedProjectMeta(schema, label)
+    setTimeout(() => setIsLoadingGuidedSchema(false), 800)
+  }
+
+  const lastLoadedSlugRef = useRef(null)
+  useEffect(() => {
+    const project = guidedProjectState?.project
+    const slug = project?.slug || (gamificationMode ? projectName : null)
+
+    if (!slug || lastLoadedSlugRef.current === slug) return
+    lastLoadedSlugRef.current = slug
+
+    const loadFromSchema = () => {
+      if (project?.schemas?.arduino) {
+        doLoadGuidedSchema(project.schemas.arduino, 'Guided Project')
+      } else {
+        setIsLoadingGuidedSchema(false)
+      }
+    }
+
+    const tryLoadFromPng = async () => {
+      const pngUrl = `${EXAMPLES_BASE_URL}/${slug}/circuit.png`
+      const res = await fetch(pngUrl)
+      if (!res.ok) throw new Error('PNG not found')
+      const buf = await res.arrayBuffer()
+      const meta = extractProjectMetaFromPng(new Uint8Array(buf))
+      applyImportedProjectMeta(meta, 'Guided Project')
+    }
+
+    setIsLoadingGuidedSchema(true)
+    tryLoadFromPng()
+      .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
+      .catch(() => loadFromSchema())
+  }, [guidedProjectState, gamificationMode, projectName])
 
   const [history, setHistory] = useState({ past: [], future: [] });
   const [selected, setSelected] = useState(null); // comp or wire id
@@ -2044,6 +2093,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   useEffect(() => {
     if (gamificationMode) return;
+    if (guidedProjectState) {
+      loadLibraries();
+      return;
+    }
 
     let cancelled = false;
     let deferTimer = null;
@@ -3774,7 +3827,7 @@ loadDemoProject();
       const s = document.createElement("script");
       s.id = "wokwi-bundle";
       s.src =
-        "https://unpkg.com/@wokwi/elements@0.48.3/dist/wokwi-elements.bundle.js";
+        "/wokwi-elements.bundle.js";
       document.head.appendChild(s);
     }
   }, []);
@@ -5145,16 +5198,34 @@ loadDemoProject();
     [liveEditingDisabled, addComponentInternal],
   );
 
-  // ── Palette click to add (adds to canvas center) ────────────────────────────
+  // ── Palette click to add (adds to canvas center, offset if overlapping) ──────
   const addComponentAtCenter = useCallback(
     async (item) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const cx =
+      let cx =
         (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
-      const cy =
+      let cy =
         (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
+
+      // Nudge position so new components don't stack exactly on top of existing ones
+      const OFFSET_STEP = 30; // px diagonal offset per overlap
+      const OVERLAP_THRESHOLD = 20; // px — consider "same spot" if within this range
+      const currentComps = componentsRef.current || [];
+      let attempts = 0;
+      while (attempts < 15) {
+        const overlapping = currentComps.some(c => {
+          const compCx = c.x + (c.w || 60) / 2;
+          const compCy = c.y + (c.h || 60) / 2;
+          return Math.abs(compCx - cx) < OVERLAP_THRESHOLD && Math.abs(compCy - cy) < OVERLAP_THRESHOLD;
+        });
+        if (!overlapping) break;
+        cx += OFFSET_STEP;
+        cy += OFFSET_STEP;
+        attempts++;
+      }
+
       await addComponentAt(item, cx, cy);
     },
     [addComponentAt],
@@ -5464,11 +5535,21 @@ loadDemoProject();
               newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newX };
             }
           }
+          const finalWaypoints = [];
+          if (newPts[0] && sd.startPts[0] && (newPts[0].x !== sd.startPts[0].x || newPts[0].y !== sd.startPts[0].y)) {
+            finalWaypoints.push({ x: newPts[0].x, y: newPts[0].y, _corner: true });
+          }
+          for (let i = 1; i < newPts.length - 1; i++) {
+            if (newPts[i]) finalWaypoints.push({ x: newPts[i].x, y: newPts[i].y, _corner: true });
+          }
+          const lastIdx = newPts.length - 1;
+          if (lastIdx > 0 && newPts[lastIdx] && sd.startPts[lastIdx] && (newPts[lastIdx].x !== sd.startPts[lastIdx].x || newPts[lastIdx].y !== sd.startPts[lastIdx].y)) {
+            finalWaypoints.push({ x: newPts[lastIdx].x, y: newPts[lastIdx].y, _corner: true });
+          }
+
           wireUpdate = {
             wireId: sd.wireId,
-            cornerWaypoints: newPts
-              .slice(1, -1)
-              .map((pt) => ({ x: pt.x, y: pt.y, _corner: true })),
+            cornerWaypoints: finalWaypoints.filter(pt => pt && isFinite(pt.x) && isFinite(pt.y)),
           };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
@@ -6195,8 +6276,8 @@ loadDemoProject();
         // Logic: If the second pin has a more "specific" color (comms, power, etc.)
         // and the first is generic green, use the specific color.
         const isGeneric = (c) => c === "#2ecc71" || c === "#10b981";
-        const finalColor =
-          !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        let finalColor = !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        if (color1 === 'black' || color2 === 'black') finalColor = 'black';
 
         const newWire = {
           id: `w${nextWireId++}`,
@@ -7545,7 +7626,7 @@ loadDemoProject();
     setCurrentProjectName("Untitled");
     setBoard("arduino_uno");
     setCode(
-      "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n",
+      "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(15000);\n  digitalWrite(13, LOW);\n  delay(15000);\n}\n",
     );
     setComponents([]);
     setWires([]);
@@ -8443,18 +8524,53 @@ loadDemoProject();
       fqbn,
       buildEngine,
       librariesTxt,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      compiled = await compileCode({
-        code: sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
-        fqbn,
-        libraries_txt: librariesTxt,
-        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-      });
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: sourceCode,
+          libraries_txt: librariesTxt,
+          targetEngine: 'hardware'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
+        compiled = await compileCode({
+          code: sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn,
+          target: kind,
+          libraries_txt: librariesTxt,
+          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+        });
+      }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -8552,12 +8668,18 @@ loadDemoProject();
         "hardware",
       );
       await disconnectHardwareSerial();
+      await new Promise(r => setTimeout(r, 3500));
     }
 
-    await uploadToHardware();
+    await uploadToHardware({
+      wasConnected: hardwareConnected,
+      disconnectFn: disconnectHardwareSerial,
+      connectFn: connectHardwareSerial,
+    });
   }, [
     hardwareConnected,
     disconnectHardwareSerial,
+    connectHardwareSerial,
     uploadToHardware,
     setHardwareStatus,
     appendConsoleEntry,
@@ -8927,6 +9049,7 @@ loadDemoProject();
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   builder,
                   libraries_txt: librariesTxt,
                 });
@@ -9046,6 +9169,7 @@ loadDemoProject();
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   libraries_txt: librariesTxt,
                 });
               }
@@ -9099,6 +9223,7 @@ loadDemoProject();
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            target: fallbackKind,
             libraries_txt: librariesTxt,
             ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
           });
@@ -12414,6 +12539,9 @@ loadDemoProject();
           handleRestoreWorkflow={handleRestoreWorkflow}
           handleSyncToCloud={handleSyncToCloud}
           user={activeUser}
+          gamPanelOpen={gamPanelOpen}
+          setGamPanelOpen={setGamPanelOpen}
+          gamificationMode={gamificationMode}
           navigate={navigate}
           isAuthenticated={isAnyAuthenticated}
           myProjects={myProjects}
@@ -12469,11 +12597,14 @@ loadDemoProject();
           setShowAutofix={setShowAutofix}
           showShortcuts={showShortcuts}
           setShowShortcuts={setShowShortcuts}
+          useBlocklyCode={useBlocklyCode}
+          setUseBlocklyCode={setUseBlocklyCode}
           onStartTour={() => {
             localStorage.removeItem("openhw-tour-completed");
             setShowTour(true);
           }}
           returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
+          code={code}
         />
 
         <SimulatorStatusBanners
@@ -12887,6 +13018,8 @@ loadDemoProject();
           <QuickAddPortal
             catalog={LOCAL_CATALOG}
             onAddComponentRef={addComponentAtRef}
+            isPaletteItemLocked={isPaletteItemLocked}
+            showLockToast={showLockToast}
           />
 
           {/* RIGHT PANEL */}
@@ -13045,7 +13178,7 @@ loadDemoProject();
             setProjContextMenu={setProjContextMenu}
           />
 
-          {gamificationMode && gamPanelOpen && (
+          {gamificationMode && gamPanelOpen && gamProject && (
             <GamificationGuidePanel
               gamTab={gamTab}
               setGamTab={setGamTab}
@@ -13644,7 +13777,58 @@ loadDemoProject();
             }
             theme={theme}
           />
+          {guidedProjectState && (
+            <GuidedProjectPopup
+              project={guidedProjectState.project}
+              levelColor={guidedProjectState.levelColor}
+              onClose={() => setGuidedProjectState(null)}
+              readOnly
+              schemas={guidedProjectState.project.schemas}
+              activeBoard={activeBoard}
+              onBoardChange={(boardKey, schema) => {
+                setActiveBoard(boardKey)
+                if (schema) doLoadGuidedSchema(schema, 'Guided Project')
+              }}
+            />
+          )}
         </div>
+
+        {/* Guided project schema loading overlay */}
+        {isLoadingGuidedSchema && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9999,
+              background: 'rgba(15,23,42,0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(2px)',
+            }}
+          >
+            <div
+              style={{
+                background: '#ffffff', borderRadius: 16,
+                padding: '32px 40px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              }}
+            >
+              <div
+                style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  border: '3px solid #e2e8f0',
+                  borderTopColor: '#2563eb',
+                  animation: 'guided-spin 0.7s linear infinite',
+                }}
+              />
+              <style>{`@keyframes guided-spin{to{transform:rotate(360deg)}}`}</style>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                Loading circuit...
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                Placing components and wiring connections
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

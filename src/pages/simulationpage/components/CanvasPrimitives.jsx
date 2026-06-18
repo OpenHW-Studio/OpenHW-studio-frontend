@@ -53,8 +53,14 @@ const getGlowColor = (color) => {
 };
 
 export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSelect, onMouseDownSegment, wirepointsEnabled, theme, offset = 0, wiresAlwaysOnTop = false, isDragging = false }) => {
-  const wirePath = useMemo(() => buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions), [p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions]);
-  const isOrphaned = p1.isFallback || p2.isFallback;
+  const wirePath = useMemo(() => {
+    try {
+      return buildWirePath(p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions);
+    } catch (e) {
+      return '';
+    }
+  }, [p1, e1, e2, p2, wire.waypoints, wire.path, offset, wire.routingInstructions]);
+  const isOrphaned = p1?.isFallback || p2?.isFallback;
 
   // Logic:
   // - If forced to top: non-selected wires use 0.6 opacity/1.5px (Feedback)
@@ -62,6 +68,17 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
   const useFeedback = wiresAlwaysOnTop && !isSelected;
   const strokeColor = isSelected ? 'var(--orange)' : (isOrphaned ? '#f59e0b' : (wire.isNew ? '#38bdf8' : wire.color));
   const glowColor = getGlowColor(strokeColor);
+
+  // Safely compute wire points for handles
+  const wirePointsForHandles = useMemo(() => {
+    if (!isSelected) return [];
+    try {
+      const pts = getWirePoints(p1, e1, e2, p2, wire.waypoints, offset);
+      return Array.isArray(pts) ? pts.filter(pt => pt && typeof pt.x === 'number' && typeof pt.y === 'number' && isFinite(pt.x) && isFinite(pt.y)) : [];
+    } catch (e) {
+      return [];
+    }
+  }, [isSelected, p1, e1, e2, p2, wire.waypoints, offset]);
 
   return (
     <g style={{ cursor: 'pointer' }} onClick={onSelect} onDoubleClick={e => e.stopPropagation()}>
@@ -80,10 +97,9 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
       />
       <circle id={`wire-circ-from-${wire.id}`} cx={p1.x} cy={p1.y} r={isSelected ? 3 : 2} fill={strokeColor} opacity={useFeedback ? 0.8 : 1} />
       <circle id={`wire-circ-to-${wire.id}`} cx={p2.x} cy={p2.y} r={isSelected ? 3 : 2} fill={strokeColor} opacity={useFeedback ? 0.8 : 1} />
-      {wirepointsEnabled && getWirePoints(p1, e1, e2, p2, wire.waypoints, offset).reduce((acc, pt, i, arr) => {
+      {isSelected && wirePointsForHandles.reduce((acc, pt, i, arr) => {
         // Waypoint Handles (Corners)
         if (i > 0 && i < arr.length - 1) {
-          const isCorner = i > 1 && i < arr.length - 2; // Simple heuristic for now
           acc.push(
             <circle key={`wp-${i}`} cx={pt.x} cy={pt.y} r={isSelected ? 5 : 3}
               fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
@@ -102,21 +118,23 @@ export const CanvasWire = React.memo(({ wire, p1, p2, e1, e2, isSelected, onSele
         // Segment Handles (Middles)
         if (i < arr.length - 1) {
           const a = arr[i], b = arr[i + 1];
-          const segLen = Math.hypot(b.x - a.x, b.y - a.y);
-          if (segLen >= 20) {
-            const isHoriz = Math.abs(b.y - a.y) < 1;
-            const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
-            acc.push(
-              <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
-                fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
-                stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
-                opacity={isSelected ? 1 : 0.55}
-                style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
-                title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
-                onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr, 'segment')}
-                onClick={ev => ev.stopPropagation()}
-              />
-            );
+          if (a && b) {
+            const segLen = Math.hypot(b.x - a.x, b.y - a.y);
+            if (segLen >= 20 && isFinite(segLen)) {
+              const isHoriz = Math.abs(b.y - a.y) < 1;
+              const midX = (a.x + b.x) / 2, midY = (a.y + b.y) / 2;
+              acc.push(
+                <circle key={`sh-${i}`} cx={midX} cy={midY} r={isSelected ? 6 : 4}
+                  fill={isSelected ? '#fff' : 'rgba(255,255,255,0.35)'}
+                  stroke={isSelected ? 'var(--orange)' : wire.color} strokeWidth={1.5}
+                  opacity={isSelected ? 1 : 0.55}
+                  style={{ pointerEvents: 'all', cursor: isHoriz ? 'ns-resize' : 'ew-resize' }}
+                  title={isHoriz ? 'Drag up/down to route' : 'Drag left/right to route'}
+                  onMouseDown={ev => onMouseDownSegment(ev, wire, i, isHoriz, arr, 'segment')}
+                  onClick={ev => ev.stopPropagation()}
+                />
+              );
+            }
           }
         }
         return acc;

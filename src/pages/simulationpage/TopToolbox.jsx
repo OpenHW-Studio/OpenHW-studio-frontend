@@ -364,6 +364,9 @@ function TopToolboxInternal(props) {
     handleRestoreWorkflow,
     handleSyncToCloud,
     user,
+    gamificationMode,
+    gamPanelOpen,
+    setGamPanelOpen,
     isAuthenticated,
     myProjects,
     currentProjectId,
@@ -420,15 +423,16 @@ function TopToolboxInternal(props) {
     setShowShortcuts,
     onStartTour,
     returnTo,
-    navigate,
     code,
+    useBlocklyCode,
+    setUseBlocklyCode,
   } = props;
+  const navigate = useNavigate();
 
-   const viewPanelRef = useRef(null);
-   const connectPanelRef = useRef(null);
-   const projectsDropdownRef = useRef(null);
-   const importedFromSimulatorRef = useRef(false);
-   const [showConnectPanel, setShowConnectPanel] = useState(false);
+  const viewPanelRef = useRef(null);
+  const connectPanelRef = useRef(null);
+  const projectsDropdownRef = useRef(null);
+  const [showConnectPanel, setShowConnectPanel] = useState(false);
   const [showAdvancedFlash, setShowAdvancedFlash] = useState(false);
   const [activeMenu, setActiveMenu] = useState(null);
   const [showSchematic, setShowSchematic] = useState(false);
@@ -493,9 +497,18 @@ function TopToolboxInternal(props) {
     },
     { label: "Import", onClick: () => importFileRef.current?.click() },
     { label: "Save", shortcut: "Ctrl+S", onClick: handleSave },
+    {
+      label: "Export",
+      submenu: [
+        { label: "PNG", onClick: downloadPng },
+        { label: "JSON", onClick: downloadSimulationJson },
+      ],
+    },
     { label: "Make a copy", onClick: () => handleSave() }, // Placeholder for copy
     { type: "separator" },
-    { label: "Save Local Copy", onClick: handleBackupWorkflow },
+    { label: "Save Local Copy (ZIP)", onClick: handleBackupWorkflow },
+    { type: "separator" },
+    { label: "📂 Examples Gallery", onClick: () => navigate("/examples") },
   ];
 
   const toolMenuItems = [
@@ -508,13 +521,6 @@ function TopToolboxInternal(props) {
     },
     { label: "Alignment Lab", onClick: () => navigate("/alignment-lab") },
     { type: "separator" },
-    {
-      label: "Export",
-      submenu: [
-        { label: "PNG", onClick: downloadPng },
-        { label: "JSON", onClick: downloadSimulationJson },
-      ],
-    },
     { type: "separator" },
     { label: "Connect Hardware", onClick: () => setShowConnectPanel(true) },
   ];
@@ -684,7 +690,7 @@ function TopToolboxInternal(props) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-1 flex-wrap">
+      <div className="flex items-center gap-2 flex-1 flex-wrap" style={{ minWidth: 0, overflowX: 'auto' }}>
         {/* RUN button */}
         <Btn
           color={
@@ -819,6 +825,43 @@ function TopToolboxInternal(props) {
             )}
           </Btn>
         )}
+
+        {/* Code / Blocks toggle */}
+        <div
+          onClick={() => setUseBlocklyCode(!useBlocklyCode)}
+          title={useBlocklyCode ? 'Currently running Blocks — click to switch to Code' : 'Currently running Code — click to switch to Blocks'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0,
+            borderRadius: 8,
+            border: '1px solid var(--border)',
+            overflow: 'hidden',
+            cursor: 'pointer',
+            flexShrink: 0,
+            fontSize: 12,
+            fontWeight: 700,
+            userSelect: 'none',
+          }}
+        >
+          <div style={{
+            padding: '5px 11px',
+            background: !useBlocklyCode ? 'var(--accent)' : 'transparent',
+            color: !useBlocklyCode ? '#000' : 'var(--text3)',
+            transition: 'all 0.15s',
+          }}>
+            &lt;/&gt; Code
+          </div>
+          <div style={{
+            padding: '5px 11px',
+            background: useBlocklyCode ? 'var(--accent)' : 'transparent',
+            color: useBlocklyCode ? '#000' : 'var(--text3)',
+            transition: 'all 0.15s',
+          }}>
+            ⬡ Blocks
+          </div>
+        </div>
+
 
         {assessmentMode && (
           <Btn
@@ -1032,51 +1075,6 @@ function TopToolboxInternal(props) {
       </div>
 
       {/* RIGHT SIDE — right to left: Sign In/User, My Projects, Save, Export, Import */}
-      {returnTo && (
-        <button
-          type="button"
-          onClick={() => {
-            const payload = {
-              board: board,
-              code: typeof code === "function" ? "" : (code || ""),
-              components: (components || []).map((c) => ({
-                id: c.id,
-                type: c.type,
-                name: c.name,
-                x: c.x,
-                y: c.y,
-                rotation: c.rotation,
-              })),
-              connections: (wires || []).map((w) => ({
-                from: w.from,
-                to: w.to,
-              })),
-             };
-             // Flag that we're preparing to import criteria from simulator
-             importedFromSimulatorRef.current = true;
-             try {
-               localStorage.setItem("bankProjectCriteria", JSON.stringify(payload));
-             } catch (e) {
-               console.warn("Failed to store bankProjectCriteria", e);
-             }
-            setTimeout(() => {
-              navigate(returnTo);
-            }, 0);
-          }}
-          style={{
-            padding: "8px 14px",
-            borderRadius: 8,
-            border: "1px solid var(--accent)",
-            background: "var(--accent)",
-            color: "#fff",
-            fontWeight: 700,
-            cursor: "pointer",
-            fontSize: 13,
-          }}
-        >
-          ⬇ Extract Criteria
-        </button>
-      )}
       <div
         style={{
           marginLeft: "auto",
@@ -1085,6 +1083,14 @@ function TopToolboxInternal(props) {
           gap: 8,
         }}
       >
+        {gamificationMode && user?.role === 'student' && (
+          <Btn
+            onClick={() => navigate('/components')}
+            title="Unlock more components to use in your projects"
+          >
+            Unlock New Components
+          </Btn>
+        )}
         <Btn
           color={showComponentList ? "var(--accent)" : undefined}
           onClick={() => setShowComponentList((v) => !v)}
@@ -1431,7 +1437,11 @@ function TopToolboxInternal(props) {
 
                   <Btn
                     color="var(--green)"
-                    onClick={uploadToHardware}
+                    onClick={() => uploadToHardware({
+                      wasConnected: hardwareConnected,
+                      disconnectFn: disconnectHardwareSerial,
+                      connectFn: connectHardwareSerial,
+                    })}
                     disabled={
                       !hardwareBoardId ||
                       isUploadingHardware ||

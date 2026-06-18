@@ -18,7 +18,7 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles } from '../../services/simulatorService.js'
+import { compileCode, flashFirmware, fetchInstalledLibraries, searchLibraries, installLibrary, submitCustomComponent, fetchInstalledComponentsWithFiles, startEsp32Compile, getEsp32CompileStatus } from '../../services/simulatorService.js'
 import { getCachedHex, setCachedHex, enqueueComponent, getQueuedComponents, dequeueComponent } from '../../services/offlineCache.js'
 import { saveProject, loadProject, listProjects, deleteProject, renameProject, generateProjectId, formatProjectDate } from '../../services/projectStore.js'
 import html2canvas from 'html2canvas'
@@ -2524,16 +2524,50 @@ export default function SimulatorPage() {
       compileUnit.mainCode || sourceCode,
       ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
       BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      compiled = await compileCode({
-        code: compileUnit.mainCode || sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
-        fqbn: BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
-      });
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: compileUnit.mainCode || sourceCode,
+          targetEngine: 'hardware'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
+        compiled = await compileCode({
+          code: compileUnit.mainCode || sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn: BOARD_FQBN[kind] || BOARD_FQBN.arduino_uno,
+          target: kind,
+        });
+      }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -2657,6 +2691,7 @@ export default function SimulatorPage() {
               code: compileUnit.mainCode || sourceCode,
               files: compileUnit.files,
               sketchName: compileUnit.sketchName,
+              target: kind,
             });
             setCachedHex(cacheSource, cacheKeyBoard, compiled);
           }
