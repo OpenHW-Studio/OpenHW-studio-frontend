@@ -1824,7 +1824,9 @@ export class RP2040Runner implements BoardRunner {
                 inst.pins[pinName] = { voltage: nextVoltage, mode: 'INPUT' };
             }
             inst.setPinVoltage(pinName, nextVoltage);
-            inst.onPinStateChange(pinName, isHigh, this.cpu.core.cycles);
+            const clockScale = 16_000_000 / this.getRp2040ClockHz();
+            const normalizedCycles = Math.floor(Number(this.cpu.core.cycles) * clockScale);
+            inst.onPinStateChange(pinName, isHigh, normalizedCycles);
         }
     }
 
@@ -2158,7 +2160,9 @@ export class RP2040Runner implements BoardRunner {
     private pulseBoardUartLed(pinId: 'GP0' | 'GP1' | 'GP4' | 'GP5') {
         const boardInst = this.instances.get(this.boardId);
         if (!boardInst || !this.cpu) return;
-        boardInst.onPinStateChange(pinId, true, this.cpu.core.cycles);
+        const clockScale = 16_000_000 / this.getRp2040ClockHz();
+        const normalizedCycles = Math.floor(Number(this.cpu.core.cycles) * clockScale);
+        boardInst.onPinStateChange(pinId, true, normalizedCycles);
 
         const previousTimer = this.uartLedOffTimers.get(pinId);
         if (previousTimer) {
@@ -2170,7 +2174,9 @@ export class RP2040Runner implements BoardRunner {
             if (!this.cpu) return;
             const liveBoardInst = this.instances.get(this.boardId);
             if (!liveBoardInst) return;
-            liveBoardInst.onPinStateChange(pinId, false, this.cpu.core.cycles);
+            const clockScale = 16_000_000 / this.getRp2040ClockHz();
+            const normalizedCycles = Math.floor(Number(this.cpu.core.cycles) * clockScale);
+            liveBoardInst.onPinStateChange(pinId, false, normalizedCycles);
         }, RP2040Runner.UART_LED_PULSE_MS);
         this.uartLedOffTimers.set(pinId, offTimer);
     }
@@ -3135,7 +3141,9 @@ export class RP2040Runner implements BoardRunner {
                 inst.setPinVoltage(compPin, v);
                 this.circuitDirty = true;
                 if (this.cpu) {
-                    inst.onPinStateChange(compPin, v > 1.8, this.cpu.core.cycles);
+                    const clockScale = 16_000_000 / this.getRp2040ClockHz();
+                    const normalizedCycles = Math.floor(Number(this.cpu.core.cycles) * clockScale);
+                    inst.onPinStateChange(compPin, v > 1.8, normalizedCycles);
                 }
                 this.tickI2S(inst, compId, compPin, v > 1.8);
 
@@ -3332,10 +3340,16 @@ export class RP2040Runner implements BoardRunner {
     }
 
     private propagateBoardPinInternal(gpPin: string, voltage: number, isHigh: boolean = voltage > 1.8) {
+        
+        let normalizedCycles = 0;
+        if (this.cpu) {
+            const clockScale = 16_000_000 / this.getRp2040ClockHz();
+            normalizedCycles = Math.floor(Number(this.cpu.core.cycles) * clockScale);
+        }
 
         const boardInst = this.instances.get(this.boardId);
         if (boardInst && this.cpu) {
-            boardInst.onPinStateChange(gpPin, isHigh, this.cpu.core.cycles);
+            boardInst.onPinStateChange(gpPin, isHigh, normalizedCycles);
         }
 
         const visitedEdges = new Set<string>();
@@ -3362,7 +3376,7 @@ export class RP2040Runner implements BoardRunner {
             inst.setPinVoltage(compPin, voltage);
             this.circuitDirty = true;
             if (this.cpu) {
-                inst.onPinStateChange(compPin, voltage > 1.8, this.cpu.core.cycles);
+                inst.onPinStateChange(compPin, voltage > 1.8, normalizedCycles);
             }
             this.tickI2S(inst, compId, compPin, voltage > 1.8);
 

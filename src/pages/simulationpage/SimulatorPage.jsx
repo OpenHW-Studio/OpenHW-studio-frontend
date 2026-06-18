@@ -1657,6 +1657,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [telemetrySampleInterval, setTelemetrySampleInterval] = useState(250);
   const [selectedTelemetryComponentIds, setSelectedTelemetryComponentIds] =
     useState([]);
+  
+  useEffect(() => {
+    setComponentTelemetryEnabled(selectedTelemetryComponentIds.length > 0);
+  }, [selectedTelemetryComponentIds]);
   const [showTelemetrySelectModal, setShowTelemetrySelectModal] =
     useState(false);
 
@@ -12470,10 +12474,6 @@ loadDemoProject();
             setShowTour(true);
           }}
           returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
-          navigate={navigate}
-          components={components}
-          wires={wires}
-          code={code}
         />
 
         <SimulatorStatusBanners

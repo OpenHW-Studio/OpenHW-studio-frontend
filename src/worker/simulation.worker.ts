@@ -109,7 +109,7 @@ function normalizeHashValue(value: any, depth = 0): any {
     if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
 
     if (ArrayBuffer.isView(value)) {
-        const view = value as ArrayLike<number> & { length?: number };
+        const view = value as any;
         const len = Number(view?.length || 0);
         const preview: number[] = [];
         for (let i = 0; i < Math.min(len, 24); i++) {
@@ -830,7 +830,7 @@ function routeDisplayFrames(components: any[]): any[] {
 
         if (rawBuffer instanceof Uint8Array && rawBuffer.buffer) {
             // Slice to get a fresh ArrayBuffer we can transfer without detaching the original.
-            bufferForWorker = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength);
+            bufferForWorker = rawBuffer.buffer.slice(rawBuffer.byteOffset, rawBuffer.byteOffset + rawBuffer.byteLength) as ArrayBuffer;
             transferable = bufferForWorker;
         } else if (rawBuffer instanceof ArrayBuffer) {
             bufferForWorker = rawBuffer.slice(0);
@@ -989,14 +989,14 @@ const coreMessageHandler = async (e: MessageEvent) => {
         for (const board of boards) {
             const type = String(board.type || '');
             if (/(stm32)/i.test(type)) {
-                import('./runners/backend-proxy-runner.ts').catch(() => {});
+                import('./runners/backend-proxy-runner').catch(() => {});
             } else if (/(esp32)/i.test(type)) {
-                import('./runners/backend-proxy-runner.ts').catch(() => {});
-                import('./runners/esp32-runner.ts').catch(() => {});
+                import('./runners/backend-proxy-runner').catch(() => {});
+                import('./runners/esp32-runner').catch(() => {});
             } else if (/pico|rp2040/i.test(type)) {
-                import('./runners/rp2040-runner.ts').catch(() => {});
+                import('./runners/rp2040-runner').catch(() => {});
             } else {
-                import('./runners/avr-runner.ts').catch(() => {});
+                import('./runners/avr-runner').catch(() => {});
             }
         }
         return;
@@ -1029,7 +1029,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 } else if (msg?.type === 'PCAP_DATA') {
                     // Transfer PCAP buffer back to main thread for download
                     const buf = msg.data as ArrayBuffer;
-                    postMessage({ type: 'wifi_pcap', boardId: msg.boardId, data: buf }, [buf]);
+                    (self as any).postMessage({ type: 'wifi_pcap', boardId: msg.boardId, data: buf }, [buf]);
                 }
             };
             console.log('[SimWorker] netWorkerPort successfully registered and started');
@@ -1040,9 +1040,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
     if (data.type === 'DOWNLOAD_PCAP') {
         const boardId = data.boardId;
         const targetRunner = boardRunners.get(boardId) || runner;
-        if (targetRunner && typeof targetRunner.downloadPcap === 'function') {
+        if (targetRunner && typeof (targetRunner as any).downloadPcap === 'function') {
             console.log(`[SimWorker] Triggering PCAP download for ${boardId}`);
-            targetRunner.downloadPcap();
+            (targetRunner as any).downloadPcap();
         } else {
             console.warn(`[SimWorker] PCAP download requested for ${boardId} but runner doesn't support it or isn't active`);
         }
@@ -1170,7 +1170,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         // Pass pyScript metadata so the worker can inject over UART0 after boot.
                         pyScript: typeof pyScript === 'string' ? pyScript : '',
                         sessionId: data.networkRoomCode || '',
-                        onByteTransmit: ({ boardId, value, char, source }) => {
+                        onByteTransmit: ({ boardId, value, char, source }: any) => {
                             appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                             postMessage({ type: 'serial', data: char, boardId, value, source });
                         },
@@ -1183,7 +1183,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         telemetryMode: activeTelemetryMode,
                         telemetryWatchedParams: activeTelemetryWatchedParamsMap,
                         deepSiliconEnabled: activeDeepSiliconEnabled,
-                    }
+                    } as any
                 );
                 console.log(`[Worker] Runner created OK. running=${(runner as any)?.running}`);
                 // TODO: Remove this temporary execute call if runners start automatically in the future
@@ -1303,7 +1303,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     speed: initialSpeed,
                     pyScript: typeof pyScript === 'string' ? pyScript : '',
                     sessionId: data.networkRoomCode || '',
-                    onByteTransmit: ({ boardId, value, char, source }) => {
+                    onByteTransmit: ({ boardId, value, char, source }: any) => {
                         appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                         postMessage({ type: 'serial', data: char, boardId, value, source });
                         routeUartByte(boardId, value, source || 'uart0');
@@ -1312,7 +1312,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                     rp2040LogicalFlashBytes: isRp2040Board ? RP2040_LOGICAL_FLASH_BYTES : undefined,
                     rp2040FlashPartitions: isRp2040Board ? rp2040FlashPartitions : undefined,
                     esp32Rom,
-                }
+                } as any
             );
 
             boardRunners.set(boardComp.id, boardRunner);
@@ -1521,9 +1521,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
         }
     } else if (data.type === 'GDB_INPUT') {
         if (mode === 'single' && runner) {
-            runner.gdbRx(data.data);
+            (runner as any).gdbRx(data.data);
         } else if (data.targetBoardId) {
-            boardRunners.get(data.targetBoardId)?.gdbRx(data.data);
+            (boardRunners.get(data.targetBoardId) as any)?.gdbRx(data.data);
         }
     } else if (data.type === 'SERIAL_INPUT') {
         if (mode === 'single' && runner) {
