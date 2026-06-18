@@ -70,33 +70,34 @@ export function useHardwareFlashing({
     const fqbn = typeof resolveBoardFqbn === 'function'
       ? resolveBoardFqbn(boardComp, kind)
       : (boardFqbn[kind] || boardFqbn.arduino_uno);
+    
     const isESP32 = fqbn.toLowerCase().includes('esp32');
+    const requiresWebSerial = isESP32;
 
-    let esp32SerialPort = null;
+    let webSerialPort = null;
 
     // Ensure Web Serial is authorized NOW during the click event, so auto-reconnect works later
     if ('serial' in navigator) {
       try {
-        if (isESP32) {
-          esp32SerialPort = await navigator.serial.requestPort();
+        if (requiresWebSerial) {
+          // Both ESP32 and Arduino Uno/Nano are now flashed via the browser!
+          webSerialPort = await navigator.serial.requestPort();
         } else if (connectFn) {
           const ports = await navigator.serial.getPorts();
           if (ports.length === 0) {
-            // No authorized ports. Prompt the user now while we are still in the user gesture context!
             await navigator.serial.requestPort();
           }
         }
       } catch (e) {
         console.warn('Web Serial authorization prompt skipped or cancelled:', e);
-        if (isESP32) {
-            alert('Web Serial port selection is required to flash ESP32.');
+        if (requiresWebSerial) {
+            alert(`Web Serial port selection is required to flash ${isESP32 ? 'ESP32' : 'Arduino'} natively.`);
             setIsUploadingHardware(false);
             return;
         }
-        // We can still proceed with backend flash for non-ESP32
       }
-    } else if (isESP32) {
-        alert('Web Serial API is not supported in this browser. Please use Chrome or Edge to flash ESP32.');
+    } else if (requiresWebSerial) {
+        alert(`Web Serial API is not supported in this browser. Please use Chrome or Edge to flash ${isESP32 ? 'ESP32' : 'Arduino'}.`);
         setIsUploadingHardware(false);
         return;
     }
@@ -119,7 +120,7 @@ export function useHardwareFlashing({
       let flashResult = null;
       if (isESP32) {
         setHardwareStatus(`Flashing ${hardwareBoardId} via Web Serial...`);
-        await flashESP32WebSerial(esp32SerialPort, hexText, {
+        await flashESP32WebSerial(webSerialPort, hexText, {
           baudRate: Number(hardwareBaudRate),
           onProgress: (msg) => {
             setHardwareStatus(msg.trim());
@@ -128,7 +129,7 @@ export function useHardwareFlashing({
         });
         flashResult = { output: 'Flashed successfully via Web Serial' };
       } else {
-        setHardwareStatus(`Flashing ${hardwareBoardId} via ${cleanPort}...`);
+        setHardwareStatus(`Flashing ${hardwareBoardId} via backend ${cleanPort}...`);
         flashResult = await flashFirmware({
           port: cleanPort,
           fqbn,
