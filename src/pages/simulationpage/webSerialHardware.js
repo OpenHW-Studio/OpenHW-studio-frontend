@@ -52,10 +52,8 @@ export function useWebSerialHardware({
         const portToRelease = hardwarePortRef.current;
         lastPortRef.current = portToRelease;
         try { await portToRelease.close(); } catch (e) { }
-        // forget() tells Chrome to completely release its OS-level exclusive
-        // claim on the serial port. Without this, Chrome keeps a ghost handle
-        // that blocks arduino-cli / Node.js from accessing the port.
-        try { await portToRelease.forget(); lastPortRef.current = null; } catch (e) { }
+        // We removed port.forget() because it revokes Web Serial permission, breaking auto-reconnect.
+        // The 4000ms delay in useHardwareFlashing handles the Windows COM port release delay.
       }
     } finally {
       hardwarePortRef.current = null;
