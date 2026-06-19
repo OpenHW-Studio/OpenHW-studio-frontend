@@ -121,7 +121,7 @@ export function useHardwareFlashing({
       if (isESP32) {
         setHardwareStatus(`Flashing ${hardwareBoardId} via Web Serial...`);
         await flashESP32WebSerial(webSerialPort, hexText, {
-          baudRate: Number(hardwareBaudRate),
+          baudRate: 921600, // Force high speed for ESP32 flashing regardless of UI dropdown
           onProgress: (msg) => {
             setHardwareStatus(msg.trim());
             pushSerialRxChunk(msg, hardwareBoardId, 'hw');
