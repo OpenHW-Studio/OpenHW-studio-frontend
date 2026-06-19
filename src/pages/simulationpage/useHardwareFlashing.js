@@ -17,7 +17,7 @@ export function useHardwareFlashing({
   const [hardwareAvailablePorts, setHardwareAvailablePorts] = useState([]);
   const [showAllHardwarePorts, setShowAllHardwarePorts] = useState(false);
   const [isLoadingHardwarePorts, setIsLoadingHardwarePorts] = useState(false);
-  const [hardwareBaudRate, setHardwareBaudRate] = useState('9600');
+  const [hardwareBaudRate, setHardwareBaudRate] = useState('921600');
   const [hardwareResetMethod, setHardwareResetMethod] = useState('normal');
   const [hardwarePortPath, setHardwarePortPath] = useState('');
   const [isUploadingHardware, setIsUploadingHardware] = useState(false);
