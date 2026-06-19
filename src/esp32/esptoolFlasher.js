@@ -25,8 +25,17 @@ export async function flashESP32WebSerial(port, base64Hex, options = {}) {
         
         const binaryString = atob(rawBase64);
         const len = binaryString.length;
-        const binaryData = new Uint8Array(len);
-        for (let i = 0; i < len; i++) {
+        
+        // Find the actual length by trimming trailing 0xFF bytes (default erased flash state)
+        // This prevents esptool from erasing and flashing 4MB of empty space if the backend padded it.
+        let actualLen = len;
+        while (actualLen > 0 && binaryString.charCodeAt(actualLen - 1) === 0xFF) {
+            actualLen--;
+        }
+        actualLen = Math.max(actualLen, 1); // Ensure at least 1 byte
+
+        const binaryData = new Uint8Array(actualLen);
+        for (let i = 0; i < actualLen; i++) {
             binaryData[i] = binaryString.charCodeAt(i);
         }
 
