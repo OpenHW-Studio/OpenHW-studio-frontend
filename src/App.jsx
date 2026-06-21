@@ -48,6 +48,7 @@ import ComponentsPage from "./pages/ComponentsPage.jsx";
 import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
 import AdventureMapPage from "./pages/AdventureMapPage.jsx";
 import ProjectGuidePage from "./pages/ProjectGuidePage.jsx";
+import ExploreCommunity from "./pages/ExploreCommunity.jsx";
 const GuidedSimulatorPage = React.lazy(
   () => import("./pages/GuidedSimulatorPage.jsx"),
 );
@@ -309,6 +310,8 @@ export default function App() {
                     />
                   }
                 />
+
+                <Route path="/explore" element={<ExploreCommunity />} />
 
                 <Route
                   path="/:projectName/demo"

@@ -3612,7 +3612,7 @@ useEffect(() => {
     if (!customElements.get('wokwi-7segment') && !document.getElementById('wokwi-bundle')) {
       const s = document.createElement('script')
       s.id = 'wokwi-bundle'
-      s.src = 'https://unpkg.com/@wokwi/elements@0.48.3/dist/wokwi-elements.bundle.js'
+      s.src = '/wokwi-elements.bundle.js'
       document.head.appendChild(s)
     }
   }, [])
@@ -6037,8 +6037,7 @@ useEffect(() => {
   /** Delete a project from the My Projects modal. */
   const handleDeleteProject = async (id) => {
     if (!window.confirm('Delete this project? This cannot be undone.')) return;
-    await deleteProject(id);
-    // If the active project was deleted, clear current id
+    await deleteProject(id, getOwner());
     if (currentProjectIdRef.current === id) {
       currentProjectIdRef.current = null;
       setCurrentProjectId(null);
@@ -6059,8 +6058,8 @@ useEffect(() => {
       return;
     }
     const newName = renameValue.trim() || 'Untitled';
-    await renameProject(id, newName);
-    if (currentProjectIdRef.current === id) setCurrentProjectName(newName);
+    const finalName = await renameProject(id, newName, getOwner());
+    if (currentProjectIdRef.current === id) setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
     await refreshProjectList();
   };
@@ -6615,17 +6614,51 @@ useEffect(() => {
       ...compileUnit.files.map((f) => `${f.name}\n${f.content || ''}`),
       fqbn,
       buildEngine,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      compiled = await compileCode({
-        code: sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
-        fqbn,
-        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-      });
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: sourceCode,
+          targetEngine: 'hardware'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
+        compiled = await compileCode({
+          code: sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn,
+          target: kind,
+          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+        });
+      }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -6711,8 +6744,12 @@ useEffect(() => {
       await disconnectHardwareSerial();
     }
 
-    await uploadToHardware();
-  }, [hardwareConnected, disconnectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry, runCircuitValidation]);
+    await uploadToHardware({
+      wasConnected: hardwareConnected,
+      disconnectFn: disconnectHardwareSerial,
+      connectFn: connectHardwareSerial,
+    });
+  }, [hardwareConnected, disconnectHardwareSerial, connectHardwareSerial, uploadToHardware, setHardwareStatus, appendConsoleEntry, runCircuitValidation]);
 
   const handleRun = async () => {
     try {
@@ -6953,6 +6990,7 @@ useEffect(() => {
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   builder,
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
@@ -7044,6 +7082,7 @@ useEffect(() => {
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                 });
               }
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
@@ -7089,6 +7128,7 @@ useEffect(() => {
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            target: fallbackKind,
             ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
           });
           setCachedHex(cacheStr, board, result);
