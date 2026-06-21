@@ -15,6 +15,7 @@ import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 import ClassCard from '../../components/common/ClassCard.jsx'
 import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
 import GuidedProjectsPanel from '../../components/student/GuidedProjectsSection.jsx'
+import SavedCircuitsSection from '../../components/common/SavedCircuitsSection.jsx'
 
 export default function StudentDashboard() {
   const { user, logout } = useAuth()
@@ -316,6 +317,8 @@ export default function StudentDashboard() {
                 </div>
               ) : null}
             </section>
+
+            <SavedCircuitsSection user={user} />
 
             {/* GAMIFIED PROGRESS STATS BAR */}
             <section className="teacher-classes-panel projects-section student-dashboard__section-gap">
