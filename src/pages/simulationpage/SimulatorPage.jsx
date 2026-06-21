@@ -725,6 +725,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [wires, setWires] = useState([]);
 
   const [isLoadingGuidedSchema, setIsLoadingGuidedSchema] = useState(false)
+  const [showComingSoon, setShowComingSoon] = useState(false)
 
   const doLoadGuidedSchema = (schema, label) => {
     setIsLoadingGuidedSchema(true)
@@ -757,10 +758,18 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       applyImportedProjectMeta(meta, 'Guided Project')
     }
 
+    setShowComingSoon(false)
     setIsLoadingGuidedSchema(true)
     tryLoadFromPng()
       .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
-      .catch(() => loadFromSchema())
+      .catch(() => {
+        if (project?.schemas?.arduino) {
+          loadFromSchema()
+        } else {
+          setIsLoadingGuidedSchema(false)
+          setShowComingSoon(true)
+        }
+      })
   }, [guidedProjectState, gamificationMode, projectName])
 
   const [history, setHistory] = useState({ past: [], future: [] });
@@ -1430,6 +1439,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   };
 
   const lastCompiledRef = useRef(null);
+  const captureThumbnailRef = useRef(null);
   const micropythonUf2PayloadRef = useRef(null);
   const circuitPythonUf2PayloadRef = useRef(null);
   const rp2040DebugLastLogRef = useRef(new Map());
@@ -2482,6 +2492,18 @@ loadDemoProject();
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Load project from dashboard card click ────────────────────
+  useEffect(() => {
+    const loadId = location.state?.loadProjectId;
+    if (!loadId) return;
+    import('../../services/projectStore.js').then(({ loadProject }) => {
+      loadProject(loadId).then((proj) => {
+        if (proj) handleLoadProject(proj);
+      });
+    });
+    window.history.replaceState({}, document.title);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!shareId || shareId === "new") return;
 
@@ -3027,18 +3049,8 @@ loadDemoProject();
     // Don't trigger auto-save if disabled or if waiting on toaster
     if (!autoSaveEnabled || restoreProjectPrompt) return;
 
-    // Don't trigger an empty-project save on initial render
-    const isCodeEmptyOrDefault =
-      code.trim() === "" ||
-      code.trim() ===
-        "void setup() {\\n  // put your setup code here, to run once:\\n\\n}\\n\\nvoid loop() {\\n  // put your main code here, to run repeatedly:\\n\\n}";
-    if (
-      !currentProjectIdRef.current &&
-      components.length === 0 &&
-      wires.length === 0 &&
-      isCodeEmptyOrDefault
-    )
-      return;
+    // Don't save if nothing is on the canvas
+    if (components.length === 0 && wires.length === 0) return;
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -3067,6 +3079,7 @@ loadDemoProject();
       if (finalName && finalName !== currentProjectName) {
         setCurrentProjectName(finalName);
       }
+      setTimeout(() => captureThumbnailRef.current?.(), 1500);
     }, 2500);
 
     return () => clearTimeout(autoSaveTimerRef.current);
@@ -3841,7 +3854,7 @@ loadDemoProject();
       const s = document.createElement("script");
       s.id = "wokwi-bundle";
       s.src =
-        "https://unpkg.com/@wokwi/elements@0.48.3/dist/wokwi-elements.bundle.js";
+        "/wokwi-elements.bundle.js";
       document.head.appendChild(s);
     }
   }, []);
@@ -5096,6 +5109,114 @@ loadDemoProject();
             setComponents(result.components);
             setWires(result.wires);
 
+            // ── JS Fallback: manually wire if WASM left component unwired ──
+            const autowiringConns = manifest?.autowiring?.connections;
+            if (autowiringConns && autowiringConns.length > 0) {
+              const compId = mainCompWithPos.id;
+              const hasAnyWire = result.wires.some(
+                w => (w.from || '').startsWith(compId + ':') || (w.to || '').startsWith(compId + ':')
+              );
+              if (!hasAnyWire) {
+                const boardComp = result.components.find(c => isProgrammableBoardType(c.type));
+                if (boardComp) {
+                  const newComponents = [...result.components];
+                  const newWires = [...result.wires];
+                  const bb = result.components.find(c => isBreadboardType(c.type));
+                  const boardPins = LOCAL_PIN_DEFS[boardComp.type] || [];
+
+                  for (let ci = 0; ci < autowiringConns.length; ci++) {
+                    const conn = autowiringConns[ci];
+                    let target = conn.to || '';
+                    let fromPin = conn.from;
+
+                    if (target.startsWith('arduino:')) {
+                      const pinId = target.split(':')[1];
+                      const match = boardPins.find(p => p.id.toLowerCase().startsWith(pinId.toLowerCase()));
+                      if (match) target = `${boardComp.id}:${match.id}`;
+                      else target = `${boardComp.id}:${pinId}`;
+                    }
+
+                    const fromEndpoint = `${compId}:${fromPin}`;
+
+                    if (conn.via) {
+                      const viaId = `${conn.via}_${Date.now()}_${ci}`;
+                      const viaType = conn.via;
+                      const viaComp = {
+                        id: viaId,
+                        type: viaType,
+                        label: 'Resistor',
+                        x: mainCompWithPos.x + 60 + ci * 30,
+                        y: mainCompWithPos.y + 20 + ci * 20,
+                        w: 60,
+                        h: 12,
+                        attrs: conn.attrs || {},
+                      };
+
+                      if (bb) {
+                        const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+                        const viaHole = bbPins.find(p => p.id.endsWith('f'));
+                        if (viaHole) {
+                          const vWorld = getRotatedPoint(
+                            bb.x + viaHole.x, bb.y + viaHole.y,
+                            bb.rotation || 0, bb.x + bb.w / 2, bb.y + bb.h / 2
+                          );
+                          viaComp.x = vWorld.x - 30;
+                          viaComp.y = vWorld.y - 6;
+                        }
+                      }
+
+                      newComponents.push(viaComp);
+
+                      const needsResistorToGnd = target.toLowerCase().includes('gnd');
+                      const midX = viaComp.x + viaComp.w / 2;
+                      const midY = viaComp.y + viaComp.h / 2;
+
+                      if (bb) {
+                        const sourceHole = `${bb.id}:${ci === 0 ? 'top_f' : 'top_e'}`;
+                        newWires.push({
+                          id: `w_via_in_${Date.now()}_${ci}`,
+                          from: sourceHole,
+                          to: `${viaId}:p1`,
+                          color: 'green',
+                          isSocket: true,
+                        });
+                        newWires.push({
+                          id: `w_via_out_${Date.now()}_${ci}`,
+                          from: `${viaId}:p2`,
+                          to: target,
+                          color: needsResistorToGnd ? 'black' : 'blue',
+                        });
+                      } else {
+                        newWires.push({
+                          id: `w_manual_${Date.now()}_${ci}_a`,
+                          from: fromEndpoint,
+                          to: `${viaId}:p1`,
+                          color: 'green',
+                          waypoints: [{ x: midX, y: mainCompWithPos.y + 20 }],
+                        });
+                        newWires.push({
+                          id: `w_manual_${Date.now()}_${ci}_b`,
+                          from: `${viaId}:p2`,
+                          to: target,
+                          color: needsResistorToGnd ? 'black' : 'blue',
+                        });
+                      }
+                    } else {
+                      newWires.push({
+                        id: `w_manual_${Date.now()}_${ci}`,
+                        from: fromEndpoint,
+                        to: target,
+                        color: target.toLowerCase().includes('gnd') ? 'black' : 'green',
+                      });
+                    }
+                  }
+
+                  setComponents(newComponents);
+                  setWires(newWires);
+                }
+              }
+            }
+
             // ── Restore Library Installation ──
             if (plan.libraries && plan.libraries.length > 0) {
               for (const libName of plan.libraries) {
@@ -5195,6 +5316,58 @@ loadDemoProject();
             if (plan.reasoning) {
               console.log("[Autonomous] Reasoning:", plan.reasoning);
             }
+          } else {
+            // WASM returned no plan — fallback: place component and wire manually
+            const boardComp = components.find(c => isProgrammableBoardType(c.type));
+            let fallbackComps = [newCompBase];
+            let fallbackWires = [...wires];
+
+            const autowiringConns = manifest?.autowiring?.connections;
+            if (autowiringConns && autowiringConns.length > 0 && boardComp) {
+              const boardPins = LOCAL_PIN_DEFS[boardComp.type] || [];
+              const bb = components.find(c => isBreadboardType(c.type));
+              for (let ci = 0; ci < autowiringConns.length; ci++) {
+                const conn = autowiringConns[ci];
+                let target = conn.to || '';
+                if (target.startsWith('arduino:')) {
+                  const pinId = target.split(':')[1];
+                  const match = boardPins.find(p => p.id.toLowerCase().startsWith(pinId.toLowerCase()));
+                  target = match ? `${boardComp.id}:${match.id}` : `${boardComp.id}:${pinId}`;
+                }
+                if (conn.via) {
+                  const viaId = `${conn.via}_${Date.now()}_${ci}`;
+                  const viaComp = {
+                    id: viaId, type: conn.via, label: 'Resistor',
+                    x: newCompBase.x + 60 + ci * 30, y: newCompBase.y + 20 + ci * 20,
+                    w: 60, h: 12, attrs: conn.attrs || {},
+                  };
+                  if (bb) {
+                    const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+                    const viaHole = bbPins.find(p => p.id.endsWith('f'));
+                    if (viaHole) {
+                      const vWorld = getRotatedPoint(bb.x + viaHole.x, bb.y + viaHole.y, bb.rotation || 0, bb.x + bb.w / 2, bb.y + bb.h / 2);
+                      viaComp.x = vWorld.x - 30; viaComp.y = vWorld.y - 6;
+                    }
+                  }
+                  fallbackComps.push(viaComp);
+                  fallbackWires.push({ id: `w_via_in_${Date.now()}_${ci}`, from: `${newCompBase.id}:${conn.from}`, to: `${viaId}:p1`, color: 'green' });
+                  fallbackWires.push({ id: `w_via_out_${Date.now()}_${ci}`, from: `${viaId}:p2`, to: target, color: target.toLowerCase().includes('gnd') ? 'black' : 'blue' });
+                } else {
+                  fallbackWires.push({ id: `w_manual_${Date.now()}_${ci}`, from: `${newCompBase.id}:${conn.from}`, to: target, color: target.toLowerCase().includes('gnd') ? 'black' : 'green' });
+                }
+              }
+            } else {
+              fallbackWires = autoConnectPowerRails(newCompBase, components, wires);
+            }
+
+            setComponents(prev => {
+              const merged = [...prev];
+              for (const fc of fallbackComps) {
+                if (!merged.find(c => c.id === fc.id)) merged.push(fc);
+              }
+              return merged;
+            });
+            setWires(fallbackWires);
           }
         } else {
           setComponents((prev) => [...prev, newCompBase]);
@@ -7739,6 +7912,7 @@ loadDemoProject();
     });
     setCurrentProjectName(finalName || name);
     setShowSaveDialog(false);
+    setTimeout(() => captureThumbnailRef.current?.(), 1500);
   };
 
   /** Create a brand-new blank project. */
@@ -7802,13 +7976,13 @@ loadDemoProject();
     setHistory({ past: [], future: [] });
     lastCompiledRef.current = null;
     setShowProjectsSidebar(false);
+    setTimeout(() => captureThumbnailRef.current?.(), 1500);
   };
 
   /** Delete a project from the My Projects modal. */
   const handleDeleteProject = async (id) => {
     if (!window.confirm("Delete this project? This cannot be undone.")) return;
-    await deleteProject(id);
-    // If the active project was deleted, clear current id
+    await deleteProject(id, getOwner());
     if (currentProjectIdRef.current === id) {
       currentProjectIdRef.current = null;
       setCurrentProjectId(null);
@@ -7829,7 +8003,7 @@ loadDemoProject();
       return;
     }
     const newName = renameValue.trim() || "Untitled";
-    const finalName = await renameProject(id, newName);
+    const finalName = await renameProject(id, newName, getOwner());
     if (currentProjectIdRef.current === id)
       setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
@@ -8655,18 +8829,53 @@ loadDemoProject();
       fqbn,
       buildEngine,
       librariesTxt,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      compiled = await compileCode({
-        code: sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
-        fqbn,
-        libraries_txt: librariesTxt,
-        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-      });
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: sourceCode,
+          libraries_txt: librariesTxt,
+          targetEngine: 'hardware'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
+        compiled = await compileCode({
+          code: sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn,
+          target: kind,
+          libraries_txt: librariesTxt,
+          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+        });
+      }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -8767,10 +8976,15 @@ loadDemoProject();
       await new Promise(r => setTimeout(r, 3500));
     }
 
-    await uploadToHardware();
+    await uploadToHardware({
+      wasConnected: hardwareConnected,
+      disconnectFn: disconnectHardwareSerial,
+      connectFn: connectHardwareSerial,
+    });
   }, [
     hardwareConnected,
     disconnectHardwareSerial,
+    connectHardwareSerial,
     uploadToHardware,
     setHardwareStatus,
     appendConsoleEntry,
@@ -9140,6 +9354,7 @@ loadDemoProject();
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   builder,
                   libraries_txt: librariesTxt,
                 });
@@ -9259,6 +9474,7 @@ loadDemoProject();
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   libraries_txt: librariesTxt,
                 });
               }
@@ -9312,6 +9528,7 @@ loadDemoProject();
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            target: fallbackKind,
             libraries_txt: librariesTxt,
             ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
           });
@@ -10982,7 +11199,7 @@ loadDemoProject();
         const idoc = iframe.contentDocument || iframe.contentWindow.document;
         idoc.open();
         idoc.write(
-          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#070b14;"></body></html>',
+          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>',
         );
         idoc.close();
 
@@ -11207,7 +11424,7 @@ loadDemoProject();
 
         const t_html2c_start = performance.now();
         circuitCanvas = await h2c(idoc.body, {
-          backgroundColor: "#070b14",
+          backgroundColor: "#ffffff",
           scale: SCALE,
           useCORS: true,
           allowTaint: false,
@@ -11216,24 +11433,24 @@ loadDemoProject();
           skipFonts: true,
           width: actualW,
           height: actualH,
-          onclone: (_clonedDoc, clonedEl) => {
-            // Selective color fix: Target graphics but SPARE the text
-            clonedEl
-              .querySelectorAll("path, rect, circle, polygon")
-              .forEach((el) => {
-                const fill = el.getAttribute("fill");
-                if (fill && fill.includes("color("))
-                  el.setAttribute("fill", "#777");
-                const stroke = el.getAttribute("stroke");
-                if (stroke && stroke.includes("color("))
-                  el.setAttribute("stroke", "#777");
+            onclone: (_clonedDoc, clonedEl) => {
+              // Selective color fix: Target graphics but SPARE the text
+              clonedEl
+                .querySelectorAll("path, rect, circle, polygon")
+                .forEach((el) => {
+                  const fill = el.getAttribute("fill");
+                  if (fill && fill.includes("color("))
+                    el.setAttribute("fill", "#777");
+                  const stroke = el.getAttribute("stroke");
+                  if (stroke && stroke.includes("color("))
+                    el.setAttribute("stroke", "#777");
+                });
+              // Ensure labels are visible on white bg
+              clonedEl.querySelectorAll("text, span, div").forEach((el) => {
+                if (el.style.color && el.style.color.includes("color("))
+                  el.style.color = "#1e293b";
               });
-            // Ensure labels are visible
-            clonedEl.querySelectorAll("text, span, div").forEach((el) => {
-              if (el.style.color && el.style.color.includes("color("))
-                el.style.color = "#ccc";
-            });
-          },
+            },
         });
 
         // Memory Flush: Clear the iframe content immediately to free RAM
@@ -11265,7 +11482,7 @@ loadDemoProject();
       out.height = CH;
       const ctx = out.getContext("2d");
 
-      ctx.fillStyle = "#070b14";
+      ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(circuitCanvas, 0, 0);
 
@@ -11371,6 +11588,192 @@ loadDemoProject();
       setIsExporting(false);
     }
   };
+
+  // ── Captures a small thumbnail (320×180) and saves to IndexedDB ───────
+  const captureThumbnail = useCallback(async () => {
+    if (!components.length) return;
+    const { saveProject, loadProject } = await import('../../services/projectStore.js');
+    const id = currentProjectIdRef.current;
+    if (!id) return;
+    const THUMB_W = 320;
+    const THUMB_H = 180;
+    const PAD = 20;
+
+    // 1. Calculate bounding box of all components + wire waypoints (canvas-space)
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    components.forEach((c) => {
+      const reg = COMPONENT_REGISTRY[c.type];
+      const b = typeof reg?.BOUNDS === 'function' ? reg.BOUNDS(getComponentStateAttrs(c)) : reg?.BOUNDS || { x: 0, y: 0, w: c.w, h: c.h };
+      minX = Math.min(minX, c.x + b.x);
+      minY = Math.min(minY, c.y + b.y);
+      maxX = Math.max(maxX, c.x + b.x + b.w);
+      maxY = Math.max(maxY, c.y + b.y + b.h + 20);
+      (PIN_DEFS[c.type] || []).forEach((pin) => {
+        const pp = getPinPos(c.id, pin.id);
+        if (pp) { minX = Math.min(minX, pp.x - 4); minY = Math.min(minY, pp.y - 4); maxX = Math.max(maxX, pp.x + 4); maxY = Math.max(maxY, pp.y + 4); }
+      });
+    });
+    wires.forEach((w) => {
+      (w.waypoints || []).forEach((wp) => { minX = Math.min(minX, wp.x); minY = Math.min(minY, wp.y); maxX = Math.max(maxX, wp.x); maxY = Math.max(maxY, wp.y); });
+      [w.from, w.to].forEach((ref) => {
+        if (!ref) return;
+        const [cId, pId] = ref.split(':');
+        const pp = getPinPos(cId, pId);
+        if (pp) { minX = Math.min(minX, pp.x); minY = Math.min(minY, pp.y); maxX = Math.max(maxX, pp.x); maxY = Math.max(maxY, pp.y); }
+      });
+    });
+    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+    minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+    const bboxW = maxX - minX;
+    const bboxH = maxY - minY;
+
+    try {
+      // 2. Use the same isolated iframe + style teleportation approach as PNG export
+      const zoomWrapper = innerCanvasRef.current;
+      if (!zoomWrapper) return;
+
+      let tagCount = 0;
+      const elementMap = new Map();
+      const deepTag = (root) => {
+        [root, ...Array.from(root.querySelectorAll("*"))].forEach((el) => {
+          if (!el.getAttribute) return;
+          const tid = `thumb-p-${tagCount++}`;
+          el.setAttribute("data-thumb-id", tid);
+          elementMap.set(tid, el);
+          if (el.shadowRoot) deepTag(el.shadowRoot);
+        });
+      };
+      deepTag(zoomWrapper);
+      const shadowHostEls = Array.from(elementMap.values()).filter((el) => !!el.shadowRoot);
+
+      const iframe = document.createElement("iframe");
+      Object.assign(iframe.style, { position: "fixed", left: "-10000px", top: "-10000px", width: bboxW + "px", height: bboxH + "px" });
+      document.body.appendChild(iframe);
+      const idoc = iframe.contentDocument || iframe.contentWindow.document;
+      idoc.open();
+      idoc.write('<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>');
+      idoc.close();
+
+      const styleReset = idoc.createElement("style");
+      styleReset.textContent = '* { box-sizing: border-box; filter: none !important; box-shadow: none !important; } text, span, div { font-family: sans-serif; }';
+      idoc.head.appendChild(styleReset);
+
+      const circuitClone = idoc.importNode(zoomWrapper, true);
+      idoc.body.appendChild(circuitClone);
+
+      // Inline shadow DOM
+      shadowHostEls.forEach((liveEl) => {
+        const dataId = liveEl.getAttribute("data-thumb-id");
+        const clonedHost = idoc.querySelector(`[data-thumb-id="${dataId}"]`);
+        if (!clonedHost) return;
+        if (liveEl.shadowRoot.adoptedStyleSheets) {
+          liveEl.shadowRoot.adoptedStyleSheets.forEach((sheet) => {
+            const se = idoc.createElement("style");
+            se.textContent = getSerializedShadowSheet(sheet);
+            clonedHost.appendChild(se);
+          });
+        }
+        for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
+          clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
+        }
+      });
+
+      // Teleport computed styles
+      const propsToCopy = ["display","position","left","top","width","height","transform","transformOrigin","color","fontSize","fontWeight","fontFamily","textAlign","visibility","opacity","backgroundColor","zIndex","border","borderWidth","borderStyle","borderColor","borderRadius","padding","margin","lineHeight","overflow","boxSizing","clipPath","mask","filter","mixBlendMode","outline","boxShadow","textShadow","cursor"];
+      const svgProps = ["fill","stroke","stroke-width","stroke-linecap","stroke-linejoin","stroke-miterlimit","stroke-dasharray","stroke-dashoffset","stroke-opacity","fill-opacity","fill-rule","marker-start","marker-mid","marker-end"];
+
+      [idoc.body, ...Array.from(idoc.body.querySelectorAll("*"))].forEach((cloned) => {
+        const dataId = cloned.getAttribute("data-thumb-id");
+        if (!dataId) return;
+        const liveEl = elementMap.get(dataId);
+        if (!liveEl) return;
+        const s = window.getComputedStyle(liveEl);
+        propsToCopy.forEach((p) => {
+          if (p === "fontSize" && (cloned.tagName === "text" || cloned.tagName === "tspan")) return;
+          cloned.style.setProperty(p, s.getPropertyValue(p), "important");
+        });
+        if (["path","circle","rect","line","polygon","text","ellipse","g","svg"].includes(cloned.tagName)) {
+          svgProps.forEach((attr) => {
+            const val = liveEl.getAttribute(attr) || s.getPropertyValue(attr);
+            if (val) {
+              const fv = val.includes("color(") ? "#777" : val;
+              cloned.setAttribute(attr, fv);
+              if (["fill","stroke","stroke-width","opacity","visibility"].includes(attr)) cloned.style.setProperty(attr, fv, "important");
+            }
+          });
+          const w = s.getPropertyValue("width");
+          const h = s.getPropertyValue("height");
+          if (w && w !== "auto" && w !== "100%") { cloned.setAttribute("width", w.replace("px","")); cloned.style.setProperty("width", w, "important"); }
+          if (h && h !== "auto" && h !== "100%") { cloned.setAttribute("height", h.replace("px","")); cloned.style.setProperty("height", h, "important"); }
+        }
+        cloned.style.setProperty("visibility", "visible", "important");
+        cloned.style.setProperty("opacity", s.opacity || "1", "important");
+        if (liveEl.shadowRoot) cloned.style.setProperty("overflow", "visible", "important");
+      });
+      elementMap.clear();
+
+      idoc.body.style.overflow = "visible";
+      circuitClone.style.overflow = "visible";
+      Object.assign(circuitClone.style, {
+        transform: `translate(${-minX}px, ${-minY}px) scale(1)`,
+        transformOrigin: "0 0",
+        width: bboxW + "px",
+        height: bboxH + "px",
+        display: "block", margin: "0", padding: "0",
+      });
+
+      // 3. Capture at full resolution then shrink to thumbnail size
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const h2c = await getHtml2canvas();
+      const rawCanvas = await h2c(idoc.body, {
+        backgroundColor: "#ffffff",
+        scale: 1,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        imageTimeout: 5000,
+        skipFonts: true,
+        width: bboxW,
+        height: bboxH,
+        onclone: (_d, el) => {
+          el.querySelectorAll("path, rect, circle, polygon").forEach((e) => {
+            const fill = e.getAttribute("fill");
+            if (fill && fill.includes("color(")) e.setAttribute("fill", "#777");
+            const stroke = e.getAttribute("stroke");
+            if (stroke && stroke.includes("color(")) e.setAttribute("stroke", "#777");
+          });
+          el.querySelectorAll("text, span, div").forEach((e) => {
+            if (e.style.color && e.style.color.includes("color(")) e.style.color = "#1e293b";
+          });
+        },
+      });
+
+      // Clean up iframe
+      idoc.body.innerHTML = "";
+      idoc.head.innerHTML = "";
+      document.body.removeChild(iframe);
+
+      // 4. Shrink to thumbnail dimensions
+      const out = document.createElement("canvas");
+      out.width = THUMB_W;
+      out.height = THUMB_H;
+      const ctx = out.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, THUMB_W, THUMB_H);
+      ctx.drawImage(rawCanvas, 0, 0, rawCanvas.width, rawCanvas.height, 0, 0, THUMB_W, THUMB_H);
+
+      const dataUrl = out.toDataURL("image/png", 0.7);
+      const existing = await loadProject(id);
+      if (existing) {
+        await saveProject({ ...existing, thumbnail: dataUrl });
+      } else {
+        await saveProject({ id, thumbnail: dataUrl });
+      }
+    } catch (err) {
+      console.warn("[Thumbnail] capture failed:", err);
+    }
+  }, [components, wires, board, currentProjectIdRef]);
+  captureThumbnailRef.current = captureThumbnail;
 
   // ── View Panel helpers — SVG Schematic Generator ─────────────────────────
   const generateSchematic = useCallback(() => {
@@ -13921,6 +14324,68 @@ loadDemoProject();
               </div>
               <div style={{ fontSize: 12, color: '#64748b' }}>
                 Placing components and wiring connections
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showComingSoon && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9999,
+              background: 'rgba(15,23,42,0.6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            <div
+              style={{
+                background: '#ffffff', borderRadius: 16,
+                padding: '40px 48px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                maxWidth: 400,
+                textAlign: 'center',
+              }}
+            >
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>
+                Coming Soon
+              </div>
+              <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.5 }}>
+                This guided project is under development and will be available soon.
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button
+                  onClick={() => navigate(-1)}
+                  style={{
+                    padding: '10px 28px',
+                    border: 'none',
+                    borderRadius: 8,
+                    background: '#2563eb',
+                    color: '#fff',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Go Back
+                </button>
+                <button
+                  onClick={() => setShowComingSoon(false)}
+                  style={{
+                    padding: '10px 28px',
+                    border: '1px solid var(--border, rgba(255,255,255,0.2))',
+                    borderRadius: 8,
+                    background: 'transparent',
+                    color: 'var(--text, #e2e8f0)',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Open Simulator
+                </button>
               </div>
             </div>
           </div>
