@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listHardwarePorts } from '../../services/simulatorService.js';
 import { flashESP32WebSerial } from '../../esp32/esptoolFlasher.js';
+import { flashArduinoWebSerial } from '../../arduino/avrbroFlasher.js';
 
 export function useHardwareFlashing({
   hardwareBoardId,
@@ -66,7 +67,8 @@ export function useHardwareFlashing({
       : (boardFqbn[kind] || boardFqbn.arduino_uno);
     
     const isESP32 = fqbn.toLowerCase().includes('esp32');
-    const requiresWebSerial = isESP32;
+    const isArduino = fqbn.toLowerCase().includes('avr');
+    const requiresWebSerial = isESP32 || isArduino;
 
     const cleanPort = String(resolvedHardwarePort || '').trim();
     if (!requiresWebSerial && !cleanPort) {
@@ -125,6 +127,24 @@ export function useHardwareFlashing({
         setHardwareStatus(`Flashing ${hardwareBoardId} via Web Serial...`);
         await flashESP32WebSerial(webSerialPort, hexText, {
           baudRate: 921600, // Force high speed for ESP32 flashing regardless of UI dropdown
+          onProgress: (msg) => {
+            setHardwareStatus(msg.trim());
+            pushSerialRxChunk(msg, hardwareBoardId, 'hw');
+          }
+        });
+        flashResult = { output: 'Flashed successfully via Web Serial' };
+      } else if (isArduino) {
+        setHardwareStatus(`Flashing ${hardwareBoardId} via Web Serial (AVR)...`);
+        
+        let avrBoardName = 'uno';
+        const lowerFqbn = fqbn.toLowerCase();
+        if (lowerFqbn.includes('mega')) avrBoardName = 'mega';
+        else if (lowerFqbn.includes('nano')) avrBoardName = 'nano';
+        else if (lowerFqbn.includes('leonardo')) avrBoardName = 'leonardo';
+        else if (lowerFqbn.includes('micro')) avrBoardName = 'micro';
+
+        await flashArduinoWebSerial(webSerialPort, hexText, {
+          boardName: avrBoardName,
           onProgress: (msg) => {
             setHardwareStatus(msg.trim());
             pushSerialRxChunk(msg, hardwareBoardId, 'hw');
