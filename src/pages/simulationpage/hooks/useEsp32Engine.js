@@ -33,7 +33,8 @@ export function useEsp32Engine({
   const pinToComponentsRef = useRef({});
   const componentsRef = useRef(components);
   const hasAttachedSensorsRef = useRef(false);
-
+  // Pre-boot sensor injection: called from onQemuBooting
+  const attachSensorsEarlyRef = useRef(null);
   // MicroPython REPL refs
   const replStateRef = useRef('idle');
   const serialBufferRef = useRef('');
@@ -160,6 +161,14 @@ export function useEsp32Engine({
         setIsRunning(true);
       } else if (phase === 'stopped' || phase === 'stalled') {
         setIsBooting(false);
+      }
+    },
+    onQemuBooting: () => {
+      // QEMU ROM boot detected — firmware hasn’t started yet.
+      // Attach I2C sensor slaves NOW so mpu.begin() / accel.begin() etc.
+      // find the virtual slave already registered when setup() runs.
+      if (attachSensorsEarlyRef.current) {
+        attachSensorsEarlyRef.current();
       }
     }
   });
@@ -445,21 +454,65 @@ export function useEsp32Engine({
     }
   }, [isRunning, components, startWebcamStream, stopWebcamStream]);
 
-  // Attach sensors securely once the simulation is fully running and WebSocket is open
+  // Build the pre-boot sensor attach function whenever components change.
+  // This is stored in a ref so the onQemuBooting callback (which is not
+  // re-created on every render) always sees the latest component list.
   useEffect(() => {
-    if (isRunning && esp32Socket && !hasAttachedSensorsRef.current) {
+    attachSensorsEarlyRef.current = () => {
+      if (hasAttachedSensorsRef.current) return;
       hasAttachedSensorsRef.current = true;
-      const i2cComps = (componentsRef.current || []).filter(c => /(ssd1306|pcf8574|mpu6050)/i.test(c.type || ''));
+
+      const I2C_SENSOR_TYPES = /(ssd1306|pcf8574|mpu6050|bmp280|bme280|adxl345|ds1307|ds3231)/i;
+      const i2cComps = (componentsRef.current || []).filter(c => I2C_SENSOR_TYPES.test(c.type || ''));
+
       i2cComps.forEach(comp => {
         let sensorType = 'ssd1306';
-        if (comp.type.includes('pcf8574')) sensorType = 'pcf8574';
-        if (comp.type.includes('mpu6050')) sensorType = 'mpu6050';
-        const addr = parseInt(comp.attrs?.i2cAddress || comp.attrs?.address || (sensorType === 'ssd1306' ? '0x3C' : '0x27'), 16);
+        if (comp.type.includes('pcf8574'))  sensorType = 'pcf8574';
+        if (comp.type.includes('mpu6050'))  sensorType = 'mpu6050';
+        if (/bmp280|bme280/i.test(comp.type)) sensorType = 'bmp280';
+        if (comp.type.includes('adxl345'))  sensorType = 'adxl345';
+        if (comp.type.includes('ds3231'))   sensorType = 'ds3231';
+        if (comp.type.includes('ds1307'))   sensorType = 'ds1307';
+
+        // Default I2C addresses per sensor type
+        const defaultAddrs = {
+          mpu6050: 0x68, adxl345: 0x53, bmp280: 0x76,
+          ssd1306: 0x3C, pcf8574: 0x27, ds1307: 0x68, ds3231: 0x68,
+        };
+        const rawAddr = comp.attrs?.i2cAddress || comp.attrs?.address;
+        const addr = rawAddr ? parseInt(rawAddr, 16) : (defaultAddrs[sensorType] ?? 0x68);
+
+        // Build initial value payload for the slave
+        const props = { addr };
+        if (sensorType === 'mpu6050') {
+          props.accelX = parseFloat(comp.state?.accelX ?? comp.attrs?.accelX ?? 0);
+          props.accelY = parseFloat(comp.state?.accelY ?? comp.attrs?.accelY ?? 0);
+          props.accelZ = parseFloat(comp.state?.accelZ ?? comp.attrs?.accelZ ?? 1);
+          props.gyroX  = parseFloat(comp.state?.gyroX  ?? 0);
+          props.gyroY  = parseFloat(comp.state?.gyroY  ?? 0);
+          props.gyroZ  = parseFloat(comp.state?.gyroZ  ?? 0);
+          props.temp   = parseFloat(comp.state?.temperature ?? comp.attrs?.temperature ?? 25);
+        } else if (sensorType === 'adxl345') {
+          props.accelX = parseFloat(comp.state?.accelX ?? comp.attrs?.accelX ?? 0);
+          props.accelY = parseFloat(comp.state?.accelY ?? comp.attrs?.accelY ?? 0);
+          props.accelZ = parseFloat(comp.state?.accelZ ?? comp.attrs?.accelZ ?? 1);
+        } else if (sensorType === 'bmp280') {
+          props.temperature = parseFloat(comp.state?.temperature ?? comp.attrs?.temperature ?? 25);
+          props.pressure    = parseFloat(comp.state?.pressure    ?? comp.attrs?.pressure    ?? 1013.25);
+        }
+
         if (esp32Socket.sensorAttach) {
-            console.log(`[useEsp32Engine] Calling sensorAttach for ${sensorType} at address 0x${addr.toString(16)}`);
-            esp32Socket.sensorAttach(sensorType, -1, { addr });
+          console.log(`[useEsp32Engine] Pre-boot sensorAttach: ${sensorType} @ 0x${addr.toString(16)}`);
+          esp32Socket.sensorAttach(sensorType, -1, props);
         }
       });
+    };
+  }, [components, esp32Socket]);
+
+  // Fallback: also try to attach on isRunning in case QEMU_BOOTING was missed
+  useEffect(() => {
+    if (isRunning && esp32Socket && !hasAttachedSensorsRef.current) {
+      if (attachSensorsEarlyRef.current) attachSensorsEarlyRef.current();
     }
   }, [isRunning, esp32Socket]);
 

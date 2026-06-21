@@ -9184,7 +9184,6 @@ loadDemoProject();
                   fqbn: targetFqbn,
                   target: kind,
                   builder,
-                  target: kind,
                   libraries_txt: librariesTxt,
                   ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
                 });
@@ -9259,8 +9258,9 @@ loadDemoProject();
                 sketchName: compileUnit.sketchName,
                 fqbn: targetFqbn,
                 target: kind,
-                  libraries_txt: librariesTxt,
-                  ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
+                isFrontendEsp32: esp32SimulationMode === 'frontend',
+                libraries_txt: librariesTxt,
+                ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
               });
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {

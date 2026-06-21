@@ -1,5 +1,5 @@
 const fs = require('fs');
-global.process = process;
+global.process = { env: {} };
 const { ESP32 } = require('./public/openhw-client-esp32/esp32-engine.js');
 
 const rom = fs.readFileSync('./public/assets/esp32/esp32-v3-rom.bin');
