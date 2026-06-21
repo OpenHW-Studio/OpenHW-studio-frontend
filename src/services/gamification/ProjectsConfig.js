@@ -796,6 +796,145 @@ void loop() {
       rarity: 'legendary',
     },
   },
+  {
+    id: 'traffic-light',
+    slug: 'traffic-light',
+    number: 11,
+    prerequisite: null,
+    title: 'Traffic Light',
+    subtitle: 'Simulate a traffic light system',
+    description: 'Simulate a traffic light system with red, yellow, and green LEDs.',
+    difficulty: 'beginner',
+    difficultyLabel: 'Beginner',
+    estimatedTime: '20 min',
+    xpReward: 180,
+    color: '#22c55e',
+    icon: '🚦',
+    world: 1,
+    tags: ['LED', 'digital output', 'traffic light'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
+    rewardComponents: [],
+    components: [
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-led', label: 'Red LED', qty: 1, attrs: { color: 'red' } },
+      { type: 'openhw-led', label: 'Yellow LED', qty: 1, attrs: { color: 'yellow' } },
+      { type: 'openhw-led', label: 'Green LED', qty: 1, attrs: { color: 'green' } },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 3, attrs: { value: '220' } },
+    ],
+    wiring: [],
+    starterCode: `void setup() {
+  pinMode(2, OUTPUT);
+  pinMode(3, OUTPUT);
+  pinMode(4, OUTPUT);
+  Serial.begin(9600);
+}
+void loop() {
+  digitalWrite(2, HIGH);
+  Serial.println("RED");
+  delay(5000);
+  digitalWrite(2, LOW);
+  digitalWrite(3, HIGH);
+  Serial.println("YELLOW");
+  delay(2000);
+  digitalWrite(3, LOW);
+  digitalWrite(4, HIGH);
+  Serial.println("GREEN");
+  delay(5000);
+  digitalWrite(4, LOW);
+}`,
+    concepts: ['digitalWrite', 'timing', 'traffic light logic'],
+    kidFriendlyTip: '🚦 Red means stop, yellow means slow down, green means go!',
+    evaluation: null,
+    badge: null,
+  },
+  {
+    id: 'led-pwm',
+    slug: 'led-pwm',
+    number: 12,
+    prerequisite: null,
+    title: 'LED Brightness (PWM)',
+    subtitle: 'Control LED brightness using PWM',
+    description: 'Control LED brightness using PWM with analogWrite().',
+    difficulty: 'beginner',
+    difficultyLabel: 'Beginner',
+    estimatedTime: '15 min',
+    xpReward: 160,
+    color: '#22c55e',
+    icon: '🔆',
+    world: 1,
+    tags: ['LED', 'PWM', 'analog output'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
+    rewardComponents: [],
+    components: [
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-led', label: 'LED', qty: 1 },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+    ],
+    wiring: [],
+    starterCode: `void setup() {
+  pinMode(9, OUTPUT);
+  Serial.begin(9600);
+}
+void loop() {
+  for (int i = 0; i <= 255; i++) {
+    analogWrite(9, i);
+    Serial.print("Brightness: ");
+    Serial.println(i);
+    delay(10);
+  }
+  for (int i = 255; i >= 0; i--) {
+    analogWrite(9, i);
+    Serial.print("Brightness: ");
+    Serial.println(i);
+    delay(10);
+  }
+}`,
+    concepts: ['analogWrite', 'PWM', 'LED brightness'],
+    kidFriendlyTip: '💡 PWM lets you control brightness like a dimmer switch!',
+    evaluation: null,
+    badge: null,
+  },
+  {
+    id: 'lcd-scrolling-text',
+    slug: 'lcd-scrolling-text',
+    number: 13,
+    prerequisite: null,
+    title: 'Scrolling Text LCD',
+    subtitle: 'Display scrolling text on LCD',
+    description: 'Display scrolling text on a 16x2 LCD character display.',
+    difficulty: 'beginner',
+    difficultyLabel: 'Beginner',
+    estimatedTime: '25 min',
+    xpReward: 190,
+    color: '#22c55e',
+    icon: '📟',
+    world: 1,
+    tags: ['LCD', 'display', 'I2C'],
+    startingComponents: ['openhw-arduino-uno'],
+    rewardComponents: [],
+    components: [
+      { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+    ],
+    wiring: [],
+    starterCode: `#include <LiquidCrystal.h>
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+void setup() {
+  lcd.begin(16, 2);
+  Serial.begin(9600);
+}
+void loop() {
+  lcd.setCursor(0, 0);
+  lcd.print("Hello, Arduino!");
+  for (int i = 0; i < 16; i++) {
+    lcd.scrollDisplayLeft();
+    delay(200);
+  }
+}`,
+    concepts: ['LiquidCrystal', 'LCD display', 'scrolling text'],
+    kidFriendlyTip: '📟 LCDs let you display messages — like a tiny TV for your Arduino!',
+    evaluation: null,
+    badge: null,
+  },
 ];
 
 // Difficulty styling

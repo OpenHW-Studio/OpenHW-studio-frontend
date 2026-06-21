@@ -316,11 +316,13 @@ export default function App() {
                 <Route
                   path="/:projectName/demo"
                   element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
-                    />
+                    <SimulatorPage gamificationMode />
                   }
+                />
+
+                <Route
+                  path="/guide"
+                  element={<Navigate to="/led-blink/guide" replace />}
                 />
 
                 <Route
