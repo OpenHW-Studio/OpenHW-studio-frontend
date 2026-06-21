@@ -55,12 +55,6 @@ export function useHardwareFlashing({
       return;
     }
 
-    const cleanPort = String(resolvedHardwarePort || '').trim();
-    if (!cleanPort) {
-      alert('No serial port detected. Connect your board, then refresh ports or enable Show all serial ports.');
-      return;
-    }
-
     const boardComp = boardComponents.find((b) => b.id === hardwareBoardId);
     if (!boardComp) {
       alert('Selected board is not available on canvas anymore.');
@@ -73,6 +67,12 @@ export function useHardwareFlashing({
     
     const isESP32 = fqbn.toLowerCase().includes('esp32');
     const requiresWebSerial = isESP32;
+
+    const cleanPort = String(resolvedHardwarePort || '').trim();
+    if (!requiresWebSerial && !cleanPort) {
+      alert('No serial port detected. Connect your board, then refresh ports or enable Show all serial ports.');
+      return;
+    }
 
     let webSerialPort = null;
 
@@ -142,12 +142,13 @@ export function useHardwareFlashing({
         });
       }
 
-      pushSerialTxLine(`Flashed ${hardwareBoardId} on ${cleanPort}`, hardwareBoardId, 'hw');
+      const portDisplay = requiresWebSerial ? 'Web Serial' : cleanPort;
+      pushSerialTxLine(`Flashed ${hardwareBoardId} on ${portDisplay}`, hardwareBoardId, 'hw');
       if (flashResult?.output) {
         pushSerialRxChunk(`${flashResult.output}\n`, hardwareBoardId, 'hw');
       }
-      setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${cleanPort}`);
-      alert(`Code successfully uploaded to ${hardwareBoardId} on ${cleanPort}!`);
+      setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${portDisplay}`);
+      alert(`Code successfully uploaded to ${hardwareBoardId} on ${portDisplay}!`);
       
       // Auto-connect after successful flash
       if (connectFn) {
