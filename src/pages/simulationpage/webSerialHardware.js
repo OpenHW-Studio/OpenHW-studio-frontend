@@ -136,7 +136,9 @@ export function useWebSerialHardware({
         const requestOptions = showAllHardwarePorts
           ? {}
           : { filters: DEFAULT_SERIAL_USB_FILTERS };
+        console.trace('Web Serial Request Options:', requestOptions);
         port = await navigator.serial.requestPort(requestOptions);
+        console.trace('Acquired Web Serial Port:', port);
       }
       
       await port.open({ baudRate });
