@@ -117,6 +117,7 @@ function _diagTick(type) {
  *   onProxyI2cComplete? : (addr: number, data: number[]) => void,
  *   onSpiBatch?    : (b64: string) => void,
  *   onEpaperUpdate?: (componentId: string, frame: { width: number, height: number, frame_b64: string, refresh_ms: number }) => void,
+ *   onQemuBooting? : () => void,
  *   onTone?        : (pin: string, frequency: number, duration: number) => void,
  * }} callbacks
  */
@@ -137,7 +138,8 @@ export function useHardwareSocket({
     onSpiEvent,
     onSpiBatch,
     onEpaperUpdate,
-    onTone
+    onTone,
+    onQemuBooting,
 } = {}) {
     // ── Refs (survive renders without causing re-renders) ────────────────────
 
@@ -173,13 +175,15 @@ export function useHardwareSocket({
     const cbRef = useRef({
         onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
         onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
-        onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone
+        onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone,
+        onQemuBooting,
     });
     useEffect(() => {
         cbRef.current = {
             onSerialLine, onGpioSync, onLog, onPhaseChange, onStop, onNeopixelSync,
             onGpioDir, onPwmSync, onGpioRouting, onGpioRoutingClear,
-            onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone
+            onI2cEvent, onI2cTransaction, onProxyI2cComplete, onSpiEvent, onSpiBatch, onEpaperUpdate, onTone,
+            onQemuBooting,
         };
     });
 
@@ -326,6 +330,9 @@ export function useHardwareSocket({
                     clearWatchdog();
                     cbRef.current.onLog?.('🔄 ESP32 is booting…', 'sys');
                     cbRef.current.onPhaseChange?.('booting');
+                    // Fire the pre-boot hook so callers can inject SENSOR_ATTACH
+                    // commands BEFORE the firmware's setup() runs.
+                    cbRef.current.onQemuBooting?.();
                     // Re-arm a watchdog for the READY handshake window
                     armWatchdog(BOOTING_TIMEOUT_MS, 'Firmware ready handshake');
                     break;
