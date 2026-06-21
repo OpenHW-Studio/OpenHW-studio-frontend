@@ -81,10 +81,13 @@ export function useHardwareFlashing({
       try {
         if (requiresWebSerial) {
           // Both ESP32 and Arduino Uno/Nano are now flashed via the browser!
+          console.trace('Requesting Web Serial port (requiresWebSerial=true)...');
           webSerialPort = await navigator.serial.requestPort();
+          console.trace('Acquired Web Serial Port for flashing:', webSerialPort);
         } else if (connectFn) {
           const ports = await navigator.serial.getPorts();
           if (ports.length === 0) {
+            console.trace('Requesting Web Serial port (ports.length === 0)...');
             await navigator.serial.requestPort();
           }
         }
