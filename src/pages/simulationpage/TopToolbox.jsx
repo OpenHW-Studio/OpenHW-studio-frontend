@@ -1074,6 +1074,52 @@ function TopToolboxInternal(props) {
         </Btn>
       </div>
 
+      {returnTo && (
+        <button
+          type="button"
+          onClick={() => {
+            const payload = {
+              board,
+              code: typeof code === "function" ? "" : code || "",
+              components: (components || []).map((c) => ({
+                id: c.id,
+                type: c.type,
+                name: c.name,
+                x: c.x,
+                y: c.y,
+                rotation: c.rotation,
+              })),
+              connections: (wires || []).map((w) => ({
+                from: w.from,
+                to: w.to,
+              })),
+            };
+
+            try {
+              localStorage.setItem("bankProjectCriteria", JSON.stringify(payload));
+            } catch (e) {
+              console.warn("Failed to store bankProjectCriteria", e);
+            }
+            setTimeout(() => {
+              navigate(returnTo);
+            }, 0);
+          }}
+          style={{
+            padding: "8px 14px",
+            borderRadius: 8,
+            border: "1px solid var(--accent)",
+            background: "var(--accent)",
+            color: "#fff",
+            fontWeight: 700,
+            cursor: "pointer",
+            fontSize: 13,
+          }}
+          title="Store current simulator circuit as project bank criteria"
+        >
+          Extract Criteria
+        </button>
+      )}
+
       {/* RIGHT SIDE — right to left: Sign In/User, My Projects, Save, Export, Import */}
       <div
         style={{
