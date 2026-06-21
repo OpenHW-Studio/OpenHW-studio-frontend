@@ -6037,8 +6037,7 @@ useEffect(() => {
   /** Delete a project from the My Projects modal. */
   const handleDeleteProject = async (id) => {
     if (!window.confirm('Delete this project? This cannot be undone.')) return;
-    await deleteProject(id);
-    // If the active project was deleted, clear current id
+    await deleteProject(id, getOwner());
     if (currentProjectIdRef.current === id) {
       currentProjectIdRef.current = null;
       setCurrentProjectId(null);
@@ -6059,8 +6058,8 @@ useEffect(() => {
       return;
     }
     const newName = renameValue.trim() || 'Untitled';
-    await renameProject(id, newName);
-    if (currentProjectIdRef.current === id) setCurrentProjectName(newName);
+    const finalName = await renameProject(id, newName, getOwner());
+    if (currentProjectIdRef.current === id) setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
     await refreshProjectList();
   };
