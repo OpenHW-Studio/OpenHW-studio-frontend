@@ -2067,6 +2067,12 @@ function attachDefaultShadows(ws, block, type) {
         valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
         block.getInput('MS').connection.connect(valBlock.outputConnection);
       }
+    } else if (type === 'math_change') {
+      if (block.getInput('DELTA')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('1', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('DELTA').connection.connect(valBlock.outputConnection);
+      }
     }
 
     // Generic fallback: attach '0' math_number shadow block to any remaining unconnected Number inputs
