@@ -2917,6 +2917,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     }
 
     block.initSvg(); block.render()
+    attachDefaultShadows(ws, block, type)
     const n = (blockCountRef.current++ % 10) * 18
     block.moveTo(new window.Blockly.utils.Coordinate(30 + n, 30 + n))
     syncGeneratedCode({ notifyParent: true, emitXml: true })
