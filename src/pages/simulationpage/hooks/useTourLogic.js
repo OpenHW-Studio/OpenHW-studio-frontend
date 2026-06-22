@@ -30,7 +30,7 @@ export const useTourLogic = ({
     setShowTour(false);
     setTourActiveStep(null);
     localStorage.setItem('openhw_tour_completed', 'true');
-    
+
     // Always purge demo artifacts by their known IDs.
     // Refs alone are unreliable — they may have been cleared mid-tour
     // (e.g. remove-demo-wire sets demoWireIdRef to null) leaving orphans on canvas.
@@ -105,7 +105,7 @@ export const useTourLogic = ({
     } else if (action === 'hide-quick-add') {
       // Mousedown outside closes it
       if (document.dispatchEvent) {
-         document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       }
     } else if (action === 'add-demo-wire-1') {
       const wire1 = {
