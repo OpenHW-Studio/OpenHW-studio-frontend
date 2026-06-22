@@ -48,7 +48,7 @@ const STEPS = [
     fallbackTarget: 'main',
     title: 'Intelligent Wiring',
     content: 'Connect pins by clicking and dragging. The simulator automatically calculates the best path for your wires.',
-    position: 'top-center',
+    position: 'top-right',
     action: 'wire',
     spotlightPadding: 0,
     // App should dispatch: new CustomEvent('openhw:wire-created', { bubbles: true })
@@ -192,6 +192,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
     x: window.innerWidth / 2,
     y: window.innerHeight / 2,
   });
+  const [ghostWireStart, setGhostWireStart] = useState(null);
   // 'show-me'   → ghost cursor runs the demo animation
   // 'let-me-try' → ghost cursor hidden; spotlight waits for the user
   const [mode, setMode] = useState('show-me');
@@ -349,10 +350,10 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
           : '[id*="comp-master-demo-comp-tour"]';
     }
     if (step.id === 'wiring') {
-      selector =
-        demoPhase <= 2
-          ? '[id*="pin-dot-demo-comp-tour-13"]'
-          : '[id*="pin-dot-demo-comp-tour-GND"]';
+      if (demoPhase <= 2) selector = '[id*="pin-dot-demo-comp-tour-13"]';
+      else if (demoPhase <= 4) selector = '[id*="pin-dot-demo-led-tour-A"]';
+      else if (demoPhase <= 6) selector = '[id*="pin-dot-demo-comp-tour-gnd_3"]';
+      else selector = '[id*="pin-dot-demo-led-tour-K"]';
     }
     if (step.action?.includes('switch-blockly')) selector = '[data-tour-id="tab-block"]';
     if (step.action?.includes('switch-serial'))  selector = '[data-tour-id="tab-serial"]';
@@ -364,7 +365,12 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       const el = document.querySelector(selector);
       if (el) {
         const rect = el.getBoundingClientRect();
-        setGhostMousePos({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+        const newPos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        setGhostMousePos(newPos);
+        if (step.id === 'wiring') {
+          if (demoPhase === 2 || demoPhase === 6) setGhostWireStart(newPos);
+          else if (demoPhase === 0 || demoPhase === 1 || demoPhase === 5) setGhostWireStart(null);
+        }
       }
     }
   }, [currentStep, demoPhase, isVisible, mode]);
@@ -387,8 +393,9 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
         onDemoAction('remove-demo-wire');
         onDemoAction('remove-component');
       }
-      if (demoPhase === 1) onDemoAction('add-component');
-      if (demoPhase === 4) onDemoAction('add-demo-wire');
+      if (demoPhase === 1) onDemoAction('add-wiring-components');
+      if (demoPhase === 4) onDemoAction('add-demo-wire-1');
+      if (demoPhase === 8) onDemoAction('add-demo-wire-2');
     }
     // Fire panel-switch actions immediately (phase 0 = step entry) so the correct
     // tab is visible right away regardless of which tab the user was on before.
@@ -400,7 +407,12 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
   // ── Demo phase loop (show-me mode only) ─────────────────────────────────
   useEffect(() => {
     if (mode !== 'show-me') return;
-    const interval = setInterval(() => setDemoPhase(p => (p + 1) % 6), 1800);
+    const interval = setInterval(() => {
+      setDemoPhase(p => {
+        const maxPhases = STEPS[currentStep].id === 'wiring' ? 9 : 6;
+        return (p + 1) % maxPhases;
+      });
+    }, 1800);
     return () => {
       clearInterval(interval);
       // Clean up any live demo artefacts when leaving a step
@@ -440,6 +452,8 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       case 'top-center':
         // Canvas-wide steps: float at the very top so the full canvas is visible
         return { top: 16, bottom: 'auto', left: '50%', transform: 'translateX(-50%)' };
+      case 'top-right':
+        return { top: 16, right: 16, bottom: 'auto', left: 'auto', transform: 'none' };
       case 'bottom':
         return {
           top: top + height + margin,
@@ -519,11 +533,35 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
     <div className="tour-overlay">
       {/* ── Ghost cursor (show-me mode only) ──────────────────────────── */}
       {mode === 'show-me' && (
-        <div
-          className={`tour-ghost-cursor step-${step.id} phase-${demoPhase}`}
-          style={{ left: ghostMousePos.x, top: ghostMousePos.y }}
-          aria-hidden="true"
-        >
+        <>
+          {step.id === 'wiring' && ghostWireStart && (demoPhase === 3 || demoPhase === 7) && (
+            <svg
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100vw',
+                height: '100vh',
+                pointerEvents: 'none',
+                zIndex: 9999998,
+              }}
+            >
+              <line
+                x1={ghostWireStart.x}
+                y1={ghostWireStart.y}
+                x2={ghostMousePos.x}
+                y2={ghostMousePos.y}
+                stroke={demoPhase === 3 ? "var(--accent, #00b4ff)" : "black"}
+                strokeWidth="3"
+                strokeDasharray="4 4"
+              />
+            </svg>
+          )}
+          <div
+            className={`tour-ghost-cursor step-${step.id} phase-${demoPhase}`}
+            style={{ left: ghostMousePos.x, top: ghostMousePos.y }}
+            aria-hidden="true"
+          >
           <svg
             width="48"
             height="48"
@@ -539,7 +577,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
           </svg>
 
           {/* Click ripple */}
-          {(demoPhase === 2 || demoPhase === 4) && (
+          {(demoPhase === 2 || demoPhase === 4 || demoPhase === 6 || demoPhase === 8) && (
             <div className="tour-ghost-ripple" />
           )}
 
@@ -560,11 +598,8 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
             </div>
           )}
 
-          {/* Wire draw preview */}
-          {step.id === 'wiring' && demoPhase >= 3 && demoPhase <= 4 && (
-            <div className="tour-ghost-wire-preview" />
-          )}
         </div>
+        </>
       )}
 
       {/* ── Spotlight ─────────────────────────────────────────────────── */}

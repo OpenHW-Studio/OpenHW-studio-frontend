@@ -65,10 +65,33 @@ export const useTourLogic = ({
       setComponents(prev => [...prev.filter(c => c.id !== id), newComp]);
       demoComponentIdRef.current = id;
     } else if (action === 'remove-component') {
-      if (demoComponentIdRef.current) {
-        setComponents(prev => prev.filter(c => c.id !== demoComponentIdRef.current));
-        demoComponentIdRef.current = null;
-      }
+      setComponents(prev => prev.filter(c => c.id !== 'demo-comp-tour' && c.id !== 'demo-led-tour'));
+      demoComponentIdRef.current = null;
+    } else if (action === 'add-wiring-components') {
+      const arduino = {
+        id: 'demo-comp-tour',
+        type: 'wokwi-arduino-uno',
+        x: 450,
+        y: 350,
+        w: 260,
+        h: 190,
+        state: {},
+        attrs: {},
+        isDemo: true
+      };
+      const led = {
+        id: 'demo-led-tour',
+        type: 'openhw-led',
+        x: 480,
+        y: 150,
+        w: 65,
+        h: 65,
+        state: {},
+        attrs: { color: "red" },
+        isDemo: true
+      };
+      setComponents(prev => [...prev.filter(c => c.id !== 'demo-comp-tour' && c.id !== 'demo-led-tour'), arduino, led]);
+      demoComponentIdRef.current = 'demo-comp-tour';
     } else if (action === 'show-quick-add') {
       const ev = new CustomEvent('quick-add-open', {
         detail: {
@@ -84,22 +107,28 @@ export const useTourLogic = ({
       if (document.dispatchEvent) {
          document.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       }
-    } else if (action === 'add-demo-wire') {
-      const id = 'demo-wire-tour';
-      const newWire = {
-        id,
+    } else if (action === 'add-demo-wire-1') {
+      const wire1 = {
+        id: 'demo-wire-tour-1',
         from: 'demo-comp-tour:13',
-        to: 'demo-comp-tour:GND',
+        to: 'demo-led-tour:A',
         color: 'var(--accent)',
         isDemo: true
       };
-      setWires(prev => [...prev.filter(w => w.id !== id), newWire]);
-      demoWireIdRef.current = id;
+      setWires(prev => [...prev.filter(w => w.id !== 'demo-wire-tour-1'), wire1]);
+      demoWireIdRef.current = 'demo-wire-tour-1';
+    } else if (action === 'add-demo-wire-2') {
+      const wire2 = {
+        id: 'demo-wire-tour-2',
+        from: 'demo-comp-tour:gnd_3',
+        to: 'demo-led-tour:K',
+        color: 'black',
+        isDemo: true
+      };
+      setWires(prev => [...prev.filter(w => w.id !== 'demo-wire-tour-2'), wire2]);
     } else if (action === 'remove-demo-wire') {
-      if (demoWireIdRef.current) {
-        setWires(prev => prev.filter(w => w.id !== demoWireIdRef.current));
-        demoWireIdRef.current = null;
-      }
+      setWires(prev => prev.filter(w => !w.isDemo));
+      demoWireIdRef.current = null;
     } else if (action === 'switch-blockly') {
       // Tab ID is 'block', not 'blockly'
       setCodeTab('block');
