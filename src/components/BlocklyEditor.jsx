@@ -3584,7 +3584,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     type={item.type}
                     isDark={isDark}
                     blocklyReady={loadStatus === 'ready'}
-                    onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
+                    onDragStart={(info) => { draggingRef.current = info; }}
                     onDragEnd={() => {
                       if (markerManagerRef.current) {
                         markerManagerRef.current.dispose()
@@ -3592,6 +3592,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                       }
                       safeDisposePreviewBlock()
                       draggingRef.current = null
+                      setShowBlocksPanel(false)
                     }}
                   />
                 </div>
@@ -3646,7 +3647,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     <div onClick={() => { addVariableBlock(getType, v); setShowBlocksPanel(false); }} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Use "${v.name}"`}>
                       <BlockPreview
                         type={getType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
+                        onDragStart={(info) => { draggingRef.current = info; }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
@@ -3654,6 +3655,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                           }
                           safeDisposePreviewBlock()
                           draggingRef.current = null
+                          setShowBlocksPanel(false)
                         }}
                       />
                     </div>
@@ -3661,7 +3663,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     <div onClick={() => addVariableBlock(setType, v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`set ${v.name}`}>
                       <BlockPreview
                         type={setType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragStart={(info) => { draggingRef.current = info; }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
@@ -3669,6 +3671,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                           }
                           safeDisposePreviewBlock()
                           draggingRef.current = null
+                          setShowBlocksPanel(false)
                         }}
                       />
                     </div>
@@ -3677,7 +3680,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     <div onClick={() => { addVariableBlock('math_change', v); setShowBlocksPanel(false); }} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`change ${v.name}`}>
                       <BlockPreview
                         type="math_change" varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
+                        onDragStart={(info) => { draggingRef.current = info; }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
@@ -3685,6 +3688,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                           }
                           safeDisposePreviewBlock()
                           draggingRef.current = null
+                          setShowBlocksPanel(false)
                         }}
                       />
                     </div>
@@ -3745,7 +3749,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     <div onClick={() => { addVariableBlock(setType, v); setShowBlocksPanel(false); }} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Store in "${v.name}"`}>
                       <BlockPreview
                         type={setType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
+                        onDragStart={(info) => { draggingRef.current = info; }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
@@ -3753,6 +3757,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                           }
                           safeDisposePreviewBlock()
                           draggingRef.current = null
+                          setShowBlocksPanel(false)
                         }}
                       />
                     </div>
@@ -3761,7 +3766,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     <div onClick={() => { addVariableBlock(getType, v); setShowBlocksPanel(false); }} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Get from "${v.name}"`}>
                       <BlockPreview
                         type={getType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
+                        onDragStart={(info) => { draggingRef.current = info; }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
@@ -3769,6 +3774,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                           }
                           safeDisposePreviewBlock()
                           draggingRef.current = null
+                          setShowBlocksPanel(false)
                         }}
                       />
                     </div>
