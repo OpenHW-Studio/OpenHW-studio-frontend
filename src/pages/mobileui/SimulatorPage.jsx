@@ -529,10 +529,10 @@ const GROUP_COLORS = {
 };
 
 const BOARD_BAUD_PRESETS = {
-  arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200'],
+  arduino_uno: ['300', '1200', '2400', '4800', '9600', '19200', '38400', '57600', '115200', '921600'],
   esp32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
-  stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
-  rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800'],
+  stm32: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
+  rp2040: ['9600', '19200', '38400', '57600', '115200', '230400', '460800', '921600'],
 };
 
 const BOARD_DEFAULT_BAUD = {
@@ -6037,8 +6037,7 @@ useEffect(() => {
   /** Delete a project from the My Projects modal. */
   const handleDeleteProject = async (id) => {
     if (!window.confirm('Delete this project? This cannot be undone.')) return;
-    await deleteProject(id);
-    // If the active project was deleted, clear current id
+    await deleteProject(id, getOwner());
     if (currentProjectIdRef.current === id) {
       currentProjectIdRef.current = null;
       setCurrentProjectId(null);
@@ -6059,8 +6058,8 @@ useEffect(() => {
       return;
     }
     const newName = renameValue.trim() || 'Untitled';
-    await renameProject(id, newName);
-    if (currentProjectIdRef.current === id) setCurrentProjectName(newName);
+    const finalName = await renameProject(id, newName, getOwner());
+    if (currentProjectIdRef.current === id) setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
     await refreshProjectList();
   };
