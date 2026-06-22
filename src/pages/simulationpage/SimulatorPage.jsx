@@ -770,7 +770,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       .catch(async () => {
         if (project?.schemas?.arduino) {
           loadFromSchema()
-        } else if (canvasOnly && slug) {
+        } else if ((canvasOnly || gamificationMode) && slug) {
           try {
             const data = await import("../../services/guidedProjects.json")
             const root = data.default || data

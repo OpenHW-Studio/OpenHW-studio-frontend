@@ -1911,7 +1911,7 @@
               "220Ω Resistor",
               "Arduino Uno"
             ],
-            "code": "int ledPin = 11;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  Serial.print(\"Light: \");\n  Serial.println(light);\n  if (light < 500) {\n    digitalWrite(ledPin, HIGH);\n    Serial.println(\"LED ON - Dark\");\n  } else {\n    digitalWrite(ledPin, LOW);\n    Serial.println(\"LED OFF - Bright\");\n  }\n  delay(500);\n}",
+            "code": "int ledPin = 13;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  int brightness = map(light, 0, 1023, 0, 255);\n  analogWrite(ledPin, brightness);\n  Serial.print(\"Light: \");\n  Serial.print(light);\n  Serial.print(\" Brightness: \");\n  Serial.println(brightness);\n  delay(50);\n}",
             "schemas": {
               "arduino": {
                 "schemaVersion": "openhw-project-v2",
@@ -1927,6 +1927,19 @@
                     "h": 320,
                     "rotation": 0,
                     "attrs": {}
+                  },
+                  {
+                    "id": "comp_0",
+                    "type": "openhw-ldr-module",
+                    "label": "LDR Sensor Module (4-pin)",
+                    "x": 80,
+                    "y": -80,
+                    "w": 180,
+                    "h": 75,
+                    "rotation": 0,
+                    "attrs": {
+                      "targetBoard": "uno1"
+                    }
                   },
                   {
                     "id": "comp_1",
@@ -1998,6 +2011,45 @@
                     "isHelp": false,
                     "fromLabel": "",
                     "toLabel": ""
+                  },
+                  {
+                    "id": "w_3",
+                    "from": "comp_0:VCC",
+                    "to": "uno1:5V",
+                    "color": "red",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_4",
+                    "from": "comp_0:GND",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_5",
+                    "from": "comp_0:AO",
+                    "to": "uno1:A0",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
                   }
                 ],
                 "blocklyXml": "",
@@ -2006,7 +2058,7 @@
                 "projectFiles": [],
                 "openCodeTabs": [],
                 "activeCodeFileId": "code.ino",
-                "code": "int ledPin = 11;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  Serial.print(\"Light: \");\n  Serial.println(light);\n  if (light < 500) {\n    digitalWrite(ledPin, HIGH);\n    Serial.println(\"LED ON - Dark\");\n  } else {\n    digitalWrite(ledPin, LOW);\n    Serial.println(\"LED OFF - Bright\");\n  }\n  delay(500);\n}",
+                "code": "int ledPin = 13;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  int brightness = map(light, 0, 1023, 0, 255);\n  analogWrite(ledPin, brightness);\n  Serial.print(\"Light: \");\n  Serial.print(light);\n  Serial.print(\" Brightness: \");\n  Serial.println(brightness);\n  delay(50);\n}",
                 "name": "LDR-based Automatic Light System",
                 "exportedAt": "2026-06-18T08:48:06.643Z"
               },

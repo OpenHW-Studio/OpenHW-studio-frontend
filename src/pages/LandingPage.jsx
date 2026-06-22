@@ -9,7 +9,6 @@ const DOCS_URL =
 // JSON slug → URL slug for projects where they differ
 const JSON_SLUG_TO_URL = {
   "rgb-led-blink": "rgb-led",
-  "ldr-automatic-light": "ldr",
 };
 
 const PREFERRED_SLUGS = [
