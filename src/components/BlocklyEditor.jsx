@@ -37,7 +37,30 @@ const CATEGORIES = [
   { id: 'message', label: 'Message', color: '#a256c7' },
   { id: 'time', label: 'Time', color: '#a256c7' },
   { id: 'code', label: 'Code', color: '#a256c7' },
+  { id: 'addons',  label: 'Add-ons', color: '#e67e22' },
+  { id: 'sensors', label: 'Sensors', color: '#1abc9c' },
 ]
+
+const SUB_CATEGORIES = {
+  addons: [
+    { id: 'addons_led', label: 'Led' },
+    { id: 'addons_rgb_led', label: 'RGB LED' },
+    { id: 'addons_motor', label: 'Motor' },
+    { id: 'addons_buzzer', label: 'Passive Buzzer' },
+    { id: 'addons_lcd', label: 'LCD Screen' },
+    { id: 'addons_pins', label: 'Pins' },
+    { id: 'addons_stepper', label: 'Stepper Motors' },
+    { id: 'addons_servo', label: 'Servo' },
+  ],
+  sensors: [
+    { id: 'sensors_analog', label: 'Analog' },
+    { id: 'sensors_button', label: 'Button' },
+    { id: 'sensors_digital', label: 'Digital' },
+    { id: 'sensors_ir', label: 'IR Remote' },
+    { id: 'sensors_temp', label: 'Temp' },
+    { id: 'sensors_thermistor', label: 'Thermistor' },
+  ]
+}
 
 // ─── Block shape kinds ────────────────────────────────────────────────────────
 // hat = event (no prev connection), value = reporter (output), statement = default
@@ -45,7 +68,7 @@ const HAT_TYPES = new Set([
   'on_start', 'forever',
   'on_button_pressed', 'on_shake', 'on_pin_pressed',
   'on_pin_changed', 'on_radio_number', 'on_radio_string', 'on_radio_key_value',
-  'create_block', 'setup_runs_once',
+  'create_block', 'setup_runs_once', 'on_button_sensor_press',
 ])
 const VALUE_TYPES = new Set([
   'math_arithmetic_openhw', 'math_compare', 'pick_random', 'map_value',
@@ -57,6 +80,8 @@ const VALUE_TYPES = new Set([
   'text', 'text_join', 'text_length', 'text_isEmpty',
   'text_changeCase', 'parse_string_block', 'number_to_text',
   'colour_picker', 'colour_random', 'colour_rgb',
+  'analog_sensor_read', 'button_is_pressed', 'digital_sensor_read', 'digital_sensor_is_on',
+  'ir_remote_has_code', 'ir_remote_get_code', 'temp_sensor_read', 'thermistor_read',
 ])
 const getShapeKind = (type) =>
   HAT_TYPES.has(type) ? 'hat' : VALUE_TYPES.has(type) ? 'value' : 'statement'
@@ -70,8 +95,7 @@ const GET_DIGITAL_PINS = () => {
   return [
     ['D0', '0'], ['D1', '1'], ['D2', '2'], ['D3', '3'], ['D4', '4'], ['D5', '5'],
     ['D6', '6'], ['D7', '7'], ['D8', '8'], ['D9', '9'], ['D10', '10'],
-    ['D11', '11'], ['D12', '12'], ['D13', '13'],
-    ['A0', 'A0'], ['A1', 'A1'], ['A2', 'A2'], ['A3', 'A3'], ['A4', 'A4'], ['A5', 'A5'],
+    ['D11', '11'], ['D12', '12'], ['D13', '13']
   ]
 }
 const GET_ANALOG_PINS = () => {
@@ -191,6 +215,69 @@ const CATEGORY_BLOCKS = {
   ],
   code: [
     { type: 'setup_runs_once', label: 'Setup (runs once)' },
+  ],
+  addons_led: [
+    { type: 'led_turn', label: 'LED turn on/off' },
+    { type: 'led_fade', label: 'LED fade' },
+  ],
+  addons_rgb_led: [
+    { type: 'rgb_led_set', label: 'set RGB LED' },
+  ],
+  addons_servo: [
+    { type: 'rotate_servo', label: 'rotate servo' },
+    { type: 'write_servo_pulse', label: 'write servo pulse' },
+  ],
+  addons_motor: [
+    { type: 'motor_turn', label: 'motor turn' },
+    { type: 'motor_speed', label: 'motor speed' },
+  ],
+  addons_buzzer: [
+    { type: 'buzzer_tone', label: 'buzzer tone' },
+    { type: 'buzzer_stop', label: 'buzzer stop' },
+  ],
+  addons_lcd: [
+    { type: 'lcd_setup', label: 'LCD setup' },
+    { type: 'lcd_print', label: 'LCD print' },
+    { type: 'lcd_clear', label: 'LCD clear' },
+    { type: 'lcd_scroll', label: 'LCD scroll' },
+    { type: 'lcd_blink', label: 'LCD blink' },
+    { type: 'lcd_backlight', label: 'LCD backlight' },
+  ],
+  addons_pins: [
+    { type: 'digital_write_pin', label: 'digital write pin' },
+    { type: 'write_analog_pin', label: 'analog write pin' },
+    { type: 'pin_set_mode', label: 'set pin mode' },
+  ],
+  addons_stepper: [
+    { type: 'stepper_setup', label: 'stepper setup' },
+    { type: 'stepper_rotate', label: 'stepper rotate' },
+  ],
+
+  sensors_analog: [
+    { type: 'analog_sensor_setup', label: 'analog sensor setup' },
+    { type: 'analog_sensor_read', label: 'analog sensor read' },
+  ],
+  sensors_button: [
+    { type: 'button_setup', label: 'button setup' },
+    { type: 'button_is_pressed', label: 'button pressed?' },
+    { type: 'on_button_sensor_press', label: 'on button press' },
+  ],
+  sensors_digital: [
+    { type: 'digital_sensor_read', label: 'digital sensor read' },
+    { type: 'digital_sensor_is_on', label: 'digital sensor on?' },
+  ],
+  sensors_ir: [
+    { type: 'ir_remote_setup', label: 'IR remote setup' },
+    { type: 'ir_remote_has_code', label: 'IR has code?' },
+    { type: 'ir_remote_get_code', label: 'IR get code' },
+  ],
+  sensors_temp: [
+    { type: 'temp_sensor_setup', label: 'temp sensor setup' },
+    { type: 'temp_sensor_read', label: 'temp read' },
+  ],
+  sensors_thermistor: [
+    { type: 'thermistor_setup', label: 'thermistor setup' },
+    { type: 'thermistor_read', label: 'thermistor read' },
   ],
 }
 
@@ -1002,7 +1089,330 @@ const BLOCK_DEFS = [
     message0: 'seconds arduino been on',
     output: 'Number',
     colour: '#a256c7', tooltip: 'Get seconds since Arduino has been on'
-  }
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Add-ons ─────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── LED ────────────────────────────────────────────────────────────────────
+  {
+    type: 'led_turn', message0: 'LED pin %1 turn %2',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+      { type: 'field_dropdown', name: 'STATE', options: [['ON', 'ON'], ['OFF', 'OFF']] },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Turn an LED on or off on a digital pin.'
+  },
+  {
+    type: 'led_fade', message0: 'LED pin %1 fade to %2',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PWM_PINS },
+      { type: 'input_value', name: 'BRIGHTNESS', check: 'Number' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Fade LED brightness (0-255) on a PWM pin.'
+  },
+
+  {
+    type: 'rgb_led_set',
+    message0: 'set RGB LED pins: R %1  G %2  B %3 \n color values: R %4  G %5  B %6',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN_R', options: GET_PWM_PINS },
+      { type: 'field_dropdown', name: 'PIN_G', options: GET_PWM_PINS },
+      { type: 'field_dropdown', name: 'PIN_B', options: GET_PWM_PINS },
+      { type: 'input_value', name: 'RED', check: 'Number' },
+      { type: 'input_value', name: 'GREEN', check: 'Number' },
+      { type: 'input_value', name: 'BLUE', check: 'Number' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Set RGB LED color using R, G, B values (0-255).'
+  },
+
+  // ── Motor ──────────────────────────────────────────────────────────────────
+  {
+    type: 'motor_turn',
+    message0: 'motor pin1 %1 pin2 %2 turn %3',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN1', options: GET_DIGITAL_PINS },
+      { type: 'field_dropdown', name: 'PIN2', options: GET_DIGITAL_PINS },
+      { type: 'field_dropdown', name: 'DIR', options: [['clockwise', 'CW'], ['counter-clockwise', 'CCW'], ['stop', 'STOP']] },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Turn DC motor in a direction or stop it.'
+  },
+  {
+    type: 'motor_speed',
+    message0: 'motor enable pin %1 speed %2',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PWM_PINS },
+      { type: 'input_value', name: 'SPEED', check: 'Number' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Set DC motor speed (0-255) on enable pin.'
+  },
+
+  // ── Passive Buzzer ─────────────────────────────────────────────────────────
+  {
+    type: 'buzzer_tone',
+    message0: 'buzzer pin %1 \n play tone %2 Hz for %3 ms',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PWM_PINS },
+      { type: 'input_value', name: 'FREQ', check: 'Number' },
+      { type: 'input_value', name: 'DUR', check: 'Number' },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Play a tone on a passive buzzer.'
+  },
+  {
+    type: 'buzzer_stop',
+    message0: 'buzzer pin %1 stop',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_PWM_PINS },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Stop the buzzer.'
+  },
+
+  // ── LCD Screen ─────────────────────────────────────────────────────────────
+  {
+    type: 'lcd_setup',
+    message0: 'LCD setup \n columns %1  rows %2  address %3',
+    args0: [
+      { type: 'field_dropdown', name: 'COLS', options: [['16', '16'], ['20', '20']] },
+      { type: 'field_dropdown', name: 'ROWS', options: [['2', '2'], ['4', '4']] },
+      { type: 'field_dropdown', name: 'ADDR', options: [['0x27', '0x27'], ['0x3F', '0x3F']] },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Setup I2C LCD display.'
+  },
+  {
+    type: 'lcd_print',
+    message0: 'LCD print %1 at row %2 column %3',
+    args0: [
+      { type: 'field_input', name: 'TEXT', text: 'Hello!' },
+      { type: 'field_number', name: 'ROW', value: 0, min: 0, max: 3, precision: 1 },
+      { type: 'field_number', name: 'COL', value: 0, min: 0, max: 19, precision: 1 },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Print text on LCD at position.'
+  },
+  {
+    type: 'lcd_clear', message0: 'LCD clear screen',
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Clear all text from LCD.'
+  },
+  {
+    type: 'lcd_scroll',
+    message0: 'LCD scroll %1',
+    args0: [
+      { type: 'field_dropdown', name: 'DIR', options: [['left', 'LEFT'], ['right', 'RIGHT']] },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Scroll LCD display content.'
+  },
+  {
+    type: 'lcd_blink',
+    message0: 'LCD cursor %1',
+    args0: [
+      { type: 'field_dropdown', name: 'STATE', options: [['blink', 'BLINK'], ['no blink', 'NOBLINK']] },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Enable or disable cursor blink.'
+  },
+  {
+    type: 'lcd_backlight',
+    message0: 'LCD backlight %1',
+    args0: [
+      { type: 'field_dropdown', name: 'STATE', options: [['on', 'ON'], ['off', 'OFF']] },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Turn LCD backlight on or off.'
+  },
+
+  // ── Pins ───────────────────────────────────────────────────────────────────
+  {
+    type: 'pin_set_mode',
+    message0: 'set pin %1 mode %2',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+      { type: 'field_dropdown', name: 'MODE', options: [['OUTPUT', 'OUTPUT'], ['INPUT', 'INPUT'], ['INPUT_PULLUP', 'INPUT_PULLUP']] },
+    ],
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Set pin mode explicitly.'
+  },
+
+  // ── Stepper Motors ─────────────────────────────────────────────────────────
+  {
+    type: 'stepper_setup',
+    message0: 'stepper setup  steps/rev %1 \n pins: 1 %2  2 %3  3 %4  4 %5',
+    args0: [
+      { type: 'field_number', name: 'STEPS', value: 200, min: 1, precision: 1 },
+      { type: 'field_dropdown', name: 'PIN1', options: GET_DIGITAL_PINS },
+      { type: 'field_dropdown', name: 'PIN2', options: GET_DIGITAL_PINS },
+      { type: 'field_dropdown', name: 'PIN3', options: GET_DIGITAL_PINS },
+      { type: 'field_dropdown', name: 'PIN4', options: GET_DIGITAL_PINS },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Setup a stepper motor with 4 pins.'
+  },
+  {
+    type: 'stepper_rotate',
+    message0: 'stepper rotate %1 steps at %2 RPM',
+    args0: [
+      { type: 'input_value', name: 'STEPS', check: 'Number' },
+      { type: 'field_number', name: 'RPM', value: 60, min: 1, precision: 1 },
+    ],
+    inputsInline: true,
+    previousStatement: null, nextStatement: null, colour: 30,
+    tooltip: 'Rotate stepper motor by steps at speed.'
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Sensors ─────────────────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── Analog ─────────────────────────────────────────────────────────────────
+  {
+    type: 'analog_sensor_setup',
+    message0: 'setup analog sensor %1 on pin %2',
+    args0: [
+      { type: 'field_input', name: 'LABEL', text: 'sensor' },
+      { type: 'field_dropdown', name: 'PIN', options: GET_ANALOG_PINS },
+    ],
+    previousStatement: null, nextStatement: null, colour: 160,
+    tooltip: 'Setup an analog sensor on a pin.'
+  },
+  {
+    type: 'analog_sensor_read',
+    message0: 'read analog sensor on pin %1',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_ANALOG_PINS },
+    ],
+    output: 'Number', colour: 160,
+    tooltip: 'Read analog sensor value (0-1023).'
+  },
+
+  // ── Button ─────────────────────────────────────────────────────────────────
+  {
+    type: 'button_setup',
+    message0: 'setup button on pin %1 pull %2',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+      { type: 'field_dropdown', name: 'PULL', options: [['up', 'UP'], ['down', 'DOWN']] },
+    ],
+    previousStatement: null, nextStatement: null, colour: 160,
+    tooltip: 'Setup a push button on a pin.'
+  },
+  {
+    type: 'button_is_pressed',
+    message0: 'button on pin %1 pressed?',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+    ],
+    output: 'Boolean', colour: 160,
+    tooltip: 'Returns true if button is pressed.'
+  },
+  {
+    type: 'on_button_sensor_press',
+    message0: 'on button pin %1 pressed %2 %3',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+      { type: 'input_dummy' },
+      { type: 'input_statement', name: 'DO' },
+    ],
+    colour: 160,
+    tooltip: 'Run code when button is pressed.'
+  },
+
+  // ── Digital ────────────────────────────────────────────────────────────────
+  {
+    type: 'digital_sensor_read',
+    message0: 'read digital sensor on pin %1',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+    ],
+    output: 'Number', colour: 160,
+    tooltip: 'Read digital sensor value (HIGH/LOW).'
+  },
+  {
+    type: 'digital_sensor_is_on',
+    message0: 'digital sensor on pin %1 is ON?',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+    ],
+    output: 'Boolean', colour: 160,
+    tooltip: 'Returns true if digital sensor reads HIGH.'
+  },
+
+  // ── IR Remote ──────────────────────────────────────────────────────────────
+  {
+    type: 'ir_remote_setup',
+    message0: 'setup IR receiver on pin %1',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+    ],
+    previousStatement: null, nextStatement: null, colour: 160,
+    tooltip: 'Setup infrared remote receiver.'
+  },
+  {
+    type: 'ir_remote_has_code',
+    message0: 'IR has received code?',
+    output: 'Boolean', colour: 160,
+    tooltip: 'Returns true if an IR code was received.'
+  },
+  {
+    type: 'ir_remote_get_code',
+    message0: 'IR get received code',
+    output: 'Number', colour: 160,
+    tooltip: 'Get the last received IR code value.'
+  },
+
+  // ── Temp ───────────────────────────────────────────────────────────────────
+  {
+    type: 'temp_sensor_setup',
+    message0: 'setup temp sensor on pin %1',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_DIGITAL_PINS },
+    ],
+    previousStatement: null, nextStatement: null, colour: 160,
+    tooltip: 'Setup a digital temperature sensor (e.g. DHT11).'
+  },
+  {
+    type: 'temp_sensor_read',
+    message0: 'read temp sensor in %1',
+    args0: [
+      { type: 'field_dropdown', name: 'UNIT', options: [['°C', 'C'], ['°F', 'F']] },
+    ],
+    output: 'Number', colour: 160,
+    tooltip: 'Read temperature from sensor.'
+  },
+
+  // ── Thermistor ─────────────────────────────────────────────────────────────
+  {
+    type: 'thermistor_setup',
+    message0: 'setup thermistor on pin %1',
+    args0: [
+      { type: 'field_dropdown', name: 'PIN', options: GET_ANALOG_PINS },
+    ],
+    previousStatement: null, nextStatement: null, colour: 160,
+    tooltip: 'Setup a thermistor on an analog pin.'
+  },
+  {
+    type: 'thermistor_read',
+    message0: 'read thermistor temp in %1',
+    args0: [
+      { type: 'field_dropdown', name: 'UNIT', options: [['°C', 'C'], ['°F', 'F']] },
+    ],
+    output: 'Number', colour: 160,
+    tooltip: 'Read temperature from thermistor.'
+  },
 ]
 
 // ─── Arduino C++ code generator ───────────────────────────────────────────────
@@ -1267,6 +1677,175 @@ function buildGenerator(B) {
   gen.forBlock['wait_for_time'] = b => `delay(${vc(b, 'TIME', gen.ORDER_ATOMIC)} * 1000);\n`
   gen.forBlock['seconds_arduino_on'] = b => ['(millis() / 1000.0)', gen.ORDER_ATOMIC]
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Generators: Add-ons ─────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  gen.forBlock['led_turn'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    const state = b.getFieldValue('STATE') === 'ON' ? 'HIGH' : 'LOW'
+    gen.usedPins.set(pin, 'OUTPUT')
+    return `digitalWrite(${pin}, ${state});\n`
+  }
+  gen.forBlock['led_fade'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    const val = gen.valueToCode(b, 'BRIGHTNESS', gen.ORDER_NONE) || '0'
+    gen.usedPins.set(pin, 'OUTPUT')
+    return `analogWrite(${pin}, ${val});\n`
+  }
+  gen.forBlock['rgb_led_set'] = function(b) {
+    const r = b.getFieldValue('PIN_R')
+    const g = b.getFieldValue('PIN_G')
+    const bl = b.getFieldValue('PIN_B')
+    const rv = gen.valueToCode(b, 'RED', gen.ORDER_NONE) || '0'
+    const gv = gen.valueToCode(b, 'GREEN', gen.ORDER_NONE) || '0'
+    const bv = gen.valueToCode(b, 'BLUE', gen.ORDER_NONE) || '0'
+    gen.usedPins.set(r, 'OUTPUT')
+    gen.usedPins.set(g, 'OUTPUT')
+    gen.usedPins.set(bl, 'OUTPUT')
+    return `analogWrite(${r}, ${rv});\nanalogWrite(${g}, ${gv});\nanalogWrite(${bl}, ${bv});\n`
+  }
+  gen.forBlock['motor_turn'] = function(b) {
+    const p1 = b.getFieldValue('PIN1')
+    const p2 = b.getFieldValue('PIN2')
+    const dir = b.getFieldValue('DIR')
+    gen.usedPins.set(p1, 'OUTPUT')
+    gen.usedPins.set(p2, 'OUTPUT')
+    if (dir === 'CW') return `digitalWrite(${p1}, HIGH);\ndigitalWrite(${p2}, LOW);\n`
+    if (dir === 'CCW') return `digitalWrite(${p1}, LOW);\ndigitalWrite(${p2}, HIGH);\n`
+    return `digitalWrite(${p1}, LOW);\ndigitalWrite(${p2}, LOW);\n`
+  }
+  gen.forBlock['motor_speed'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    const speed = gen.valueToCode(b, 'SPEED', gen.ORDER_NONE) || '0'
+    gen.usedPins.set(pin, 'OUTPUT')
+    return `analogWrite(${pin}, ${speed});\n`
+  }
+  gen.forBlock['buzzer_tone'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    const freq = gen.valueToCode(b, 'FREQ', gen.ORDER_NONE) || '1000'
+    const dur = gen.valueToCode(b, 'DUR', gen.ORDER_NONE) || '1000'
+    gen.usedPins.set(pin, 'OUTPUT')
+    return `tone(${pin}, ${freq}, ${dur});\ndelay(${dur});\n`
+  }
+  gen.forBlock['buzzer_stop'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    gen.usedPins.set(pin, 'OUTPUT')
+    return `noTone(${pin});\n`
+  }
+  gen.forBlock['lcd_setup'] = function(b) {
+    gen._useLCD = true
+    gen._lcdCols = b.getFieldValue('COLS')
+    gen._lcdRows = b.getFieldValue('ROWS')
+    gen._lcdAddr = b.getFieldValue('ADDR')
+    return `lcd.init();\nlcd.backlight();\n`
+  }
+  gen.forBlock['lcd_print'] = function(b) {
+    const text = b.getFieldValue('TEXT')
+    const row = b.getFieldValue('ROW')
+    const col = b.getFieldValue('COL')
+    return `lcd.setCursor(${col}, ${row});\nlcd.print("${text}");\n`
+  }
+  gen.forBlock['lcd_clear'] = function() { return 'lcd.clear();\n' }
+  gen.forBlock['lcd_scroll'] = function(b) {
+    return b.getFieldValue('DIR') === 'LEFT' ? 'lcd.scrollDisplayLeft();\n' : 'lcd.scrollDisplayRight();\n'
+  }
+  gen.forBlock['lcd_blink'] = function(b) {
+    return b.getFieldValue('STATE') === 'BLINK' ? 'lcd.blink();\n' : 'lcd.noBlink();\n'
+  }
+  gen.forBlock['lcd_backlight'] = function(b) {
+    return b.getFieldValue('STATE') === 'ON' ? 'lcd.backlight();\n' : 'lcd.noBacklight();\n'
+  }
+  gen.forBlock['pin_set_mode'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    const mode = b.getFieldValue('MODE')
+    gen.usedPins.set(pin, mode)
+    return `pinMode(${pin}, ${mode});\n`
+  }
+  gen.forBlock['stepper_setup'] = function(b) {
+    gen._useStepper = true
+    gen._stepperSteps = b.getFieldValue('STEPS')
+    gen._stepperPins = [b.getFieldValue('PIN1'), b.getFieldValue('PIN2'), b.getFieldValue('PIN3'), b.getFieldValue('PIN4')]
+    return ''
+  }
+  gen.forBlock['stepper_rotate'] = function(b) {
+    const steps = gen.valueToCode(b, 'STEPS', gen.ORDER_NONE) || '0'
+    const rpm = b.getFieldValue('RPM')
+    return `myStepper.setSpeed(${rpm});\nmyStepper.step(${steps});\n`
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ── Generators: Sensors ─────────────────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  gen.forBlock['analog_sensor_setup'] = function(b) { return '' }
+  gen.forBlock['analog_sensor_read'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    gen.usedPins.set(pin, 'INPUT')
+    return [`analogRead(${pin})`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['button_setup'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    const pull = b.getFieldValue('PULL') === 'UP' ? 'INPUT_PULLUP' : 'INPUT'
+    gen.usedPins.set(pin, pull)
+    return ''
+  }
+  gen.forBlock['button_is_pressed'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    const pull = gen.usedPins.get(pin) || 'INPUT'
+    const targetState = pull === 'INPUT_PULLUP' ? 'LOW' : 'HIGH'
+    gen.usedPins.set(pin, pull) // ensure recorded
+    return [`digitalRead(${pin}) == ${targetState}`, gen.ORDER_EQUALITY]
+  }
+  gen.forBlock['on_button_sensor_press'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    const pull = gen.usedPins.get(pin) || 'INPUT'
+    const targetState = pull === 'INPUT_PULLUP' ? 'LOW' : 'HIGH'
+    const doCode = gen.statementToCode(b, 'DO')
+    gen.usedPins.set(pin, pull)
+    return `if (digitalRead(${pin}) == ${targetState}) {\n${doCode}}\n`
+  }
+  gen.forBlock['digital_sensor_read'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    gen.usedPins.set(pin, 'INPUT')
+    return [`digitalRead(${pin})`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['digital_sensor_is_on'] = function(b) {
+    const pin = b.getFieldValue('PIN')
+    gen.usedPins.set(pin, 'INPUT')
+    return [`digitalRead(${pin}) == HIGH`, gen.ORDER_EQUALITY]
+  }
+  gen.forBlock['ir_remote_setup'] = function(b) {
+    gen._useIR = true
+    gen._irPin = b.getFieldValue('PIN')
+    return `irrecv.enableIRIn();\n`
+  }
+  gen.forBlock['ir_remote_has_code'] = function(b) {
+    return [`irrecv.decode(&results)`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['ir_remote_get_code'] = function(b) {
+    return [`results.value`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['temp_sensor_setup'] = function(b) {
+    gen._useDHT = true
+    gen._dhtPin = b.getFieldValue('PIN')
+    return `dht.begin();\n`
+  }
+  gen.forBlock['temp_sensor_read'] = function(b) {
+    const unit = b.getFieldValue('UNIT') === 'F' ? 'true' : 'false'
+    return [`dht.readTemperature(${unit})`, gen.ORDER_ATOMIC]
+  }
+  gen.forBlock['thermistor_setup'] = function(b) {
+    gen._useThermistor = true
+    gen._thermistorPin = b.getFieldValue('PIN')
+    return ''
+  }
+  gen.forBlock['thermistor_read'] = function(b) {
+    const unit = b.getFieldValue('UNIT')
+    const rPin = b.getFieldValue('PIN') || gen._thermistorPin || 'A0'
+    const tempVar = unit === 'F' ? `(analogRead(${rPin}) * 0.48828125 * 1.8 + 32)` : `(analogRead(${rPin}) * 0.48828125)`
+    gen.usedPins.set(rPin, 'INPUT')
+    return [tempVar, gen.ORDER_ATOMIC]
+  }
+
   return gen
 }
 
@@ -1275,6 +1854,22 @@ function generateSketch(gen, ws) {
   if (typeof gen.init === 'function') {
     gen.init(ws)
   }
+  
+  // Reset state flags for Add-ons/Sensors
+  gen._useLCD = false
+  gen._useStepper = false
+  gen._useIR = false
+  gen._useDHT = false
+  gen._useThermistor = false
+  gen._lcdAddr = '0x27'
+  gen._lcdCols = '16'
+  gen._lcdRows = '2'
+  gen._stepperSteps = 200
+  gen._stepperPins = ['8', '9', '10', '11']
+  gen._irPin = '2'
+  gen._dhtPin = '2'
+  gen._thermistorPin = 'A0'
+
   gen.usedPins = new Map()
 
   const vars = (ws.getAllVariables() || []).filter(v => v.type === 'Number' || v.type === 'String' || v.type === 'Boolean');
@@ -1352,7 +1947,32 @@ function generateSketch(gen, ws) {
     helpers += `String toLowerCase(String str) {\n  str.toLowerCase();\n  return str;\n}\n\n`
   }
 
-  const code = `// Generated by OpenHW Studio Block Editor\n\n${varDecl}${listVarDecl}${helpers}${extras.join('\n')}${extras.length ? '\n' : ''}${setupFunc}${loopFunc}`
+  // Handle library includes and global declarations
+  let includes = ''
+  let globals = ''
+  
+  if (gen._useLCD) {
+    includes += '#include <Wire.h>\n#include <LiquidCrystal_I2C.h>\n'
+    globals += `LiquidCrystal_I2C lcd(${gen._lcdAddr}, ${gen._lcdCols}, ${gen._lcdRows});\n`
+  }
+  if (gen._useStepper) {
+    includes += '#include <Stepper.h>\n'
+    globals += `Stepper myStepper(${gen._stepperSteps}, ${gen._stepperPins.join(', ')});\n`
+  }
+  if (gen._useIR) {
+    includes += '#include <IRremote.h>\n'
+    globals += `IRrecv irrecv(${gen._irPin});\ndecode_results results;\n`
+  }
+  if (gen._useDHT) {
+    includes += '#include <DHT.h>\n'
+    globals += `DHT dht(${gen._dhtPin}, DHT11);\n`
+  }
+  
+  if (includes || globals) {
+    globals += '\n'
+  }
+
+  const code = `// Generated by OpenHW Studio Block Editor\n\n${includes}${globals}${varDecl}${listVarDecl}${helpers}${extras.join('\n')}${extras.length ? '\n' : ''}${setupFunc}${loopFunc}`
   return typeof gen.finish === 'function' ? gen.finish(code) : code
 }
 
@@ -1814,7 +2434,9 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
   const [generatedCode, setGeneratedCode] = useState('')
   const [showCode, setShowCode] = useState(false)
   const [activeCat, setActiveCat] = useState('basic')
+  const [parentCat, setParentCat] = useState(null)
   const [showAllCategories, setShowAllCategories] = useState(false)
+  const [showBlocksPanel, setShowBlocksPanel] = useState(false)
   const [variables, setVariables] = useState([])
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
@@ -2056,6 +2678,91 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     ws.addChangeListener(e => {
       const B2 = window.Blockly
       if (!B2) return
+
+      // --- PIN VALIDATION LOGIC ---
+      if (e.type === B2.Events.CLICK && e.blockId) {
+        const clickedBlock = ws.getBlockById(e.blockId)
+        if (clickedBlock && clickedBlock.data && clickedBlock.data.startsWith('origHue:')) {
+          let conflictingField = null
+          clickedBlock.inputList.forEach(input => {
+            input.fieldRow.forEach(field => {
+              if (field instanceof B2.FieldDropdown && 
+                 (field.name.includes('PIN') || field.name === 'ECHO' || field.name === 'TRIG')) {
+                conflictingField = field
+              }
+            })
+          })
+          if (conflictingField) {
+            const options = conflictingField.getOptions()
+            const allUsedPins = new Set()
+            ws.getAllBlocks(false).forEach(b => {
+              b.inputList.forEach(input => {
+                input.fieldRow.forEach(f => {
+                  if (f instanceof B2.FieldDropdown && 
+                     (f.name.includes('PIN') || f.name === 'ECHO' || f.name === 'TRIG')) {
+                    allUsedPins.add(f.getValue())
+                  }
+                })
+              })
+            })
+            for (const option of options) {
+              const val = option[1]
+              if (!allUsedPins.has(val)) {
+                conflictingField.setValue(val)
+                break
+              }
+            }
+          }
+        }
+      }
+
+      // Run validation for changes
+      if (!e.isUiEvent || e.type === B2.Events.CLICK) {
+        const blocks = ws.getAllBlocks(false)
+        const pinUsage = new Map()
+
+        blocks.forEach(block => {
+          const pinFields = []
+          block.inputList.forEach(input => {
+            input.fieldRow.forEach(field => {
+              if (field instanceof B2.FieldDropdown && 
+                 (field.name.includes('PIN') || field.name === 'ECHO' || field.name === 'TRIG')) {
+                pinFields.push(field)
+              }
+            })
+          })
+          pinFields.forEach(field => {
+            const pinVal = field.getValue()
+            if (!pinUsage.has(pinVal)) pinUsage.set(pinVal, [])
+            pinUsage.get(pinVal).push({ block, field })
+          })
+        })
+
+        // Clear conflicts for ALL blocks first
+        blocks.forEach(block => {
+          if (block.data && block.data.startsWith('origHue:')) {
+            const hue = parseInt(block.data.split(':')[1], 10)
+            if (!isNaN(hue)) block.setColour(hue)
+            block.data = null
+            block.setWarningText(null, 'pin_conflict')
+          }
+        })
+
+        // Identify and mark conflicts
+        pinUsage.forEach((usages, pinVal) => {
+          if (usages.length > 1) {
+            usages.forEach(({ block }) => {
+              if (!block.data || !block.data.startsWith('origHue:')) {
+                block.data = 'origHue:' + block.getHue()
+              }
+              block.setColour('#A0A0A0')
+              block.setWarningText('Pin conflict detected! Click the block to auto-assign a free pin.', 'pin_conflict')
+            })
+          }
+        })
+      }
+      // --- END PIN VALIDATION LOGIC ---
+
       if ([B2.Events.VAR_CREATE, B2.Events.VAR_DELETE, B2.Events.VAR_RENAME].includes(e.type))
         setVariables([...ws.getAllVariables()])
       if (!skipHistoryTypes.has(e.type)) scheduleHistoryPush()
@@ -2449,14 +3156,15 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
         aria-expanded={showSidebar}
         style={{
           position: 'absolute',
-          left: showSidebar ? sidebarWidth - 14 : 0,
-          top: '42%',
-          width: 28,
-          height: 72,
+          left: showSidebar ? (showBlocksPanel ? (isMobile ? 330 : 390) : (isMobile ? 110 : 130)) : 0,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          width: 24,
+          height: 48,
           background: tok.sidebar,
           border: `1px solid ${tok.border}`,
           borderLeft: showSidebar ? 'none' : `1px solid ${tok.border}`,
-          borderRadius: '0 14px 14px 0',
+          borderRadius: '0 8px 8px 0',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -2464,12 +3172,12 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
           zIndex: 100,
           padding: 0,
           transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          boxShadow: '4px 0 14px rgba(0,0,0,0.12)',
+          boxShadow: '4px 0 12px rgba(0,0,0,0.08)',
         }}
       >
         <svg
-          width="18"
-          height="18"
+          width="16"
+          height="16"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -2668,11 +3376,13 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
 
         {/* ════ Sidebar (collapsible) ════ */}
         <div style={{
-          width: showSidebar ? sidebarWidth : 0,
+          width: showSidebar ? (isMobile ? 110 : 130) : 0,
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
+          overflow: 'visible',
+          position: 'relative',
+          zIndex: 10,
           minWidth: 0,
           boxSizing: 'border-box',
           background: isMobile ? 'var(--bg2)' : tok.sidebar,
@@ -2682,101 +3392,112 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
           transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease',
         }}>
 
-          {/* Category pills grid - fixed height to prevent CLS */}
+          {/* Category column */}
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
+            display: 'flex',
+            flexDirection: 'column',
             gap: 6,
-            padding: '12px 10px',
-            borderBottom: `1px solid ${tok.border}`,
-            flexShrink: 0,
-            minHeight: 124,
+            padding: '12px 8px',
+            flex: 1,
+            overflowY: 'auto',
+            background: isMobile ? 'var(--bg2)' : tok.sidebar,
+            zIndex: 2,
           }}>
-            {(showAllCategories ? CATEGORIES : CATEGORIES.slice(0, 6)).map(cat => {
-              const active = activeCat === cat.id
+            {parentCat && (
+              <div style={{ marginBottom: 8 }}>
+                <button
+                  onClick={() => {
+                    setParentCat(null)
+                    setShowBlocksPanel(false)
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px',
+                    borderRadius: 12, background: 'transparent',
+                    color: CATEGORIES.find(c => c.id === parentCat)?.color || tok.text,
+                    border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700,
+                    fontFamily: 'inherit', textTransform: 'uppercase', letterSpacing: '0.05em',
+                    width: '100%', justifyContent: 'flex-start'
+                  }}
+                  title="Go back"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M15 18l-6-6 6-6" />
+                  </svg>
+                  {CATEGORIES.find(c => c.id === parentCat)?.label}
+                </button>
+              </div>
+            )}
+            
+            {(parentCat ? SUB_CATEGORIES[parentCat] : CATEGORIES).map(cat => {
+              const isParentNode = !parentCat && SUB_CATEGORIES[cat.id]
+              const active = activeCat === cat.id && showBlocksPanel
+              const pillColor = parentCat ? CATEGORIES.find(c => c.id === parentCat)?.color : cat.color
               return (
                 <button
                   key={cat.id}
-                  onClick={() => setActiveCat(cat.id)}
+                  onClick={() => {
+                    if (isParentNode) {
+                      setParentCat(cat.id)
+                      setActiveCat(SUB_CATEGORIES[cat.id][0].id)
+                      setShowBlocksPanel(true)
+                    } else {
+                      setActiveCat(cat.id)
+                      setShowBlocksPanel(true)
+                    }
+                  }}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 5,
-                    padding: isMobile ? '7px 10px' : '6px 10px',
-                    borderRadius: isMobile ? 12 : 20,
-                    border: `1px solid ${active ? cat.color : tok.border}`,
-                    background: active ? (isMobile ? 'var(--bg)' : cat.color + '22') : (isMobile ? 'var(--bg3)' : 'transparent'),
-                    color: active ? cat.color : tok.textMuted,
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    gap: isMobile ? 6 : 8,
+                    padding: isMobile ? '8px 10px' : '10px 12px',
+                    borderRadius: 12,
+                    border: `1px solid ${active && !isParentNode ? pillColor : tok.border}`,
+                    background: active && !isParentNode ? (isMobile ? 'var(--bg)' : pillColor + '22') : (isMobile ? 'var(--bg3)' : 'transparent'),
+                    color: active && !isParentNode ? pillColor : tok.textMuted,
                     cursor: 'pointer', fontFamily: 'inherit',
                     fontSize: isMobile ? 10 : 12,
-                    fontWeight: active ? 700 : 400,
-                    textTransform: isMobile ? 'uppercase' : 'none',
-                    letterSpacing: isMobile ? '.05em' : 'normal',
+                    fontWeight: active && !isParentNode ? 700 : 400,
                     transition: 'all .2s', whiteSpace: 'nowrap', overflow: 'hidden',
-                    boxShadow: (isMobile && active) ? `0 4px 12px ${cat.color}22` : 'none',
                   }}
                   title={cat.label}
                 >
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: cat.color, flexShrink: 0 }} />
-                  {cat.label}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: pillColor, flexShrink: 0 }} />
+                    {cat.label}
+                  </div>
+                  {isParentNode && (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5, flexShrink: 0 }}>
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                  )}
                 </button>
               )
             })}
-            {!showAllCategories && CATEGORIES.length > 6 && (
-              <button
-                onClick={() => setShowAllCategories(true)}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  padding: isMobile ? '7px 10px' : '6px 10px',
-                  borderRadius: isMobile ? 12 : 20,
-                  border: `1px solid ${tok.border}`,
-                  background: isMobile ? 'var(--bg3)' : 'transparent',
-                  color: tok.textMuted,
-                  cursor: 'pointer', fontFamily: 'inherit',
-                  fontSize: isMobile ? 10 : 12,
-                  fontWeight: 400,
-                  textTransform: isMobile ? 'uppercase' : 'none',
-                  letterSpacing: isMobile ? '.05em' : 'normal',
-                  transition: 'all .2s', whiteSpace: 'nowrap', overflow: 'hidden',
-                  gridColumn: '1 / -1', // span full width if desired, or just sit in flow
-                }}
-                title="Show more categories"
-              >
-                More...
-              </button>
-            )}
-            {showAllCategories && CATEGORIES.length > 6 && (
-              <button
-                onClick={() => setShowAllCategories(false)}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-                  padding: isMobile ? '7px 10px' : '6px 10px',
-                  borderRadius: isMobile ? 12 : 20,
-                  border: `1px solid ${tok.border}`,
-                  background: isMobile ? 'var(--bg3)' : 'transparent',
-                  color: tok.textMuted,
-                  cursor: 'pointer', fontFamily: 'inherit',
-                  fontSize: isMobile ? 10 : 12,
-                  fontWeight: 400,
-                  textTransform: isMobile ? 'uppercase' : 'none',
-                  letterSpacing: isMobile ? '.05em' : 'normal',
-                  transition: 'all .2s', whiteSpace: 'nowrap', overflow: 'hidden',
-                  gridColumn: '1 / -1',
-                }}
-                title="Show fewer categories"
-              >
-                Less...
-              </button>
-            )}
           </div>
 
           {/* Block list */}
-          <div className="panel-scroll" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+          <div className="panel-scroll" style={{ 
+            position: 'absolute',
+            left: '100%',
+            top: 0,
+            bottom: 0,
+            width: isMobile ? 220 : 260,
+            background: isMobile ? 'var(--bg2)' : tok.sidebar,
+            borderRight: `1px solid ${tok.border}`,
+            zIndex: 1,
+            transform: showBlocksPanel ? 'translateX(0)' : 'translateX(-100%)',
+            opacity: showBlocksPanel ? 1 : 0,
+            pointerEvents: showBlocksPanel ? 'auto' : 'none',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+            overflowY: 'auto', overflowX: 'hidden', padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0,
+            boxShadow: showBlocksPanel ? '4px 0 15px rgba(0,0,0,0.1)' : 'none',
+          }}>
 
             {/* Standard categories */}
             {activeCat !== 'variables' && activeCat !== 'list' && (CATEGORY_BLOCKS[activeCat] || []).map(item => {
               return (
                 <div
                   key={item.type}
-                  onClick={() => addBlock(item.type)}
+                  onClick={() => { addBlock(item.type); setShowBlocksPanel(false); }}
                   title={`Add "${item.label}" block`}
                   style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}
                 >
@@ -2784,7 +3505,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     type={item.type}
                     isDark={isDark}
                     blocklyReady={loadStatus === 'ready'}
-                    onDragStart={(info) => { draggingRef.current = info }}
+                    onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
                     onDragEnd={() => {
                       if (markerManagerRef.current) {
                         markerManagerRef.current.dispose()
@@ -2810,7 +3531,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                   ].map(btn => (
                     <div
                       key={btn.type}
-                      onClick={() => handleNewVariable(btn.type)}
+                      onClick={() => { handleNewVariable(btn.type); setShowBlocksPanel(false); }}
                       style={{ cursor: 'pointer' }}
                       title={btn.label}
                     >
@@ -2843,10 +3564,10 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                   <div key={v.getId()} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 12, borderBottom: `1px solid ${isDark ? '#333' : '#eee'}` }}>
                     <div style={{ fontSize: 11, color: tok.textMuted, fontWeight: 600 }}>{v.name} ({t})</div>
                     {/* Variable reporter (get) */}
-                    <div onClick={() => addVariableBlock(getType, v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Use "${v.name}"`}>
+                    <div onClick={() => { addVariableBlock(getType, v); setShowBlocksPanel(false); }} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Use "${v.name}"`}>
                       <BlockPreview
                         type={getType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
@@ -2874,10 +3595,10 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     </div>
                     {/* change */}
                     {(!t || t === 'Number') && (
-                    <div onClick={() => addVariableBlock('math_change', v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`change ${v.name}`}>
+                    <div onClick={() => { addVariableBlock('math_change', v); setShowBlocksPanel(false); }} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`change ${v.name}`}>
                       <BlockPreview
                         type="math_change" varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
@@ -2907,7 +3628,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                   ].map(btn => (
                     <div
                       key={btn.type}
-                      onClick={() => handleNewVariable(btn.type)}
+                      onClick={() => { handleNewVariable(btn.type); setShowBlocksPanel(false); }}
                       style={{ cursor: 'pointer' }}
                       title={btn.label}
                     >
@@ -2942,10 +3663,10 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     <div style={{ fontSize: 11, color: tok.textMuted, fontWeight: 600 }}>{v.name} ({v.type})</div>
                     
                     {/* Store block */}
-                    <div onClick={() => addVariableBlock(setType, v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Store in "${v.name}"`}>
+                    <div onClick={() => { addVariableBlock(setType, v); setShowBlocksPanel(false); }} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Store in "${v.name}"`}>
                       <BlockPreview
                         type={setType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
@@ -2958,10 +3679,10 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
                     </div>
 
                     {/* Get block */}
-                    <div onClick={() => addVariableBlock(getType, v)} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Get from "${v.name}"`}>
+                    <div onClick={() => { addVariableBlock(getType, v); setShowBlocksPanel(false); }} style={{ cursor: 'pointer', width: '100%', maxWidth: '100%', minWidth: 0 }} title={`Get from "${v.name}"`}>
                       <BlockPreview
                         type={getType} varId={v.getId()} varName={v.name} varType={v.type} isDark={isDark} blocklyReady={loadStatus === 'ready'}
-                        onDragStart={(info) => { draggingRef.current = info }}
+                        onDragStart={(info) => { draggingRef.current = info; setShowBlocksPanel(false); }}
                         onDragEnd={() => {
                           if (markerManagerRef.current) {
                             markerManagerRef.current.dispose()
