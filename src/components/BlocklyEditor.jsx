@@ -1463,7 +1463,7 @@ function buildGenerator(B) {
   gen.forBlock['if_then'] = b => `if (${vc(b, 'COND', gen.ORDER_NONE)}) {\n${sc(b, 'DO')}}\n`
   gen.forBlock['if_then_else'] = b => `if (${vc(b, 'COND', gen.ORDER_NONE)}) {\n${sc(b, 'DO')}} else {\n${sc(b, 'ELSE')}}\n`
   gen.forBlock['loop_with_for'] = b => {
-    const varName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const varName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
     const fromVal = vc(b, 'FROM', gen.ORDER_ATOMIC) || '1';
     const toVal = vc(b, 'TO', gen.ORDER_ATOMIC) || '10';
     const byVal = b.getFieldValue('BY') || '1';
@@ -1623,28 +1623,28 @@ function buildGenerator(B) {
   }
 
   // Variable blocks
-  gen.forBlock['variables_get'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
-  gen.forBlock['variables_set'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC)};\n` }
-  gen.forBlock['math_change'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} += ${vc(b, 'DELTA', gen.ORDER_ADDITION)};\n` }
+  gen.forBlock['variables_get'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC)};\n` }
+  gen.forBlock['math_change'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} += ${vc(b, 'DELTA', gen.ORDER_ADDITION)};\n` }
 
   // Typed Variable blocks
-  gen.forBlock['variables_get_number'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
-  gen.forBlock['variables_set_number'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '0'};\n` }
+  gen.forBlock['variables_get_number'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_number'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '0'};\n` }
   
-  gen.forBlock['variables_get_string'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
-  gen.forBlock['variables_set_string'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'};\n` }
+  gen.forBlock['variables_get_string'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_string'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'};\n` }
   
-  gen.forBlock['variables_get_boolean'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE), gen.ORDER_ATOMIC]
-  gen.forBlock['variables_set_boolean'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false'};\n` }
+  gen.forBlock['variables_get_boolean'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_boolean'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false'};\n` }
 
   // List blocks
   const genListGet = (b) => {
-    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
     const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
     return [`${listName}[(${pos}) - 1]`, gen.ORDER_ATOMIC];
   };
   const genListSet = (b) => {
-    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
     const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '0';
     const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
     return `${listName}[(${pos}) - 1] = ${val};\n`;
@@ -1653,14 +1653,14 @@ function buildGenerator(B) {
   gen.forBlock['list_store_number'] = genListSet;
   gen.forBlock['list_get_text'] = genListGet;
   gen.forBlock['list_store_text'] = b => {
-    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
     const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""';
     const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
     return `${listName}[(${pos}) - 1] = ${val};\n`;
   };
   gen.forBlock['list_get_boolean'] = genListGet;
   gen.forBlock['list_store_boolean'] = b => {
-    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), B.Names.NameType.VARIABLE);
+    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
     const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false';
     const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
     return `${listName}[(${pos}) - 1] = ${val};\n`;
@@ -1909,7 +1909,7 @@ function generateSketch(gen, ws) {
       }
     } catch (err) {
       // Don't let one block break generation for others
-      console.warn('Block code gen error:', err)
+      console.warn('Block code gen error:', err.stack || err)
     }
   })
 
