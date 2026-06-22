@@ -8,7 +8,6 @@ const SLUG_MAP = {
   "rgb-led": "rgb-led-blink",
   buzzer: "buzzer",
   potentiometer: "potentiometer-led",
-  ldr: "ldr-automatic-light",
   "button-led": "button-led",
   "button-debounce": "button-debounce",
   "rgb-led-3-buttons": "rgb-led-3-buttons",
@@ -284,6 +283,22 @@ export default function ProjectGuidePage() {
               <p style={{ margin: 0, fontSize: 13, color: "var(--text2, #94a3b8)", lineHeight: 1.7 }}>
                 {explanation}
               </p>
+            </div>
+          )}
+
+          {project?.code && (
+            <div style={{
+              background: "var(--bg3, #1e293b)", borderRadius: 10, padding: 14,
+            }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
+                <Cpu size={12} strokeWidth={2.5} /> Arduino Code
+              </div>
+              <pre style={{
+                margin: 0, fontSize: 12, lineHeight: 1.6,
+                color: "#e2e8f0", overflowX: "auto",
+                fontFamily: "'JetBrains Mono','Fira Code',monospace",
+                whiteSpace: "pre-wrap", wordBreak: "break-word",
+              }}>{project.code}</pre>
             </div>
           )}
         </div>

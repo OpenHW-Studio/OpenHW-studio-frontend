@@ -27,7 +27,6 @@ const COMPILER_URL = process.env.COMPILER_URL || 'http://localhost:5000/api';
 // ── Slug mapping (JSON slug → URL slug) ──────────────────────────────────────
 const JSON_SLUG_TO_URL = {
   'rgb-led-blink':        'rgb-led',
-  'ldr-automatic-light':  'ldr',
   'potentiometer-led':    'potentiometer',
 };
 
