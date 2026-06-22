@@ -66,6 +66,7 @@ export function useHardwareFlashing({
         const ports = await navigator.serial.getPorts();
         if (ports.length === 0) {
           // No authorized ports. Prompt the user now while we are still in the user gesture context!
+          console.trace('Requesting Web Serial port (ports.length === 0)...');
           await navigator.serial.requestPort();
         }
       } catch (e) {
