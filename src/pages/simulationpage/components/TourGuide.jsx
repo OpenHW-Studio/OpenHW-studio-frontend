@@ -356,7 +356,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       else selector = '[id*="pin-dot-demo-led-tour-K"]';
     }
     if (step.action?.includes('switch-blockly')) selector = '[data-tour-id="tab-block"]';
-    if (step.action?.includes('switch-serial'))  selector = '[data-tour-id="tab-serial"]';
+    if (step.action?.includes('switch-serial')) selector = '[data-tour-id="tab-serial"]';
     if (step.action?.includes('switch-library')) selector = '[data-tour-step="library"], [data-tour-id="btn-libraries"], button[class*="librari" i]';
     // Plotter is a view-mode button inside the Serial tab, not its own tab
     if (step.action?.includes('switch-plotter')) selector = '[data-tour-id="plotter-view-btn"]';
@@ -562,43 +562,43 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
             style={{ left: ghostMousePos.x, top: ghostMousePos.y }}
             aria-hidden="true"
           >
-          <svg
-            width="48"
-            height="48"
-            viewBox="0 0 24 24"
-            fill="var(--accent, #00b4ff)"
-            stroke="white"
-            strokeWidth="1.2"
-          >
-            <path
-              d="M5.636 5.636l12.728 4.243-5.657 1.414-1.414 5.657-4.243-12.728z"
-              strokeLinejoin="round"
-            />
-          </svg>
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="var(--accent, #00b4ff)"
+              stroke="white"
+              strokeWidth="1.2"
+            >
+              <path
+                d="M5.636 5.636l12.728 4.243-5.657 1.414-1.414 5.657-4.243-12.728z"
+                strokeLinejoin="round"
+              />
+            </svg>
 
-          {/* Click ripple */}
-          {(demoPhase === 2 || demoPhase === 4 || demoPhase === 6 || demoPhase === 8) && (
-            <div className="tour-ghost-ripple" />
-          )}
+            {/* Click ripple */}
+            {(demoPhase === 2 || demoPhase === 4 || demoPhase === 6 || demoPhase === 8) && (
+              <div className="tour-ghost-ripple" />
+            )}
 
-          {/* Dragging component preview */}
-          {step.id === 'drag-demo' && demoPhase >= 2 && demoPhase <= 4 && (
-            <div className="tour-ghost-comp-small">
-              <svg
-                width="36"
-                height="36"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth="2.5"
-              >
-                <rect x="3" y="3" width="18" height="18" rx="3" ry="3" />
-                <line x1="9" y1="3" x2="9" y2="21" />
-              </svg>
-            </div>
-          )}
+            {/* Dragging component preview */}
+            {step.id === 'drag-demo' && demoPhase >= 2 && demoPhase <= 4 && (
+              <div className="tour-ghost-comp-small">
+                <svg
+                  width="36"
+                  height="36"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth="2.5"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="3" ry="3" />
+                  <line x1="9" y1="3" x2="9" y2="21" />
+                </svg>
+              </div>
+            )}
 
-        </div>
+          </div>
         </>
       )}
 
