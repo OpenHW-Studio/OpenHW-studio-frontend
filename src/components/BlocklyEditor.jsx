@@ -2038,6 +2038,51 @@ function attachDefaultShadows(ws, block, type) {
         valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
         block.getInput('TO').connection.connect(valBlock.outputConnection);
       }
+    } else if (type === 'rotate_servo') {
+      if (block.getInput('DEG')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('90', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('DEG').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'write_servo_pulse') {
+      if (block.getInput('PULSE')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('1500', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('PULSE').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'analog_write') {
+      if (block.getInput('VAL')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('128', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('VAL').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'play_tone') {
+      if (block.getInput('FREQ')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('440', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('FREQ').connection.connect(valBlock.outputConnection);
+      }
+      if (block.getInput('MS')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('500', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('MS').connection.connect(valBlock.outputConnection);
+      }
+    }
+
+    // Generic fallback: attach '0' math_number shadow block to any remaining unconnected Number inputs
+    if (window.Blockly && block.inputList) {
+      for (let i = 0; i < block.inputList.length; i++) {
+        const input = block.inputList[i];
+        if (input.type === window.Blockly.INPUT_VALUE && input.connection && !input.connection.targetConnection) {
+          const checks = input.connection.getCheck();
+          if (checks && (checks.includes('Number') || checks[0] === 'Number')) {
+            const valBlock = ws.newBlock('math_number');
+            valBlock.setFieldValue('0', 'NUM');
+            valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+            input.connection.connect(valBlock.outputConnection);
+          }
+        }
+      }
     }
   } catch (err) { console.error('Failed to attach shadow blocks:', err) }
 }
@@ -2620,6 +2665,33 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
   const init = useCallback(() => {
     const B = window.Blockly
     if (!B || !wsContainerRef.current || workspaceRef.current) return
+
+    if (!B._hasPatchedFieldNumber && B.FieldNumber) {
+      B._hasPatchedFieldNumber = true
+      const origShowEditor = B.FieldNumber.prototype.showEditor_
+      B.FieldNumber.prototype.showEditor_ = function() {
+        origShowEditor.apply(this, arguments)
+        setTimeout(() => {
+          const htmlInput = document.querySelector('.blocklyHtmlInput')
+          if (htmlInput && !htmlInput._hasNumValidator) {
+            htmlInput._hasNumValidator = true
+            htmlInput.addEventListener('input', () => {
+              const val = htmlInput.value
+              const cleaned = val.replace(/[^0-9.\-eE]/g, '')
+              if (val !== cleaned) {
+                const start = htmlInput.selectionStart
+                htmlInput.value = cleaned
+                if (start !== null) {
+                  const diff = val.length - cleaned.length
+                  htmlInput.selectionStart = start > diff ? start - diff : 0
+                  htmlInput.selectionEnd = htmlInput.selectionStart
+                }
+              }
+            })
+          }
+        }, 10)
+      }
+    }
     const defsToRegister = BLOCK_DEFS.filter((def) => !B.Blocks?.[def.type])
     if (defsToRegister.length > 0) {
       B.defineBlocksWithJsonArray(defsToRegister)

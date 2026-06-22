@@ -11461,7 +11461,10 @@ body {
 
 /* ─── BLOCKLY FIXES ──────────────────────────────────────────────────────── */
 .blocklyHtmlInput {
-  background-color: transparent !important;
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  text-shadow: none !important;
   border: none !important;
   outline: none !important;
   font-family: inherit !important;
