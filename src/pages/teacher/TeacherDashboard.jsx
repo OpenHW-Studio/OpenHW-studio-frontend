@@ -6,6 +6,7 @@ import {
   CalendarDays,
   FolderKanban,
   Home,
+  Microchip,
   Monitor,
   Plus,
   Settings,
@@ -16,12 +17,14 @@ import { formatDateTime, getAvatarLetters } from '../../components/common/test.j
 import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 import ClassCard from '../../components/common/ClassCard.jsx'
 import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
+import GuidedProjectsPanel from '../../components/student/GuidedProjectsSection.jsx'
 import SavedCircuitsSection from '../../components/common/SavedCircuitsSection.jsx'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
 import { useLocation } from 'react-router-dom'
 
 const sidebarLinks = [
   { key: 'home', label: 'Home', icon: Home, route: '/teacher/dashboard' },
+  { key: 'projects', label: 'Guided Projects', icon: Microchip },
   { key: 'simulator', label: 'Open Simulator', icon: Monitor, route: '/simulator' },
   { key: 'projectBank', label: 'Project Bank', icon: FolderKanban, route: '/teacher/project-bank' },
   { key: 'settings', label: 'Settings', icon: Settings },
@@ -35,6 +38,7 @@ export default function TeacherDashboard() {
   const [classrooms, setClassrooms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showGuidedProjects, setShowGuidedProjects] = useState(false)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
@@ -94,9 +98,10 @@ export default function TeacherDashboard() {
 
   const navLinks = sidebarLinks.map((item) => ({
     ...item,
-    isActive: item.route ? location.pathname.startsWith(item.route) : item.key === 'home',
+    isActive: item.route ? location.pathname.startsWith(item.route) : false,
     onClick: () => {
-      if (item.route) navigate(item.route)
+      if (item.key === 'projects') setShowGuidedProjects(true)
+      else if (item.route) navigate(item.route)
     }
   }))
 
@@ -406,6 +411,8 @@ export default function TeacherDashboard() {
           </section>
         </div>
       )}
+
+      <GuidedProjectsPanel isOpen={showGuidedProjects} onClose={() => setShowGuidedProjects(false)} />
     </div>
   )
 }
