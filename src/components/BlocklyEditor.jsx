@@ -1463,7 +1463,7 @@ function buildGenerator(B) {
   gen.forBlock['if_then'] = b => `if (${vc(b, 'COND', gen.ORDER_NONE)}) {\n${sc(b, 'DO')}}\n`
   gen.forBlock['if_then_else'] = b => `if (${vc(b, 'COND', gen.ORDER_NONE)}) {\n${sc(b, 'DO')}} else {\n${sc(b, 'ELSE')}}\n`
   gen.forBlock['loop_with_for'] = b => {
-    const varName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
+    const varName = getSafeVarName(b, 'VAR');
     const fromVal = vc(b, 'FROM', gen.ORDER_ATOMIC) || '1';
     const toVal = vc(b, 'TO', gen.ORDER_ATOMIC) || '10';
     const byVal = b.getFieldValue('BY') || '1';
@@ -1622,29 +1622,34 @@ function buildGenerator(B) {
     return [`toLowerCase(String(${txt}))`, gen.ORDER_ATOMIC]
   }
 
+    const getSafeVarName = (b, fieldName) => {
+    const v = b.workspace.getVariableById(b.getFieldValue(fieldName));
+    return v ? v.name.replace(/[^a-zA-Z0-9_]/g, '_') : 'unknown';
+  };
+
   // Variable blocks
-  gen.forBlock['variables_get'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME), gen.ORDER_ATOMIC]
-  gen.forBlock['variables_set'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC)};\n` }
-  gen.forBlock['math_change'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} += ${vc(b, 'DELTA', gen.ORDER_ADDITION)};\n` }
+  gen.forBlock['variables_get'] = b => [getSafeVarName(b, 'VAR'), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set'] = b => { const n = getSafeVarName(b, 'VAR'); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC)};\n` }
+  gen.forBlock['math_change'] = b => { const n = getSafeVarName(b, 'VAR'); return `${n} += ${vc(b, 'DELTA', gen.ORDER_ADDITION)};\n` }
 
   // Typed Variable blocks
-  gen.forBlock['variables_get_number'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME), gen.ORDER_ATOMIC]
-  gen.forBlock['variables_set_number'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '0'};\n` }
+  gen.forBlock['variables_get_number'] = b => [getSafeVarName(b, 'VAR'), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_number'] = b => { const n = getSafeVarName(b, 'VAR'); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '0'};\n` }
   
-  gen.forBlock['variables_get_string'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME), gen.ORDER_ATOMIC]
-  gen.forBlock['variables_set_string'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'};\n` }
+  gen.forBlock['variables_get_string'] = b => [getSafeVarName(b, 'VAR'), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_string'] = b => { const n = getSafeVarName(b, 'VAR'); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""'};\n` }
   
-  gen.forBlock['variables_get_boolean'] = b => [gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME), gen.ORDER_ATOMIC]
-  gen.forBlock['variables_set_boolean'] = b => { const n = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false'};\n` }
+  gen.forBlock['variables_get_boolean'] = b => [getSafeVarName(b, 'VAR'), gen.ORDER_ATOMIC]
+  gen.forBlock['variables_set_boolean'] = b => { const n = getSafeVarName(b, 'VAR'); return `${n} = ${vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false'};\n` }
 
   // List blocks
   const genListGet = (b) => {
-    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
+    const listName = getSafeVarName(b, 'VAR');
     const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
     return [`${listName}[(${pos}) - 1]`, gen.ORDER_ATOMIC];
   };
   const genListSet = (b) => {
-    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
+    const listName = getSafeVarName(b, 'VAR');
     const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '0';
     const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
     return `${listName}[(${pos}) - 1] = ${val};\n`;
@@ -1653,14 +1658,14 @@ function buildGenerator(B) {
   gen.forBlock['list_store_number'] = genListSet;
   gen.forBlock['list_get_text'] = genListGet;
   gen.forBlock['list_store_text'] = b => {
-    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
+    const listName = getSafeVarName(b, 'VAR');
     const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || '""';
     const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
     return `${listName}[(${pos}) - 1] = ${val};\n`;
   };
   gen.forBlock['list_get_boolean'] = genListGet;
   gen.forBlock['list_store_boolean'] = b => {
-    const listName = gen.nameDB_.getName(b.getFieldValue('VAR'), window.Blockly.VARIABLE_CATEGORY_NAME);
+    const listName = getSafeVarName(b, 'VAR');
     const val = vc(b, 'VALUE', gen.ORDER_ATOMIC) || 'false';
     const pos = vc(b, 'POS', gen.ORDER_ATOMIC) || '1';
     return `${listName}[(${pos}) - 1] = ${val};\n`;
@@ -1878,7 +1883,8 @@ function generateSketch(gen, ws) {
     let def = '0';
     if (v.type === 'String') { type = 'String'; def = '""'; }
     else if (v.type === 'Boolean') { type = 'bool'; def = 'false'; }
-    return `${type} ${v.name} = ${def};`;
+    const safeName = v.name.replace(/[^a-zA-Z0-9_]/g, '_');
+    return `${type} ${safeName} = ${def};`;
   }).join('\n') + '\n\n' : ''
   
   const listVars = (ws.getAllVariables() || []).filter(v => v.type.startsWith('List '));
@@ -1887,10 +1893,17 @@ function generateSketch(gen, ws) {
     if (v.type === 'List String') type = 'String';
     else if (v.type === 'List Boolean') type = 'bool';
     else if (v.type === 'List Colour') type = 'long';
-    return `${type} ${v.name}[10];`; // Default to size 10
+    const safeName = v.name.replace(/[^a-zA-Z0-9_]/g, '_');
+    return `${type} ${safeName}[10];`; // Default to size 10
   }).join('\n') + '\n\n' : ''
   
   gen.usedPins = new Map() // Reset/initialize used pins Map for the current generation run
+
+  // Block types that generate standalone function definitions (placed outside setup/loop)
+  const FUNCTION_BLOCK_TYPES = new Set([
+    'on_button_pressed', 'on_shake', 'on_pin_pressed', 'on_pin_changed',
+    'on_radio_number', 'on_radio_string', 'on_radio_key_value', 'create_block',
+  ])
 
   // Generate code for top-level blocks first so generators can record usedPins, helpers, etc.
   let setup = '', loop_ = ''
@@ -1899,17 +1912,23 @@ function generateSketch(gen, ws) {
   ws.getTopBlocks(true).forEach(b => {
     try {
       const code = gen.blockToCode(b)
+      console.log('[generateSketch] block type:', b.type, '| code:', JSON.stringify(code), '| hasInput DO:', !!b.getInput('DO'), '| childBlock:', b.getInputTargetBlock && b.getInputTargetBlock('DO')?.type)
       if (!code) return
+      // Skip stray value blocks (they return [code, order] arrays, not strings)
+      if (Array.isArray(code)) return
       if (b.type === 'on_start' || b.type === 'setup_runs_once') {
         setup += code
       } else if (b.type === 'forever') {
         loop_ += code
-      } else {
+      } else if (FUNCTION_BLOCK_TYPES.has(b.type)) {
         extras.push(code)
+      } else {
+        // All other statement blocks (loops, conditionals, actions) go inside loop()
+        loop_ += code
       }
     } catch (err) {
       // Don't let one block break generation for others
-      console.warn('Block code gen error:', err.stack || err)
+      console.warn('Block code gen error for', b.type, ':', err.stack || err)
     }
   })
 
