@@ -244,7 +244,36 @@ void loop() {
       passingThreshold: 70,
       evaluationCriteria: {
         components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'buzzer', count: 1 }] },
-        wiringAccuracy: { description: 'Correct wiring', weight: 0.3, requiredConnections: [] },
+        wiringAccuracy: { 
+          description: 'Correct wiring', 
+          weight: 0.3, 
+          requiredConnections: [
+            { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: 'SIG' } },
+            { from: { component: 'buzzer', pin: 'GND' }, to: { component: 'arduino', pin: 'GND' } }
+          ],
+          alternativeConnections: [
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: '1' } },
+              { from: { component: 'buzzer', pin: '2' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: '2' } },
+              { from: { component: 'buzzer', pin: '1' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: 'GND' } },
+              { from: { component: 'buzzer', pin: 'SIG' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: '+' } },
+              { from: { component: 'buzzer', pin: '-' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: '-' } },
+              { from: { component: 'buzzer', pin: '+' }, to: { component: 'arduino', pin: 'GND' } }
+            ]
+          ]
+        },
         codeFunctionality: { description: 'Code plays tones', weight: 0.4, requiredFunctions: ['setup', 'loop'] },
       },
     },
