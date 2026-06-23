@@ -1265,6 +1265,11 @@ export class ESP32Runner implements BoardRunner {
                 } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
                     const sdaV = (inst as any).sdaOutputVoltage !== undefined ? (inst as any).sdaOutputVoltage : inst.pins['SDA']?.voltage ?? 5.0;
                     if (inst.pins['SDA']) updateOopPin('SDA', sdaV, compId);
+                } else if (inst.type.includes('ntc')) {
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
+                    ['OUT', 'A0', 'D0'].forEach(pin => {
+                        if (inst.pins[pin] != null) updateOopPin(pin, inst.pins[pin].voltage, compId);
+                    });
                 }
             });
         };
