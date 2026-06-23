@@ -69,6 +69,13 @@ void loop() {
             { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
             { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND.1' } },
           ],
+          alternativeConnections: [
+            [
+              { from: { component: 'arduino', pin: '13' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'arduino', pin: 'GND.1' } },
+            ]
+          ]
         },
         codeFunctionality: {
           description: 'Code blinks LED correctly',

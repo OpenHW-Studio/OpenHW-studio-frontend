@@ -68,19 +68,61 @@ function evaluateAssessment(config, components, wires, code) {
     const issues = []
     let ok = 0
     const wm = (wire, conn) => {
+      const checkDir = (fId, fPin, fLabel, tId, tPin, tLabel, cFrom, cTo) => {
+        const fC = components.find(c => c.id === fId), tC = components.find(c => c.id === tId)
+        const fT = ROLE_TO_TYPE[cFrom.component] || cFrom.component, tT = ROLE_TO_TYPE[cTo.component] || cTo.component
+        const fTo = fC ? isTypeMatch(fC.type, fT) || fC.id === cFrom.component : false
+        const tTo = tC ? isTypeMatch(tC.type, tT) || tC.id === cTo.component : false
+        
+        const isResistor = (c) => c && (c.type === 'openhw-resistor' || c.type === 'wokwi-resistor');
+        const matchEp = (comp, pin, label, ep) => {
+          if (!comp || !ep) return false;
+          if (isResistor(comp) && (['1', '2', 'p1', 'p2'].includes(ep.pin) || ['1', '2', 'p1', 'p2'].includes(ep.terminal))) {
+            return ['1', '2', 'p1', 'p2'].includes(pin);
+          }
+          const isArduino = comp && (comp.type === 'openhw-arduino-uno' || comp.type === 'wokwi-arduino-uno');
+          const expectedPin = ep.pin || ep.terminal;
+          if (isArduino && expectedPin?.toLowerCase().startsWith('gnd') && pin?.toLowerCase().startsWith('gnd')) {
+            return true;
+          }
+          if (ep.pin) return label === ep.pin || pin === ep.pin;
+          if (ep.terminal) return label === ep.terminal || pin === ep.terminal;
+          return false;
+        };
+
+        return fTo && tTo && matchEp(fC, fPin, fLabel, cFrom) && matchEp(tC, tPin, tLabel, cTo);
+      };
+
       const [fId, fPin] = wire.from.split(':'), [tId, tPin] = wire.to.split(':')
-      const fC = components.find(c => c.id === fId), tC = components.find(c => c.id === tId)
-      const fT = ROLE_TO_TYPE[conn.from.component], tT = ROLE_TO_TYPE[conn.to.component]
-      const fIE = !fT ? conn.from.component : null, tIE = !tT ? conn.to.component : null
-      const fTo = fC && fT ? isTypeMatch(fC.type, fT) : false, tTo = tC && tT ? isTypeMatch(tC.type, tT) : false
-      const fIo = fC && fIE ? fC.id === fIE : false, tIo = tC && tIE ? tC.id === tIE : false
-      return (fTo||fIo) && (tTo||tIo) && endpointMatches(fC, fPin, wire.fromLabel, conn.from) && endpointMatches(tC, tPin, wire.toLabel, conn.to)
+      return checkDir(fId, fPin, wire.fromLabel, tId, tPin, wire.toLabel, conn.from, conn.to) ||
+             checkDir(tId, tPin, wire.toLabel, fId, fPin, wire.fromLabel, conn.from, conn.to);
     }
-    requiredConnections.forEach(conn => {
-      if (wires.some(w => wm(w, conn))) ok++
-      else issues.push(`Missing: ${conn.from.component} ${conn.from.pin||conn.from.terminal} → ${conn.to.component} ${conn.to.pin||conn.to.terminal}.`)
-    })
-    const score = requiredConnections.length ? Math.round((ok / requiredConnections.length) * 100) : 0
+
+    const evaluateTopology = (connections) => {
+      let matched = 0;
+      let missing = [];
+      connections.forEach(conn => {
+        if (wires.some(w => wm(w, conn))) matched++;
+        else missing.push(`Missing: ${conn.from.component} ${conn.from.pin||conn.from.terminal} → ${conn.to.component} ${conn.to.pin||conn.to.terminal}.`);
+      });
+      return { matched, missing, total: connections.length };
+    };
+
+    let bestResult = evaluateTopology(requiredConnections);
+    
+    if (cc.wiringAccuracy.alternativeConnections) {
+      for (const altConns of cc.wiringAccuracy.alternativeConnections) {
+        const altResult = evaluateTopology(altConns);
+        if (altResult.matched > bestResult.matched || (altResult.matched === altResult.total && altResult.total > 0)) {
+          bestResult = altResult;
+        }
+      }
+    }
+
+    ok = bestResult.matched;
+    issues.push(...bestResult.missing);
+
+    const score = bestResult.total ? Math.round((ok / bestResult.total) * 100) : 0
     total += score * weight
     res.wiringAccuracy = { title: 'Wiring', score, feedback: pickFeedback(score, sc.wiringAccuracy), issues }
   }
@@ -279,8 +321,19 @@ const projectColor  = location.state?.projectColor || '#22c55e'
 
   // Assessment config: class (MongoDB) assessment object | built-in PROJECTS.fallback
   const assessmentConfig = useMemo(() => {
+    const defaultProject = PROJECTS.find(p => p.slug === projectName)
+    const defaultEvaluation = defaultProject?.evaluation || {}
+
     if (classProjectContent) {
       const assessment = classProjectContent.assessment || {}
+      
+      // Merge alternative connections to ensure legacy DB assessments get the relaxed validation
+      if (assessment.evaluationCriteria?.wiringAccuracy && defaultEvaluation.evaluationCriteria?.wiringAccuracy?.alternativeConnections) {
+        if (!assessment.evaluationCriteria.wiringAccuracy.alternativeConnections) {
+          assessment.evaluationCriteria.wiringAccuracy.alternativeConnections = defaultEvaluation.evaluationCriteria.wiringAccuracy.alternativeConnections;
+        }
+      }
+
       return {
         passingThreshold: assessment.passingThreshold ?? 0,
         evaluationCriteria: assessment.evaluationCriteria || {},
@@ -288,12 +341,10 @@ const projectColor  = location.state?.projectColor || '#22c55e'
       }
     }
     // Non-class fallback: built-in PROJECTS data
-    const project = PROJECTS.find(p => p.slug === projectName)
-    const evaluation = project?.evaluation || {}
     return {
-      passingThreshold: evaluation.passingThreshold ?? 0,
-      evaluationCriteria: evaluation.evaluationCriteria || {},
-      scoring:              evaluation.scoring || {},
+      passingThreshold: defaultEvaluation.passingThreshold ?? 0,
+      evaluationCriteria: defaultEvaluation.evaluationCriteria || {},
+      scoring:              defaultEvaluation.scoring || {},
     }
   }, [classProjectContent, projectName])
 
