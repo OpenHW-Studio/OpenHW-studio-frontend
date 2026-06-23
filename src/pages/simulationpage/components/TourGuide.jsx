@@ -48,12 +48,23 @@ const STEPS = [
     fallbackTarget: 'main',
     title: 'Intelligent Wiring',
     content: 'Connect pins by clicking and dragging. The simulator automatically calculates the best path for your wires.',
-    position: 'top-center',
+    position: 'top-right',
     action: 'wire',
     spotlightPadding: 0,
     // App should dispatch: new CustomEvent('openhw:wire-created', { bubbles: true })
     letMeTryTrigger: { event: 'openhw:wire-created', selector: 'window' },
     letMeTryHint: 'Connect two pins with a wire to continue →',
+  },
+  {
+    id: 'autowiring',
+    target: '[data-tour-step="autowiring"]',
+    fallbackTarget: 'main',
+    title: 'Intelligent Autowiring',
+    content: 'Select a component, right click, then choose Wire To. This automatically adds required components like resistors and routes the wires perfectly.',
+    position: 'top-right',
+    action: 'add-wiring-components',
+    spotlightPadding: 0,
+    letMeTryHint: 'Try right-clicking a component to see its context menu, then click Done →',
   },
   {
     id: 'components-palette',
@@ -146,12 +157,11 @@ const STEPS = [
   },
   {
     id: 'console',
-    target: '[data-tour-step="console"]',
+    target: '#tour-console-btn, [data-tour-step="console"]',
     fallbackTarget: '[data-simulation-console="true"]',
     title: 'System Console',
     content: 'Check for compilation logs, system warnings, and hardware connection status here.',
     position: 'top',
-    // Small targets like pin dots benefit from more breathing room
     spotlightPadding: 16,
   },
   {
@@ -192,6 +202,7 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
     x: window.innerWidth / 2,
     y: window.innerHeight / 2,
   });
+  const [ghostWireStart, setGhostWireStart] = useState(null);
   // 'show-me'   → ghost cursor runs the demo animation
   // 'let-me-try' → ghost cursor hidden; spotlight waits for the user
   const [mode, setMode] = useState('show-me');
@@ -349,22 +360,43 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
           : '[id*="comp-master-demo-comp-tour"]';
     }
     if (step.id === 'wiring') {
-      selector =
-        demoPhase <= 2
-          ? '[id*="pin-dot-demo-comp-tour-13"]'
-          : '[id*="pin-dot-demo-comp-tour-GND"]';
+      if (demoPhase <= 2) selector = '[id*="pin-dot-demo-comp-tour-13"]';
+      else if (demoPhase <= 4) selector = '[id*="pin-dot-demo-led-tour-A"]';
+      else if (demoPhase <= 6) selector = '[id*="pin-dot-demo-comp-tour-gnd_3"]';
+      else selector = '[id*="pin-dot-demo-led-tour-K"]';
+    }
+    if (step.id === 'autowiring') {
+      selector = '[id*="comp-master-demo-led-tour"]';
+    }
+    if (step.id === 'library') {
+      if (demoPhase <= 1) selector = '[data-tour-file="library.txt"]';
+      else selector = '[data-tour-step="library"]';
     }
     if (step.action?.includes('switch-blockly')) selector = '[data-tour-id="tab-block"]';
     if (step.action?.includes('switch-serial'))  selector = '[data-tour-id="tab-serial"]';
-    if (step.action?.includes('switch-library')) selector = '[data-tour-step="library"], [data-tour-id="btn-libraries"], button[class*="librari" i]';
+    if (step.action?.includes('switch-library') && step.id !== 'library') selector = '[data-tour-step="library"], [data-tour-id="btn-libraries"], button[class*="librari" i]';
     // Plotter is a view-mode button inside the Serial tab, not its own tab
     if (step.action?.includes('switch-plotter')) selector = '[data-tour-id="plotter-view-btn"]';
-
+    
     if (selector) {
       const el = document.querySelector(selector);
       if (el) {
         const rect = el.getBoundingClientRect();
-        setGhostMousePos({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+        let newPos = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+        if (step.id === 'autowiring') {
+          if (demoPhase === 3) {
+            newPos.x += 115;
+            newPos.y += 168; // Move to "Wire To"
+          } else if (demoPhase >= 4) {
+            newPos.x += 255;
+            newPos.y += 168; // Move to "uno" submenu option
+          }
+        }
+        setGhostMousePos(newPos);
+        if (step.id === 'wiring') {
+          if (demoPhase === 2 || demoPhase === 6) setGhostWireStart(newPos);
+          else if (demoPhase === 0 || demoPhase === 1 || demoPhase === 5) setGhostWireStart(null);
+        }
       }
     }
   }, [currentStep, demoPhase, isVisible, mode]);
@@ -387,12 +419,46 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
         onDemoAction('remove-demo-wire');
         onDemoAction('remove-component');
       }
-      if (demoPhase === 1) onDemoAction('add-component');
-      if (demoPhase === 4) onDemoAction('add-demo-wire');
+      if (demoPhase === 1) onDemoAction('add-wiring-components');
+      if (demoPhase === 4) onDemoAction('add-demo-wire-1');
+      if (demoPhase === 8) onDemoAction('add-demo-wire-2');
+    }
+    if (step.id === 'autowiring') {
+      if (demoPhase === 0) {
+        onDemoAction('remove-demo-wire');
+        onDemoAction('remove-component');
+      }
+      if (demoPhase === 1) onDemoAction('add-wiring-components');
+      if (demoPhase === 5) onDemoAction('execute-autowire-demo');
+    }
+    if (step.id === 'library') {
+      if (demoPhase === 0) {
+        onDemoAction('close-library-panel');
+        onDemoAction('open-demo-ino');
+      }
+      if (demoPhase === 1) onDemoAction('open-library-txt');
+      if (demoPhase === 3) onDemoAction('open-library-panel');
+    }
+    if (step.id === 'plotter') {
+      if (demoPhase === 0) onDemoAction('switch-monitor');
+      if (demoPhase === 2) onDemoAction('switch-plotter');
+    }
+    if (step.id === 'console') {
+      if (demoPhase === 0) {
+        onDemoAction('reset-autowiring');
+        onDemoAction('close-palette');
+        onDemoAction('close-right-panel');
+        onDemoAction('clear-console');
+        onDemoAction('close-console');
+      }
+      if (demoPhase === 2) {
+        onDemoAction('open-console');
+        onDemoAction('console-demo-log');
+      }
     }
     // Fire panel-switch actions immediately (phase 0 = step entry) so the correct
     // tab is visible right away regardless of which tab the user was on before.
-    if (step.action?.startsWith('switch-') && demoPhase === 0) {
+    if (step.action?.startsWith('switch-') && demoPhase === 0 && step.id !== 'library' && step.id !== 'plotter' && step.id !== 'console') {
       onDemoAction(step.action);
     }
   }, [demoPhase, currentStep, isVisible, onDemoAction, mode]);
@@ -400,7 +466,12 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
   // ── Demo phase loop (show-me mode only) ─────────────────────────────────
   useEffect(() => {
     if (mode !== 'show-me') return;
-    const interval = setInterval(() => setDemoPhase(p => (p + 1) % 6), 1800);
+    const interval = setInterval(() => {
+      setDemoPhase(p => {
+        const maxPhases = STEPS[currentStep].id === 'wiring' ? 9 : (STEPS[currentStep].id === 'library' ? 5 : (STEPS[currentStep].id === 'plotter' ? 5 : (STEPS[currentStep].id === 'console' ? 5 : 6)));
+        return (p + 1) % maxPhases;
+      });
+    }, 1800);
     return () => {
       clearInterval(interval);
       // Clean up any live demo artefacts when leaving a step
@@ -440,6 +511,8 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
       case 'top-center':
         // Canvas-wide steps: float at the very top so the full canvas is visible
         return { top: 16, bottom: 'auto', left: '50%', transform: 'translateX(-50%)' };
+      case 'top-right':
+        return { top: 16, right: 16, bottom: 'auto', left: 'auto', transform: 'none' };
       case 'bottom':
         return {
           top: top + height + margin,
@@ -519,11 +592,35 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
     <div className="tour-overlay">
       {/* ── Ghost cursor (show-me mode only) ──────────────────────────── */}
       {mode === 'show-me' && (
-        <div
-          className={`tour-ghost-cursor step-${step.id} phase-${demoPhase}`}
-          style={{ left: ghostMousePos.x, top: ghostMousePos.y }}
-          aria-hidden="true"
-        >
+        <>
+          {step.id === 'wiring' && ghostWireStart && (demoPhase === 3 || demoPhase === 7) && (
+            <svg
+              style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100vw',
+                height: '100vh',
+                pointerEvents: 'none',
+                zIndex: 9999998,
+              }}
+            >
+              <line
+                x1={ghostWireStart.x}
+                y1={ghostWireStart.y}
+                x2={ghostMousePos.x}
+                y2={ghostMousePos.y}
+                stroke={demoPhase === 3 ? "var(--accent, #00b4ff)" : "black"}
+                strokeWidth="3"
+                strokeDasharray="4 4"
+              />
+            </svg>
+          )}
+          <div
+            className={`tour-ghost-cursor step-${step.id} phase-${demoPhase}`}
+            style={{ left: ghostMousePos.x, top: ghostMousePos.y }}
+            aria-hidden="true"
+          >
           <svg
             width="48"
             height="48"
@@ -539,7 +636,12 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
           </svg>
 
           {/* Click ripple */}
-          {(demoPhase === 2 || demoPhase === 4) && (
+          {((step.id === 'wiring' && (demoPhase === 2 || demoPhase === 4 || demoPhase === 6 || demoPhase === 8)) ||
+            (step.id === 'autowiring' && (demoPhase === 2 || demoPhase === 5)) ||
+            (step.id === 'drag-demo' && demoPhase === 1) ||
+            (step.id === 'library' && (demoPhase === 1 || demoPhase === 3)) ||
+            (step.id === 'plotter' && demoPhase === 2) ||
+            (step.id === 'console' && demoPhase === 2)) && (
             <div className="tour-ghost-ripple" />
           )}
 
@@ -560,11 +662,67 @@ const TourGuide = ({ onFinish, onStepChange, onDemoAction }) => {
             </div>
           )}
 
-          {/* Wire draw preview */}
-          {step.id === 'wiring' && demoPhase >= 3 && demoPhase <= 4 && (
-            <div className="tour-ghost-wire-preview" />
-          )}
         </div>
+
+        {/* Fake Context Menu for Autowiring */}
+        {step.id === 'autowiring' && demoPhase >= 2 && demoPhase <= 4 && (
+          <div
+            className="canvas-menu"
+            style={{
+              position: 'fixed',
+              left: ghostMousePos.x + 45 - (demoPhase === 3 ? 115 : (demoPhase >= 4 ? 255 : 0)),
+              top: ghostMousePos.y + 20 - (demoPhase >= 3 ? 168 : 0),
+              zIndex: 999999,
+              background: 'rgba(15, 23, 42, 0.96)',
+              border: '1px solid rgba(30, 45, 71, 0.8)',
+              borderRadius: '10px',
+              padding: '4px',
+              color: 'white',
+              minWidth: '135px',
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '11.5px',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+              pointerEvents: 'none'
+            }}
+          >
+            <div style={{ padding: '5px 8px 4px', fontSize: '9.5px', color: '#ef4444', background: '#ef444445', borderRadius: '6px', textAlign: 'center', marginBottom: '4px', fontWeight: 800 }}>DEMO-LED-TOUR</div>
+            <div style={{ padding: '4px 8px', display: 'flex', gap: '6px' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></svg><span>Rename</span></div>
+            <div style={{ padding: '4px 8px', display: 'flex', gap: '6px' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6" /><path d="m9 9 6 6" /></svg><span>Color</span></div>
+            <div style={{ padding: '4px 8px', display: 'flex', gap: '6px' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11a9 9 0 0 1 9 9" /><path d="M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" /></svg><span>Pin Map</span></div>
+            <div style={{ padding: '4px 8px', display: 'flex', gap: '6px' }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg><span>AutoCode</span></div>
+            
+            <div style={{
+              padding: '4px 8px', display: 'flex', gap: '6px',
+              background: demoPhase >= 3 ? 'var(--item-hover-bg, rgba(255,255,255,0.1))' : 'transparent',
+              borderRadius: '6px',
+              position: 'relative'
+            }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+              <span>Wire to</span>
+              <svg style={{ marginLeft: 'auto', opacity: 0.4 }} width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+              
+              {demoPhase >= 3 && (
+                <div style={{
+                  position: 'absolute', left: '100%', top: '-4px', marginLeft: '6px',
+                  background: 'rgba(15, 23, 42, 0.96)', border: '1px solid rgba(30, 45, 71, 0.8)',
+                  borderRadius: '10px', padding: '4px', minWidth: '140px',
+                  boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+                }}>
+                  <div style={{
+                    padding: '4px 8px', display: 'flex', gap: '6px',
+                    background: demoPhase >= 4 ? 'rgba(56, 189, 248, 0.15)' : 'transparent',
+                    color: demoPhase >= 4 ? '#38bdf8' : 'inherit',
+                    fontWeight: demoPhase >= 4 ? 700 : 500,
+                    borderRadius: '6px'
+                  }}>
+                    uno
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       {/* ── Spotlight ─────────────────────────────────────────────────── */}

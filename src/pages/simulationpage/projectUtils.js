@@ -1016,7 +1016,7 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
           } else if (type === 'openhw-potentiometer') {
             if (pinId === 'GND' || pinId === '1') pinId = '1';
             else if (pinId === 'VCC' || pinId === '3') pinId = '2';
-            else if (pinId === 'SIG' || pinId === '2') pinId = 'SIG';
+            else if (pinId === 'SIG') pinId = 'SIG';
           } else if (type === 'openhw-slide-potentiometer') {
             if (pinId === 'OUT') pinId = 'SIG';
           } else if (type === 'openhw-pushbutton') {

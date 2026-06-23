@@ -68,6 +68,7 @@ import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-recei
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
+import { NtcLogic } from '@openhw/emulator/src/components/openhw-ntc-temperature-sensor/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -243,7 +244,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-photoresistor': PhotoresistorLogic,
     'openhw-photoresistor': PhotoresistorLogic,
     'openhw-ntc-thermistor': BaseComponent,
-    'openhw-ntc-temperature-sensor': BaseComponent,
+    'openhw-ntc-temperature-sensor': NtcLogic,
     'openhw-charger': BaseComponent,
     'openhw-breadboard-mini': BaseComponent,
     'openhw-neopixel-ring': NeopixelLogic,

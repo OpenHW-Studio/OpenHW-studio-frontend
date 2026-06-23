@@ -28,6 +28,9 @@ export function getPinPosForComp(comp, pinId, pinDefs) {
     if (s === 'p2') return '2';
     if (s === 'a') return 'anode';
     if (s === 'k') return 'cathode';
+    if (s === 's' || s === 'SIG') return 'sig';
+    if (s === 'v'|| s === 'VCC') return 'vcc';
+    if (s === 'g' || s === 'GND') return 'gnd';
     if (s === '3.3v' || s === '3v3') return '3v3';
     return s.replace(/[:.]/g, '_');
   };
@@ -74,6 +77,9 @@ export function getPinExitPointForComp(comp, pinId, pinDefs) {
     if (s === 'p2') return '2';
     if (s === 'a') return 'anode';
     if (s === 'k') return 'cathode';
+    if (s === 's') return 'sig';
+    if (s === 'v') return 'vcc';
+    if (s === 'g') return 'gnd';
     if (s === '3.3v' || s === '3v3') return '3v3';
     return s.replace(/[:.]/g, '_');
   };
@@ -101,8 +107,8 @@ export function getPinExitPointForComp(comp, pinId, pinDefs) {
   if (!pPos) return null;
 
   const bounds = getComponentBounds(comp);
-  const localX = (Number(pin.x) || 0) - (Number(bounds.x) || 0);
-  const localY = (Number(pin.y) || 0) - (Number(bounds.y) || 0);
+  const localX = ((Number(pin.x) || 0) - (Number(bounds.x) || 0)) * scaleX;
+  const localY = ((Number(pin.y) || 0) - (Number(bounds.y) || 0)) * scaleY;
   const distLeft = localX;
   const distRight = (Number(bounds.w) || comp.w || 0) - localX;
   const distTop = localY;
