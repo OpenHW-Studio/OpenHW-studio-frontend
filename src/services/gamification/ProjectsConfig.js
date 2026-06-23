@@ -800,10 +800,23 @@ void loop() {
 
 // Difficulty styling
 export const DIFFICULTY_CONFIG = {
-  beginner:     { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  label: 'Beginner' },
+  easy:         { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  label: 'Easy' },
   intermediate: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: 'Intermediate' },
-  advanced:     { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  label: 'Advanced' },
+  hard:         { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  label: 'Hard' },
 };
+
+export function normalizeDifficulty(value, fallback = 'intermediate') {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'beginner') return 'easy';
+  if (raw === 'advanced') return 'hard';
+  if (raw === 'easy' || raw === 'intermediate' || raw === 'hard') return raw;
+  return fallback;
+}
+
+export function getDifficultyDisplay(value, fallback = 'intermediate') {
+  const normalized = normalizeDifficulty(value, fallback);
+  return DIFFICULTY_CONFIG[normalized] || DIFFICULTY_CONFIG[fallback] || DIFFICULTY_CONFIG.intermediate;
+}
 
 // ── Helper: get project status based on completed projects ────────────────────
 export function getProjectStatus(projectSlug, completedProjects = []) {

@@ -16,6 +16,67 @@ const getEntityId = (value) => {
   return value._id || value.id || value.toString?.() || "";
 };
 
+const DIFFICULTY_OPTIONS = [
+  { value: "easy", label: "Easy" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "hard", label: "Hard" },
+];
+
+const DIFFICULTY_ORDER = {
+  easy: 0,
+  intermediate: 1,
+  hard: 2,
+};
+
+const normalizeDifficulty = (value, fallback = "intermediate") => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "beginner") return "easy";
+  if (raw === "advanced") return "hard";
+  if (raw === "easy" || raw === "intermediate" || raw === "hard") return raw;
+  return fallback;
+};
+
+const difficultyLabel = (value) => {
+  const normalized = normalizeDifficulty(value);
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
+const filterAndSortByDifficulty = (items, filterValue, sortValue) => {
+  const indexed = (items || []).map((item, index) => ({ item, index }));
+  const filtered = indexed.filter(({ item }) => {
+    if (!filterValue || filterValue === "all") return true;
+    return normalizeDifficulty(item?.difficulty) === filterValue;
+  });
+
+  if (sortValue === "difficulty-asc") {
+    return [...filtered].sort((a, b) => {
+      const diff = DIFFICULTY_ORDER[normalizeDifficulty(a.item?.difficulty)] - DIFFICULTY_ORDER[normalizeDifficulty(b.item?.difficulty)];
+      if (diff !== 0) return diff;
+      return String(a.item?.front || a.item?.question || "").localeCompare(String(b.item?.front || b.item?.question || ""));
+    });
+  }
+
+  if (sortValue === "difficulty-desc") {
+    return [...filtered].sort((a, b) => {
+      const diff = DIFFICULTY_ORDER[normalizeDifficulty(b.item?.difficulty)] - DIFFICULTY_ORDER[normalizeDifficulty(a.item?.difficulty)];
+      if (diff !== 0) return diff;
+      return String(a.item?.front || a.item?.question || "").localeCompare(String(b.item?.front || b.item?.question || ""));
+    });
+  }
+
+  return filtered;
+};
+
+const normalizeTheoryCard = (card, fallbackDifficulty = "intermediate") => ({
+  ...card,
+  difficulty: normalizeDifficulty(card?.difficulty, fallbackDifficulty),
+});
+
+const normalizeQuizQuestion = (question, fallbackDifficulty = "intermediate") => ({
+  ...question,
+  difficulty: normalizeDifficulty(question?.difficulty, fallbackDifficulty),
+});
+
 const SIMULATOR_CRITERIA_STORAGE_KEY = "bankProjectCriteria";
 
 const createDefaultAssessment = () => ({
@@ -50,6 +111,11 @@ export default function TeacherProjectContentEditor() {
 
   const [theoryCards, setTheoryCards] = useState([]);
   const [quizQuestions, setQuizQuestions] = useState([]);
+  const [projectDifficulty, setProjectDifficulty] = useState("intermediate");
+  const [theoryDifficultyFilter, setTheoryDifficultyFilter] = useState("all");
+  const [theoryDifficultySort, setTheoryDifficultySort] = useState("original");
+  const [quizDifficultyFilter, setQuizDifficultyFilter] = useState("all");
+  const [quizDifficultySort, setQuizDifficultySort] = useState("original");
   const [rewardComponents, setRewardComponents] = useState([]);
   const [rewardSearchQuery, setRewardSearchQuery] = useState("");
   const [rewardCategoryFilter, setRewardCategoryFilter] = useState("All");
@@ -128,6 +194,7 @@ const load = async () => {
         if (isNewBankProject) {
           importedFromSimulatorRef.current = false;
           const template = getProjectFlashcards(projectSlug);
+          const defaultDifficulty = normalizeDifficulty(projectMeta?.difficulty || "intermediate");
           const newCards = template.map((card, idx) => ({
             id: `card-${Date.now()}-${idx}`,
             emoji: card.emoji || "📚",
@@ -135,8 +202,10 @@ const load = async () => {
             simple: card.simple || "",
             detail: card.detail || "",
             funFact: card.funFact || "",
+            difficulty: normalizeDifficulty(card.difficulty, defaultDifficulty),
           }));
           if (!cancelled) {
+            setProjectDifficulty(defaultDifficulty);
             setTheoryCards(newCards);
             setQuizQuestions(
               template.map((card, i) => ({
@@ -146,6 +215,7 @@ const load = async () => {
                 correctAnswer: Number.isFinite(card.quiz?.correctAnswer)
                   ? card.quiz.correctAnswer
                   : 0,
+                difficulty: normalizeDifficulty(card.quiz?.difficulty, defaultDifficulty),
               }))
             );
             setBankProjectId(null);
@@ -173,8 +243,10 @@ const load = async () => {
             setCustomTitle("");
             return;
           }
-          setTheoryCards(project.theory || []);
-          setQuizQuestions(project.quizQuestions || []);
+          const defaultDifficulty = normalizeDifficulty(project.difficulty || projectMeta?.difficulty || "intermediate");
+          setProjectDifficulty(defaultDifficulty);
+          setTheoryCards((project.theory || []).map((card) => normalizeTheoryCard(card, defaultDifficulty)));
+          setQuizQuestions((project.quizQuestions || []).map((question) => normalizeQuizQuestion(question, defaultDifficulty)));
           const rewardIds = (project.rewardComponents || []).map(c => c.id).filter(Boolean);
           setRewardComponents(rewardIds);
           const baseAssessment = project.assessment || createDefaultAssessment();
@@ -204,6 +276,7 @@ const load = async () => {
         if (!project) {
           // Create new project from template
           const template = getProjectFlashcards(projectSlug);
+          const defaultDifficulty = normalizeDifficulty(projectMeta?.difficulty || "intermediate");
           const newCards = template.map((card, idx) => ({
             id: `card-${Date.now()}-${idx}`,
             emoji: card.emoji || "📚",
@@ -211,7 +284,9 @@ const load = async () => {
             simple: card.simple || "",
             detail: card.detail || "",
             funFact: card.funFact || "",
+            difficulty: normalizeDifficulty(card.difficulty, defaultDifficulty),
           }));
+          setProjectDifficulty(defaultDifficulty);
           setTheoryCards(newCards);
           setQuizQuestions(
             template.map((card, i) => ({
@@ -221,6 +296,7 @@ const load = async () => {
               correctAnswer: Number.isFinite(card.quiz?.correctAnswer)
                 ? card.quiz.correctAnswer
                 : 0,
+              difficulty: normalizeDifficulty(card.quiz?.difficulty, defaultDifficulty),
             }))
           );
           // New projects start with no reward components selected
@@ -231,8 +307,10 @@ const load = async () => {
             setRewardComponents((prev) => [...new Set([...prev, ...importedAssessment._rewardIds])]);
           }
         } else {
-          setTheoryCards(project.theory || []);
-          setQuizQuestions(project.quizQuestions || []);
+          const defaultDifficulty = normalizeDifficulty(project.difficulty || projectMeta?.difficulty || "intermediate");
+          setProjectDifficulty(defaultDifficulty);
+          setTheoryCards((project.theory || []).map((card) => normalizeTheoryCard(card, defaultDifficulty)));
+          setQuizQuestions((project.quizQuestions || []).map((question) => normalizeQuizQuestion(question, defaultDifficulty)));
           // Extract component IDs from rewardComponents array
           const rewardIds = (project.rewardComponents || []).map(c => c.id).filter(Boolean);
           setRewardComponents(rewardIds);
@@ -257,6 +335,16 @@ const load = async () => {
 
   const projectMeta = PROJECTS.find((p) => p.slug === projectSlug);
   const color = projectMeta?.color || "#3b82f6";
+  const visibleTheoryCards = filterAndSortByDifficulty(
+    theoryCards,
+    theoryDifficultyFilter,
+    theoryDifficultySort
+  );
+  const visibleQuizQuestions = filterAndSortByDifficulty(
+    quizQuestions,
+    quizDifficultyFilter,
+    quizDifficultySort
+  );
 
   // Theory card handlers
   const updateCard = (index, field, value) => {
@@ -275,6 +363,7 @@ const load = async () => {
         simple: "",
         detail: "",
         funFact: "",
+        difficulty: projectDifficulty,
       },
     ]);
   };
@@ -314,6 +403,7 @@ const load = async () => {
         options: ["", "", "", ""],
         correctAnswer: 0,
         explanation: "",
+        difficulty: projectDifficulty,
       },
     ]);
   };
@@ -625,6 +715,9 @@ const load = async () => {
     try {
       const response = await getResolvedClassAdventure(classId);
       const currentConfig = response?.resolved || { worlds: [], projects: [] };
+      const activeDifficulty = normalizeDifficulty(projectDifficulty || projectMeta?.difficulty || "intermediate");
+      const sanitizedTheoryCards = theoryCards.map((card) => normalizeTheoryCard(card, activeDifficulty));
+      const sanitizedQuizQuestions = quizQuestions.map((question) => normalizeQuizQuestion(question, activeDifficulty));
 
       const existingIndex = currentConfig.projects.findIndex(
         (p) => p.slug === projectSlug
@@ -662,8 +755,9 @@ const load = async () => {
           const sanitizedAssessmentContent = makeAssessmentContent();
           updatedProject = {
             ...existing,
-            theory: theoryCards,
-            quizQuestions: quizQuestions,
+            difficulty: activeDifficulty,
+            theory: sanitizedTheoryCards,
+            quizQuestions: sanitizedQuizQuestions,
             rewardComponents: selectedRewardComponents,
             assessment: sanitizedAssessmentContent,
           };
@@ -676,11 +770,12 @@ const load = async () => {
               order: (currentConfig.projects?.length || 0) + 1,
               enabled: true,
               title: projectMeta?.title || projectSlug,
+              difficulty: activeDifficulty,
               prerequisite: null,
               xpReward: 100,
               rewardComponents: selectedRewardComponents,
-              theory: theoryCards,
-              quizQuestions: quizQuestions,
+              theory: sanitizedTheoryCards,
+              quizQuestions: sanitizedQuizQuestions,
               assessment: sanitizedAssessmentContent,
             };
          }
@@ -710,15 +805,19 @@ const load = async () => {
     const displayTitle = customTitle.trim() || projectMeta?.title || projectSlug || "";
     // For new bank projects (no projectSlug in URL), use the custom title as slug
     const resolvedSlug = isNewBankProject ? customTitle.trim() : projectSlug;
+    const activeDifficulty = normalizeDifficulty(projectDifficulty || projectMeta?.difficulty || "intermediate");
+    const sanitizedTheoryCards = theoryCards.map((card) => normalizeTheoryCard(card, activeDifficulty));
+    const sanitizedQuizQuestions = quizQuestions.map((question) => normalizeQuizQuestion(question, activeDifficulty));
     return {
       title: displayTitle || "Untitled Project",
       slug: resolvedSlug || displayTitle,
       description: projectMeta?.description || "",
+      difficulty: activeDifficulty,
       visibility: bankVisibility,
       components: PROJECTS.find((p) => p.slug === projectSlug)?.components || [],
       starterCode: PROJECTS.find((p) => p.slug === projectSlug)?.starterCode || "",
-      theory: theoryCards,
-      quizQuestions,
+      theory: sanitizedTheoryCards,
+      quizQuestions: sanitizedQuizQuestions,
       rewardComponents: rewardComponents.map((id) => {
         const comp = COMPONENTS.find((c) => c.id === id);
         return comp
@@ -743,6 +842,8 @@ const load = async () => {
     setError("");
     try {
       const payload = buildBankPayload();
+      let targetProjectId = bankProjectId;
+      let resolvedExistingProject = null;
 
       // For NEW bank projects, slug must exist; for EDIT mode, projectSlug must exist
       if (!payload.slug) {
@@ -750,6 +851,16 @@ const load = async () => {
       }
       if (!isNewBankProject && !projectSlug) {
         throw new Error("Cannot save: project identifier is missing. Please navigate to this page from the Project Bank list.");
+      }
+
+      if (!targetProjectId && payload.slug) {
+        try {
+          const existingResult = await getProjectBySlug(payload.slug);
+          resolvedExistingProject = existingResult?.project || existingResult || null;
+          targetProjectId = resolvedExistingProject?._id || resolvedExistingProject?.id || null;
+        } catch (lookupError) {
+          resolvedExistingProject = null;
+        }
       }
 
       if (!canEditBankProject && !isNewBankProject) {
@@ -766,6 +877,14 @@ const load = async () => {
         setBankVisibility(createdProject?.visibility || "personal");
         setCustomTitle(createdProject?.title || copyPayload.title);
         setSuccessMsg("Shared project copied to your bank.");
+      } else if (targetProjectId) {
+        const result = await updateProjectBankEntry(targetProjectId, payload);
+        const updatedProject = result?.project || result;
+        setBankProjectId(updatedProject?._id || updatedProject?.id || targetProjectId);
+        setBankProjectOwnerId(getEntityId(updatedProject?.owner) || currentUserId);
+        setBankVisibility(updatedProject?.visibility || payload.visibility || "personal");
+        setCustomTitle(updatedProject?.title || payload.title);
+        setSuccessMsg(resolvedExistingProject ? "Bank project updated." : "Project saved to bank.");
       } else if (isNewBankProject || !bankProjectId) {
         const result = await createProjectBankEntry(payload);
         const createdProject = result?.project || result;
@@ -776,10 +895,36 @@ const load = async () => {
         const result = await updateProjectBankEntry(bankProjectId, payload);
         const updatedProject = result?.project || result;
         setBankProjectId(updatedProject?._id || updatedProject?.id || bankProjectId);
+        setBankProjectOwnerId(getEntityId(updatedProject?.owner) || currentUserId);
+        setBankVisibility(updatedProject?.visibility || payload.visibility || "personal");
+        setCustomTitle(updatedProject?.title || payload.title);
         setSuccessMsg("Bank project updated.");
       }
       setTimeout(() => setSuccessMsg(""), 3000);
     } catch (e) {
+      if (e?.response?.status === 409 && e?.response?.data?.message?.includes("slug")) {
+        try {
+          const payload = buildBankPayload();
+          const existingResult = await getProjectBySlug(payload.slug);
+          const existingProject = existingResult?.project || existingResult;
+          const existingId = existingProject?._id || existingProject?.id;
+          if (existingId) {
+            const result = await updateProjectBankEntry(existingId, payload);
+            const updatedProject = result?.project || result;
+            setBankProjectId(updatedProject?._id || updatedProject?.id || existingId);
+            setBankProjectOwnerId(getEntityId(updatedProject?.owner) || currentUserId);
+            setBankVisibility(updatedProject?.visibility || payload.visibility || "personal");
+            setCustomTitle(updatedProject?.title || payload.title);
+            setSuccessMsg("Bank project updated.");
+            setError("");
+            setTimeout(() => setSuccessMsg(""), 3000);
+            return;
+          }
+        } catch (retryError) {
+          console.error("Failed to update existing bank project after slug conflict:", retryError);
+        }
+      }
+
       const message =
         e?.response?.data?.message ||
         e?.response?.data?.error ||
@@ -870,8 +1015,14 @@ const load = async () => {
   };
 
   const handleBankProjectSelect = (bankProject) => {
-    if (bankProject.theory?.length) setTheoryCards(bankProject.theory);
-    if (bankProject.quizQuestions?.length) setQuizQuestions(bankProject.quizQuestions);
+    const loadedDifficulty = normalizeDifficulty(bankProject?.difficulty || projectDifficulty || projectMeta?.difficulty || "intermediate");
+    setProjectDifficulty(loadedDifficulty);
+    if (bankProject.theory?.length) {
+      setTheoryCards(bankProject.theory.map((card) => normalizeTheoryCard(card, loadedDifficulty)));
+    }
+    if (bankProject.quizQuestions?.length) {
+      setQuizQuestions(bankProject.quizQuestions.map((question) => normalizeQuizQuestion(question, loadedDifficulty)));
+    }
     if (bankProject.rewardComponents?.length) {
       setRewardComponents(bankProject.rewardComponents.map((c) => c.id || c.type || c));
     }
@@ -905,47 +1056,54 @@ return (
         >
           ← {bankMode ? "Project Bank" : "Back to Class"}
         </button>
-          <div style={{ textAlign: "center", flex: 1 }}>
-            <div style={{ fontSize: 12, color, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase" }}>
-              📖
-              {bankMode ? (
-                <input
-                  type="text"
-                  value={customTitle || ""}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                  className="editor-field"
-                  style={{
-                    marginLeft: 8,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "#f0f4ff",
-                    background: "rgba(255,255,255,.06)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    padding: "4px 8px",
-                    width: 260,
-                    textAlign: "center",
-                    textTransform: "none",
-                    letterSpacing: "0",
-                  }}
-                  placeholder="Project title"
-                />
-              ) : (
-                <span>{projectMeta?.title || projectSlug}</span>
-              )}
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: "#f0f4ff" }}>Content Editor</div>
+
+        <div className="teacher-editor-header-center">
+          <div className="teacher-editor-project-title">
+            📖{" "}
+            {bankMode ? (
+              <input
+                type="text"
+                value={customTitle || ""}
+                onChange={(e) => setCustomTitle(e.target.value)}
+                className="editor-field header-title-input"
+                placeholder="Project title"
+              />
+            ) : (
+              <span>{projectMeta?.title || projectSlug}</span>
+            )}
           </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div className="teacher-editor-title">Content Editor</div>
+          <div className="teacher-editor-difficulty">
+            <label>Project Difficulty</label>
+            <select
+              value={projectDifficulty}
+              onChange={(e) => setProjectDifficulty(normalizeDifficulty(e.target.value))}
+              className="editor-field"
+            >
+              {DIFFICULTY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="teacher-editor-actions">
           {bankMode && (
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: "var(--text2)" }}>
-              <input type="checkbox" checked={bankVisibility === "published"} onChange={handlePublishToggle} disabled={publishing || savingBank || !canEditBankProject} />
+            <label className="teacher-editor-publish-toggle">
+              <input
+                type="checkbox"
+                checked={bankVisibility === "published"}
+                onChange={handlePublishToggle}
+                disabled={publishing || savingBank || !canEditBankProject}
+              />
               Shared / Published
             </label>
           )}
           <button
             type="button"
-            onClick={() => navigate(`/teacher/classes/${classId}`)}
+            onClick={() => bankMode ? navigate("/teacher/project-bank") : navigate(`/teacher/classes/${classId}`)}
             className="btn-ghost"
             disabled={saving || savingBank}
           >
@@ -957,7 +1115,6 @@ return (
               onClick={handleSaveToBank}
               disabled={savingBank}
               className="btn-primary"
-              style={{ opacity: savingBank ? 0.6 : 1 }}
             >
               {savingBank ? "Saving..." : canEditBankProject ? "Save to Bank" : "Save a Copy"}
             </button>
@@ -967,7 +1124,6 @@ return (
               onClick={handleSave}
               disabled={saving}
               className="btn-primary"
-              style={{ opacity: saving ? 0.6 : 1 }}
             >
               {saving ? "Saving..." : "Save"}
             </button>
@@ -975,55 +1131,97 @@ return (
         </div>
       </div>
 
-       {error && (
-         <div style={{ color: "#f87171", padding: "12px 24px", background: "rgba(239,68,68,.12)" }}>
-           {error}
-         </div>
-       )}
-       {successMsg && (
-         <div style={{ color: "#34d399", padding: "12px 24px", background: "rgba(52,211,153,.12)" }}>
-           {successMsg}
-         </div>
-       )}
+      {error && (
+        <div className="editor-message editor-message--error">
+          {error}
+        </div>
+      )}
+      {successMsg && (
+        <div className="editor-message editor-message--success">
+          {successMsg}
+        </div>
+      )}
 
-       <div className="teacher-editor-tabs">
-         <button
-           type="button"
-           onClick={() => setActiveTab("theory")}
-           className={"teacher-editor-tab" + (activeTab === "theory" ? " active" : "")}
-         >
-           Theory ({theoryCards.length} cards)
-         </button>
-         <button
-           type="button"
-           onClick={() => setActiveTab("quiz")}
-           className={"teacher-editor-tab" + (activeTab === "quiz" ? " active" : "")}
-         >
-           Quiz ({quizQuestions.length} questions)
-         </button>
-         <button
-           type="button"
-           onClick={() => setActiveTab("rewards")}
-           className={"teacher-editor-tab" + (activeTab === "rewards" ? " active" : "")}
-         >
-           Rewards ({rewardComponents.length} components)
-         </button>
-         <button
-           type="button"
-           onClick={() => setActiveTab("assessment")}
-           className={"teacher-editor-tab" + (activeTab === "assessment" ? " active" : "")}
-         >
-           Assessment
-         </button>
-       </div>
-<div className="teacher-editor-content">
+      <div className="teacher-editor-tabs">
+          <button
+            type="button"
+            onClick={() => setActiveTab("theory")}
+            className={"teacher-editor-tab" + (activeTab === "theory" ? " active" : "")}
+          >
+            Theory ({theoryCards.length} cards)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("quiz")}
+            className={"teacher-editor-tab" + (activeTab === "quiz" ? " active" : "")}
+          >
+            Quiz ({quizQuestions.length} questions)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("rewards")}
+            className={"teacher-editor-tab" + (activeTab === "rewards" ? " active" : "")}
+          >
+            Rewards ({rewardComponents.length} components)
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("assessment")}
+            className={"teacher-editor-tab" + (activeTab === "assessment" ? " active" : "")}
+          >
+            Assessment
+          </button>
+        </div>
+
+        <div className="teacher-editor-content">
           <div className="editor-pane">
             {activeTab === "theory" && (
               <div className="editor-tab-content">
-                {theoryCards.map((card, idx) => (
+                <div className="editor-toolbar">
+                  <div className="editor-toolbar-group">
+                    <label>Filter</label>
+                    <select
+                      value={theoryDifficultyFilter}
+                      onChange={(e) => setTheoryDifficultyFilter(e.target.value)}
+                      className="editor-field"
+                    >
+                      <option value="all">All difficulties</option>
+                      {DIFFICULTY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="editor-toolbar-group">
+                    <label>Sort</label>
+                    <select
+                      value={theoryDifficultySort}
+                      onChange={(e) => setTheoryDifficultySort(e.target.value)}
+                      className="editor-field"
+                    >
+                      <option value="original">Original order</option>
+                      <option value="difficulty-asc">Easy to hard</option>
+                      <option value="difficulty-desc">Hard to easy</option>
+                    </select>
+                  </div>
+                </div>
+                {visibleTheoryCards.map(({ item: card, index: idx }, displayIdx) => (
                   <div key={card.id} className="editor-card">
                     <div className="editor-card-header">
-                      <strong>Card {idx + 1}</strong>
+                      <strong>Card {displayIdx + 1}</strong>
+                      <select
+                        value={normalizeDifficulty(card.difficulty)}
+                        onChange={(e) => updateCard(idx, "difficulty", normalizeDifficulty(e.target.value))}
+                        className="editor-field editor-card-difficulty"
+                        aria-label={`Difficulty for card ${displayIdx + 1}`}
+                      >
+                        {DIFFICULTY_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                       <button type="button" onClick={() => removeCard(idx)} className="btn-remove" title="Remove card">
                         Remove
                       </button>
@@ -1056,7 +1254,7 @@ return (
                         placeholder="Short summary (back face)"
                       />
 
-                      <label>Detail</label>
+<label>Detail</label>
                       <textarea
                         value={card.detail || ""}
                         onChange={(e) => updateCard(idx, "detail", e.target.value)}
@@ -1065,7 +1263,7 @@ return (
                         placeholder="Full explanation (back face)"
                       />
 
-<label>Fun Fact</label>
+                      <label>Fun Fact</label>
                       <textarea
                         value={card.funFact || ""}
                         onChange={(e) => updateCard(idx, "funFact", e.target.value)}
@@ -1082,12 +1280,53 @@ return (
               </div>
             )}
 
-{activeTab === "quiz" && (
+            {activeTab === "quiz" && (
               <div className="editor-tab-content">
-                {quizQuestions.map((q, idx) => (
+                <div className="editor-toolbar">
+                  <div className="editor-toolbar-group">
+                    <label>Filter</label>
+                    <select
+                      value={quizDifficultyFilter}
+                      onChange={(e) => setQuizDifficultyFilter(e.target.value)}
+                      className="editor-field"
+                    >
+                      <option value="all">All difficulties</option>
+                      {DIFFICULTY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="editor-toolbar-group">
+                    <label>Sort</label>
+                    <select
+                      value={quizDifficultySort}
+                      onChange={(e) => setQuizDifficultySort(e.target.value)}
+                      className="editor-field"
+                    >
+                      <option value="original">Original order</option>
+                      <option value="difficulty-asc">Easy to hard</option>
+                      <option value="difficulty-desc">Hard to easy</option>
+                    </select>
+                  </div>
+                </div>
+{visibleQuizQuestions.map(({ item: q, index: idx }, displayIdx) => (
                   <div key={q.id || idx} className="editor-card">
                     <div className="editor-card-header">
-                      <strong>Question {idx + 1}</strong>
+                      <strong>Question {displayIdx + 1}</strong>
+                      <select
+                        value={normalizeDifficulty(q.difficulty)}
+                        onChange={(e) => updateQuizQuestion(idx, "difficulty", normalizeDifficulty(e.target.value))}
+                        className="editor-field editor-card-difficulty"
+                        aria-label={`Difficulty for question ${displayIdx + 1}`}
+                      >
+                        {DIFFICULTY_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
                       <button type="button" onClick={() => removeQuizQuestion(idx)} className="btn-remove" title="Remove question">
                         Remove
                       </button>
