@@ -102,6 +102,58 @@ export function GamificationProvider({ children }) {
         } catch (e) {
           // Ignore parsing errors, use defaults
         }
+
+        // Self-heal: Infer completed projects and recalculate XP/Level
+        try {
+          const inferred = [];
+          
+          for (const p of PROJECTS) {
+            try {
+              const raw = localStorage.getItem(`adventureProgress:${p.slug}`);
+              if (raw) {
+                const parsedProgress = JSON.parse(raw);
+                const order = parsedProgress.currentStepOrder;
+                const completedSteps = parsedProgress.completedSteps || [];
+                if (order > 4 || completedSteps.includes(`${p.slug}:sim`) || completedSteps.includes('sim')) {
+                  inferred.push(p.slug);
+                }
+              }
+            } catch(e){}
+          }
+          
+          if (inferred.length > 0) {
+            // Merge inferred projects into parsed state
+            const uniqueProjects = Array.from(new Set([...(parsed.completedProjects || []), ...inferred]));
+            parsed.completedProjects = uniqueProjects;
+            
+            // Recalculate XP
+            let calculatedXp = 0;
+            let calculatedBadges = new Set(parsed.earnedBadges || []);
+            for (const slug of uniqueProjects) {
+              const proj = PROJECTS.find(p => p.slug === slug);
+              if (proj) {
+                calculatedXp += proj.xpReward || 100;
+                if (proj.badge?.id) calculatedBadges.add(proj.badge.id);
+              }
+            }
+            
+            if (calculatedXp > parsed.xp) {
+              parsed.xp = calculatedXp;
+            }
+            parsed.earnedBadges = Array.from(calculatedBadges);
+          }
+        } catch (e) {
+          // Ignore
+        }
+
+        // Recalculate level based on XP
+        let calculatedLevel = 1;
+        for (const l of LEVELS) {
+          if (parsed.xp >= l.xpRequired && l.id > calculatedLevel) {
+            calculatedLevel = l.id;
+          }
+        }
+        parsed.currentLevel = Math.max(parsed.currentLevel || 1, calculatedLevel);
         
         // Fetch unlocks from MongoDB if user is authenticated
         if (user?.email && (user._id || user.id)) {
