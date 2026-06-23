@@ -92,7 +92,10 @@ export function GamificationProvider({ children }) {
         
         // If we have local storage data (migration), use it as base
         try {
-          const stored = localStorage.getItem(getStorageKey(null));
+          let stored = localStorage.getItem(storageKey);
+          if (!stored && storageKey !== getStorageKey(null)) {
+            stored = localStorage.getItem(getStorageKey(null));
+          }
           if (stored) {
             parsed = { ...DEFAULT_STATE, ...JSON.parse(stored) };
           }
