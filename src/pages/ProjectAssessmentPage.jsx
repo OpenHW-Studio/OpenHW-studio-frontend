@@ -119,6 +119,59 @@ function evaluateAssessment(config, components, wires, code) {
       }
     }
 
+    if (cc.wiringAccuracy.customWiringCheck === 'rgb-discrete') {
+      let matchedPaths = 0;
+      const issuesList = [];
+      const expectedPins = ['9', '10', '11'];
+      const arduinoRole = resolveRoleType('arduino');
+      const resistorRole = resolveRoleType('resistor');
+      const ledRole = resolveRoleType('led');
+      
+      expectedPins.forEach(pin => {
+        const aWires = wires.filter(w => {
+          const [fId, fPin] = w.from.split(':'); const [tId, tPin] = w.to.split(':');
+          return (isTypeMatch(components.find(c=>c.id===fId)?.type, arduinoRole) && fPin === pin) ||
+                 (isTypeMatch(components.find(c=>c.id===tId)?.type, arduinoRole) && tPin === pin);
+        });
+        
+        let pathValid = false;
+        for (const w of aWires) {
+          const [fId] = w.from.split(':'); const [tId] = w.to.split(':');
+          const aId = isTypeMatch(components.find(c=>c.id===fId)?.type, arduinoRole) ? fId : tId;
+          const otherId = aId === fId ? tId : fId;
+          const otherC = components.find(c=>c.id===otherId);
+          
+          if (isTypeMatch(otherC?.type, resistorRole)) {
+             const rWires = wires.filter(rw => rw.from.startsWith(otherId+':') || rw.to.startsWith(otherId+':'));
+             for (const rw of rWires) {
+                const [rfId, rfPin] = rw.from.split(':'); const [rtId, rtPin] = rw.to.split(':');
+                const nextId = rfId === otherId ? rtId : rfId;
+                const nextPin = rfId === otherId ? rtPin : rfPin;
+                if (nextId === aId) continue;
+                
+                const nextC = components.find(c=>c.id===nextId);
+                if (isTypeMatch(nextC?.type, ledRole) && (nextPin === 'A' || nextPin === 'anode')) {
+                   const lWires = wires.filter(lw => (lw.from === `${nextId}:K` || lw.from === `${nextId}:cathode` || lw.from === `${nextId}:C`) ||
+                                                     (lw.to === `${nextId}:K` || lw.to === `${nextId}:cathode` || lw.to === `${nextId}:C`));
+                   for (const lw of lWires) {
+                      const [lfId, lfPin] = lw.from.split(':'); const [ltId, ltPin] = lw.to.split(':');
+                      const finalId = lfId === nextId ? ltId : lfId;
+                      const finalPin = lfId === nextId ? ltPin : lfPin;
+                      const finalC = components.find(c=>c.id===finalId);
+                      if (isTypeMatch(finalC?.type, arduinoRole) && finalPin.toLowerCase().startsWith('gnd')) {
+                         pathValid = true;
+                      }
+                   }
+                }
+             }
+          }
+        }
+        if (pathValid) matchedPaths++;
+        else issuesList.push(`Missing valid path: Pin ${pin} -> Resistor -> LED Anode, and LED Cathode -> GND.`);
+      });
+      bestResult = { matched: matchedPaths, missing: issuesList, total: 3 };
+    }
+
     ok = bestResult.matched;
     issues.push(...bestResult.missing);
 
