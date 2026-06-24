@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { LEVELS, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
 import { PROJECTS, getProjectStatus } from '../services/gamification/ProjectsConfig.js';
 import { useAuth } from './AuthContext.jsx';
-import { fetchUserUnlocks, saveUserUnlocks } from '../services/gamification/unlockService';
+import { fetchUserGamificationState, saveUserGamificationState } from '../services/gamification/unlockService';
 
 const getStorageKey = (email) => `openhw_gamification_v3_${email || 'guest'}`;
 const STARTING_COMPONENTS = [];
@@ -92,33 +92,108 @@ export function GamificationProvider({ children }) {
         
         // If we have local storage data (migration), use it as base
         try {
-          const stored = localStorage.getItem(getStorageKey(null));
+          let stored = localStorage.getItem(storageKey);
+          if (!stored && storageKey !== getStorageKey(null)) {
+            stored = localStorage.getItem(getStorageKey(null));
+          }
           if (stored) {
             parsed = { ...DEFAULT_STATE, ...JSON.parse(stored) };
           }
         } catch (e) {
           // Ignore parsing errors, use defaults
         }
+
+        // Self-heal: Infer completed projects and recalculate XP/Level
+        try {
+          const inferred = [];
+          
+          for (const p of PROJECTS) {
+            try {
+              const raw = localStorage.getItem(`adventureProgress:${p.slug}`);
+              if (raw) {
+                const parsedProgress = JSON.parse(raw);
+                const order = parsedProgress.currentStepOrder;
+                const completedSteps = parsedProgress.completedSteps || [];
+                if (order > 4 || completedSteps.includes(`${p.slug}:sim`) || completedSteps.includes('sim')) {
+                  inferred.push(p.slug);
+                }
+              }
+            } catch(e){}
+          }
+          
+          if (inferred.length > 0) {
+            // Merge inferred projects into parsed state
+            const uniqueProjects = Array.from(new Set([...(parsed.completedProjects || []), ...inferred]));
+            parsed.completedProjects = uniqueProjects;
+            
+            // Recalculate XP
+            let calculatedXp = 0;
+            let calculatedBadges = new Set(parsed.earnedBadges || []);
+            for (const slug of uniqueProjects) {
+              const proj = PROJECTS.find(p => p.slug === slug);
+              if (proj) {
+                calculatedXp += proj.xpReward || 100;
+                if (proj.badge?.id) calculatedBadges.add(proj.badge.id);
+              }
+            }
+            
+            if (calculatedXp > parsed.xp) {
+              parsed.xp = calculatedXp;
+            }
+            parsed.earnedBadges = Array.from(calculatedBadges);
+          }
+        } catch (e) {
+          // Ignore
+        }
+
+        // Recalculate level based on XP
+        let calculatedLevel = 1;
+        for (const l of LEVELS) {
+          if (parsed.xp >= l.xpRequired && l.id > calculatedLevel) {
+            calculatedLevel = l.id;
+          }
+        }
+        parsed.currentLevel = Math.max(parsed.currentLevel || 1, calculatedLevel);
         
-        // Fetch unlocks from MongoDB if user is authenticated
+        // Fetch full gamification state from MongoDB if user is authenticated
         if (user?.email && (user._id || user.id)) {
           try {
-            const unlockData = await fetchUserUnlocks(user._id || user.id);
-            // Merge with level-based unlocks
-            const levelUnlocks = getLevelUnlocks(1); // Level 1 unlocks
-            const combinedUnlocks = [...(unlockData.unlockedComponentTypes || []), ...levelUnlocks];
-            
-            // Remove duplicates and ensure it's an array
-            const uniqueUnlocks = Array.from(new Set(combinedUnlocks));
-            parsed.unlockedComponentTypes = uniqueUnlocks.length > 0 ? uniqueUnlocks : [...STARTING_COMPONENTS, ...levelUnlocks];
+            const apiData = await fetchUserGamificationState(user._id || user.id);
+            if (apiData?.state && Object.keys(apiData.state).length > 0) {
+              const backendState = apiData.state;
+              if (backendState.xp > parsed.xp) parsed.xp = backendState.xp;
+              if (backendState.currentLevel > parsed.currentLevel) parsed.currentLevel = backendState.currentLevel;
+              
+              if (backendState.completedProjects && backendState.completedProjects.length > 0) {
+                const mergedProjects = new Set([...parsed.completedProjects, ...backendState.completedProjects]);
+                parsed.completedProjects = Array.from(mergedProjects);
+              }
+              if (backendState.earnedBadges && backendState.earnedBadges.length > 0) {
+                const mergedBadges = new Set([...parsed.earnedBadges, ...backendState.earnedBadges]);
+                parsed.earnedBadges = Array.from(mergedBadges);
+              }
+              
+              const levelUnlocks = getLevelUnlocks(parsed.currentLevel || 1);
+              let backendUnlocks = backendState.unlockedComponentTypes || [];
+              if (backendUnlocks === '*') {
+                parsed.unlockedComponentTypes = '*';
+              } else {
+                const combinedUnlocks = [...backendUnlocks, ...levelUnlocks];
+                const uniqueUnlocks = Array.from(new Set(combinedUnlocks));
+                parsed.unlockedComponentTypes = uniqueUnlocks.length > 0 ? uniqueUnlocks : [...STARTING_COMPONENTS, ...levelUnlocks];
+              }
+            } else {
+              // No backend data yet, use level-based unlocks
+              parsed.unlockedComponentTypes = [...STARTING_COMPONENTS, ...getLevelUnlocks(parsed.currentLevel || 1)];
+            }
           } catch (e) {
-            console.warn('Failed to fetch user unlocks from MongoDB, using level defaults:', e);
+            console.warn('Failed to fetch user gamification state from MongoDB, using level defaults:', e);
             // Fall back to level-based unlocks
-            parsed.unlockedComponentTypes = [...STARTING_COMPONENTS, ...getLevelUnlocks(1)];
+            parsed.unlockedComponentTypes = [...STARTING_COMPONENTS, ...getLevelUnlocks(parsed.currentLevel || 1)];
           }
         } else {
           // No user, use level-based unlocks
-          parsed.unlockedComponentTypes = [...STARTING_COMPONENTS, ...getLevelUnlocks(1)];
+          parsed.unlockedComponentTypes = [...STARTING_COMPONENTS, ...getLevelUnlocks(parsed.currentLevel || 1)];
         }
         
         // Always ensure starting components are present
@@ -141,10 +216,17 @@ export function GamificationProvider({ children }) {
   useEffect(() => {
     const handleSave = async () => {
       try {
-        if (user?.email && (user._id || user.id) && state.unlockedComponentTypes !== '*') {
-          await saveUserUnlocks(user._id || user.id, state.unlockedComponentTypes);
+        if (user?.email && (user._id || user.id)) {
+          await saveUserGamificationState(user._id || user.id, state);
           
           // Also save to localStorage as backup/migration
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(state));
+          } catch (e) {
+            console.warn('Failed to save to localStorage:', e);
+          }
+        } else {
+          // Guest mode: Just save to localStorage
           try {
             localStorage.setItem(storageKey, JSON.stringify(state));
           } catch (e) {
@@ -221,7 +303,7 @@ const awardXP = useCallback((amount, reason = '') => {
       // Handle wildcard case
       if (prev.unlockedComponentTypes === '*' || typesToUnlock.includes('*')) {
         if (user?.email && (user._id || user.id)) {
-          saveUserUnlocks(user._id || user.id, '*').catch(e =>
+          saveUserGamificationState(user._id || user.id, { ...prev, unlockedComponentTypes: '*' }).catch(e =>
             console.warn('Failed to save unlocks to MongoDB:', e)
           );
         }
@@ -244,7 +326,7 @@ const awardXP = useCallback((amount, reason = '') => {
 
       // Persist to MongoDB with the correct new state
       if (user?.email && (user._id || user.id)) {
-        saveUserUnlocks(user._id || user.id, finalUnlocks).catch(e =>
+        saveUserGamificationState(user._id || user.id, { ...prev, unlockedComponentTypes: finalUnlocks }).catch(e =>
           console.warn('Failed to save unlocks to MongoDB:', e)
         );
       }

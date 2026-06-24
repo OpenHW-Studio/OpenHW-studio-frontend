@@ -319,7 +319,7 @@ export default function AdventureMapPage() {
   const classId = searchParams.get('classId')
   const {
     xp, currentLevel, currentLevelData, nextLevel, xpProgress,
-    completedProjects = [],
+    completedProjects: localCompletedProjects = [],
   } = useGamification()
   const [classAdventure, setClassAdventure] = useState(null)
   const [classProgress, setClassProgress] = useState(null)
@@ -376,6 +376,19 @@ export default function AdventureMapPage() {
       }))
       .sort((a, b) => (a.world - b.world) || (a.number - b.number))
   }, [classAdventure])
+
+  const completedProjects = useMemo(() => {
+    const classCompleted = classProgress?.completedProjects?.map(p => p.projectSlug || p) || []
+    
+    // Fallback: If local step progress says 'sim' is complete, the project is complete.
+    // This repairs state if GamificationContext was wiped.
+    const inferredCompleted = resolvedProjects.filter(p => {
+      const progress = getLocalAdventureStepProgress(p.slug)
+      return progress?.completedSteps?.includes(`${p.slug}:sim`)
+    }).map(p => p.slug)
+
+    return Array.from(new Set([...localCompletedProjects, ...classCompleted, ...inferredCompleted]))
+  }, [localCompletedProjects, classProgress, resolvedProjects])
 
   const getStatus = (project) => {
     if (!classAdventure?.projects?.length) return getProjectStatus(project.slug, completedProjects)
