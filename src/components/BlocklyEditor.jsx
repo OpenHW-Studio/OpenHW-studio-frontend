@@ -2830,8 +2830,19 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
           })
           pinFields.forEach(field => {
             const pinVal = field.getValue()
-            if (!pinUsage.has(pinVal)) pinUsage.set(pinVal, [])
-            pinUsage.get(pinVal).push({ block, field })
+            // Also capture the STATE field value (HIGH/LOW/ON/OFF) if present on this block
+            let stateVal = null
+            block.inputList.forEach(input => {
+              input.fieldRow.forEach(f => {
+                if (f instanceof B2.FieldDropdown && f.name === 'STATE') {
+                  stateVal = f.getValue()
+                }
+              })
+            })
+            // Build a composite key: only blocks with the same pin AND same state conflict
+            const usageKey = stateVal ? `${pinVal}::${stateVal}` : pinVal
+            if (!pinUsage.has(usageKey)) pinUsage.set(usageKey, [])
+            pinUsage.get(usageKey).push({ block, field })
           })
         })
 
@@ -2846,7 +2857,7 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
         })
 
         // Identify and mark conflicts
-        pinUsage.forEach((usages, pinVal) => {
+        pinUsage.forEach((usages, usageKey) => {
           if (usages.length > 1) {
             usages.forEach(({ block }) => {
               if (!block.data || !block.data.startsWith('origHue:')) {
