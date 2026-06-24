@@ -8,10 +8,13 @@ import { STARTING_COMPONENTS } from '../services/gamification/GamificationConfig
 
 // ── Which project unlocks which component? ────────────────────────────────────
 function findUnlockProject(componentType) {
-  const norm = (t) => String(t || '').replace('openhw-', 'wokwi-');
+  // Normalize the component type (remove both prefixes for comparison)
+  const norm = (t) => String(t || '').replace('openhw-', '').replace('wokwi-', '');
   for (const project of PROJECTS) {
     for (const reward of (project.rewardComponents || [])) {
-      if (reward.type === '*' || norm(reward.type) === norm(componentType)) {
+      if (reward.type === '*') return project;
+      // Compare both normalized forms
+      if (norm(reward.type) === norm(componentType)) {
         return project;
       }
     }
@@ -176,36 +179,59 @@ const S = {
   },
 }
 
+
 export default function ComponentsPage() {
   const navigate = useNavigate()
   const { unlockedComponentTypes, completedProjects, currentLevel, xp } = useGamification()
   const [expandedCard, setExpandedCard] = useState(null)
+  const [journeyFilter, setJourneyFilter] = useState('all') // 'all' | 'arduino' | 'esp32'
+  const [searchQuery, setSearchQuery] = useState('')
 
   const isAllUnlocked = unlockedComponentTypes === '*'
   const unlockedSet = isAllUnlocked ? null : new Set(Array.isArray(unlockedComponentTypes) ? unlockedComponentTypes : [])
 
-  const isOwned = (wokwiType) => {
+  const isOwned = (comp) => {
     if (isAllUnlocked) return true
-    return unlockedSet?.has(wokwiType) || STARTING_COMPONENTS.includes(wokwiType)
+    if (!comp) return false
+    // Check short id, wokwiType, and all prefixed variants
+    const variants = [
+      comp.id,
+      comp.wokwiType,
+      comp.wokwiType ? `wokwi-${comp.id}` : null,
+      comp.wokwiType ? `openhw-${comp.id}` : null,
+      comp.id ? `wokwi-${comp.id}` : null,
+      comp.id ? `openhw-${comp.id}` : null,
+    ].filter(Boolean)
+    // Also check STARTING_COMPONENTS directly
+    if (STARTING_COMPONENTS.some(s => variants.includes(s))) return true
+    return variants.some(v => unlockedSet?.has(v))
   }
 
   // Which project will unlock this component next?
-  const getUnlocker = (wokwiType) => findUnlockProject(wokwiType)
+  const getUnlocker = (comp) => findUnlockProject(comp?.wokwiType || comp?.id)
 
   // Next project the player should complete (first available, incomplete)
   const nextProject = PROJECTS.find(p => !completedProjects.includes(p.slug) &&
     (!p.prerequisite || completedProjects.includes(p.prerequisite)))
 
-  // Categorize components
-  const ownedComponents = COMPONENTS.filter(c => isOwned(c.wokwiType || `wokwi-${c.id}`))
-  const nextComponents = COMPONENTS.filter(c => {
-    if (isOwned(c.wokwiType || `wokwi-${c.id}`)) return false
-    const unlocker = getUnlocker(c.wokwiType || `wokwi-${c.id}`)
+  // Categorize components (filter by journey if set)
+  const ESP32_IDS = new Set(['esp32','esp32-cam','pico','pico-w'])
+  const filtered = COMPONENTS.filter(c => {
+    if (journeyFilter === 'esp32') return ESP32_IDS.has(c.id)
+    if (journeyFilter === 'arduino') return !ESP32_IDS.has(c.id) && c.category !== 'Board' || c.id === 'uno' || c.id === 'nano' || c.id === 'mega'
+    if (searchQuery) return (c.name + c.description + (c.tags||[]).join(' ')).toLowerCase().includes(searchQuery.toLowerCase())
+    return true
+  })
+
+  const ownedComponents = filtered.filter(c => isOwned(c))
+  const nextComponents = filtered.filter(c => {
+    if (isOwned(c)) return false
+    const unlocker = getUnlocker(c)
     return unlocker && unlocker.slug === nextProject?.slug
   })
-  const lockedComponents = COMPONENTS.filter(c => {
-    if (isOwned(c.wokwiType || `wokwi-${c.id}`)) return false
-    const unlocker = getUnlocker(c.wokwiType || `wokwi-${c.id}`)
+  const lockedComponents = filtered.filter(c => {
+    if (isOwned(c)) return false
+    const unlocker = getUnlocker(c)
     return !unlocker || unlocker.slug !== nextProject?.slug
   })
 
@@ -228,8 +254,27 @@ export default function ComponentsPage() {
         <h1 style={S.heroTitle}>Your Component Toolbox 🧰</h1>
         <p style={S.heroSub}>
           Complete projects on the Adventure Map to earn new components!<br/>
-          No quizzes — just build, learn, and unlock. 🚀
+          Arduino boards are always unlocked. Build and learn. 🚀
         </p>
+
+        {/* Journey filter + search */}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap', marginTop: 16, marginBottom: 4 }}>
+          {[
+            { id: 'all', label: '📦 All Components' },
+            { id: 'arduino', label: '🔵 Arduino' },
+            { id: 'esp32', label: '📡 ESP32 / Pico' },
+          ].map(f => (
+            <button key={f.id} onClick={() => setJourneyFilter(f.id)}
+              style={{ padding: '7px 16px', borderRadius: 99, border: `1px solid ${journeyFilter===f.id ? '#34d399' : 'rgba(255,255,255,0.1)'}`,
+                background: journeyFilter===f.id ? 'rgba(52,211,153,0.15)' : 'rgba(255,255,255,0.04)',
+                color: journeyFilter===f.id ? '#34d399' : '#94a3b8', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {f.label}
+            </button>
+          ))}
+          <input placeholder="🔍 Search components..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+            style={{ padding: '7px 14px', borderRadius: 99, border: '1px solid rgba(255,255,255,0.1)',
+              background: 'rgba(255,255,255,0.05)', color: '#e2e8f0', fontSize: 13, fontFamily: 'inherit', minWidth: 200, outline: 'none' }} />
+        </div>
 
         {/* Progress banner */}
         <div style={S.progressBanner}>
@@ -263,10 +308,10 @@ export default function ComponentsPage() {
               key={comp.id}
               comp={comp}
               status="owned"
-              isStarting={STARTING_COMPONENTS.includes(comp.wokwiType || `wokwi-${comp.id}`)}
+              isStarting={STARTING_COMPONENTS.some(s => s === comp.id || s === comp.wokwiType || s === `wokwi-${comp.id}` || s === `openhw-${comp.id}`)}
               expanded={expandedCard === comp.id}
               onToggle={() => setExpandedCard(expandedCard === comp.id ? null : comp.id)}
-              onLearn={() => navigate(`/components/${comp.id}/theory`)}
+              onLearn={() => navigate('/adventure')}
             />
           ))}
         </div>
@@ -308,7 +353,7 @@ export default function ComponentsPage() {
           </div>
           <div style={S.grid}>
             {lockedComponents.map(comp => {
-              const unlocker = getUnlocker(comp.wokwiType || `wokwi-${comp.id}`)
+              const unlocker = getUnlocker(comp)
               return (
                 <ComponentCard
                   key={comp.id}
