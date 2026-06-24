@@ -210,6 +210,7 @@ const CATEGORY_BLOCKS = {
   ],
   time: [
     { type: 'setup_time', label: 'Setup Time' },
+    { type: 'set_duration', label: 'set duration' },
     { type: 'wait_for_time', label: 'wait for' },
     { type: 'seconds_arduino_on', label: 'seconds arduino been on' },
   ],
@@ -1075,6 +1076,16 @@ const BLOCK_DEFS = [
     colour: '#a256c7', tooltip: 'Setup time'
   },
   {
+    type: 'set_duration',
+    message0: 'set duration to %1 seconds',
+    args0: [
+      { type: 'input_value', name: 'TIME', check: 'Number' }
+    ],
+    previousStatement: null,
+    nextStatement: null,
+    colour: '#a256c7', tooltip: 'Set a duration (delay) in seconds'
+  },
+  {
     type: 'wait_for_time',
     message0: 'wait for %1 seconds',
     args0: [
@@ -1679,6 +1690,7 @@ function buildGenerator(B) {
   gen.forBlock['message_received'] = b => ['true', gen.ORDER_ATOMIC]
 
   gen.forBlock['setup_time'] = b => '// Setup time\n'
+  gen.forBlock['set_duration'] = b => `delay(${vc(b, 'TIME', gen.ORDER_ATOMIC)} * 1000);\n`
   gen.forBlock['wait_for_time'] = b => `delay(${vc(b, 'TIME', gen.ORDER_ATOMIC)} * 1000);\n`
   gen.forBlock['seconds_arduino_on'] = b => ['(millis() / 1000.0)', gen.ORDER_ATOMIC]
 
@@ -2033,6 +2045,12 @@ function attachDefaultShadows(ws, block, type) {
         const valBlock = ws.newBlock('text'); valBlock.setFieldValue('Hi', 'TEXT');
         valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
         block.getInput('MESSAGE').connection.connect(valBlock.outputConnection);
+      }
+    } else if (type === 'set_duration') {
+      if (block.getInput('TIME')) {
+        const valBlock = ws.newBlock('math_number'); valBlock.setFieldValue('2', 'NUM');
+        valBlock.initSvg(); valBlock.render(); valBlock.setShadow(true);
+        block.getInput('TIME').connection.connect(valBlock.outputConnection);
       }
     } else if (type === 'wait_for_time') {
       if (block.getInput('TIME')) {
