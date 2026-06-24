@@ -3,18 +3,18 @@
 
 // ── Starting components — ALWAYS unlocked, no adventure map needed ─────────────
 // Arduino boards are the base learning platform and must never be locked.
-// NOTE: WOKWI_TO_COMP_ID maps wokwi-arduino-uno → "uno" etc, so we include
-// both the short IDs AND the wokwi/openhw prefixed strings to cover all paths.
 export const STARTING_COMPONENTS = [
-  // Arduino boards — ALL variants always unlocked
+  // Arduino boards — ALL variants always unlocked (short ID + both prefixes)
   'uno',  'wokwi-arduino-uno',  'openhw-arduino-uno',
   'nano', 'wokwi-arduino-nano', 'openhw-arduino-nano',
   'mega', 'wokwi-arduino-mega', 'openhw-arduino-mega',
   // Core passive components
-  'led',       'wokwi-led',        'openhw-led',
-  'resistor',  'wokwi-resistor',   'openhw-resistor',
-  'breadboard','wokwi-breadboard', 'openhw-breadboard',
+  'led',        'wokwi-led',        'openhw-led',
+  'resistor',   'wokwi-resistor',   'openhw-resistor',
+  'breadboard', 'wokwi-breadboard', 'openhw-breadboard',
   'wokwi-breadboard-half', 'openhw-breadboard-half',
+  // Boards that map to 'uno'/'nano'/'mega' — alias coverage
+  'arduino-uno', 'arduino-nano', 'arduino-mega',
 ];
 
 // ── Level config (XP-based titles / badges, separate from component unlocking) ─

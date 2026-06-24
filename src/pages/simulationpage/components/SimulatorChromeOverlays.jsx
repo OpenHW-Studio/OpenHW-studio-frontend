@@ -90,18 +90,18 @@ function SimulatorChromeOverlaysBase({
       {gamificationMode && gamProject && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px',
-          background: 'rgba(7,8,15,0.97)', borderBottom: `2px solid ${gamProject.color || '#22c55e'}44`,
+          background: 'var(--bg2)', borderBottom: `1px solid var(--border)`,
           fontFamily: "'Space Grotesk', sans-serif", flexShrink: 0, flexWrap: 'wrap', zIndex: 50,
         }}>
           <button
             onClick={() => navigate('/projects')}
-            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,.12)', color: 'rgba(255,255,255,.55)', borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
           >← Projects</button>
 
           <span style={{ fontSize: 18, flexShrink: 0 }}>{gamProject.icon}</span>
           <div style={{ flexShrink: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', lineHeight: 1 }}>{gamProject.title}</div>
-            <div style={{ fontSize: 10, color: 'rgba(255,255,255,.4)', marginTop: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', lineHeight: 1 }}>{gamProject.title}</div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 1 }}>
               Project {String(gamProject.number).padStart(2, '0')} ·{' '}
               <span style={{ color: gamProject.color || '#22c55e' }}>{gamProject.difficultyLabel}</span>
               {' '}· ⏱ {gamProject.estimatedTime}
@@ -119,10 +119,10 @@ function SimulatorChromeOverlaysBase({
               fontSize: 10, fontWeight: 800, color: currentLevelData?.color || '#22c55e',
             }}>{currentLevel}</div>
             <div style={{ width: 90 }}>
-              <div style={{ height: 3, borderRadius: 999, background: 'rgba(255,255,255,.1)', overflow: 'hidden' }}>
+              <div style={{ height: 3, borderRadius: 999, background: 'var(--border)', overflow: 'hidden' }}>
                 <div style={{ height: '100%', borderRadius: 999, width: `${xpProgress}%`, background: `${currentLevelData?.color || '#22c55e'}` }} />
               </div>
-              <div style={{ fontSize: 9, color: 'rgba(255,255,255,.3)', marginTop: 2 }}>{xpProgress}% to Lvl {nextLevel?.id ?? '—'}</div>
+              <div style={{ fontSize: 9, color: 'var(--text3)', marginTop: 2 }}>{xpProgress}% to Lvl {nextLevel?.id ?? '—'}</div>
             </div>
           </div>
 
@@ -147,9 +147,9 @@ function SimulatorChromeOverlaysBase({
           <button
             onClick={() => setGamPanelOpen((p) => !p)}
             style={{
-              background: gamPanelOpen ? 'rgba(0,180,255,.1)' : 'transparent',
-              border: `1px solid ${gamPanelOpen ? 'rgba(0,180,255,.3)' : 'rgba(255,255,255,.12)'}`,
-              color: gamPanelOpen ? '#00b4ff' : 'rgba(255,255,255,.5)',
+              background: gamPanelOpen ? 'var(--bg1)' : 'transparent',
+              border: `1px solid ${gamPanelOpen ? 'var(--accent)' : 'var(--border)'}`,
+              color: gamPanelOpen ? 'var(--accent)' : 'var(--text2)',
               borderRadius: 7, padding: '4px 11px', fontSize: 11, fontWeight: 700,
               cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
             }}
@@ -168,21 +168,22 @@ function SimulatorChromeOverlaysBase({
 
       {lockToast && (
         <div style={{
-          position: 'fixed', bottom: 20, left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(7, 11, 25, 0.95)', border: '1px solid rgba(239, 68, 68, 0.3)',
-          boxShadow: '0 8px 32px rgba(239, 68, 68, 0.2)', padding: '12px 20px', borderRadius: 12,
-          display: 'flex', alignItems: 'center', gap: 12, zIndex: 9999, animation: 'slideUp 0.3s ease-out'
+          position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(7, 11, 25, 0.97)', border: '1px solid rgba(239, 68, 68, 0.4)',
+          boxShadow: '0 8px 32px rgba(239, 68, 68, 0.25)', padding: '14px 20px', borderRadius: 14,
+          display: 'flex', alignItems: 'center', gap: 12, zIndex: 9999, animation: 'slideUp 0.3s ease-out',
+          minWidth: 320, maxWidth: 480,
         }}>
-          <span style={{ fontSize: 24 }}>🔒</span>
-          <div>
-            <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 14 }}>{lockToast.label} is Locked</div>
-            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>Study the theory and pass the quiz to unlock this component.</div>
+          <span style={{ fontSize: 26 }}>🔒</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ color: '#ef4444', fontWeight: 800, fontSize: 14 }}>{lockToast.label} is Locked</div>
+            <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 3 }}>Complete the adventure map project to unlock this component.</div>
           </div>
           {lockToast.compId && (
             <button
-              onClick={() => navigate(`/components/${lockToast.compId}/theory`)}
-              style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontWeight: 600, cursor: 'pointer', fontSize: 12, marginLeft: 8 }}
-            >Study Now</button>
+              onClick={() => navigate(`/adventure?unlock=${lockToast.compId}`)}
+              style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontWeight: 700, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap', flexShrink: 0 }}
+            >🗺️ Go to Adventure</button>
           )}
         </div>
       )}

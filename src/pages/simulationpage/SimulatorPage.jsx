@@ -99,6 +99,7 @@ import { SimulatorRuntimePanel } from "./components/SimulatorRuntimePanel";
 import { CanvasBottomControls } from "./components/CanvasBottomControls";
 import { F1MenuOverlay } from "./components/F1MenuOverlay";
 import AutofixPreviewPanel from "../../components/AutofixPreviewPanel.jsx";
+import GuidedProjectPopup from "../../components/student/GuidedProjectPopup.jsx";
 
 import * as EmulatorComponents from "@openhw/emulator";
 
@@ -297,8 +298,8 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
       if (cats.includes('GND')) gndPins.push(pin);
     });
 
-    // Force Arduino Uno to use 5V by eliminating the 3.3V pin from consideration
-    if (comp.type.includes('arduino-uno')) {
+    // Force all Arduino boards (Uno, Mega, Nano, etc.) to use 5V by eliminating the 3.3V pin from consideration
+    if (comp.type.includes('arduino')) {
       for (let i = vccPins.length - 1; i >= 0; i--) {
         const idAndDesc = ((vccPins[i].id || '') + ' ' + (vccPins[i].description || '')).toUpperCase();
         if (idAndDesc.includes('3.3') || idAndDesc.includes('3V3')) {
@@ -440,7 +441,7 @@ const autoConnectPowerRails = (newComp, existingComponents, currentWires) => {
   return newWires;
 };
 
-export function SimulatorPage({ gamificationMode = false }) {
+export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const {
     isAuthenticated,
     isAdminAuthenticated,
@@ -462,6 +463,11 @@ export function SimulatorPage({ gamificationMode = false }) {
     liveCode = "",
   } = useParams();
   const location = useLocation();
+  const [guidedProjectState, setGuidedProjectState] = useState(() => {
+    if (location.state?.guidedProject) return { project: location.state.guidedProject, levelColor: location.state.levelColor || '#22c55e' }
+    return null
+  })
+  const [activeBoard, setActiveBoard] = useState('arduino')
   const assessmentParams = useMemo(
     () => new URLSearchParams(location.search),
     [location.search],
@@ -493,6 +499,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     currentLevelData,
     nextLevel,
     xpProgress,
+    unlockedComponents,
   } = typeof useGamification === "function" ? useGamification() : {};
   const gamProject = useMemo(
     () =>
@@ -521,6 +528,8 @@ export function SimulatorPage({ gamificationMode = false }) {
       "openhw-rgb-led": "rgb-led",
       "wokwi-ntc-temperature-sensor": "dht11",
       "openhw-ntc-temperature-sensor": "dht11",
+      "wokwi-dht22": "dht22",
+      "openhw-dht22": "dht22",
       "wokwi-hc-sr04": "ultrasonic",
       "openhw-hc-sr04": "ultrasonic",
       "wokwi-servo": "servo",
@@ -634,7 +643,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         compId && typeof COMPONENT_MAP !== "undefined"
           ? COMPONENT_MAP[compId]
           : null;
-      const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(compId) : false;
+      const isLocked = (compId && isUnlocked && activeUser?.role === 'student') ? !isUnlocked(c.type) : false;
       return { ...c, compId, compDef, isLocked };
     });
   }, [gamProject, isUnlocked, WOKWI_TO_COMP_ID]);
@@ -642,7 +651,8 @@ export function SimulatorPage({ gamificationMode = false }) {
   const gamLockedCount = gamProjectComponents.filter(
     (c) => c.isLocked && c.compId,
   ).length;
-  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : true;
+  const gamAllUnlockedGlobally = unlockedComponents === '*';
+  const gamAllUnlocked = gamProject ? gamLockedCount === 0 : gamAllUnlockedGlobally;
 
   const handleAssessmentSubmit = async () => {
     if (!assessmentMode && !gamificationMode) return;
@@ -662,11 +672,17 @@ export function SimulatorPage({ gamificationMode = false }) {
         wires,
         code,
       };
-      sessionStorage.setItem(
-        `openhw_assessment_submission:${assessmentName}`,
-        JSON.stringify(payload),
-      );
-      navigate(`/${assessmentName}/assessment`);
+      sessionStorage.setItem(`openhw_assessment_submission:${assessmentName}`, JSON.stringify(payload));
+      // Preserve classId when navigating to assessment page to maintain class context
+      const targetPath = classId
+        ? `/${assessmentName}/assessment?classId=${encodeURIComponent(classId)}`
+        : `/${assessmentName}/assessment`;
+      // If running in iframe (guided mode), navigate parent window to replace the whole page
+      if (window.self !== window.top) {
+        window.parent.location.href = targetPath;
+      } else {
+        navigate(targetPath);
+      }
     } finally {
       setIsSubmittingAssessment(false);
     }
@@ -707,6 +723,54 @@ export function SimulatorPage({ gamificationMode = false }) {
   const [wiringStartPin, setWiringStartPin] = useState(null);
   const [components, setComponents] = useState([]);
   const [wires, setWires] = useState([]);
+
+  const [isLoadingGuidedSchema, setIsLoadingGuidedSchema] = useState(false)
+  const [showComingSoon, setShowComingSoon] = useState(false)
+
+  const doLoadGuidedSchema = (schema, label) => {
+    setIsLoadingGuidedSchema(true)
+    applyImportedProjectMeta(schema, label)
+    setTimeout(() => setIsLoadingGuidedSchema(false), 800)
+  }
+
+  const lastLoadedSlugRef = useRef(null)
+  useEffect(() => {
+    const project = guidedProjectState?.project
+    const slug = project?.slug || (gamificationMode ? projectName : null)
+
+    if (!slug || lastLoadedSlugRef.current === slug) return
+    lastLoadedSlugRef.current = slug
+
+    const loadFromSchema = () => {
+      if (project?.schemas?.arduino) {
+        doLoadGuidedSchema(project.schemas.arduino, 'Guided Project')
+      } else {
+        setIsLoadingGuidedSchema(false)
+      }
+    }
+
+    const tryLoadFromPng = async () => {
+      const pngUrl = `${EXAMPLES_BASE_URL}/${slug}/circuit.png`
+      const res = await fetch(pngUrl)
+      if (!res.ok) throw new Error('PNG not found')
+      const buf = await res.arrayBuffer()
+      const meta = extractProjectMetaFromPng(new Uint8Array(buf))
+      applyImportedProjectMeta(meta, 'Guided Project')
+    }
+
+    setShowComingSoon(false)
+    setIsLoadingGuidedSchema(true)
+    tryLoadFromPng()
+      .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
+      .catch(() => {
+        if (project?.schemas?.arduino) {
+          loadFromSchema()
+        } else {
+          setIsLoadingGuidedSchema(false)
+          setShowComingSoon(true)
+        }
+      })
+  }, [guidedProjectState, gamificationMode, projectName])
 
   const [history, setHistory] = useState({ past: [], future: [] });
   const [selected, setSelected] = useState(null); // comp or wire id
@@ -1375,6 +1439,7 @@ export function SimulatorPage({ gamificationMode = false }) {
   };
 
   const lastCompiledRef = useRef(null);
+  const captureThumbnailRef = useRef(null);
   const micropythonUf2PayloadRef = useRef(null);
   const circuitPythonUf2PayloadRef = useRef(null);
   const rp2040DebugLastLogRef = useRef(new Map());
@@ -2052,6 +2117,10 @@ export function SimulatorPage({ gamificationMode = false }) {
 
   useEffect(() => {
     if (gamificationMode) return;
+    if (guidedProjectState) {
+      loadLibraries();
+      return;
+    }
 
     let cancelled = false;
     let deferTimer = null;
@@ -2086,15 +2155,41 @@ export function SimulatorPage({ gamificationMode = false }) {
       }
     };
 
-    loadDemoProject();
-    return () => {
-      cancelled = true;
-      if (deferTimer !== null) window.clearTimeout(deferTimer);
-    };
-  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+loadDemoProject();
+     return () => {
+       cancelled = true;
+       if (deferTimer !== null) window.clearTimeout(deferTimer);
+     };
+   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Offline component queue: flush to backend when connectivity restores ──
-  useEffect(() => {
+// ── Load circuit data from bankProjectCriteria (opened from Project Bank Editor) ──
+    useEffect(() => {
+      if (!returnTo) return;
+
+      // Check if we have circuit data from Project Bank Editor
+      const stored = localStorage.getItem("bankProjectCriteria");
+      if (!stored) return;
+
+      try {
+        const parsed = JSON.parse(stored);
+        // Only load if it has the full payload format (components/connections)
+        if (parsed && Array.isArray(parsed.components) && Array.isArray(parsed.connections)) {
+          const { components: normalizedComponents, wires: normalizedConnections } =
+            normalizeImportedCircuitData(parsed.components, parsed.connections);
+
+          setBoard(parsed.board || "arduino_uno");
+          setComponents(normalizedComponents);
+          setWires(normalizedConnections);
+          setCode(parsed.code || "");
+          syncNextIds(normalizedComponents, normalizedConnections);
+        }
+      } catch (e) {
+        console.warn("[BankProjectCriteria] Failed to parse circuit data:", e);
+      }
+    }, [returnTo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── Offline component queue: flush to backend when connectivity restores ──
+    useEffect(() => {
     const drainQueue = async () => {
       const queued = await getQueuedComponents();
       if (!queued.length) return;
@@ -2118,11 +2213,13 @@ export function SimulatorPage({ gamificationMode = false }) {
     return () => window.removeEventListener("online", drainQueue);
   }, []);
 
-  // ── Sync backend custom components (cache-first, version-checked) ──────────
+// ── Sync backend custom components (cache-first, version-checked) ──────────
   // On every page load:
   //  1. Read IndexedDB cache → inject immediately (no network, instant palette)
   //  2. GET /api/components/version (~40 bytes) → compare hash
   //  3. Only fetch + transpile when the hash actually changed
+  //  Note: In Adventure/Classroom mode, clear cache to ensure component filtering
+  //  is based on fresh unlock data from the API.
   useEffect(() => {
     let cancelled = false;
 
@@ -2393,6 +2490,18 @@ export function SimulatorPage({ gamificationMode = false }) {
         setRestoreProjectPrompt(latest);
       }
     });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Load project from dashboard card click ────────────────────
+  useEffect(() => {
+    const loadId = location.state?.loadProjectId;
+    if (!loadId) return;
+    import('../../services/projectStore.js').then(({ loadProject }) => {
+      loadProject(loadId).then((proj) => {
+        if (proj) handleLoadProject(proj);
+      });
+    });
+    window.history.replaceState({}, document.title);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -2940,18 +3049,8 @@ export function SimulatorPage({ gamificationMode = false }) {
     // Don't trigger auto-save if disabled or if waiting on toaster
     if (!autoSaveEnabled || restoreProjectPrompt) return;
 
-    // Don't trigger an empty-project save on initial render
-    const isCodeEmptyOrDefault =
-      code.trim() === "" ||
-      code.trim() ===
-        "void setup() {\\n  // put your setup code here, to run once:\\n\\n}\\n\\nvoid loop() {\\n  // put your main code here, to run repeatedly:\\n\\n}";
-    if (
-      !currentProjectIdRef.current &&
-      components.length === 0 &&
-      wires.length === 0 &&
-      isCodeEmptyOrDefault
-    )
-      return;
+    // Don't save if nothing is on the canvas
+    if (components.length === 0 && wires.length === 0) return;
 
     clearTimeout(autoSaveTimerRef.current);
     autoSaveTimerRef.current = setTimeout(async () => {
@@ -2980,6 +3079,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       if (finalName && finalName !== currentProjectName) {
         setCurrentProjectName(finalName);
       }
+      setTimeout(() => captureThumbnailRef.current?.(), 1500);
     }, 2500);
 
     return () => clearTimeout(autoSaveTimerRef.current);
@@ -3754,10 +3854,30 @@ export function SimulatorPage({ gamificationMode = false }) {
       const s = document.createElement("script");
       s.id = "wokwi-bundle";
       s.src =
-        "https://unpkg.com/@wokwi/elements@0.48.3/dist/wokwi-elements.bundle.js";
+        "/wokwi-elements.bundle.js";
       document.head.appendChild(s);
     }
   }, []);
+
+  // ── Smart Prefetching for Simulation Runners ───────────────────────────────
+  const preloadedBoardsRef = useRef(new Set());
+  useEffect(() => {
+    if (!components) return;
+    const currentBoardTypes = components
+      .filter((c) => /arduino|esp32|stm32|pico|rp2040|attiny/i.test(c.type))
+      .map((c) => c.type);
+    
+    const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
+    if (newTypesToPreload.length > 0) {
+      newTypesToPreload.forEach(t => preloadedBoardsRef.current.add(t));
+      const prefetchWorker = new Worker(new URL("../../worker/simulation.worker.ts", import.meta.url), { type: "module" });
+      const dummyComponents = newTypesToPreload.map(type => ({ type }));
+      prefetchWorker.postMessage({ type: "PRELOAD_RUNNERS", components: dummyComponents });
+      
+      const timer = setTimeout(() => prefetchWorker.terminate(), 5000);
+      return () => { clearTimeout(timer); prefetchWorker.terminate(); };
+    }
+  }, [components]);
 
   // ── Validation toast auto-dismiss ───────────────────────────────────────────
   useEffect(() => {
@@ -4989,6 +5109,114 @@ export function SimulatorPage({ gamificationMode = false }) {
             setComponents(result.components);
             setWires(result.wires);
 
+            // ── JS Fallback: manually wire if WASM left component unwired ──
+            const autowiringConns = manifest?.autowiring?.connections;
+            if (autowiringConns && autowiringConns.length > 0) {
+              const compId = mainCompWithPos.id;
+              const hasAnyWire = result.wires.some(
+                w => (w.from || '').startsWith(compId + ':') || (w.to || '').startsWith(compId + ':')
+              );
+              if (!hasAnyWire) {
+                const boardComp = result.components.find(c => isProgrammableBoardType(c.type));
+                if (boardComp) {
+                  const newComponents = [...result.components];
+                  const newWires = [...result.wires];
+                  const bb = result.components.find(c => isBreadboardType(c.type));
+                  const boardPins = LOCAL_PIN_DEFS[boardComp.type] || [];
+
+                  for (let ci = 0; ci < autowiringConns.length; ci++) {
+                    const conn = autowiringConns[ci];
+                    let target = conn.to || '';
+                    let fromPin = conn.from;
+
+                    if (target.startsWith('arduino:')) {
+                      const pinId = target.split(':')[1];
+                      const match = boardPins.find(p => p.id.toLowerCase().startsWith(pinId.toLowerCase()));
+                      if (match) target = `${boardComp.id}:${match.id}`;
+                      else target = `${boardComp.id}:${pinId}`;
+                    }
+
+                    const fromEndpoint = `${compId}:${fromPin}`;
+
+                    if (conn.via) {
+                      const viaId = `${conn.via}_${Date.now()}_${ci}`;
+                      const viaType = conn.via;
+                      const viaComp = {
+                        id: viaId,
+                        type: viaType,
+                        label: 'Resistor',
+                        x: mainCompWithPos.x + 60 + ci * 30,
+                        y: mainCompWithPos.y + 20 + ci * 20,
+                        w: 60,
+                        h: 12,
+                        attrs: conn.attrs || {},
+                      };
+
+                      if (bb) {
+                        const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+                        const viaHole = bbPins.find(p => p.id.endsWith('f'));
+                        if (viaHole) {
+                          const vWorld = getRotatedPoint(
+                            bb.x + viaHole.x, bb.y + viaHole.y,
+                            bb.rotation || 0, bb.x + bb.w / 2, bb.y + bb.h / 2
+                          );
+                          viaComp.x = vWorld.x - 30;
+                          viaComp.y = vWorld.y - 6;
+                        }
+                      }
+
+                      newComponents.push(viaComp);
+
+                      const needsResistorToGnd = target.toLowerCase().includes('gnd');
+                      const midX = viaComp.x + viaComp.w / 2;
+                      const midY = viaComp.y + viaComp.h / 2;
+
+                      if (bb) {
+                        const sourceHole = `${bb.id}:${ci === 0 ? 'top_f' : 'top_e'}`;
+                        newWires.push({
+                          id: `w_via_in_${Date.now()}_${ci}`,
+                          from: sourceHole,
+                          to: `${viaId}:p1`,
+                          color: 'green',
+                          isSocket: true,
+                        });
+                        newWires.push({
+                          id: `w_via_out_${Date.now()}_${ci}`,
+                          from: `${viaId}:p2`,
+                          to: target,
+                          color: needsResistorToGnd ? 'black' : 'blue',
+                        });
+                      } else {
+                        newWires.push({
+                          id: `w_manual_${Date.now()}_${ci}_a`,
+                          from: fromEndpoint,
+                          to: `${viaId}:p1`,
+                          color: 'green',
+                          waypoints: [{ x: midX, y: mainCompWithPos.y + 20 }],
+                        });
+                        newWires.push({
+                          id: `w_manual_${Date.now()}_${ci}_b`,
+                          from: `${viaId}:p2`,
+                          to: target,
+                          color: needsResistorToGnd ? 'black' : 'blue',
+                        });
+                      }
+                    } else {
+                      newWires.push({
+                        id: `w_manual_${Date.now()}_${ci}`,
+                        from: fromEndpoint,
+                        to: target,
+                        color: target.toLowerCase().includes('gnd') ? 'black' : 'green',
+                      });
+                    }
+                  }
+
+                  setComponents(newComponents);
+                  setWires(newWires);
+                }
+              }
+            }
+
             // ── Restore Library Installation ──
             if (plan.libraries && plan.libraries.length > 0) {
               for (const libName of plan.libraries) {
@@ -5088,6 +5316,58 @@ export function SimulatorPage({ gamificationMode = false }) {
             if (plan.reasoning) {
               console.log("[Autonomous] Reasoning:", plan.reasoning);
             }
+          } else {
+            // WASM returned no plan — fallback: place component and wire manually
+            const boardComp = components.find(c => isProgrammableBoardType(c.type));
+            let fallbackComps = [newCompBase];
+            let fallbackWires = [...wires];
+
+            const autowiringConns = manifest?.autowiring?.connections;
+            if (autowiringConns && autowiringConns.length > 0 && boardComp) {
+              const boardPins = LOCAL_PIN_DEFS[boardComp.type] || [];
+              const bb = components.find(c => isBreadboardType(c.type));
+              for (let ci = 0; ci < autowiringConns.length; ci++) {
+                const conn = autowiringConns[ci];
+                let target = conn.to || '';
+                if (target.startsWith('arduino:')) {
+                  const pinId = target.split(':')[1];
+                  const match = boardPins.find(p => p.id.toLowerCase().startsWith(pinId.toLowerCase()));
+                  target = match ? `${boardComp.id}:${match.id}` : `${boardComp.id}:${pinId}`;
+                }
+                if (conn.via) {
+                  const viaId = `${conn.via}_${Date.now()}_${ci}`;
+                  const viaComp = {
+                    id: viaId, type: conn.via, label: 'Resistor',
+                    x: newCompBase.x + 60 + ci * 30, y: newCompBase.y + 20 + ci * 20,
+                    w: 60, h: 12, attrs: conn.attrs || {},
+                  };
+                  if (bb) {
+                    const bbPins = LOCAL_PIN_DEFS[bb.type] || [];
+                    const viaHole = bbPins.find(p => p.id.endsWith('f'));
+                    if (viaHole) {
+                      const vWorld = getRotatedPoint(bb.x + viaHole.x, bb.y + viaHole.y, bb.rotation || 0, bb.x + bb.w / 2, bb.y + bb.h / 2);
+                      viaComp.x = vWorld.x - 30; viaComp.y = vWorld.y - 6;
+                    }
+                  }
+                  fallbackComps.push(viaComp);
+                  fallbackWires.push({ id: `w_via_in_${Date.now()}_${ci}`, from: `${newCompBase.id}:${conn.from}`, to: `${viaId}:p1`, color: 'green' });
+                  fallbackWires.push({ id: `w_via_out_${Date.now()}_${ci}`, from: `${viaId}:p2`, to: target, color: target.toLowerCase().includes('gnd') ? 'black' : 'blue' });
+                } else {
+                  fallbackWires.push({ id: `w_manual_${Date.now()}_${ci}`, from: `${newCompBase.id}:${conn.from}`, to: target, color: target.toLowerCase().includes('gnd') ? 'black' : 'green' });
+                }
+              }
+            } else {
+              fallbackWires = autoConnectPowerRails(newCompBase, components, wires);
+            }
+
+            setComponents(prev => {
+              const merged = [...prev];
+              for (const fc of fallbackComps) {
+                if (!merged.find(c => c.id === fc.id)) merged.push(fc);
+              }
+              return merged;
+            });
+            setWires(fallbackWires);
           }
         } else {
           setComponents((prev) => [...prev, newCompBase]);
@@ -5196,16 +5476,34 @@ export function SimulatorPage({ gamificationMode = false }) {
     [liveEditingDisabled, addComponentInternal],
   );
 
-  // ── Palette click to add (adds to canvas center) ────────────────────────────
+  // ── Palette click to add (adds to canvas center, offset if overlapping) ──────
   const addComponentAtCenter = useCallback(
     async (item) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
-      const cx =
+      let cx =
         (rect.width / 2 - canvasOffsetRef.current.x) / canvasZoomRef.current;
-      const cy =
+      let cy =
         (rect.height / 2 - canvasOffsetRef.current.y) / canvasZoomRef.current;
+
+      // Nudge position so new components don't stack exactly on top of existing ones
+      const OFFSET_STEP = 30; // px diagonal offset per overlap
+      const OVERLAP_THRESHOLD = 20; // px — consider "same spot" if within this range
+      const currentComps = componentsRef.current || [];
+      let attempts = 0;
+      while (attempts < 15) {
+        const overlapping = currentComps.some(c => {
+          const compCx = c.x + (c.w || 60) / 2;
+          const compCy = c.y + (c.h || 60) / 2;
+          return Math.abs(compCx - cx) < OVERLAP_THRESHOLD && Math.abs(compCy - cy) < OVERLAP_THRESHOLD;
+        });
+        if (!overlapping) break;
+        cx += OFFSET_STEP;
+        cy += OFFSET_STEP;
+        attempts++;
+      }
+
       await addComponentAt(item, cx, cy);
     },
     [addComponentAt],
@@ -5515,11 +5813,21 @@ export function SimulatorPage({ gamificationMode = false }) {
               newPts[segIdx + 1] = { ...newPts[segIdx + 1], x: newX };
             }
           }
+          const finalWaypoints = [];
+          if (newPts[0] && sd.startPts[0] && (newPts[0].x !== sd.startPts[0].x || newPts[0].y !== sd.startPts[0].y)) {
+            finalWaypoints.push({ x: newPts[0].x, y: newPts[0].y, _corner: true });
+          }
+          for (let i = 1; i < newPts.length - 1; i++) {
+            if (newPts[i]) finalWaypoints.push({ x: newPts[i].x, y: newPts[i].y, _corner: true });
+          }
+          const lastIdx = newPts.length - 1;
+          if (lastIdx > 0 && newPts[lastIdx] && sd.startPts[lastIdx] && (newPts[lastIdx].x !== sd.startPts[lastIdx].x || newPts[lastIdx].y !== sd.startPts[lastIdx].y)) {
+            finalWaypoints.push({ x: newPts[lastIdx].x, y: newPts[lastIdx].y, _corner: true });
+          }
+
           wireUpdate = {
             wireId: sd.wireId,
-            cornerWaypoints: newPts
-              .slice(1, -1)
-              .map((pt) => ({ x: pt.x, y: pt.y, _corner: true })),
+            cornerWaypoints: finalWaypoints.filter(pt => pt && isFinite(pt.x) && isFinite(pt.y)),
           };
         }
       } else if (isPanningRef.current && !isCanvasLockedRef.current) {
@@ -6246,8 +6554,8 @@ export function SimulatorPage({ gamificationMode = false }) {
         // Logic: If the second pin has a more "specific" color (comms, power, etc.)
         // and the first is generic green, use the specific color.
         const isGeneric = (c) => c === "#2ecc71" || c === "#10b981";
-        const finalColor =
-          !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        let finalColor = !isGeneric(color2) && isGeneric(color1) ? color2 : color1;
+        if (color1 === 'black' || color2 === 'black') finalColor = 'black';
 
         const newWire = {
           id: `w${nextWireId++}`,
@@ -7604,6 +7912,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     });
     setCurrentProjectName(finalName || name);
     setShowSaveDialog(false);
+    setTimeout(() => captureThumbnailRef.current?.(), 1500);
   };
 
   /** Create a brand-new blank project. */
@@ -7622,7 +7931,7 @@ export function SimulatorPage({ gamificationMode = false }) {
     setCurrentProjectName("Untitled");
     setBoard("arduino_uno");
     setCode(
-      "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(1000);\n  digitalWrite(13, LOW);\n  delay(1000);\n}\n",
+      "void setup() {\n  pinMode(13, OUTPUT);\n}\n\nvoid loop() {\n  digitalWrite(13, HIGH);\n  delay(15000);\n  digitalWrite(13, LOW);\n  delay(15000);\n}\n",
     );
     setComponents([]);
     setWires([]);
@@ -7667,13 +7976,13 @@ export function SimulatorPage({ gamificationMode = false }) {
     setHistory({ past: [], future: [] });
     lastCompiledRef.current = null;
     setShowProjectsSidebar(false);
+    setTimeout(() => captureThumbnailRef.current?.(), 1500);
   };
 
   /** Delete a project from the My Projects modal. */
   const handleDeleteProject = async (id) => {
     if (!window.confirm("Delete this project? This cannot be undone.")) return;
-    await deleteProject(id);
-    // If the active project was deleted, clear current id
+    await deleteProject(id, getOwner());
     if (currentProjectIdRef.current === id) {
       currentProjectIdRef.current = null;
       setCurrentProjectId(null);
@@ -7694,7 +8003,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       return;
     }
     const newName = renameValue.trim() || "Untitled";
-    const finalName = await renameProject(id, newName);
+    const finalName = await renameProject(id, newName, getOwner());
     if (currentProjectIdRef.current === id)
       setCurrentProjectName(finalName || newName);
     setRenamingProjectId(null);
@@ -8520,18 +8829,53 @@ export function SimulatorPage({ gamificationMode = false }) {
       fqbn,
       buildEngine,
       librariesTxt,
+      'targetEngine:hardware'
     ].join('\n/*__SPLIT__*/\n');
 
     let compiled = await getCachedHex(cacheSource, cacheKeyBoard);
     if (!compiled) {
-      compiled = await compileCode({
-        code: sourceCode,
-        files: compileUnit.files,
-        sketchName: compileUnit.sketchName,
-        fqbn,
-        libraries_txt: librariesTxt,
-        ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
-      });
+      if (kind === 'esp32') {
+        const startRes = await startEsp32Compile({
+          code: sourceCode,
+          libraries_txt: librariesTxt,
+          targetEngine: 'hardware'
+        });
+        if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+          throw new Error('Failed to start ESP32 compilation.');
+        }
+        const jobId = startRes.jobId || startRes.buildId;
+        let pollCount = 0;
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          const statusRes = await getEsp32CompileStatus(jobId);
+          if (!statusRes) continue;
+          
+          if (statusRes.status === 'success') {
+            if (!statusRes.binary_content) {
+              throw new Error('Compilation succeeded but no binary content was returned.');
+            }
+            compiled = { hex: statusRes.binary_content };
+            break;
+          } else if (statusRes.status === 'failed') {
+            throw new Error(statusRes.error || 'ESP32 compilation failed.');
+          }
+          
+          pollCount++;
+          if (pollCount > 180) {
+            throw new Error('ESP32 compilation timed out after 90 seconds.');
+          }
+        }
+      } else {
+        compiled = await compileCode({
+          code: sourceCode,
+          files: compileUnit.files,
+          sketchName: compileUnit.sketchName,
+          fqbn,
+          target: kind,
+          libraries_txt: librariesTxt,
+          ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+        });
+      }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);
     }
     return compiled.hex;
@@ -8629,12 +8973,18 @@ export function SimulatorPage({ gamificationMode = false }) {
         "hardware",
       );
       await disconnectHardwareSerial();
+      await new Promise(r => setTimeout(r, 3500));
     }
 
-    await uploadToHardware();
+    await uploadToHardware({
+      wasConnected: hardwareConnected,
+      disconnectFn: disconnectHardwareSerial,
+      connectFn: connectHardwareSerial,
+    });
   }, [
     hardwareConnected,
     disconnectHardwareSerial,
+    connectHardwareSerial,
     uploadToHardware,
     setHardwareStatus,
     appendConsoleEntry,
@@ -9004,6 +9354,7 @@ export function SimulatorPage({ gamificationMode = false }) {
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   builder,
                   libraries_txt: librariesTxt,
                 });
@@ -9123,6 +9474,7 @@ export function SimulatorPage({ gamificationMode = false }) {
                   files: compileUnit.files,
                   sketchName: compileUnit.sketchName,
                   fqbn: targetFqbn,
+                  target: kind,
                   libraries_txt: librariesTxt,
                 });
               }
@@ -9176,6 +9528,7 @@ export function SimulatorPage({ gamificationMode = false }) {
           result = await compileCode({
             code: finalCode,
             fqbn: BOARD_FQBN[fallbackKind] || BOARD_FQBN.arduino_uno,
+            target: fallbackKind,
             libraries_txt: librariesTxt,
             ...(fallbackKind === 'rp2040' ? { builder: 'arduino-pico' } : {}),
           });
@@ -10846,7 +11199,7 @@ export function SimulatorPage({ gamificationMode = false }) {
         const idoc = iframe.contentDocument || iframe.contentWindow.document;
         idoc.open();
         idoc.write(
-          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#070b14;"></body></html>',
+          '<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>',
         );
         idoc.close();
 
@@ -11071,7 +11424,7 @@ export function SimulatorPage({ gamificationMode = false }) {
 
         const t_html2c_start = performance.now();
         circuitCanvas = await h2c(idoc.body, {
-          backgroundColor: "#070b14",
+          backgroundColor: "#ffffff",
           scale: SCALE,
           useCORS: true,
           allowTaint: false,
@@ -11080,24 +11433,24 @@ export function SimulatorPage({ gamificationMode = false }) {
           skipFonts: true,
           width: actualW,
           height: actualH,
-          onclone: (_clonedDoc, clonedEl) => {
-            // Selective color fix: Target graphics but SPARE the text
-            clonedEl
-              .querySelectorAll("path, rect, circle, polygon")
-              .forEach((el) => {
-                const fill = el.getAttribute("fill");
-                if (fill && fill.includes("color("))
-                  el.setAttribute("fill", "#777");
-                const stroke = el.getAttribute("stroke");
-                if (stroke && stroke.includes("color("))
-                  el.setAttribute("stroke", "#777");
+            onclone: (_clonedDoc, clonedEl) => {
+              // Selective color fix: Target graphics but SPARE the text
+              clonedEl
+                .querySelectorAll("path, rect, circle, polygon")
+                .forEach((el) => {
+                  const fill = el.getAttribute("fill");
+                  if (fill && fill.includes("color("))
+                    el.setAttribute("fill", "#777");
+                  const stroke = el.getAttribute("stroke");
+                  if (stroke && stroke.includes("color("))
+                    el.setAttribute("stroke", "#777");
+                });
+              // Ensure labels are visible on white bg
+              clonedEl.querySelectorAll("text, span, div").forEach((el) => {
+                if (el.style.color && el.style.color.includes("color("))
+                  el.style.color = "#1e293b";
               });
-            // Ensure labels are visible
-            clonedEl.querySelectorAll("text, span, div").forEach((el) => {
-              if (el.style.color && el.style.color.includes("color("))
-                el.style.color = "#ccc";
-            });
-          },
+            },
         });
 
         // Memory Flush: Clear the iframe content immediately to free RAM
@@ -11129,7 +11482,7 @@ export function SimulatorPage({ gamificationMode = false }) {
       out.height = CH;
       const ctx = out.getContext("2d");
 
-      ctx.fillStyle = "#070b14";
+      ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, CW, CH);
       ctx.drawImage(circuitCanvas, 0, 0);
 
@@ -11235,6 +11588,192 @@ export function SimulatorPage({ gamificationMode = false }) {
       setIsExporting(false);
     }
   };
+
+  // ── Captures a small thumbnail (320×180) and saves to IndexedDB ───────
+  const captureThumbnail = useCallback(async () => {
+    if (!components.length) return;
+    const { saveProject, loadProject } = await import('../../services/projectStore.js');
+    const id = currentProjectIdRef.current;
+    if (!id) return;
+    const THUMB_W = 320;
+    const THUMB_H = 180;
+    const PAD = 20;
+
+    // 1. Calculate bounding box of all components + wire waypoints (canvas-space)
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    components.forEach((c) => {
+      const reg = COMPONENT_REGISTRY[c.type];
+      const b = typeof reg?.BOUNDS === 'function' ? reg.BOUNDS(getComponentStateAttrs(c)) : reg?.BOUNDS || { x: 0, y: 0, w: c.w, h: c.h };
+      minX = Math.min(minX, c.x + b.x);
+      minY = Math.min(minY, c.y + b.y);
+      maxX = Math.max(maxX, c.x + b.x + b.w);
+      maxY = Math.max(maxY, c.y + b.y + b.h + 20);
+      (PIN_DEFS[c.type] || []).forEach((pin) => {
+        const pp = getPinPos(c.id, pin.id);
+        if (pp) { minX = Math.min(minX, pp.x - 4); minY = Math.min(minY, pp.y - 4); maxX = Math.max(maxX, pp.x + 4); maxY = Math.max(maxY, pp.y + 4); }
+      });
+    });
+    wires.forEach((w) => {
+      (w.waypoints || []).forEach((wp) => { minX = Math.min(minX, wp.x); minY = Math.min(minY, wp.y); maxX = Math.max(maxX, wp.x); maxY = Math.max(maxY, wp.y); });
+      [w.from, w.to].forEach((ref) => {
+        if (!ref) return;
+        const [cId, pId] = ref.split(':');
+        const pp = getPinPos(cId, pId);
+        if (pp) { minX = Math.min(minX, pp.x); minY = Math.min(minY, pp.y); maxX = Math.max(maxX, pp.x); maxY = Math.max(maxY, pp.y); }
+      });
+    });
+    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 800; maxY = 600; }
+    minX -= PAD; minY -= PAD; maxX += PAD; maxY += PAD;
+    const bboxW = maxX - minX;
+    const bboxH = maxY - minY;
+
+    try {
+      // 2. Use the same isolated iframe + style teleportation approach as PNG export
+      const zoomWrapper = innerCanvasRef.current;
+      if (!zoomWrapper) return;
+
+      let tagCount = 0;
+      const elementMap = new Map();
+      const deepTag = (root) => {
+        [root, ...Array.from(root.querySelectorAll("*"))].forEach((el) => {
+          if (!el.getAttribute) return;
+          const tid = `thumb-p-${tagCount++}`;
+          el.setAttribute("data-thumb-id", tid);
+          elementMap.set(tid, el);
+          if (el.shadowRoot) deepTag(el.shadowRoot);
+        });
+      };
+      deepTag(zoomWrapper);
+      const shadowHostEls = Array.from(elementMap.values()).filter((el) => !!el.shadowRoot);
+
+      const iframe = document.createElement("iframe");
+      Object.assign(iframe.style, { position: "fixed", left: "-10000px", top: "-10000px", width: bboxW + "px", height: bboxH + "px" });
+      document.body.appendChild(iframe);
+      const idoc = iframe.contentDocument || iframe.contentWindow.document;
+      idoc.open();
+      idoc.write('<!DOCTYPE html><html><head></head><body style="margin:0;padding:0;background:#ffffff;"></body></html>');
+      idoc.close();
+
+      const styleReset = idoc.createElement("style");
+      styleReset.textContent = '* { box-sizing: border-box; filter: none !important; box-shadow: none !important; } text, span, div { font-family: sans-serif; }';
+      idoc.head.appendChild(styleReset);
+
+      const circuitClone = idoc.importNode(zoomWrapper, true);
+      idoc.body.appendChild(circuitClone);
+
+      // Inline shadow DOM
+      shadowHostEls.forEach((liveEl) => {
+        const dataId = liveEl.getAttribute("data-thumb-id");
+        const clonedHost = idoc.querySelector(`[data-thumb-id="${dataId}"]`);
+        if (!clonedHost) return;
+        if (liveEl.shadowRoot.adoptedStyleSheets) {
+          liveEl.shadowRoot.adoptedStyleSheets.forEach((sheet) => {
+            const se = idoc.createElement("style");
+            se.textContent = getSerializedShadowSheet(sheet);
+            clonedHost.appendChild(se);
+          });
+        }
+        for (let i = 0; i < liveEl.shadowRoot.childNodes.length; i++) {
+          clonedHost.appendChild(idoc.importNode(liveEl.shadowRoot.childNodes[i], true));
+        }
+      });
+
+      // Teleport computed styles
+      const propsToCopy = ["display","position","left","top","width","height","transform","transformOrigin","color","fontSize","fontWeight","fontFamily","textAlign","visibility","opacity","backgroundColor","zIndex","border","borderWidth","borderStyle","borderColor","borderRadius","padding","margin","lineHeight","overflow","boxSizing","clipPath","mask","filter","mixBlendMode","outline","boxShadow","textShadow","cursor"];
+      const svgProps = ["fill","stroke","stroke-width","stroke-linecap","stroke-linejoin","stroke-miterlimit","stroke-dasharray","stroke-dashoffset","stroke-opacity","fill-opacity","fill-rule","marker-start","marker-mid","marker-end"];
+
+      [idoc.body, ...Array.from(idoc.body.querySelectorAll("*"))].forEach((cloned) => {
+        const dataId = cloned.getAttribute("data-thumb-id");
+        if (!dataId) return;
+        const liveEl = elementMap.get(dataId);
+        if (!liveEl) return;
+        const s = window.getComputedStyle(liveEl);
+        propsToCopy.forEach((p) => {
+          if (p === "fontSize" && (cloned.tagName === "text" || cloned.tagName === "tspan")) return;
+          cloned.style.setProperty(p, s.getPropertyValue(p), "important");
+        });
+        if (["path","circle","rect","line","polygon","text","ellipse","g","svg"].includes(cloned.tagName)) {
+          svgProps.forEach((attr) => {
+            const val = liveEl.getAttribute(attr) || s.getPropertyValue(attr);
+            if (val) {
+              const fv = val.includes("color(") ? "#777" : val;
+              cloned.setAttribute(attr, fv);
+              if (["fill","stroke","stroke-width","opacity","visibility"].includes(attr)) cloned.style.setProperty(attr, fv, "important");
+            }
+          });
+          const w = s.getPropertyValue("width");
+          const h = s.getPropertyValue("height");
+          if (w && w !== "auto" && w !== "100%") { cloned.setAttribute("width", w.replace("px","")); cloned.style.setProperty("width", w, "important"); }
+          if (h && h !== "auto" && h !== "100%") { cloned.setAttribute("height", h.replace("px","")); cloned.style.setProperty("height", h, "important"); }
+        }
+        cloned.style.setProperty("visibility", "visible", "important");
+        cloned.style.setProperty("opacity", s.opacity || "1", "important");
+        if (liveEl.shadowRoot) cloned.style.setProperty("overflow", "visible", "important");
+      });
+      elementMap.clear();
+
+      idoc.body.style.overflow = "visible";
+      circuitClone.style.overflow = "visible";
+      Object.assign(circuitClone.style, {
+        transform: `translate(${-minX}px, ${-minY}px) scale(1)`,
+        transformOrigin: "0 0",
+        width: bboxW + "px",
+        height: bboxH + "px",
+        display: "block", margin: "0", padding: "0",
+      });
+
+      // 3. Capture at full resolution then shrink to thumbnail size
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const h2c = await getHtml2canvas();
+      const rawCanvas = await h2c(idoc.body, {
+        backgroundColor: "#ffffff",
+        scale: 1,
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
+        imageTimeout: 5000,
+        skipFonts: true,
+        width: bboxW,
+        height: bboxH,
+        onclone: (_d, el) => {
+          el.querySelectorAll("path, rect, circle, polygon").forEach((e) => {
+            const fill = e.getAttribute("fill");
+            if (fill && fill.includes("color(")) e.setAttribute("fill", "#777");
+            const stroke = e.getAttribute("stroke");
+            if (stroke && stroke.includes("color(")) e.setAttribute("stroke", "#777");
+          });
+          el.querySelectorAll("text, span, div").forEach((e) => {
+            if (e.style.color && e.style.color.includes("color(")) e.style.color = "#1e293b";
+          });
+        },
+      });
+
+      // Clean up iframe
+      idoc.body.innerHTML = "";
+      idoc.head.innerHTML = "";
+      document.body.removeChild(iframe);
+
+      // 4. Shrink to thumbnail dimensions
+      const out = document.createElement("canvas");
+      out.width = THUMB_W;
+      out.height = THUMB_H;
+      const ctx = out.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, THUMB_W, THUMB_H);
+      ctx.drawImage(rawCanvas, 0, 0, rawCanvas.width, rawCanvas.height, 0, 0, THUMB_W, THUMB_H);
+
+      const dataUrl = out.toDataURL("image/png", 0.7);
+      const existing = await loadProject(id);
+      if (existing) {
+        await saveProject({ ...existing, thumbnail: dataUrl });
+      } else {
+        await saveProject({ id, thumbnail: dataUrl });
+      }
+    } catch (err) {
+      console.warn("[Thumbnail] capture failed:", err);
+    }
+  }, [components, wires, board, currentProjectIdRef]);
+  captureThumbnailRef.current = captureThumbnail;
 
   // ── View Panel helpers — SVG Schematic Generator ─────────────────────────
   const generateSchematic = useCallback(() => {
@@ -12499,6 +13038,9 @@ export function SimulatorPage({ gamificationMode = false }) {
           handleRestoreWorkflow={handleRestoreWorkflow}
           handleSyncToCloud={handleSyncToCloud}
           user={activeUser}
+          gamPanelOpen={gamPanelOpen}
+          setGamPanelOpen={setGamPanelOpen}
+          gamificationMode={gamificationMode}
           navigate={navigate}
           isAuthenticated={isAnyAuthenticated}
           myProjects={myProjects}
@@ -12554,10 +13096,14 @@ export function SimulatorPage({ gamificationMode = false }) {
           setShowAutofix={setShowAutofix}
           showShortcuts={showShortcuts}
           setShowShortcuts={setShowShortcuts}
+          useBlocklyCode={useBlocklyCode}
+          setUseBlocklyCode={setUseBlocklyCode}
           onStartTour={() => {
             localStorage.removeItem("openhw-tour-completed");
             setShowTour(true);
           }}
+          returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
+          code={code}
         />
 
         <SimulatorStatusBanners
@@ -13131,7 +13677,7 @@ export function SimulatorPage({ gamificationMode = false }) {
             setProjContextMenu={setProjContextMenu}
           />
 
-          {gamificationMode && gamPanelOpen && (
+          {gamificationMode && gamPanelOpen && gamProject && (
             <GamificationGuidePanel
               gamTab={gamTab}
               setGamTab={setGamTab}
@@ -13730,7 +14276,120 @@ export function SimulatorPage({ gamificationMode = false }) {
             }
             theme={theme}
           />
+          {guidedProjectState && (
+            <GuidedProjectPopup
+              project={guidedProjectState.project}
+              levelColor={guidedProjectState.levelColor}
+              onClose={() => setGuidedProjectState(null)}
+              readOnly
+              schemas={guidedProjectState.project.schemas}
+              activeBoard={activeBoard}
+              onBoardChange={(boardKey, schema) => {
+                setActiveBoard(boardKey)
+                if (schema) doLoadGuidedSchema(schema, 'Guided Project')
+              }}
+            />
+          )}
         </div>
+
+        {/* Guided project schema loading overlay */}
+        {isLoadingGuidedSchema && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9999,
+              background: 'rgba(15,23,42,0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(2px)',
+            }}
+          >
+            <div
+              style={{
+                background: '#ffffff', borderRadius: 16,
+                padding: '32px 40px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              }}
+            >
+              <div
+                style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  border: '3px solid #e2e8f0',
+                  borderTopColor: '#2563eb',
+                  animation: 'guided-spin 0.7s linear infinite',
+                }}
+              />
+              <style>{`@keyframes guided-spin{to{transform:rotate(360deg)}}`}</style>
+              <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                Loading circuit...
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                Placing components and wiring connections
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showComingSoon && (
+          <div
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9999,
+              background: 'rgba(15,23,42,0.6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              backdropFilter: 'blur(4px)',
+            }}
+          >
+            <div
+              style={{
+                background: '#ffffff', borderRadius: 16,
+                padding: '40px 48px',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                maxWidth: 400,
+                textAlign: 'center',
+              }}
+            >
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>
+                Coming Soon
+              </div>
+              <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.5 }}>
+                This guided project is under development and will be available soon.
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button
+                  onClick={() => navigate(-1)}
+                  style={{
+                    padding: '10px 28px',
+                    border: 'none',
+                    borderRadius: 8,
+                    background: '#2563eb',
+                    color: '#fff',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Go Back
+                </button>
+                <button
+                  onClick={() => setShowComingSoon(false)}
+                  style={{
+                    padding: '10px 28px',
+                    border: '1px solid var(--border, rgba(255,255,255,0.2))',
+                    borderRadius: 8,
+                    background: 'transparent',
+                    color: 'var(--text, #e2e8f0)',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Open Simulator
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

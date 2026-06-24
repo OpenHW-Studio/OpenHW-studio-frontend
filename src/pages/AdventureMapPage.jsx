@@ -336,6 +336,37 @@ export default function AdventureMapPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const classId = searchParams.get('classId')
+  const unlockCompId = searchParams.get('unlock') // from lock toast "Go to Adventure"
+
+  // Map component IDs to the project slug that unlocks them
+  const COMP_TO_PROJECT_SLUG = {
+    'button': 'push-button', 'pushbutton': 'push-button',
+    'ultrasonic': 'ultrasonic-sensor', 'dht11': 'dht11-sensor', 'dht22': 'dht11-sensor',
+    'lcd': 'lcd-display', 'lcd1602-i2c': 'lcd-display', 'lcd2004-i2c': 'lcd-display',
+    'relay': 'relay-control', 'oled': 'oled-graphics', 'ssd1306': 'oled-graphics',
+    'neopixel': 'neopixel-effects', 'neopixel-ring': 'neopixel-effects', 'neopixel-matrix': 'neopixel-effects', 'ws2812b': 'neopixel-effects',
+    'keypad': 'keypad-lock', 'membrane-keypad': 'keypad-lock',
+    'rotary-encoder': 'rotary-menu',
+    'tm1637-7segment': 'seven-segment-clock', '7segment': 'seven-segment-clock',
+    'stepper': 'stepper-motor', 'stepper-motor': 'stepper-motor', 'a4988': 'stepper-motor',
+    'mpu6050': 'mpu6050-tilt',
+    'analog-joystick': 'analog-joystick-project',
+    'nokia-5110': 'nokia-display', 'soil-moisture-sensor': 'soil-moisture',
+    'ir-receiver': 'ir-remote', 'mfrc522': 'rfid-reader',
+    'pir-motion-sensor': 'pir-motion',
+    'motor': 'dc-motor', 'motor-driver': 'dc-motor', 'l293d': 'dc-motor',
+    'ds18b20': 'temperature-sensor',
+    'bmp180': 'bmp180-weather', 'rtc': 'rtc-clock',
+    'max7219': 'max7219-matrix',
+    'ili9341': 'tft-display',
+    'sd-card': 'sd-card-logger',
+    'pico': 'pico-basics', 'raspberry-pi-pico': 'pico-basics', 'pico-w': 'pico-wifi',
+    'esp32': 'esp32-blink', 'esp32-cam': 'esp32-cam-stream',
+    'mq2-gas-sensor': 'gas-sensor',
+    'raindrop-module': 'rain-sensor',
+    'npn-transistor': 'transistor-switch',
+    'pca9685': 'servo-driver',
+  }
   const {
     xp, currentLevel, currentLevelData, nextLevel, xpProgress,
     completedProjects = [],
@@ -348,9 +379,26 @@ export default function AdventureMapPage() {
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const [selectedProject, setSelectedProject] = useState(null)
 
-  // ── Journey tabs: 'arduino' | 'esp32' ──
-  const [activeJourney, setActiveJourney] = useState('arduino')
+  // Journey tabs: 'arduino' | 'esp32'
+  const [activeJourney, setActiveJourney] = useState(() => {
+    // If unlocking an ESP32 component, switch to ESP32 tab automatically
+    const espComps = ['esp32','esp32-cam','pico','pico-w','raspberry-pi-pico','raspberry-pi-pico-w']
+    if (unlockCompId && espComps.includes(unlockCompId)) return 'esp32'
+    return 'arduino'
+  })
   const WORLDS = activeJourney === 'arduino' ? ARDUINO_WORLDS : ESP32_WORLDS
+
+  // Highlight the project that unlocks the requested component
+  const [highlightSlug, setHighlightSlug] = useState(() => unlockCompId ? (COMP_TO_PROJECT_SLUG[unlockCompId] || null) : null)
+
+  useEffect(() => {
+    if (!highlightSlug) return
+    // Auto-scroll to and open the highlighted project
+    setTimeout(() => {
+      const el = document.getElementById(`project-node-${highlightSlug}`)
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.click() }
+    }, 600)
+  }, [highlightSlug])
 
   // ── Teacher quiz difficulty ──
   const [quizDifficulty, setQuizDifficulty] = useState(() => {
@@ -700,14 +748,26 @@ export default function AdventureMapPage() {
             ? '🎒 Arduino is always unlocked. Complete projects to unlock more components!'
             : '📡 Build WiFi servers, IoT dashboards, and Bluetooth projects with ESP32.'}
         </p>
-        {classId && (
-          <p style={{ color: T.heroSubText, fontSize: 12, margin: '0 auto', maxWidth: 420 }}>
-            Class mode active {classProgress?.lastActivityAt ? `- Last activity ${new Date(classProgress.lastActivityAt).toLocaleString()}` : ''}
-          </p>
+        {unlockCompId && highlightSlug && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '8px 16px', borderRadius: 10, marginBottom: 10,
+            background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)',
+            fontSize: 13, fontWeight: 700, color: '#ef4444',
+          }}>
+            🔒 To unlock <strong style={{ textTransform: 'capitalize' }}>{unlockCompId.replace(/-/g,' ')}</strong> — complete the highlighted project below!
+          </div>
         )}
-
-
-      </div>
+        {unlockCompId && !highlightSlug && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '8px 16px', borderRadius: 10, marginBottom: 10,
+            background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)',
+            fontSize: 13, fontWeight: 700, color: '#f59e0b',
+          }}>
+            ⚡ Complete more projects to unlock <strong style={{ textTransform: 'capitalize' }}>{unlockCompId.replace(/-/g,' ')}</strong>!
+          </div>
+        )}
 
       {/* Map */}
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '12px 20px 120px' }}>
@@ -790,7 +850,20 @@ export default function AdventureMapPage() {
                 })
 
                 return (
-                  <div key={project.slug} style={{ marginBottom: 16 }}>
+                  <div
+                    key={project.slug}
+                    id={`project-node-${project.slug}`}
+                    onClick={() => !isLocked && handleNodeClick(project)}
+                    style={{
+                      marginBottom: 16,
+                      borderRadius: 12,
+                      outline: highlightSlug === project.slug ? '2px solid #ef4444' : 'none',
+                      outlineOffset: 2,
+                      boxShadow: highlightSlug === project.slug ? '0 0 0 4px rgba(239,68,68,0.15)' : 'none',
+                      transition: 'box-shadow 0.3s, outline 0.3s',
+                      cursor: isLocked ? 'default' : 'pointer',
+                    }}
+                  >
                     {/* Project Heading */}
                     <div style={{
                       display: 'flex',
@@ -798,8 +871,8 @@ export default function AdventureMapPage() {
                       gap: 10,
                       padding: '10px 14px',
                       borderRadius: 10,
-                      background: `${project.color}12`,
-                      border: `1px solid ${project.color}33`,
+                      background: highlightSlug === project.slug ? `${project.color}22` : `${project.color}12`,
+                      border: `1px solid ${highlightSlug === project.slug ? project.color : project.color + '33'}`,
                       color: isLocked ? T.labelLocked : project.color,
                       fontSize: 13,
                       fontWeight: 800,
@@ -807,6 +880,7 @@ export default function AdventureMapPage() {
                       <span style={{ fontSize: 18 }}>{project.icon}</span>
                       <span style={{ flex: 1, color: isLocked ? T.labelLocked : T.labelText }}>
                         {project.title}
+                        {highlightSlug === project.slug && <span style={{ marginLeft: 8, fontSize: 11, color: '#ef4444', fontWeight: 900 }}>← Complete this to unlock!</span>}
                       </span>
                       <span style={{
                         fontSize: 11,
@@ -1020,6 +1094,7 @@ export default function AdventureMapPage() {
         />
       )}
     </div>
+  </div>
   )
 }
 
