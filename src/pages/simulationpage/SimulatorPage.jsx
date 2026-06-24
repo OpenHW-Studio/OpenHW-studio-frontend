@@ -193,6 +193,7 @@ import {
   endpointAliases,
   hasCategoryIntersection,
   getPinCategory,
+  isRp2040CoreMissingError
 } from "./utils/hardwareUtils";
 
 // Web Editor features
@@ -226,14 +227,7 @@ function assertSafeDynamicModule(code, label) {
   }
 }
 
-function isRp2040CoreMissingError(err) {
-  const msg = String(err?.message || err || "").toLowerCase();
-  return (
-    msg.includes("platform 'rp2040:rp2040' not found") ||
-    msg.includes("platform rp2040:rp2040 is not found") ||
-    msg.includes("platform not installed")
-  );
-}
+
 
 // Tracks component types that were dynamically injected from the backend (not built-in).
 const BACKEND_INJECTED_TYPES = new Set();
@@ -9421,6 +9415,14 @@ loadDemoProject();
             } else {
               logSerial(`Compiling ${boardComp.id}...`);
               try {
+                // Collect libraries required by all placed components on this board
+                const requiredLibsForBoard = [...new Set(
+                  components
+                    .filter((c) => !isProgrammableBoardType(c.type))
+                    .flatMap((c) => COMPONENT_REGISTRY[c.type]?.autocoding?.libraries || [])
+                    .map((l) => String(l || '').trim())
+                    .filter(Boolean)
+                )];
                 compiled = await compileCode({
                   code: nativeCompileSource,
                   files: compileUnit.files,
@@ -9429,6 +9431,7 @@ loadDemoProject();
                   target: kind,
                   builder,
                   libraries_txt: librariesTxt,
+                  ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
                 });
                 setCachedHex(cacheSource, cacheKeyBoard, compiled);
               } catch (compileErr) {
@@ -9487,69 +9490,24 @@ loadDemoProject();
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
             try {
-              if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
-                const startRes = await startEsp32Compile({
-                  code: compileSource,
-                  libraries_txt: librariesTxt,
-                  targetEngine: 'frontend'
-                });
-                
-                if (!startRes || (!startRes.jobId && !startRes.buildId)) {
-                  throw new Error('Failed to start ESP32 compilation.');
-                }
-                
-                if (startRes.cache === 'hit') {
-                  logSerial(`Using server-cached compilation for ${boardComp.id}...`);
-                }
-                
-                const jobId = startRes.jobId || startRes.buildId;
-                let pollCount = 0;
-                let lastPrintedProgressLen = 0;
-                
-                while (true) {
-                  await new Promise(resolve => setTimeout(resolve, 500));
-                  const statusRes = await getEsp32CompileStatus(jobId);
-                  
-                  if (!statusRes) continue;
-                  
-                  const progressLines = statusRes.progress || [];
-                  if (progressLines.length > lastPrintedProgressLen) {
-                    for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
-                      logSerial(progressLines[i]);
-                    }
-                    lastPrintedProgressLen = progressLines.length;
-                  }
-                  
-                  if (statusRes.status === 'success') {
-                    if (!statusRes.binary_content) {
-                      throw new Error('Compilation succeeded but no binary content was returned.');
-                    }
-                    compiled = {
-                      hex: statusRes.binary_content,
-                      stdout: statusRes.stdout || '',
-                      stderr: statusRes.stderr || ''
-                    };
-                    break;
-                  } else if (statusRes.status === 'failed') {
-                    const errMsg = statusRes.error || 'ESP32 compilation failed.';
-                    throw new Error(errMsg);
-                  }
-                  
-                  pollCount++;
-                  if (pollCount > 180) {
-                    throw new Error('ESP32 compilation timed out after 90 seconds.');
-                  }
-                }
-              } else {
-                compiled = await compileCode({
-                  code: compileSource,
-                  files: compileUnit.files,
-                  sketchName: compileUnit.sketchName,
-                  fqbn: targetFqbn,
-                  target: kind,
-                  libraries_txt: librariesTxt,
-                });
-              }
+              // Collect libraries required by all placed components on this board
+              const requiredLibsForBoard = [...new Set(
+                components
+                  .filter((c) => !isProgrammableBoardType(c.type))
+                  .flatMap((c) => COMPONENT_REGISTRY[c.type]?.autocoding?.libraries || [])
+                  .map((l) => String(l || '').trim())
+                  .filter(Boolean)
+              )];
+              compiled = await compileCode({
+                code: compileSource,
+                files: compileUnit.files,
+                sketchName: compileUnit.sketchName,
+                fqbn: targetFqbn,
+                target: kind,
+                isFrontendEsp32: esp32SimulationMode === 'frontend',
+                libraries_txt: librariesTxt,
+                ...(requiredLibsForBoard.length > 0 ? { libraries: requiredLibsForBoard } : {}),
+              });
               setCachedHex(cacheSource, cacheKeyBoard, compiled);
             } catch (compileErr) {
               throw compileErr;

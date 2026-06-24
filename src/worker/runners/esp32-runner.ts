@@ -602,12 +602,23 @@ export class ESP32Runner implements BoardRunner {
         console.warn(`[ESP32Runner] Magic byte at 0x1000: 0x${binaryBytes[0x1000]?.toString(16)} (Expected: 0xe9)`);
         console.warn(`[ESP32Runner] Magic byte at 0x0000: 0x${binaryBytes[0]?.toString(16)}`);
         
+        // --- DIAGNOSTICS to Serial Monitor ---
+        if (onStateUpdate) {
+            onStateUpdate({ 
+                type: 'serial', 
+                data: `\r\n[WASM DIAGNOSTICS] Flash size: ${binaryBytes.length} bytes\r\n[WASM DIAGNOSTICS] Magic at 0x1000: 0x${binaryBytes[0x1000]?.toString(16)}\r\n`, 
+                boardId: "esp32", 
+                source: 'backend' 
+            });
+        }
+        // -------------------------------------
+
         // CRITICAL: Do NOT pass an external SimulationClock to the ESP32 constructor!
         // When you do, clock.cpu points to a null/different object, so all clock events
         // (like eFuse cmdDone after 634,400 cycles) NEVER fire, causing the BootROM to
         // spin forever waiting for eFuse operations to complete.
         // Let ESP32 create its own internal clock, then grab the reference from it.
-                this.cpu = new ESP32({ flashSizeMB: 4, flash: binaryBytes });
+        this.cpu = new ESP32({ flashSizeMB: 4, flash: binaryBytes });
         this.clock = this.cpu.clock; // Use the clock that is correctly linked to this CPU
         
         try {
@@ -697,21 +708,8 @@ export class ESP32Runner implements BoardRunner {
             (this.cpu.gpio as any).strapValue = 0x13; // default: GPIO5=1,GPIO15=1,GPIO0=1 = SPI Flash + Verbose
         }
         
-        // CRITICAL FIX: Wokwi MMU starts with ALL entries = 256 (INVALID bit set).
-        // The BootROM reads flash through the MMU-cached virtual address window (0x3f400000 / 0x40200000).
-        // Without valid MMU entries, every flash read returns -1 (invalidMem), causing the boot loop.
-        // Flash page size = 64KB (shift=16). For 4MB flash = 64 pages (indices 0-63).
-        // We pre-populate mmuTablePro with a 1:1 identity mapping for all flash pages.
-        if ((this.cpu as any).mmuTablePro) {
-            const mmuPro = (this.cpu as any).mmuTablePro as Uint32Array;
-            const mmuApp = (this.cpu as any).mmuTableApp as Uint32Array;
-            const FLASH_PAGES = 64; // 64 pages × 64KB = 4MB
-            for (let page = 0; page < FLASH_PAGES; page++) {
-                mmuPro[page] = page;  // 1:1 identity mapping, no invalid bit
-                mmuApp[page] = page;
-            }
-            console.log(`[ESP32Runner] Pre-seeded MMU with ${FLASH_PAGES} identity-mapped flash pages`);
-        }
+        // Wokwi engine already handles MMU correctly or intercepting FLASH_SPI0.
+        // We do not pre-seed mmuTablePro here because it breaks BootROM's flash mapping.
         
         // CRITICAL FIX #2: The BootROM polls 0x3ff5a104 (EFUSE_STATUS_REG) waiting for 0x5aa5.
         // Wokwi's Efuse controller initializes this to 0x1 (busy), so the BootROM spins forever.
@@ -813,6 +811,77 @@ export class ESP32Runner implements BoardRunner {
                     this.onStateUpdate({ type: 'protocol:i2c', boardId: this.boardId, address: addr, hex: displayHex, direction: 'write' });
                     return;
                 }
+
+                // >I2C_READ:53:01< -> I2C read
+                const i2cReadMatch = frame.match(/^I2C_READ:([0-9a-fA-F]+):([0-9a-fA-F]+)$/);
+                if (i2cReadMatch) {
+                    const addrStr = i2cReadMatch[1];
+                    const addr = parseInt(addrStr, 16);
+                    const qty = parseInt(i2cReadMatch[2], 16);
+                    
+                    let hexResp = '';
+                    
+                    // Start transaction and find which component ACKs
+                    let selectedInst: any = null;
+                    this.instances.forEach(inst => {
+                        const anyInst = inst as any;
+                        if (typeof anyInst.onI2CStart === 'function') {
+                            const ack = anyInst.onI2CStart(addr, true);
+                            if (ack) {
+                                selectedInst = anyInst;
+                            }
+                        }
+                    });
+
+                    // Read bytes — try both method names:
+                    //   readI2CByte()   → legacy ADXL345-style components
+                    //   onI2CReadByte() → I2CProtocol base class (MPU6050, BMP180, LCD, etc.)
+                    for (let i = 0; i < qty; i++) {
+                        let val = 0xFF; // NACK/pull-up default
+                        if (selectedInst) {
+                            if (typeof selectedInst.readI2CByte === 'function') {
+                                val = selectedInst.readI2CByte();
+                            } else if (typeof selectedInst.onI2CReadByte === 'function') {
+                                val = selectedInst.onI2CReadByte();
+                            }
+                        }
+                        hexResp += val.toString(16).padStart(2, '0');
+                    }
+                    
+                    // Stop transaction
+                    this.instances.forEach(inst => {
+                        const anyInst = inst as any;
+                        if (typeof anyInst.onI2CStop === 'function') {
+                            anyInst.onI2CStop();
+                            inst.stateChanged = true;
+                        }
+                    });
+
+                    // Send the response back to ESP32 UART
+                    const reply = `<I2C_RESP:${addrStr}:${hexResp}>\n`;
+                    this.serialRx(reply);
+                    
+                    // Add diagnostics!
+                    const instName = selectedInst ? selectedInst.type : 'NONE';
+                    const isPowered = selectedInst ? !!selectedInst.powered : false;
+                    const diagMsg = `\r\n[WASM DIAGNOSTICS] I2C_READ addr=${addrStr} qty=${qty} -> val=${hexResp} (Inst=${instName}, Powered=${isPowered})\r\n`;
+                    this.onStateUpdate({ type: 'serial', data: diagMsg, boardId: "esp32", source: 'backend' });
+
+                    this.onStateUpdate({ type: 'protocol:i2c', boardId: this.boardId, address: addr, hex: hexResp, direction: 'read' });
+                    
+                    // INJECT I2C RESPONSE BACK TO UART DIRECTLY
+                    // Bypassing this.serialBuffer so the simulated CPU gets it before the 8ms timeout
+                    const cmd = `<I2C_RESP:${addrStr.padStart(2, '0')}:${hexResp}>\n`;
+                    if (this.cpu && this.cpu.uart[0]) {
+                        for (let i = 0; i < cmd.length; i++) {
+                            this.cpu.uart[0].feedByte(cmd.charCodeAt(i));
+                        }
+                    } else {
+                        this.serialRx(cmd);
+                    }
+                    
+                    return;
+                }
                 
                 // >SPI:<hexbyte>< or >SPIBUF:<hexdata>< → SPI write
                 const spiMatch = frame.match(/^SPI:([0-9a-fA-F]{2})$/);
@@ -847,10 +916,18 @@ export class ESP32Runner implements BoardRunner {
                     }
                     protocolFrame = '';
                 } else if (inFrame) {
-                    protocolFrame += char;
+                    if (char === '\n' || char === '\r') {
+                        // Abort frame if newline is encountered
+                        inFrame = false;
+                        protocolFrame = '';
+                        // Emit the aborted frame text if needed, but for now just discard
+                    } else {
+                        protocolFrame += char;
+                    }
                 }
 
                 // Line-buffer for console logging
+
                 if (char === '\n' || char === '\r') {
                     if (uartBuffer.length > 0) {
                         // Suppress massive internal protocol frames from the browser console
@@ -863,13 +940,15 @@ export class ESP32Runner implements BoardRunner {
                     uartBuffer += char;
                 }
 
-                if (this.onByteTransmitCb) {
-                    this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'uart0' });
+                if (!inFrame && char !== '>' && char !== '<') {
+                    if (this.onByteTransmitCb) {
+                        this.onByteTransmitCb({ boardId: this.boardId, value: byte, char, source: 'uart0' });
+                    }
                 }
 
                 // Line-buffer for serial monitor: emit complete lines as SERIAL_OUTPUT
                 // This matches the behavior of qemuRunner.js on the backend
-                if (!inFrame) {
+                if (!inFrame && char !== '>' && char !== '<') {
                     if (char === '\n') {
                         if (this.uartLineBuffer.length > 0) {
                             this.onStateUpdate({ type: 'SERIAL_OUTPUT', text: this.uartLineBuffer, boardId: this.boardId, source: 'wasm' });

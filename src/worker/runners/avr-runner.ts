@@ -195,12 +195,18 @@ export class AVRRunner {
 
             stop() {
                 const instArray = Array.from(this.instances.values());
-                for (const inst of instArray) {
-                    if (inst.onI2CStop) {
-                        inst.onI2CStop();
+                // Only call onI2CStop on the active slave, not all instances
+                if (this.activeSlave) {
+                    if (this.activeSlave.onI2CStop) {
+                        this.activeSlave.onI2CStop();
                     }
-                    if (this.currentBuffer.length > 0 && inst.onI2CStart && this.activeSlave === inst) {
-                        inst.recordI2cTransaction([...this.currentBuffer]);
+                    if (this.currentBuffer.length > 0 && this.activeSlave.onI2CStart) {
+                        this.activeSlave.recordI2cTransaction?.([...this.currentBuffer]);
+                    }
+                } else {
+                    // Fallback: notify all in case no active slave tracked (e.g. broadcast stop)
+                    for (const inst of instArray) {
+                        if (inst.onI2CStop) inst.onI2CStop();
                     }
                 }
 
@@ -240,11 +246,11 @@ export class AVRRunner {
             }
 
             writeByte(value: number) {
-                const instArray = Array.from(this.instances.values());
+                // Only send write bytes to the active slave, not all instances
                 let handled = false;
-                for (const inst of instArray) {
-                    if (inst.onI2CByte) {
-                        if (inst.onI2CByte(-1, value)) {
+                if (this.activeSlave) {
+                    if (this.activeSlave.onI2CByte) {
+                        if (this.activeSlave.onI2CByte(-1, value)) {
                             handled = true;
                         }
                     }
@@ -520,7 +526,7 @@ export class AVRRunner {
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string, nextVoltage: number) => void) {
-        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor' || inst.type === 'openhw-photoresistor' || inst.type === 'openhw-ntc-thermistor' || inst.type === 'openhw-ntc-temperature-sensor') {
             const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : null;
             if (!otherPin) return;
             const resistance = Number.parseFloat(String((inst as any).state?.value || (inst as any).state?.resistance || 1000));
@@ -1230,14 +1236,15 @@ export class AVRRunner {
             port.addListener((value) => {
                 pinNames.forEach((pin, i) => {
                     if (!pin) return;
-                    // Only propagate port register changes to the external circuit if the pin is configured as an OUTPUT!
+                    // Propagate port register changes to the external circuit immediately.
+                    // If the pin is changed to INPUT, it should be treated as HIGH (pulled up)
+                    // unless later overridden by physics solver.
                     const state = port.pinState(i);
-                    const isOutput = state === PinState.Low || state === PinState.High;
-                    if (!isOutput) {
-                        return;
+                    let isHigh = true;
+                    if (state === PinState.Low) {
+                        isHigh = false;
                     }
 
-                    const isHigh = (value & (1 << i)) !== 0;
                     if (this.pinStates[pin] !== isHigh) {
                         this.pinStates[pin] = isHigh;
                         this.pinsChanged = true;
@@ -1397,6 +1404,8 @@ export class AVRRunner {
                 instArray.forEach(inst => {
                     if (!(inst as any)._simCpu) {
                         (inst as any)._simCpu = this.cpu;
+                        (inst as any)._simUpdatePhysics = this.updatePhysics;
+
                         (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
                     }
                     inst.update(this.cpu!.cycles, this.currentWires, instArray);
@@ -1420,6 +1429,43 @@ export class AVRRunner {
                 if (typeof this.repropagateAllVoltages === 'function') {
                     this.repropagateAllVoltages();
                 }
+
+                if (this.adc && this.cpu) {
+                    const isMega = this.boardId.toLowerCase().includes('mega');
+                    const analogPins = isMega ? ['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15'] : UNO_ANALOG_PINS;
+                    for (let i = 0; i < analogPins.length; i++) {
+                        const arduinoPin = analogPins[i];
+                        let voltage = 0;
+                        for (const w of this.currentWires) {
+                            const [fromComp, fromPin] = w.from.split(':');
+                            const [toComp, toPin] = w.to.split(':');
+
+                            let isConnectedToPin = false;
+                            let otherCompId = '';
+                            let otherCompPin = '';
+
+                            if (fromComp === this.boardId && (fromPin === arduinoPin || fromPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = toComp;
+                                otherCompPin = toPin;
+                            } else if (toComp === this.boardId && (toPin === arduinoPin || toPin === `A${i}`)) {
+                                isConnectedToPin = true;
+                                otherCompId = fromComp;
+                                otherCompPin = fromPin;
+                            }
+
+                            if (isConnectedToPin) {
+                                const inst = this.instances.get(otherCompId);
+                                if (inst) {
+                                    voltage = Math.max(voltage, inst.getPinVoltage(otherCompPin));
+                                }
+                            }
+                        }
+                        this.adc.channelValues[i] = voltage;
+                    }
+                }
+
+
                 if (this.cpu) {
                     const pind = this.cpu.data[0x29];
                     console.log(`[PhysicsSolve] PIND2=${(pind>>2)&1} PIND3=${(pind>>3)&1} PIND4=${(pind>>4)&1} PIND5=${(pind>>5)&1} DDRD=${this.cpu.data[0x2A]} PORTD=${this.cpu.data[0x2B]}`);
@@ -2010,7 +2056,7 @@ export class AVRRunner {
         // Identify nets that contain a resistor pin
         this.netHasResistor.clear();
         for (const [id, inst] of this.instances) {
-            if (inst.type === 'openhw-resistor' || inst.type === 'openhw-resistor') {
+            if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor' || inst.type === 'openhw-photoresistor' || inst.type === 'openhw-ntc-thermistor' || inst.type === 'openhw-ntc-temperature-sensor') {
                 const n1 = this.pinToNet.get(`${id}:p1`);
                 const n2 = this.pinToNet.get(`${id}:p2`);
                 if (n1 !== undefined) this.netHasResistor.add(n1);

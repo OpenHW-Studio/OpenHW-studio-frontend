@@ -300,6 +300,13 @@ export function isProgrammableBoardType(type) {
   return /(arduino|esp32|stm32|rp2040|pico)/i.test(s);
 }
 
+export function isRp2040CoreMissingError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes("platform 'rp2040:rp2040' not found")
+    || msg.includes('platform rp2040:rp2040 is not found')
+    || msg.includes('platform not installed');
+}
+
 export function isBreadboardType(type) {
   const s = String(type || '').toLowerCase();
   return s.startsWith('wokwi-breadboard') || s.startsWith('openhw-breadboard');

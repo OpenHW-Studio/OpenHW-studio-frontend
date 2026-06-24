@@ -251,6 +251,43 @@ self.onmessage = async (e) => {
         
         const snippet = generateCodeForComponent(compId, wires || [], manifest, components || []);
         
+        // ---- FIX FOR divider mode resolving to GND instead of Analog pin ----
+        if (snippet && typeof snippet === 'object') {
+            const hasGndBug = ['setup', 'loop'].some(k => snippet[k] && typeof snippet[k] === 'string' && snippet[k].match(/\b(analogRead|digitalRead)\(GND\)/));
+            if (hasGndBug) {
+                // Find any wire connected to this component that goes to a typical analog/digital pin
+                const aWire = (wires || []).find((w: any) => {
+                    const isFromThis = w.from.startsWith(compId + ':');
+                    const isToThis = w.to.startsWith(compId + ':');
+                    if (!isFromThis && !isToThis) return false;
+                    
+                    const other = isFromThis ? w.to : w.from;
+                    // Match A0-A15, GPxx, Dxx, or raw numbers
+                    return other.match(/:(A\d+|GP\d+|D\d+|\d+)$/);
+                });
+
+                if (aWire) {
+                    const isFromThis = aWire.from.startsWith(compId + ':');
+                    const other = isFromThis ? aWire.to : aWire.from;
+                    const mMatch = other.match(/:(A\d+|GP\d+|D\d+|\d+)$/);
+                    let m = mMatch ? mMatch[1] : null;
+                    
+                    if (m && m.startsWith('GP')) {
+                        m = m.replace('GP', ''); // e.g. convert GP26 to 26
+                    }
+                    
+                    if (m) {
+                        for (const key of ['setup', 'loop']) {
+                            if (snippet[key] && typeof snippet[key] === 'string') {
+                                snippet[key] = snippet[key].replace(/\b(analogRead|digitalRead)\(GND\)/g, `$1(${m})`);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // ---------------------------------------------------------------------
+
         // Post-process: replace placeholders the WASM engine left unresolved
         if (snippet && typeof snippet === 'object') {
           extractGlobalsFromManifest(snippet, manifest);

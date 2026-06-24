@@ -731,7 +731,7 @@ export class BackendProxyRunner implements BoardRunner {
     }
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string) => void) {
-        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
+        if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor' || inst.type === 'openhw-photoresistor' || inst.type === 'openhw-ntc-thermistor' || inst.type === 'openhw-ntc-temperature-sensor') {
             const otherPin = pinId === 'p1' ? 'p2' : pinId === 'p2' ? 'p1' : (pinId === '1' ? '2' : pinId === '2' ? '1' : null);
             if (!otherPin) return;
             (inst as any).setPinVoltage?.(otherPin, voltage);

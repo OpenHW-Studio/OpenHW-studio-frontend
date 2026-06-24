@@ -1751,6 +1751,16 @@ const coreMessageHandler = async (e: MessageEvent) => {
     }
 };
 
+self.addEventListener('error', (err: any) => {
+    console.error('[SimWorker] UNCAUGHT ERROR:', err.message, err.filename, err.lineno, err.error);
+    postMessage({ type: 'error', message: `Uncaught Worker Error: ${err.message} at ${err.filename}:${err.lineno}\n${err.error?.stack || ''}` });
+});
+
+self.addEventListener('unhandledrejection', (err: any) => {
+    console.error('[SimWorker] UNHANDLED PROMISE REJECTION:', err.reason);
+    postMessage({ type: 'error', message: `Unhandled Promise Rejection: ${err.reason?.message || err.reason}\n${err.reason?.stack || ''}` });
+});
+
 self.onmessage = async (e) => {
     const data = e.data;
 

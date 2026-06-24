@@ -33,8 +33,11 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'openhw-ws2812b': ['pixels', 'brightness', 'count'],
   'openhw-mpu6050': ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'temp'],
   'openhw-adxl345': ['accelX', 'accelY', 'accelZ', 'powered', 'i2cAddress'],
-  'openhw-ds1307-rtc': ['running', 'time'],
-  'openhw-bmp180': ['temp', 'pressure', 'altitude'],
+  'openhw-ds1307-rtc': ['running', 'time', 'datetime'],
+  'openhw-bmp180': ['temperature', 'pressure', 'altitude', 'powered'],
+  'openhw-bmp180-breakout': ['temperature', 'pressure', 'altitude', 'powered'],
+  'wokwi-bmp180': ['temperature', 'pressure', 'altitude', 'powered'],
+  'wokwi-bmp180-breakout': ['temperature', 'pressure', 'altitude', 'powered'],
   'openhw-dht22': ['temperature', 'humidity', 'lastReadMs', 'error'],
   'max30102': ['ir', 'red', 'temp', 'active'],
   'openhw-hc-sr04': ['distance', 'echoTimeMs'],
@@ -122,8 +125,10 @@ export const COMPONENT_TELEMETRY_PARAMS = {
   'wokwi-ws2812b': ['pixels', 'brightness', 'count'],
   'wokwi-ws2821b': ['pixels', 'brightness', 'count'],
   'wokwi-mpu6050': ['ax', 'ay', 'az', 'gx', 'gy', 'gz', 'temp'],
-  'wokwi-ds1307': ['running', 'time'],
-  'wokwi-bmp180': ['temp', 'pressure', 'altitude'],
+  'wokwi-ds1307': ['running', 'time', 'datetime'],
+  'wokwi-ds1307-rtc': ['running', 'time', 'datetime'],
+  'wokwi-bmp180': ['temperature', 'pressure', 'altitude', 'powered'],
+  'wokwi-bmp180-breakout': ['temperature', 'pressure', 'altitude', 'powered'],
   'wokwi-dht22': ['temperature', 'humidity', 'lastReadMs', 'error'],
   'wokwi-max30102': ['ir', 'red', 'temp', 'active'],
   'wokwi-hc-sr04': ['distance', 'echoTimeMs'],
@@ -172,7 +177,7 @@ export function getTelemetryParamsForComponent(compType) {
     return COMPONENT_TELEMETRY_PARAMS[compType];
   }
 
-  const baseParams = COMPONENT_TELEMETRY_PARAMS[compType] || ['illuminated', 'voltageDrop', 'current', 'brightness', 'color', 'glow', 'value', 'pressed', 'angle'];
+  const baseParams = COMPONENT_TELEMETRY_PARAMS[compType] ?? [];
   
   // Every component gets basic pin state tracking
   const universalParams = ['pins', 'pinToggles'];
@@ -181,7 +186,7 @@ export function getTelemetryParamsForComponent(compType) {
   // TODO: Add esp32 and stm32 to board classifications
   const isBoard = safeCompType.includes('arduino') || safeCompType.includes('pico') || safeCompType.includes('attiny') || safeCompType.includes('esp32') || safeCompType.includes('stm32');
   const isI2C = safeCompType.includes('ssd1306') || safeCompType.includes('lcd1602-i2c') || safeCompType.includes('lcd2004-i2c') || safeCompType.includes('mpu6050') || safeCompType.includes('ds1307') || safeCompType.includes('bmp180') || safeCompType.includes('max30102');
-  const isSPI = safeCompType.includes('max7219') || safeCompType.includes('ili9341') || safeCompType.includes('nokia-5110') || safeCompType.includes('sd-card');
+  const isSPI = safeCompType.includes('max7219') || safeCompType.includes('ili9341') || safeCompType.includes('nokia-5110') || safeCompType.includes('sd-card') || safeCompType.includes('mfrc522');
   const isOneWire = safeCompType.includes('dht22');
   const isAnalog = safeCompType.includes('potentiometer') || safeCompType.includes('photoresistor') || safeCompType.includes('thermistor') || safeCompType.includes('joystick') || safeCompType.includes('soil') || safeCompType.includes('sensor');
   const isPWM = safeCompType.includes('led') || safeCompType.includes('servo') || safeCompType.includes('buzzer') || safeCompType.includes('motor');

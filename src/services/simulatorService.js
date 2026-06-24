@@ -117,6 +117,9 @@ const getAdminAuthConfig = () => {
  */
 export async function compileCode(input) {
     const payload = typeof input === 'string' ? { code: input } : (input || {});
+    if (input && typeof input === 'object' && 'isFrontendEsp32' in input) {
+        payload.isFrontendEsp32 = input.isFrontendEsp32;
+    }
     const targetFqbn = String(payload.fqbn || '').trim();
     const isUnoOrPico = targetFqbn.includes('avr') || targetFqbn.includes('rp2040') || payload.target === 'uno' || payload.target === 'pico';
 

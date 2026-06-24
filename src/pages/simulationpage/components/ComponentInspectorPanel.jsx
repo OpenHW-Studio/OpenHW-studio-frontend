@@ -1,5 +1,5 @@
 import React from 'react';
-import { wireColor } from "../wireUtils"
+import { wireColor } from '../wireUtils';
 function ComponentInspectorPanelBase({
   selectedComponentInfo,
   showComponentDesc,
