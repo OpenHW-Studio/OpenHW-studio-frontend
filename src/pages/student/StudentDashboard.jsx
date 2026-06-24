@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { BookOpen, ClipboardCheck, Home, Monitor, X } from 'lucide-react'
+import { BookOpen, ClipboardCheck, Home, Microchip, Monitor, X, User } from 'lucide-react'
 import { useAuth } from "../../context/AuthContext.jsx";
 import { useGamification } from "../../context/GamificationContext.jsx";
 import { PROJECTS } from "../../services/gamification/ProjectsConfig.js";
@@ -14,15 +14,8 @@ import { formatDateTime, normalizeJoinCode, getAvatarLetters } from '../../compo
 import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 import ClassCard from '../../components/common/ClassCard.jsx'
 import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
-
-const DEMO_PROJECTS = [
-  { title: 'LED Blink',          slug: 'led-blink',          board: 'Arduino Uno', difficulty: 'Beginner',     icon: '💡', xp: 100 },
-  { title: 'RGB LED',            slug: 'rgb-led',             board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🌈', xp: 150 },
-  { title: 'Buzzer',             slug: 'buzzer',              board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🔊', xp: 150 },
-  { title: 'Potentiometer',      slug: 'potentiometer',       board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🎛️', xp: 175 },
-  { title: 'Button & Debounce',  slug: 'button-debounce',     board: 'Arduino Uno', difficulty: 'Beginner',     icon: '🔘', xp: 200 },
-  { title: 'Temperature Sensor', slug: 'temperature-sensor',  board: 'Arduino Uno', difficulty: 'Intermediate', icon: '🌡️', xp: 250 },
-]
+import GuidedProjectsPanel from '../../components/student/GuidedProjectsSection.jsx'
+import SavedCircuitsSection from '../../components/common/SavedCircuitsSection.jsx'
 
 export default function StudentDashboard() {
   const { user, logout } = useAuth()
@@ -48,6 +41,7 @@ export default function StudentDashboard() {
   const [joinLoading, setJoinLoading] = useState(false)
   const [joinError, setJoinError] = useState('')
   const [info, setInfo] = useState('')
+  const [showGuidedProjects, setShowGuidedProjects] = useState(false)
 
   const firstName = user?.name ? user.name.split(' ')[0] : 'Student'
   const avatarLetter = getAvatarLetters(user?.name, 'S')
@@ -189,8 +183,10 @@ export default function StudentDashboard() {
 
   const sidebarLinks = [
     { key: 'home', label: 'Dashboard', icon: Home, isActive: true, onClick: () => {} },
+    { key: 'projects', label: 'Guided Projects', icon: Microchip, isActive: false, onClick: () => setShowGuidedProjects(true) },
     { key: 'simulator', label: 'Open Simulator', icon: Monitor, isActive: false, onClick: () => navigate('/simulator') },
-    { key: 'join', label: 'Join class', icon: BookOpen, isActive: false, onClick: handleOpenJoinModal }
+    { key: 'join', label: 'Join New Class', icon: BookOpen, isActive: false, onClick: handleOpenJoinModal },
+    { key: 'user-dash', label: 'Go to User Dashboard', icon: User, isActive: false, onClick: () => navigate('/user/dashboard') }
   ]
 
   const handlePasteCode = async () => {
@@ -297,7 +293,7 @@ export default function StudentDashboard() {
 
               {!loadingDashboard && !dashboardError && classrooms.length === 0 ? (
                 <div className="empty-state">
-                  <div className="empty-icon">??</div>
+                  <div className="empty-icon"></div>
                   <p>You have not joined any classes yet.</p>
                   <button type="button" className="btn btn-primary" onClick={handleOpenJoinModal}>
                     Join with class code
@@ -322,38 +318,7 @@ export default function StudentDashboard() {
               ) : null}
             </section>
 
-            {/* DEMO PROJECTS — guide only, no gamification */}
-            <section className="teacher-classes-panel projects-section student-dashboard__section-gap">
-              <header className="teacher-section-heading teacher-section-heading--compact">
-                <div>
-                  <h3 className="student-dashboard__section-title">Guided project demos</h3>
-                  <p className="section-sub student-dashboard__section-sub">
-                    Explore the circuit and code before starting the real challenge
-                  </p>
-                </div>
-              </header>
-
-              <div className="projects-grid student-dashboard__projects-grid">
-                {DEMO_PROJECTS.map((p) => (
-                  <div
-                    className="project-card"
-                    key={p.slug}
-                    onClick={() => navigate(`/${p.slug}/guide`)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <div className="project-icon">{p.icon}</div>
-                    <div className="project-info">
-                      <h4>{p.title}</h4>
-                      <span className="project-board">{p.board}</span>
-                    </div>
-                    <div className="project-meta">
-                      <span className={`difficulty ${p.difficulty.toLowerCase()}`}>{p.difficulty}</span>
-                      <span className="points">+{p.xp} XP</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+            <SavedCircuitsSection user={user} />
 
             {/* GAMIFIED PROGRESS STATS BAR */}
             <section className="teacher-classes-panel projects-section student-dashboard__section-gap">
@@ -569,6 +534,8 @@ export default function StudentDashboard() {
           </section>
         </div>
       )}
+
+      <GuidedProjectsPanel isOpen={showGuidedProjects} onClose={() => setShowGuidedProjects(false)} />
 
       {info && (
         <div className="teacher-toast" role="status">

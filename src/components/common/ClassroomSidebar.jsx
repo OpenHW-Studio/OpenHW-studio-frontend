@@ -10,7 +10,7 @@ export default function ClassroomSidebar({
 }) {
   const [theme, setTheme] = useState(
     () =>
-      localStorage.getItem("openhw_theme") ||
+      localStorage.getItem("theme") ||
       document.documentElement.getAttribute("data-theme") ||
       "light",
   );
@@ -25,7 +25,7 @@ export default function ClassroomSidebar({
     setTheme((prev) => {
       const next = prev === "dark" ? "light" : "dark";
       document.documentElement.setAttribute("data-theme", next);
-      localStorage.setItem("openhw_theme", next);
+      localStorage.setItem("theme", next);
       return next;
     });
   };
