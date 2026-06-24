@@ -159,9 +159,9 @@ void loop() {
       passingThreshold: 70,
       evaluationCriteria: {
         components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'led', count: 3 }, { type: 'resistor', count: 3 }] },
-        wiringAccuracy: { 
-          description: 'Correct wiring', 
-          weight: 0.3, 
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
           requiredConnections: [
             // We just require 3 LEDs connected to pins 9, 10, 11 (with resistors in between)
             // Since we can't easily distinguish which LED is which color in Wokwi JSON without reading the 'color' attribute,
@@ -244,9 +244,9 @@ void loop() {
       passingThreshold: 70,
       evaluationCriteria: {
         components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'buzzer', count: 1 }] },
-        wiringAccuracy: { 
-          description: 'Correct wiring', 
-          weight: 0.3, 
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
           requiredConnections: [
             { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: 'SIG' } },
             { from: { component: 'buzzer', pin: 'GND' }, to: { component: 'arduino', pin: 'GND' } }
@@ -345,9 +345,9 @@ void loop() {
       passingThreshold: 70,
       evaluationCriteria: {
         components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'led', count: 1 }, { type: 'potentiometer', count: 1 }, { type: 'resistor', count: 1 }] },
-        wiringAccuracy: { 
-          description: 'Correct wiring', 
-          weight: 0.3, 
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
           requiredConnections: [
             { from: { component: 'arduino', pin: 'A0' }, to: { component: 'potentiometer', pin: 'SIG' } },
             { from: { component: 'potentiometer', pin: '1' }, to: { component: 'arduino', pin: 'GND' } },
@@ -455,8 +455,29 @@ void loop() {
     evaluation: {
       passingThreshold: 70,
       evaluationCriteria: {
-        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'photoresistor', count: 1 }, { type: 'led', count: 1 }] },
-        wiringAccuracy: { description: 'Correct wiring', weight: 0.3, requiredConnections: [] },
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'photoresistor', count: 1 }] },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
+          requiredConnections: [
+            { from: { component: 'photoresistor', pin: '1' }, to: { component: 'arduino', pin: '5V' } },
+            { from: { component: 'photoresistor', pin: '2' }, to: { component: 'arduino', pin: 'A0' } },
+            { from: { component: 'photoresistor', pin: '2' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } },
+            { from: { component: 'arduino', pin: '13' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } }
+          ],
+          alternativeConnections: [
+            [
+              { from: { component: 'photoresistor', pin: '2' }, to: { component: 'arduino', pin: '5V' } },
+              { from: { component: 'photoresistor', pin: '1' }, to: { component: 'arduino', pin: 'A0' } },
+              { from: { component: 'photoresistor', pin: '1' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } },
+              { from: { component: 'arduino', pin: '13' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } }
+            ]
+          ]
+        },
         codeFunctionality: { description: 'LED responds to light level', weight: 0.4, requiredFunctions: ['setup', 'loop'] },
       },
     },
@@ -1020,9 +1041,9 @@ void loop() {
 
 // Difficulty styling
 export const DIFFICULTY_CONFIG = {
-  beginner:     { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  label: 'Beginner' },
+  beginner: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)', label: 'Beginner' },
   intermediate: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: 'Intermediate' },
-  advanced:     { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  label: 'Advanced' },
+  advanced: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: 'Advanced' },
 };
 
 // ── Helper: get project status based on completed projects ────────────────────
