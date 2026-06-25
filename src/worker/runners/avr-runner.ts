@@ -342,6 +342,15 @@ export class AVRRunner {
         this.setupHooks();
         this.setSoftSerialRxLevel(true);
 
+        // Initialize _simCpu / _simUpdatePhysics on all component instances BEFORE the first
+        // CPU chunk runs, so that components (e.g. HC-SR04) can use addClockEvent immediately.
+        this.instances.forEach(inst => {
+            if (!(inst as any)._simCpu) {
+                (inst as any)._simCpu = this.cpu;
+                (inst as any)._simUpdatePhysics = this.repropagateAllVoltages;
+            }
+        });
+
         this.running = true;
         this.lastTime = performance.now();
         this.lastStateEmitTime = this.lastTime;
@@ -1042,7 +1051,23 @@ export class AVRRunner {
                 return pinState === PinState.High || pinState === PinState.Low;
             });
             const analogPins = allBoardPins.filter(p => p.startsWith('A'));
-            [...inputPins, ...analogPins, ...outputPins].forEach(pin => {
+            // INPUT pins: only update pinStates — do NOT propagate outward, because an
+            // external component owns the line (e.g. HC-SR04 drives ECHO, DHT22 drives DATA).
+            // Propagating a default-HIGH here would overwrite the component's output.
+            inputPins.forEach(pin => {
+                const { isDriven, isHigh } = getAvrPinModeState(pin);
+                if (isDriven) {
+                    this.pinStates[pin] = isHigh;
+                }
+            });
+            analogPins.forEach(pin => {
+                const { isDriven, isHigh } = getAvrPinModeState(pin);
+                if (isDriven) {
+                    this.pinStates[pin] = isHigh;
+                    updateOopPin(pin, isHigh);
+                }
+            });
+            outputPins.forEach(pin => {
                 const { isDriven, isHigh } = getAvrPinModeState(pin);
                 if (isDriven) {
                     this.pinStates[pin] = isHigh;
@@ -1437,10 +1462,17 @@ export class AVRRunner {
             if (this.serialBuffer.length > 0 && this.usart && this.serialByteBudget >= 1) {
                 const maxBytes = Math.floor(this.serialByteBudget);
                 const toSend = Math.min(maxBytes, this.serialBuffer.length);
+                let sent = 0;
                 for (let i = 0; i < toSend; i++) {
-                    this.usart.writeByte(this.serialBuffer.shift()!);
+                    const byte = this.serialBuffer[0];
+                    if (this.usart.writeByte(byte)) {
+                        this.serialBuffer.shift();
+                        sent++;
+                    } else {
+                        break;
+                    }
                 }
-                this.serialByteBudget -= toSend;
+                this.serialByteBudget -= sent;
             }
 
             this.lastPhysicsMs = physicsMs;
@@ -1814,6 +1846,7 @@ export class AVRRunner {
         }
 
         if (frequencyHz <= 0 && dutyCycle <= 0 && pulseUs <= 0) return;
+        if (frequencyHz > 0 && frequencyHz < 5) return;
 
         const meta = {
             protocol: 'pwm',
