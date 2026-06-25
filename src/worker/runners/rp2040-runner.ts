@@ -3280,6 +3280,13 @@ export class RP2040Runner implements BoardRunner {
                 if (inst.pins['SIG'] != null) {
                     seedFrom(`${compId}:SIG`, inst.pins['SIG'].voltage);
                 }
+            } else if (inst.type.includes('ntc')) {
+                inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
+                ['OUT', 'A0', 'D0'].forEach(pin => {
+                    if (inst.pins[pin] != null) {
+                        seedFrom(`${compId}:${pin}`, inst.pins[pin].voltage);
+                    }
+                });
             }
         });
 
