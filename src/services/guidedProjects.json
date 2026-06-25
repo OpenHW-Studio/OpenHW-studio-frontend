@@ -1629,7 +1629,7 @@
               "Arduino Uno",
               "Breadboard"
             ],
-            "code": "const int TEMP_PIN = A0;\nconst int BUZZER_PIN = 8;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(BUZZER_PIN, OUTPUT);\n}\n\nvoid loop() {\n  int raw = analogRead(TEMP_PIN);\n  float voltage = raw * (5.0 / 1023.0);\n  float temperatureC = voltage * 100.0;\n\n  Serial.print(\"Temp C: \");\n  Serial.println(temperatureC);\n\n  if (temperatureC >= 30.0) {\n    tone(BUZZER_PIN, 900);\n  } else {\n    noTone(BUZZER_PIN);\n  }\n\n  delay(150);\n}",
+            "code": "const int TEMP_PIN = A0;\nconst int BUZZER_PIN = 8;\nconst float BETA = 3950;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(BUZZER_PIN, OUTPUT);\n}\n\nvoid loop() {\n  int raw = analogRead(TEMP_PIN);\n  float resistance = 10000.0 * raw / (1023.0 - raw);\n  float tempK = 1.0 / (log(resistance / 10000.0) / BETA + 1.0 / 298.15);\n  float tempC = tempK - 273.15;\n\n  Serial.print(\"Temp C: \");\n  Serial.println(tempC);\n\n  if (tempC >= 30.0) {\n    tone(BUZZER_PIN, 900);\n  } else {\n    noTone(BUZZER_PIN);\n  }\n\n  delay(150);\n}",
             "schemas": {
               "arduino": {
                 "schemaVersion": "openhw-project-v2",
@@ -1643,6 +1643,17 @@
                     "y": -280,
                     "w": 425,
                     "h": 320,
+                    "rotation": 0,
+                    "attrs": {}
+                  },
+                  {
+                    "id": "comp_0",
+                    "type": "openhw-ntc-temperature-sensor",
+                    "label": "Temperature Sensor",
+                    "x": 200,
+                    "y": -270,
+                    "w": 40,
+                    "h": 45,
                     "rotation": 0,
                     "attrs": {}
                   },
@@ -1692,6 +1703,45 @@
                 "connections": [
                   {
                     "id": "w_0",
+                    "from": "comp_0:OUT",
+                    "to": "uno1:A0",
+                    "color": "blue",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_1",
+                    "from": "comp_0:VCC",
+                    "to": "uno1:5V",
+                    "color": "red",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_2",
+                    "from": "comp_0:GND",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_3",
                     "from": "comp_2:p",
                     "to": "uno1:8",
                     "color": "green",
@@ -1704,7 +1754,7 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_1",
+                    "id": "w_4",
                     "from": "comp_2:n",
                     "to": "uno1:GND",
                     "color": "black",
@@ -1723,7 +1773,7 @@
                 "projectFiles": [],
                 "openCodeTabs": [],
                 "activeCodeFileId": "code.ino",
-"code": "const int TEMP_PIN = A0;\nconst int BUZZER_PIN = 8;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(BUZZER_PIN, OUTPUT);\n}\n\nvoid loop() {\n  int raw = analogRead(TEMP_PIN);\n  float voltage = raw * (5.0 / 1023.0);\n  float temperatureC = voltage * 100.0;\n\n  Serial.print(\"Temp C: \");\n  Serial.println(temperatureC);\n\n  if (temperatureC >= 30.0) {\n    tone(BUZZER_PIN, 900);\n  } else {\n    noTone(BUZZER_PIN);\n  }\n\n  delay(150);\n}",
+"code": "const int TEMP_PIN = A0;\nconst int BUZZER_PIN = 8;\nconst float BETA = 3950;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(BUZZER_PIN, OUTPUT);\n}\n\nvoid loop() {\n  int raw = analogRead(TEMP_PIN);\n  float resistance = 10000.0 * raw / (1023.0 - raw);\n  float tempK = 1.0 / (log(resistance / 10000.0) / BETA + 1.0 / 298.15);\n  float tempC = tempK - 273.15;\n\n  Serial.print(\"Temp C: \");\n  Serial.println(tempC);\n\n  if (tempC >= 30.0) {\n    tone(BUZZER_PIN, 900);\n  } else {\n    noTone(BUZZER_PIN);\n  }\n\n  delay(150);\n}",
                 "name": "Temperature Sensor (NTC) with Buzzer Alarm",
                 "exportedAt": "2026-06-18T08:48:06.643Z"
               },
@@ -3768,7 +3818,7 @@
               "3x 220Ω Resistors",
               "Arduino Uno"
             ],
-            "code": "int ledR = 11;\nint ledG = 10;\nint ledB = 9;\n\nvoid setup() {\n  pinMode(ledR, OUTPUT);\n  pinMode(ledG, OUTPUT);\n  pinMode(ledB, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int val = analogRead(A0);\n  float mV = val * 5000.0 / 1024;\n  float tempC = (mV - 500) / 10;\n  Serial.print(tempC);\n  Serial.println(\"C\");\n\n  if (tempC < 20) {\n    digitalWrite(ledR, HIGH);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, LOW);\n  } else if (tempC < 30) {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, HIGH);\n    digitalWrite(ledB, LOW);\n  } else {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, HIGH);\n  }\n  delay(500);\n}",
+            "code": "int ledR = 11;\nint ledG = 10;\nint ledB = 9;\nconst float BETA = 3950;\n\nvoid setup() {\n  pinMode(ledR, OUTPUT);\n  pinMode(ledG, OUTPUT);\n  pinMode(ledB, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int raw = analogRead(A0);\n  float resistance = 10000.0 * raw / (1023.0 - raw);\n  float tempK = 1.0 / (log(resistance / 10000.0) / BETA + 1.0 / 298.15);\n  float tempC = tempK - 273.15;\n  Serial.print(tempC);\n  Serial.println(\"C\");\n\n  if (tempC < 20) {\n    digitalWrite(ledR, HIGH);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, LOW);\n  } else if (tempC < 30) {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, HIGH);\n    digitalWrite(ledB, LOW);\n  } else {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, HIGH);\n  }\n  delay(500);\n}",
             "schemas": {
               "arduino": {
                 "schemaVersion": "openhw-project-v2",
@@ -3782,6 +3832,17 @@
                     "y": -280,
                     "w": 425,
                     "h": 320,
+                    "rotation": 0,
+                    "attrs": {}
+                  },
+                  {
+                    "id": "comp_0",
+                    "type": "openhw-ntc-temperature-sensor",
+                    "label": "Temperature Sensor",
+                    "x": 200,
+                    "y": -270,
+                    "w": 40,
+                    "h": 45,
                     "rotation": 0,
                     "attrs": {}
                   },
@@ -3884,6 +3945,45 @@
                 "connections": [
                   {
                     "id": "w_0",
+                    "from": "comp_0:OUT",
+                    "to": "uno1:A0",
+                    "color": "blue",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_1",
+                    "from": "comp_0:VCC",
+                    "to": "uno1:5V",
+                    "color": "red",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_2",
+                    "from": "comp_0:GND",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_3",
                     "from": "comp_1:a",
                     "to": "r_1:p1",
                     "color": "orange",
@@ -3896,7 +3996,7 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_1",
+                    "id": "w_4",
                     "from": "r_1:p2",
                     "to": "uno1:13",
                     "color": "green",
@@ -3909,7 +4009,7 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_2",
+                    "id": "w_5",
                     "from": "comp_1:k",
                     "to": "uno1:GND",
                     "color": "black",
@@ -3928,7 +4028,7 @@
                 "projectFiles": [],
                 "openCodeTabs": [],
                 "activeCodeFileId": "code.ino",
-                "code": "int ledR = 11;\nint ledG = 10;\nint ledB = 9;\n\nvoid setup() {\n  pinMode(ledR, OUTPUT);\n  pinMode(ledG, OUTPUT);\n  pinMode(ledB, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int val = analogRead(A0);\n  float mV = val * 5000.0 / 1024;\n  float tempC = (mV - 500) / 10;\n  Serial.print(tempC);\n  Serial.println(\"C\");\n\n  if (tempC < 20) {\n    digitalWrite(ledR, HIGH);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, LOW);\n  } else if (tempC < 30) {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, HIGH);\n    digitalWrite(ledB, LOW);\n  } else {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, HIGH);\n  }\n  delay(500);\n}",
+                "code": "int ledR = 11;\nint ledG = 10;\nint ledB = 9;\nconst float BETA = 3950;\n\nvoid setup() {\n  pinMode(ledR, OUTPUT);\n  pinMode(ledG, OUTPUT);\n  pinMode(ledB, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int raw = analogRead(A0);\n  float resistance = 10000.0 * raw / (1023.0 - raw);\n  float tempK = 1.0 / (log(resistance / 10000.0) / BETA + 1.0 / 298.15);\n  float tempC = tempK - 273.15;\n  Serial.print(tempC);\n  Serial.println(\"C\");\n\n  if (tempC < 20) {\n    digitalWrite(ledR, HIGH);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, LOW);\n  } else if (tempC < 30) {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, HIGH);\n    digitalWrite(ledB, LOW);\n  } else {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, HIGH);\n  }\n  delay(500);\n}",
                 "name": "Temperature Indicator using RGB LED",
                 "exportedAt": "2026-06-18T08:48:06.644Z"
               },
@@ -5110,7 +5210,7 @@
               "L293D",
               "Arduino Uno"
             ],
-            "code": "void setup() {\n  pinMode(9,OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  int val=analogRead(A0);\n  float mV=val*5000.0/1024;\n  float tempC=(mV-500)/10;\n  int speed=map(tempC,20,40,0,255);\n  speed=constrain(speed,0,255);\n  analogWrite(9,speed);\n  Serial.print(tempC);\n  Serial.print(\"C Fan: \");\n  Serial.println(speed);\n  delay(500);\n}",
+            "code": "void setup() {\n  pinMode(9,OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  int raw=analogRead(A0);\n  float resistance=10000.0*raw/(1023.0-raw);\n  float tempK=1.0/(log(resistance/10000.0)/3950+1.0/298.15);\n  float tempC=tempK-273.15;\n  int speed=map(tempC,20,40,0,255);\n  speed=constrain(speed,0,255);\n  analogWrite(9,speed);\n  Serial.print(tempC);\n  Serial.print(\"C Fan: \");\n  Serial.println(speed);\n  delay(500);\n}",
             "schemas": {
               "arduino": {
                 "schemaVersion": "openhw-project-v2",
@@ -5304,7 +5404,7 @@
                 "projectFiles": [],
                 "openCodeTabs": [],
                 "activeCodeFileId": "code.ino",
-                "code": "void setup() {\n  pinMode(9,OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  int val=analogRead(A0);\n  float mV=val*5000.0/1024;\n  float tempC=(mV-500)/10;\n  int speed=map(tempC,20,40,0,255);\n  speed=constrain(speed,0,255);\n  analogWrite(9,speed);\n  Serial.print(tempC);\n  Serial.print(\"C Fan: \");\n  Serial.println(speed);\n  delay(500);\n}",
+                "code": "void setup() {\n  pinMode(9,OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  int raw=analogRead(A0);\n  float resistance=10000.0*raw/(1023.0-raw);\n  float tempK=1.0/(log(resistance/10000.0)/3950+1.0/298.15);\n  float tempC=tempK-273.15;\n  int speed=map(tempC,20,40,0,255);\n  speed=constrain(speed,0,255);\n  analogWrite(9,speed);\n  Serial.print(tempC);\n  Serial.print(\"C Fan: \");\n  Serial.println(speed);\n  delay(500);\n}",
                 "name": "Automatic Fan Speed Control",
                 "exportedAt": "2026-06-18T08:48:06.645Z"
               }
