@@ -2436,6 +2436,7 @@ export class RP2040Runner implements BoardRunner {
         }
 
         if (frequencyHz <= 0 && dutyCycle <= 0 && pulseUs <= 0) return;
+        if (frequencyHz > 0 && frequencyHz < 5) return;
 
         const meta = {
             protocol: 'pwm',
