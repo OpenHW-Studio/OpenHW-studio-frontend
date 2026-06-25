@@ -69,6 +69,13 @@ void loop() {
             { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
             { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND.1' } },
           ],
+          alternativeConnections: [
+            [
+              { from: { component: 'arduino', pin: '13' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'arduino', pin: 'GND.1' } },
+            ]
+          ],
         },
         codeFunctionality: {
           description: 'Code blinks LED correctly',
@@ -105,13 +112,13 @@ void loop() {
     icon: '🌈',
     world: 1,
     tags: ['PWM', 'RGB', 'color mixing'],
-    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-rgb-led'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
     rewardComponents: [
       { type: 'openhw-buzzer', name: 'Buzzer', icon: '🔔', description: 'Makes sounds and tones — you can even play music with it!' },
     ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
-      { type: 'openhw-rgb-led', label: 'RGB LED', qty: 1 },
+      { type: 'openhw-led', label: 'LED (1 Red, 1 Green, 1 Blue)', qty: 3 },
       { type: 'openhw-resistor', label: '220Ω Resistor', qty: 3, attrs: { value: '220' } },
     ],
     wiring: [
@@ -152,9 +159,14 @@ void loop() {
     evaluation: {
       passingThreshold: 70,
       evaluationCriteria: {
-        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'rgb-led', count: 1 }, { type: 'resistor', count: 3 }] },
-        wiringAccuracy: { description: 'Correct wiring', weight: 0.3, requiredConnections: [] },
-        codeFunctionality: { description: 'Code changes LED color', weight: 0.4, requiredFunctions: ['setup', 'loop', 'setColor'] },
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'led', count: 3 }, { type: 'resistor', count: 3 }] },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
+          requiredConnections: [],
+          customWiringCheck: 'rgb-discrete',
+        },
+        codeFunctionality: { description: 'Code changes LED colors', weight: 0.4, requiredFunctions: ['setup', 'loop', 'setColor'] },
       },
     },
     badge: {
@@ -228,7 +240,36 @@ void loop() {
       passingThreshold: 70,
       evaluationCriteria: {
         components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'buzzer', count: 1 }] },
-        wiringAccuracy: { description: 'Correct wiring', weight: 0.3, requiredConnections: [] },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
+          requiredConnections: [
+            { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: 'SIG' } },
+            { from: { component: 'buzzer', pin: 'GND' }, to: { component: 'arduino', pin: 'GND' } }
+          ],
+          alternativeConnections: [
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: '1' } },
+              { from: { component: 'buzzer', pin: '2' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: '2' } },
+              { from: { component: 'buzzer', pin: '1' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: 'GND' } },
+              { from: { component: 'buzzer', pin: 'SIG' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: '+' } },
+              { from: { component: 'buzzer', pin: '-' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: '8' }, to: { component: 'buzzer', pin: '-' } },
+              { from: { component: 'buzzer', pin: '+' }, to: { component: 'arduino', pin: 'GND' } }
+            ]
+          ]
+        },
         codeFunctionality: { description: 'Code plays tones', weight: 0.4, requiredFunctions: ['setup', 'loop'] },
       },
     },
