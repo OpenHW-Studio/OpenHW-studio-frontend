@@ -1498,11 +1498,13 @@ function buildGenerator(B) {
   gen.forBlock['rotate_servo'] = b => {
     const pin = b.getFieldValue('PIN')
     gen.usedPins.set(pin, 'OUTPUT')
+    gen._usedServos.add(pin)
     return `myServo_${pin}.write(${vc(b, 'DEG', gen.ORDER_ATOMIC)});\n`
   }
   gen.forBlock['write_servo_pulse'] = b => {
     const pin = b.getFieldValue('PIN')
     gen.usedPins.set(pin, 'OUTPUT')
+    gen._usedServos.add(pin)
     return `myServo_${pin}.writeMicroseconds(${vc(b, 'PULSE', gen.ORDER_ATOMIC)});\n`
   }
   gen.forBlock['set_pull_pin'] = b => {
@@ -1888,6 +1890,7 @@ function generateSketch(gen, ws) {
   gen._thermistorPin = 'A0'
 
   gen.usedPins = new Map()
+  gen._usedServos = new Set()
 
   const vars = (ws.getAllVariables() || []).filter(v => v.type === 'Number' || v.type === 'String' || v.type === 'Boolean');
   const varDecl = vars.length ? vars.map(v => {
@@ -1928,7 +1931,10 @@ function generateSketch(gen, ws) {
       if (!code) return
       // Skip stray value blocks (they return [code, order] arrays, not strings)
       if (Array.isArray(code)) return
-      if (b.type === 'on_start' || b.type === 'setup_runs_once') {
+      
+      const SETUP_BLOCKS = new Set(['on_start', 'setup_runs_once', 'lcd_setup', 'ir_remote_setup', 'temp_sensor_setup', 'stepper_setup', 'analog_sensor_setup', 'button_setup', 'thermistor_setup'])
+      
+      if (SETUP_BLOCKS.has(b.type)) {
         setup += code
       } else if (b.type === 'forever') {
         loop_ += code
@@ -1949,6 +1955,11 @@ function generateSketch(gen, ws) {
   gen.usedPins.forEach((mode, pin) => {
     setupCode += `  pinMode(${pin}, ${mode});\n`
   })
+  if (gen._usedServos && gen._usedServos.size > 0) {
+    gen._usedServos.forEach(pin => {
+      setupCode += `  myServo_${pin}.attach(${pin});\n`
+    })
+  }
 
   const setupFunc = `void setup() {\n${setupCode}${setup}}\n\n`
   const loopFunc = loop_ ? `void loop() {\n${loop_}}\n\n` : 'void loop() {\n  // loop\n}\n\n'
@@ -1997,6 +2008,12 @@ function generateSketch(gen, ws) {
   if (gen._useDHT) {
     includes += '#include <DHT.h>\n'
     globals += `DHT dht(${gen._dhtPin}, DHT11);\n`
+  }
+  if (gen._usedServos && gen._usedServos.size > 0) {
+    includes += '#include <Servo.h>\n'
+    gen._usedServos.forEach(pin => {
+      globals += `Servo myServo_${pin};\n`
+    })
   }
   
   if (includes || globals) {
