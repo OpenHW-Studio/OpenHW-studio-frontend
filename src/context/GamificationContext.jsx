@@ -10,8 +10,13 @@ const STARTING_COMPONENTS = [];
 
 // Get all level-based unlocks for initial level
 const getLevelUnlocks = (levelId) => {
-  const level = LEVELS.find(l => l.id === levelId);
-  return level?.unlockedComponents || [];
+  let unlocks = [];
+  for (const level of LEVELS) {
+    if (level.id <= levelId && level.unlockedComponents) {
+      unlocks.push(...level.unlockedComponents);
+    }
+  }
+  return unlocks;
 };
 
 const DEFAULT_STATE = {
