@@ -10,11 +10,11 @@
           {
             "title": "Blink of LED",
             "slug": "led-blink",
-            "description": "Make an LED blink on and off — the \"Hello World\" of electronics.",
+            "description": "Make an LED blink on and off \u2014 the \"Hello World\" of electronics.",
             "board": "Arduino Uno",
             "components": [
               "LED",
-              "220Ω Resistor",
+              "220\u03a9 Resistor",
               "Arduino Uno"
             ],
             "code": "void setup() {\n  pinMode(13, OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  digitalWrite(13, HIGH);\n  Serial.println(\"LED ON\");\n  delay(1000);\n  digitalWrite(13, LOW);\n  Serial.println(\"LED OFF\");\n  delay(1000);\n}",
@@ -208,7 +208,7 @@
             "board": "Arduino Uno",
             "components": [
               "RGB LED",
-              "3x 220Ω Resistors",
+              "3x 220\u03a9 Resistors",
               "Arduino Uno"
             ],
             "code": "void setup() {\n  pinMode(9, OUTPUT);\n  pinMode(10, OUTPUT);\n  pinMode(11, OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  digitalWrite(9, HIGH);\n  Serial.println(\"RED\");\n  delay(1000);\n  digitalWrite(9, LOW);\n  digitalWrite(10, HIGH);\n  Serial.println(\"GREEN\");\n  delay(1000);\n  digitalWrite(10, LOW);\n  digitalWrite(11, HIGH);\n  Serial.println(\"BLUE\");\n  delay(1000);\n  digitalWrite(11, LOW);\n}",
@@ -218,39 +218,39 @@
                 "board": "openhw-arduino-uno",
                 "components": [
                   {
-                    "id": "uno1",
-                    "type": "openhw-arduino-uno",
-                    "label": "Arduino Uno",
-                    "x": -220,
-                    "y": -280,
-                    "w": 425,
-                    "h": 320,
-                    "rotation": 0,
-                    "attrs": {}
-                  },
-                  {
-                    "id": "comp_0",
+                    "id": "rgb_led_1",
                     "type": "openhw-rgb-led",
                     "label": "RGB LED (4-pin)",
-                    "x": 200,
-                    "y": -200,
+                    "x": 345,
+                    "y": -180,
                     "w": 75,
                     "h": 105,
                     "rotation": 0,
                     "attrs": {
                       "common": "cathode",
                       "breadboard": {
-                        "anchorPin": "GND"
+                        "anchorPin": "R"
                       },
                       "targetBoard": "uno1"
                     }
                   },
                   {
-                    "id": "r_0_r",
+                    "id": "uno1",
+                    "type": "openhw-arduino-uno",
+                    "label": "Arduino Uno",
+                    "x": -239.7,
+                    "y": -299.5,
+                    "w": 425,
+                    "h": 320,
+                    "rotation": 0,
+                    "attrs": {}
+                  },
+                  {
+                    "id": "via_R_rgb_led_1_0",
                     "type": "openhw-resistor",
                     "label": "Resistor",
-                    "x": 200,
-                    "y": -80,
+                    "x": 390,
+                    "y": -255,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -259,11 +259,11 @@
                     }
                   },
                   {
-                    "id": "r_0_g",
+                    "id": "via_G_rgb_led_1_1",
                     "type": "openhw-resistor",
                     "label": "Resistor",
-                    "x": 290,
-                    "y": -80,
+                    "x": 390,
+                    "y": -255,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -272,50 +272,11 @@
                     }
                   },
                   {
-                    "id": "r_0_b",
+                    "id": "via_B_rgb_led_1_2",
                     "type": "openhw-resistor",
                     "label": "Resistor",
-                    "x": 380,
-                    "y": -80,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "r_1",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 0,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "r_2",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 50,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "r_3",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 100,
+                    "x": 390,
+                    "y": -255,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -326,9 +287,9 @@
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_0:a",
-                    "to": "r_0:p1",
+                    "id": "w_via_in_rgb_led_1_0",
+                    "from": "rgb_led_1:R",
+                    "to": "via_R_rgb_led_1_0:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -339,8 +300,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_1",
-                    "from": "r_0:p2",
+                    "id": "w_via_out_rgb_led_1_0",
+                    "from": "via_R_rgb_led_1_0:p2",
                     "to": "uno1:9",
                     "color": "green",
                     "waypoints": [],
@@ -352,8 +313,60 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_2",
-                    "from": "comp_0:k",
+                    "id": "w_via_in_rgb_led_1_1",
+                    "from": "rgb_led_1:G",
+                    "to": "via_G_rgb_led_1_1:p1",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_via_out_rgb_led_1_1",
+                    "from": "via_G_rgb_led_1_1:p2",
+                    "to": "uno1:10",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_via_in_rgb_led_1_2",
+                    "from": "rgb_led_1:B",
+                    "to": "via_B_rgb_led_1_2:p1",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_via_out_rgb_led_1_2",
+                    "from": "via_B_rgb_led_1_2:p2",
+                    "to": "uno1:11",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_auto_rgb_led_1_3",
+                    "from": "rgb_led_1:COM",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -368,12 +381,35 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
-                "code": "void setup() {\n  pinMode(9, OUTPUT);\n  pinMode(10, OUTPUT);\n  pinMode(11, OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  digitalWrite(9, HIGH);\n  Serial.println(\"RED\");\n  delay(1000);\n  digitalWrite(9, LOW);\n  digitalWrite(10, HIGH);\n  Serial.println(\"GREEN\");\n  delay(1000);\n  digitalWrite(10, LOW);\n  digitalWrite(11, HIGH);\n  Serial.println(\"BLUE\");\n  delay(1000);\n  digitalWrite(11, LOW);\n}",
-                "name": "Blink of RGB LED",
-                "exportedAt": "2026-06-18T08:48:06.641Z"
+                "projectFiles": [
+                  {
+                    "id": "project/uno1/uno1.ino",
+                    "path": "project/uno1/uno1.ino",
+                    "name": "uno1.ino",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "// autocoding for rgb_led_1 start\n#define PIN_R_1 9\n#define PIN_G_1 9\n#define PIN_B_1 9\n// autocoding for rgb_led_1 end\n\nvoid setup() {\n  // autocoding for rgb_led_1 start\n  pinMode(PIN_R_1, OUTPUT);\n    pinMode(PIN_G_1, OUTPUT);\n    pinMode(PIN_B_1, OUTPUT);\n  // autocoding for rgb_led_1 end\n\n  // put your setup code here, to run once:\n\n}\n\nvoid loop() {\n  // autocoding for rgb_led_1 start\n  // Red\n    analogWrite(PIN_R_1, 255);\n    analogWrite(PIN_G_1, 0);\n    analogWrite(PIN_B_1, 0);\n    delay(500);\n  \n    // Green\n    analogWrite(PIN_R_1, 0);\n    analogWrite(PIN_G_1, 255);\n    analogWrite(PIN_B_1, 0);\n    delay(500);\n  \n    // Blue\n    analogWrite(PIN_R_1, 0);\n    analogWrite(PIN_G_1, 0);\n    analogWrite(PIN_B_1, 255);\n    delay(500);\n  // autocoding for rgb_led_1 end\n\n  // put your main code here, to run repeatedly:\n\n}\n",
+                    "dirty": true
+                  },
+                  {
+                    "id": "project/uno1/library.txt",
+                    "path": "project/uno1/library.txt",
+                    "name": "library.txt",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n",
+                    "dirty": false
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno1/uno1.ino"
+                ],
+                "activeCodeFileId": "project/uno1/uno1.ino",
+                "code": "// autocoding for rgb_led_1 start\n#define PIN_R_1 9\n#define PIN_G_1 9\n#define PIN_B_1 9\n// autocoding for rgb_led_1 end\n\nvoid setup() {\n  // autocoding for rgb_led_1 start\n  pinMode(PIN_R_1, OUTPUT);\n    pinMode(PIN_G_1, OUTPUT);\n    pinMode(PIN_B_1, OUTPUT);\n  // autocoding for rgb_led_1 end\n\n  // put your setup code here, to run once:\n\n}\n\nvoid loop() {\n  // autocoding for rgb_led_1 start\n  // Red\n    analogWrite(PIN_R_1, 255);\n    analogWrite(PIN_G_1, 0);\n    analogWrite(PIN_B_1, 0);\n    delay(500);\n  \n    // Green\n    analogWrite(PIN_R_1, 0);\n    analogWrite(PIN_G_1, 255);\n    analogWrite(PIN_B_1, 0);\n    delay(500);\n  \n    // Blue\n    analogWrite(PIN_R_1, 0);\n    analogWrite(PIN_G_1, 0);\n    analogWrite(PIN_B_1, 255);\n    delay(500);\n  // autocoding for rgb_led_1 end\n\n  // put your main code here, to run repeatedly:\n\n}\n",
+                "name": "RGB LED Blink",
+                "exportedAt": "2026-06-10T19:30:54.433Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -386,10 +422,10 @@
             "board": "Arduino Uno",
             "components": [
               "3x LEDs (Red, Yellow, Green)",
-              "3x 220Ω Resistors",
+              "3x 220\u03a9 Resistors",
               "Arduino Uno"
             ],
-            "code": "const int RED_PIN = 11;\nconst int GREEN_PIN = 10;\nconst int BLUE_PIN = 9;\n\nvoid setup() {\n  pinMode(RED_PIN, OUTPUT);\n  pinMode(GREEN_PIN, OUTPUT);\n  pinMode(BLUE_PIN, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid showColor(bool r, bool g, bool b) {\n  digitalWrite(RED_PIN, r ? HIGH : LOW);\n  digitalWrite(GREEN_PIN, g ? HIGH : LOW);\n  digitalWrite(BLUE_PIN, b ? HIGH : LOW);\n}\n\nvoid loop() {\n  // RED = STOP\n  showColor(true, false, false);\n  Serial.println(\"STOP\");\n  delay(5000);\n  // YELLOW = WAIT\n  showColor(false, true, false);\n  Serial.println(\"WAIT\");\n  delay(2000);\n  // GREEN = GO\n  showColor(false, false, true);\n  Serial.println(\"GO\");\n  delay(5000);\n}",
+            "code": "void setup() {\n  pinMode(2, OUTPUT);\n  pinMode(3, OUTPUT);\n  pinMode(4, OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  digitalWrite(2, HIGH);\n  Serial.println(\"RED\");\n  delay(5000);\n  digitalWrite(2, LOW);\n  digitalWrite(3, HIGH);\n  Serial.println(\"YELLOW\");\n  delay(2000);\n  digitalWrite(3, LOW);\n  digitalWrite(4, HIGH);\n  Serial.println(\"GREEN\");\n  delay(5000);\n  digitalWrite(4, LOW);\n}",
             "schemas": {
               "arduino": {
                 "schemaVersion": "openhw-project-v2",
@@ -641,8 +677,8 @@
             "components": [
               "Push Button",
               "LED",
-              "220Ω Resistor",
-              "10kΩ Resistor",
+              "220\u03a9 Resistor",
+              "10k\u03a9 Resistor",
               "Arduino Uno"
             ],
             "code": "void setup() {\n  pinMode(2, INPUT);\n  pinMode(13, OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  int val = digitalRead(2);\n  digitalWrite(13, val);\n  if (val) Serial.println(\"Button Pressed\");\n  else Serial.println(\"Button Released\");\n  delay(100);\n}",
@@ -809,8 +845,8 @@
             "components": [
               "Push Button",
               "LED",
-              "220Ω Resistor",
-              "10kΩ Resistor",
+              "220\u03a9 Resistor",
+              "10k\u03a9 Resistor",
               "Arduino Uno"
             ],
             "code": "void setup() {\n  pinMode(2, INPUT);\n  pinMode(13, OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  static int last = HIGH;\n  int cur = digitalRead(2);\n  if (cur != last) {\n    delay(50);\n    if (digitalRead(2) == cur) {\n      last = cur;\n      digitalWrite(13, !digitalRead(13));\n      Serial.println(cur == LOW ? \"Pressed\" : \"Released\");\n    }\n}\n}",
@@ -977,8 +1013,8 @@
             "components": [
               "RGB LED",
               "3x Push Buttons",
-              "3x 220Ω Resistors",
-              "3x 10kΩ Resistors",
+              "3x 220\u03a9 Resistors",
+              "3x 10k\u03a9 Resistors",
               "Arduino Uno"
             ],
             "code": "void setup() {\n  pinMode(2, INPUT);\n  pinMode(3, INPUT);\n  pinMode(4, INPUT);\n  pinMode(9, OUTPUT);\n  pinMode(10, OUTPUT);\n  pinMode(11, OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  digitalWrite(9, digitalRead(2));\n  digitalWrite(10, digitalRead(3));\n  digitalWrite(11, digitalRead(4));\n  Serial.print(\"RGB: \");\n  Serial.print(digitalRead(2));\n  Serial.print(digitalRead(3));\n  Serial.println(digitalRead(4));\n  delay(100);\n}",
@@ -1315,14 +1351,14 @@
           {
             "title": "Control RGB LED with Serial Monitor",
             "slug": "rgb-led-serial",
-            "description": "Cycles RGB LED colors (Red, Green, Blue) with serial monitor output.",
+            "description": "Type R, G, B in Serial Monitor to control RGB LED colors.",
             "board": "Arduino Uno",
             "components": [
               "RGB LED",
-              "3x 220Ω Resistors",
+              "3x 220\u03a9 Resistors",
               "Arduino Uno"
             ],
-            "code": "// autocoding for rgb_led_1 start\n#define PIN_R_1 9\n#define PIN_G_1 10\n#define PIN_B_1 11\n// autocoding for rgb_led_1 end\n\nvoid setup() {\n  // autocoding for rgb_led_1 start\n  pinMode(PIN_R_1, OUTPUT);\n  pinMode(PIN_G_1, OUTPUT);\n  pinMode(PIN_B_1, OUTPUT);\n  // autocoding for rgb_led_1 end\n\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  // Red\n  analogWrite(PIN_R_1, 255);\n  analogWrite(PIN_G_1, 0);\n  analogWrite(PIN_B_1, 0);\n  Serial.println(\"Red\");\n  delay(500);\n\n  // Green\n  analogWrite(PIN_R_1, 0);\n  analogWrite(PIN_G_1, 255);\n  analogWrite(PIN_B_1, 0);\n  Serial.println(\"Green\");\n  delay(500);\n\n  // Blue\n  analogWrite(PIN_R_1, 0);\n  analogWrite(PIN_G_1, 0);\n  analogWrite(PIN_B_1, 255);\n  Serial.println(\"Blue\");\n  delay(500);\n}",
+            "code": "void setup() {\n  pinMode(9, OUTPUT);\n  pinMode(10, OUTPUT);\n  pinMode(11, OUTPUT);\n  Serial.begin(9600);\n  Serial.println(\"Enter R, G, or B:\");\n}\nvoid loop() {\n  if (Serial.available()) {\n    char c = Serial.read();\n    digitalWrite(9, LOW);\n    digitalWrite(10, LOW);\n    digitalWrite(11, LOW);\n    if (c == 'R' || c == 'r') {\n      digitalWrite(9, HIGH);\n      Serial.println(\"RED ON\");\n    } else if (c == 'G' || c == 'g') {\n    digitalWrite(10, HIGH);\n    Serial.println(\"GREEN ON\");\n  } else if (c == 'B' || c == 'b') {\n  digitalWrite(11, HIGH);\n  Serial.println(\"BLUE ON\");\n}\n}\n}",
             "schemas": {
               "arduino": {
                 "schemaVersion": "openhw-project-v2",
@@ -1359,7 +1395,7 @@
                   {
                     "id": "r_0_r",
                     "type": "openhw-resistor",
-                    "label": "220Ω Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 200,
                     "y": -80,
                     "w": 70,
@@ -1372,7 +1408,7 @@
                   {
                     "id": "r_0_g",
                     "type": "openhw-resistor",
-                    "label": "220Ω Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 290,
                     "y": -80,
                     "w": 70,
@@ -1385,7 +1421,7 @@
                   {
                     "id": "r_0_b",
                     "type": "openhw-resistor",
-                    "label": "220Ω Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 380,
                     "y": -80,
                     "w": 70,
@@ -1508,10 +1544,10 @@
             "board": "Arduino Uno",
             "components": [
               "LED",
-              "220Ω Resistor",
+              "220\u03a9 Resistor",
               "Arduino Uno"
             ],
-            "code": "// autocoding for led_1 start\n// autocoding for led_1 end\n\nvoid setup() {\n  pinMode(9, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  for (int i = 0; i <= 255; i++) {\n    analogWrite(9, i);\n    Serial.print(\"Brightness: \");\n    Serial.println(i);\n    delay(10);\n  }\n  for (int i = 255; i >= 0; i--) {\n    analogWrite(9, i);\n    Serial.print(\"Brightness: \");\n    Serial.println(i);\n    delay(10);\n  }\n}",
+            "code": "void setup() {\n  pinMode(9, OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  for (int i = 0; i <= 255; i++) {\n    analogWrite(9, i);\n    Serial.print(\"Brightness: \");\n    Serial.println(i);\n    delay(10);\n  }\nfor (int i = 255; i >= 0; i--) {\n  analogWrite(9, i);\n  Serial.print(\"Brightness: \");\n  Serial.println(i);\n  delay(10);\n}\n}",
             "schemas": {
               "arduino": {
                 "schemaVersion": "openhw-project-v2",
@@ -1548,7 +1584,7 @@
                   {
                     "id": "r_0",
                     "type": "openhw-resistor",
-                    "label": "220Ω Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 280,
                     "y": -200,
                     "w": 70,
@@ -1623,8 +1659,8 @@
             "description": "Read temperature using an NTC thermistor, display on Serial Monitor, and trigger a buzzer alarm when temperature exceeds threshold.",
             "board": "Arduino Uno",
             "components": [
-              "NTC Thermistor (10kΩ)",
-              "10kΩ Resistor",
+              "NTC Thermistor (10k\u03a9)",
+              "10k\u03a9 Resistor",
               "Buzzer",
               "Arduino Uno",
               "Breadboard"
@@ -1636,65 +1672,51 @@
                 "board": "openhw-arduino-uno",
                 "components": [
                   {
-                    "id": "uno1",
+                    "id": "uno",
                     "type": "openhw-arduino-uno",
                     "label": "Arduino Uno",
-                    "x": -220,
-                    "y": -280,
-                    "w": 425,
-                    "h": 320,
+                    "x": 90,
+                    "y": 120,
+                    "w": 311,
+                    "h": 228,
                     "rotation": 0,
                     "attrs": {}
                   },
                   {
-                    "id": "r_0",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": -200,
-                    "w": 70,
-                    "h": 32,
+                    "id": "ntc_temperature_sensor_1",
+                    "type": "openhw-ntc-temperature-sensor",
+                    "label": "Temperature Sensor (NTC)",
+                    "x": 776.25,
+                    "y": 277.5,
+                    "w": 22.5,
+                    "h": 22.5,
                     "rotation": 0,
                     "attrs": {
-                      "value": "220"
+                      "temperature": "25",
+                      "beta": "3950",
+                      "r25": "10000"
                     }
                   },
                   {
-                    "id": "r_1",
+                    "id": "r_pulldown",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": -150,
+                    "label": "10k\u03a9 Resistor",
+                    "x": 851.25,
+                    "y": 277.5,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
                     "attrs": {
                       "value": "10000"
                     }
-                  },
-                  {
-                    "id": "comp_2",
-                    "type": "openhw-buzzer",
-                    "label": "Buzzer",
-                    "x": 200,
-                    "y": -100,
-                    "w": 50,
-                    "h": 50,
-                    "rotation": 0,
-                    "attrs": {
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
-                    }
                   }
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_2:p",
-                    "to": "uno1:8",
-                    "color": "green",
+                    "id": "w_ntc_5v",
+                    "from": "ntc_temperature_sensor_1:p1",
+                    "to": "uno:5V",
+                    "color": "red",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
@@ -1704,9 +1726,35 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_1",
-                    "from": "comp_2:n",
-                    "to": "uno1:GND",
+                    "id": "w_ntc_sig",
+                    "from": "ntc_temperature_sensor_1:p2",
+                    "to": "uno:A0",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_ntc_pull",
+                    "from": "ntc_temperature_sensor_1:p2",
+                    "to": "r_pulldown:p1",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_pull_gnd",
+                    "from": "r_pulldown:p2",
+                    "to": "uno:GND",
                     "color": "black",
                     "waypoints": [],
                     "isBelow": false,
@@ -1720,12 +1768,25 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
-"code": "const int TEMP_PIN = A0;\nconst int BUZZER_PIN = 8;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(BUZZER_PIN, OUTPUT);\n}\n\nvoid loop() {\n  int raw = analogRead(TEMP_PIN);\n  float voltage = raw * (5.0 / 1023.0);\n  float temperatureC = voltage * 100.0;\n\n  Serial.print(\"Temp C: \");\n  Serial.println(temperatureC);\n\n  if (temperatureC >= 30.0) {\n    tone(BUZZER_PIN, 900);\n  } else {\n    noTone(BUZZER_PIN);\n  }\n\n  delay(150);\n}",
-                "name": "Temperature Sensor (NTC) with Buzzer Alarm",
-                "exportedAt": "2026-06-18T08:48:06.643Z"
+                "projectFiles": [
+                  {
+                    "id": "project/uno/uno.ino",
+                    "path": "project/uno/uno.ino",
+                    "name": "uno.ino",
+                    "kind": "code",
+                    "boardId": "uno",
+                    "boardKind": "arduino_uno",
+                    "content": "const int TEMP_PIN = A0;\nconst int BUZZER_PIN = 8;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(BUZZER_PIN, OUTPUT);\n}\n\nvoid loop() {\n  int raw = analogRead(TEMP_PIN);\n  float voltage = raw * (5.0 / 1023.0);\n  float temperatureC = voltage * 100.0;\n\n  Serial.print(\"Temp C: \");\n  Serial.println(temperatureC);\n\n  if (temperatureC >= 30.0) {\n    tone(BUZZER_PIN, 900);\n  } else {\n    noTone(BUZZER_PIN);\n  }\n\n  delay(150);\n}",
+                    "dirty": true
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno/uno.ino"
+                ],
+                "activeCodeFileId": "project/uno/uno.ino",
+                "code": "const int TEMP_PIN = A0;\nconst int BUZZER_PIN = 8;\n\nvoid setup() {\n  Serial.begin(9600);\n  pinMode(BUZZER_PIN, OUTPUT);\n}\n\nvoid loop() {\n  int raw = analogRead(TEMP_PIN);\n  float voltage = raw * (5.0 / 1023.0);\n  float temperatureC = voltage * 100.0;\n\n  Serial.print(\"Temp C: \");\n  Serial.println(temperatureC);\n\n  if (temperatureC >= 30.0) {\n    tone(BUZZER_PIN, 900);\n  } else {\n    noTone(BUZZER_PIN);\n  }\n\n  delay(150);\n}",
+                "name": "Guided Project",
+                "exportedAt": "2026-06-11T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -1739,7 +1800,7 @@
             "components": [
               "Potentiometer",
               "LED",
-              "220Ω Resistor",
+              "220\u03a9 Resistor",
               "Arduino Uno"
             ],
             "code": "//Controlling LED brightness using a potentiometer\n\nint ledPin = 3;\nint analogPin = 0;\nint val = 0;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  val = analogRead(analogPin);\n  Serial.println(val);\n  val = map(val, 0, 1023, 0, 255);\n  analogWrite(ledPin, val);\n}",
@@ -1749,55 +1810,48 @@
                 "board": "openhw-arduino-uno",
                 "components": [
                   {
-                    "id": "uno1",
+                    "id": "uno",
                     "type": "openhw-arduino-uno",
                     "label": "Arduino Uno",
-                    "x": -220,
-                    "y": -280,
-                    "w": 425,
-                    "h": 320,
+                    "x": 105,
+                    "y": 180,
+                    "w": 311,
+                    "h": 228,
                     "rotation": 0,
                     "attrs": {}
                   },
                   {
-                    "id": "comp_0",
+                    "id": "pot1",
                     "type": "openhw-potentiometer",
-                    "label": "Potentiometer",
-                    "x": 200,
-                    "y": -200,
-                    "w": 50,
-                    "h": 70,
+                    "label": "Rotary Potentiometer",
+                    "x": 570,
+                    "y": 222,
+                    "w": 75,
+                    "h": 75,
                     "rotation": 0,
                     "attrs": {
-                      "breadboard": {
-                        "anchorPin": "A0"
-                      },
-                      "targetBoard": "uno1"
+                      "value": 15
                     }
                   },
                   {
-                    "id": "comp_1",
+                    "id": "led_1",
                     "type": "openhw-led",
                     "label": "LED",
-                    "x": 200,
-                    "y": -110,
-                    "w": 35,
-                    "h": 35,
+                    "x": 439,
+                    "y": 3,
+                    "w": 65,
+                    "h": 65,
                     "rotation": 0,
                     "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
+                      "color": "red"
                     }
                   },
                   {
-                    "id": "r_1",
+                    "id": "r_led",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": -110,
+                    "label": "220\u03a9 Resistor",
+                    "x": 514,
+                    "y": 3,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -1808,22 +1862,9 @@
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_0:SIG",
-                    "to": "uno1:A0",
-                    "color": "blue",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_1",
-                    "from": "comp_0:2",
-                    "to": "uno1:3V3",
+                    "id": "w_pot_vcc",
+                    "from": "pot1:2",
+                    "to": "uno:5V",
                     "color": "red",
                     "waypoints": [],
                     "isBelow": false,
@@ -1834,35 +1875,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_2",
-                    "from": "comp_0:1",
-                    "to": "uno1:GND",
-                    "color": "black",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_3",
-                    "from": "comp_1:a",
-                    "to": "r_1:p1",
-                    "color": "orange",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_4",
-                    "from": "r_1:p2",
-                    "to": "uno1:13",
+                    "id": "w_pot_sig",
+                    "from": "pot1:SIG",
+                    "to": "uno:A0",
                     "color": "green",
                     "waypoints": [],
                     "isBelow": false,
@@ -1873,9 +1888,48 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_5",
-                    "from": "comp_1:k",
-                    "to": "uno1:GND",
+                    "id": "w_pot_gnd",
+                    "from": "pot1:1",
+                    "to": "uno:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_led_anode_res",
+                    "from": "led_1:A",
+                    "to": "r_led:p1",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_res_pwm",
+                    "from": "r_led:p2",
+                    "to": "uno:3",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_led_gnd",
+                    "from": "led_1:K",
+                    "to": "uno:GND",
                     "color": "black",
                     "waypoints": [],
                     "isBelow": false,
@@ -1889,12 +1943,25 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
+                "projectFiles": [
+                  {
+                    "id": "project/uno/uno.ino",
+                    "path": "project/uno/uno.ino",
+                    "name": "uno.ino",
+                    "kind": "code",
+                    "boardId": "uno",
+                    "boardKind": "arduino_uno",
+                    "content": "//Controlling LED brightness using a potentiometer\n\nint ledPin = 3;\nint analogPin = 0;\nint val = 0;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  val = analogRead(analogPin);\n  Serial.println(val);\n  val = map(val, 0, 1023, 0, 255);\n  analogWrite(ledPin, val);\n}",
+                    "dirty": true
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno/uno.ino"
+                ],
+                "activeCodeFileId": "project/uno/uno.ino",
                 "code": "//Controlling LED brightness using a potentiometer\n\nint ledPin = 3;\nint analogPin = 0;\nint val = 0;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  val = analogRead(analogPin);\n  Serial.println(val);\n  val = map(val, 0, 1023, 0, 255);\n  analogWrite(ledPin, val);\n}",
-                "name": "Potentiometer Controlled LED Brightness",
-                "exportedAt": "2026-06-18T08:48:06.643Z"
+                "name": "Guided Project",
+                "exportedAt": "2026-06-11T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -1908,10 +1975,10 @@
             "components": [
               "LDR Sensor Module (4-pin)",
               "LED",
-              "220Ω Resistor",
+              "220\u03a9 Resistor",
               "Arduino Uno"
             ],
-            "code": "int ledPin = 13;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  int brightness = map(light, 0, 1023, 0, 255);\n  analogWrite(ledPin, brightness);\n  Serial.print(\"Light: \");\n  Serial.print(light);\n  Serial.print(\" Brightness: \");\n  Serial.println(brightness);\n  delay(50);\n}",
+            "code": "int ledPin = 11;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  Serial.print(\"Light: \");\n  Serial.println(light);\n  if (light < 500) {\n    digitalWrite(ledPin, HIGH);\n    Serial.println(\"LED ON - Dark\");\n  } else {\n    digitalWrite(ledPin, LOW);\n    Serial.println(\"LED OFF - Bright\");\n  }\n  delay(500);\n}",
             "schemas": {
               "arduino": {
                 "schemaVersion": "openhw-project-v2",
@@ -1921,7 +1988,7 @@
                     "id": "uno1",
                     "type": "openhw-arduino-uno",
                     "label": "Arduino Uno",
-                    "x": -220,
+                    "x": -200,
                     "y": -280,
                     "w": 425,
                     "h": 320,
@@ -1929,43 +1996,41 @@
                     "attrs": {}
                   },
                   {
-                    "id": "comp_0",
+                    "id": "ldr_module_1",
                     "type": "openhw-ldr-module",
                     "label": "LDR Sensor Module (4-pin)",
-                    "x": 80,
+                    "x": 160,
                     "y": -80,
                     "w": 180,
                     "h": 75,
                     "rotation": 0,
                     "attrs": {
-                      "targetBoard": "uno1"
+                      "targetBoard": "uno",
+                      "threshold": 616,
+                      "lux": 0
                     }
                   },
                   {
-                    "id": "comp_1",
+                    "id": "led1",
                     "type": "openhw-led",
                     "label": "LED",
-                    "x": 200,
-                    "y": -200,
-                    "w": 35,
-                    "h": 35,
+                    "x": 350,
+                    "y": -150,
+                    "w": 38,
+                    "h": 38,
                     "rotation": 0,
                     "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
+                      "color": "yellow"
                     }
                   },
                   {
-                    "id": "r_1",
+                    "id": "r1",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": -200,
-                    "w": 70,
-                    "h": 32,
+                    "label": "220\u03a9 Resistor",
+                    "x": 290,
+                    "y": -100,
+                    "w": 60,
+                    "h": 12,
                     "rotation": 0,
                     "attrs": {
                       "value": "220"
@@ -1974,47 +2039,8 @@
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_1:a",
-                    "to": "r_1:p1",
-                    "color": "orange",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_1",
-                    "from": "r_1:p2",
-                    "to": "uno1:13",
-                    "color": "green",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_2",
-                    "from": "comp_1:k",
-                    "to": "uno1:GND",
-                    "color": "black",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_3",
-                    "from": "comp_0:VCC",
+                    "id": "w_ldr_vcc",
+                    "from": "ldr_module_1:VCC",
                     "to": "uno1:5V",
                     "color": "red",
                     "waypoints": [],
@@ -2026,8 +2052,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_4",
-                    "from": "comp_0:GND",
+                    "id": "w_ldr_gnd",
+                    "from": "ldr_module_1:GND",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -2039,10 +2065,62 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_5",
-                    "from": "comp_0:AO",
+                    "id": "w_ldr_ao",
+                    "from": "ldr_module_1:AO",
                     "to": "uno1:A0",
                     "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_ldr_do",
+                    "from": "ldr_module_1:DO",
+                    "to": "uno1:3",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_led_pin",
+                    "from": "uno1:11",
+                    "to": "r1:p1",
+                    "color": "yellow",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_led_res",
+                    "from": "r1:p2",
+                    "to": "led1:A",
+                    "color": "yellow",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_led_gnd",
+                    "from": "led1:K",
+                    "to": "uno1:gnd_1",
+                    "color": "black",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
@@ -2055,12 +2133,35 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
-                "code": "int ledPin = 13;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  int brightness = map(light, 0, 1023, 0, 255);\n  analogWrite(ledPin, brightness);\n  Serial.print(\"Light: \");\n  Serial.print(light);\n  Serial.print(\" Brightness: \");\n  Serial.println(brightness);\n  delay(50);\n}",
-                "name": "LDR-based Automatic Light System",
-                "exportedAt": "2026-06-18T08:48:06.643Z"
+                "projectFiles": [
+                  {
+                    "id": "project/uno1/uno1.ino",
+                    "path": "project/uno1/uno1.ino",
+                    "name": "uno1.ino",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "int ledPin = 11;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  Serial.print(\"Light: \");\n  Serial.println(light);\n  if (light < 500) {\n    digitalWrite(ledPin, HIGH);\n    Serial.println(\"LED ON - Dark\");\n  } else {\n    digitalWrite(ledPin, LOW);\n    Serial.println(\"LED OFF - Bright\");\n  }\n  delay(500);\n}",
+                    "dirty": true
+                  },
+                  {
+                    "id": "project/uno1/library.txt",
+                    "path": "project/uno1/library.txt",
+                    "name": "library.txt",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n",
+                    "dirty": false
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno1/uno1.ino"
+                ],
+                "activeCodeFileId": "project/uno1/uno1.ino",
+                "code": "int ledPin = 11;\n\nvoid setup() {\n  pinMode(ledPin, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int light = analogRead(A0);\n  Serial.print(\"Light: \");\n  Serial.println(light);\n  if (light < 500) {\n    digitalWrite(ledPin, HIGH);\n    Serial.println(\"LED ON - Dark\");\n  } else {\n    digitalWrite(ledPin, LOW);\n    Serial.println(\"LED OFF - Bright\");\n  }\n  delay(500);\n}",
+                "name": "Guided Project",
+                "exportedAt": "2026-06-12T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -2100,12 +2201,23 @@
                     "attrs": {}
                   },
                   {
-                    "id": "comp_0",
+                    "id": "lcd_1",
                     "type": "wokwi-lcd1602",
                     "label": "16x2 LCD",
                     "x": 200,
-                    "y": -200,
-                    "w": 150,
+                    "y": -260,
+                    "w": 200,
+                    "h": 150,
+                    "rotation": 0,
+                    "attrs": {}
+                  },
+                  {
+                    "id": "pot_2",
+                    "type": "openhw-potentiometer",
+                    "label": "Contrast",
+                    "x": 180,
+                    "y": -40,
+                    "w": 80,
                     "h": 80,
                     "rotation": 0,
                     "attrs": {}
@@ -2113,10 +2225,10 @@
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_0:rs",
-                    "to": "uno1:12",
-                    "color": "blue",
+                    "id": "w_lcd_vcc_1",
+                    "from": "lcd_1:VCC",
+                    "to": "uno1:5V",
+                    "color": "red",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
@@ -2126,73 +2238,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_1",
-                    "from": "comp_0:e",
-                    "to": "uno1:11",
-                    "color": "green",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_2",
-                    "from": "comp_0:d4",
-                    "to": "uno1:5",
-                    "color": "yellow",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_3",
-                    "from": "comp_0:d5",
-                    "to": "uno1:4",
-                    "color": "orange",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_4",
-                    "from": "comp_0:d6",
-                    "to": "uno1:3",
-                    "color": "purple",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_5",
-                    "from": "comp_0:d7",
-                    "to": "uno1:2",
-                    "color": "brown",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_6",
-                    "from": "comp_0:vss",
+                    "id": "w_lcd_gnd_2",
+                    "from": "lcd_1:GND",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -2204,10 +2251,140 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_7",
-                    "from": "comp_0:vdd",
+                    "id": "w_pot_vcc_3",
+                    "from": "pot_2:2",
                     "to": "uno1:5V",
                     "color": "red",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_pot_sig_4",
+                    "from": "pot_2:SIG",
+                    "to": "lcd_1:V0",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_pot_gnd_5",
+                    "from": "pot_2:1",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_lcd_rs_6",
+                    "from": "lcd_1:RS",
+                    "to": "uno1:12",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_lcd_en_7",
+                    "from": "lcd_1:E",
+                    "to": "uno1:11",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_lcd_d4_8",
+                    "from": "lcd_1:D4",
+                    "to": "uno1:5",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_lcd_d5_9",
+                    "from": "lcd_1:D5",
+                    "to": "uno1:4",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_lcd_d6_10",
+                    "from": "lcd_1:D6",
+                    "to": "uno1:3",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_lcd_d7_11",
+                    "from": "lcd_1:D7",
+                    "to": "uno1:2",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_lcd_a_12",
+                    "from": "lcd_1:A",
+                    "to": "uno1:5V",
+                    "color": "red",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_lcd_k_13",
+                    "from": "lcd_1:K",
+                    "to": "uno1:GND",
+                    "color": "black",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
@@ -2220,12 +2397,35 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
-                "code": "#include <LiquidCrystal.h>\nLiquidCrystal lcd(12, 11, 5, 4, 3, 2);\nvoid setup() {\n  lcd.begin(16, 2);\n  Serial.begin(9600);\n}\nvoid loop() {\n  lcd.setCursor(0, 0);\n  lcd.print(\"Hello, Arduino!\");\n  for (int i = 0; i < 16; i++) {\n    lcd.scrollDisplayLeft();\n    delay(200);\n  }\n}",
-                "name": "Scrolling Text on LCD",
-                "exportedAt": "2026-06-18T08:48:06.643Z"
+                "projectFiles": [
+                  {
+                    "id": "project/uno1/uno1.ino",
+                    "path": "project/uno1/uno1.ino",
+                    "name": "uno1.ino",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "#include <LiquidCrystal.h>\nLiquidCrystal lcd(12, 11, 5, 4, 3, 2);\n\nvoid setup() {\n  lcd.begin(16, 2);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  lcd.setCursor(0, 0);\n  lcd.print(\"Hello, Arduino!\");\n  for (int i = 0; i < 16; i++) {\n    lcd.scrollDisplayLeft();\n    delay(200);\n  }\n}",
+                    "dirty": true
+                  },
+                  {
+                    "id": "project/uno1/library.txt",
+                    "path": "project/uno1/library.txt",
+                    "name": "library.txt",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n",
+                    "dirty": false
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno1/uno1.ino"
+                ],
+                "activeCodeFileId": "project/uno1/uno1.ino",
+                "code": "#include <LiquidCrystal.h>\nLiquidCrystal lcd(12, 11, 5, 4, 3, 2);\n\nvoid setup() {\n  lcd.begin(16, 2);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  lcd.setCursor(0, 0);\n  lcd.print(\"Hello, Arduino!\");\n  for (int i = 0; i < 16; i++) {\n    lcd.scrollDisplayLeft();\n    delay(200);\n  }\n}",
+                "name": "Guided Project",
+                "exportedAt": "2026-06-11T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -2238,7 +2438,7 @@
             "board": "Arduino Uno",
             "components": [
               "7-Segment Display",
-              "8x 220Ω Resistors",
+              "8x 220\u03a9 Resistors",
               "Arduino Uno"
             ],
             "code": "int segPins[] = {\n  2,3,4,5,6,7,8,9\n}\n;\nbyte digits[10] = {\n  B11111100,B01100000,B11011010,B11110010,B01100110,B10110110,B10111110,B11100000,B11111110,B11110110\n}\n;\nvoid setup() {\n  for (int i=0; i<8; i++) pinMode(segPins[i],OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  for (int d=0; d<10; d++) {\n    for (int i=0; i<8; i++) digitalWrite(segPins[i],bitRead(digits[d],7-i));\n    Serial.print(\"Display: \");\n    Serial.println(d);\n    delay(1000);\n  }\n}",
@@ -2259,35 +2459,22 @@
                     "attrs": {}
                   },
                   {
-                    "id": "comp_0",
+                    "id": "seg_1",
                     "type": "openhw-7segment",
                     "label": "7-Segment Display",
                     "x": 200,
                     "y": -200,
                     "w": 100,
-                    "h": 100,
+                    "h": 140,
                     "rotation": 0,
                     "attrs": {}
                   },
                   {
-                    "id": "r_1",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": -80,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
                     "id": "r_2",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 200,
-                    "y": -30,
+                    "y": 100,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2298,9 +2485,9 @@
                   {
                     "id": "r_3",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 20,
+                    "label": "220\u03a9 Resistor",
+                    "x": 290,
+                    "y": 100,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2311,9 +2498,9 @@
                   {
                     "id": "r_4",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 70,
+                    "label": "220\u03a9 Resistor",
+                    "x": 380,
+                    "y": 100,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2324,9 +2511,9 @@
                   {
                     "id": "r_5",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 120,
+                    "label": "220\u03a9 Resistor",
+                    "x": 470,
+                    "y": 100,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2337,9 +2524,9 @@
                   {
                     "id": "r_6",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 200,
-                    "y": 170,
+                    "y": 140,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2350,9 +2537,9 @@
                   {
                     "id": "r_7",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 220,
+                    "label": "220\u03a9 Resistor",
+                    "x": 290,
+                    "y": 140,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2363,9 +2550,22 @@
                   {
                     "id": "r_8",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 270,
+                    "label": "220\u03a9 Resistor",
+                    "x": 380,
+                    "y": 140,
+                    "w": 70,
+                    "h": 32,
+                    "rotation": 0,
+                    "attrs": {
+                      "value": "220"
+                    }
+                  },
+                  {
+                    "id": "r_9",
+                    "type": "openhw-resistor",
+                    "label": "220\u03a9 Resistor",
+                    "x": 470,
+                    "y": 140,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2376,9 +2576,9 @@
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_0:a",
-                    "to": "comp_0_r_a:p1",
+                    "id": "w_seg_1",
+                    "from": "seg_1:a",
+                    "to": "r_2:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -2389,8 +2589,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_1",
-                    "from": "comp_0_r_a:p2",
+                    "id": "w_seg_2",
+                    "from": "r_2:p2",
                     "to": "uno1:2",
                     "color": "green",
                     "waypoints": [],
@@ -2402,9 +2602,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_2",
-                    "from": "comp_0:b",
-                    "to": "comp_0_r_b:p1",
+                    "id": "w_seg_3",
+                    "from": "seg_1:b",
+                    "to": "r_3:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -2415,8 +2615,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_3",
-                    "from": "comp_0_r_b:p2",
+                    "id": "w_seg_4",
+                    "from": "r_3:p2",
                     "to": "uno1:3",
                     "color": "green",
                     "waypoints": [],
@@ -2428,9 +2628,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_4",
-                    "from": "comp_0:c",
-                    "to": "comp_0_r_c:p1",
+                    "id": "w_seg_5",
+                    "from": "seg_1:c",
+                    "to": "r_4:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -2441,8 +2641,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_5",
-                    "from": "comp_0_r_c:p2",
+                    "id": "w_seg_6",
+                    "from": "r_4:p2",
                     "to": "uno1:4",
                     "color": "green",
                     "waypoints": [],
@@ -2454,9 +2654,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_6",
-                    "from": "comp_0:d",
-                    "to": "comp_0_r_d:p1",
+                    "id": "w_seg_7",
+                    "from": "seg_1:d",
+                    "to": "r_5:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -2467,8 +2667,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_7",
-                    "from": "comp_0_r_d:p2",
+                    "id": "w_seg_8",
+                    "from": "r_5:p2",
                     "to": "uno1:5",
                     "color": "green",
                     "waypoints": [],
@@ -2480,9 +2680,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_8",
-                    "from": "comp_0:e",
-                    "to": "comp_0_r_e:p1",
+                    "id": "w_seg_9",
+                    "from": "seg_1:e",
+                    "to": "r_6:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -2493,8 +2693,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_9",
-                    "from": "comp_0_r_e:p2",
+                    "id": "w_seg_10",
+                    "from": "r_6:p2",
                     "to": "uno1:6",
                     "color": "green",
                     "waypoints": [],
@@ -2506,9 +2706,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_10",
-                    "from": "comp_0:f",
-                    "to": "comp_0_r_f:p1",
+                    "id": "w_seg_11",
+                    "from": "seg_1:f",
+                    "to": "r_7:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -2519,8 +2719,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_11",
-                    "from": "comp_0_r_f:p2",
+                    "id": "w_seg_12",
+                    "from": "r_7:p2",
                     "to": "uno1:7",
                     "color": "green",
                     "waypoints": [],
@@ -2532,9 +2732,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_12",
-                    "from": "comp_0:g",
-                    "to": "comp_0_r_g:p1",
+                    "id": "w_seg_13",
+                    "from": "seg_1:g",
+                    "to": "r_8:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -2545,8 +2745,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_13",
-                    "from": "comp_0_r_g:p2",
+                    "id": "w_seg_14",
+                    "from": "r_8:p2",
                     "to": "uno1:8",
                     "color": "green",
                     "waypoints": [],
@@ -2558,9 +2758,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_14",
-                    "from": "comp_0:dp",
-                    "to": "comp_0_r_dp:p1",
+                    "id": "w_seg_15",
+                    "from": "seg_1:dp",
+                    "to": "r_9:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -2571,8 +2771,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_15",
-                    "from": "comp_0_r_dp:p2",
+                    "id": "w_seg_16",
+                    "from": "r_9:p2",
                     "to": "uno1:9",
                     "color": "green",
                     "waypoints": [],
@@ -2584,8 +2784,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_16",
-                    "from": "comp_0:com",
+                    "id": "w_seg_gnd_17",
+                    "from": "seg_1:DIG1",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -2600,12 +2800,35 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
-                "code": "int segPins[] = {\n  2,3,4,5,6,7,8,9\n}\n;\nbyte digits[10] = {\n  B11111100,B01100000,B11011010,B11110010,B01100110,B10110110,B10111110,B11100000,B11111110,B11110110\n}\n;\nvoid setup() {\n  for (int i=0; i<8; i++) pinMode(segPins[i],OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  for (int d=0; d<10; d++) {\n    for (int i=0; i<8; i++) digitalWrite(segPins[i],bitRead(digits[d],7-i));\n    Serial.print(\"Display: \");\n    Serial.println(d);\n    delay(1000);\n  }\n}",
-                "name": "7-Segment Display",
-                "exportedAt": "2026-06-18T08:48:06.644Z"
+                "projectFiles": [
+                  {
+                    "id": "project/uno1/uno1.ino",
+                    "path": "project/uno1/uno1.ino",
+                    "name": "uno1.ino",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "int segPins[] = {2,3,4,5,6,7,8,9};\nbyte digits[10] = {B11111100,B01100000,B11011010,B11110010,B01100110,B10110110,B10111110,B11100000,B11111110,B11110110};\n\nvoid setup() {\n  for (int i=0; i<8; i++) pinMode(segPins[i],OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  for (int d=0; d<10; d++) {\n    for (int i=0; i<8; i++) digitalWrite(segPins[i],bitRead(digits[d],7-i));\n    Serial.print(\"Display: \");\n    Serial.println(d);\n    delay(1000);\n  }\n}",
+                    "dirty": true
+                  },
+                  {
+                    "id": "project/uno1/library.txt",
+                    "path": "project/uno1/library.txt",
+                    "name": "library.txt",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n",
+                    "dirty": false
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno1/uno1.ino"
+                ],
+                "activeCodeFileId": "project/uno1/uno1.ino",
+                "code": "int segPins[] = {2,3,4,5,6,7,8,9};\nbyte digits[10] = {B11111100,B01100000,B11011010,B11110010,B01100110,B10110110,B10111110,B11100000,B11111110,B11110110};\n\nvoid setup() {\n  for (int i=0; i<8; i++) pinMode(segPins[i],OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  for (int d=0; d<10; d++) {\n    for (int i=0; i<8; i++) digitalWrite(segPins[i],bitRead(digits[d],7-i));\n    Serial.print(\"Display: \");\n    Serial.println(d);\n    delay(1000);\n  }\n}",
+                "name": "Guided Project",
+                "exportedAt": "2026-06-11T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -2643,147 +2866,49 @@
                     "attrs": {}
                   },
                   {
-                    "id": "comp_0",
+                    "id": "led_1",
                     "type": "openhw-led",
-                    "label": "LED",
-                    "x": 200,
-                    "y": -200,
-                    "w": 35,
-                    "h": 35,
+                    "label": "Bit 0",
+                    "x": -100,
+                    "y": 50,
+                    "w": 40,
+                    "h": 30,
                     "rotation": 0,
                     "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
-                    }
-                  },
-                  {
-                    "id": "r_0",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": -200,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "comp_1",
-                    "type": "openhw-led",
-                    "label": "LED",
-                    "x": 200,
-                    "y": -145,
-                    "w": 35,
-                    "h": 35,
-                    "rotation": 0,
-                    "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
-                    }
-                  },
-                  {
-                    "id": "r_1",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": -145,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "comp_2",
-                    "type": "openhw-led",
-                    "label": "LED",
-                    "x": 200,
-                    "y": -90,
-                    "w": 35,
-                    "h": 35,
-                    "rotation": 0,
-                    "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
+                      "color": "red"
                     }
                   },
                   {
                     "id": "r_2",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": -90,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "comp_3",
-                    "type": "openhw-led",
-                    "label": "LED",
-                    "x": 200,
-                    "y": -35,
-                    "w": 35,
-                    "h": 35,
-                    "rotation": 0,
-                    "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
-                    }
-                  },
-                  {
-                    "id": "r_3",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": -35,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "comp_4",
-                    "type": "openhw-led",
-                    "label": "LED",
-                    "x": 200,
+                    "label": "220\u03a9",
+                    "x": -80,
                     "y": 20,
-                    "w": 35,
-                    "h": 35,
+                    "w": 70,
+                    "h": 32,
                     "rotation": 0,
                     "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
+                      "value": "220"
+                    }
+                  },
+                  {
+                    "id": "led_3",
+                    "type": "openhw-led",
+                    "label": "Bit 1",
+                    "x": 0,
+                    "y": 50,
+                    "w": 40,
+                    "h": 30,
+                    "rotation": 0,
+                    "attrs": {
+                      "color": "yellow"
                     }
                   },
                   {
                     "id": "r_4",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
+                    "label": "220\u03a9",
+                    "x": 20,
                     "y": 20,
                     "w": 70,
                     "h": 32,
@@ -2793,58 +2918,24 @@
                     }
                   },
                   {
-                    "id": "comp_5",
+                    "id": "led_5",
                     "type": "openhw-led",
-                    "label": "LED",
-                    "x": 200,
-                    "y": 75,
-                    "w": 35,
-                    "h": 35,
+                    "label": "Bit 2",
+                    "x": 100,
+                    "y": 50,
+                    "w": 40,
+                    "h": 30,
                     "rotation": 0,
                     "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
-                    }
-                  },
-                  {
-                    "id": "r_5",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": 75,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "comp_6",
-                    "type": "openhw-led",
-                    "label": "LED",
-                    "x": 200,
-                    "y": 130,
-                    "w": 35,
-                    "h": 35,
-                    "rotation": 0,
-                    "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
+                      "color": "yellow"
                     }
                   },
                   {
                     "id": "r_6",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": 130,
+                    "label": "220\u03a9",
+                    "x": 120,
+                    "y": 20,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2853,28 +2944,128 @@
                     }
                   },
                   {
-                    "id": "comp_7",
+                    "id": "led_7",
                     "type": "openhw-led",
-                    "label": "LED",
+                    "label": "Bit 3",
                     "x": 200,
-                    "y": 185,
-                    "w": 35,
-                    "h": 35,
+                    "y": 50,
+                    "w": 40,
+                    "h": 30,
                     "rotation": 0,
                     "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
+                      "color": "green"
                     }
                   },
                   {
-                    "id": "r_7",
+                    "id": "r_8",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 280,
-                    "y": 185,
+                    "label": "220\u03a9",
+                    "x": 220,
+                    "y": 20,
+                    "w": 70,
+                    "h": 32,
+                    "rotation": 0,
+                    "attrs": {
+                      "value": "220"
+                    }
+                  },
+                  {
+                    "id": "led_9",
+                    "type": "openhw-led",
+                    "label": "Bit 4",
+                    "x": -100,
+                    "y": 110,
+                    "w": 40,
+                    "h": 30,
+                    "rotation": 0,
+                    "attrs": {
+                      "color": "green"
+                    }
+                  },
+                  {
+                    "id": "r_10",
+                    "type": "openhw-resistor",
+                    "label": "220\u03a9",
+                    "x": -80,
+                    "y": 80,
+                    "w": 70,
+                    "h": 32,
+                    "rotation": 0,
+                    "attrs": {
+                      "value": "220"
+                    }
+                  },
+                  {
+                    "id": "led_11",
+                    "type": "openhw-led",
+                    "label": "Bit 5",
+                    "x": 0,
+                    "y": 110,
+                    "w": 40,
+                    "h": 30,
+                    "rotation": 0,
+                    "attrs": {
+                      "color": "green"
+                    }
+                  },
+                  {
+                    "id": "r_12",
+                    "type": "openhw-resistor",
+                    "label": "220\u03a9",
+                    "x": 20,
+                    "y": 80,
+                    "w": 70,
+                    "h": 32,
+                    "rotation": 0,
+                    "attrs": {
+                      "value": "220"
+                    }
+                  },
+                  {
+                    "id": "led_13",
+                    "type": "openhw-led",
+                    "label": "Bit 6",
+                    "x": 100,
+                    "y": 110,
+                    "w": 40,
+                    "h": 30,
+                    "rotation": 0,
+                    "attrs": {
+                      "color": "green"
+                    }
+                  },
+                  {
+                    "id": "r_14",
+                    "type": "openhw-resistor",
+                    "label": "220\u03a9",
+                    "x": 120,
+                    "y": 80,
+                    "w": 70,
+                    "h": 32,
+                    "rotation": 0,
+                    "attrs": {
+                      "value": "220"
+                    }
+                  },
+                  {
+                    "id": "led_15",
+                    "type": "openhw-led",
+                    "label": "Bit 7",
+                    "x": 200,
+                    "y": 110,
+                    "w": 40,
+                    "h": 30,
+                    "rotation": 0,
+                    "attrs": {
+                      "color": "green"
+                    }
+                  },
+                  {
+                    "id": "r_16",
+                    "type": "openhw-resistor",
+                    "label": "220\u03a9",
+                    "x": 220,
+                    "y": 80,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -2885,86 +3076,8 @@
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_0:a",
-                    "to": "r_0:p1",
-                    "color": "orange",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_1",
-                    "from": "r_0:p2",
-                    "to": "uno1:13",
-                    "color": "green",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_2",
-                    "from": "comp_0:k",
-                    "to": "uno1:GND",
-                    "color": "black",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_3",
-                    "from": "comp_1:a",
-                    "to": "r_1:p1",
-                    "color": "orange",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_4",
-                    "from": "r_1:p2",
-                    "to": "uno1:13",
-                    "color": "green",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_5",
-                    "from": "comp_1:k",
-                    "to": "uno1:GND",
-                    "color": "black",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_6",
-                    "from": "comp_2:a",
+                    "id": "w_up_1",
+                    "from": "led_1:A",
                     "to": "r_2:p1",
                     "color": "orange",
                     "waypoints": [],
@@ -2976,9 +3089,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_7",
+                    "id": "w_up_2",
                     "from": "r_2:p2",
-                    "to": "uno1:13",
+                    "to": "uno1:2",
                     "color": "green",
                     "waypoints": [],
                     "isBelow": false,
@@ -2989,8 +3102,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_8",
-                    "from": "comp_2:k",
+                    "id": "w_up_3",
+                    "from": "led_1:K",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -3002,47 +3115,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_9",
-                    "from": "comp_3:a",
-                    "to": "r_3:p1",
-                    "color": "orange",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_10",
-                    "from": "r_3:p2",
-                    "to": "uno1:13",
-                    "color": "green",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_11",
-                    "from": "comp_3:k",
-                    "to": "uno1:GND",
-                    "color": "black",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_12",
-                    "from": "comp_4:a",
+                    "id": "w_up_5",
+                    "from": "led_3:A",
                     "to": "r_4:p1",
                     "color": "orange",
                     "waypoints": [],
@@ -3054,9 +3128,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_13",
+                    "id": "w_up_6",
                     "from": "r_4:p2",
-                    "to": "uno1:13",
+                    "to": "uno1:3",
                     "color": "green",
                     "waypoints": [],
                     "isBelow": false,
@@ -3067,8 +3141,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_14",
-                    "from": "comp_4:k",
+                    "id": "w_up_7",
+                    "from": "led_3:K",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -3080,47 +3154,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_15",
-                    "from": "comp_5:a",
-                    "to": "r_5:p1",
-                    "color": "orange",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_16",
-                    "from": "r_5:p2",
-                    "to": "uno1:13",
-                    "color": "green",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_17",
-                    "from": "comp_5:k",
-                    "to": "uno1:GND",
-                    "color": "black",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_18",
-                    "from": "comp_6:a",
+                    "id": "w_up_9",
+                    "from": "led_5:A",
                     "to": "r_6:p1",
                     "color": "orange",
                     "waypoints": [],
@@ -3132,9 +3167,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_19",
+                    "id": "w_up_10",
                     "from": "r_6:p2",
-                    "to": "uno1:13",
+                    "to": "uno1:4",
                     "color": "green",
                     "waypoints": [],
                     "isBelow": false,
@@ -3145,8 +3180,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_20",
-                    "from": "comp_6:k",
+                    "id": "w_up_11",
+                    "from": "led_5:K",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -3158,9 +3193,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_21",
-                    "from": "comp_7:a",
-                    "to": "r_7:p1",
+                    "id": "w_up_13",
+                    "from": "led_7:A",
+                    "to": "r_8:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3171,9 +3206,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_22",
-                    "from": "r_7:p2",
-                    "to": "uno1:13",
+                    "id": "w_up_14",
+                    "from": "r_8:p2",
+                    "to": "uno1:5",
                     "color": "green",
                     "waypoints": [],
                     "isBelow": false,
@@ -3184,8 +3219,164 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_23",
-                    "from": "comp_7:k",
+                    "id": "w_up_15",
+                    "from": "led_7:K",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_17",
+                    "from": "led_9:A",
+                    "to": "r_10:p1",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_18",
+                    "from": "r_10:p2",
+                    "to": "uno1:6",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_19",
+                    "from": "led_9:K",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_21",
+                    "from": "led_11:A",
+                    "to": "r_12:p1",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_22",
+                    "from": "r_12:p2",
+                    "to": "uno1:7",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_23",
+                    "from": "led_11:K",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_25",
+                    "from": "led_13:A",
+                    "to": "r_14:p1",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_26",
+                    "from": "r_14:p2",
+                    "to": "uno1:8",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_27",
+                    "from": "led_13:K",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_29",
+                    "from": "led_15:A",
+                    "to": "r_16:p1",
+                    "color": "orange",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_30",
+                    "from": "r_16:p2",
+                    "to": "uno1:9",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_up_31",
+                    "from": "led_15:K",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -3200,12 +3391,35 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
-                "code": "int count = 0;\nvoid setup() {\n  Serial.begin(9600);\n}\nvoid loop() {\n  Serial.print(\"Count: \");\n  Serial.println(count++);\n  delay(1000);\n  if (count > 255) count = 0;\n}",
-                "name": "Up Counter",
-                "exportedAt": "2026-06-18T08:48:06.644Z"
+                "projectFiles": [
+                  {
+                    "id": "project/uno1/uno1.ino",
+                    "path": "project/uno1/uno1.ino",
+                    "name": "uno1.ino",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "int count = 0;\n\nvoid setup() {\n  for (int i=2; i<=9; i++) pinMode(i,OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  for (int i=2; i<=9; i++) digitalWrite(i, bitRead(count, i-2));\n  Serial.print(\"Count: \");\n  Serial.println(count++);\n  delay(1000);\n  if (count > 255) count = 0;\n}",
+                    "dirty": true
+                  },
+                  {
+                    "id": "project/uno1/library.txt",
+                    "path": "project/uno1/library.txt",
+                    "name": "library.txt",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n",
+                    "dirty": false
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno1/uno1.ino"
+                ],
+                "activeCodeFileId": "project/uno1/uno1.ino",
+                "code": "int count = 0;\n\nvoid setup() {\n  for (int i=2; i<=9; i++) pinMode(i,OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  for (int i=2; i<=9; i++) digitalWrite(i, bitRead(count, i-2));\n  Serial.print(\"Count: \");\n  Serial.println(count++);\n  delay(1000);\n  if (count > 255) count = 0;\n}",
+                "name": "Guided Project",
+                "exportedAt": "2026-06-11T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -3218,7 +3432,7 @@
             "board": "Arduino Uno",
             "components": [
               "2x Push Buttons",
-              "2x 10kΩ Resistors",
+              "2x 10k\u03a9 Resistors",
               "Arduino Uno"
             ],
             "code": "int count = 0;\nvoid setup() {\n  pinMode(2, INPUT_PULLUP);\n  pinMode(3, INPUT_PULLUP);\n  Serial.begin(9600);\n}\nvoid loop() {\n  if (digitalRead(2) == LOW) {\n    count++;\n    Serial.print(\"Up: \");\n    Serial.println(count);\n    delay(200);\n  }\nif (digitalRead(3) == LOW) {\n  count--;\n  Serial.print(\"Down: \");\n  Serial.println(count);\n  delay(200);\n}\n}",
@@ -3231,7 +3445,7 @@
                     "id": "uno1",
                     "type": "openhw-arduino-uno",
                     "label": "Arduino Uno",
-                    "x": -220,
+                    "x": -200,
                     "y": -280,
                     "w": 425,
                     "h": 320,
@@ -3239,81 +3453,32 @@
                     "attrs": {}
                   },
                   {
-                    "id": "comp_0",
+                    "id": "btn_1",
                     "type": "openhw-pushbutton",
-                    "label": "Push Button",
-                    "x": 200,
-                    "y": -200,
-                    "w": 40,
-                    "h": 40,
+                    "label": "Up Button",
+                    "x": 150,
+                    "y": -100,
+                    "w": 50,
+                    "h": 50,
                     "rotation": 0,
-                    "attrs": {
-                      "breadboard": {
-                        "anchorPin": "2"
-                      },
-                      "targetBoard": "uno1"
-                    }
+                    "attrs": {}
                   },
                   {
-                    "id": "comp_1",
+                    "id": "btn_2",
                     "type": "openhw-pushbutton",
-                    "label": "Push Button",
-                    "x": 200,
-                    "y": -140,
-                    "w": 40,
-                    "h": 40,
+                    "label": "Down Button",
+                    "x": 150,
+                    "y": 0,
+                    "w": 50,
+                    "h": 50,
                     "rotation": 0,
-                    "attrs": {
-                      "breadboard": {
-                        "anchorPin": "2"
-                      },
-                      "targetBoard": "uno1"
-                    }
-                  },
-                  {
-                    "id": "r_2",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": -80,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "10000"
-                    }
-                  },
-                  {
-                    "id": "r_3",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": -30,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "10000"
-                    }
+                    "attrs": {}
                   }
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_0:p1",
-                    "to": "uno1:2",
-                    "color": "blue",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_1",
-                    "from": "comp_0:p2",
+                    "id": "w_up_gnd",
+                    "from": "btn_1:1l",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -3325,10 +3490,10 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_2",
-                    "from": "comp_1:p1",
+                    "id": "w_up_sig",
+                    "from": "btn_1:2l",
                     "to": "uno1:2",
-                    "color": "blue",
+                    "color": "green",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
@@ -3338,10 +3503,23 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_3",
-                    "from": "comp_1:p2",
+                    "id": "w_down_gnd",
+                    "from": "btn_2:1l",
                     "to": "uno1:GND",
                     "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_down_sig",
+                    "from": "btn_2:2l",
+                    "to": "uno1:3",
+                    "color": "green",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
@@ -3354,12 +3532,35 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
-                "code": "int count = 0;\nvoid setup() {\n  pinMode(2, INPUT_PULLUP);\n  pinMode(3, INPUT_PULLUP);\n  Serial.begin(9600);\n}\nvoid loop() {\n  if (digitalRead(2) == LOW) {\n    count++;\n    Serial.print(\"Up: \");\n    Serial.println(count);\n    delay(200);\n  }\nif (digitalRead(3) == LOW) {\n  count--;\n  Serial.print(\"Down: \");\n  Serial.println(count);\n  delay(200);\n}\n}",
-                "name": "Up-Down Counter",
-                "exportedAt": "2026-06-18T08:48:06.644Z"
+                "projectFiles": [
+                  {
+                    "id": "project/uno1/uno1.ino",
+                    "path": "project/uno1/uno1.ino",
+                    "name": "uno1.ino",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "int count = 0;\n\nvoid setup() {\n  pinMode(2, INPUT);\n  pinMode(3, INPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  if (digitalRead(2) == LOW) {\n    count++;\n    Serial.print(\"Up: \");\n    Serial.println(count);\n    delay(200);\n  }\n  if (digitalRead(3) == LOW) {\n    count--;\n    Serial.print(\"Down: \");\n    Serial.println(count);\n    delay(200);\n  }\n}",
+                    "dirty": true
+                  },
+                  {
+                    "id": "project/uno1/library.txt",
+                    "path": "project/uno1/library.txt",
+                    "name": "library.txt",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n",
+                    "dirty": false
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno1/uno1.ino"
+                ],
+                "activeCodeFileId": "project/uno1/uno1.ino",
+                "code": "int count = 0;\n\nvoid setup() {\n  pinMode(2, INPUT);\n  pinMode(3, INPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  if (digitalRead(2) == LOW) {\n    count++;\n    Serial.print(\"Up: \");\n    Serial.println(count);\n    delay(200);\n  }\n  if (digitalRead(3) == LOW) {\n    count--;\n    Serial.print(\"Down: \");\n    Serial.println(count);\n    delay(200);\n  }\n}",
+                "name": "Guided Project",
+                "exportedAt": "2026-06-11T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -3372,7 +3573,7 @@
             "board": "Arduino Uno",
             "components": [
               "7-Segment Display",
-              "8x 220Ω Resistors",
+              "8x 220\u03a9 Resistors",
               "Arduino Uno"
             ],
             "code": "int segPins[] = {\n  2,3,4,5,6,7,8,9\n}\n;\nbyte digits[10] = {\n  B11111100,B01100000,B11011010,B11110010,B01100110,B10110110,B10111110,B11100000,B11111110,B11110110\n}\n;\nvoid setup() {\n  for (int i=0; i<8; i++) pinMode(segPins[i],OUTPUT);\n  Serial.begin(9600);\n}\nint count=0;\nvoid loop() {\n  for (int i=0; i<8; i++) digitalWrite(segPins[i],bitRead(digits[count%10],7-i));\n  Serial.print(\"Count: \");\n  Serial.println(count++);\n  delay(1000);\n}",
@@ -3393,35 +3594,22 @@
                     "attrs": {}
                   },
                   {
-                    "id": "comp_0",
+                    "id": "seg_1",
                     "type": "openhw-7segment",
                     "label": "7-Segment Display",
                     "x": 200,
                     "y": -200,
                     "w": 100,
-                    "h": 100,
+                    "h": 140,
                     "rotation": 0,
                     "attrs": {}
                   },
                   {
-                    "id": "r_1",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": -80,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
                     "id": "r_2",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 200,
-                    "y": -30,
+                    "y": 100,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -3432,9 +3620,9 @@
                   {
                     "id": "r_3",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 20,
+                    "label": "220\u03a9 Resistor",
+                    "x": 290,
+                    "y": 100,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -3445,9 +3633,9 @@
                   {
                     "id": "r_4",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 70,
+                    "label": "220\u03a9 Resistor",
+                    "x": 380,
+                    "y": 100,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -3458,9 +3646,9 @@
                   {
                     "id": "r_5",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 120,
+                    "label": "220\u03a9 Resistor",
+                    "x": 470,
+                    "y": 100,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -3471,9 +3659,9 @@
                   {
                     "id": "r_6",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 200,
-                    "y": 170,
+                    "y": 140,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -3484,9 +3672,9 @@
                   {
                     "id": "r_7",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 220,
+                    "label": "220\u03a9 Resistor",
+                    "x": 290,
+                    "y": 140,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -3497,9 +3685,22 @@
                   {
                     "id": "r_8",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 270,
+                    "label": "220\u03a9 Resistor",
+                    "x": 380,
+                    "y": 140,
+                    "w": 70,
+                    "h": 32,
+                    "rotation": 0,
+                    "attrs": {
+                      "value": "220"
+                    }
+                  },
+                  {
+                    "id": "r_9",
+                    "type": "openhw-resistor",
+                    "label": "220\u03a9 Resistor",
+                    "x": 470,
+                    "y": 140,
                     "w": 70,
                     "h": 32,
                     "rotation": 0,
@@ -3510,9 +3711,9 @@
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_0:a",
-                    "to": "comp_0_r_a:p1",
+                    "id": "w_seg_1",
+                    "from": "seg_1:a",
+                    "to": "r_2:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3523,8 +3724,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_1",
-                    "from": "comp_0_r_a:p2",
+                    "id": "w_seg_2",
+                    "from": "r_2:p2",
                     "to": "uno1:2",
                     "color": "green",
                     "waypoints": [],
@@ -3536,9 +3737,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_2",
-                    "from": "comp_0:b",
-                    "to": "comp_0_r_b:p1",
+                    "id": "w_seg_3",
+                    "from": "seg_1:b",
+                    "to": "r_3:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3549,8 +3750,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_3",
-                    "from": "comp_0_r_b:p2",
+                    "id": "w_seg_4",
+                    "from": "r_3:p2",
                     "to": "uno1:3",
                     "color": "green",
                     "waypoints": [],
@@ -3562,9 +3763,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_4",
-                    "from": "comp_0:c",
-                    "to": "comp_0_r_c:p1",
+                    "id": "w_seg_5",
+                    "from": "seg_1:c",
+                    "to": "r_4:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3575,8 +3776,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_5",
-                    "from": "comp_0_r_c:p2",
+                    "id": "w_seg_6",
+                    "from": "r_4:p2",
                     "to": "uno1:4",
                     "color": "green",
                     "waypoints": [],
@@ -3588,9 +3789,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_6",
-                    "from": "comp_0:d",
-                    "to": "comp_0_r_d:p1",
+                    "id": "w_seg_7",
+                    "from": "seg_1:d",
+                    "to": "r_5:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3601,8 +3802,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_7",
-                    "from": "comp_0_r_d:p2",
+                    "id": "w_seg_8",
+                    "from": "r_5:p2",
                     "to": "uno1:5",
                     "color": "green",
                     "waypoints": [],
@@ -3614,9 +3815,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_8",
-                    "from": "comp_0:e",
-                    "to": "comp_0_r_e:p1",
+                    "id": "w_seg_9",
+                    "from": "seg_1:e",
+                    "to": "r_6:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3627,8 +3828,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_9",
-                    "from": "comp_0_r_e:p2",
+                    "id": "w_seg_10",
+                    "from": "r_6:p2",
                     "to": "uno1:6",
                     "color": "green",
                     "waypoints": [],
@@ -3640,9 +3841,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_10",
-                    "from": "comp_0:f",
-                    "to": "comp_0_r_f:p1",
+                    "id": "w_seg_11",
+                    "from": "seg_1:f",
+                    "to": "r_7:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3653,8 +3854,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_11",
-                    "from": "comp_0_r_f:p2",
+                    "id": "w_seg_12",
+                    "from": "r_7:p2",
                     "to": "uno1:7",
                     "color": "green",
                     "waypoints": [],
@@ -3666,9 +3867,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_12",
-                    "from": "comp_0:g",
-                    "to": "comp_0_r_g:p1",
+                    "id": "w_seg_13",
+                    "from": "seg_1:g",
+                    "to": "r_8:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3679,8 +3880,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_13",
-                    "from": "comp_0_r_g:p2",
+                    "id": "w_seg_14",
+                    "from": "r_8:p2",
                     "to": "uno1:8",
                     "color": "green",
                     "waypoints": [],
@@ -3692,9 +3893,9 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_14",
-                    "from": "comp_0:dp",
-                    "to": "comp_0_r_dp:p1",
+                    "id": "w_seg_15",
+                    "from": "seg_1:dp",
+                    "to": "r_9:p1",
                     "color": "orange",
                     "waypoints": [],
                     "isBelow": false,
@@ -3705,8 +3906,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_15",
-                    "from": "comp_0_r_dp:p2",
+                    "id": "w_seg_16",
+                    "from": "r_9:p2",
                     "to": "uno1:9",
                     "color": "green",
                     "waypoints": [],
@@ -3718,8 +3919,8 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_16",
-                    "from": "comp_0:com",
+                    "id": "w_seg_gnd_17",
+                    "from": "seg_1:DIG1",
                     "to": "uno1:GND",
                     "color": "black",
                     "waypoints": [],
@@ -3734,12 +3935,35 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
-                "code": "int segPins[] = {\n  2,3,4,5,6,7,8,9\n}\n;\nbyte digits[10] = {\n  B11111100,B01100000,B11011010,B11110010,B01100110,B10110110,B10111110,B11100000,B11111110,B11110110\n}\n;\nvoid setup() {\n  for (int i=0; i<8; i++) pinMode(segPins[i],OUTPUT);\n  Serial.begin(9600);\n}\nint count=0;\nvoid loop() {\n  for (int i=0; i<8; i++) digitalWrite(segPins[i],bitRead(digits[count%10],7-i));\n  Serial.print(\"Count: \");\n  Serial.println(count++);\n  delay(1000);\n}",
-                "name": "7-Segment Display Counter",
-                "exportedAt": "2026-06-18T08:48:06.644Z"
+                "projectFiles": [
+                  {
+                    "id": "project/uno1/uno1.ino",
+                    "path": "project/uno1/uno1.ino",
+                    "name": "uno1.ino",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "int segPins[] = {2,3,4,5,6,7,8,9};\nbyte digits[10] = {B11111100,B01100000,B11011010,B11110010,B01100110,B10110110,B10111110,B11100000,B11111110,B11110110};\nint count = 0;\n\nvoid setup() {\n  for (int i=0; i<8; i++) pinMode(segPins[i],OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  for (int i=0; i<8; i++) digitalWrite(segPins[i],bitRead(digits[count%10],7-i));\n  Serial.print(\"Count: \");\n  Serial.println(count++);\n  delay(1000);\n}",
+                    "dirty": true
+                  },
+                  {
+                    "id": "project/uno1/library.txt",
+                    "path": "project/uno1/library.txt",
+                    "name": "library.txt",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n",
+                    "dirty": false
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno1/uno1.ino"
+                ],
+                "activeCodeFileId": "project/uno1/uno1.ino",
+                "code": "int segPins[] = {2,3,4,5,6,7,8,9};\nbyte digits[10] = {B11111100,B01100000,B11011010,B11110010,B01100110,B10110110,B10111110,B11100000,B11111110,B11110110};\nint count = 0;\n\nvoid setup() {\n  for (int i=0; i<8; i++) pinMode(segPins[i],OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  for (int i=0; i<8; i++) digitalWrite(segPins[i],bitRead(digits[count%10],7-i));\n  Serial.print(\"Count: \");\n  Serial.println(count++);\n  delay(1000);\n}",
+                "name": "Guided Project",
+                "exportedAt": "2026-06-11T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -3765,7 +3989,7 @@
             "components": [
               "NTC Temperature Sensor",
               "RGB LED",
-              "3x 220Ω Resistors",
+              "3x 220\u03a9 Resistors",
               "Arduino Uno"
             ],
             "code": "int ledR = 11;\nint ledG = 10;\nint ledB = 9;\n\nvoid setup() {\n  pinMode(ledR, OUTPUT);\n  pinMode(ledG, OUTPUT);\n  pinMode(ledB, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int val = analogRead(A0);\n  float mV = val * 5000.0 / 1024;\n  float tempC = (mV - 500) / 10;\n  Serial.print(tempC);\n  Serial.println(\"C\");\n\n  if (tempC < 20) {\n    digitalWrite(ledR, HIGH);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, LOW);\n  } else if (tempC < 30) {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, HIGH);\n    digitalWrite(ledB, LOW);\n  } else {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, HIGH);\n  }\n  delay(500);\n}",
@@ -3778,7 +4002,7 @@
                     "id": "uno1",
                     "type": "openhw-arduino-uno",
                     "label": "Arduino Uno",
-                    "x": -220,
+                    "x": -200,
                     "y": -280,
                     "w": 425,
                     "h": 320,
@@ -3786,107 +4010,73 @@
                     "attrs": {}
                   },
                   {
-                    "id": "comp_1",
+                    "id": "rgb_led1",
                     "type": "openhw-rgb-led",
-                    "label": "RGB LED (4-pin)",
-                    "x": 200,
+                    "label": "RGB LED",
+                    "x": 250,
                     "y": -200,
-                    "w": 75,
-                    "h": 105,
+                    "w": 50,
+                    "h": 50,
                     "rotation": 0,
-                    "attrs": {
-                      "common": "cathode",
-                      "breadboard": {
-                        "anchorPin": "GND"
-                      },
-                      "targetBoard": "uno1"
-                    }
+                    "attrs": {}
                   },
                   {
-                    "id": "r_1_r",
+                    "id": "r_r",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
+                    "label": "220\u03a9 Resistor",
                     "x": 200,
                     "y": -80,
-                    "w": 70,
-                    "h": 32,
+                    "w": 60,
+                    "h": 12,
                     "rotation": 0,
                     "attrs": {
                       "value": "220"
                     }
                   },
                   {
-                    "id": "r_1_g",
+                    "id": "r_g",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 290,
+                    "label": "220\u03a9 Resistor",
+                    "x": 280,
                     "y": -80,
-                    "w": 70,
-                    "h": 32,
+                    "w": 60,
+                    "h": 12,
                     "rotation": 0,
                     "attrs": {
                       "value": "220"
                     }
                   },
                   {
-                    "id": "r_1_b",
+                    "id": "r_b",
                     "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 380,
+                    "label": "220\u03a9 Resistor",
+                    "x": 360,
                     "y": -80,
-                    "w": 70,
-                    "h": 32,
+                    "w": 60,
+                    "h": 12,
                     "rotation": 0,
                     "attrs": {
                       "value": "220"
                     }
                   },
                   {
-                    "id": "r_2",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
+                    "id": "ntc_1",
+                    "type": "openhw-ntc-temperature-sensor",
+                    "label": "NTC Temperature Sensor",
+                    "x": 150,
                     "y": 0,
-                    "w": 70,
-                    "h": 32,
+                    "w": 180,
+                    "h": 75,
                     "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "r_3",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 50,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
-                  },
-                  {
-                    "id": "r_4",
-                    "type": "openhw-resistor",
-                    "label": "Resistor",
-                    "x": 200,
-                    "y": 100,
-                    "w": 70,
-                    "h": 32,
-                    "rotation": 0,
-                    "attrs": {
-                      "value": "220"
-                    }
+                    "attrs": {}
                   }
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_1:a",
-                    "to": "r_1:p1",
-                    "color": "orange",
+                    "id": "w_rr1",
+                    "from": "uno1:11",
+                    "to": "r_r:p1",
+                    "color": "red",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
@@ -3896,9 +4086,22 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_1",
-                    "from": "r_1:p2",
-                    "to": "uno1:13",
+                    "id": "w_rr2",
+                    "from": "r_r:p2",
+                    "to": "rgb_led1:R",
+                    "color": "red",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_rg1",
+                    "from": "uno1:10",
+                    "to": "r_g:p1",
                     "color": "green",
                     "waypoints": [],
                     "isBelow": false,
@@ -3909,10 +4112,88 @@
                     "toLabel": ""
                   },
                   {
-                    "id": "w_2",
-                    "from": "comp_1:k",
+                    "id": "w_rg2",
+                    "from": "r_g:p2",
+                    "to": "rgb_led1:G",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_rb1",
+                    "from": "uno1:9",
+                    "to": "r_b:p1",
+                    "color": "blue",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_rb2",
+                    "from": "r_b:p2",
+                    "to": "rgb_led1:B",
+                    "color": "blue",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_com",
+                    "from": "rgb_led1:COM",
                     "to": "uno1:GND",
                     "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_ntc_vcc",
+                    "from": "ntc_1:VCC",
+                    "to": "uno1:5V",
+                    "color": "red",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_ntc_gnd",
+                    "from": "ntc_1:GND",
+                    "to": "uno1:GND",
+                    "color": "black",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "",
+                    "toLabel": ""
+                  },
+                  {
+                    "id": "w_ntc_out",
+                    "from": "ntc_1:OUT",
+                    "to": "uno1:A0",
+                    "color": "green",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
@@ -3925,12 +4206,35 @@
                 "blocklyXml": "",
                 "blocklyGeneratedCode": "",
                 "useBlocklyCode": false,
-                "projectFiles": [],
-                "openCodeTabs": [],
-                "activeCodeFileId": "code.ino",
+                "projectFiles": [
+                  {
+                    "id": "project/uno1/uno1.ino",
+                    "path": "project/uno1/uno1.ino",
+                    "name": "uno1.ino",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "int ledR = 11;\nint ledG = 10;\nint ledB = 9;\n\nvoid setup() {\n  pinMode(ledR, OUTPUT);\n  pinMode(ledG, OUTPUT);\n  pinMode(ledB, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int val = analogRead(A0);\n  float mV = val * 5000.0 / 1024;\n  float tempC = (mV - 500) / 10;\n  Serial.print(tempC);\n  Serial.println(\"C\");\n\n  if (tempC < 20) {\n    digitalWrite(ledR, HIGH);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, LOW);\n  } else if (tempC < 30) {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, HIGH);\n    digitalWrite(ledB, LOW);\n  } else {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, HIGH);\n  }\n  delay(500);\n}",
+                    "dirty": true
+                  },
+                  {
+                    "id": "project/uno1/library.txt",
+                    "path": "project/uno1/library.txt",
+                    "name": "library.txt",
+                    "kind": "code",
+                    "boardId": "uno1",
+                    "boardKind": "arduino_uno",
+                    "content": "# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n",
+                    "dirty": false
+                  }
+                ],
+                "openCodeTabs": [
+                  "project/uno1/uno1.ino"
+                ],
+                "activeCodeFileId": "project/uno1/uno1.ino",
                 "code": "int ledR = 11;\nint ledG = 10;\nint ledB = 9;\n\nvoid setup() {\n  pinMode(ledR, OUTPUT);\n  pinMode(ledG, OUTPUT);\n  pinMode(ledB, OUTPUT);\n  Serial.begin(9600);\n}\n\nvoid loop() {\n  int val = analogRead(A0);\n  float mV = val * 5000.0 / 1024;\n  float tempC = (mV - 500) / 10;\n  Serial.print(tempC);\n  Serial.println(\"C\");\n\n  if (tempC < 20) {\n    digitalWrite(ledR, HIGH);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, LOW);\n  } else if (tempC < 30) {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, HIGH);\n    digitalWrite(ledB, LOW);\n  } else {\n    digitalWrite(ledR, LOW);\n    digitalWrite(ledG, LOW);\n    digitalWrite(ledB, HIGH);\n  }\n  delay(500);\n}",
-                "name": "Temperature Indicator using RGB LED",
-                "exportedAt": "2026-06-18T08:48:06.644Z"
+                "name": "Guided Project",
+                "exportedAt": "2026-06-12T10:00:00.000Z"
               },
               "raspberrypi": null,
               "esp32": null
@@ -4203,7 +4507,7 @@
             "components": [
               "MQ-2 Gas Sensor",
               "LED",
-              "220Ω Resistor",
+              "220\u03a9 Resistor",
               "Arduino Uno",
               "Buzzer"
             ],
@@ -5317,9 +5621,9 @@
             "board": "Arduino Uno",
             "components": [
               "LDR",
-              "10kΩ Resistor",
+              "10k\u03a9 Resistor",
               "LED (Street Light)",
-              "220Ω Resistor",
+              "220\u03a9 Resistor",
               "Arduino Uno"
             ],
             "code": "void setup() {\n  pinMode(9,OUTPUT);\n  Serial.begin(9600);\n}\nvoid loop() {\n  int light=analogRead(A0);\n  Serial.print(\"Light: \");\n  Serial.println(light);\n  if(light<400) {\n    digitalWrite(9,HIGH);\n    Serial.println(\"Street Light ON\");\n  } else {\n  digitalWrite(9,LOW);\n  Serial.println(\"Street Light OFF\");\n}\ndelay(500);\n}",
@@ -7122,7 +7426,7 @@
             "components": [
               "ESP32",
               "LED",
-              "220Ω Resistor",
+              "220\u03a9 Resistor",
               "Breadboard"
             ],
             "code": "#define BLYNK_PRINT Serial\n#include <Blynk.h>\nchar auth[]=\"YOUR_AUTH_TOKEN\";\nchar ssid[]=\"YOUR_SSID\";\nchar pass[]=\"YOUR_PASS\";\nvoid setup() {\n  Serial.begin(9600);\n  Blynk.begin(auth,ssid,pass);\n  pinMode(2,OUTPUT);\n}\nvoid loop() {\n  Blynk.run();\n}",

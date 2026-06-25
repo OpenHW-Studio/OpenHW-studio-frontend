@@ -758,7 +758,7 @@ export default function AdminAdventureContentTab() {
                               )}
 
                               <p className="mt-4 text-sm leading-6 text-slate-400">
-                                {project.theory?.length || 0} theory cards · {project.quizQuestions?.length || 0} quiz questions · {project.rewardComponents?.length || 0} rewards
+                                {project.theory?.length || 0} theory cards Â· {project.quizQuestions?.length || 0} quiz questions Â· {project.rewardComponents?.length || 0} rewards
                               </p>
                             </div>
 
@@ -830,7 +830,7 @@ export default function AdminAdventureContentTab() {
                 {selectedProjectMeta?.title || activeProject?.title || selectedSlug}
               </div>
               <p className="mt-3 text-sm leading-6 text-slate-400">
-                This editor updates the selected project’s theory, quiz, rewards, and assessment data.
+                This editor updates the selected projectâ€™s theory, quiz, rewards, and assessment data.
               </p>
             </div>
             <div className="ml-auto flex flex-wrap items-center gap-2">

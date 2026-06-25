@@ -100,6 +100,7 @@ import { SimulatorRuntimePanel } from "./components/SimulatorRuntimePanel";
 import { CanvasBottomControls } from "./components/CanvasBottomControls";
 import { F1MenuOverlay } from "./components/F1MenuOverlay";
 import AutofixPreviewPanel from "../../components/AutofixPreviewPanel.jsx";
+import GuidedProjectPopup from "../../components/student/GuidedProjectPopup.jsx";
 
 import * as EmulatorComponents from "@openhw/emulator";
 
@@ -632,7 +633,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
       if (activeUser?.role !== 'student') return false;
       const compId = WOKWI_TO_COMP_ID[itemType];
       if (!compId) return false;
-      return isUnlocked ? !isUnlocked(itemType) : false;
+      return isUnlocked ? !isUnlocked(compId) : false;
     },
     [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID, activeUser?.role],
   );
@@ -732,10 +733,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const doLoadGuidedSchema = (schema, label) => {
     setIsLoadingGuidedSchema(true)
     applyImportedProjectMeta(schema, label)
-    setTimeout(() => {
-      setIsLoadingGuidedSchema(false)
-      fitToView("fit")
-    }, 800)
+    setTimeout(() => setIsLoadingGuidedSchema(false), 800)
   }
 
   const lastLoadedSlugRef = useRef(null)
@@ -766,7 +764,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setShowComingSoon(false)
     setIsLoadingGuidedSchema(true)
     tryLoadFromPng()
-      .then(() => setTimeout(() => { setIsLoadingGuidedSchema(false); fitToView("fit") }, 800))
+      .then(() => setTimeout(() => setIsLoadingGuidedSchema(false), 800))
       .catch(async () => {
         if (project?.schemas?.arduino) {
           loadFromSchema()
@@ -785,9 +783,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
               }
             }
           } catch {}
-          setIsLoadingGuidedSchema(false)
-          setShowComingSoon(true)
-        } else {
           setIsLoadingGuidedSchema(false)
           setShowComingSoon(true)
         }
@@ -904,9 +899,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     );
   }, [components, wires]);
 
-  const [serialViewMode, setSerialViewMode] = useState("monitor"); // 'monitor' | 'plotter'
-  const [isPaletteHovered, setIsPaletteHovered] = useState(false);
-
   const {
     showTour,
     setShowTour,
@@ -919,9 +911,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setWires,
     setCodeTab,
     setIsPanelOpen,
-    openCodeFile,
-    setSerialViewMode,
-    setIsPaletteHovered,
   });
 
   useEffect(() => {
@@ -1138,18 +1127,16 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const pendingProtocolLogsRef = useRef([]);
   const protocolLogsTimerRef = useRef(null);
   const lastRenderSyncCacheRef = useRef({}); // { [boardId]: { hash, timestamp, pins, analog, components, neopixels } }
+  const [serialHistory, setSerialHistory] = useState([]);
+  const [serialInput, setSerialInput] = useState("");
+  const [serialPaused, setSerialPaused] = useState(false);
   const [serialPanelOpen, setSerialPanelOpen] = useState(false);
   const [serialPanelPos, setSerialPanelPos] = useState(null);
   const serialPanelDragging = useRef(false);
   const [serialPanelGrabbing, setSerialPanelGrabbing] = useState(false);
   const serialPanelDragOffset = useRef({ x: 0, y: 0 });
   const serialRelayActiveRef = useRef(false);
-  const lastRelayedLengthRef = useRef(0);
-  const [serialHistory, setSerialHistory] = useState([]);
-  const serialHistoryRef = useRef([]);
-  serialHistoryRef.current = serialHistory;
-  const [serialInput, setSerialInput] = useState("");
-  const [serialPaused, setSerialPaused] = useState(false);
+  const [serialViewMode, setSerialViewMode] = useState("monitor"); // 'monitor' | 'plotter'
   const [serialBoardFilter, setSerialBoardFilter] = useState("all");
   const [serialBaudRate, setSerialBaudRate] = useState("9600");
   const [serialLineEnding, setSerialLineEnding] = useState(() => {
@@ -1736,6 +1723,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentProjectName, setCurrentProjectName] = useState("Untitled");
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [isPaletteHovered, setIsPaletteHovered] = useState(false);
   const [showF1Menu, setShowF1Menu] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1.0);
   const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
@@ -4612,9 +4600,6 @@ loadDemoProject();
         if (s === "p2") return "2";
         if (s === "a") return "anode";
         if (s === "k") return "cathode";
-        if (s === "s" || s === "sig") return "sig";
-        if (s === "v" || s === "vcc") return "vcc";
-        if (s === "g" || s === "gnd") return "gnd";
         if (s === "3.3v" || s === "3v3") return "3v3";
         return s.replace(/[:.]/g, "_");
       };
@@ -5664,7 +5649,7 @@ loadDemoProject();
   const onCompMouseDown = useCallback(
     (e, id) => {
       e.stopPropagation();
-      if (isRunning || (liveEditingDisabled && !readOnly)) return; // Restrict movement while running
+      if (isRunning || liveEditingDisabled) return; // Restrict movement while running
       const comp = components.find((c) => c.id === id);
       if (!comp) return;
 
@@ -9106,6 +9091,7 @@ loadDemoProject();
       const boardsWithoutCompilableSketch = [];
       let result = null;
 
+
       if (!result && canvasOnly && readOnly && projectName) {
         // 1. Check precompiledBinaries.js (statically imported hex data)
         const { getPrecompiledBinary } = await import("../../services/precompiledBinaries.js");
@@ -9146,7 +9132,7 @@ loadDemoProject();
           components: components,
           connections: wires,
         };
-      } else if (!result && programmableBoards.length > 0) {
+      } else if (programmableBoards.length > 0) {
         for (const boardComp of programmableBoards) {
           const kind = normalizeBoardKind(boardComp.type);
           const targetFqbn = resolveBoardFqbnForComponent(boardComp, kind);
@@ -9612,13 +9598,13 @@ loadDemoProject();
 
       lastCompiledRef.current = { code, board, result };
       setIsCompiling(false);
+      if (!isBackendProxy) {
 
       if (canvasOnly && readOnly && projectName && result?.hex) {
         const { setGuidedHex } = await import("../../services/guidedProjectHexes.js");
         setGuidedHex(projectName, result.hex);
       }
 
-      if (!isBackendProxy) {
         setIsRunning(true);
         setIsBooting(true);
       }
@@ -10775,8 +10761,6 @@ loadDemoProject();
     }
   };
 
-  const runFnRef = useRef(null)
-  runFnRef.current = handleRun
   useEffect(() => {
     const handler = (e) => {
       if (e.data?.type === 'RUN_SIMULATION') {
@@ -13106,7 +13090,6 @@ loadDemoProject();
         )}
 
         {/* TOP BAR */}
-        {!canvasOnly && (
         <TopToolbox
           board={board}
           setBoard={setBoard}
@@ -13234,9 +13217,92 @@ loadDemoProject();
           returnTo={location.search.includes("returnTo") ? new URLSearchParams(location.search).get("returnTo") : null}
           code={code}
         />
-        )}
 
-        {!canvasOnly && (<>
+            {canvasOnly && (
+              <div style={{
+                position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 90,
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'rgba(15,23,42,0.85)', backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12,
+                padding: '8px 16px', pointerEvents: 'auto',
+                boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
+              }}>
+                {!isRunning ? (
+                  <>
+                  <button
+                    onClick={handleRun}
+                    disabled={isCompiling}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'var(--accent)', border: 'none', color: '#000',
+                      padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700,
+                      cursor: isCompiling ? 'wait' : 'pointer',
+                      opacity: isCompiling ? 0.6 : 1, transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={(e) => { if (!isCompiling) { e.target.style.transform = 'translateY(-1px)'; e.target.style.boxShadow = '0 4px 12px rgba(0,212,255,0.4)' }}}
+                    onMouseLeave={(e) => { e.target.style.transform = 'none'; e.target.style.boxShadow = 'none' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+                    {isCompiling ? 'Compiling...' : 'Run'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const url = `/${projectName}/demo`
+                      if (window.self !== window.top) {
+                        window.parent.location.href = url
+                      } else {
+                        window.location.href = url
+                      }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)',
+                      color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                      cursor: 'pointer', transition: 'all 0.2s',
+                    }}
+                    onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.2)' }}
+                    onMouseLeave={(e) => { e.target.style.background = 'rgba(255,255,255,0.1)' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                    Edit
+                  </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={isPaused ? handleResume : handlePause}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        background: isPaused ? 'var(--orange, #f59e0b)' : 'rgba(255,255,255,0.1)',
+                        border: '1px solid rgba(255,255,255,0.15)', color: '#fff',
+                        padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                        cursor: 'pointer', transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={(e) => { e.target.style.background = isPaused ? '#d97706' : 'rgba(255,255,255,0.2)' }}
+                      onMouseLeave={(e) => { e.target.style.background = isPaused ? 'var(--orange, #f59e0b)' : 'rgba(255,255,255,0.1)' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        {isPaused ? <polygon points="5 3 19 12 5 21 5 3" /> : <><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></>}
+                      </svg>
+                      {isPaused ? 'Resume' : 'Pause'}
+                    </button>
+                    <button onClick={handleStop} style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)',
+                      color: '#ef4444', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                      cursor: 'pointer', transition: 'all 0.2s',
+                    }}
+                      onMouseEnter={(e) => { e.target.style.background = 'rgba(239,68,68,0.3)' }}
+                      onMouseLeave={(e) => { e.target.style.background = 'rgba(239,68,68,0.2)' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
+                      Stop
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
         <SimulatorStatusBanners
           studentAssignmentMode={studentAssignmentMode}
           assignmentSubmissionAssignment={assignmentSubmissionAssignment}
@@ -13308,7 +13374,6 @@ loadDemoProject();
           lockToast={lockToast}
           wireStart={wireStart}
         />
-        </>)}
 
         <F1MenuOverlay
           showF1Menu={showF1Menu}
@@ -13341,8 +13406,6 @@ loadDemoProject();
           className="flex flex-1 overflow-hidden"
           onClick={() => setProjContextMenu(null)}
         >
-          {!canvasOnly && (
-          <>
           {/* PALETTE — hover to expand */}
           <PalettePanel
             isPaletteHovered={isPaletteHovered}
@@ -13378,7 +13441,6 @@ loadDemoProject();
             open={showCreateComponentModal}
             onClose={handleCloseCreateComponentModal}
           />
-          </>)} 
 
           {/* CANVAS + SVG WIRE LAYER */}
           <main
@@ -13396,8 +13458,8 @@ loadDemoProject();
                       ? "default"
                       : "grab",
               touchAction: "none", // Block browser pinch-to-zoom
-              pointerEvents: liveEditingDisabled && !readOnly ? "none" : "auto",
-              opacity: liveEditingDisabled && !readOnly ? 0.8 : 1,
+              pointerEvents: liveEditingDisabled ? "none" : "auto",
+              opacity: liveEditingDisabled ? 0.8 : 1,
               marginLeft: canvasOnly ? "0" : "38px",
               transform: canvasOnly ? "none" : `translateX(${isPaletteHovered ? "302px" : "0"})`,
               transition: canvasOnly ? "none" : "transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)",
@@ -13549,92 +13611,6 @@ loadDemoProject();
               formatRunDuration={formatRunDuration}
             />
 
-            {canvasOnly && (
-              <div style={{
-                position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 90,
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: 'rgba(15,23,42,0.85)', backdropFilter: 'blur(12px)',
-                WebkitBackdropFilter: 'blur(12px)',
-                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12,
-                padding: '8px 16px', pointerEvents: 'auto',
-                boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
-              }}>
-                {!isRunning ? (
-                  <>
-                  <button
-                    onClick={handleRun}
-                    disabled={isCompiling}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'var(--accent)', border: 'none', color: '#000',
-                      padding: '8px 20px', borderRadius: 8, fontSize: 13, fontWeight: 700,
-                      cursor: isCompiling ? 'wait' : 'pointer',
-                      opacity: isCompiling ? 0.6 : 1, transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => { if (!isCompiling) { e.target.style.transform = 'translateY(-1px)'; e.target.style.boxShadow = '0 4px 12px rgba(0,212,255,0.4)' }}}
-                    onMouseLeave={(e) => { e.target.style.transform = 'none'; e.target.style.boxShadow = 'none' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-                    {isCompiling ? 'Compiling...' : 'Run'}
-                  </button>
-                  <button
-                    onClick={() => {
-                      const url = `/${projectName}/demo`
-                      if (window.self !== window.top) {
-                        window.parent.location.href = url
-                      } else {
-                        window.location.href = url
-                      }
-                    }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)',
-                      color: '#fff', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                      cursor: 'pointer', transition: 'all 0.2s',
-                    }}
-                    onMouseEnter={(e) => { e.target.style.background = 'rgba(255,255,255,0.2)' }}
-                    onMouseLeave={(e) => { e.target.style.background = 'rgba(255,255,255,0.1)' }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
-                    Edit
-                  </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={isPaused ? handleResume : handlePause}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        background: isPaused ? 'var(--orange, #f59e0b)' : 'rgba(255,255,255,0.1)',
-                        border: '1px solid rgba(255,255,255,0.15)', color: '#fff',
-                        padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                        cursor: 'pointer', transition: 'all 0.2s',
-                      }}
-                      onMouseEnter={(e) => { e.target.style.background = isPaused ? '#d97706' : 'rgba(255,255,255,0.2)' }}
-                      onMouseLeave={(e) => { e.target.style.background = isPaused ? 'var(--orange, #f59e0b)' : 'rgba(255,255,255,0.1)' }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                        {isPaused ? <polygon points="5 3 19 12 5 21 5 3" /> : <><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></>}
-                      </svg>
-                      {isPaused ? 'Resume' : 'Pause'}
-                    </button>
-                    <button onClick={handleStop} style={{
-                      display: 'flex', alignItems: 'center', gap: 6,
-                      background: 'rgba(239,68,68,0.2)', border: '1px solid rgba(239,68,68,0.3)',
-                      color: '#ef4444', padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                      cursor: 'pointer', transition: 'all 0.2s',
-                    }}
-                      onMouseEnter={(e) => { e.target.style.background = 'rgba(239,68,68,0.3)' }}
-                      onMouseLeave={(e) => { e.target.style.background = 'rgba(239,68,68,0.2)' }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1" /></svg>
-                      Stop
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-
             <ComponentInspectorPanel
               selectedComponentInfo={selectedComponentInfo}
               showComponentDesc={showComponentDesc}
@@ -13734,8 +13710,6 @@ loadDemoProject();
             {((addComponentAtRef.current = addComponentAt), null)}
           </main>
 
-          {!canvasOnly && (
-          <>
           {/* ── QuickAddPortal — mounts to document.body, zero canvas re-render cost ── */}
           <QuickAddPortal
             catalog={LOCAL_CATALOG}
@@ -14377,7 +14351,6 @@ loadDemoProject();
             }}
             onRotate={() => rotateComponent(compContextMenu.compId)}
             onDelete={() => {
-              if (liveEditingDisabled) return;
               saveHistory();
               const id = compContextMenu.compId;
               // Shared Ownership Cleanup: Only delete if no other owners exist
@@ -14499,11 +14472,24 @@ loadDemoProject();
               setValueState({ id: null, x: 0, y: 0, key: "value" })
             }
             theme={theme}
+          />
+          {guidedProjectState && (
+            <GuidedProjectPopup
+              project={guidedProjectState.project}
+              levelColor={guidedProjectState.levelColor}
+              onClose={() => setGuidedProjectState(null)}
+              readOnly
+              schemas={guidedProjectState.project.schemas}
+              activeBoard={activeBoard}
+              onBoardChange={(boardKey, schema) => {
+                setActiveBoard(boardKey)
+                if (schema) doLoadGuidedSchema(schema, 'Guided Project')
+              }}
             />
-          </>)}
+          )}
         </div>
 
-          {/* Guided project schema loading overlay */}
+        {/* Guided project schema loading overlay */}
         {isLoadingGuidedSchema && (
           <div
             style={{
@@ -14559,7 +14545,7 @@ loadDemoProject();
                 textAlign: 'center',
               }}
             >
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
               <div style={{ fontSize: 20, fontWeight: 700, color: '#0f172a' }}>
                 Coming Soon
               </div>
