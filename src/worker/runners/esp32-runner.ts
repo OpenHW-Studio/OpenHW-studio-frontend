@@ -1581,11 +1581,17 @@ export class ESP32Runner implements BoardRunner {
             if (this.serialBuffer.length > 0 && this.cpu.uart && this.cpu.uart[0] && this.serialByteBudget >= 1) {
                 const maxBytes = Math.floor(this.serialByteBudget);
                 const toSend = Math.min(maxBytes, this.serialBuffer.length);
+                let sent = 0;
                 for (let i = 0; i < toSend; i++) {
-                    const val = this.serialBuffer.shift()!;
-                    this.cpu.uart[0].feedByte(val);
+                    const val = this.serialBuffer[0];
+                    if (this.cpu.uart[0].feedByte(val)) {
+                        this.serialBuffer.shift();
+                        sent++;
+                    } else {
+                        break;
+                    }
                 }
-                this.serialByteBudget -= toSend;
+                this.serialByteBudget -= sent;
             }
 
             // Emit pin states every frame so frontend stays in sync
