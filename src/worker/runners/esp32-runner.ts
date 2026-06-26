@@ -1265,6 +1265,11 @@ export class ESP32Runner implements BoardRunner {
                 } else if (inst.type === 'openhw-dht22' || inst.type === 'wokwi-dht22') {
                     const sdaV = (inst as any).sdaOutputVoltage !== undefined ? (inst as any).sdaOutputVoltage : inst.pins['SDA']?.voltage ?? 5.0;
                     if (inst.pins['SDA']) updateOopPin('SDA', sdaV, compId);
+                } else if (inst.type.includes('ntc')) {
+                    inst.update(this.cpu?.cycles ?? 0, this.currentWires, Array.from(this.instances.values()));
+                    ['OUT', 'A0', 'D0'].forEach(pin => {
+                        if (inst.pins[pin] != null) updateOopPin(pin, inst.pins[pin].voltage, compId);
+                    });
                 }
             });
         };
@@ -1576,11 +1581,17 @@ export class ESP32Runner implements BoardRunner {
             if (this.serialBuffer.length > 0 && this.cpu.uart && this.cpu.uart[0] && this.serialByteBudget >= 1) {
                 const maxBytes = Math.floor(this.serialByteBudget);
                 const toSend = Math.min(maxBytes, this.serialBuffer.length);
+                let sent = 0;
                 for (let i = 0; i < toSend; i++) {
-                    const val = this.serialBuffer.shift()!;
-                    this.cpu.uart[0].feedByte(val);
+                    const val = this.serialBuffer[0];
+                    if (this.cpu.uart[0].feedByte(val)) {
+                        this.serialBuffer.shift();
+                        sent++;
+                    } else {
+                        break;
+                    }
                 }
-                this.serialByteBudget -= toSend;
+                this.serialByteBudget -= sent;
             }
 
             // Emit pin states every frame so frontend stays in sync

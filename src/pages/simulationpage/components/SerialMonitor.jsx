@@ -280,7 +280,7 @@ export const SerialOutputPane = ({ boardId, history, outputRef, isPaused, boardC
 export const BaudRateSelector = ({ value, onChange }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const menuRef = React.useRef(null);
-  const options = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 74880, 115200, 230400, 250000, 500000, 1000000, 2000000];
+  const options = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 74880, 115200, 230400, 250000, 500000, 921600, 1000000, 2000000];
 
   React.useEffect(() => {
     const handleClick = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setIsOpen(false); };
