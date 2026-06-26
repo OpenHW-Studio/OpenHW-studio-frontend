@@ -2,17 +2,92 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { signupUser } from "../../services/authService.js";
-import { ChevronLeft } from "lucide-react";
+import {
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Signal,
+  Cpu,
+  Activity,
+  Users,
+  Award,
+  Shuffle,
+  ChevronLeft,
+  ChevronRight
+} from "lucide-react";
 
-const BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5000/api" : "/api");
+// Presets for the Avatar Builder
+const STYLE_PRESETS = [
+  { id: "bottts", label: "Robot" },
+  { id: "lorelei", label: "Lorelei" },
+  { id: "avataaars", label: "Avataaars" },
+  { id: "pixel-art", label: "Pixel Art" },
+  { id: "adventurer", label: "Adventurer" },
+  { id: "micah", label: "Micah" }
+];
+
+const SEEDS = [
+  "alpha", "beta", "gamma", "delta", "epsilon", "zeta",
+  "eta", "theta", "iota", "kappa", "lambda", "mu",
+  "nu", "xi", "omicron", "pi", "rho", "sigma"
+];
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const { login, isAuthenticated, role } = useAuth();
+  const { login, isAuthenticated } = useAuth();
+  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Avatar Builder State
+  const [styleIndex, setStyleIndex] = useState(0);
+  const [avatarStyle, setAvatarStyle] = useState("bottts");
+  const [avatarSeed, setAvatarSeed] = useState("alpha");
+  const [avatarPage, setAvatarPage] = useState(0);
+
+  const getAdjacentIndex = (offset) => {
+    const len = STYLE_PRESETS.length;
+    return (styleIndex + offset + len) % len;
+  };
+
+  const prevStyle = () => {
+    const nextIdx = getAdjacentIndex(-1);
+    setStyleIndex(nextIdx);
+    setAvatarStyle(STYLE_PRESETS[nextIdx].id);
+    setAvatarPage(0);
+    setAvatarSeed(SEEDS[0]);
+  };
+
+  const nextStyle = () => {
+    const nextIdx = getAdjacentIndex(1);
+    setStyleIndex(nextIdx);
+    setAvatarStyle(STYLE_PRESETS[nextIdx].id);
+    setAvatarPage(0);
+    setAvatarSeed(SEEDS[0]);
+  };
+
+  const handleRandomize = () => {
+    const randomStyleIdx = Math.floor(Math.random() * STYLE_PRESETS.length);
+    const randSeed = "rand-" + Math.random().toString(36).substring(2, 9);
+    
+    setStyleIndex(randomStyleIdx);
+    setAvatarStyle(STYLE_PRESETS[randomStyleIdx].id);
+    setAvatarSeed(randSeed);
+    setAvatarPage(0);
+  };
+
+  const prevPage = () => {
+    setAvatarPage((prev) => (prev - 1 + 3) % 3);
+  };
+
+  const nextPage = () => {
+    setAvatarPage((prev) => (prev + 1) % 3);
+  };
+
+  const currentPageSeeds = SEEDS.slice(avatarPage * 6, avatarPage * 6 + 6);
+
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -26,11 +101,11 @@ export default function SignupPage() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      if (role === "teacher") navigate("/teacher/dashboard");
-      else if (role === "student") navigate("/student/dashboard");
+      if (formData.role === "teacher") navigate("/teacher/dashboard");
+      else if (formData.role === "student") navigate("/student/dashboard");
       else navigate("/user/dashboard");
     }
-  }, [isAuthenticated, role, navigate]);
+  }, [isAuthenticated, formData.role, navigate]);
 
   const handleInputChange = (e) => {
     const value =
@@ -42,15 +117,18 @@ export default function SignupPage() {
     e.preventDefault();
     setLoading(true);
     setError("");
+
     try {
-      const data = await signupUser(formData);
+      const data = await signupUser({
+        ...formData,
+        avatarSeed,
+        avatarStyle,
+      });
       login(data.token, data.user);
-      const handleRedirect = (userRole) => {
-        if (userRole === "teacher") navigate("/teacher/dashboard");
-        else if (userRole === "student") navigate("/student/dashboard");
-        else navigate("/user/dashboard");
-      };
-      handleRedirect(data.user.role);
+      
+      if (data.user.role === "teacher") navigate("/teacher/dashboard");
+      else if (data.user.role === "student") navigate("/student/dashboard");
+      else navigate("/user/dashboard");
     } catch (err) {
       setError(err.message || "Registration failed. Please try again.");
     } finally {
@@ -58,187 +136,327 @@ export default function SignupPage() {
     }
   };
 
-  const handleGoogleLogin = () => {
-    // Save the selected role before redirecting to Google OAuth
-    localStorage.setItem("pending_oauth_role", formData.role);
-
-    const authUrl = BASE_URL.replace("/api", "/auth");
-    window.location.href = `${authUrl}/google`;
-  };
-
   return (
-    <div className="auth-screen auth-screen--signup">
-      <div className="auth-shell auth-shell--wide auth-shell--reverse">
-        <section className="auth-panel">
-          <Link to="/login" className="auth-panel__back">
-            <ChevronLeft className="w-5 h-5" /> Back to User Login
-          </Link>
-
-          <div className="auth-panel__brand">
-            <img
-              src="/logo-Photoroom.png"
-              alt="OpenHW-Studio"
-              className="brand-logo brand-logo--auth"
-            />
+    <div className="auth-hardware-screen">
+      <div className="auth-hardware-frame">
+        
+        {/* Left Panel: Avatar Customizer & Live Preview */}
+        <section className="auth-hardware-showcase">
+          <div className="hardware-card">
+            <div className="hardware-card__header">
+              <span>LIVE PROFILE PREVIEW</span>
+              <span className="hardware-card__signal">
+                <Signal className="w-3.5 h-3.5 animate-pulse" />
+                <span>ONLINE</span>
+              </span>
+            </div>
+            
+            <div className="hardware-card__preview-area">
+              <img
+                src={`https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${avatarSeed}`}
+                alt="Profile Preview"
+                className="hardware-card__avatar"
+              />
+              <div className="hardware-card__chip-icon">
+                <Cpu className="w-4 h-4 text-orange-600 animate-pulse" />
+              </div>
+            </div>
+            
+            <div className="hardware-card__footer">
+              <span>ID: PENDING_GEN</span>
+              <span>V.1.0.4</span>
+            </div>
           </div>
 
-          <header className="auth-panel__header">
-            <h2>Classroom Sign Up</h2>
-            <p>Set up your role, profile, and access details.</p>
-          </header>
-
-          <form className="auth-form" onSubmit={handleSignup}>
-            <div className="auth-role-picker">
+          {/* Interactive Tabs Slider */}
+          <div className="hardware-tabs-wrapper">
+            <button
+              type="button"
+              onClick={prevStyle}
+              className="hardware-slider-btn"
+              title="Previous Style"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            
+            <div className="hardware-tabs-slider">
+              {/* Adjacent Left Tab */}
               <button
                 type="button"
-                className={`auth-role-picker__option${formData.role === "teacher" ? " is-active" : ""}`}
-                onClick={() => setFormData({ ...formData, role: "teacher" })}
+                onClick={prevStyle}
+                className="hardware-tab-slide is-adjacent"
               >
-                <strong>Teacher</strong>
-                <span>Create classes and assignments</span>
+                {STYLE_PRESETS[getAdjacentIndex(-1)].label.toUpperCase()}
               </button>
 
+              {/* Active Tab */}
               <button
                 type="button"
-                className={`auth-role-picker__option${formData.role === "student" ? " is-active" : ""}`}
-                onClick={() => setFormData({ ...formData, role: "student" })}
+                className="hardware-tab-slide is-active"
               >
-                <strong>Student</strong>
-                <span>Track coursework and progress</span>
+                {STYLE_PRESETS[styleIndex].label.toUpperCase()}
+              </button>
+
+              {/* Adjacent Right Tab */}
+              <button
+                type="button"
+                onClick={nextStyle}
+                className="hardware-tab-slide is-adjacent"
+              >
+                {STYLE_PRESETS[getAdjacentIndex(1)].label.toUpperCase()}
               </button>
             </div>
 
-            <div className="auth-form__grid">
-              <label className="auth-field auth-field--full">
-                <span>Full Name</span>
+            <button
+              type="button"
+              onClick={nextStyle}
+              className="hardware-slider-btn"
+              title="Next Style"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Customizer Option Grid with Arrows */}
+          <div className="hardware-grid-wrapper">
+            <button
+              type="button"
+              onClick={prevPage}
+              className="hardware-slider-btn"
+              title="Previous Page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <div className="hardware-grid">
+              {currentPageSeeds.map((seed) => (
+                <button
+                  key={seed}
+                  type="button"
+                  onClick={() => setAvatarSeed(seed)}
+                  className={`hardware-grid-item ${avatarSeed === seed ? "is-selected" : ""}`}
+                  title={`Seed: ${seed}`}
+                >
+                  <img
+                    src={`https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${seed}&size=40`}
+                    alt={seed}
+                    className="w-10 h-10 object-contain"
+                  />
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={nextPage}
+              className="hardware-slider-btn"
+              title="Next Page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Randomize Button */}
+          <button
+            type="button"
+            onClick={handleRandomize}
+            className="hardware-random-btn"
+          >
+            <Shuffle className="w-3.5 h-3.5" />
+            [ RANDOMIZE AVATAR ]
+          </button>
+
+          {/* Diagnostic Telemetry Display */}
+          <div 
+            style={{
+              width: "100%",
+              maxWidth: "320px",
+              background: "rgba(30, 41, 59, 0.9)",
+              border: "1px solid #475569",
+              borderRadius: "8px",
+              padding: "12px",
+              fontSize: "11px",
+              color: "#38bdf8",
+              fontFamily: "monospace",
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px"
+            }}
+          >
+            <div className="flex justify-between border-b border-slate-700 pb-1.5 mb-1.5 text-slate-300">
+              <span className="font-bold flex items-center gap-1"><Activity className="w-3.5 h-3.5 text-emerald-400" />AVATAR MODULE DIAGNOSTIC</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">[BASE_STYLE]</span>
+              <span className="text-emerald-400 font-bold uppercase">{avatarStyle}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">[SEED_VAL]</span>
+              <span>{avatarSeed}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">[ACTIVE_PAGE]</span>
+              <span className="text-amber-400">PAGE {avatarPage + 1} / 3</span>
+            </div>
+          </div>
+
+        </section>
+
+        {/* Right Panel: Signup Form */}
+        <section className="auth-hardware-panel">
+          <div className="hardware-panel-container">
+            
+            <div className="hardware-switch-wrapper">
+              <button
+                type="button"
+                onClick={() => navigate(`/classroom/signin?role=${formData.role}`)}
+                className="hardware-switch-btn"
+              >
+                <span>[PORTAL_SWITCH] → SWITCH TO {formData.role === "teacher" ? "INSTRUCTOR" : "STUDENT"} SIGN IN</span>
+              </button>
+            </div>
+
+            <header className="hardware-panel__header">
+              <h2>INITIALIZE {formData.role === "teacher" ? "INSTRUCTOR" : "STUDENT"} NODE</h2>
+              <p>Configure your access parameters for the OpenHW Studio simulation environment.</p>
+            </header>
+
+            <form className="hardware-form" onSubmit={handleSignup}>
+              
+              {/* Monospaced Role Picker */}
+              <div className="hardware-field">
+                <span className="hardware-label">[ACCESS_ROLE // SELECT_NODE_TYPE]</span>
+                <div className="hardware-role-picker">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, role: "student" })}
+                    className={`hardware-role-btn ${formData.role === "student" ? "is-active" : ""}`}
+                  >
+                    <Users className="w-4 h-4" />
+                    Student
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, role: "teacher" })}
+                    className={`hardware-role-btn ${formData.role === "teacher" ? "is-active" : ""}`}
+                  >
+                    <Cpu className="w-4 h-4" />
+                    Instructor
+                  </button>
+                </div>
+              </div>
+
+              <label className="hardware-field">
+                <span className="hardware-label">[SYS_ID // FULL_NAME]</span>
                 <input
                   type="text"
                   name="name"
-                  placeholder="Enter your full name"
                   value={formData.name}
                   onChange={handleInputChange}
                   required
+                  placeholder={formData.role === "teacher" ? "e.g. Dr. Jane Doe" : "e.g. Jane Doe"}
+                  className="hardware-input hardware-input--name"
                 />
               </label>
 
-              <label className="auth-field auth-field--full">
-                <span>Email</span>
+              <label className="hardware-field">
+                <span className="hardware-label">[NET_NODE // EMAIL_ADDRESS]</span>
                 <input
                   type="email"
                   name="email"
-                  placeholder="Enter your email"
                   value={formData.email}
                   onChange={handleInputChange}
                   required
+                  placeholder="e.g. jane.doe@university.edu"
+                  className="hardware-input hardware-input--email"
                 />
               </label>
 
-              <label className="auth-field auth-field--full">
-                <span>Password</span>
-                <input
-                  type="password"
-                  name="password"
-                  placeholder="Create a password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  required
-                />
-              </label>
-
-              <label className="auth-field auth-field--full">
-                <span>Bio (optional)</span>
-                <input
-                  type="text"
-                  name="bio"
-                  placeholder="Tell us about yourself"
-                  value={formData.bio}
-                  onChange={handleInputChange}
-                />
-              </label>
-
-              <label className="auth-field auth-field--full">
-                <span>Profile Image URL (optional)</span>
-                <input
-                  type="url"
-                  name="image"
-                  placeholder="https://..."
-                  value={formData.image}
-                  onChange={handleInputChange}
-                />
+              <label className="hardware-field">
+                <span className="hardware-label">[CRYPT_KEY // PASSWORD]</span>
+                <div className="hardware-input-wrapper">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="••••••••••••"
+                    className="hardware-input hardware-input--password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="hardware-input-toggle"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </label>
 
               {formData.role === "student" && (
-                <>
-                  <label className="auth-field">
-                    <span>College</span>
+                <div 
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: "10px"
+                  }}
+                >
+                  <label className="hardware-field">
+                    <span className="hardware-label">[CAMPUS // INSTITUTION_NAME]</span>
                     <input
                       type="text"
                       name="college"
-                      placeholder="Enter your college"
                       value={formData.college}
                       onChange={handleInputChange}
+                      placeholder="e.g. Stanford University"
+                      className="hardware-input"
                     />
                   </label>
 
-                  <label className="auth-field">
-                    <span>Semester</span>
+                  <label className="hardware-field">
+                    <span className="hardware-label">[TERM_ID // SEMESTER]</span>
                     <input
                       type="text"
                       name="semester"
-                      placeholder="Enter your semester"
                       value={formData.semester}
                       onChange={handleInputChange}
+                      placeholder="e.g. Semester 3"
+                      className="hardware-input"
                     />
                   </label>
-                </>
+                </div>
               )}
-            </div>
 
-            {error && <div className="auth-form__error">{error}</div>}
+              <div className="hardware-checkbox-wrapper">
+                <input
+                  type="checkbox"
+                  id="terms"
+                  required
+                  className="hardware-checkbox"
+                />
+                <label htmlFor="terms" className="hardware-checkbox-label">
+                  I acknowledge the strict compliance requirements of the OpenHW Group Academic Terms and verify my eligibility for {formData.role === "teacher" ? "Instructor" : "Student"} access.
+                </label>
+              </div>
 
-            <button
-              type="submit"
-              className="auth-form__submit"
-              disabled={loading}
-            >
-              {loading ? "Creating account..." : "Create Account"}
-            </button>
-          </form>
+              {error && <div className="auth-form__error">{error}</div>}
 
-          <p className="auth-panel__footer">
-            Already have an account? <Link to="/login">Log in</Link>
-          </p>
-        </section>
+              <button
+                type="submit"
+                disabled={loading}
+                className="hardware-submit-btn"
+              >
+                {loading ? "Initializing..." : `BUILD ${formData.role === "teacher" ? "INSTRUCTOR" : "STUDENT"} COMPONENT 🛠️`}
+              </button>
 
-        <section className="auth-showcase auth-showcase--signup">
-          <div className="auth-showcase__badge">
-            Teacher &amp; Student Access
-          </div>
-          <h1 className="auth-showcase__title">
-            Join the classroom and start learning or teaching with hardware
-            simulation.
-          </h1>
-          <p className="auth-showcase__copy">
-            Create your classroom account to access assignments, track progress,
-            manage classes, and collaborate on real circuit simulations — all in
-            one place.
-          </p>
+            </form>
 
-          <div className="auth-showcase__highlights">
-            <div className="auth-showcase__card">
-              <strong>For Teachers</strong>
-              <span>
-                Create classes, set assignments, review student submissions, and
-                monitor progress in real time.
-              </span>
-            </div>
-            <div className="auth-showcase__card">
-              <strong>For Students</strong>
-              <span>
-                Join classes, submit simulation projects, and track your
-                coursework from a single dashboard.
-              </span>
-            </div>
+            <p className="hardware-panel__footer">
+              Already have {formData.role === "teacher" ? "an Instructor" : "a Student"} account?{" "}
+              <Link to={`/classroom/signin?role=${formData.role}`}>Login</Link>
+            </p>
+
           </div>
         </section>
       </div>

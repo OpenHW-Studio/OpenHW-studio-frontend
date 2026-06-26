@@ -132,7 +132,7 @@ export default function StudentDashboard() {
     const items = []
 
     classrooms.forEach((classroom) => {
-      ;(noticesByClass[classroom._id] || []).forEach((notice) => {
+      ; (noticesByClass[classroom._id] || []).forEach((notice) => {
         items.push({
           id: `notice-${notice._id}`,
           type: 'notice',
@@ -143,16 +143,16 @@ export default function StudentDashboard() {
         })
       })
 
-      ;(assignmentsByClass[classroom._id] || []).forEach((assignment) => {
-        items.push({
-          id: `assignment-${assignment._id}`,
-          type: 'assignment',
-          className: classroom.name,
-          title: assignment.title || 'Assignment posted',
-          body: assignment.description || 'New assignment added in this class.',
-          createdAt: assignment.createdAt
+        ; (assignmentsByClass[classroom._id] || []).forEach((assignment) => {
+          items.push({
+            id: `assignment-${assignment._id}`,
+            type: 'assignment',
+            className: classroom.name,
+            title: assignment.title || 'Assignment posted',
+            body: assignment.description || 'New assignment added in this class.',
+            createdAt: assignment.createdAt
+          })
         })
-      })
     })
 
     return items
@@ -182,7 +182,7 @@ export default function StudentDashboard() {
   }
 
   const sidebarLinks = [
-    { key: 'home', label: 'Dashboard', icon: Home, isActive: true, onClick: () => {} },
+    { key: 'home', label: 'Dashboard', icon: Home, isActive: true, onClick: () => { } },
     { key: 'projects', label: 'Guided Projects', icon: Microchip, isActive: false, onClick: () => setShowGuidedProjects(true) },
     { key: 'simulator', label: 'Open Simulator', icon: Monitor, isActive: false, onClick: () => navigate('/simulator') },
     { key: 'join', label: 'Join New Class', icon: BookOpen, isActive: false, onClick: handleOpenJoinModal },
