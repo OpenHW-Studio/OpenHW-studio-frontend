@@ -169,7 +169,7 @@ export default function SerialMonitorView(props) {
               cursor: 'pointer'
             }}
           >
-            {(serialBaudOptions && serialBaudOptions.length ? serialBaudOptions : ['9600', '19200', '38400', '57600', '115200']).map((baud) => (
+            {(serialBaudOptions && serialBaudOptions.length ? serialBaudOptions : ['9600', '19200', '38400', '57600', '115200', '921600']).map((baud) => (
               <option key={baud} value={baud}>{baud}</option>
             ))}
           </select>

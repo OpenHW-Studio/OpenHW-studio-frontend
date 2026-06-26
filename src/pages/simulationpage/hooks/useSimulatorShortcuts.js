@@ -6,7 +6,7 @@ import { removeCodeSnippet } from '../projectUtils';
  * Extracts the complex keydown logic from SimulatorPage.jsx.
  */
 export function useSimulatorShortcuts({
-  selected, isRunning, liveEditingDisabled, saveHistory, handleSave, undo, redo, handleRun, handleStop,
+  selected, isRunning, liveEditingDisabled, readOnly, saveHistory, handleSave, undo, redo, handleRun, handleStop,
   rotateComponent, components, setShowShortcuts, setCanvasZoom, setCanvasOffset, setShowProjectsSidebar,
   setProjectsSidebarTab, wireStart, setWireStart, setSelected, setWireClickPos, setWires, setComponents,
   applyZoomAtCenter, showProjectsSidebar, handleNewProject, setIsConsoleOpen, setShowGrid, setIsCanvasLocked,
@@ -67,7 +67,7 @@ export function useSimulatorShortcuts({
       }
 
       // Edit
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning && !liveEditingDisabled) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !isRunning && !liveEditingDisabled && !readOnly) {
         saveHistory();
         if (selected.match(/^w\d+$/)) {
           setWires(prev => prev.filter(w => w.id !== selected))
@@ -108,7 +108,7 @@ export function useSimulatorShortcuts({
         }
       }
 
-      if (e.altKey && e.shiftKey && e.code === 'KeyR' && selected && !isRunning && !liveEditingDisabled) {
+      if (e.altKey && e.shiftKey && e.code === 'KeyR' && selected && !isRunning && !liveEditingDisabled && !readOnly) {
         e.preventDefault();
         if (components.find(c => c.id === selected)) {
           rotateComponent(selected);
@@ -211,7 +211,7 @@ export function useSimulatorShortcuts({
 
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'Delete' || e.key === 'Backspace')) {
         e.preventDefault();
-        if (!isRunning) {
+        if (!isRunning && !readOnly) {
           if (window.confirm('Clear all components and wires from the canvas?')) {
             saveHistory();
             setComponents([]);
