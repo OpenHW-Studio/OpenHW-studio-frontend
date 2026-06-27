@@ -30,6 +30,7 @@ export function useWebSerialHardware({
   const [hardwareConnecting, setHardwareConnecting] = useState(false);
 
   const hardwarePortRef = useRef(null);
+  const lastPortRef = useRef(null);
   const hardwareReaderRef = useRef(null);
   const hardwareReadAbortRef = useRef(false);
   const hardwareDecoderRef = useRef(new TextDecoder());
@@ -48,7 +49,11 @@ export function useWebSerialHardware({
 
     try {
       if (hardwarePortRef.current) {
-        try { await hardwarePortRef.current.close(); } catch (e) { }
+        const portToRelease = hardwarePortRef.current;
+        lastPortRef.current = portToRelease;
+        try { await portToRelease.close(); } catch (e) { }
+        // We removed port.forget() because it revokes Web Serial permission, breaking auto-reconnect.
+        // The 4000ms delay in useHardwareFlashing handles the Windows COM port release delay.
       }
     } finally {
       hardwarePortRef.current = null;
@@ -93,7 +98,7 @@ export function useWebSerialHardware({
     }
   }, [pushSerialRxChunk]);
 
-  const connectHardwareSerial = useCallback(async () => {
+  const connectHardwareSerial = useCallback(async (useLastPort = false) => {
     if (!('serial' in navigator)) {
       alert('Web Serial is not supported in this browser. Use Chromium-based browsers like Chrome or Edge.');
       return;
@@ -104,16 +109,38 @@ export function useWebSerialHardware({
     }
 
     setHardwareConnecting(true);
-    setHardwareStatus('Waiting for serial device permission...');
+    setHardwareStatus(useLastPort === true ? 'Auto-reconnecting serial...' : 'Waiting for serial device permission...');
     try {
       const boardComp = boardComponents.find((b) => b.id === hardwareBoardId);
       const kind = normalizeBoardKind(boardComp?.type || board);
       const baudRate = Number(hardwareBaudRate || boardDefaultBaud[kind] || boardDefaultBaud.arduino_uno);
 
-      const requestOptions = showAllHardwarePorts
-        ? {}
-        : { filters: DEFAULT_SERIAL_USB_FILTERS };
-      const port = await navigator.serial.requestPort(requestOptions);
+      let port;
+      if (useLastPort === true) {
+        if (lastPortRef.current) {
+          port = lastPortRef.current;
+        } else {
+          // We are trying to auto-connect but don't have a cached port.
+          // Try to find an already-authorized port via getPorts() since
+          // we are likely outside a user gesture here.
+          const ports = await navigator.serial.getPorts();
+          if (ports.length > 0) {
+            // For now, just grab the first authorized port.
+            // Ideally we'd match by VID/PID, but often there's only 1.
+            port = ports[0];
+          } else {
+            throw new Error("No authorized serial ports found. Please connect manually first.");
+          }
+        }
+      } else {
+        const requestOptions = showAllHardwarePorts
+          ? {}
+          : { filters: DEFAULT_SERIAL_USB_FILTERS };
+        console.trace('Web Serial Request Options:', requestOptions);
+        port = await navigator.serial.requestPort(requestOptions);
+        console.trace('Acquired Web Serial Port:', port);
+      }
+      
       await port.open({ baudRate });
       hardwarePortRef.current = port;
 

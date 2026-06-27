@@ -98,6 +98,11 @@ function CanvasSceneLayerBase({
   respectExitSide = true,
 }) {
 
+  const [hideWireMenu, setHideWireMenu] = useState(false);
+  useEffect(() => {
+    setHideWireMenu(false);
+  }, [selected]);
+
   const wireOffsetMap = useMemo(() => calculateWireBundleOffsets(wires, (wire) => {
     const fromParts = wire.from.split(':');
     const toParts = wire.to.split(':');
@@ -200,10 +205,12 @@ function CanvasSceneLayerBase({
               onSelect={(e) => {
                 e.stopPropagation();
                 setSelected(w.id);
+                setHideWireMenu(false);
                 const rect = canvasRef.current.getBoundingClientRect();
                 setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
               }}
               onMouseDownSegment={(ev, wire, i, isHoriz, arr, mode) => {
+                setHideWireMenu(true);
                 if (selected !== wire.id) { setSelected(wire.id); return; }
                 const rect = canvasRef.current.getBoundingClientRect();
                 const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
@@ -294,10 +301,12 @@ function CanvasSceneLayerBase({
               onSelect={(e) => {
                 e.stopPropagation();
                 setSelected(w.id);
+                setHideWireMenu(false);
                 const rect = canvasRef.current.getBoundingClientRect();
                 setWireClickPos({ x: (e.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current, y: (e.clientY - rect.top - canvasOffsetRef.current.y) / canvasZoomRef.current });
               }}
               onMouseDownSegment={(ev, wire, i, isHoriz, arr, mode) => {
+                setHideWireMenu(true);
                 if (selected !== wire.id) { setSelected(wire.id); return; }
                 const rect = canvasRef.current.getBoundingClientRect();
                 const mx = (ev.clientX - rect.left - canvasOffsetRef.current.x) / canvasZoomRef.current;
@@ -365,7 +374,7 @@ function CanvasSceneLayerBase({
       {/* HTML Overlay for Wire Context Menus (Bypasses SVG foreignObject event bugs) */}
       {(() => {
         const w = wires.find(w => w.id === selected);
-        if (!w || isRunning) return null;
+        if (!w || isRunning || hideWireMenu) return null;
 
         const fromParts = w.from.split(':');
         const toParts = w.to.split(':');
@@ -525,7 +534,7 @@ function CanvasSceneLayerBase({
                   );
                 })()}
 
-                <div style={{ pointerEvents: 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
+                <div style={{ pointerEvents: isRunning ? 'auto' : 'none', position: 'absolute', inset: 0, zIndex: 20 }}>
                   {COMPONENT_REGISTRY[comp.type] ? (
                     <ReactiveComponentUI
                       comp={comp}

@@ -149,6 +149,17 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
 
   const [isLibPanelOpen, setIsLibPanelOpen] = React.useState(false);
 
+  React.useEffect(() => {
+    const handleOpenLib = () => setIsLibPanelOpen(true);
+    const handleCloseLib = () => setIsLibPanelOpen(false);
+    window.addEventListener('open-library-panel', handleOpenLib);
+    window.addEventListener('close-library-panel', handleCloseLib);
+    return () => {
+      window.removeEventListener('open-library-panel', handleOpenLib);
+      window.removeEventListener('close-library-panel', handleCloseLib);
+    };
+  }, []);
+
   const isActiveFileLibraryTxt = React.useMemo(() => {
     const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
     return activeFile ? activeFile.name === 'library.txt' : false;
@@ -390,17 +401,19 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
 
   React.useEffect(() => {
     const autoscroll = boardAutoscrolls[serialBoardFilter] ?? true;
-    if (autoscroll && serialOutputRef.current) {
+    const isPaused = boardPausedStates[serialBoardFilter] ?? false;
+    if (autoscroll && !isPaused && serialOutputRef.current) {
       serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
     }
-  }, [filteredSerialHistory, serialBoardFilter, boardAutoscrolls]);
+  }, [filteredSerialHistory, serialBoardFilter, boardAutoscrolls, boardPausedStates]);
 
   React.useEffect(() => {
     const autoscroll = boardAutoscrolls[serialBoardFilter2] ?? true;
-    if (autoscroll && serialOutputRef2.current) {
+    const isPaused = boardPausedStates[serialBoardFilter2] ?? false;
+    if (autoscroll && !isPaused && serialOutputRef2.current) {
       serialOutputRef2.current.scrollTop = serialOutputRef2.current.scrollHeight;
     }
-  }, [filteredSerialHistory2, serialBoardFilter2, boardAutoscrolls]);
+  }, [filteredSerialHistory2, serialBoardFilter2, boardAutoscrolls, boardPausedStates]);
 
   const boardColors = React.useMemo(() => getBoardColors(serialBoardOptions), [serialBoardOptions]);
 
@@ -467,10 +480,11 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
       data-tour-step="ide"
       className="relative bg-[var(--bg2)] border-l border-[var(--border)] flex flex-col shrink-0 overflow-hidden"
       style={{
-        width: isDragging ? 'var(--panel-width)' : (isPanelOpen ? panelWidth : 21),
+        width: isDragging ? 'var(--panel-width)' : (isPanelOpen ? panelWidth : 0),
         transition: isDragging ? 'none' : 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         willChange: isDragging ? 'width' : 'auto',
-        contain: isDragging ? 'size layout paint' : 'none'
+        contain: isDragging ? 'size layout paint' : 'none',
+        borderLeft: isPanelOpen ? undefined : 'none',
       }}
       onDoubleClick={(e) => e.stopPropagation()}
     >
@@ -491,30 +505,31 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
         />
       )}
 
-      {/* Toggle Button */}
+      {/* Toggle Button — floats outside panel edge so always clickable */}
       <button
         type="button"
         onClick={() => setIsPanelOpen(!isPanelOpen)}
         title={isPanelOpen ? 'Hide panel' : 'Show panel'}
         aria-label={isPanelOpen ? 'Hide panel' : 'Show panel'}
         style={{
-          position: 'absolute',
-          left: 0,
+          position: 'fixed',
+          right: isPanelOpen ? panelWidth : 0,
           top: '50%',
           transform: 'translateY(-50%)',
           height: 48,
           width: 20,
           background: 'var(--card)',
           border: '1px solid var(--border)',
-          borderLeft: 'none',
-          borderRadius: '0 8px 8px 0',
+          borderRight: 'none',
+          borderRadius: '8px 0 0 8px',
           color: 'var(--text3)',
           cursor: 'pointer',
-          zIndex: 11,
+          zIndex: 1200,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          boxShadow: '2px 0 8px rgba(0,0,0,0.2)',
+          boxShadow: '-2px 0 8px rgba(0,0,0,0.2)',
+          transition: isDragging ? 'none' : 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         {isPanelOpen ? (
@@ -827,6 +842,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                           {projectRootFiles.map((file) => (
                             <div
                               key={file.id}
+                              data-tour-file={file.name}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setFileMenu(null);
@@ -910,6 +926,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                               {!collapsedBoards[group.boardId] && group.files.map((file) => (
                                 <div
                                   key={file.id}
+                                  data-tour-file={file.name}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setFileMenu(null);
@@ -1605,7 +1622,10 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                           onTogglePause={() => setBoardPausedStates(p => ({ ...p, [serialBoardFilter]: !(p[serialBoardFilter] ?? false) }))}
                           autoscroll={boardAutoscrolls[serialBoardFilter] ?? true}
                           onToggleAutoscroll={(val) => setBoardAutoscrolls(p => ({ ...p, [serialBoardFilter]: val }))}
-                          onClear={() => setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter))}
+                          onClear={() => {
+                            if (serialBoardFilter === 'all') clearSerialMonitor();
+                            else setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter));
+                          }}
                           onToggleSplit={() => setIsSerialSplit(!isSerialSplit)}
                           isSplit={isSerialSplit}
                           boardOptions={serialBoardOptions}
@@ -1678,7 +1698,10 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                             onTogglePause={() => setBoardPausedStates(p => ({ ...p, [serialBoardFilter2]: !(p[serialBoardFilter2] ?? false) }))}
                             autoscroll={boardAutoscrolls[serialBoardFilter2] ?? true}
                             onToggleAutoscroll={(val) => setBoardAutoscrolls(p => ({ ...p, [serialBoardFilter2]: val }))}
-                            onClear={() => setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter2))}
+                            onClear={() => {
+                              if (serialBoardFilter2 === 'all') clearSerialMonitor();
+                              else setSerialHistory(prev => prev.filter(e => e.boardId !== serialBoardFilter2));
+                            }}
                             onToggleSplit={() => setIsSerialSplit(false)}
                             isSplit={true}
                             boardOptions={serialBoardOptions}

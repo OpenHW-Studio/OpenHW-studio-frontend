@@ -40,7 +40,29 @@
 
 /// <reference lib="webworker" />
 
-import { PicowNetBridge, WifiEnvironment, type WiFiApConfig } from '@openhw/emulator';
+// import { PicowNetBridge, WifiEnvironment, type WiFiApConfig } from '@openhw/emulator';
+
+type WiFiApConfig = any;
+class PicowNetBridge {
+  packetCount = 0;
+  constructor(public boardId: string, public cb: any, public wifiEnabled: boolean) {}
+  start() {}
+  async stop() {}
+  async deliverPacketOut(frame: Uint8Array) {}
+  getPcapBytes(): Uint8Array { return new Uint8Array(0); }
+}
+
+const dummyWifiEnv = {
+  registerBoard: (o: any) => {},
+  unregisterBoard: (id: string) => {},
+  announceAp: (c: any) => {},
+  removeAp: (id: string) => {},
+};
+
+class WifiEnvironment {
+  static getInstance() { return dummyWifiEnv; }
+  static reset() {}
+}
 
 // ── State ─────────────────────────────────────────────────────────────────────
 

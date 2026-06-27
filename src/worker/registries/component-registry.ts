@@ -3,6 +3,7 @@ import { LEDLogic } from '@openhw/emulator/src/components/openhw-led/logic';
 import { UnoLogic } from '@openhw/emulator/src/components/openhw-arduino-uno/logic';
 import { Esp32Logic } from '@openhw/emulator/src/components/ESP32/logic';
 import { Esp32CamLogic } from '@openhw/emulator/src/components/openhw-esp32-cam/logic';
+import { HCSR04Logic } from '@openhw/emulator/src/components/openhw-hc-sr04/logic';
 import { PicoLogic } from '../pico-logic';
 import { PicoWLogic } from '@openhw/emulator/src/components/openhw-pico-w/logic';
 import { ResistorLogic } from '@openhw/emulator/src/components/openhw-resistor/logic';
@@ -19,6 +20,13 @@ import { SlidePotLogic } from '@openhw/emulator/src/components/openhw-slide-pote
 import { PotentiometerLogic } from '@openhw/emulator/src/components/openhw-potentiometer/logic';
 import { HC595Logic as ShiftRegisterLogic } from '@openhw/emulator/src/components/openhw-74hc595/logic';
 import { JoystickLogic } from '@openhw/emulator/src/components/openhw-analog-joystick/logic';
+import { AndGateLogic } from '@openhw/emulator/src/components/logic-and-gate/logic';
+import { OrGateLogic } from '@openhw/emulator/src/components/logic-or-gate/logic';
+import { NotGateLogic } from '@openhw/emulator/src/components/logic-not-gate/logic';
+import { NandGateLogic } from '@openhw/emulator/src/components/logic-nand-gate/logic';
+import { NorGateLogic } from '@openhw/emulator/src/components/logic-nor-gate/logic';
+import { XorGateLogic } from '@openhw/emulator/src/components/logic-xor-gate/logic';
+import { XnorGateLogic } from '@openhw/emulator/src/components/logic-xnor-gate/logic';
 import { LogicIC74xxLogic } from '@openhw/emulator/src/components/logic-ic-74xx/logic';
 import { Mux2to1Logic } from '@openhw/emulator/src/components/logic-mux-2to1/logic';
 import { DFlipFlopLogic } from '@openhw/emulator/src/components/logic-d-flipflop/logic';
@@ -50,6 +58,8 @@ import { A4988Logic } from '@openhw/emulator/src/components/openhw-a4988/logic';
 import { StepperMotorLogic } from '@openhw/emulator/src/components/openhw-stepper-motor/logic';
 import { Wokwi7SegmentLogic } from '@openhw/emulator/src/components/openhw-7segment/logic';
 import { ILI9341Logic } from '@openhw/emulator/src/components/openhw-ili9341/logic';
+import { Ks2eLogic } from '@openhw/emulator/src/components/openhw-ks2e-m-dc5/logic';
+import { RelayModuleLogic } from '@openhw/emulator/src/components/openhw-relay-module/logic';
 
 import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic-analyzer/logic';
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
@@ -59,12 +69,11 @@ import { IRTransmitterLogic } from '@openhw/emulator/src/components/openhw-ir-tr
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
+import { NtcLogic } from '@openhw/emulator/src/components/openhw-ntc-temperature-sensor/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
-import {
-    NotGateLogic, TwoInputGateLogic, AndGateLogic, NandGateLogic, NorGateLogic, XorGateLogic
-} from '../protocol-handlers/gates';
+
 import { KeypadLogic } from '../protocol-handlers/keypad';
 import { SDCardLogic } from '../protocol-handlers/sd-card';
 import { SimulationMonitorLogic } from '../protocol-handlers/simulation-monitor';
@@ -146,6 +155,13 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-analog-joystick': JoystickLogic,
     'openhw-rotary-encoder': RotaryEncoderLogic,
     'wokwi-rotary-encoder': RotaryEncoderLogic,
+    'logic-and-gate': AndGateLogic,
+    'logic-or-gate': OrGateLogic,
+    'logic-not-gate': NotGateLogic,
+    'logic-nand-gate': NandGateLogic,
+    'logic-nor-gate': NorGateLogic,
+    'logic-xor-gate': XorGateLogic,
+    'logic-xnor-gate': XnorGateLogic,
     'logic-ic-74xx': LogicIC74xxLogic,
     'logic-mux-2to1': Mux2to1Logic,
     'logic-d-flipflop': DFlipFlopLogic,
@@ -180,6 +196,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-cd74hc4067': BaseComponent,
     'wokwi-logic-analyzer': SimulationMonitorLogic,
     'openhw-logic-analyzer': SimulationMonitorLogic,
+    'openhw-ks2e-m-dc5': Ks2eLogic,
 
     // I2S Audio Components
     'openhw-pcm5102': I2SProtocol,
@@ -209,14 +226,14 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-bmp180-breakout': BaseComponent,
     'wokwi-ds1307-rtc': BaseComponent,
     'openhw-ds1307-rtc': BaseComponent,
-    'wokwi-hc-sr04': BaseComponent,
-    'openhw-hc-sr04': BaseComponent,
+    'wokwi-hc-sr04': HCSR04Logic,
+    'openhw-hc-sr04': HCSR04Logic,
     'wokwi-mpu6050': BaseComponent,
     'openhw-mpu6050': BaseComponent,
     'wokwi-nlsf595': BaseComponent,
     'openhw-nlsf595': BaseComponent,
-    'wokwi-relay-module': BaseComponent,
-    'openhw-relay-module': BaseComponent,
+    'wokwi-relay-module': RelayModuleLogic,
+    'openhw-relay-module': RelayModuleLogic,
     'wokwi-stepper-motor': StepperMotorLogic,
     'openhw-stepper-motor': StepperMotorLogic,
     'wokwi-arduino-mega': MegaLogic,
@@ -228,7 +245,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'wokwi-photoresistor': PhotoresistorLogic,
     'openhw-photoresistor': PhotoresistorLogic,
     'openhw-ntc-thermistor': BaseComponent,
-    'openhw-ntc-temperature-sensor': BaseComponent,
+    'openhw-ntc-temperature-sensor': NtcLogic,
     'openhw-charger': BaseComponent,
     'openhw-breadboard-mini': BaseComponent,
     'openhw-neopixel-ring': NeopixelLogic,
@@ -389,11 +406,18 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'wokwi-ir-transmitter': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
     'openhw-ir-transmitter': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
     'wokwi-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
+    'openhw-ks2e-m-dc5': [
+  { id: 'COIL1' }, { id: 'COIL2' },
+  { id: 'P1' }, { id: 'NC1' }, { id: 'NO1' },
+  { id: 'P2' }, { id: 'NC2' }, { id: 'NO2' }
+],
     'openhw-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
 
     // Custom sensors
     'DHT-22':                [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
+    'openhw-dht22':          [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
     'MQ-2 Gas Sensor':       [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
+    'openhw-mq2-gas-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }],
     'wokwi-pir-motion-sensor': [{ id: 'VCC' }, { id: 'GND' }, { id: 'OUT' }],
     'wokwi-raindrop-module': [{ id: 'VCC' }, { id: 'GND' }, { id: 'DO' }, { id: 'AO' }, { id: 'PAD+' }, { id: 'PAD-' }],
     'wokwi-raindrop-pad':    [{ id: 'AOUT' }, { id: 'GND' }],

@@ -6,6 +6,7 @@ import {
   CalendarDays,
   FolderKanban,
   Home,
+  Microchip,
   Monitor,
   Plus,
   Settings,
@@ -16,21 +17,28 @@ import { formatDateTime, getAvatarLetters } from '../../components/common/test.j
 import ClassroomSidebar from '../../components/common/ClassroomSidebar.jsx'
 import ClassCard from '../../components/common/ClassCard.jsx'
 import { ClassCardSkeleton } from '../../components/common/ClassroomSkeletons.jsx'
+import GuidedProjectsPanel from '../../components/student/GuidedProjectsSection.jsx'
+import SavedCircuitsSection from '../../components/common/SavedCircuitsSection.jsx'
 import { uploadClassroomFiles } from '../../components/teacher/class-detail/uploadUtils.js'
+import { useLocation } from 'react-router-dom'
 
 const sidebarLinks = [
-  { key: 'home', label: 'Home', icon: Home },
-  { key: 'simulator', label: 'Open Simulator', icon: Monitor },
-  { key: 'settings', label: 'Settings', icon: Settings }
+  { key: 'home', label: 'Home', icon: Home, route: '/teacher/dashboard' },
+  { key: 'projects', label: 'Guided Projects', icon: Microchip },
+  { key: 'simulator', label: 'Open Simulator', icon: Monitor, route: '/simulator' },
+  { key: 'projectBank', label: 'Project Bank', icon: FolderKanban, route: '/teacher/project-bank' },
+  { key: 'settings', label: 'Settings', icon: Settings },
 ]
 
 export default function TeacherDashboard() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   const [classrooms, setClassrooms] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showGuidedProjects, setShowGuidedProjects] = useState(false)
 
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
@@ -90,9 +98,10 @@ export default function TeacherDashboard() {
 
   const navLinks = sidebarLinks.map((item) => ({
     ...item,
-    isActive: item.key === 'home',
+    isActive: item.route ? location.pathname.startsWith(item.route) : false,
     onClick: () => {
-      if (item.key === 'simulator') navigate('/simulator')
+      if (item.key === 'projects') setShowGuidedProjects(true)
+      else if (item.route) navigate(item.route)
     }
   }))
 
@@ -214,42 +223,46 @@ export default function TeacherDashboard() {
         </section>
 
         <div className="teacher-dashboard-grid">
-          <section className="teacher-classes-panel">
-            <div className="teacher-section-heading">
-              <h3>Your Classes</h3>
-              <button type="button" className="teacher-section-link" onClick={() => setIsModalOpen(true)}>
-                + Add new
-              </button>
-            </div>
+          <div>
+            <section className="teacher-classes-panel">
+              <div className="teacher-section-heading">
+                <h3>Your Classes</h3>
+                <button type="button" className="teacher-section-link" onClick={() => setIsModalOpen(true)}>
+                  + Add new
+                </button>
+              </div>
 
-            {loading ? <p className="teacher-inline-state">Loading classes...</p> : null}
-            {error ? <p className="teacher-inline-state teacher-inline-state--error">{error}</p> : null}
+              {loading ? <p className="teacher-inline-state">Loading classes...</p> : null}
+              {error ? <p className="teacher-inline-state teacher-inline-state--error">{error}</p> : null}
 
-            <div className="teacher-class-grid">
-              {loading ? (
-                <ClassCardSkeleton count={4} />
-              ) : null}
+              <div className="teacher-class-grid">
+                {loading ? (
+                  <ClassCardSkeleton count={4} />
+                ) : null}
 
-              {classrooms.map((classroom, index) => (
-                <ClassCard
-                  key={classroom._id}
-                  classroom={classroom}
-                  index={index}
-                  role="teacher"
-                  userName={user?.name || 'Teacher'}
-                  avatarInitials={avatarInitials}
-                  onClick={() => navigate(`/teacher/classes/${classroom._id}`)}
-                  onDelete={handleDeleteClass}
-                />
-              ))}
+                {classrooms.map((classroom, index) => (
+                  <ClassCard
+                    key={classroom._id}
+                    classroom={classroom}
+                    index={index}
+                    role="teacher"
+                    userName={user?.name || 'Teacher'}
+                    avatarInitials={avatarInitials}
+                    onClick={() => navigate(`/teacher/classes/${classroom._id}`)}
+                    onDelete={handleDeleteClass}
+                  />
+                ))}
 
-              <button type="button" className="teacher-class-card teacher-class-card--add" onClick={() => setIsModalOpen(true)}>
-                <span className="teacher-class-card__plus"><Plus size={18} /></span>
-                <span className="teacher-class-card__add-title">Add New Class</span>
-                <span className="teacher-class-card__add-copy">Create classroom and share join code</span>
-              </button>
-            </div>
-          </section>
+                <button type="button" className="teacher-class-card teacher-class-card--add" onClick={() => setIsModalOpen(true)}>
+                  <span className="teacher-class-card__plus"><Plus size={18} /></span>
+                  <span className="teacher-class-card__add-title">Add New Class</span>
+                  <span className="teacher-class-card__add-copy">Create classroom and share join code</span>
+                </button>
+              </div>
+            </section>
+
+            <SavedCircuitsSection user={user} />
+          </div>
 
           <aside className="teacher-dashboard-sidepanels">
             <section className="teacher-side-card">
@@ -398,6 +411,8 @@ export default function TeacherDashboard() {
           </section>
         </div>
       )}
+
+      <GuidedProjectsPanel isOpen={showGuidedProjects} onClose={() => setShowGuidedProjects(false)} />
     </div>
   )
 }
