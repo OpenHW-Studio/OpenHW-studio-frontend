@@ -43,14 +43,17 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
+        // Keep @worker alias from danish branch
+        '@worker': path.resolve(__dirname, 'src/worker'),
+        // Keep emulator alias from develop
         ...(useAlias ? {
           '@openhw/emulator': resolvedEmulatorPath,
         } : {}),
-        '@worker': path.resolve(__dirname, 'src/worker'),
       },
     },
     optimizeDeps: {
-      exclude: ['@openhw/emulator'],
+      // develop changed this from exclude to include
+      include: ['@openhw/emulator'],
       esbuildOptions: {
         plugins: [
           {
@@ -61,6 +64,20 @@ export default defineConfig(({ mode }) => {
                 namespace: 'raw-html',
               }))
               build.onLoad({ filter: /.*/, namespace: 'raw-html' }, (args) => ({
+                contents: `export default ${JSON.stringify(fs.readFileSync(args.path, 'utf8'))}`,
+                loader: 'js',
+              }))
+            },
+          },
+          // New from develop branch
+          {
+            name: 'raw-ts',
+            setup(build) {
+              build.onResolve({ filter: /\.(ts|tsx)\?raw$/ }, (args) => ({
+                path: path.resolve(path.dirname(args.importer), args.path.replace(/\?raw$/, '')),
+                namespace: 'raw-ts',
+              }))
+              build.onLoad({ filter: /.*/, namespace: 'raw-ts' }, (args) => ({
                 contents: `export default ${JSON.stringify(fs.readFileSync(args.path, 'utf8'))}`,
                 loader: 'js',
               }))
@@ -79,6 +96,7 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
+      // Keep CORS headers from danish branch (required for SharedArrayBuffer / WASM)
       headers: {
         "Cross-Origin-Embedder-Policy": "require-corp",
         "Cross-Origin-Opener-Policy": "same-origin"

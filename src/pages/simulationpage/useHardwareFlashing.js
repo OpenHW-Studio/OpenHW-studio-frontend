@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listHardwarePorts } from '../../services/simulatorService.js';
+import { flashESP32WebSerial } from '../../esp32/esptoolFlasher.js';
+import { flashArduinoWebSerial } from '../../arduino/avrbroFlasher.js';
 
 export function useHardwareFlashing({
   hardwareBoardId,
@@ -16,7 +18,7 @@ export function useHardwareFlashing({
   const [hardwareAvailablePorts, setHardwareAvailablePorts] = useState([]);
   const [showAllHardwarePorts, setShowAllHardwarePorts] = useState(false);
   const [isLoadingHardwarePorts, setIsLoadingHardwarePorts] = useState(false);
-  const [hardwareBaudRate, setHardwareBaudRate] = useState('9600');
+  const [hardwareBaudRate, setHardwareBaudRate] = useState('921600');
   const [hardwareResetMethod, setHardwareResetMethod] = useState('normal');
   const [hardwarePortPath, setHardwarePortPath] = useState('');
   const [isUploadingHardware, setIsUploadingHardware] = useState(false);
@@ -47,49 +49,143 @@ export function useHardwareFlashing({
     refreshHardwarePorts();
   }, [refreshHardwarePorts]);
 
-  const uploadToHardware = useCallback(async () => {
+  const uploadToHardware = useCallback(async (opts = {}) => {
+    const { wasConnected, disconnectFn, connectFn } = opts;
     if (!hardwareBoardId) {
       alert('Please select a target board on canvas.');
       return;
     }
 
+    const boardComp = boardComponents.find((b) => b.id === hardwareBoardId);
+    if (!boardComp) {
+      alert('Selected board is not available on canvas anymore.');
+      return;
+    }
+    const kind = normalizeBoardKind(boardComp.type);
+    const fqbn = typeof resolveBoardFqbn === 'function'
+      ? resolveBoardFqbn(boardComp, kind)
+      : (boardFqbn[kind] || boardFqbn.arduino_uno);
+    
+    const isESP32 = fqbn.toLowerCase().includes('esp32');
+    const isArduino = fqbn.toLowerCase().includes('avr');
+    const requiresWebSerial = isESP32 || isArduino;
+
     const cleanPort = String(resolvedHardwarePort || '').trim();
-    if (!cleanPort) {
+    if (!requiresWebSerial && !cleanPort) {
       alert('No serial port detected. Connect your board, then refresh ports or enable Show all serial ports.');
       return;
     }
 
+    let webSerialPort = null;
+
+    // Ensure Web Serial is authorized NOW during the click event, so auto-reconnect works later
+    if ('serial' in navigator) {
+      try {
+        if (requiresWebSerial) {
+          // Both ESP32 and Arduino Uno/Nano are now flashed via the browser!
+          console.trace('Requesting Web Serial port (requiresWebSerial=true)...');
+          webSerialPort = await navigator.serial.requestPort();
+          console.trace('Acquired Web Serial Port for flashing:', webSerialPort);
+        } else if (connectFn) {
+          const ports = await navigator.serial.getPorts();
+          if (ports.length === 0) {
+            console.trace('Requesting Web Serial port (ports.length === 0)...');
+            await navigator.serial.requestPort();
+          }
+        }
+      } catch (e) {
+        console.warn('Web Serial authorization prompt skipped or cancelled:', e);
+        if (requiresWebSerial) {
+            alert(`Web Serial port selection is required to flash ${isESP32 ? 'ESP32' : 'Arduino'} natively.`);
+            setIsUploadingHardware(false);
+            return;
+        }
+      }
+    } else if (requiresWebSerial) {
+        alert(`Web Serial API is not supported in this browser. Please use Chrome or Edge to flash ${isESP32 ? 'ESP32' : 'Arduino'}.`);
+        setIsUploadingHardware(false);
+        return;
+    }
+
+    if (wasConnected && disconnectFn) {
+      setHardwareStatus('Disconnecting serial monitor for upload...');
+      await disconnectFn();
+      // Chrome on Windows takes a surprisingly long time to fully release
+      // the exclusive OS-level lock on a COM port after port.close() resolves.
+      // 2 seconds is NOT enough. 4 seconds reliably lets the driver release.
+      setHardwareStatus('Waiting for port to be released...');
+      await new Promise(r => setTimeout(r, 4000));
+    }
+
     setIsUploadingHardware(true);
     try {
-      const boardComp = boardComponents.find((b) => b.id === hardwareBoardId);
-      if (!boardComp) throw new Error('Selected board is not available on canvas anymore.');
-
       setHardwareStatus('Resolving HEX for selected board...');
       const hexText = await resolveBoardHex(boardComp);
 
-      const kind = normalizeBoardKind(boardComp.type);
-      const fqbn = typeof resolveBoardFqbn === 'function'
-        ? resolveBoardFqbn(boardComp, kind)
-        : (boardFqbn[kind] || boardFqbn.arduino_uno);
+      let flashResult = null;
+      if (isESP32) {
+        setHardwareStatus(`Flashing ${hardwareBoardId} via Web Serial...`);
+        await flashESP32WebSerial(webSerialPort, hexText, {
+          baudRate: 921600, // Force high speed for ESP32 flashing regardless of UI dropdown
+          onProgress: (msg) => {
+            setHardwareStatus(msg.trim());
+            pushSerialRxChunk(msg, hardwareBoardId, 'hw');
+          }
+        });
+        flashResult = { output: 'Flashed successfully via Web Serial' };
+      } else if (isArduino) {
+        setHardwareStatus(`Flashing ${hardwareBoardId} via Web Serial (AVR)...`);
+        
+        let avrBoardName = 'uno';
+        const lowerFqbn = fqbn.toLowerCase();
+        if (lowerFqbn.includes('mega')) avrBoardName = 'mega';
+        else if (lowerFqbn.includes('nano')) avrBoardName = 'nano';
+        else if (lowerFqbn.includes('leonardo')) avrBoardName = 'leonardo';
+        else if (lowerFqbn.includes('micro')) avrBoardName = 'micro';
 
-      setHardwareStatus(`Flashing ${hardwareBoardId} via ${cleanPort}...`);
-      const flashResult = await flashFirmware({
-        port: cleanPort,
-        fqbn,
-        hex: hexText,
-        baudRate: Number(hardwareBaudRate),
-        resetMethod: hardwareResetMethod,
-      });
+        await flashArduinoWebSerial(webSerialPort, hexText, {
+          boardName: avrBoardName,
+          onProgress: (msg) => {
+            setHardwareStatus(msg.trim());
+            pushSerialRxChunk(msg, hardwareBoardId, 'hw');
+          }
+        });
+        flashResult = { output: 'Flashed successfully via Web Serial' };
+      } else {
+        setHardwareStatus(`Flashing ${hardwareBoardId} via backend ${cleanPort}...`);
+        flashResult = await flashFirmware({
+          port: cleanPort,
+          fqbn,
+          hex: hexText,
+          baudRate: Number(hardwareBaudRate),
+          resetMethod: hardwareResetMethod,
+        });
+      }
 
-      pushSerialTxLine(`Flashed ${hardwareBoardId} on ${cleanPort}`, hardwareBoardId, 'hw');
+      const portDisplay = requiresWebSerial ? 'Web Serial' : cleanPort;
+      pushSerialTxLine(`Flashed ${hardwareBoardId} on ${portDisplay}`, hardwareBoardId, 'hw');
       if (flashResult?.output) {
         pushSerialRxChunk(`${flashResult.output}\n`, hardwareBoardId, 'hw');
       }
-      setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${cleanPort}`);
+      setHardwareStatus(`Flash complete: ${hardwareBoardId} @ ${portDisplay}`);
+      alert(`Code successfully uploaded to ${hardwareBoardId} on ${portDisplay}!`);
+      
+      // Auto-connect after successful flash
+      if (connectFn) {
+        setTimeout(async () => {
+          try {
+            await connectFn(true); // useLastPort = true
+          } catch (e) {
+            console.warn('[BootloaderFlash] Auto-reconnect failed', e);
+          }
+        }, 1200); // Give bootloader time to restart user application before reconnecting
+      }
     } catch (err) {
       console.error('[BootloaderFlash] upload failed:', err);
-      setHardwareStatus(`Flash failed: ${err?.message || 'Unknown error'}`);
-      alert(err?.message || 'Hardware upload failed.');
+      const backendDetails = err?.response?.data?.details || err?.response?.data?.error;
+      const displayMsg = backendDetails ? `${err.message}\n\n${backendDetails}` : (err?.message || 'Unknown error');
+      setHardwareStatus(`Flash failed: ${err?.message}`);
+      alert(`Hardware upload failed:\n${displayMsg}`);
     } finally {
       setIsUploadingHardware(false);
     }

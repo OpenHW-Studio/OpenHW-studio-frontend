@@ -437,10 +437,10 @@ export function GamificationToasts() {
 
   return (
     <div style={{
-      position: 'fixed', bottom: 24, left: '50%',
-      transform: 'translateX(-50%)',
-      zIndex: 9990, display: 'flex', flexDirection: 'column-reverse',
-      alignItems: 'center', gap: 10, pointerEvents: 'none',
+      position: 'fixed', top: 20, right: 20,
+      zIndex: 9990, display: 'flex', flexDirection: 'column',
+      alignItems: 'flex-end', gap: 10, pointerEvents: 'none',
+      maxWidth: 400,
     }}>
       {notifications.map(n => (
         <Toast key={n.id} notification={n} onDismiss={() => dismissNotification(n.id)} />
@@ -468,7 +468,7 @@ function Toast({ notification: n, onDismiss }) {
         boxShadow: `0 8px 32px rgba(0,0,0,0.6), 0 0 24px ${n.color || '#22c55e'}22`,
         fontFamily: "'Space Grotesk', sans-serif",
         opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0) scale(1)' : 'translateY(24px) scale(0.95)',
+        transform: visible ? 'translateX(0) scale(1)' : 'translateX(40px) scale(0.95)',
         transition: 'opacity 0.35s ease, transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
       }}
     >

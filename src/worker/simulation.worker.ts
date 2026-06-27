@@ -1407,6 +1407,9 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 if (typeof (r as any).repropagateAllVoltages === 'function') {
                     (r as any).repropagateAllVoltages();
                 }
+                if (typeof (r as any).pollADCChannels === 'function') {
+                    (r as any).pollADCChannels();
+                }
                 if (typeof (r as any).updateGPIOInputsFromCircuit === 'function') {
                     (r as any).updateGPIOInputsFromCircuit();
                 }

@@ -2,33 +2,53 @@ import { buildWireRoutePoints } from '../../utils/wireRouting.js';
 import { makeOrthogonal } from '../../utils/wireUtils.js';
 
 function snapPointsToHalfPixel(pts) {
-  return (pts || []).map(p => ({ x: Math.round(p.x * 2) / 2, y: Math.round(p.y * 2) / 2, _corner: p._corner }));
+  return (pts || []).filter(Boolean).map(p => ({ x: Math.round((p.x || 0) * 2) / 2, y: Math.round((p.y || 0) * 2) / 2, _corner: p._corner }));
 }
 
 // ─── RENDER ROUNDED PATH FROM POINT ARRAY ─────────────────────────────────
 export function renderRoundedPath(pts) {
-  if (!pts || pts.length < 2) return '';
-  const r = 6;
-  let d = `M ${pts[0].x} ${pts[0].y}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const prev = pts[i - 1], curr = pts[i], next = pts[i + 1];
-    const distPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
-    const distNext = Math.hypot(next.x - curr.x, next.y - curr.y);
-    const cornerR = Math.min(r, distPrev / 2, distNext / 2);
-    if (cornerR < 0.5) {
-      d += ` L ${curr.x} ${curr.y}`;
-      continue;
+  try {
+    if (!pts || pts.length < 2) return '';
+    // Filter out any null/undefined/NaN points before processing
+    const validPts = pts.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number' && isFinite(p.x) && isFinite(p.y));
+    if (validPts.length < 2) return '';
+    const r = 6;
+    const p0 = validPts[0];
+    let d = `M ${p0.x} ${p0.y}`;
+    for (let i = 1; i < validPts.length - 1; i++) {
+      const prev = validPts[i - 1], curr = validPts[i], next = validPts[i + 1];
+      if (!prev || !curr || !next) { if (curr) d += ` L ${curr.x} ${curr.y}`; continue; }
+      const distPrev = Math.hypot(curr.x - prev.x, curr.y - prev.y);
+      const distNext = Math.hypot(next.x - curr.x, next.y - curr.y);
+      if (distPrev < 0.1 || distNext < 0.1 || !isFinite(distPrev) || !isFinite(distNext)) {
+        d += ` L ${curr.x} ${curr.y}`;
+        continue;
+      }
+      const cornerR = Math.min(r, distPrev / 2, distNext / 2);
+      if (cornerR < 0.5) {
+        d += ` L ${curr.x} ${curr.y}`;
+        continue;
+      }
+      const ps = { x: curr.x + (prev.x - curr.x) * (cornerR / distPrev), y: curr.y + (prev.y - curr.y) * (cornerR / distPrev) };
+      const pe = { x: curr.x + (next.x - curr.x) * (cornerR / distNext), y: curr.y + (next.y - curr.y) * (cornerR / distNext) };
+      if (!isFinite(ps.x) || !isFinite(ps.y) || !isFinite(pe.x) || !isFinite(pe.y)) {
+        d += ` L ${curr.x} ${curr.y}`;
+        continue;
+      }
+      d += ` L ${ps.x} ${ps.y} Q ${curr.x} ${curr.y} ${pe.x} ${pe.y}`;
     }
-    const ps = { x: curr.x + (prev.x - curr.x) * (cornerR / distPrev), y: curr.y + (prev.y - curr.y) * (cornerR / distPrev) };
-    const pe = { x: curr.x + (next.x - curr.x) * (cornerR / distNext), y: curr.y + (next.y - curr.y) * (cornerR / distNext) };
-    d += ` L ${ps.x} ${ps.y} Q ${curr.x} ${curr.y} ${pe.x} ${pe.y}`;
+    const lastPt = validPts[validPts.length - 1];
+    d += ` L ${lastPt.x} ${lastPt.y}`;
+    return d;
+  } catch (e) {
+    return '';
   }
-  d += ` L ${pts[pts.length - 1].x} ${pts[pts.length - 1].y}`;
-  return d;
 }
 
 // ─── COMPUTE ORTHOGONAL WIRE CORNER POINTS ─────────────────────────────────
 export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 0, routingInstructions = []) {
+  try {
+  if (!p1 || !e1 || !e2 || !p2) return p1 && p2 ? [p1, p2] : [];
   if (routingInstructions && routingInstructions.length > 0) {
     let currentX = p1.x;
     let currentY = p1.y;
@@ -120,23 +140,34 @@ export function computeWireOrthoPoints(p1, e1, e2, p2, waypoints = [], offset = 
   }
   const pts = buildWireRoutePoints(p1, e1, e2, p2, waypoints, offset);
   return snapPointsToHalfPixel(makeOrthogonal(pts));
+  } catch (e) {
+    return p1 && p2 ? [p1, p2] : [];
+  }
 }
 
 
 // ─── BUILD FULL WIRE PATH STRING ───────────────────────────────────────────
 
 export function buildWirePath(p1, e1, e2, p2, waypoints = [], pathOverride = null, offset = 0, routingInstructions = []) {
-  const rawPts = Array.isArray(pathOverride) && pathOverride.length > 1
-    ? pathOverride
-    : computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset, routingInstructions);
-  const pts = snapPointsToHalfPixel(makeOrthogonal(rawPts));
-  return renderRoundedPath(pts);
+  try {
+    const rawPts = Array.isArray(pathOverride) && pathOverride.length > 1
+      ? pathOverride
+      : computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset, routingInstructions);
+    const pts = snapPointsToHalfPixel(makeOrthogonal(rawPts));
+    return renderRoundedPath(pts);
+  } catch (e) {
+    return '';
+  }
 }
 
 // ─── GET WIRE POINTS FOR DRAGGING ──────────────────────────────────────────
 export function getWirePoints(p1, e1, e2, p2, waypoints = [], offset = 0) {
-  const pts = computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
-  return snapPointsToHalfPixel(makeOrthogonal(pts));
+  try {
+    const pts = computeWireOrthoPoints(p1, e1, e2, p2, waypoints, offset);
+    return snapPointsToHalfPixel(makeOrthogonal(pts));
+  } catch (e) {
+    return p1 && p2 ? [p1, p2] : [];
+  }
 }
 
 // ─── PREVIEW WIRE ROUTER (Drawing mode) ───────────────────────────────────
@@ -161,7 +192,7 @@ export function wireColor(pinLabel) {
   const l = pinLabel.toUpperCase();
 
   // Power & Ground (Highest priority)
-  if (l === 'GND' || l.includes('.GND') || l.includes('_GND') || l === 'VSS' || l === 'CATHODE' || l === 'COM') return '#1f2937'; 
+  if (l === 'GND' || l.includes('.GND') || l.includes('_GND') || l === 'VSS' || l === 'CATHODE' || l === 'COM') return 'black'; 
   if (l === 'VCC' || l === 'VDD' || l === '5V' || l === '3V3' || l === '3.3V' || l === 'VIN' || l === 'ANODE' || l === 'V+') return '#ef4444'; 
 
   // UART

@@ -25,10 +25,17 @@ export default function AuthSuccess() {
 
         // Fetch user profile from backend
         const data = await fetchProfile();
+
+        let defaultRedirect = "/user/dashboard";
+        if (data.user?.role === "student") {
+          defaultRedirect = "/student/dashboard";
+        } else if (data.user?.role === "teacher") {
+          defaultRedirect = "/teacher/dashboard";
+        }
         
         if (data && data.user) {
           // Check if there was a saved redirect destination
-          const redirectPath = localStorage.getItem("authRedirectPath") || "/user/dashboard";
+          const redirectPath = localStorage.getItem("authRedirectPath") || defaultRedirect;
           // Delay removal so StrictMode's second execution can still read it
           setTimeout(() => localStorage.removeItem("authRedirectPath"), 1000);
           

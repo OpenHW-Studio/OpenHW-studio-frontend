@@ -145,7 +145,11 @@ export const SerialTabBar = ({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 8, borderLeft: '1px solid var(--border)', marginLeft: 2 }}>
         <button
-          onClick={() => onToggleAutoscroll(!autoscroll)}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleAutoscroll(!autoscroll);
+          }}
           style={{
             background: autoscroll ? 'rgba(0, 255, 255, 0.08)' : 'transparent',
             border: `1px solid ${autoscroll ? 'var(--accent)' : 'var(--border)'}`,
@@ -166,7 +170,11 @@ export const SerialTabBar = ({
         </button>
 
         <button
-          onClick={onTogglePause}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePause();
+          }}
           title={isPaused ? 'Resume' : 'Pause'}
           style={{
             background: 'transparent', border: 'none', cursor: 'pointer', padding: 2, borderRadius: 4,
@@ -183,7 +191,11 @@ export const SerialTabBar = ({
         </button>
 
         <button
-          onClick={onClear}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClear();
+          }}
           title="Clear Output"
           style={{
             background: 'transparent', border: 'none', cursor: 'pointer', padding: 2, borderRadius: 4,
@@ -198,7 +210,11 @@ export const SerialTabBar = ({
         </button>
 
         <button
-          onClick={onToggleSplit}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSplit();
+          }}
           title={isSplit ? 'Single View' : 'Split View'}
           style={{
             background: isSplit ? 'rgba(0,255,255,0.1)' : 'transparent',
@@ -221,16 +237,23 @@ export const SerialTabBar = ({
 
 export const SerialOutputPane = ({ boardId, history, outputRef, isPaused, boardColors, isRunning }) => {
   const filtered = boardId === 'all' ? history : history.filter(e => e.boardId === boardId);
+  const [frozen, setFrozen] = React.useState(filtered);
+
+  React.useEffect(() => {
+    if (!isPaused || filtered.length < frozen.length) setFrozen(filtered);
+  }, [filtered, isPaused, frozen.length]);
+
+  const visibleHistory = isPaused ? frozen : filtered;
 
   return (
     <div ref={outputRef} className="flex-1 overflow-y-auto py-1.5 flex flex-col panel-scroll" style={{ background: 'var(--bg)' }}>
-      {filtered.length === 0 ? (
+      {visibleHistory.length === 0 ? (
         <div style={{ color: 'var(--text3)', fontSize: 12, padding: '40px 0', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
           <span style={{ fontSize: 24, opacity: 0.5 }}>📡</span>
           {isRunning ? `Waiting for serial output from ${boardId}...` : 'Start simulation to see serial output.'}
         </div>
       ) : (
-        filtered.map((entry, i) => {
+        visibleHistory.map((entry, i) => {
           const badgeColor = entry.dir === 'rx' ? '#2ecc71' : entry.dir === 'tx' ? '#3498db' : '#888';
           const badgeBg = entry.dir === 'rx' ? 'rgba(46,204,113,0.12)' : entry.dir === 'tx' ? 'rgba(52,152,219,0.12)' : 'rgba(128,128,128,0.12)';
           const boardColor = boardColors[entry.boardId] || '#64748b';
@@ -257,7 +280,7 @@ export const SerialOutputPane = ({ boardId, history, outputRef, isPaused, boardC
 export const BaudRateSelector = ({ value, onChange }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const menuRef = React.useRef(null);
-  const options = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 74880, 115200, 230400, 250000, 500000, 1000000, 2000000];
+  const options = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 74880, 115200, 230400, 250000, 500000, 921600, 1000000, 2000000];
 
   React.useEffect(() => {
     const handleClick = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setIsOpen(false); };
