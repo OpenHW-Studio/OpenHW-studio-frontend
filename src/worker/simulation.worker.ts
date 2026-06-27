@@ -16,7 +16,7 @@ if (typeof window === 'undefined') {
 
 import { BoardRunner, createRunnerForBoard, LOGIC_REGISTRY, COMPONENT_PINS, buildFatFsImage, buildLittleFsImage } from './execute';
 import { avrInstruction } from 'avr8js';
-import { BaseComponent } from '@openhw/emulator';
+import { BaseComponent, IREnvironment } from '@openhw/emulator';
 import {
     setRealMetrics
 } from './registries/component-registry';
@@ -358,7 +358,10 @@ function collectRp2040RuntimeFiles(
         }
     }
 
-    return Array.from(filesByPath.entries()).map(([path, data]) => ({ path, data }));
+    const isPython = isRp2040PythonRuntimeEnv(env);
+    return Array.from(filesByPath.entries())
+        .filter(([path]) => !isPython || !/^library\.txt$/i.test(path))
+        .map(([path, data]) => ({ path, data }));
 }
 
 function buildCircuitPythonInjectedScript(runtimeFiles: Array<{ path: string; data: string }>): string {
@@ -515,14 +518,20 @@ async function buildRp2040FlashPartitions(
     boardPythonFilesMap: any,
     boardPythonMap: any
 ): Promise<Array<{ offset: number; data: Uint8Array }> | undefined> {
-    if (!isRp2040PythonRuntimeEnv(env)) return undefined;
+    if (!isRp2040PythonRuntimeEnv(env)) {
+        return undefined;
+    }
 
     const runtimeFiles = collectRp2040RuntimeFiles(boardId, env, boardPythonFilesMap, boardPythonMap);
-    if (runtimeFiles.length === 0) return undefined;
+    if (runtimeFiles.length === 0) {
+        return undefined;
+    }
 
     const fsOffset = getRp2040PythonFsOffset(env);
     const fsBytes = getRp2040PythonFsBytes(env);
-    if (fsBytes <= 0) return undefined;
+    if (fsBytes <= 0) {
+        return undefined;
+    }
 
     const image = env === 'circuitpython'
         ? buildFatFsImage(runtimeFiles, {
@@ -533,7 +542,9 @@ async function buildRp2040FlashPartitions(
             sizeBytes: fsBytes,
             blockSize: RP2040_LITTLEFS_BLOCK_SIZE,
         });
-    if (!image || image.length === 0) return undefined;
+    if (!image || image.length === 0) {
+        return undefined;
+    }
 
     return [{
         offset: fsOffset,
@@ -623,6 +634,7 @@ function scheduleMicroPythonInject(
         if (finalized) return;
         if (!target) return;
 
+        const waitedMs = Date.now() - startedAt;
         // Keep REPL responsive and request a prompt.
         target.setSerialBaudRate(baudOverride);
         target.serialRx(replProbePayload);
@@ -661,16 +673,21 @@ function scheduleMicroPythonInject(
 
     // Sniff UART output by wrapping the cpu uart onByte callback.
     // rp2040js exposes cpu.uart[0].onByte – we chain onto it.
+    let uartByteCount = 0;
     const patchUart = () => {
         const cpu = (target as any).cpu;
-        if (!cpu?.uart?.[0]) return false;
+        if (!cpu?.uart?.[0]) {
+            return false;
+        }
         const prev = cpu.uart[0].onByte;
         const patched = (value: number) => {
             if (prev) prev(value);
             if (finalized) return;
 
-            uartBuf += String.fromCharCode(value);
-            if (uartBuf.length > 32) uartBuf = uartBuf.slice(-32);
+            uartByteCount++;
+            const char = String.fromCharCode(value);
+            uartBuf += char;
+            if (uartBuf.length > 64) uartBuf = uartBuf.slice(-64);
 
             if (uartBuf.includes('>>>')) {
                 sendRawOnce();
@@ -1026,7 +1043,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 import('./runners/backend-proxy-runner.ts').catch(() => {});
             } else if (/(esp32)/i.test(type)) {
                 import('./runners/backend-proxy-runner.ts').catch(() => {});
-                import('./runners/esp32-runner.ts').catch(() => {});
+                import('@private/esp32-engine/runner').catch(() => {});
             } else if (/pico|rp2040/i.test(type)) {
                 import('./runners/rp2040-runner.ts').catch(() => {});
             } else {
@@ -1111,6 +1128,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
         activeDeepSiliconEnabled = !!data.deepSilicon;
 
         stopAllRunners();
+        IREnvironment.reset();
         syncValidationEnabled = !!debugSyncHeartbeat;
         resetSyncValidationState();
 
@@ -1165,10 +1183,6 @@ const coreMessageHandler = async (e: MessageEvent) => {
             const singleBoardFlashPartitions = singleBoardIsRp2040 && singleBoardId
                 ? await buildRp2040FlashPartitions(singleBoardId, singleBoardRuntimeEnv, boardPythonFilesMap, boardPythonMap)
                 : undefined;
-
-            if (singleBoardIsRp2040 && singleBoardRuntimeEnv !== 'native' && (!singleBoardFlashPartitions || singleBoardFlashPartitions.length === 0)) {
-                console.warn(`[Worker] RP2040 Python filesystem unavailable for ${singleBoardId}; falling back where possible.`);
-            }
 
             const shouldInjectPythonOverUart = singleBoardIsRp2040
                 && singleBoardRuntimeEnv !== 'native'

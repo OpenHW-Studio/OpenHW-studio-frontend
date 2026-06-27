@@ -86,6 +86,10 @@ export class BackendProxyRunner implements BoardRunner {
                     const inst = new RegistryClass(compDef.id, manifest);
                     if (compDef.attrs) inst.state = { ...inst.state, ...compDef.attrs };
                     this.instances.set(compDef.id, inst);
+                    if (typeof compDef.x === 'number' && typeof compDef.y === 'number') {
+                        (inst as any)._posX = compDef.x;
+                        (inst as any)._posY = compDef.y;
+                    }
                 } catch (err) {
                     console.error(`Failed to init ${compDef.type}:`, err);
                 }
@@ -95,6 +99,10 @@ export class BackendProxyRunner implements BoardRunner {
                     const inst = new BaseComponent(compDef.id, manifest) as any;
                     if (compDef.attrs) inst.state = { ...inst.state, ...compDef.attrs };
                     this.instances.set(compDef.id, inst);
+                    if (typeof compDef.x === 'number' && typeof compDef.y === 'number') {
+                        (inst as any)._posX = compDef.x;
+                        (inst as any)._posY = compDef.y;
+                    }
                 } catch (err) {
                     console.error(`Failed to init board ${compDef.type}:`, err);
                 }

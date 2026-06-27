@@ -1,7 +1,14 @@
 import axios from 'axios';
 import { getAdminToken, getToken } from './authService.js';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+export const API_BASE_URL = (() => {
+    const customUrl = localStorage.getItem("CUSTOM_BACKEND_URL");
+    if (customUrl) {
+        // Assume user provided full URL including path if needed, e.g. http://localhost:4000/api
+        return customUrl.endsWith('/api') ? customUrl : `${customUrl}/api`;
+    }
+    return import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+})();
 const COMPILER_URL = API_BASE_URL;
 const API_ORIGIN = COMPILER_URL.replace(/\/api$/, '');
 

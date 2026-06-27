@@ -25,7 +25,10 @@ export function parse(data: string) {
     return { data: result };
 }
 
-const LITTLEFS_MODULE_NAME = 'littlefs';
+import createLFS from 'littlefs';
+// @ts-ignore - Vite ?url import
+import littlefsWasmUrl from 'littlefs/dist/littlefs.wasm?url';
+
 export const SD_BLOCK_SIZE = 512;
 export const SD_DATA_TOKEN = 0xfe;
 
@@ -45,16 +48,6 @@ function toUint8Array(data: any, encoder: TextEncoder): Uint8Array {
     if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
     if (Array.isArray(data)) return new Uint8Array(data.map((v) => Number(v) & 0xff));
     return encoder.encode(String(data ?? ''));
-}
-
-async function tryLoadLittleFsFactory(): Promise<((options?: any) => Promise<any>) | null> {
-    try {
-        const mod = await import(/* @vite-ignore */ LITTLEFS_MODULE_NAME);
-        const candidate = (mod as any)?.default ?? mod;
-        return typeof candidate === 'function' ? candidate : null;
-    } catch (e) {
-        return null;
-    }
 }
 
 function isNodeRuntime(): boolean {
@@ -79,9 +72,8 @@ async function readLittleFsWasmBinaryForNode(): Promise<Uint8Array | null> {
     if (!readFile) return null;
 
     const candidates = [
-        new URL('/wasm/littlefs.wasm', import.meta.url),
-        /* @vite-ignore */
-        new URL('../../node_modules/littlefs/dist/littlefs.wasm', import.meta.url),
+        new URL('file:///' + process.cwd() + '/public/wasm/littlefs.wasm'),
+        new URL('file:///' + process.cwd() + '/node_modules/littlefs/dist/littlefs.wasm'),
     ];
 
     const seen = new Set<string>();
@@ -326,24 +318,66 @@ export async function buildLittleFsImage(
     const storage = new Uint8Array(blockCount * blockSize);
     storage.fill(0xff);
 
-    const factory = await tryLoadLittleFsFactory();
-    if (!factory) return null;
+    let lfs: any = null;
+    let configPtr = 0;
+    let lfsPtr = 0;
+    const tablePointers: number[] = [];
 
-    let littlefsModule: any = null;
-    let volume: LittleFsVolume | null = null;
     try {
-        const env: any = { print: () => {}, printErr: () => {} };
         if (isNodeRuntime()) {
             const nodeWasm = await readLittleFsWasmBinaryForNode();
-            if (nodeWasm && nodeWasm.length > 0) env.wasmBinary = nodeWasm;
+            lfs = await createLFS({ wasmBinary: nodeWasm ?? undefined });
+        } else {
+            lfs = await createLFS({ locateFile: () => littlefsWasmUrl });
         }
-        littlefsModule = await factory(env);
-        volume = createLittleFsVolume(littlefsModule, storage, blockSize, blockCount);
-        if (!volume || volume.formatAndMount() < 0) return null;
 
-        const createdDirs = new Set<string>();
+        const addFn = (fn: (...args: any[]) => number, signature: string) => {
+            const ptr = Number(lfs.addFunction(fn, signature));
+            tablePointers.push(ptr);
+            return ptr;
+        };
+
+        const read = addFn(
+            (cfg: number, block: number, off: number, buffer: number, size: number) => {
+                void cfg;
+                const start = block * blockSize + off;
+                if (start < 0 || (start + size) > storage.length) return -5;
+                lfs.HEAPU8.set(storage.subarray(start, start + size), buffer);
+                return 0;
+            }, 'iiiiii'
+        );
+
+        const prog = addFn(
+            (cfg: number, block: number, off: number, buffer: number, size: number) => {
+                void cfg;
+                const start = block * blockSize + off;
+                if (start < 0 || (start + size) > storage.length) return -5;
+                storage.set(lfs.HEAPU8.subarray(buffer, buffer + size), start);
+                return 0;
+            }, 'iiiiii'
+        );
+
+        const erase = addFn(
+            (cfg: number, block: number) => {
+                void cfg;
+                const start = block * blockSize;
+                storage.fill(0xff, start, start + blockSize);
+                return 0;
+            }, 'iii'
+        );
+
+        const sync = addFn(() => 0, 'ii');
+
+        configPtr = lfs._new_lfs_config(read, prog, erase, sync, blockCount, blockSize);
+        lfsPtr = lfs._new_lfs();
+
+        if (lfs._lfs_format(lfsPtr, configPtr) < 0) return null;
+        if (lfs._lfs_mount(lfsPtr, configPtr) < 0) return null;
+
+        const writeFile = lfs.cwrap('lfs_write_file', 'number', ['number', 'string', 'string', 'number']);
         const encoder = new TextEncoder();
 
+        const createdDirs = new Set<string>();
         for (const file of files) {
             const path = normalizeLittleFsPath(file?.path);
             if (!path) continue;
@@ -351,35 +385,30 @@ export async function buildLittleFsImage(
             const parentDirs = collectLittleFsParentDirs(path);
             for (const dir of parentDirs) {
                 if (createdDirs.has(dir)) continue;
-                if (!volume.mkdir(`/${dir}`) && !volume.mkdir(dir)) {
-                    return null;
-                }
+                const rc = lfs._lfs_mkdir(lfsPtr, `/${dir}`);
+                if (rc !== 0 && rc !== -17) return null;
                 createdDirs.add(dir);
             }
 
             const data = toUint8Array(file?.data, encoder);
-            if (!volume.writeFile(`/${path}`, data) && !volume.writeFile(path, data)) {
-                return null;
-            }
+            const content = new TextDecoder().decode(data);
+            const byteLength = data.length;
+            if (writeFile(lfsPtr, `/${path}`, content, byteLength) < 0) return null;
         }
 
-        volume.unmount();
+        lfs._lfs_unmount(lfsPtr);
         return storage.slice();
     } catch (e) {
         return null;
     } finally {
-        try {
-            volume?.destroy();
-        } catch (e) {
-            // ignore
-        }
-        try {
-            if (littlefsModule && typeof littlefsModule.quit === 'function') {
-                littlefsModule.quit();
+        try { if (lfs && lfsPtr > 0) lfs._free(lfsPtr); } catch (e) {}
+        try { if (lfs && configPtr > 0) lfs._free(configPtr); } catch (e) {}
+        if (lfs && typeof lfs.removeFunction === 'function') {
+            for (const ptr of tablePointers) {
+                try { lfs.removeFunction(ptr); } catch (e) {}
             }
-        } catch (e) {
-            // ignore
         }
+        try { if (lfs && typeof lfs.quit === 'function') lfs.quit(); } catch (e) {}
     }
 }
 

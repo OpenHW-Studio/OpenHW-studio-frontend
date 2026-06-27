@@ -63,8 +63,18 @@ const MAX_RECONNECT_ATTEMPTS = 1;
  * Falls back to ws://localhost:5001 in development.
  */
 function getWsBaseUrl() {
+    const customUrl = localStorage.getItem("CUSTOM_BACKEND_URL");
+    if (customUrl) {
+        const base = customUrl.endsWith('/api') ? customUrl : `${customUrl}/api`;
+        return base.replace(/^https/i, 'wss').replace(/^http/i, 'ws');
+    }
     const base = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
-    return base.replace(/^https/, 'wss').replace(/^http/, 'ws');
+    // If it's a relative path like '/api', we need to prepend window.location.origin to make it an absolute WS URL
+    if (base.startsWith('/')) {
+        const origin = window.location.origin.replace(/^http/i, 'ws');
+        return `${origin}${base}`;
+    }
+    return base.replace(/^https/i, 'wss').replace(/^http/i, 'ws');
 }
 
 // ── Frontend perf diagnostics ────────────────────────────────────────────

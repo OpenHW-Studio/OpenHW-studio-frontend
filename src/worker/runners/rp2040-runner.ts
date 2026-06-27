@@ -119,6 +119,33 @@ type RP2040I2CBitBangState = {
     ackDriveActive: boolean;
 };
 
+type RP2040SoftSPIBusPins = {
+    sck: string;
+    mosi: string;
+    miso: string | null;
+};
+
+type RP2040SoftSPIState = {
+    prevSckHigh: boolean;
+    shift: number;
+    bitCount: number;
+    activeSlave: BaseComponent | null;
+    // MISO response bits queued from onSPIByte return value
+    misoResponseBits: number[];  // 8 bits queued MSB first
+    misoBitIndex: number;
+};
+
+type SoftUARTState = {
+    // null = idle (not in a frame)
+    startCycle: number | null;
+    // auto-detected baud period in CPU cycles (from first falling edge to first rising)
+    baudCycles: number | null;
+    shift: number;       // LSB-first accumulation
+    bitCount: number;    // data bits received so far (0..7)
+    lastEdgeCycle: number;
+    lastLevel: boolean;
+};
+
 const RP2040_SPI_SOURCE_PINS = {
     spi0: {
         mosi: ['MOSI', 'TX0', 'GP3', 'GPIO3', 'D3', '3', 'GP7', 'GPIO7', 'D7', '7', 'GP19', 'GPIO19', 'D19', '19', 'GP23', 'GPIO23', 'D23', '23'],
@@ -499,6 +526,7 @@ function loadRP2040FirmwareFromUF2Payload(rp2040: RP2040, uf2Payload: string, lo
 
     const bytes = decodeBase64ToBytes(payload);
     const blockCount = Math.floor(bytes.length / UF2_BLOCK_SIZE);
+    let validBlocks = 0;
 
     for (let i = 0; i < blockCount; i++) {
         const offset = i * UF2_BLOCK_SIZE;
@@ -520,6 +548,7 @@ function loadRP2040FirmwareFromUF2Payload(rp2040: RP2040, uf2Payload: string, lo
 
         const payloadOffset = offset + 32;
         rp2040.flash.set(bytes.subarray(payloadOffset, payloadOffset + maxCopy), dstStart);
+        validBlocks++;
     }
 
     return loadRP2040Entry(rp2040, logicalFlashLength);
@@ -578,9 +607,13 @@ function applyRP2040FlashPartitions(
 
     for (const partition of partitions) {
         const dstOffset = partition.offset >>> 0;
-        if (dstOffset >= logicalFlashLength) continue;
+        if (dstOffset >= logicalFlashLength) {
+            continue;
+        }
         const maxCopy = Math.min(partition.bytes.length, logicalFlashLength - dstOffset);
-        if (maxCopy <= 0) continue;
+        if (maxCopy <= 0) {
+            continue;
+        }
 
         rp2040.flash.set(partition.bytes.subarray(0, maxCopy), dstOffset);
     }
@@ -704,6 +737,16 @@ export class RP2040Runner implements BoardRunner {
     private pwmState = new Map<string, { lastRiseCycle: number; lastFallCycle: number; lastPeriodCycles: number }>();
     private i2sState = new Map<string, { bclkLast: boolean; wsLast: boolean; shiftBuf: number; bitCount: number }>();
     private oneWireState = new Map<string, { lowStartCycle: number | null; highStartCycle: number | null }>();
+    // gpPin -> true when a OneWire slave is actively pulling the DQ line low (read slot response)
+    private oneWirePinLowOverride = new Map<string, boolean>();
+    // key = "sck|mosi" identifying a SoftSPI bus detected from wired components
+    private softSpiState = new Map<string, RP2040SoftSPIState>();
+    // key = gpPin;  SoftUART decoder per output pin
+    private softUartState = new Map<string, SoftUARTState>();
+    // Set of gpPins already serving hardware UART (skip SoftUART on these)
+    private hardwareUartPins = new Set<string>(['GP0', 'GP1', 'GP4', 'GP5']);
+    // Set of gpPins already serving hardware SPI SCK (skip SoftSPI sniffer on these)
+    private hardwareSpiSckPins = new Set<string>();
     private spiFrameState = new Map<'spi0' | 'spi1', { bytes: number[]; lastByteTime: number }>();
     private componentSyncMeta = new Map<string, { lastSentAt: number; lastWeight: number }>();
     private hasFaulted: boolean = false;
@@ -933,6 +976,19 @@ export class RP2040Runner implements BoardRunner {
         this.rp2040 = new RP2040();
         (globalThis as any).rp2040 = this.rp2040;
         this.cpu = new RP2040(new RP2040MockClock() as any);
+
+        // MicroPython I2C/SPI fix: rp2040js initializes padValue to 0x36 (IE clear).
+        // MicroPython's masked writes to GPIO config don't touch IE (bit 6),
+        // leaving the pin effectively isolated and reading LOW internally.
+        // We force IE=1 (bit 6) to mimic real hardware reset state (0x76/0x56)
+        // so hardware peripherals correctly read external pull-ups/levels.
+        if (this.cpu.gpio) {
+            for (const gpio of this.cpu.gpio) {
+                if (gpio) {
+                    gpio.padValue |= 0x40;
+                }
+            }
+        }
 
         // Hack to fix TXSTALL bug in rp2040js PIO emulator
         for (const pio of (this.cpu as any).pio) {
@@ -1600,6 +1656,7 @@ export class RP2040Runner implements BoardRunner {
             if (!uart) return;
 
             uart.onByte = (value: number) => {
+                console.log(`[UART_DEBUG] uart${uartIndex} emitted byte: 0x${value.toString(16)} ('${String.fromCharCode(value)}')`);
                 this.emitSerialByte(value, uartIndex);
             };
         };
@@ -1724,7 +1781,9 @@ export class RP2040Runner implements BoardRunner {
 
         // Fallback: if bus-pin topology detection misses a supported device,
         // allow address-based matching to keep common display modules functional.
-        return this.getI2CCallbackDevices();
+        const fallback = this.getI2CCallbackDevices();
+        console.log(`[I2C_DEBUG] getRp2040ConnectedI2CDevices(${bus}): cache empty, fallback=${fallback.length} devices:`, fallback.map(d => ({ id: (d as any).id, hasI2CStart: typeof (d as any).onI2CStart === 'function', hasI2CByte: typeof (d as any).onI2CByte === 'function' })));
+        return fallback;
     }
 
     private getRp2040ConnectedSPIBusesForDevice(componentId: string): Array<'spi0' | 'spi1'> {
@@ -1973,7 +2032,18 @@ export class RP2040Runner implements BoardRunner {
 
         const attachBus = (index: 0 | 1, bus: 'i2c0' | 'i2c1') => {
             const i2c: any = (this.cpu as any)?.i2c?.[index];
-            if (!i2c) return;
+            if (!i2c) { console.log(`[I2C_HW_DEBUG] ${bus}: i2c peripheral NOT FOUND`); return; }
+            console.log(`[I2C_HW_DEBUG] ${bus}: adapter installed, enable=${i2c.enable} state=${i2c.state}`);
+
+            // Hook writeUint32 to log I2C register writes
+            const origWrite = i2c.writeUint32.bind(i2c);
+            i2c.writeUint32 = (offset: number, value: number) => {
+                if (offset === 0x6c || offset === 0x04 || offset === 0x10 || offset === 0x00) {
+                    const regName = offset === 0x6c ? 'IC_ENABLE' : offset === 0x04 ? 'IC_TAR' : offset === 0x10 ? 'IC_DATA_CMD' : 'IC_CON';
+                    console.log(`[I2C_REG] ${bus} write ${regName}(0x${offset.toString(16)}) = 0x${(value >>> 0).toString(16)} (enable=${i2c.enable} state=${i2c.state} busy=${i2c.busy} txFIFO=${i2c.txFIFO?.itemCount})`);
+                }
+                origWrite(offset, value);
+            };
 
             let activeSlave: BaseComponent | null = null;
             let transactionBytes: number[] = [];
@@ -1983,6 +2053,7 @@ export class RP2040Runner implements BoardRunner {
             i2c.onStart = (repeatedStart: boolean) => {
                 void repeatedStart;
                 activeSlave = null;
+                console.log(`[I2C_DEBUG] ${bus} onStart repeated=${repeatedStart}`);
                 i2c.completeStart();
             };
 
@@ -2004,6 +2075,7 @@ export class RP2040Runner implements BoardRunner {
                     }
                 }
 
+                console.log(`[I2C_DEBUG] ${bus} onConnect addr=0x${(address & 0x7f).toString(16)} mode=${mode} isRead=${isRead} deviceCount=${devices.length} ack=${ack} activeSlave=${(activeSlave as any)?.id || 'none'}`);
                 i2c.completeConnect(ack);
 
                 if (this.debugEnabled) {
@@ -2034,6 +2106,7 @@ export class RP2040Runner implements BoardRunner {
                         ack = true;
                     }
                 }
+                console.log(`[I2C_DEBUG] ${bus} onWriteByte value=0x${(value & 0xff).toString(16).padStart(2, '0')} ack=${ack} activeSlave=${(activeSlave as any)?.id || 'none'}`);
                 i2c.completeWrite(ack);
             };
 
@@ -2049,10 +2122,12 @@ export class RP2040Runner implements BoardRunner {
                     }
                 }
                 transactionBytes.push(byte);
+                console.log(`[I2C_DEBUG] ${bus} onReadByte ack=${ack} byte=0x${byte.toString(16).padStart(2, '0')}`);
                 i2c.completeRead(byte);
             };
 
             i2c.onStop = () => {
+                console.log(`[I2C_DEBUG] ${bus} onStop txBytes=${transactionBytes.length}`);
                 if (transactionBytes.length > 0) {
                     this.onStateUpdate({
                         type: 'protocol:i2c',
@@ -2143,6 +2218,15 @@ export class RP2040Runner implements BoardRunner {
                 let response = 0xff;
                 const devices = this.getRp2040ConnectedSPIDevices(bus);
 
+                // Mark hardware SPI SCK pins so SoftSPI sniffer won't double-count
+                const sckPins = RP2040_SPI_SOURCE_PINS[bus]?.sck || [];
+                for (const sckAlias of sckPins) {
+                    const normSck = this.normalizeToGpPin(sckAlias);
+                    if (/^GP\d+$/.test(normSck)) {
+                        this.hardwareSpiSckPins.add(normSck);
+                    }
+                }
+
                 if (frameState.bytes.length === 1 || nowMs - this.debugLastSpiLogAt > 500) {
                     this.debugLastSpiLogAt = nowMs;
                 }
@@ -2158,6 +2242,7 @@ export class RP2040Runner implements BoardRunner {
 
                 spi.completeTransmit(response);
             };
+
         };
 
         attachBus(0, 'spi0');
@@ -2608,8 +2693,18 @@ export class RP2040Runner implements BoardRunner {
                 cycles,
             };
             for (const endpoint of endpoints) {
-                invokeOptional(endpoint.inst as any, ['onOneWireWriteBit', 'onOnewireWriteBit'], [endpoint.pinId, bit, meta]);
-                invokeOptional(endpoint.inst as any, ['onOneWireSlot', 'onOnewireSlot'], [endpoint.pinId, meta]);
+                // Capture slave response bit from onOneWireWriteBit (returns 0 or 1 if slave wants to pull low)
+                const writeBitResult = invokeOptional(endpoint.inst as any, ['onOneWireWriteBit', 'onOnewireWriteBit'], [endpoint.pinId, bit, meta]);
+                const slotResult = invokeOptional(endpoint.inst as any, ['onOneWireSlot', 'onOnewireSlot'], [endpoint.pinId, meta]);
+                // If slave returns a boolean/number for its read-slot bit, drive the DQ line accordingly
+                const slaveBit = (writeBitResult !== undefined && writeBitResult !== null)
+                    ? Number(writeBitResult)
+                    : (slotResult !== undefined && slotResult !== null)
+                        ? Number(slotResult)
+                        : -1;
+                if (slaveBit === 0) {
+                    this.dispatchOneWireSlaveResponse(key, 0, cycles);
+                }
             }
         }
     }
@@ -2651,6 +2746,7 @@ export class RP2040Runner implements BoardRunner {
         const idx = this.parseGpIndex(pin);
         if (idx == null) return;
         this.cpu.gpio[idx].setInputValue(!!isHigh);
+        this.pinStates[pin] = !!isHigh;
     }
 
     private consumeRp2040I2CBitBangByte(bus: RP2040I2CBus, state: RP2040I2CBitBangState, value: number): boolean {
@@ -2692,8 +2788,10 @@ export class RP2040Runner implements BoardRunner {
             }
         } else if (state.activeSlave && !state.read && state.activeSlave.onI2CByte) {
             ack = !!state.activeSlave.onI2CByte(-1, byte);
+            console.log(`[I2C_BITBANG_BYTE] ${bus} idx=${state.byteIndex} byte=0x${byte.toString(16).padStart(2,'0')} ack=${ack} slave=${(state.activeSlave as any)?.id}`);
         } else if (state.activeSlave) {
             ack = true;
+            console.log(`[I2C_BITBANG_BYTE] ${bus} idx=${state.byteIndex} byte=0x${byte.toString(16).padStart(2,'0')} ack=default-true slave=${(state.activeSlave as any)?.id}`);
         }
 
         state.byteIndex += 1;
@@ -2710,6 +2808,23 @@ export class RP2040Runner implements BoardRunner {
             const pins = this.i2cBusPinPairs.get(bus);
             if (!pins) continue;
             if (pin !== pins.sda && pin !== pins.scl) continue;
+
+            // rp2040js defaults padValue to 0x36 (bit6=IE clear) vs real
+            // hardware's 0x76 (IE set).  MicroPython uses masked writes
+            // (hw_write_masked) for pull-up config that only touch bits 8/9,
+            // so IE stays 0 → inputValue is always false.  Force IE=1 on
+            // I2C bus pins so the PIO can correctly read back pin levels.
+            if (this.cpu) {
+                for (const p of [pins.sda, pins.scl]) {
+                    const idx = this.parseGpIndex(p);
+                    if (idx != null) {
+                        const gpio = this.cpu.gpio[idx];
+                        if (!gpio.inputEnable) {
+                            gpio.padValue |= 0x40;
+                        }
+                    }
+                }
+            }
 
             const state = this.getRp2040I2CBitBangState(bus, pins);
             const sdaNow = !!this.pinStates[pins.sda];
@@ -2788,7 +2903,263 @@ export class RP2040Runner implements BoardRunner {
         this.dispatchOptionalPio(gpPin, isHigh, cycles, functionSelect);
         this.dispatchOptionalOneWire(gpPin, isHigh, cycles);
         this.dispatchOptionalI2CFallback(gpPin);
+        this.dispatchOptionalSoftSpi(gpPin, isHigh, cycles);
+        this.dispatchOptionalSoftUart(gpPin, isHigh, cycles);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FIX 1: OneWire Bidirectional — allow slave to pull DQ low during read slots
+    // Override base dispatchOptionalOneWire to capture slave responses and guard
+    // the DQ pin in updateGPIOInputsFromCircuit.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private dispatchOneWireSlaveResponse(gpPin: string, bit: number, cycles: number) {
+        // Slave wants to send a '0' bit: hold DQ low for ~30µs (approx read slot duration).
+        // MicroPython samples DQ ~15µs after it drives it LOW, so we keep it low for
+        // the full read slot window (60µs) to be safe.
+        if (bit === 0) {
+            this.oneWirePinLowOverride.set(gpPin, true);
+            if (this.cpu) {
+                const idx = this.parseGpIndex(gpPin);
+                if (idx != null) this.cpu.gpio[idx].setInputValue(false);
+            }
+            // Release after 60µs (read slot window)
+            const clockHz = this.getRp2040ClockHz();
+            const releaseCycles = Math.ceil((60 * clockHz) / 1_000_000);
+            const releaseAtCycles = cycles + releaseCycles;
+            // Store the release cycle so updateGPIOInputsFromCircuit can clear it
+            (this as any)._oneWireReleaseMap = (this as any)._oneWireReleaseMap || new Map<string, number>();
+            (this as any)._oneWireReleaseMap.set(gpPin, releaseAtCycles);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FIX 2: Software SPI (SoftSPI) Bitbang Sniffer
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private softSpiBusCache: Array<{ sck: string; mosi: string; miso: string | null; devices: BaseComponent[] }> | null = null;
+    private softSpiMisoPinOverride = new Map<string, boolean>(); // gpPin -> isForcedLow
+
+    private buildSoftSpiBusCache(): Array<{ sck: string; mosi: string; miso: string | null; devices: BaseComponent[] }> {
+        const result: Array<{ sck: string; mosi: string; miso: string | null; devices: BaseComponent[] }> = [];
+
+        for (const inst of this.instances.values()) {
+            if (typeof inst.onSPIByte !== 'function') continue;
+
+            const mosiPin = this.findExistingPinName(inst, ['MOSI', 'DIN', 'SI', 'SDI', 'DATA']);
+            const sckPin = this.findExistingPinName(inst, ['SCK', 'CLK', 'SCLK']);
+            if (!mosiPin || !sckPin) continue;
+
+            const boardMosi = this.resolveBoardPinForComponentPin(inst.id, mosiPin);
+            const boardSck = this.resolveBoardPinForComponentPin(inst.id, sckPin);
+            if (!boardMosi || !boardSck) continue;
+
+            const normMosi = this.normalizeToGpPin(boardMosi);
+            const normSck = this.normalizeToGpPin(boardSck);
+
+            // Skip if this SCK pin is already handled by hardware SPI
+            if (this.hardwareSpiSckPins.has(normSck)) continue;
+
+            // Resolve optional MISO pin
+            const misoPin = this.findExistingPinName(inst, ['MISO', 'DOUT', 'SO', 'SDO']);
+            const boardMiso = misoPin ? this.resolveBoardPinForComponentPin(inst.id, misoPin) : null;
+            const normMiso = boardMiso ? this.normalizeToGpPin(boardMiso) : null;
+
+            // Check if a bus entry already exists for this sck+mosi pair
+            const busKey = `${normSck}|${normMosi}`;
+            const existing = result.find(b => `${b.sck}|${b.mosi}` === busKey);
+            if (existing) {
+                existing.devices.push(inst);
+            } else {
+                result.push({ sck: normSck, mosi: normMosi, miso: normMiso, devices: [inst] });
+            }
+        }
+
+        return result;
+    }
+
+    private dispatchOptionalSoftSpi(gpPin: string, isHigh: boolean, cycles: number) {
+        // Lazy-build SoftSPI bus cache (topology-aware)
+        if (!this.softSpiBusCache) {
+            this.softSpiBusCache = this.buildSoftSpiBusCache();
+        }
+
+        for (const bus of this.softSpiBusCache) {
+            if (bus.sck !== gpPin) continue; // Only act on SCK transitions
+
+            const busKey = `${bus.sck}|${bus.mosi}`;
+            let state = this.softSpiState.get(busKey);
+            if (!state) {
+                state = {
+                    prevSckHigh: false,
+                    shift: 0,
+                    bitCount: 0,
+                    activeSlave: null,
+                    misoResponseBits: [],
+                    misoBitIndex: 0,
+                };
+                this.softSpiState.set(busKey, state);
+            }
+
+            const risingEdge = isHigh && !state.prevSckHigh;
+            state.prevSckHigh = isHigh;
+
+            if (!risingEdge) continue;
+
+            // Sample MOSI on the rising edge of SCK (SPI Mode 0/1 - CPOL=0)
+            const mosiIdx = this.parseGpIndex(bus.mosi);
+            const mosiHigh = mosiIdx != null && this.cpu ? this.cpu.gpio[mosiIdx].value !== GPIOPinState.Low : false;
+            const bit = mosiHigh ? 1 : 0;
+
+            // Feed queued MISO bit back to the CPU pin BEFORE sampling so the firmware
+            // reads the correct level on this same rising edge (SPI Mode 0)
+            if (bus.miso && state.misoResponseBits.length > 0) {
+                const misoBit = state.misoResponseBits.shift()!;
+                const misoIdx = this.parseGpIndex(bus.miso);
+                if (misoIdx != null && this.cpu) {
+                    const high = misoBit !== 0;
+                    this.cpu.gpio[misoIdx].setInputValue(high);
+                    this.pinStates[bus.miso] = high;
+                    // Mark MISO as actively driven so the pull-up loop doesn't clobber it
+                    this.softSpiMisoPinOverride.set(bus.miso, true);
+                }
+            }
+
+            // Shift in MOSI bit (MSB first)
+            state.shift = ((state.shift << 1) | bit) & 0xff;
+            state.bitCount++;
+
+            if (state.bitCount >= 8) {
+                const byte = state.shift & 0xff;
+                state.shift = 0;
+                state.bitCount = 0;
+
+                // Deliver to all connected SPI devices
+                for (const inst of bus.devices) {
+                    this.syncSpiControlPins(inst);
+                    if (!this.isRp2040SpiSelected(inst)) continue;
+                    const response = inst.onSPIByte?.(byte);
+                    if (response !== undefined && bus.miso) {
+                        // Queue 8 MISO bits for next byte's rising edges (MSB first)
+                        const respByte = Number(response) & 0xff;
+                        state.misoResponseBits = [];
+                        for (let b = 7; b >= 0; b--) {
+                            state.misoResponseBits.push((respByte >> b) & 1);
+                        }
+                        state.misoBitIndex = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    // Invalidate caches when topology changes so the sniffers re-scan
+    private invalidateSoftProtocolCaches() {
+        this.softSpiBusCache = null;
+        this.softSpiState.clear();
+        this.softSpiMisoPinOverride.clear();
+        this.softUartState.clear();
+        this.oneWirePinLowOverride.clear();
+        (this as any)._oneWireReleaseMap = undefined;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // FIX 3: Software UART TX Sniffer (auto-baud)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private dispatchOptionalSoftUart(gpPin: string, isHigh: boolean, cycles: number) {
+        // Skip pins already claimed by hardware UART
+        if (this.hardwareUartPins.has(gpPin)) return;
+        // Skip pins used by I2C bitbang buses
+        for (const pins of this.i2cBusPinPairs.values()) {
+            if (pins.sda === gpPin || pins.scl === gpPin) return;
+        }
+        // Skip pins used as SCK by hardware SPI
+        if (this.hardwareSpiSckPins.has(gpPin)) return;
+
+        let state = this.softUartState.get(gpPin);
+        if (!state) {
+            state = {
+                startCycle: null,
+                baudCycles: null,
+                shift: 0,
+                bitCount: 0,
+                lastEdgeCycle: cycles,
+                lastLevel: true, // UART idles HIGH
+            };
+            this.softUartState.set(gpPin, state);
+        }
+
+        const fallingEdge = state.lastLevel && !isHigh;
+        const risingEdge = !state.lastLevel && isHigh;
+        state.lastLevel = isHigh;
+
+        if (state.startCycle === null) {
+            // Idle state — look for a START bit (falling edge while UART idles HIGH)
+            if (fallingEdge) {
+                state.startCycle = cycles;
+                state.shift = 0;
+                state.bitCount = 0;
+                state.baudCycles = null;
+            }
+            state.lastEdgeCycle = cycles;
+            return;
+        }
+
+        // ── Auto-baud: derive baudCycles from the first complete low pulse ──
+        if (state.baudCycles === null && risingEdge) {
+            const pulseCycles = Math.max(1, cycles - (state.startCycle ?? cycles));
+            const clockHz = this.getRp2040ClockHz();
+            // Snap to the nearest standard baud rate
+            const BAUD_RATES = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
+            let best = 9600;
+            let bestDiff = Infinity;
+            for (const baud of BAUD_RATES) {
+                const expected = Math.floor(clockHz / baud);
+                const diff = Math.abs(pulseCycles - expected);
+                if (diff < bestDiff) { bestDiff = diff; best = baud; }
+            }
+            state.baudCycles = Math.floor(clockHz / best);
+        }
+
+        if (state.baudCycles === null) {
+            state.lastEdgeCycle = cycles;
+            return;
+        }
+
+        // ── Sample data bits at the center of each baud period ──
+        // The first data bit center is at startCycle + 1.5 * baudCycles
+        // Subsequent bits are at startCycle + (1.5 + N) * baudCycles
+        const elapsed = cycles - state.startCycle;
+        const expectedBitIndex = Math.floor((elapsed - (state.baudCycles >> 1)) / state.baudCycles);
+        // expectedBitIndex 0 = start bit, 1..8 = data bits, 9 = stop bit
+
+        while (state.bitCount < 8 && state.bitCount + 1 <= expectedBitIndex) {
+            // Sample current line level for this data bit
+            const bitLevel = isHigh ? 1 : 0;
+            // LSB first: shift into low end
+            state.shift = (state.shift | (bitLevel << state.bitCount)) & 0xff;
+            state.bitCount++;
+        }
+
+        // Stop bit reached (bit index 9)
+        if (expectedBitIndex >= 9 && state.bitCount >= 8) {
+            const byte = state.shift & 0xff;
+            // Only emit if the stop bit is HIGH (valid frame)
+            if (isHigh) {
+                this.emitSerialByte(byte, 3); // source=3 → 'soft-uart'
+            }
+            // Reset decoder
+            state.startCycle = null;
+            state.baudCycles = null;
+            state.shift = 0;
+            state.bitCount = 0;
+        }
+
+        state.lastEdgeCycle = cycles;
+    }
+
+
 
     private traversePassive(inst: BaseComponent, compId: string, pinId: string, voltage: number, visit: (target: string) => void) {
         if (inst.type === 'openhw-resistor' || inst.type === 'wokwi-resistor') {
@@ -3111,9 +3482,19 @@ export class RP2040Runner implements BoardRunner {
         // ── Pass 1: Board GP pins at their current CPU output state ───────────────
         for (let gp = 0; gp <= 28; gp++) {
             const pinName = `GP${gp}`;
-            const isHigh = this.pinStates[pinName] ?? false;
-            const voltage = isHigh ? 3.3 : 0.0;
-            seedFrom(`${this.boardId}:${pinName}`, voltage);
+            if (this.cpu) {
+                const gpio = this.cpu.gpio[gp];
+                if (gpio.outputEnable) {
+                    seedFrom(`${this.boardId}:${pinName}`, gpio.outputValue ? 3.3 : 0.0);
+                } else if (gpio.pullupEnabled) {
+                    seedFrom(`${this.boardId}:${pinName}`, 3.3);
+                } else if (gpio.pulldownEnabled) {
+                    seedFrom(`${this.boardId}:${pinName}`, 0.0);
+                }
+            } else {
+                const isHigh = this.pinStates[pinName] ?? false;
+                seedFrom(`${this.boardId}:${pinName}`, isHigh ? 3.3 : 0.0);
+            }
         }
 
         // ── Pass 2: Active driver outputs ─────────────────────────────────────────
@@ -3284,6 +3665,17 @@ export class RP2040Runner implements BoardRunner {
         if (this.pinStates[pinName] === isHigh) return;
 
         this.pinStates[pinName] = isHigh;
+
+        // Ensure input is enabled so the PIO can read the actual pin level.
+        // rp2040js defaults padValue to 0x36 (bit6=IE clear) vs real
+        // hardware's 0x76 (IE set).
+        if (this.cpu?.gpio?.[pin]) {
+            const gpio = this.cpu.gpio[pin];
+            if (!gpio.inputEnable) {
+                gpio.padValue |= 0x40;
+            }
+        }
+
         this.pinsChanged = true;
         this.debugGpioTransitions += 1;
         this.debugLastGpioPin = pinName;
@@ -3369,8 +3761,65 @@ export class RP2040Runner implements BoardRunner {
                 continue;
             }
 
+            // Prevent overwriting SDA if the bitbang sniffer is actively holding it low for an ACK
+            let isI2CAckActive = false;
+            for (const [bus, state] of this.i2cBitBangState.entries()) {
+                if (state.ackDriveActive) {
+                    const pins = this.i2cBusPinPairs.get(bus);
+                    if (pins && pins.sda === gpPin) {
+                        isI2CAckActive = true;
+                        break;
+                    }
+                }
+            }
+            if (isI2CAckActive) {
+                this.cpu.gpio[gp].setInputValue(false);
+                continue;
+            }
+
+            // OneWire: prevent pull-up from overwriting slave's DQ low during read slots
+            if (this.oneWirePinLowOverride.get(gpPin)) {
+                const releaseMap: Map<string, number> | undefined = (this as any)._oneWireReleaseMap;
+                const releaseCycle = releaseMap?.get(gpPin);
+                const currentCycles = this.cpu.core.cycles;
+                if (releaseCycle != null && currentCycles >= releaseCycle) {
+                    // Release window expired — let line float high again
+                    this.oneWirePinLowOverride.delete(gpPin);
+                    releaseMap?.delete(gpPin);
+                } else {
+                    this.cpu.gpio[gp].setInputValue(false);
+                    continue;
+                }
+            }
+
+            // SoftSPI: prevent pull-up from overwriting MISO bits driven by onSPIByte response
+            if (this.softSpiMisoPinOverride.get(gpPin)) {
+                // MISO is driven bit-by-bit in dispatchOptionalSoftSpi; clear the override
+                // once there are no more response bits queued for this pin
+                let hasPendingMiso = false;
+                if (this.softSpiBusCache) {
+                    for (const bus of this.softSpiBusCache) {
+                        if (bus.miso === gpPin) {
+                            const busKey = `${bus.sck}|${bus.mosi}`;
+                            const st = this.softSpiState.get(busKey);
+                            if (st && st.misoResponseBits.length > 0) {
+                                hasPendingMiso = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (!hasPendingMiso) {
+                    this.softSpiMisoPinOverride.delete(gpPin);
+                } else {
+                    // Keep the current forced value — don't let pull-up overwrite it
+                    continue;
+                }
+            }
+
             // Sync Digital State
             this.cpu.gpio[gp].setInputValue(observedVoltage > 1.65);
+
 
             // Sync Analog State (only for ADC-capable pins GP26-29)
             if (gp >= 26 && gp <= 29) {
@@ -3382,8 +3831,11 @@ export class RP2040Runner implements BoardRunner {
         }
     }
 
+    private _runLoopCount = 0;
     private runLoop = () => {
         if (!this.running || !this.cpu) return;
+
+        this._runLoopCount++;
 
         const loopStart = performance.now();
         const now = performance.now();
@@ -3434,6 +3886,11 @@ export class RP2040Runner implements BoardRunner {
                     const before = this.cpu!.core.cycles >>> 0;
                     core.executeInstruction();
                     const after = this.cpu!.core.cycles >>> 0;
+                    
+                    if (after % 5000000 < (after - before)) {
+                        console.log(`[CPU_TRACE] PC=0x${core.PC.toString(16)} cycles=${after}`);
+                    }
+
                     const delta = (after - before) >>> 0;
                     return delta > 0 ? delta : 1;
                 };
@@ -3593,10 +4050,10 @@ export class RP2040Runner implements BoardRunner {
 
                 const uart0 = this.cpu.uart[0];
                 const uart1 = this.cpu.uart[1];
-                if (this.serialBuffer.length > 0 && this.serialByteBudget >= 1) {
-                    const maxBytes = Math.floor(this.serialByteBudget);
-                    let sent = 0;
-                    for (let i = 0; i < maxBytes && this.serialBuffer.length > 0; i++) {
+                    if (this.serialBuffer.length > 0 && this.serialByteBudget >= 1) {
+                        const maxBytes = Math.floor(this.serialByteBudget);
+                        let sent = 0;
+                        for (let i = 0; i < maxBytes && this.serialBuffer.length > 0; i++) {
                         const packet = this.serialBuffer[0]!;
                         let delivered = false;
                         if (packet.source === 2) {
@@ -3818,6 +4275,18 @@ export class RP2040Runner implements BoardRunner {
         if (!this.cpu) return;
         this.clearPendingUartLedTimers();
         this.cpu.reset();
+        
+        // RE-APPLY: We force IE=1 (bit 6) to mimic real hardware reset state (0x76/0x56)
+        // because cpu.reset() wipes our constructor fix!
+        if (this.cpu.gpio) {
+            for (let i = 0; i < 30; i++) {
+                const gpio = this.cpu.gpio[i];
+                if (gpio) {
+                    gpio.padValue |= 0x40;
+                }
+            }
+        }
+
         this.cpu.loadBootrom(bootromB1);
         this.bootromLoaded = true;
         this.entryInfo = loadRP2040Firmware(this.cpu, this.firmwareHex, {
@@ -3867,6 +4336,8 @@ export class RP2040Runner implements BoardRunner {
         this.i2sState.clear();
         this.oneWireState.clear();
         this.componentSyncMeta.clear();
+        this.invalidateSoftProtocolCaches();
+
         this.setSoftSerialRxLevel(true);
         this.attachUART();
         this.attachUSBSerial();

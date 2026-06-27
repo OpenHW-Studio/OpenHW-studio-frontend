@@ -42,9 +42,12 @@ export default defineConfig(({ mode }) => {
       cssMinify: true,
     },
     resolve: {
-      alias: useAlias ? {
-        '@openhw/emulator': resolvedEmulatorPath,
-      } : {},
+      alias: {
+        ...(useAlias ? {
+          '@openhw/emulator': resolvedEmulatorPath,
+        } : {}),
+        '@worker': path.resolve(__dirname, 'src/worker'),
+      },
     },
     optimizeDeps: {
       exclude: ['@openhw/emulator'],
@@ -76,6 +79,10 @@ export default defineConfig(({ mode }) => {
       }
     },
     server: {
+      headers: {
+        "Cross-Origin-Embedder-Policy": "require-corp",
+        "Cross-Origin-Opener-Policy": "same-origin"
+      },
       fs: {
         allow: [
           path.resolve(__dirname, '..'),
