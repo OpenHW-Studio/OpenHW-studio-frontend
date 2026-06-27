@@ -26,7 +26,9 @@ import {
   fetchComponentsVersion,
   API_BASE_URL,
   startEsp32Compile,
-  getEsp32CompileStatus
+  getEsp32CompileStatus,
+  startStm32Compile,
+  getStm32CompileStatus
 } from '../../services/simulatorService.js'
 import { getCachedComponents, getCachedServerHash, setCachedComponents, clearComponentCache } from '../../services/componentCache.js'
 import { getMyAssignmentSubmission, submitAssignment } from '../../services/classroomService.js'
@@ -4640,19 +4642,6 @@ export function SimulatorPage({ gamificationMode = false }) {
         exitY = pPos.y;
       }
 
-      try {
-        console.debug("[getPinExitPoint]", {
-          compId: comp.id,
-          pinId: pin.id,
-          bounds,
-          localX,
-          localY,
-          dir,
-          laneOffset,
-          exitX,
-          exitY,
-        });
-      } catch (e) {}
       return {
         x: exitX,
         y: exitY,
@@ -9034,6 +9023,62 @@ export function SimulatorPage({ gamificationMode = false }) {
                   pollCount++;
                   if (pollCount > 180) {
                     throw new Error('ESP32 compilation timed out after 90 seconds.');
+                  }
+                }
+              } else if (kind === 'stm32' && boardComp.type.includes('frontend')) {
+                const startRes = await startStm32Compile({
+                  code: compileSource,
+                  files: compileUnit.files,
+                  target: kind,
+                  fqbn: targetFqbn,
+                  libraries_txt: librariesTxt,
+                  targetEngine: 'frontend'
+                });
+                
+                if (!startRes || (!startRes.jobId && !startRes.buildId)) {
+                  throw new Error('Failed to start STM32 compilation.');
+                }
+                
+                if (startRes.cache === 'hit') {
+                  logSerial(`Using server-cached compilation for ${boardComp.id}...`);
+                }
+                
+                const jobId = startRes.jobId || startRes.buildId;
+                let pollCount = 0;
+                let lastPrintedProgressLen = 0;
+                
+                while (true) {
+                  await new Promise(resolve => setTimeout(resolve, 500));
+                  const statusRes = await getStm32CompileStatus(jobId);
+                  
+                  if (!statusRes) continue;
+                  
+                  const progressLines = statusRes.progress || [];
+                  if (progressLines.length > lastPrintedProgressLen) {
+                    for (let i = lastPrintedProgressLen; i < progressLines.length; i++) {
+                      logSerial(progressLines[i]);
+                    }
+                    lastPrintedProgressLen = progressLines.length;
+                  }
+                  
+                  if (statusRes.status === 'success') {
+                    if (!statusRes.binary_content) {
+                      throw new Error('Compilation succeeded but no binary content was returned.');
+                    }
+                    compiled = {
+                      hex: statusRes.binary_content,
+                      stdout: statusRes.stdout || '',
+                      stderr: statusRes.stderr || ''
+                    };
+                    break;
+                  } else if (statusRes.status === 'failed') {
+                    const errMsg = statusRes.error || 'STM32 compilation failed.';
+                    throw new Error(errMsg);
+                  }
+                  
+                  pollCount++;
+                  if (pollCount > 180) {
+                    throw new Error('STM32 compilation timed out after 90 seconds.');
                   }
                 }
               } else {

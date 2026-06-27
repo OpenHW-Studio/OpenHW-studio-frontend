@@ -556,6 +556,10 @@ export function useEsp32Engine({
       }
       return true; // Handled
     } else if (stm32Board) {
+      if (stm32Board.type.includes('frontend')) {
+        return false;
+      }
+
       if (serialFlushTimer.current) clearInterval(serialFlushTimer.current);
       serialFlushTimer.current = setInterval(flushESP32Serial, 120);
 

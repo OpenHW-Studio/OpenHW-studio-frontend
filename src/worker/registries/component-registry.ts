@@ -55,6 +55,7 @@ import { LogicAnalyzerLogic } from '@openhw/emulator/src/components/openhw-logic
 import { MegaLogic } from '@openhw/emulator/src/components/openhw-arduino-mega/logic';
 import { DS18B20Logic } from '@openhw/emulator/src/components/openhw-ds18b20/logic';
 import { IRReceiverLogic } from '@openhw/emulator/src/components/openhw-ir-receiver/logic';
+import { IRTransmitterLogic } from '@openhw/emulator/src/components/openhw-ir-transmitter/logic';
 import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/logic';
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
@@ -237,6 +238,8 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ds18b20': DS18B20Logic,
     'wokwi-ir-receiver': IRReceiverLogic,
     'openhw-ir-receiver': IRReceiverLogic,
+    'wokwi-ir-transmitter': IRTransmitterLogic,
+    'openhw-ir-transmitter': IRTransmitterLogic,
     'wokwi-mfrc522': MFRC522Logic,
     'openhw-mfrc522': MFRC522Logic,
 };
@@ -383,6 +386,8 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
     'openhw-ds18b20': [{ id: 'GND' }, { id: 'DQ' }, { id: 'VDD' }],
     'wokwi-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
     'openhw-ir-receiver': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
+    'wokwi-ir-transmitter': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
+    'openhw-ir-transmitter': [{ id: 'OUT' }, { id: 'GND' }, { id: 'VCC' }],
     'wokwi-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
     'openhw-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
 

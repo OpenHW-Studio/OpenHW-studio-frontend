@@ -186,9 +186,29 @@ function F1MenuOverlayBase({
               }
               closeMenu();
             }}
-            style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--accent)', color: 'var(--accent)' }}
+            style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--accent)', color: 'var(--accent)', marginBottom: '8px' }}
           >
             Network: Join Multiplayer Room
+          </Btn>
+
+          <Btn
+            onClick={() => {
+              const currentUrl = localStorage.getItem("CUSTOM_BACKEND_URL") || "";
+              const url = window.prompt("Enter Custom Backend URL (e.g. http://localhost:4000). Leave blank to use default cloud backend:", currentUrl);
+              if (url !== null) {
+                if (url.trim() === "") {
+                  localStorage.removeItem("CUSTOM_BACKEND_URL");
+                  alert("Reverted to default Cloud Backend. Please refresh the page to apply.");
+                } else {
+                  localStorage.setItem("CUSTOM_BACKEND_URL", url.trim());
+                  alert(`Backend set to '${url.trim()}'. Please refresh the page to apply.`);
+                }
+              }
+              closeMenu();
+            }}
+            style={{ width: '100%', justifyContent: 'flex-start', padding: '12px 16px', background: 'var(--card)', border: '1px solid var(--accent)', color: 'var(--accent)' }}
+          >
+            Network: Set Custom Backend URL
           </Btn>
 
           <div className="flex flex-col gap-1.5 mb-2">

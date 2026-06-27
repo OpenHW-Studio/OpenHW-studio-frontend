@@ -155,6 +155,11 @@ export class AVRRunner {
                     });
                 };
                 this.instances.set(cDef.id, inst);
+                // Inject canvas position for spatial components (IR, radio, etc.)
+                if (typeof cDef.x === 'number' && typeof cDef.y === 'number') {
+                    (inst as any)._posX = cDef.x;
+                    (inst as any)._posY = cDef.y;
+                }
             }
         });
 
@@ -1176,7 +1181,7 @@ export class AVRRunner {
             this.lastRunLoopMs = performance.now() - loopStart;
 
             // Cycle-Locked State Emission. Tuned to ~60Hz for lower stateGap.
-            // this.emitStateIfDue(now); // Disabled. Handled by FLUSH_VISUALS from UI thread.
+            this.emitStateIfDue(now);
         }
 
         this._dbgFrameCount++;
