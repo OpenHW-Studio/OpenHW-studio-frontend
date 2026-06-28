@@ -21,10 +21,10 @@ const ARDUINO_WORLDS = [
 
 // ─── ESP32 journey worlds ────────────────────────────────────────────────────
 const ESP32_WORLDS = [
-  { id: 1, name: 'ESP32 Basics',        theme: 'Beginner',     color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '🟢', slugs: ['esp32-blink','esp32-analog','esp32-pwm'],                       comingSoon: false },
-  { id: 2, name: 'WiFi & Web',          theme: 'Intermediate', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)',  border: 'rgba(59,130,246,0.18)', icon: '📶', slugs: ['esp32-wifi-scan','esp32-web-server','esp32-http-client'],         comingSoon: true  },
-  { id: 3, name: 'IoT & Connectivity',  theme: 'Advanced',     color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🌐', slugs: ['esp32-mqtt','esp32-ble','esp32-deep-sleep'],                     comingSoon: true  },
-  { id: 4, name: 'Smart Systems',       theme: 'Expert',       color: '#a855f7', bg: 'rgba(168,85,247,0.06)',  border: 'rgba(168,85,247,0.18)', icon: '🧠', slugs: ['esp32-oled-wifi','esp32-sensor-cloud','esp32-cam-stream'],      comingSoon: true  },
+  { id: 1, name: 'ESP32 Basics',       theme: 'Beginner',     color: '#22c55e', bg: 'rgba(34,197,94,0.06)',  border: 'rgba(34,197,94,0.18)',  icon: '🟢', slugs: ['esp32-blink','esp32-analog','esp32-pwm'],                               comingSoon: false },
+  { id: 2, name: 'WiFi & Web',         theme: 'Intermediate', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)', border: 'rgba(59,130,246,0.18)', icon: '📶', slugs: ['esp32-wifi-scan','esp32-web-server','esp32-http-client'],               comingSoon: false },
+  { id: 3, name: 'IoT & Connectivity', theme: 'Advanced',     color: '#f97316', bg: 'rgba(249,115,22,0.06)', border: 'rgba(249,115,22,0.18)', icon: '🌐', slugs: ['esp32-mqtt','esp32-ble','esp32-deep-sleep'],                            comingSoon: false },
+  { id: 4, name: 'Smart Systems',      theme: 'Expert',       color: '#a855f7', bg: 'rgba(168,85,247,0.06)', border: 'rgba(168,85,247,0.18)', icon: '🧠', slugs: ['esp32-oled-wifi','esp32-sensor-cloud','esp32-cam-stream'],             comingSoon: false },
 ]
 
 // ─── Quiz difficulty options (teacher-controlled) ─────────────────────────────
@@ -319,11 +319,13 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }
             border: `1px solid ${T.lockedPanelBorder}`,
             textAlign: 'center',
           }}>
-            <div style={{ fontSize: 20, marginBottom: 6 }}>🔒</div>
+            <div style={{ fontSize: 20, marginBottom: 6 }}>💡</div>
             <div style={{ fontSize: 14, color: T.lockedText, lineHeight: 1.5 }}>
-              Complete <strong style={{ color: T.lockedStrong }}>
+              We suggest completing{' '}
+              <strong style={{ color: T.lockedStrong }}>
                 {PROJECTS.find(p => p.slug === fullProject?.prerequisite)?.title || 'the previous project'}
-              </strong> first to unlock this one!
+              </strong>{' '}
+              first — but you can start this one now too!
             </div>
           </div>
         )}
@@ -409,6 +411,7 @@ export default function AdventureMapPage() {
     try { localStorage.setItem('openhw_quiz_difficulty', val) } catch {}
   }
 
+
   const T = getT(theme)
   const toggleTheme = () => {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -470,10 +473,14 @@ export default function AdventureMapPage() {
   }, [localCompletedProjects, classProgress, resolvedProjects])
 
   const getStatus = (project) => {
-    if (!classAdventure?.projects?.length) return getProjectStatus(project.slug, completedProjects)
+    // Always allow starting any project directly — no prerequisite blocking
     if (completedProjects.includes(project.slug)) return 'completed'
-    if (!project.prerequisite) return 'available'
-    return completedProjects.includes(project.prerequisite) ? 'available' : 'locked'
+    if (!classAdventure?.projects?.length) {
+      // Use standard status but treat 'locked' as 'available' so any project is startable
+      const status = getProjectStatus(project.slug, completedProjects)
+      return status === 'locked' ? 'available' : status
+    }
+    return completedProjects.includes(project.slug) ? 'completed' : 'available'
   }
   const handleNodeClick = (project) => setSelectedProject(project)
   const handleStepNavigate = (project, step) => {
@@ -524,7 +531,7 @@ export default function AdventureMapPage() {
   )
 
   const getStepStatusForProject = (project, step, isProjectLocked) => {
-    if (step.soon || isProjectLocked) return 'locked'
+    if (step.soon) return 'locked' // only lock 'coming soon' steps
     if (completedProjects.includes(project.slug)) return 'completed'
 
     const progress = getLocalAdventureStepProgress(project.slug)
@@ -535,7 +542,8 @@ export default function AdventureMapPage() {
     if (completedSteps.includes(stepId)) return 'completed'
     if (step.order === currentOrder) return 'current'
     if (step.order < currentOrder) return 'unlocked'
-    return 'locked'
+    // Instead of 'locked', return 'available' so every step is directly accessible
+    return 'available'
   }
 
   return (
@@ -864,7 +872,7 @@ export default function AdventureMapPage() {
                   <div
                     key={project.slug}
                     id={`project-node-${project.slug}`}
-                    onClick={() => !isLocked && handleNodeClick(project)}
+                    onClick={() => handleNodeClick(project)}
                     style={{
                       marginBottom: 16,
                       borderRadius: 12,
@@ -884,18 +892,30 @@ export default function AdventureMapPage() {
                       borderRadius: 10,
                       background: highlightSlug === project.slug ? `${project.color}22` : `${project.color}12`,
                       border: `1px solid ${highlightSlug === project.slug ? project.color : project.color + '33'}`,
-                      color: isLocked ? T.labelLocked : project.color,
+                      color: project.color,
                       fontSize: 13,
                       fontWeight: 800,
                     }}>
                       <span style={{ fontSize: 18 }}>{project.icon}</span>
-                      <span style={{ flex: 1, color: isLocked ? T.labelLocked : T.labelText }}>
+                      <span style={{ flex: 1, color: T.labelText }}>
                         {project.title}
                         {highlightSlug === project.slug && <span style={{ marginLeft: 8, fontSize: 11, color: '#ef4444', fontWeight: 900 }}>← Complete this to unlock!</span>}
+                        {/* Subtle hint if prerequisite not done — purely informational, not blocking */}
+                        {project.prerequisite && !completedProjects.includes(project.prerequisite) && !isCompleted && (
+                          <span style={{
+                            marginLeft: 8, fontSize: 10, fontWeight: 700,
+                            padding: '2px 7px', borderRadius: 99,
+                            background: 'rgba(148,163,184,0.12)',
+                            border: '1px solid rgba(148,163,184,0.2)',
+                            color: '#94a3b8', whiteSpace: 'nowrap',
+                          }}>
+                            💡 Try {PROJECTS.find(p => p.slug === project.prerequisite)?.title || 'previous'} first
+                          </span>
+                        )}
                       </span>
                       <span style={{
                         fontSize: 11,
-                        color: isLocked ? T.labelLocked : T.labelXp,
+                        color: isCompleted ? '#22c55e' : T.labelXp,
                         fontWeight: 700,
                       }}>
                         {isCompleted ? '✅ Completed' : `${project.xpReward} XP`}
@@ -931,8 +951,8 @@ export default function AdventureMapPage() {
                       {steps.map((step, si) => {
                         const point = points[si]
                         const stepStatus = getStepStatusForProject(project, step, isLocked)
-                        const isStepLocked = stepStatus === 'locked' || step.soon
-                        const nodeSize = isAvailable ? 56 : 50
+                        const isStepLocked = step.soon  // only block 'coming soon' steps; available steps are always accessible
+                        const nodeSize = 56  // all projects always available
 
                         return (
                           <div
@@ -954,19 +974,29 @@ export default function AdventureMapPage() {
                               width: nodeSize,
                               height: nodeSize,
                               borderRadius: '50%',
-                              border: `2px solid ${isStepLocked ? T.nodeLockedBorder : project.color}`,
+                              border: stepStatus === 'available'
+                                ? `2px dashed ${project.color}66`
+                                : isStepLocked
+                                  ? `2px solid ${T.nodeLockedBorder}`
+                                  : `2px solid ${project.color}`,
                               background: isStepLocked
                                 ? T.nodeLockedBg
-                                : `radial-gradient(circle, ${project.color}20, transparent)`,
+                                : stepStatus === 'available'
+                                  ? `radial-gradient(circle, ${project.color}10, transparent)`
+                                  : `radial-gradient(circle, ${project.color}20, transparent)`,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              boxShadow: isStepLocked ? 'none' : `0 0 14px ${project.color}44`,
+                              boxShadow: isStepLocked
+                                ? 'none'
+                                : stepStatus === 'available'
+                                  ? `0 0 6px ${project.color}22`
+                                  : `0 0 14px ${project.color}44`,
                               transition: 'transform .2s, box-shadow .2s',
                             }}>
                               <span style={{
                                 fontSize: 18,
-                                filter: isStepLocked ? 'grayscale(1) opacity(.35)' : 'none',
+                                filter: isStepLocked ? 'grayscale(1) opacity(.35)' : stepStatus === 'available' ? 'opacity(.6)' : 'none',
                                 lineHeight: 1,
                               }}>
                                 {isStepLocked ? '🔒' : step.icon}
@@ -1094,6 +1124,7 @@ export default function AdventureMapPage() {
       </div>
 
       {/* Modal */}
+
       {selectedProject && (
         <ProjectModal
           project={selectedProject}

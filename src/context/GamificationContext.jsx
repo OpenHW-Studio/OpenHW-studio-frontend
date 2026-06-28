@@ -1,12 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LEVELS, isComponentUnlocked } from '../services/gamification/GamificationConfig.jsx';
+import { LEVELS, isComponentUnlocked, STARTING_COMPONENTS as CONFIG_STARTING_COMPONENTS } from '../services/gamification/GamificationConfig.jsx';
 import { PROJECTS, getProjectStatus } from '../services/gamification/ProjectsConfig.js';
 import { useAuth } from './AuthContext.jsx';
 import { fetchUserGamificationState, saveUserGamificationState } from '../services/gamification/unlockService';
 
 const getStorageKey = (email) => `openhw_gamification_v3_${email || 'guest'}`;
-const STARTING_COMPONENTS = [];
+// Use the config's STARTING_COMPONENTS so Arduino + ESP32 boards are always unlocked
+const STARTING_COMPONENTS = CONFIG_STARTING_COMPONENTS;
 
 // Get all level-based unlocks for initial level
 const getLevelUnlocks = (levelId) => {
@@ -106,7 +107,6 @@ export function GamificationProvider({ children }) {
         // Self-heal: Infer completed projects and recalculate XP/Level
         try {
           const inferred = [];
-          
           for (const p of PROJECTS) {
             try {
               const raw = localStorage.getItem(`adventureProgress:${p.slug}`);
@@ -120,13 +120,9 @@ export function GamificationProvider({ children }) {
               }
             } catch(e){}
           }
-          
           if (inferred.length > 0) {
-            // Merge inferred projects into parsed state
             const uniqueProjects = Array.from(new Set([...(parsed.completedProjects || []), ...inferred]));
             parsed.completedProjects = uniqueProjects;
-            
-            // Recalculate XP
             let calculatedXp = 0;
             let calculatedBadges = new Set(parsed.earnedBadges || []);
             for (const slug of uniqueProjects) {
@@ -136,7 +132,6 @@ export function GamificationProvider({ children }) {
                 if (proj.badge?.id) calculatedBadges.add(proj.badge.id);
               }
             }
-            
             if (calculatedXp > parsed.xp) {
               parsed.xp = calculatedXp;
             }
@@ -154,7 +149,7 @@ export function GamificationProvider({ children }) {
           }
         }
         parsed.currentLevel = Math.max(parsed.currentLevel || 1, calculatedLevel);
-        
+
         // Fetch full gamification state from MongoDB if user is authenticated
         if (user?.email && (user._id || user.id)) {
           try {
@@ -163,7 +158,6 @@ export function GamificationProvider({ children }) {
               const backendState = apiData.state;
               if (backendState.xp > parsed.xp) parsed.xp = backendState.xp;
               if (backendState.currentLevel > parsed.currentLevel) parsed.currentLevel = backendState.currentLevel;
-              
               if (backendState.completedProjects && backendState.completedProjects.length > 0) {
                 const mergedProjects = new Set([...parsed.completedProjects, ...backendState.completedProjects]);
                 parsed.completedProjects = Array.from(mergedProjects);
@@ -172,7 +166,6 @@ export function GamificationProvider({ children }) {
                 const mergedBadges = new Set([...parsed.earnedBadges, ...backendState.earnedBadges]);
                 parsed.earnedBadges = Array.from(mergedBadges);
               }
-              
               const levelUnlocks = getLevelUnlocks(parsed.currentLevel || 1);
               let backendUnlocks = backendState.unlockedComponentTypes || [];
               if (backendUnlocks === '*') {
@@ -218,7 +211,7 @@ export function GamificationProvider({ children }) {
       try {
         if (user?.email && (user._id || user.id)) {
           await saveUserGamificationState(user._id || user.id, state);
-          
+
           // Also save to localStorage as backup/migration
           try {
             localStorage.setItem(storageKey, JSON.stringify(state));
@@ -463,7 +456,7 @@ const trackComponentPlaced = useCallback(() => {
 
     // Also reset in MongoDB
     if (user?.email && (user._id || user.id)) {
-      saveUserUnlocks(user._id || user.id, [...STARTING_COMPONENTS]).catch(e =>
+      saveUserGamificationState(user._id || user.id, { ...DEFAULT_STATE, unlockedComponentTypes: [...STARTING_COMPONENTS] }).catch(e =>
         console.warn('Failed to reset unlocks in MongoDB:', e)
       );
     }

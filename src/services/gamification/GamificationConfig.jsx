@@ -15,6 +15,10 @@ export const STARTING_COMPONENTS = [
   'wokwi-breadboard-half', 'openhw-breadboard-half',
   // Boards that map to 'uno'/'nano'/'mega' — alias coverage
   'arduino-uno', 'arduino-nano', 'arduino-mega',
+  // ESP32 boards — always unlocked for ESP32 journey
+  'esp32',           'wokwi-esp32-devkit-v1', 'openhw-esp32',
+  'esp32-cam',       'wokwi-esp32-cam',        'openhw-esp32-cam',
+  'esp32-devkit-v1', 'esp32-wroom-32',
 ];
 
 // ── Level config (XP-based titles / badges, separate from component unlocking) ─
