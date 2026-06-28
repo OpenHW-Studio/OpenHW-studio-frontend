@@ -495,7 +495,7 @@ function TopToolboxInternal(props) {
         setProjectsSidebarTab("projects");
       },
     },
-    { label: "Import", onClick: () => importFileRef.current?.click() },
+    !gamificationMode && !assessmentMode ? { label: "Import", onClick: () => importFileRef.current?.click() } : null,
     { label: "Save", shortcut: "Ctrl+S", onClick: handleSave },
     {
       label: "Export",
@@ -509,7 +509,7 @@ function TopToolboxInternal(props) {
     { label: "Save Local Copy (ZIP)", onClick: handleBackupWorkflow },
     { type: "separator" },
     { label: "📂 Examples Gallery", onClick: () => navigate("/examples") },
-  ];
+  ].filter(Boolean);
 
   const toolMenuItems = [
     {

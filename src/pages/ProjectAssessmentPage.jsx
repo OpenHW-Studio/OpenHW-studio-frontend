@@ -442,7 +442,7 @@ const projectColor  = location.state?.projectColor || '#22c55e'
         classId,
         projectSlug: projectName,
         stepKey: 'sim',
-        stepOrder: 4,
+        stepOrder: 5,
       }).catch(() => {})
       if (classId) {
         const proj = PROJECTS.find(p => p.slug === projectName)

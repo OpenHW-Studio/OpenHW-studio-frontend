@@ -119,7 +119,7 @@ export function GamificationProvider({ children }) {
                 const parsedProgress = JSON.parse(raw);
                 const order = parsedProgress.currentStepOrder;
                 const completedSteps = parsedProgress.completedSteps || [];
-                if (order > 4 || completedSteps.includes(`${p.slug}:sim`) || completedSteps.includes('sim')) {
+                if (order > 5 || completedSteps.includes(`${p.slug}:sim`) || completedSteps.includes('sim')) {
                   inferred.push(p.slug);
                 }
               }
