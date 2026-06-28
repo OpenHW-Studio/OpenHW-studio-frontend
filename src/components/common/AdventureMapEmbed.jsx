@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGamification } from '../../context/GamificationContext'
-import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../../services/gamification/ProjectsConfig'
+import { PROJECTS, getProjectStatus, getProjectRewardComponents, normalizeDifficulty } from '../../services/gamification/ProjectsConfig'
 
 // ─── World config ────────────────────────────────────────────────────────────
 const WORLDS = [
@@ -272,7 +272,7 @@ function NodeModal({ project, isCompleted, isAvailable, onClose, onStart }) {
             filter: isAvailable || isCompleted ? 'none' : 'grayscale(1) opacity(.35)',
           }}>{project.icon}</div>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase', color: project.color, marginBottom: 5 }}>
-            {project.difficulty} · Project {project.number}
+            {normalizeDifficulty(project.difficulty).charAt(0).toUpperCase() + normalizeDifficulty(project.difficulty).slice(1)} · Project {project.number}
           </div>
           <div style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 3 }}>{project.title}</div>
           {isCompleted && (

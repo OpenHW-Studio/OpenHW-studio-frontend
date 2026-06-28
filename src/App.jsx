@@ -405,6 +405,14 @@ export default function App() {
                   }
                 />
                 <Route
+                  path="/teacher/classes/:classId/projects/:projectSlug/edit"
+                  element={
+                    <ProtectedRoute allowedRole="teacher">
+                      <TeacherProjectContentEditor />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/teacher/profile"
                   element={
                     <ProtectedRoute allowedRole="teacher">
