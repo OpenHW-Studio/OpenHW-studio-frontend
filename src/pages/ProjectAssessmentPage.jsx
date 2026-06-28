@@ -22,6 +22,10 @@ const ROLE_TO_TYPE = {
   led: 'openhw-led', 'rgb-led': 'openhw-rgb-led',
   potentiometer: 'openhw-potentiometer', 'analog-joystick': 'openhw-analog-joystick',
   buzzer: 'openhw-buzzer', photoresistor: 'openhw-photoresistor',
+  lcd: 'openhw-lcd1602', servo: 'openhw-servo',
+  neopixel: 'openhw-neopixel-matrix', button: 'openhw-pushbutton',
+  ntc: 'openhw-ntc-temperature-sensor', motor: 'openhw-motor',
+  'motor-driver': 'openhw-motor-driver',
 }
 
 function isTypeMatch(actual, expected) {
@@ -86,8 +90,10 @@ function evaluateAssessment(config, components, wires, code) {
           if (isArduino && expectedPin?.toLowerCase().startsWith('gnd') && pin?.toLowerCase().startsWith('gnd')) {
             return true;
           }
-          if (ep.pin) return label === ep.pin || pin === ep.pin;
-          if (ep.terminal) return label === ep.terminal || pin === ep.terminal;
+          
+          const safeCmp = (a, b) => (a||'').toString().toLowerCase() === (b||'').toString().toLowerCase();
+          if (ep.pin) return safeCmp(label, ep.pin) || safeCmp(pin, ep.pin);
+          if (ep.terminal) return safeCmp(label, ep.terminal) || safeCmp(pin, ep.terminal);
           return false;
         };
 
