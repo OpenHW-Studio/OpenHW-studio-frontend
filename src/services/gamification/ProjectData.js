@@ -281,6 +281,96 @@ unlockComponents: [
      ]
   },
 
+  // ===== TRAFFIC LIGHT (project: traffic-light) =====
+  'traffic-light': {
+    flashcards: [
+      {
+        id: 1,
+        emoji: '🚦',
+        front: 'What makes a traffic light?',
+        simple: 'A traffic light uses 3 LEDs: Red, Yellow, and Green to tell cars what to do!',
+        detail: 'In electronics, you can control multiple LEDs by assigning each one to a different digital pin on the Arduino.',
+        funFact: '🚗 The first traffic light was invented in 1868 and used gas lamps!',
+        quiz: {
+          question: 'How many LEDs do you need for a basic traffic light?',
+          options: ['1', '2', '3', '4'],
+          correctAnswer: 2
+        }
+      },
+      {
+        id: 2,
+        emoji: '⏱️',
+        front: 'How do you control timing?',
+        simple: 'We use the delay() function to keep the light on for the right amount of time!',
+        detail: 'Red and Green lights stay on longer (e.g. 5000ms), while the Yellow light is just a short warning (e.g. 2000ms).',
+        funFact: '⏳ Traffic light engineers spend years perfecting the exact timing of lights to prevent traffic jams.',
+        quiz: {
+          question: 'Which light typically stays on for the shortest time?',
+          options: ['Red', 'Yellow', 'Green', 'Blue'],
+          correctAnswer: 1
+        }
+      }
+    ],
+    unlockComponents: []
+  },
+
+  // ===== LED PWM (project: led-pwm) =====
+  'led-pwm': {
+    flashcards: [
+      {
+        id: 1,
+        emoji: '🔆',
+        front: 'What is PWM?',
+        simple: 'PWM stands for Pulse Width Modulation. It is a trick to make a digital pin act like an analog pin, so you can change brightness!',
+        detail: 'By turning the pin ON and OFF really fast (hundreds of times a second), the LED looks like it is at half brightness instead of blinking.',
+        funFact: '🌟 Arduino UNO pins with a tilde (~) next to them (like ~9, ~10, ~11) support PWM!',
+        quiz: {
+          question: 'What does PWM do to an LED?',
+          options: ['Changes its color', 'Makes it blink slowly', 'Allows you to change its brightness', 'Turns it off permanently'],
+          correctAnswer: 2
+        }
+      },
+      {
+        id: 2,
+        emoji: '🎛️',
+        front: 'How to use analogWrite()?',
+        simple: 'Instead of HIGH or LOW, analogWrite() uses numbers from 0 (OFF) to 255 (Fully ON).',
+        detail: 'analogWrite(9, 127) will turn the LED on at exactly 50% brightness.',
+        funFact: '⚡ The number 255 is the maximum value for an 8-bit number (2^8 - 1).',
+        quiz: {
+          question: 'What value in analogWrite() makes the LED half bright?',
+          options: ['0', '127', '255', '50'],
+          correctAnswer: 1
+        }
+      }
+    ],
+    unlockComponents: [
+      { type: 'openhw-lcd1602', name: 'LCD Display', icon: '📟', color: '#22c55e', desc: 'A tiny screen to display messages! Unlocked for your next projects.' }
+    ]
+  },
+
+  // ===== SCROLLING TEXT LCD (project: lcd-scrolling-text) =====
+  'lcd-scrolling-text': {
+    flashcards: [
+      {
+        id: 1,
+        emoji: '📟',
+        front: 'What is an LCD?',
+        simple: 'An LCD (Liquid Crystal Display) is a small screen that can show letters and numbers!',
+        detail: 'The 16x2 LCD can show 16 characters on the top row, and 16 on the bottom row. You can make text scroll across it using code.',
+        funFact: '📺 The screens on early calculators, digital watches, and Game Boys used the same technology!',
+        quiz: {
+          question: 'How many characters can a 16x2 LCD show at once?',
+          options: ['16', '32', '2', '64'],
+          correctAnswer: 1
+        }
+      }
+    ],
+    unlockComponents: [
+      { type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', color: '#f97316', desc: 'A motor that can turn exactly where you tell it to!' }
+    ]
+  },
+
 // ===== DC MOTOR (project: dc-motor) =====
    'dc-motor': {
      flashcards: [],

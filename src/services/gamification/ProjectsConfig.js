@@ -413,11 +413,9 @@ void loop() {
     color: '#eab308',
     icon: '🌞',
     world: 1,
-    tags: ['LDR', 'light sensor', 'analog input'],
-    startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor', 'openhw-photoresistor'],
-    rewardComponents: [
-      { type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', description: 'A motor that can turn to any angle you set — like a robot arm!' },
-    ],
+    tags: ['analog input', 'light sensor', 'voltage divider'],
+    startingComponents: ['openhw-arduino-uno', 'openhw-photoresistor', 'openhw-resistor', 'openhw-led'],
+    rewardComponents: [],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-photoresistor', label: 'Light Sensor (LDR)', qty: 1 },
@@ -495,7 +493,7 @@ void loop() {
     id: 'servo-motor',
     slug: 'servo-motor',
     number: 6,
-    prerequisite: 'ldr',
+    prerequisite: 'lcd-scrolling-text',
     title: 'Servo Motor',
     subtitle: 'Control a robot arm!',
     description:
@@ -902,7 +900,7 @@ void loop() {
     id: 'traffic-light',
     slug: 'traffic-light',
     number: 11,
-    prerequisite: null,
+    prerequisite: 'ldr',
     title: 'Traffic Light',
     subtitle: 'Simulate a traffic light system',
     description: 'Simulate a traffic light system with red, yellow, and green LEDs.',
@@ -923,37 +921,95 @@ void loop() {
       { type: 'openhw-led', label: 'Green LED', qty: 1, attrs: { color: 'green' } },
       { type: 'openhw-resistor', label: '220Ω Resistor', qty: 3, attrs: { value: '220' } },
     ],
-    wiring: [],
-    starterCode: `void setup() {
-  pinMode(2, OUTPUT);
-  pinMode(3, OUTPUT);
-  pinMode(4, OUTPUT);
+    wiring: [
+      { from: 'Arduino pin 11', to: '220Ω resistor → Red LED anode (+)' },
+      { from: 'Red LED cathode (−)', to: 'Arduino GND' },
+      { from: 'Arduino pin 10', to: '220Ω resistor → Yellow LED anode (+)' },
+      { from: 'Yellow LED cathode (−)', to: 'Arduino GND' },
+      { from: 'Arduino pin 9', to: '220Ω resistor → Green LED anode (+)' },
+      { from: 'Green LED cathode (−)', to: 'Arduino GND' },
+    ],
+    starterCode: `const int RED_PIN = 11;
+const int GREEN_PIN = 10;
+const int BLUE_PIN = 9;
+
+void setup() {
+  pinMode(RED_PIN, OUTPUT);
+  pinMode(GREEN_PIN, OUTPUT);
+  pinMode(BLUE_PIN, OUTPUT);
   Serial.begin(9600);
 }
+
+void showColor(bool r, bool g, bool b) {
+  digitalWrite(RED_PIN, r ? HIGH : LOW);
+  digitalWrite(GREEN_PIN, g ? HIGH : LOW);
+  digitalWrite(BLUE_PIN, b ? HIGH : LOW);
+}
+
 void loop() {
-  digitalWrite(2, HIGH);
-  Serial.println("RED");
+  // RED = STOP
+  showColor(true, false, false);
+  Serial.println("STOP");
   delay(5000);
-  digitalWrite(2, LOW);
-  digitalWrite(3, HIGH);
-  Serial.println("YELLOW");
+  // YELLOW = WAIT
+  showColor(false, true, false);
+  Serial.println("WAIT");
   delay(2000);
-  digitalWrite(3, LOW);
-  digitalWrite(4, HIGH);
-  Serial.println("GREEN");
+  // GREEN = GO
+  showColor(false, false, true);
+  Serial.println("GO");
   delay(5000);
-  digitalWrite(4, LOW);
 }`,
     concepts: ['digitalWrite', 'timing', 'traffic light logic'],
     kidFriendlyTip: '🚦 Red means stop, yellow means slow down, green means go!',
-    evaluation: null,
-    badge: null,
+    evaluation: {
+      passingThreshold: 70,
+      evaluationCriteria: {
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'led', count: 3 }, { type: 'resistor', count: 3 }] },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
+          requiredConnections: [
+            { from: { component: 'arduino', pin: '11' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+            { from: { component: 'led', terminal: 'K' }, to: { component: 'arduino', pin: 'GND' } },
+            { from: { component: 'arduino', pin: '10' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+            { from: { component: 'led', terminal: 'K' }, to: { component: 'arduino', pin: 'GND' } },
+            { from: { component: 'arduino', pin: '9' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+            { from: { component: 'led', terminal: 'K' }, to: { component: 'arduino', pin: 'GND' } }
+          ],
+          alternativeConnections: [
+            [
+              { from: { component: 'arduino', pin: '11' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } },
+              { from: { component: 'arduino', pin: '10' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } },
+              { from: { component: 'arduino', pin: '9' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } }
+            ]
+          ]
+        },
+        codeFunctionality: { description: 'Traffic light sequence works', weight: 0.4, requiredFunctions: ['setup', 'loop', 'showColor'] },
+      },
+    },
+    badge: {
+      id: 'badge_traffic_light',
+      name: 'Traffic Controller',
+      description: 'Built a working traffic light!',
+      icon: '🚦',
+      rarity: 'common',
+    },
   },
   {
     id: 'led-pwm',
     slug: 'led-pwm',
     number: 12,
-    prerequisite: null,
+    prerequisite: 'traffic-light',
     title: 'LED Brightness (PWM)',
     subtitle: 'Control LED brightness using PWM',
     description: 'Control LED brightness using PWM with analogWrite().',
@@ -966,13 +1022,18 @@ void loop() {
     world: 1,
     tags: ['LED', 'PWM', 'analog output'],
     startingComponents: ['openhw-arduino-uno', 'openhw-led', 'openhw-resistor'],
-    rewardComponents: [],
+    rewardComponents: [
+      { type: 'openhw-lcd1602', name: 'LCD Display', icon: '📟', description: 'A tiny screen to display messages!' }
+    ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
       { type: 'openhw-led', label: 'LED', qty: 1 },
       { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
     ],
-    wiring: [],
+    wiring: [
+      { from: 'Arduino pin 9 (PWM)', to: '220Ω resistor → LED anode (+)' },
+      { from: 'LED cathode (−)', to: 'Arduino GND' },
+    ],
     starterCode: `void setup() {
   pinMode(9, OUTPUT);
   Serial.begin(9600);
@@ -993,14 +1054,42 @@ void loop() {
 }`,
     concepts: ['analogWrite', 'PWM', 'LED brightness'],
     kidFriendlyTip: '💡 PWM lets you control brightness like a dimmer switch!',
-    evaluation: null,
-    badge: null,
+    evaluation: {
+      passingThreshold: 70,
+      evaluationCriteria: {
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'led', count: 1 }, { type: 'resistor', count: 1 }] },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
+          requiredConnections: [
+            { from: { component: 'arduino', pin: '9' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+            { from: { component: 'led', terminal: 'K' }, to: { component: 'arduino', pin: 'GND' } }
+          ],
+          alternativeConnections: [
+            [
+              { from: { component: 'arduino', pin: '9' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } }
+            ]
+          ]
+        },
+        codeFunctionality: { description: 'LED dims up and down', weight: 0.4, requiredFunctions: ['setup', 'loop', 'analogWrite'] },
+      },
+    },
+    badge: {
+      id: 'badge_led_pwm',
+      name: 'Dimmer Master',
+      description: 'Mastered PWM brightness control!',
+      icon: '🔆',
+      rarity: 'common',
+    },
   },
   {
     id: 'lcd-scrolling-text',
     slug: 'lcd-scrolling-text',
     number: 13,
-    prerequisite: null,
+    prerequisite: 'led-pwm',
     title: 'Scrolling Text LCD',
     subtitle: 'Display scrolling text on LCD',
     description: 'Display scrolling text on a 16x2 LCD character display.',
@@ -1012,12 +1101,24 @@ void loop() {
     icon: '📟',
     world: 1,
     tags: ['LCD', 'display', 'I2C'],
-    startingComponents: ['openhw-arduino-uno'],
-    rewardComponents: [],
+    startingComponents: ['openhw-arduino-uno', 'openhw-lcd1602'],
+    rewardComponents: [
+      { type: 'openhw-servo', name: 'Servo Motor', icon: '⚙️', description: 'A motor that can turn exactly where you tell it to!' }
+    ],
     components: [
       { type: 'openhw-arduino-uno', label: 'Arduino Uno', qty: 1 },
+      { type: 'openhw-lcd1602', label: '16x2 LCD', qty: 1 },
     ],
-    wiring: [],
+    wiring: [
+      { from: 'LCD VDD', to: 'Arduino 5V' },
+      { from: 'LCD VSS', to: 'Arduino GND' },
+      { from: 'LCD RS', to: 'Arduino pin 12' },
+      { from: 'LCD E', to: 'Arduino pin 11' },
+      { from: 'LCD D4', to: 'Arduino pin 5' },
+      { from: 'LCD D5', to: 'Arduino pin 4' },
+      { from: 'LCD D6', to: 'Arduino pin 3' },
+      { from: 'LCD D7', to: 'Arduino pin 2' },
+    ],
     starterCode: `#include <LiquidCrystal.h>
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 void setup() {
@@ -1034,8 +1135,35 @@ void loop() {
 }`,
     concepts: ['LiquidCrystal', 'LCD display', 'scrolling text'],
     kidFriendlyTip: '📟 LCDs let you display messages — like a tiny TV for your Arduino!',
-    evaluation: null,
-    badge: null,
+    evaluation: {
+      passingThreshold: 80,
+      evaluationCriteria: {
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'lcd', count: 1 }] },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.4,
+          requiredConnections: [
+            { from: { component: 'lcd', terminal: 'vdd' }, to: { component: 'arduino', pin: '5V' } },
+            { from: { component: 'lcd', terminal: 'vss' }, to: { component: 'arduino', pin: 'GND' } },
+            { from: { component: 'lcd', terminal: 'rs' }, to: { component: 'arduino', pin: '12' } },
+            { from: { component: 'lcd', terminal: 'e' }, to: { component: 'arduino', pin: '11' } },
+            { from: { component: 'lcd', terminal: 'd4' }, to: { component: 'arduino', pin: '5' } },
+            { from: { component: 'lcd', terminal: 'd5' }, to: { component: 'arduino', pin: '4' } },
+            { from: { component: 'lcd', terminal: 'd6' }, to: { component: 'arduino', pin: '3' } },
+            { from: { component: 'lcd', terminal: 'd7' }, to: { component: 'arduino', pin: '2' } }
+          ],
+          alternativeConnections: []
+        },
+        codeFunctionality: { description: 'LCD scrolls text', weight: 0.3, requiredFunctions: ['setup', 'loop'] },
+      },
+    },
+    badge: {
+      id: 'badge_lcd',
+      name: 'Message Board',
+      description: 'Programmed an LCD display!',
+      icon: '📟',
+      rarity: 'rare',
+    },
   },
 ];
 
