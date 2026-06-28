@@ -189,11 +189,11 @@ const upload = async (serial, hex, options) => {
       debug && console.log('program page')
       useaddr = pageaddr >> 1
       await loadAddress(serial, useaddr, options)
-      writeBytes = hex.slice(pageaddr, (hex.length > pageSize ? (pageaddr + pageSize) : hex.length - 1))
+      writeBytes = hex.slice(pageaddr, pageaddr + pageSize)
       await loadPage(serial, writeBytes, options)
       debug && console.log('programmed page')
       pageaddr =  pageaddr + writeBytes.length
-      // await new Promise((resolve) => setTimeout(resolve, 4))
+      await new Promise((resolve) => setTimeout(resolve, 10))
       debug && console.log('page done')
     }   
   } catch (err) {
@@ -232,11 +232,11 @@ const verify = async (serial, hex, options) => {
       debug && console.log('verify page')
       useaddr = pageaddr >> 1
       await loadAddress(serial, useaddr, options)
-      writeBytes = hex.slice(pageaddr, (hex.length > pageSize ? (pageaddr + pageSize) : hex.length - 1))
+      writeBytes = hex.slice(pageaddr, pageaddr + pageSize)
       await verifyPage(serial, writeBytes, options)
       debug && console.log('verified page')
       pageaddr =  pageaddr + writeBytes.length
-      // await new Promise((resolve) => setTimeout(resolve, 4))
+      await new Promise((resolve) => setTimeout(resolve, 10))
       debug && console.log('page done')
     }   
   } catch (err) {

@@ -21,7 +21,7 @@ const ROLE_TO_TYPE = {
   arduino: 'openhw-arduino-uno', resistor: 'openhw-resistor',
   led: 'openhw-led', 'rgb-led': 'openhw-rgb-led',
   potentiometer: 'openhw-potentiometer', 'analog-joystick': 'openhw-analog-joystick',
-  buzzer: 'openhw-buzzer',
+  buzzer: 'openhw-buzzer', photoresistor: 'openhw-photoresistor',
 }
 
 function isTypeMatch(actual, expected) {
