@@ -13898,6 +13898,8 @@ loadDemoProject();
             handleStartRename={handleStartRename}
             handleDeleteProject={handleDeleteProject}
             setProjContextMenu={setProjContextMenu}
+            gamificationMode={gamificationMode}
+            assessmentMode={assessmentMode}
           />
 
           {gamificationMode && gamPanelOpen && gamProject && (
