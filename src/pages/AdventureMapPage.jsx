@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
-import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../services/gamification/ProjectsConfig'
+import { PROJECTS, getProjectStatus, getProjectRewardComponents, normalizeDifficulty } from '../services/gamification/ProjectsConfig'
 import {
   getAdventureContent,
   getAdventureProgress,
@@ -11,9 +11,9 @@ import { buildFallbackClassAdventureContent } from '../services/classAdventureAd
 
 // ─── World groupings ────────────────────────────────────────────────────────
 const WORLDS = [
-  { id: 1, name: 'Circuit Basics',      theme: 'Beginner',     color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '⚡', slugs: ['led-blink','rgb-led','buzzer','potentiometer','ldr'] },
+  { id: 1, name: 'Circuit Basics',      theme: 'Easy',         color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '⚡', slugs: ['led-blink','rgb-led','buzzer','potentiometer','ldr'] },
   { id: 2, name: 'Signal Control',      theme: 'Intermediate', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)',  border: 'rgba(59,130,246,0.18)', icon: '🎮', slugs: ['servo-motor','led-strip','button-debounce','temperature-sensor'] },
-  { id: 3, name: 'Machines & Sensors',  theme: 'Advanced',     color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🤖', slugs: ['dc-motor'] },
+  { id: 3, name: 'Machines & Sensors',  theme: 'Hard',         color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🤖', slugs: ['dc-motor'] },
 ]
 
 // Winding x-positions
@@ -176,7 +176,7 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }
             fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase',
             color: project.color, marginBottom: 6,
           }}>
-            {project.difficulty} · Project {project.number}
+            {normalizeDifficulty(project.difficulty).charAt(0).toUpperCase() + normalizeDifficulty(project.difficulty).slice(1)} · Project {project.number}
           </div>
           <div style={{ fontSize: 22, fontWeight: 900, color: T.rewardItemText, marginBottom: 4 }}>
             {project.title}
