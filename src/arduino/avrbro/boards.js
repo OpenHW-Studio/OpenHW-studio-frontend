@@ -9,7 +9,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x0f],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0x0043', '0x7523', '0x0001', '0xea60'],
     productPage: 'https://store.arduino.cc/arduino-uno-rev3',
     protocol: 'stk500v1'
@@ -76,7 +76,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x0f],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0x6001', '0x7523'],
     productPage: 'https://web.archive.org/web/20150813095112/https://www.arduino.cc/en/Main/ArduinoBoardNano',
     protocol: 'stk500v1'
@@ -87,7 +87,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x0f],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0x6001', '0x7523'],
     productPage: 'https://store.arduino.cc/arduino-nano',
     protocol: 'stk500v1'
@@ -98,7 +98,7 @@ export const boards = [
     signature: [0x1e, 0x94, 0x06],
     pageSize: 128,
     numPages: 128,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0x6001'],
     productPage: 'https://www.arduino.cc/en/Main/arduinoBoardDuemilanove',
     protocol: 'stk500v1'
@@ -109,7 +109,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x14],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0x6001'],
     productPage: 'https://www.arduino.cc/en/Main/arduinoBoardDuemilanove',
     protocol: 'stk500v1'
@@ -122,7 +122,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x0f],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0x6015'],
     productPage: 'https://tinycircuits.com/pages/tinyduino-overview',
     protocol: 'stk500v1',
@@ -178,7 +178,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x0f],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productPage: 'https://store.arduino.cc/arduino-pro-mini',
     protocol: 'stk500v1'
   },
@@ -247,7 +247,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x0f],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0xEA60'],
     productPage: 'https://store-de.bq.com/de/zum-kit-junior',
     protocol: 'stk500v1'
@@ -258,7 +258,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x0f],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0xEA60'],
     productPage: 'https://www.bq.com/de/zum-core-2-0',
     protocol: 'stk500v1'
@@ -269,7 +269,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x0f],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0x6001', '0x7523'],
     productPage: 'http://diwo.bq.com/zum-bt-328-especificaciones-tecnicas/',
     protocol: 'stk500v1'
@@ -283,7 +283,7 @@ export const boards = [
     signature: [0x1e, 0x95, 0x16],
     pageSize: 128,
     numPages: 256,
-    timeout: 400,
+    timeout: 3000,
     productId: ['0x0043', '0x7523', '0x0001', '0xea60'],
     productPage: 'http://www.spark-concepts.com/cnc-xpro-v4-controller/',
     protocol: 'stk500v1'

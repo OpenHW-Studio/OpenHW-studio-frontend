@@ -315,35 +315,71 @@ void loop() {
       { from: 'Potentiometer left pin', to: 'Arduino 5V' },
       { from: 'Potentiometer middle pin (wiper)', to: 'Arduino A0' },
       { from: 'Potentiometer right pin', to: 'Arduino GND' },
-      { from: 'Arduino pin 9 (~)', to: 'LED anode (+)' },
+      { from: 'Arduino pin 3 (~)', to: 'LED anode (+)' },
       { from: 'LED cathode (−)', to: '220Ω resistor → GND' },
     ],
-    starterCode: `void setup() {
-  pinMode(9, OUTPUT);
+    starterCode: `//Controlling LED brightness using a potentiometer
+
+int ledPin=3;
+int analogPin=0;
+int val=0;
+
+void setup() {
+  pinMode(ledPin, OUTPUT);
   Serial.begin(9600);
 }
 
 void loop() {
-  int knobValue = analogRead(A0);  // Reads 0 to 1023
-  int brightness = knobValue / 4;  // Map to 0-255 for PWM
-
-  analogWrite(9, brightness);  // Set LED brightness
-
-  Serial.print("Knob: ");
-  Serial.print(knobValue);
-  Serial.print("  Brightness: ");
-  Serial.println(brightness);
-
-  delay(100);
+  val=analogRead(analogPin);
+  Serial.println(val);
+  val=map(val,0,1023,0,255);
+  analogWrite(ledPin,val);
 }`,
     concepts: ['analogRead()', 'analogWrite()', 'Analog signals', 'Mapping values', 'Serial.print()'],
     kidFriendlyTip: '🎛️ Tip: analogRead() gives you a number from 0 to 1023. Divide by 4 to get 0-255 for analogWrite. This is called "mapping" — like converting centimetres to inches!',
     evaluation: {
       passingThreshold: 70,
       evaluationCriteria: {
-        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'led', count: 1 }, { type: 'potentiometer', count: 1 }] },
-        wiringAccuracy: { description: 'Correct wiring', weight: 0.3, requiredConnections: [] },
-        codeFunctionality: { description: 'Knob controls brightness', weight: 0.4, requiredFunctions: ['setup', 'loop'] },
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'led', count: 1 }, { type: 'potentiometer', count: 1 }, { type: 'resistor', count: 1 }] },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
+          requiredConnections: [
+            { from: { component: 'arduino', pin: 'A0' }, to: { component: 'potentiometer', pin: 'SIG' } },
+            { from: { component: 'potentiometer', pin: '1' }, to: { component: 'arduino', pin: 'GND' } },
+            { from: { component: 'potentiometer', pin: '2' }, to: { component: 'arduino', pin: '5V' } },
+            { from: { component: 'arduino', pin: '3' }, to: { component: 'led', terminal: 'A' } },
+            { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } }
+          ],
+          alternativeConnections: [
+            [
+              { from: { component: 'arduino', pin: 'A0' }, to: { component: 'potentiometer', pin: 'SIG' } },
+              { from: { component: 'potentiometer', pin: '1' }, to: { component: 'arduino', pin: '5V' } },
+              { from: { component: 'potentiometer', pin: '2' }, to: { component: 'arduino', pin: 'GND' } },
+              { from: { component: 'arduino', pin: '3' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: 'A0' }, to: { component: 'potentiometer', pin: 'SIG' } },
+              { from: { component: 'potentiometer', pin: '1' }, to: { component: 'arduino', pin: 'GND' } },
+              { from: { component: 'potentiometer', pin: '2' }, to: { component: 'arduino', pin: '5V' } },
+              { from: { component: 'arduino', pin: '3' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'arduino', pin: 'GND' } }
+            ],
+            [
+              { from: { component: 'arduino', pin: 'A0' }, to: { component: 'potentiometer', pin: 'SIG' } },
+              { from: { component: 'potentiometer', pin: '1' }, to: { component: 'arduino', pin: '5V' } },
+              { from: { component: 'potentiometer', pin: '2' }, to: { component: 'arduino', pin: 'GND' } },
+              { from: { component: 'arduino', pin: '3' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'arduino', pin: 'GND' } }
+            ]
+          ]
+        },
+        codeFunctionality: { description: 'Knob controls brightness', weight: 0.4, requiredFunctions: ['setup', 'loop', 'analogRead', 'analogWrite'] },
       },
     },
     badge: {
@@ -415,8 +451,29 @@ void loop() {
     evaluation: {
       passingThreshold: 70,
       evaluationCriteria: {
-        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'photoresistor', count: 1 }, { type: 'led', count: 1 }] },
-        wiringAccuracy: { description: 'Correct wiring', weight: 0.3, requiredConnections: [] },
+        components: { description: 'Correct components placed', weight: 0.3, required: [{ type: 'arduino', count: 1 }, { type: 'photoresistor', count: 1 }] },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
+          requiredConnections: [
+            { from: { component: 'photoresistor', pin: '1' }, to: { component: 'arduino', pin: '5V' } },
+            { from: { component: 'photoresistor', pin: '2' }, to: { component: 'arduino', pin: 'A0' } },
+            { from: { component: 'photoresistor', pin: '2' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } },
+            { from: { component: 'arduino', pin: '13' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } }
+          ],
+          alternativeConnections: [
+            [
+              { from: { component: 'photoresistor', pin: '2' }, to: { component: 'arduino', pin: '5V' } },
+              { from: { component: 'photoresistor', pin: '1' }, to: { component: 'arduino', pin: 'A0' } },
+              { from: { component: 'photoresistor', pin: '1' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } },
+              { from: { component: 'arduino', pin: '13' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'arduino', pin: 'GND' } }
+            ]
+          ]
+        },
         codeFunctionality: { description: 'LED responds to light level', weight: 0.4, requiredFunctions: ['setup', 'loop'] },
       },
     },
@@ -2136,9 +2193,9 @@ void loop() { delay(10000); }`,
 
 // Difficulty styling
 export const DIFFICULTY_CONFIG = {
-  beginner:     { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  label: 'Beginner' },
+  beginner: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)', label: 'Beginner' },
   intermediate: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: 'Intermediate' },
-  advanced:     { color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  label: 'Advanced' },
+  advanced: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', label: 'Advanced' },
 };
 
 // ── Helper: get project status based on completed projects ────────────────────

@@ -39,12 +39,6 @@ export const LEVELS = [
       'openhw-led',
       'wokwi-resistor',
       'openhw-resistor',
-      'wokwi-breadboard',
-      'openhw-breadboard',
-      'wokwi-breadboard-half',
-      'openhw-breadboard-half',
-      'wokwi-breadboard-mini',
-      'openhw-breadboard-mini',
     ],
     badge: {
       id: 'badge_spark_starter',
@@ -63,6 +57,16 @@ export const LEVELS = [
     xpReward: 150,
     color: '#a855f7',
     icon: '🌈',
+    unlockedComponents: [
+      'wokwi-breadboard',
+      'openhw-breadboard',
+      'wokwi-breadboard-half',
+      'openhw-breadboard-half',
+      'wokwi-breadboard-mini',
+      'openhw-breadboard-mini',
+      'wokwi-rgb-led',
+      'openhw-rgb-led',
+    ],
     badge: {
       id: 'badge_color_explorer',
       name: 'Color Explorer',
@@ -80,6 +84,10 @@ export const LEVELS = [
     xpReward: 120,
     color: '#f59e0b',
     icon: '🎵',
+    unlockedComponents: [
+      'wokwi-buzzer',
+      'openhw-buzzer',
+    ],
     badge: {
       id: 'badge_sound_maker',
       name: 'Sound Maker',
@@ -97,6 +105,12 @@ export const LEVELS = [
     xpReward: 130,
     color: '#06b6d4',
     icon: '🎛️',
+    unlockedComponents: [
+      'wokwi-potentiometer',
+      'openhw-potentiometer',
+      'wokwi-slide-potentiometer',
+      'openhw-slide-potentiometer',
+    ],
     badge: {
       id: 'badge_knob_controller',
       name: 'Knob Controller',
@@ -115,12 +129,10 @@ export const LEVELS = [
     color: '#eab308',
     icon: '🌞',
     unlockedComponents: [
-      'wokwi-rgb-led',
-      'openhw-rgb-led',
-      'wokwi-neopixel-matrix',
-      'openhw-neopixel-matrix',
-      'wokwi-neopixel-ring',
-      'openhw-neopixel-ring',
+      'wokwi-photoresistor',
+      'openhw-photoresistor',
+      'wokwi-ldr-module',
+      'openhw-ldr-module',
     ],
     badge: {
       id: 'badge_light_chaser',
@@ -175,6 +187,12 @@ export const LEVELS = [
     xpReward: 220,
     color: '#ec4899',
     icon: '✨',
+    unlockedComponents: [
+      'wokwi-neopixel-matrix',
+      'openhw-neopixel-matrix',
+      'wokwi-neopixel-ring',
+      'openhw-neopixel-ring',
+    ],
     badge: {
       id: 'badge_light_artist',
       name: 'Light Show Artist',
@@ -192,6 +210,10 @@ export const LEVELS = [
     xpReward: 250,
     color: '#14b8a6',
     icon: '🔘',
+    unlockedComponents: [
+      'wokwi-pushbutton',
+      'openhw-pushbutton',
+    ],
     badge: {
       id: 'badge_button_ninja',
       name: 'Button Ninja',
@@ -217,6 +239,8 @@ export const LEVELS = [
       rarity: 'rare',
     },
     unlockedComponents: [
+      'wokwi-ntc-temperature-sensor',
+      'openhw-ntc-temperature-sensor',
       'wokwi-dht22',
       'openhw-dht22',
     ],
@@ -230,6 +254,12 @@ export const LEVELS = [
     xpReward: 500,
     color: '#fbbf24',
     icon: '🏆',
+    unlockedComponents: [
+      'wokwi-motor',
+      'openhw-motor',
+      'wokwi-l293d',
+      'openhw-l293d',
+    ],
     badge: {
       id: 'badge_circuit_champion',
       name: 'Circuit Champion',
