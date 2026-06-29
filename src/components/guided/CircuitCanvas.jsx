@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 
 const COMPONENT_COLORS = {
   'openhw-arduino-uno': '#1a5276',
@@ -34,6 +34,22 @@ function getComponentType(type) {
 }
 
 export default function CircuitCanvas({ schema, components: compList, board }) {
+  const containerRef = useRef(null)
+  const [containerSize, setContainerSize] = useState({ w: 700, h: 400 })
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      if (width > 0 && height > 0) {
+        setContainerSize({ w: width, h: height })
+      }
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   const layout = useMemo(() => {
     if (schema?.components?.length > 0) {
       const comps = schema.components
@@ -65,14 +81,16 @@ export default function CircuitCanvas({ schema, components: compList, board }) {
 
   if (layout.hasSchema) {
     const { components: comps, connections: conns, bounds } = layout
-    const W = 700, H = 400
+    const { w: W, h: H } = containerSize
     const pad = 40
     const scaleX = (W - pad * 2) / bounds.rangeX
     const scaleY = (H - pad * 2) / bounds.rangeY
     const scale = Math.min(scaleX, scaleY, 1.2)
 
-    const toX = (x) => pad + (x - bounds.minX) * scale
-    const toY = (y) => pad + (y - bounds.minY) * scale
+    const cx = (bounds.minX + bounds.maxX) / 2
+    const cy = (bounds.minY + bounds.maxY) / 2
+    const toX = (x) => W / 2 + (x - cx) * scale
+    const toY = (y) => H / 2 + (y - cy) * scale
 
     const connEndpoints = conns.map(conn => {
       const [fromId, fromPin] = conn.from.split(':')
@@ -88,7 +106,7 @@ export default function CircuitCanvas({ schema, components: compList, board }) {
     }).filter(Boolean)
 
     return (
-      <div style={{
+      <div ref={containerRef} style={{
         width: '100%', height: 420, borderRadius: 16,
         background: 'var(--bg2, #0f172a)',
         border: '1px solid var(--border, rgba(255,255,255,0.1))',

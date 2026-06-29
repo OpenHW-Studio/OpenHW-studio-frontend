@@ -47,7 +47,9 @@ import ProjectsGallery from "./pages/ProjectsGallery.jsx";
 import ComponentsPage from "./pages/ComponentsPage.jsx";
 import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
 import AdventureMapPage from "./pages/AdventureMapPage.jsx";
-import ProjectGuidePage from "./pages/ProjectGuidePage.jsx";
+const ProjectGuidePage = React.lazy(
+  () => import("./pages/ProjectGuidePage.jsx"),
+);
 import ExploreCommunity from "./pages/ExploreCommunity.jsx";
 const GuidedSimulatorPage = React.lazy(
   () => import("./pages/GuidedSimulatorPage.jsx"),
