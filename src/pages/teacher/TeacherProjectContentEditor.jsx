@@ -111,6 +111,8 @@ export default function TeacherProjectContentEditor() {
 
   const [theoryCards, setTheoryCards] = useState([]);
   const [quizQuestions, setQuizQuestions] = useState([]);
+  const [projectComponents, setProjectComponents] = useState([]);
+  const [projectStarterCode, setProjectStarterCode] = useState("");
   const [projectDifficulty, setProjectDifficulty] = useState("intermediate");
   const [theoryDifficultyFilter, setTheoryDifficultyFilter] = useState("all");
   const [theoryDifficultySort, setTheoryDifficultySort] = useState("original");
@@ -152,7 +154,7 @@ export default function TeacherProjectContentEditor() {
 
   useEffect(() => {
     let cancelled = false;
-const load = async () => {
+    const load = async () => {
       setLoading(true);
       setError("");
 
@@ -160,6 +162,21 @@ const load = async () => {
       const params = new URLSearchParams(location.search);
       const returningFromSimulator = params.get("simulatorCriteria") === "1";
       const storedCriteria = localStorage.getItem(SIMULATOR_CRITERIA_STORAGE_KEY);
+
+      if (returningFromSimulator && storedCriteria) {
+        try {
+          const parsed = JSON.parse(storedCriteria);
+          if (parsed && Array.isArray(parsed.components)) {
+            setProjectComponents(parsed.components);
+          }
+          if (parsed && parsed.code !== undefined) {
+            setProjectStarterCode(parsed.code);
+          }
+        } catch (e) {
+          console.error("Failed to parse stored criteria for components/code", e);
+        }
+      }
+
       const buildSimulatorImportedAssessment = (baseAssessment = createDefaultAssessment()) => {
         if (!returningFromSimulator || !storedCriteria) return null;
         try {
@@ -226,6 +243,10 @@ const load = async () => {
             if (importedAssessment?._rewardIds?.length) {
               setRewardComponents((prev) => [...new Set([...prev, ...importedAssessment._rewardIds])]);
             }
+            if (!returningFromSimulator) {
+              setProjectComponents(projectMeta?.components || []);
+              setProjectStarterCode(projectMeta?.starterCode || "");
+            }
             setLoading(false);
           }
           return;
@@ -258,6 +279,10 @@ const load = async () => {
           setBankProjectOwnerId(getEntityId(project.owner));
           setBankVisibility(project.visibility || "personal");
           setCustomTitle(project.title || "");
+          if (!returningFromSimulator) {
+            setProjectComponents(project.components || []);
+            setProjectStarterCode(project.starterCode || "");
+          }
         } catch (err) {
           if (!cancelled) setError(err?.message || "Failed to load bank project");
         } finally {
@@ -306,6 +331,10 @@ const load = async () => {
           if (importedAssessment?._rewardIds?.length) {
             setRewardComponents((prev) => [...new Set([...prev, ...importedAssessment._rewardIds])]);
           }
+          if (!returningFromSimulator) {
+            setProjectComponents(projectMeta?.components || []);
+            setProjectStarterCode(projectMeta?.starterCode || "");
+          }
         } else {
           const defaultDifficulty = normalizeDifficulty(project.difficulty || projectMeta?.difficulty || "intermediate");
           setProjectDifficulty(defaultDifficulty);
@@ -319,6 +348,10 @@ const load = async () => {
           setAssessmentNodeContent(importedAssessment2 || baseAssessment);
           if (importedAssessment2?._rewardIds?.length) {
             setRewardComponents((prev) => [...new Set([...prev, ...importedAssessment2._rewardIds])]);
+          }
+          if (!returningFromSimulator) {
+            setProjectComponents(project.components || []);
+            setProjectStarterCode(project.starterCode || "");
           }
         }
       } catch (err) {
@@ -656,6 +689,25 @@ const load = async () => {
     );
   };
 
+  // Resolve the board type from a list of circuit components
+  const resolveBoard = (comps) => {
+    if (!Array.isArray(comps)) return "arduino-uno";
+    const types = comps.map((c) => String(c.type || "").toLowerCase());
+    if (types.some((t) => t.includes("pico-w") || t.includes("pico_w"))) return "pico-w";
+    if (types.some((t) => t.includes("pico"))) return "pico";
+    if (types.some((t) => t.includes("mega"))) return "arduino-mega";
+    if (types.some((t) => t.includes("nano"))) return "arduino-nano";
+    return "arduino-uno";
+  };
+
+  const resolveRewardBoards = (selectedIds = rewardComponents) => {
+    const selected = new Set((selectedIds || []).map((id) => String(id || "").trim()).filter(Boolean));
+    return [...new Set(
+      COMPONENTS.filter((comp) => selected.has(comp.id) && String(comp.category || "").toLowerCase() === "board")
+        .map((comp) => comp.id)
+    )];
+  };
+
   const handleSave = async () => {
     // Validation - Theory
     for (let i = 0; i < theoryCards.length; i++) {
@@ -718,6 +770,12 @@ const load = async () => {
       const activeDifficulty = normalizeDifficulty(projectDifficulty || projectMeta?.difficulty || "intermediate");
       const sanitizedTheoryCards = theoryCards.map((card) => normalizeTheoryCard(card, activeDifficulty));
       const sanitizedQuizQuestions = quizQuestions.map((question) => normalizeQuizQuestion(question, activeDifficulty));
+      // Resolve active components/code/board for saving
+      const activeCompsForSave = projectComponents.length > 0
+        ? projectComponents
+        : (PROJECTS.find((p) => p.slug === projectSlug)?.components || []);
+      const activeCodeForSave = projectStarterCode || PROJECTS.find((p) => p.slug === projectSlug)?.starterCode || "";
+      const boardForSave = resolveBoard(activeCompsForSave);
 
       const existingIndex = currentConfig.projects.findIndex(
         (p) => p.slug === projectSlug
@@ -756,6 +814,9 @@ const load = async () => {
           updatedProject = {
             ...existing,
             difficulty: activeDifficulty,
+            board: boardForSave,
+            components: activeCompsForSave,
+            starterCode: activeCodeForSave,
             theory: sanitizedTheoryCards,
             quizQuestions: sanitizedQuizQuestions,
             rewardComponents: selectedRewardComponents,
@@ -771,6 +832,9 @@ const load = async () => {
               enabled: true,
               title: projectMeta?.title || projectSlug,
               difficulty: activeDifficulty,
+              board: boardForSave,
+              components: activeCompsForSave,
+              starterCode: activeCodeForSave,
               prerequisite: null,
               xpReward: 100,
               rewardComponents: selectedRewardComponents,
@@ -808,14 +872,21 @@ const load = async () => {
     const activeDifficulty = normalizeDifficulty(projectDifficulty || projectMeta?.difficulty || "intermediate");
     const sanitizedTheoryCards = theoryCards.map((card) => normalizeTheoryCard(card, activeDifficulty));
     const sanitizedQuizQuestions = quizQuestions.map((question) => normalizeQuizQuestion(question, activeDifficulty));
+    // Use simulator-imported components if available, otherwise fall back to static metadata
+    const activeComponents = projectComponents.length > 0
+      ? projectComponents
+      : (PROJECTS.find((p) => p.slug === projectSlug)?.components || []);
+    const activeStarterCode = projectStarterCode || PROJECTS.find((p) => p.slug === projectSlug)?.starterCode || "";
+    const board = resolveRewardBoards()[0] || resolveBoard(activeComponents);
     return {
       title: displayTitle || "Untitled Project",
       slug: resolvedSlug || displayTitle,
       description: projectMeta?.description || "",
       difficulty: activeDifficulty,
       visibility: bankVisibility,
-      components: PROJECTS.find((p) => p.slug === projectSlug)?.components || [],
-      starterCode: PROJECTS.find((p) => p.slug === projectSlug)?.starterCode || "",
+      board,
+      components: activeComponents,
+      starterCode: activeStarterCode,
       theory: sanitizedTheoryCards,
       quizQuestions: sanitizedQuizQuestions,
       rewardComponents: rewardComponents.map((id) => {

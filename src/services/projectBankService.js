@@ -12,13 +12,19 @@ const authHeaders = () => {
   };
 };
 
-export const getMyProjectBank = async () => {
-  const response = await axios.get(`${API_BASE_URL}/project-bank`, { headers: authHeaders() });
+export const getMyProjectBank = async (params = {}) => {
+  const response = await axios.get(`${API_BASE_URL}/project-bank`, {
+    headers: authHeaders(),
+    params,
+  });
   return response.data;
 };
 
-export const getSharedProjectBank = async () => {
-  const response = await axios.get(`${API_BASE_URL}/project-bank/shared`, { headers: authHeaders() });
+export const getSharedProjectBank = async (params = {}) => {
+  const response = await axios.get(`${API_BASE_URL}/project-bank/shared`, {
+    headers: authHeaders(),
+    params,
+  });
   return response.data;
 };
 
