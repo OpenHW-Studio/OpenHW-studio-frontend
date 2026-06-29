@@ -69,6 +69,7 @@ import { MFRC522Logic } from '@openhw/emulator/src/components/openhw-mfrc522/log
 import { SlideSwitchLogic } from '@openhw/emulator/src/components/openhw-slide-switch/logic';
 import { PhotoresistorLogic } from '@openhw/emulator/src/components/openhw-photoresistor/logic';
 import { NtcLogic } from '@openhw/emulator/src/components/openhw-ntc-temperature-sensor/logic';
+import { ADXL345Logic } from '@openhw/emulator/src/components/openhw-adxl345/logic';
 
 import { PICO_BOARD_PINS, UNO_ANALOG_PINS, UNO_BOARD_PINS, UNO_DIGITAL_PINS } from '../board-profiles';
 
@@ -256,6 +257,7 @@ export const LOGIC_REGISTRY: Record<string, any> = {
     'openhw-ir-receiver': IRReceiverLogic,
     'wokwi-mfrc522': MFRC522Logic,
     'openhw-mfrc522': MFRC522Logic,
+    'openhw-adxl345': ADXL345Logic,
 };
 
 // Per-type pin lists so every component's pins are registered correctly
@@ -407,6 +409,7 @@ export const COMPONENT_PINS: Record<string, { id: string }[]> = {
   { id: 'P2' }, { id: 'NC2' }, { id: 'NO2' }
 ],
     'openhw-mfrc522': [{ id: '3V3' }, { id: 'RST' }, { id: 'GND' }, { id: 'IRQ' }, { id: 'MISO' }, { id: 'MOSI' }, { id: 'SCK' }, { id: 'SDA' }],
+    'openhw-adxl345': [{ id: 'GND' }, { id: 'VCC' }, { id: 'CS' }, { id: 'INT1' }, { id: 'INT2' }, { id: 'SDO' }, { id: 'SDA' }, { id: 'SCL' }],
 
     // Custom sensors
     'DHT-22':                [{ id: 'VCC' }, { id: 'SDA' }, { id: 'NC' }, { id: 'GND' }],
