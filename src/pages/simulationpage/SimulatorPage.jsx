@@ -904,6 +904,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     );
   }, [components, wires]);
 
+  const [serialViewMode, setSerialViewMode] = useState("monitor"); // 'monitor' | 'plotter'
+  const [isPaletteHovered, setIsPaletteHovered] = useState(false);
+
   const {
     showTour,
     setShowTour,
@@ -916,6 +919,9 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     setWires,
     setCodeTab,
     setIsPanelOpen,
+    openCodeFile,
+    setSerialViewMode,
+    setIsPaletteHovered,
   });
 
   useEffect(() => {
@@ -1144,7 +1150,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   serialHistoryRef.current = serialHistory;
   const [serialInput, setSerialInput] = useState("");
   const [serialPaused, setSerialPaused] = useState(false);
-  const [serialViewMode, setSerialViewMode] = useState("monitor"); // 'monitor' | 'plotter'
   const [serialBoardFilter, setSerialBoardFilter] = useState("all");
   const [serialBaudRate, setSerialBaudRate] = useState("9600");
   const [serialLineEnding, setSerialLineEnding] = useState(() => {
@@ -1731,7 +1736,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [currentProjectName, setCurrentProjectName] = useState("Untitled");
   const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [isPaletteHovered, setIsPaletteHovered] = useState(false);
   const [showF1Menu, setShowF1Menu] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1.0);
   const simulationSpeedPercent = Math.max(0, Math.round(simulationSpeed * 100));
@@ -13894,6 +13898,8 @@ loadDemoProject();
             handleStartRename={handleStartRename}
             handleDeleteProject={handleDeleteProject}
             setProjContextMenu={setProjContextMenu}
+            gamificationMode={gamificationMode}
+            assessmentMode={assessmentMode}
           />
 
           {gamificationMode && gamPanelOpen && gamProject && (

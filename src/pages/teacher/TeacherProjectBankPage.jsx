@@ -4,6 +4,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import ClassroomSidebar from "../../components/common/ClassroomSidebar.jsx";
 import { getMyProjectBank, getSharedProjectBank, deleteProjectBankEntry } from "../../services/projectBankService";
 import { sidebarLinks as teacherSidebarLinks } from "../../components/teacher/class-detail/helpers.js";
+import { getDifficultyDisplay } from "../../services/gamification/ProjectsConfig.js";
 
 function getProjectBoardType(project) {
   const components = project.components || [];
@@ -275,20 +276,37 @@ export default function TeacherProjectBankPage() {
                       <strong style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
                         {project.title || project.slug}
                       </strong>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          padding: "3px 7px",
-                          borderRadius: 5,
-                          background: "rgba(56,189,248,0.15)",
-                          color: "var(--accent)",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {board}
-                      </span>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            padding: "3px 7px",
+                            borderRadius: 5,
+                            background: "rgba(56,189,248,0.15)",
+                            color: "var(--accent)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {board}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "capitalize",
+                            padding: "3px 7px",
+                            borderRadius: 5,
+                            background: `${getDifficultyDisplay(project.difficulty).bg}`,
+                            color: getDifficultyDisplay(project.difficulty).color,
+                            border: `1px solid ${getDifficultyDisplay(project.difficulty).color}40`,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {getDifficultyDisplay(project.difficulty).label}
+                        </span>
+                      </div>
                     </div>
                     <p
                       style={{
