@@ -24,41 +24,37 @@
                 "board": "openhw-arduino-uno",
                 "components": [
                   {
-                    "id": "uno1",
+                    "id": "uno",
                     "type": "openhw-arduino-uno",
                     "label": "Arduino Uno",
-                    "x": -220,
-                    "y": -280,
-                    "w": 425,
-                    "h": 320,
+                    "x": 225.3,
+                    "y": 195.5,
+                    "w": 311,
+                    "h": 228,
                     "rotation": 0,
                     "attrs": {}
                   },
                   {
-                    "id": "comp_0",
+                    "id": "led1",
                     "type": "openhw-led",
                     "label": "LED",
-                    "x": 200,
-                    "y": -200,
-                    "w": 35,
-                    "h": 35,
+                    "x": 598,
+                    "y": 108,
+                    "w": 38,
+                    "h": 38,
                     "rotation": 0,
                     "attrs": {
-                      "color": "red",
-                      "breadboard": {
-                        "anchorPin": "13"
-                      },
-                      "targetBoard": "uno1"
+                      "color": "red"
                     }
                   },
                   {
-                    "id": "r_0",
+                    "id": "r1",
                     "type": "openhw-resistor",
                     "label": "Resistor",
-                    "x": 280,
-                    "y": -200,
-                    "w": 70,
-                    "h": 32,
+                    "x": 447,
+                    "y": 123,
+                    "w": 60,
+                    "h": 12,
                     "rotation": 0,
                     "attrs": {
                       "value": "220"
@@ -67,43 +63,43 @@
                 ],
                 "connections": [
                   {
-                    "id": "w_0",
-                    "from": "comp_0:a",
-                    "to": "r_0:p1",
-                    "color": "orange",
-                    "waypoints": [],
-                    "isBelow": false,
-                    "isSocket": false,
-                    "isHidden": false,
-                    "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
-                  },
-                  {
-                    "id": "w_1",
-                    "from": "r_0:p2",
-                    "to": "uno1:13",
+                    "id": "w1",
+                    "from": "uno:13",
+                    "to": "r1:p1",
                     "color": "green",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
                     "isHidden": false,
                     "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
+                    "fromLabel": "13",
+                    "toLabel": "p1"
                   },
                   {
-                    "id": "w_2",
-                    "from": "comp_0:k",
-                    "to": "uno1:GND",
+                    "id": "w2",
+                    "from": "r1:p2",
+                    "to": "led1:A",
+                    "color": "green",
+                    "waypoints": [],
+                    "isBelow": false,
+                    "isSocket": false,
+                    "isHidden": false,
+                    "isHelp": false,
+                    "fromLabel": "p2",
+                    "toLabel": "A"
+                  },
+                  {
+                    "id": "w3",
+                    "from": "led1:K",
+                    "to": "uno:gnd_1",
                     "color": "black",
                     "waypoints": [],
                     "isBelow": false,
                     "isSocket": false,
                     "isHidden": false,
                     "isHelp": false,
-                    "fromLabel": "",
-                    "toLabel": ""
+                    "fromLabel": "K",
+                    "toLabel": "gnd_1"
                   }
                 ],
                 "blocklyXml": "",
