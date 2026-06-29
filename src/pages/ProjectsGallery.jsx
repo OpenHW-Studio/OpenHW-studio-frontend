@@ -4,6 +4,7 @@ import { useGamification } from '../context/GamificationContext'
 import {
   PROJECTS,
   DIFFICULTY_CONFIG,
+  normalizeDifficulty,
   getUnlockedProjects,
   getLockedProjects,
   getProjectStatus,
@@ -96,8 +97,9 @@ const compReqStyles = {
 const FILTERS = [
   { id: 'all',          label: 'All Projects' },
   { id: 'unlocked',     label: 'Unlocked' },
-  { id: 'beginner',     label: 'Beginner' },
+  { id: 'easy',         label: 'Easy' },
   { id: 'intermediate', label: 'Intermediate' },
+  { id: 'hard',         label: 'Hard' },
   { id: 'completed',    label: 'Completed' },
 ]
 
@@ -124,8 +126,9 @@ export default function ProjectsGallery() {
   const filtered = useMemo(() => {
     return PROJECTS.filter(p => {
       if (filter === 'unlocked')     return p.levelRequired <= currentLevel && canStartProject(p, unlockedComponents)
-      if (filter === 'beginner')     return p.difficulty === 'beginner'
-      if (filter === 'intermediate') return p.difficulty === 'intermediate'
+      if (filter === 'easy')         return normalizeDifficulty(p.difficulty) === 'easy'
+      if (filter === 'intermediate') return normalizeDifficulty(p.difficulty) === 'intermediate'
+      if (filter === 'hard')         return normalizeDifficulty(p.difficulty) === 'hard'
       if (filter === 'completed')    return completedProjectIds.has(p.id)
       return true
     })
@@ -258,7 +261,7 @@ export default function ProjectsGallery() {
 
 function ProjectCard({ project, isLocked, isSeqLocked, isCompleted, missingComponents = [], canStart = true, onStart, onGuide, onComplete }) {
   const navigate = useNavigate()
-  const diff = DIFFICULTY_CONFIG[project.difficulty]
+  const diff = DIFFICULTY_CONFIG[normalizeDifficulty(project.difficulty)]
   const [hovered, setHovered] = useState(false)
 
   const cardS = {

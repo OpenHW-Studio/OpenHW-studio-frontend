@@ -810,38 +810,40 @@ export default function TeacherClassDetailPage() {
     });
   };
 
-   const handleAddProject = (worldId) => {
-     if (!worldId) return;
-     setAdventureContent((current) => {
-       const projects = current?.projects || [];
-       const index = projects.length + 1;
-       return {
-         ...current,
-         projects: [
-           ...projects,
-           {
-             id: `project-${index}-${Date.now()}`,
-             slug: `custom-project-${index}`,
-             worldId: worldId,
-             order: index,
-             enabled: true,
-             title: `Custom Project ${index}`,
-             prerequisite: null,
-             xpReward: 100,
-             rewardComponents: [],
-             theory: [],
-             quizQuestions: [],
-             nodes: [
-               { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
-               { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
-               { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
-               { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
-             ],
-           },
-         ],
-       };
-     });
-   };
+  const handleAddProject = (worldId) => {
+    if (!worldId) return;
+    setAdventureContent((current) => {
+      const projects = current?.projects || [];
+      return {
+        ...current,
+        projects: [
+          {
+            id: `project-${Date.now()}`,
+            slug: `custom-project-${Date.now()}`,
+            worldId,
+            order: 1,
+            enabled: true,
+            title: "Custom Project 1",
+            prerequisite: null,
+            xpReward: 100,
+            rewardComponents: [],
+            theory: [],
+            quizQuestions: [],
+            nodes: [
+              { id: "read", type: "theory", title: "Reading", order: 1, content: {} },
+              { id: "quiz", type: "quiz", title: "Quiz", order: 2, content: {} },
+              { id: "unlock", type: "reward", title: "Component Unlock", order: 3, content: {} },
+              { id: "sim", type: "assessment", title: "Project Assessment", order: 4, content: {} },
+            ],
+          },
+          ...projects.map((project) => ({
+            ...project,
+            order: (project.order || 0) + 1,
+          })),
+        ],
+      };
+    });
+  };
 
   const handleDeleteWorld = (worldId) => {
     if (!window.confirm("Delete this world and all its projects?")) return;

@@ -232,8 +232,8 @@ export default function App() {
                   path="/simulator"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -241,8 +241,8 @@ export default function App() {
                   path="/mobile-simulator"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -251,8 +251,8 @@ export default function App() {
                   path="/simulator/live/:liveCode"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -260,8 +260,8 @@ export default function App() {
                   path="/mobile-simulator/live/:liveCode"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -270,8 +270,8 @@ export default function App() {
                   path="/simulator/share/:shareId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -279,8 +279,8 @@ export default function App() {
                   path="/mobile-simulator/share/:shareId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -289,8 +289,8 @@ export default function App() {
                   path="/simulator/share/:shareId/assignment/:classId/:assignmentId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -298,8 +298,8 @@ export default function App() {
                   path="/simulator/assignment/:classId/:assignmentId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -307,8 +307,8 @@ export default function App() {
                   path="/mobile-simulator/share/:shareId/assignment/:classId/:assignmentId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -403,6 +403,14 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRole="teacher">
                       <TeacherClassDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/teacher/classes/:classId/projects/:projectSlug/edit"
+                  element={
+                    <ProtectedRoute allowedRole="teacher">
+                      <TeacherProjectContentEditor />
                     </ProtectedRoute>
                   }
                 />
