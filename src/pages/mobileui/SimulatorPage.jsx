@@ -4583,7 +4583,7 @@ useEffect(() => {
     if (e.touches && e.cancelable) e.preventDefault();
     const event = (e.touches && e.touches.length > 0) ? e.touches[0] : e;
     e.stopPropagation();
-    if (isRunning || liveEditingDisabled) return;
+    if (isRunning) return;
     const comp = components.find(c => c.id === id);
     if (!comp) return;
 
@@ -4618,7 +4618,7 @@ useEffect(() => {
     }
 
     movingComp.current = dragData;
-  }, [components, wires, isRunning, liveEditingDisabled])
+  }, [components, wires, isRunning])
 
   const onCompClick = useCallback((e, id) => {
     e.stopPropagation()
@@ -9616,8 +9616,8 @@ useEffect(() => {
               ? 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)'
               : 'none',
             touchAction: 'none', // Block browser pinch-to-zoom
-            pointerEvents: liveEditingDisabled ? 'none' : 'auto',
-            opacity: liveEditingDisabled ? 0.8 : 1,
+            pointerEvents: 'auto',
+            opacity: 1,
           }}
           ref={canvasRef}
           onTouchStart={onTouchStart}
