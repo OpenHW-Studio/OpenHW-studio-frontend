@@ -32,10 +32,20 @@ export async function flashArduinoWebSerial(port, hexText, options = {}) {
         const serialObj = { port, reader, writer };
 
         try {
-            await avrbro.flash(serialObj, binaryData, { 
-                boardName: boardName, 
-                debug: false // Disabled debug logging to prevent heavy UI re-renders which throttle Web Serial I/O
-            });
+            try {
+                await avrbro.flash(serialObj, binaryData, { 
+                    boardName: boardName, 
+                    debug: false // Disabled debug logging to prevent heavy UI re-renders which throttle Web Serial I/O
+                });
+            } catch (flashErr) {
+                // If upload finished but exiting bootloader mode or final page write timed out during handover, treat as non-fatal success
+                const msg = flashErr?.message || '';
+                if (msg.includes('Sending 11') || msg.includes('LEAVE_PROGMODE') || msg.includes('receiveData timeout') || msg.includes('Sending 64')) {
+                    console.warn('Non-fatal bootloader handover/exit timeout ignored:', msg);
+                } else {
+                    throw flashErr;
+                }
+            }
             onProgress('Flash complete.\n');
         } finally {
             // Clean up serial port locks

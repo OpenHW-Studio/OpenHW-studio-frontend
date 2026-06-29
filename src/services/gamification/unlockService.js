@@ -57,6 +57,41 @@ export const saveUserUnlocks = async (userId, unlocks) => {
   }
 };
 
+export const fetchUserGamificationState = async (userId) => {
+  try {
+    const response = await axios.get(`/gamification/state/${userId}`, {
+      baseURL: API_BASE_URL,
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching user gamification state:', error);
+    if (error.response && error.response.status === 404) {
+      return { state: {} };
+    }
+    throw error;
+  }
+};
+
+export const saveUserGamificationState = async (userId, state) => {
+  const token = getToken();
+  if (!token) {
+    console.warn('No auth token available, skipping state save to MongoDB');
+    return { state };
+  }
+  try {
+    const response = await axios.put(
+      `/gamification/state/${userId}`,
+      { state },
+      { baseURL: API_BASE_URL, headers: getAuthHeaders() }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error saving user gamification state:', error);
+    throw error;
+  }
+};
+
 export const saveClassAdventureUnlocks = async (classId, componentTypes) => {
   try {
     const response = await axios.post(

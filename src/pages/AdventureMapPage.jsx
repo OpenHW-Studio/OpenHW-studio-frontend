@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
-import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../services/gamification/ProjectsConfig'
+import { PROJECTS, getProjectStatus, getProjectRewardComponents, normalizeDifficulty } from '../services/gamification/ProjectsConfig'
 import {
   getAdventureContent,
   getAdventureProgress,
@@ -11,9 +11,9 @@ import { buildFallbackClassAdventureContent } from '../services/classAdventureAd
 
 // ─── World groupings ────────────────────────────────────────────────────────
 const WORLDS = [
-  { id: 1, name: 'Circuit Basics',      theme: 'Beginner',     color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '⚡', slugs: ['led-blink','rgb-led','buzzer','potentiometer','ldr'] },
+  { id: 1, name: 'Circuit Basics',      theme: 'Easy',         color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '⚡', slugs: ['led-blink','rgb-led','buzzer','potentiometer','ldr'] },
   { id: 2, name: 'Signal Control',      theme: 'Intermediate', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)',  border: 'rgba(59,130,246,0.18)', icon: '🎮', slugs: ['servo-motor','led-strip','button-debounce','temperature-sensor'] },
-  { id: 3, name: 'Machines & Sensors',  theme: 'Advanced',     color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🤖', slugs: ['dc-motor'] },
+  { id: 3, name: 'Machines & Sensors',  theme: 'Hard',         color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🤖', slugs: ['dc-motor'] },
 ]
 
 // Winding x-positions
@@ -176,7 +176,7 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }
             fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase',
             color: project.color, marginBottom: 6,
           }}>
-            {project.difficulty} · Project {project.number}
+            {normalizeDifficulty(project.difficulty).charAt(0).toUpperCase() + normalizeDifficulty(project.difficulty).slice(1)} · Project {project.number}
           </div>
           <div style={{ fontSize: 22, fontWeight: 900, color: T.rewardItemText, marginBottom: 4 }}>
             {project.title}
@@ -319,7 +319,7 @@ export default function AdventureMapPage() {
   const classId = searchParams.get('classId')
   const {
     xp, currentLevel, currentLevelData, nextLevel, xpProgress,
-    completedProjects = [],
+    completedProjects: localCompletedProjects = [],
   } = useGamification()
   const [classAdventure, setClassAdventure] = useState(null)
   const [classProgress, setClassProgress] = useState(null)
@@ -377,6 +377,19 @@ export default function AdventureMapPage() {
       .sort((a, b) => (a.world - b.world) || (a.number - b.number))
   }, [classAdventure])
 
+  const completedProjects = useMemo(() => {
+    const classCompleted = classProgress?.completedProjects?.map(p => p.projectSlug || p) || []
+    
+    // Fallback: If local step progress says 'sim' is complete, the project is complete.
+    // This repairs state if GamificationContext was wiped.
+    const inferredCompleted = resolvedProjects.filter(p => {
+      const progress = getLocalAdventureStepProgress(p.slug)
+      return progress?.completedSteps?.includes(`${p.slug}:sim`)
+    }).map(p => p.slug)
+
+    return Array.from(new Set([...localCompletedProjects, ...classCompleted, ...inferredCompleted]))
+  }, [localCompletedProjects, classProgress, resolvedProjects])
+
   const getStatus = (project) => {
     if (!classAdventure?.projects?.length) return getProjectStatus(project.slug, completedProjects)
     if (completedProjects.includes(project.slug)) return 'completed'
@@ -387,12 +400,19 @@ export default function AdventureMapPage() {
   const handleStepNavigate = (project, step) => {
     if (!step?.route) return
     const route = step.route(project.slug)
-    navigate(classId ? `${route}?classId=${encodeURIComponent(classId)}` : route)
+    const url = new URL(route, window.location.origin)
+    if (classId) url.searchParams.set('classId', classId)
+    url.searchParams.set('fromMap', '1')
+    navigate(url.pathname + url.search)
   }
 
   const handleStart = (slug, mode) => {
     setSelectedProject(null)
-    const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+    const searchParams = new URLSearchParams()
+    if (classId) searchParams.set('classId', classId)
+    searchParams.set('fromMap', '1')
+    const suffix = `?${searchParams.toString()}`
+
     if (mode === 'guide') navigate(`/${slug}/reading${suffix}`)
     else if (mode === 'guide-simple') navigate(`/${slug}/guide${suffix}`)
     else navigate(`/${slug}/assessment${suffix}`)
@@ -628,7 +648,8 @@ export default function AdventureMapPage() {
                   { key: 'read', label: 'Reading Part', icon: '\u{1F4D6}', order: 1, route: (slug) => '/' + slug + '/reading' },
                   { key: 'quiz', label: 'Quiz', icon: '\u2753', order: 2, route: (slug) => '/' + slug + '/quiz' },
                   { key: 'unlock', label: 'Component Unlock', icon: '\u{1F381}', order: 3, route: (slug) => '/' + slug + '/components' },
-                  { key: 'sim', label: 'Simulator / Project', icon: '\u{1F527}', order: 4, route: (slug) => '/' + slug + '/assessment' },
+                  { key: 'demo', label: 'Learn from project demo', icon: '📺', order: 4, route: (slug) => '/' + slug + '/guide' },
+                  { key: 'sim', label: 'Simulator / Project', icon: '\u{1F527}', order: 5, route: (slug) => '/' + slug + '/assessment' },
                 ]
 
                 const points = getStepPoints(steps.length)
