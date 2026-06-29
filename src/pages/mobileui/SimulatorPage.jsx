@@ -6658,6 +6658,7 @@ useEffect(() => {
           fqbn,
           target: kind,
           ...(kind === 'rp2040' ? { builder: rp2040Builder } : {}),
+          ...(kind === 'esp32' ? { isFrontendEsp32: esp32SimulationMode === 'frontend' } : {}),
         });
       }
       setCachedHex(cacheSource, cacheKeyBoard, compiled);

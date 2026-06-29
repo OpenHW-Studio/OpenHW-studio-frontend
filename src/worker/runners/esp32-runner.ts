@@ -862,7 +862,7 @@ export class ESP32Runner implements BoardRunner {
                     this.serialRx(reply);
                     
                     // Add diagnostics!
-                    const instName = selectedInst ? selectedInst.type : 'NONE';
+                    const instName = selectedInst ? selectedInst.constructor.name : 'None';
                     const isPowered = selectedInst ? !!selectedInst.powered : false;
                     const diagMsg = `\r\n[WASM DIAGNOSTICS] I2C_READ addr=${addrStr} qty=${qty} -> val=${hexResp} (Inst=${instName}, Powered=${isPowered})\r\n`;
                     this.onStateUpdate({ type: 'serial', data: diagMsg, boardId: "esp32", source: 'backend' });

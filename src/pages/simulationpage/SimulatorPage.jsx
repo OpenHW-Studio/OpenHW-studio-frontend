@@ -102,7 +102,7 @@ import AutofixPreviewPanel from "../../components/AutofixPreviewPanel.jsx";
 import GuidedProjectPopup from "../../components/student/GuidedProjectPopup.jsx";
 
 import * as EmulatorComponents from "@openhw/emulator";
-
+console.log("Cache bust trigger for emulator updates #2");
 const {
   FullCircuitValidator,
   analyzeCodeHardwareSync,
