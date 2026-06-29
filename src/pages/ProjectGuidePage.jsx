@@ -1,5 +1,5 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Microchip, Lightbulb, CircuitBoard, FlaskConical, Cpu } from "lucide-react";
 import PROJECT_DATA from "../services/guidedProjects.json";
 
@@ -45,8 +45,24 @@ const SLUG_MAP = {
   "line-following-robot": "line-following-robot",
 };
 
+import { markAdventureStepComplete } from "../services/adventureService";
+
 export default function ProjectGuidePage() {
   const { projectName = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const classId = searchParams.get('classId');
+
+  useEffect(() => {
+    if (projectName) {
+      markAdventureStepComplete({
+        classId,
+        projectSlug: projectName,
+        stepKey: 'demo',
+        stepOrder: 4,
+      }).catch(() => {});
+    }
+  }, [projectName, classId]);
+
   const iframeRef = useRef(null);
   const [iframeLoading, setIframeLoading] = useState(true);
   const [serialBtnHovered, setSerialBtnHovered] = useState(false);
@@ -286,22 +302,40 @@ export default function ProjectGuidePage() {
             </div>
           )}
 
-          {project?.code && (
-            <div style={{
-              background: "var(--bg3, #1e293b)", borderRadius: 10, padding: 14,
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
-                <Cpu size={12} strokeWidth={2.5} /> Arduino Code
+            {project?.code && (
+              <div style={{
+                background: "var(--bg3, #1e293b)", borderRadius: 10, padding: 14,
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
+                  <Cpu size={12} strokeWidth={2.5} /> Arduino Code
+                </div>
+                <pre style={{
+                  margin: 0, fontSize: 12, lineHeight: 1.6,
+                  color: "#e2e8f0", overflowX: "auto",
+                  fontFamily: "'JetBrains Mono','Fira Code',monospace",
+                  whiteSpace: "pre-wrap", wordBreak: "break-word",
+                }}>{project.code}</pre>
               </div>
-              <pre style={{
-                margin: 0, fontSize: 12, lineHeight: 1.6,
-                color: "#e2e8f0", overflowX: "auto",
-                fontFamily: "'JetBrains Mono','Fira Code',monospace",
-                whiteSpace: "pre-wrap", wordBreak: "break-word",
-              }}>{project.code}</pre>
-            </div>
-          )}
-        </div>
+            )}
+            
+            {searchParams.get('fromMap') && (
+              <div style={{ marginTop: 'auto', paddingTop: 20 }}>
+                <button 
+                  onClick={() => {
+                    window.location.href = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure';
+                  }}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'center',
+                    padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                    color: '#fff', fontSize: 15, fontWeight: 800,
+                    boxShadow: '0 8px 24px rgba(34,197,94,0.35)',
+                  }}>
+                  ← Back to Adventure Map
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
