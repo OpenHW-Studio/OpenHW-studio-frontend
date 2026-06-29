@@ -627,14 +627,13 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
 
   const isPaletteItemLocked = useCallback(
     (itemType) => {
-      // Only lock components for students in gamification mode
-      if (!gamificationMode) return false;
+      // Lock components for students everywhere based on their progress
       if (activeUser?.role !== 'student') return false;
       const compId = WOKWI_TO_COMP_ID[itemType];
       if (!compId) return false;
       return isUnlocked ? !isUnlocked(itemType) : false;
     },
-    [gamificationMode, isUnlocked, WOKWI_TO_COMP_ID, activeUser?.role],
+    [isUnlocked, WOKWI_TO_COMP_ID, activeUser?.role],
   );
 
   const gamProjectComponents = useMemo(() => {
