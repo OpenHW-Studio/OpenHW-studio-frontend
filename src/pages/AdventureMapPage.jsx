@@ -400,12 +400,19 @@ export default function AdventureMapPage() {
   const handleStepNavigate = (project, step) => {
     if (!step?.route) return
     const route = step.route(project.slug)
-    navigate(classId ? `${route}?classId=${encodeURIComponent(classId)}` : route)
+    const url = new URL(route, window.location.origin)
+    if (classId) url.searchParams.set('classId', classId)
+    url.searchParams.set('fromMap', '1')
+    navigate(url.pathname + url.search)
   }
 
   const handleStart = (slug, mode) => {
     setSelectedProject(null)
-    const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+    const searchParams = new URLSearchParams()
+    if (classId) searchParams.set('classId', classId)
+    searchParams.set('fromMap', '1')
+    const suffix = `?${searchParams.toString()}`
+
     if (mode === 'guide') navigate(`/${slug}/reading${suffix}`)
     else if (mode === 'guide-simple') navigate(`/${slug}/guide${suffix}`)
     else navigate(`/${slug}/assessment${suffix}`)
@@ -641,7 +648,8 @@ export default function AdventureMapPage() {
                   { key: 'read', label: 'Reading Part', icon: '\u{1F4D6}', order: 1, route: (slug) => '/' + slug + '/reading' },
                   { key: 'quiz', label: 'Quiz', icon: '\u2753', order: 2, route: (slug) => '/' + slug + '/quiz' },
                   { key: 'unlock', label: 'Component Unlock', icon: '\u{1F381}', order: 3, route: (slug) => '/' + slug + '/components' },
-                  { key: 'sim', label: 'Simulator / Project', icon: '\u{1F527}', order: 4, route: (slug) => '/' + slug + '/assessment' },
+                  { key: 'demo', label: 'Learn from project demo', icon: '📺', order: 4, route: (slug) => '/' + slug + '/guide' },
+                  { key: 'sim', label: 'Simulator / Project', icon: '\u{1F527}', order: 5, route: (slug) => '/' + slug + '/assessment' },
                 ]
 
                 const points = getStepPoints(steps.length)
