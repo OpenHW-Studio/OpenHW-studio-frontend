@@ -108,6 +108,12 @@ export default function ProjectGuidePage() {
     }
   }, [serialEntries])
 
+  useEffect(() => {
+    if (autoscroll && !serialPaused && serialOutputRef.current) {
+      serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
+    }
+  }, [serialEntries, serialBoardFilter, autoscroll, serialPaused]);
+
   const canvasOnlyUrl = `/${projectName}/demo?canvas-only=1&readonly=1`
 
   const project = useMemo(() => {
@@ -310,7 +316,7 @@ export default function ProjectGuidePage() {
           position: 'fixed',
           left: serialPopupPos?.x ?? (typeof window !== 'undefined' ? window.innerWidth - 420 : 700),
           top: serialPopupPos?.y ?? (typeof window !== 'undefined' ? window.innerHeight - 350 : 400),
-          width: 400, height: 320,
+          width: 'min(520px, 94vw)', height: 'min(400px, 70vh)',
           background: '#0f172a',
           border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: 12,
@@ -327,7 +333,7 @@ export default function ProjectGuidePage() {
               borderBottom: '1px solid rgba(255,255,255,0.06)',
               fontSize: 12, fontWeight: 700, color: '#e2e8f0',
               cursor: 'grab', userSelect: 'none',
-              background: '#1e293b',
+              background: '#1e293b', flexShrink: 0,
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
