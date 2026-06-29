@@ -5664,7 +5664,7 @@ loadDemoProject();
   const onCompMouseDown = useCallback(
     (e, id) => {
       e.stopPropagation();
-      if (isRunning || (liveEditingDisabled && !readOnly)) return; // Restrict movement while running
+      if (isRunning) return; // Restrict movement while running
       const comp = components.find((c) => c.id === id);
       if (!comp) return;
 
@@ -5709,7 +5709,7 @@ loadDemoProject();
       movingComp.current = dragData;
       setIsComponentDragging(true);
     },
-    [components, wires, isRunning, liveEditingDisabled],
+    [components, wires, isRunning],
   );
 
   const onCompClick = useCallback((e, id) => {
@@ -13396,8 +13396,8 @@ loadDemoProject();
                       ? "default"
                       : "grab",
               touchAction: "none", // Block browser pinch-to-zoom
-              pointerEvents: liveEditingDisabled && !readOnly ? "none" : "auto",
-              opacity: liveEditingDisabled && !readOnly ? 0.8 : 1,
+              pointerEvents: readOnly ? "none" : "auto",
+              opacity: readOnly ? 0.8 : 1,
               marginLeft: canvasOnly ? "0" : "38px",
               transform: canvasOnly ? "none" : `translateX(${isPaletteHovered ? "302px" : "0"})`,
               transition: canvasOnly ? "none" : "transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)",
