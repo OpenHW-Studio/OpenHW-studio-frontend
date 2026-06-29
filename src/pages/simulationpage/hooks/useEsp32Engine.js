@@ -483,7 +483,8 @@ export function useEsp32Engine({
     const esp32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'esp32');
     const stm32Board = programmableBoards.find(c => normalizeBoardKind(c.type) === 'stm32');
     if (esp32Board) {
-      if (esp32SimulationMode === 'frontend') {
+      const isNewEsp32Variant = esp32Board.type.includes('esp32-c3') || esp32Board.type.includes('esp32-c6') || esp32Board.type.includes('esp32-p4');
+      if (esp32SimulationMode === 'frontend' || isNewEsp32Variant) {
         return false;
       }
       const isMicroPython = esp32Board.attrs?.env === 'micropython';

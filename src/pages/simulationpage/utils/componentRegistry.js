@@ -125,7 +125,9 @@ export function sortCatalog(catalog) {
   catalog.sort((a, b) => {
     const idxA = GROUP_ORDER.indexOf(a.group);
     const idxB = GROUP_ORDER.indexOf(b.group);
-    if (idxA === -1 && idxB === -1) return a.group.localeCompare(b.group);
+    if (idxA === -1 && idxB === -1) {
+      return (a.group || '').localeCompare(b.group || '');
+    }
     if (idxA === -1) return 1;
     if (idxB === -1) return -1;
     return idxA - idxB;
@@ -220,7 +222,7 @@ export function injectComponentsIntoRegistry(comps) {
 
       if (manifest.pins) pinDefs[manifest.type] = manifest.pins;
 
-      const groupName = normalizeGroupName(manifest.group, groupMapping);
+      const groupName = normalizeGroupName(manifest.group || 'Misc', groupMapping);
       let group = catalog.find(g => g.group === groupName);
       if (!group) { group = { group: groupName, items: [] }; catalog.push(group); }
       group.items = group.items.filter(i => i.type !== manifest.type);

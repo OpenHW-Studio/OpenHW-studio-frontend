@@ -1043,6 +1043,7 @@ const coreMessageHandler = async (e: MessageEvent) => {
                 import('./runners/backend-proxy-runner.ts').catch(() => {});
             } else if (/(esp32)/i.test(type)) {
                 import('./runners/backend-proxy-runner.ts').catch(() => {});
+                import('./runners/rv32-runner.ts').catch(() => {});
                 import('@private/esp32-engine/runner').catch(() => {});
             } else if (/pico|rp2040/i.test(type)) {
                 import('./runners/rp2040-runner.ts').catch(() => {});
@@ -1067,10 +1068,13 @@ const coreMessageHandler = async (e: MessageEvent) => {
             netWorkerPort.onmessage = (evt: MessageEvent) => {
                 const msg = evt.data;
                 if (msg?.type === 'FRAME_IN') {
-                    // Inject Ethernet frame into the Pico W chip via the runner
-                    // The runner must have onEthernetFrameIn(boardId, frame) or similar
+                    // Inject Ethernet frame into the Pico W chip / ESP32 via the runner
                     const boardId = String(msg.boardId || '');
                     const frame   = new Uint8Array(msg.frame as ArrayBuffer);
+                    const targetRunner = boardRunners.get(boardId) || runner;
+                    if (targetRunner && typeof (targetRunner as any).injectWifiFrame === 'function') {
+                        (targetRunner as any).injectWifiFrame(frame);
+                    }
                     const b64     = btoa(String.fromCharCode(...frame));
                     // Forward to main thread as a wifi_packet_in event
                     postMessage({ type: 'wifi_packet_in', boardId, ether_b64: b64 });
@@ -1119,6 +1123,8 @@ const coreMessageHandler = async (e: MessageEvent) => {
             telemetryEnabled,
             telemetryMode,
             esp32SimulationMode,
+            elf,
+            boardElfMap,
         } = data;
         const initialSpeed = Number(speed ?? 1.0);
         const rp2040DebugEnabled = !!debugRp2040;
@@ -1222,11 +1228,17 @@ const coreMessageHandler = async (e: MessageEvent) => {
                             appendBoardSerialOutput(String(boardId || ''), String(char || ''));
                             bufferSerialTx(String(boardId || ''), char, value, source || 'uart0');
                         },
+                        onWifiTx: (frame: ArrayBuffer) => {
+                            if (netWorkerPort) {
+                                netWorkerPort.postMessage({ type: 'FRAME_OUT', boardId: singleBoardId || 'default', frame }, [frame]);
+                            }
+                        },
                         rp2040ExecutableRanges: singleBoardIsRp2040 ? singleBoardExecutableRanges : undefined,
                         rp2040LogicalFlashBytes: singleBoardIsRp2040 ? RP2040_LOGICAL_FLASH_BYTES : undefined,
                         rp2040FlashPartitions: singleBoardIsRp2040 ? singleBoardFlashPartitions : undefined,
                         esp32SimulationMode: esp32SimulationMode || 'qemu',
                         esp32Rom,
+                        elf,
                         telemetryEnabled: activeTelemetryEnabled,
                         telemetryMode: activeTelemetryMode,
                         telemetryWatchedParams: activeTelemetryWatchedParamsMap,
@@ -1356,10 +1368,17 @@ const coreMessageHandler = async (e: MessageEvent) => {
                         bufferSerialTx(String(boardId || ''), char, value, source || 'uart0');
                         routeUartByte(boardId, value, source || 'uart0');
                     },
+                    onWifiTx: (frame: ArrayBuffer) => {
+                        if (netWorkerPort) {
+                            netWorkerPort.postMessage({ type: 'FRAME_OUT', boardId: boardComp.id, frame }, [frame]);
+                        }
+                    },
                     rp2040ExecutableRanges: isRp2040Board ? executableRanges : undefined,
                     rp2040LogicalFlashBytes: isRp2040Board ? RP2040_LOGICAL_FLASH_BYTES : undefined,
                     rp2040FlashPartitions: isRp2040Board ? rp2040FlashPartitions : undefined,
+                    esp32SimulationMode: esp32SimulationMode || 'qemu',
                     esp32Rom,
+                    elf: boardElfMap?.[boardComp.id] || elf,
                 }
             );
 

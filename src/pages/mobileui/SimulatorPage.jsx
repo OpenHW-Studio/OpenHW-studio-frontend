@@ -227,7 +227,9 @@ function sortCatalog(catalog) {
   catalog.sort((a, b) => {
     const idxA = GROUP_ORDER.indexOf(a.group);
     const idxB = GROUP_ORDER.indexOf(b.group);
-    if (idxA === -1 && idxB === -1) return a.group.localeCompare(b.group);
+    if (idxA === -1 && idxB === -1) {
+      return (a.group || '').localeCompare(b.group || '');
+    }
     if (idxA === -1) return 1;
     if (idxB === -1) return -1;
     return idxA - idxB;
@@ -484,7 +486,7 @@ function injectComponentsIntoRegistry(comps) {
       if (manifest.pins) LOCAL_PIN_DEFS[manifest.type] = manifest.pins;
       BACKEND_INJECTED_TYPES.add(manifest.type);
 
-      const groupName = normalizeGroupName(manifest.group);
+      const groupName = normalizeGroupName(manifest.group || 'Misc');
       let group = LOCAL_CATALOG.find(g => g.group === groupName);
       if (!group) { group = { group: groupName, items: [] }; LOCAL_CATALOG.push(group); }
       group.items = group.items.filter(i => i.type !== manifest.type);
