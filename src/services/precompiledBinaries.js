@@ -1,6 +1,6 @@
 /**
  * Pre-compiled hex/elf binaries for instant simulation.
- * Auto-generated on 2026-06-25 by scripts/precompile-guided-projects.mjs
+ * Auto-generated on 2026-06-29 by scripts/precompile-guided-projects.mjs
  */
 
 const PRECOMPILED_BINARIES = {
