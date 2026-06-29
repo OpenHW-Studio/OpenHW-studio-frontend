@@ -1511,6 +1511,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const serialIngressArbitrationRef = useRef(new Map());
   const serialPausedRef = useRef(false);
   const serialPausedQueueRef = useRef([]);
+  // Throttle buffer: accumulate incoming serial chunks and flush to React state
+  // at most every 100ms to prevent UI freezing when firmware outputs at high rate.
+  const serialRxBufferRef = useRef([]);
+  const serialRxFlushTimerRef = useRef(null);
 
   const canvasRef = useRef(null);
   const innerCanvasRef = useRef(null); // ref to the zoom-wrapper div — used for CSS-transform panning (Fix #4)
@@ -8678,13 +8682,22 @@ loadDemoProject();
 
       const isNumeric = parts.every((p) => !isNaN(parseFloat(p)));
       if (!isNumeric) {
+        // Prevent ESP-IDF logs from being interpreted as plotter labels
+        // A plotter header usually doesn't contain parenthesis or colons
+        const isLikelyLog = parts.some(p => p.includes('(') || p.includes(')') || p.includes(':'));
+        if (isLikelyLog) return;
+        
         serialPlotLabelsRef.current = parts;
         setSelectedPlotPins((prev) => {
+          let changed = false;
           const nextPins = [...prev];
           parts.forEach((lbl) => {
-            if (!nextPins.includes(lbl)) nextPins.push(lbl);
+            if (!nextPins.includes(lbl)) {
+              nextPins.push(lbl);
+              changed = true;
+            }
           });
-          return nextPins;
+          return changed ? nextPins : prev;
         });
         return;
       }
@@ -8711,6 +8724,33 @@ loadDemoProject();
         });
         return changed ? nextPins : prev;
       });
+    });
+  }, []);
+
+  const flushSerialRxBuffer = useCallback(() => {
+    const pending = serialRxBufferRef.current;
+    if (pending.length === 0) return;
+    serialRxBufferRef.current = [];
+    serialRxFlushTimerRef.current = null;
+
+    setSerialHistory((prev) => {
+      let next = prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
+      for (const entry of pending) {
+        if (next.length > 0) {
+          const last = next[next.length - 1];
+          if (
+            last.dir === "rx" &&
+            last.boardId === entry.boardId &&
+            last.source === entry.source &&
+            !last.text.endsWith("\n")
+          ) {
+            next[next.length - 1] = { ...last, text: last.text + entry.text };
+            continue;
+          }
+        }
+        next = [...next, entry];
+      }
+      return next;
     });
   }, []);
 
@@ -8741,34 +8781,28 @@ loadDemoProject();
 
       parseSerialForPlotter(chunk);
       const ts = getSerialTimestamp();
-      setSerialHistory((prev) => {
-        let next =
-          prev.length > 2000 ? prev.slice(prev.length - 1800) : [...prev];
-        if (next.length > 0) {
-          const last = next[next.length - 1];
-          if (
-            last.dir === "rx" &&
-            last.boardId === normalizedBoardId &&
-            last.source === normalizedSource &&
-            !last.text.endsWith("\n")
-          ) {
-            next[next.length - 1] = { ...last, text: last.text + chunk };
-            return next;
-          }
-        }
-        return [
-          ...next,
-          {
-            dir: "rx",
-            text: chunk,
-            ts,
-            boardId: normalizedBoardId,
-            source: normalizedSource,
-          },
-        ];
+
+      // Push into throttle buffer instead of calling setSerialHistory directly.
+      // This prevents hundreds of re-renders/sec when firmware outputs at high rate.
+      serialRxBufferRef.current.push({
+        dir: "rx",
+        text: chunk,
+        ts,
+        boardId: normalizedBoardId,
+        source: normalizedSource,
       });
+
+      // Limit buffer size to avoid unbounded memory growth
+      if (serialRxBufferRef.current.length > 500) {
+        serialRxBufferRef.current.splice(0, serialRxBufferRef.current.length - 500);
+      }
+
+      // Schedule a flush at most every 100ms
+      if (serialRxFlushTimerRef.current === null) {
+        serialRxFlushTimerRef.current = setTimeout(flushSerialRxBuffer, 100);
+      }
     },
-    [parseSerialForPlotter],
+    [parseSerialForPlotter, flushSerialRxBuffer],
   );
 
   const pushSerialRxChunk = useCallback(
@@ -8818,6 +8852,12 @@ loadDemoProject();
     latestParsedSerialRef.current = [];
     serialIngressArbitrationRef.current.clear();
     serialPausedQueueRef.current = [];
+    // Clear the throttle buffer so stale data doesn't flush after clear
+    serialRxBufferRef.current = [];
+    if (serialRxFlushTimerRef.current !== null) {
+      clearTimeout(serialRxFlushTimerRef.current);
+      serialRxFlushTimerRef.current = null;
+    }
   }, []);
 
   const handleHardwareBoardChange = useCallback(
@@ -8864,6 +8904,7 @@ loadDemoProject();
       if (kind === 'esp32') {
         const startRes = await startEsp32Compile({
           code: sourceCode,
+          fqbn: fqbn,
           libraries_txt: librariesTxt,
           targetEngine: 'hardware'
         });
@@ -9476,11 +9517,13 @@ loadDemoProject();
           } else {
             logSerial(`Compiling ${boardComp.id}...`);
             try {
-              if (kind === 'esp32' && esp32SimulationMode === 'frontend') {
+              const isNewEsp32Variant = boardComp.type.includes('esp32-c3') || boardComp.type.includes('esp32-c6') || boardComp.type.includes('esp32-p4');
+              if (kind === 'esp32' && (esp32SimulationMode === 'frontend' || isNewEsp32Variant)) {
                 const startRes = await startEsp32Compile({
                   code: compileSource,
+                  fqbn: targetFqbn,
                   libraries_txt: librariesTxt,
-                  targetEngine: 'frontend'
+                  targetEngine: isNewEsp32Variant ? 'rv32' : 'frontend'
                 });
                 
                 if (!startRes || (!startRes.jobId && !startRes.buildId)) {
@@ -9515,6 +9558,7 @@ loadDemoProject();
                     }
                     compiled = {
                       hex: statusRes.binary_content,
+                      elf: statusRes.elf_content || '',
                       stdout: statusRes.stdout || '',
                       stderr: statusRes.stderr || ''
                     };
@@ -9525,8 +9569,8 @@ loadDemoProject();
                   }
                   
                   pollCount++;
-                  if (pollCount > 180) {
-                    throw new Error('ESP32 compilation timed out after 90 seconds.');
+                  if (pollCount > 600) {
+                    throw new Error('ESP32 compilation timed out after 300 seconds.');
                   }
                 }
               } else if (kind === 'stm32' && boardComp.type.includes('frontend')) {
@@ -9768,7 +9812,9 @@ loadDemoProject();
           (msg.type === "debug" && msg.category === "rp2040-runtime")
         ) {
           if (!isBackendProxy) {
-            setIsBooting(false);
+            // Guard: only call setState when the value actually changes to avoid
+            // triggering re-renders on every 200ms heartbeat from the runner.
+            setIsBooting((prev) => (prev ? false : prev));
           }
         }
 
@@ -10768,6 +10814,7 @@ loadDemoProject();
         type: "START",
         networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
         hex: result.hex,
+        elf: result.elf,
         neopixels: neopixelWiring,
         wires: cleanWires,
         components: cleanComponents,
@@ -11036,7 +11083,9 @@ loadDemoProject();
     updateElapsed();
     const timer = setInterval(updateElapsed, 250);
     return () => clearInterval(timer);
-  }, [isRunning, runStartedAtMs, isCompiling, isBooting]);
+    // NOTE: isBooting intentionally excluded — it is stable once false and
+    // including it caused the interval to re-mount on every runner heartbeat.
+  }, [isRunning, runStartedAtMs, isCompiling]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!hardwareStatus) return;

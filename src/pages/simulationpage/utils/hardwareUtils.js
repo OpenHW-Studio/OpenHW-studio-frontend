@@ -31,6 +31,9 @@ export function resolveBoardFqbnForComponent(boardComp, boardKind) {
   if (type.includes('pico-w') || type.includes('picow')) {
     return 'rp2040:rp2040:rpipicow';
   }
+  if (type.includes('esp32-c3')) return 'esp32:esp32:esp32c3';
+  if (type.includes('esp32-c6')) return 'esp32:esp32:esp32c6';
+  if (type.includes('esp32-p4')) return 'esp32:esp32:esp32p4';
   return BOARD_FQBN[boardKind] || BOARD_FQBN.arduino_uno;
 }
 

@@ -1,16 +1,17 @@
 import axios from 'axios';
 import { getAdminToken, getToken } from './authService.js';
 
-export const API_BASE_URL = (() => {
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+
+export const COMPILER_URL = (() => {
     const customUrl = localStorage.getItem("CUSTOM_BACKEND_URL");
     if (customUrl) {
-        // Assume user provided full URL including path if needed, e.g. http://localhost:4000/api
         return customUrl.endsWith('/api') ? customUrl : `${customUrl}/api`;
     }
-    return import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}` : (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
+    return API_BASE_URL;
 })();
-const COMPILER_URL = API_BASE_URL;
-const API_ORIGIN = COMPILER_URL.replace(/\/api$/, '');
+
+const API_ORIGIN = API_BASE_URL.replace(/\/api$/, '');
 
 // ─── Frontend IndexedDB Compile Cache for Uno & Pico ───────────────────────
 const DB_NAME = 'OpenHW_Compile_Cache';
@@ -226,22 +227,22 @@ export async function fetchInstalledLibraries() {
 }
 
 export async function searchLibraries(query) {
-    const response = await axios.get(`${COMPILER_URL}/lib-search?q=${encodeURIComponent(query)}`, getUserAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/lib-search?q=${encodeURIComponent(query)}`, getUserAuthConfig());
     return response.data.libraries || [];
 }
 
 export async function installLibrary(name) {
-    const response = await axios.post(`${COMPILER_URL}/lib-install`, { name }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/lib-install`, { name }, getAdminAuthConfig());
     return response.data;
 }
 
 export async function uninstallLibrary(name) {
-    const response = await axios.post(`${COMPILER_URL}/lib-uninstall`, { name }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/lib-uninstall`, { name }, getAdminAuthConfig());
     return response.data;
 }
 
 export async function fetchLibraryConfig() {
-    const response = await axios.get(`${COMPILER_URL}/admin/lib-config`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/lib-config`, getAdminAuthConfig());
     return {
         permanent: response.data.permanent || [],
         totalSize: response.data.totalSize || 0
@@ -249,17 +250,17 @@ export async function fetchLibraryConfig() {
 }
 
 export async function uploadLibraryConfig(permanent) {
-    const response = await axios.post(`${COMPILER_URL}/admin/lib-config/upload`, { permanent }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/lib-config/upload`, { permanent }, getAdminAuthConfig());
     return response.data;
 }
 
 export async function fetchLibraryCache() {
-    const response = await axios.get(`${COMPILER_URL}/admin/lib-cache`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/lib-cache`, getAdminAuthConfig());
     return response.data.cached || [];
 }
 
 export async function clearLibraryCache(name = null) {
-    const response = await axios.delete(`${COMPILER_URL}/admin/lib-cache`, { 
+    const response = await axios.delete(`${API_BASE_URL}/admin/lib-cache`, { 
         ...getAdminAuthConfig(), 
         data: name ? { name } : {} 
     });
@@ -267,7 +268,7 @@ export async function clearLibraryCache(name = null) {
 }
 
 export async function fetchLibrariesInfo(names) {
-    const response = await axios.get(`${COMPILER_URL}/lib-info?names=${encodeURIComponent(names.join(','))}`, getUserAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/lib-info?names=${encodeURIComponent(names.join(','))}`, getUserAuthConfig());
     return response.data.libraries || {};
 }
 
@@ -276,43 +277,43 @@ export async function fetchLibrariesInfo(names) {
  */
 
 export async function approveCustomComponent(payload) {
-    const response = await axios.post(`${COMPILER_URL}/admin/components/approve`, payload, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/components/approve`, payload, getAdminAuthConfig());
     return response.data;
 }
 
 export async function rejectCustomComponent(submissionId) {
-    const response = await axios.delete(`${COMPILER_URL}/admin/components/reject/${submissionId}`, getAdminAuthConfig());
+    const response = await axios.delete(`${API_BASE_URL}/admin/components/reject/${submissionId}`, getAdminAuthConfig());
     return response.data;
 }
 
 export async function fetchPendingComponents() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/pending`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/components/pending`, getAdminAuthConfig());
     return response.data.components || [];
 }
 
 export async function submitCustomComponent(payload) {
-    const response = await axios.post(`${COMPILER_URL}/components/submit`, payload, getUserAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/components/submit`, payload, getUserAuthConfig());
     return response.data;
 }
 
 export async function getInstalledComponents() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/installed`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/components/installed`, getAdminAuthConfig());
     return response.data.components || [];
 }
 
 export async function deleteInstalledComponent(id) {
-    const response = await axios.delete(`${COMPILER_URL}/admin/components/installed/${id}`, getAdminAuthConfig());
+    const response = await axios.delete(`${API_BASE_URL}/admin/components/installed/${id}`, getAdminAuthConfig());
     return response.data;
 }
 
 export async function fetchPublicInstalledComponents() {
-    const response = await axios.get(`${COMPILER_URL}/components/public-installed`);
+    const response = await axios.get(`${API_BASE_URL}/components/public-installed`);
     return response.data.components || [];
 }
 
 export async function fetchComponentsVersion() {
     try {
-        const response = await axios.get(`${COMPILER_URL}/components/version`);
+        const response = await axios.get(`${API_BASE_URL}/components/version`);
         return response.data?.version ?? null;
     } catch (e) {
         return null;
@@ -320,7 +321,7 @@ export async function fetchComponentsVersion() {
 }
 
 export async function backupInstalledComponents() {
-    const response = await axios.get(`${COMPILER_URL}/admin/components/backup`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/components/backup`, getAdminAuthConfig());
     return response.data.components || [];
 }
 
@@ -334,22 +335,22 @@ export async function fetchInstalledComponentsWithFiles() {
 export async function createSharedSimulation(payload) {
     const config = getAdminAuthConfig();
     console.log("[SimulatorService] createSharedSimulation auth config:", config);
-    const response = await axios.post(`${COMPILER_URL}/simulations/share`, payload, config);
+    const response = await axios.post(`${API_BASE_URL}/simulations/share`, payload, config);
     return response.data;
 }
 
 export async function fetchSharedSimulation(shareId) {
-    const response = await axios.get(`${COMPILER_URL}/simulations/share/${shareId}`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/simulations/share/${shareId}`, getAdminAuthConfig());
     return response.data?.project || null;
 }
 
 export async function createLiveSimulationSession(payload) {
-    const response = await axios.post(`${COMPILER_URL}/live-simulations`, payload, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/live-simulations`, payload, getAdminAuthConfig());
     return response.data?.session || null;
 }
 
 export async function fetchLiveSimulationSession(sessionCode) {
-    const response = await axios.get(`${COMPILER_URL}/live-simulations/${encodeURIComponent(sessionCode)}`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/live-simulations/${encodeURIComponent(sessionCode)}`, getAdminAuthConfig());
     return response.data?.session || null;
 }
 
@@ -372,43 +373,43 @@ export function buildLiveSimulationWsUrl(sessionCode, role = 'student') {
  * CI/CD & Infrastructure
  */
 export async function fetchPendingDeployments() {
-    const response = await axios.get(`${COMPILER_URL}/admin/deployments/pending`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/deployments/pending`, getAdminAuthConfig());
     return response.data.pending || [];
 }
 
 export async function approveDeploymentAction(runId, repo, env) {
-    const response = await axios.post(`${COMPILER_URL}/admin/deployments/approve`, { run_id: runId, repo, environment: env }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/deployments/approve`, { run_id: runId, repo, environment: env }, getAdminAuthConfig());
     return response.data;
 }
 
 export async function rejectDeploymentAction(runId, repo, env) {
-    const response = await axios.post(`${COMPILER_URL}/admin/deployments/reject`, { run_id: runId, repo, environment: env }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/deployments/reject`, { run_id: runId, repo, environment: env }, getAdminAuthConfig());
     return response.data;
 }
 
 export async function rollbackDeploymentAction(repo, branch = 'develop') {
-    const response = await axios.post(`${COMPILER_URL}/admin/deployments/rollback`, { repo, branch }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/deployments/rollback`, { repo, branch }, getAdminAuthConfig());
     return response.data;
 }
 
 export async function fetchDeploymentNotifications() {
-    const response = await axios.get(`${COMPILER_URL}/admin/deployments/notifications`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/deployments/notifications`, getAdminAuthConfig());
     return response.data.notifications || [];
 }
 
 export async function dismissDeploymentNotification(id) {
-    const response = await axios.delete(`${COMPILER_URL}/admin/deployments/notifications/${id}`, getAdminAuthConfig());
+    const response = await axios.delete(`${API_BASE_URL}/admin/deployments/notifications/${id}`, getAdminAuthConfig());
     return response.data;
 }
 
 export async function triggerDeploymentBuild(repo, notificationId = null) {
-    const response = await axios.post(`${COMPILER_URL}/admin/deployments/trigger`, { target_repo: repo, notification_id: notificationId }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/deployments/trigger`, { target_repo: repo, notification_id: notificationId }, getAdminAuthConfig());
     return response.data;
 }
 
 export async function fetchInfrastructureStatus() {
     try {
-        const response = await axios.get(`${COMPILER_URL}/admin/infrastructure/status`, getAdminAuthConfig());
+        const response = await axios.get(`${API_BASE_URL}/admin/infrastructure/status`, getAdminAuthConfig());
         return response.data.services || [];
     } catch (e) {
         return [];
@@ -416,7 +417,7 @@ export async function fetchInfrastructureStatus() {
 }
 
 export async function restartInfrastructureService(name) {
-    const response = await axios.post(`${COMPILER_URL}/admin/infrastructure/restart`, { name }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/infrastructure/restart`, { name }, getAdminAuthConfig());
     return response.data;
 }
 
@@ -436,12 +437,12 @@ export function buildLiveLogStreamUrl(service) {
 }
 
 export async function fetchSystemLogs() {
-    const response = await axios.get(`${COMPILER_URL}/admin/system-logs`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/system-logs`, getAdminAuthConfig());
     return response.data.logs || [];
 }
 
 export async function fetchWorkflowLogs(repo, runId) {
-    const response = await axios.get(`${COMPILER_URL}/admin/deployments/logs`, {
+    const response = await axios.get(`${API_BASE_URL}/admin/deployments/logs`, {
         params: { repo, run_id: runId },
         ...getAdminAuthConfig()
     });
@@ -449,23 +450,23 @@ export async function fetchWorkflowLogs(repo, runId) {
 }
 
 export async function fetchUsageAnalytics() {
-    const response = await axios.get(`${COMPILER_URL}/admin/usage-analytics`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/usage-analytics`, getAdminAuthConfig());
     return response.data.stats || null;
 }
 
 export async function fetchAuditHistory() {
-    const response = await axios.get(`${COMPILER_URL}/admin/audit-history`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/audit-history`, getAdminAuthConfig());
     return response.data.logs || [];
 }
 
 export async function fetchPublicSystemStatus() {
-    const response = await axios.get(`${COMPILER_URL}/public/system-status`);
+    const response = await axios.get(`${API_BASE_URL}/public/system-status`);
     return response.data.status || null;
 }
 
 export async function fetchMaintenanceStatus() {
     try {
-        const response = await axios.get(`${COMPILER_URL}/public/maintenance-status`);
+        const response = await axios.get(`${API_BASE_URL}/public/maintenance-status`);
         return response.data.enabled || false;
     } catch (e) {
         // If connection fails (e.g. backend down), consider it maintenance/offline
@@ -474,28 +475,28 @@ export async function fetchMaintenanceStatus() {
 }
 
 export async function toggleMaintenanceMode(enabled) {
-    const response = await axios.post(`${COMPILER_URL}/admin/maintenance/toggle`, { enabled }, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/maintenance/toggle`, { enabled }, getAdminAuthConfig());
     return response.data;
 }
 
 export async function fetchResourceStatus() {
-    const response = await axios.get(`${COMPILER_URL}/admin/resource-status`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/resource-status`, getAdminAuthConfig());
     return response.data;
 }
 
 export async function fetchHostStatus() {
-    const response = await axios.get(`${COMPILER_URL}/admin/host-status`, getAdminAuthConfig());
+    const response = await axios.get(`${API_BASE_URL}/admin/host-status`, getAdminAuthConfig());
     return response.data;
 }
 
 
 export async function triggerRecalibrate() {
-    const response = await axios.post(`${COMPILER_URL}/admin/recalibrate`, {}, getAdminAuthConfig());
+    const response = await axios.post(`${API_BASE_URL}/admin/recalibrate`, {}, getAdminAuthConfig());
     return response.data;
 }
 
 export async function downloadCalibrationScripts() {
-    const response = await axios.get(`${COMPILER_URL}/admin/recalibrate/scripts`, {
+    const response = await axios.get(`${API_BASE_URL}/admin/recalibrate/scripts`, {
         ...getAdminAuthConfig(),
         responseType: 'blob'
     });
@@ -507,14 +508,15 @@ export async function uploadCalibrationScripts(file) {
     formData.append('file', file);
     const config = getAdminAuthConfig();
     config.headers['Content-Type'] = 'multipart/form-data';
-    const response = await axios.put(`${COMPILER_URL}/admin/recalibrate/scripts`, formData, config);
+    const response = await axios.put(`${API_BASE_URL}/admin/recalibrate/scripts`, formData, config);
     return response.data;
 }
 
-export async function startEsp32Compile({ code, libraries_txt, targetEngine }) {
+export async function startEsp32Compile({ code, fqbn, libraries_txt, targetEngine }) {
     const response = await axios.post(`${COMPILER_URL}/compile/start`, {
         code,
         target: 'esp32',
+        fqbn,
         libraries_txt,
         targetEngine
     }, getUserAuthConfig());

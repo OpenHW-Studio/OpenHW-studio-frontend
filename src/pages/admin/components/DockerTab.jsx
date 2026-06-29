@@ -85,7 +85,7 @@ const DockerTab = ({ infraStatus, onRestart }) => {
             case 'backend': return 'Backend Main';
             case 'frontend': return 'Frontend Client';
             case 'mongodb': return 'Database (MongoDB)';
-            case 'esp32-worker': return 'ESP32 Worker';
+            case 'compile-server': return 'Compile Server (ESP32)';
             case 'stm32-worker': return 'STM32 Worker';
             case 'health-agent': return 'Health Agent';
             default: return name;
@@ -222,7 +222,7 @@ const DockerTab = ({ infraStatus, onRestart }) => {
                             <option value="frontend">Frontend Client</option>
                             <option value="backend">Backend Main</option>
                             <option value="mongodb">Database (MongoDB)</option>
-                            <option value="esp32-worker">ESP32 Worker</option>
+                            <option value="compile-server">Compile Server (ESP32)</option>
                             <option value="stm32-worker">STM32 Worker</option>
                             <option value="health-agent">Health Agent</option>
                         </select>

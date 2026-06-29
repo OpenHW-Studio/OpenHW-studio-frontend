@@ -236,7 +236,10 @@ export const SerialTabBar = ({
 };
 
 export const SerialOutputPane = ({ boardId, history, outputRef, isPaused, boardColors, isRunning }) => {
-  const filtered = boardId === 'all' ? history : history.filter(e => e.boardId === boardId);
+  const filtered = React.useMemo(() => {
+    return boardId === 'all' ? history : history.filter(e => e.boardId === boardId);
+  }, [boardId, history]);
+  
   const [frozen, setFrozen] = React.useState(filtered);
 
   React.useEffect(() => {

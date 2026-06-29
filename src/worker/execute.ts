@@ -10,8 +10,10 @@ export async function createRunnerForBoard(
 ): Promise<BoardRunner> {
     if (/(esp32)/i.test(String(boardType || ''))) {
         if (options.esp32SimulationMode === 'frontend') {
-            const { ESP32Runner } = await import('@private/esp32-engine/runner');
-            return new ESP32Runner(hexData, componentsDef, wiresDef, onStateUpdate, options);
+            const { RV32Runner } = await import('./runners/rv32-runner.ts');
+            const runner = new RV32Runner(hexData, componentsDef, wiresDef, onStateUpdate, options);
+            await runner.init();
+            return runner;
         } else {
             const { BackendProxyRunner } = await import('./runners/backend-proxy-runner.ts');
             return new BackendProxyRunner(hexData, componentsDef, wiresDef, onStateUpdate, options);
