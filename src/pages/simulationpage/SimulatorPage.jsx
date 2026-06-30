@@ -13395,7 +13395,6 @@ loadDemoProject();
                       ? "default"
                       : "grab",
               touchAction: "none", // Block browser pinch-to-zoom
-              pointerEvents: readOnly ? "none" : "auto",
               opacity: readOnly ? 0.8 : 1,
               marginLeft: canvasOnly ? "0" : "38px",
               transform: canvasOnly ? "none" : `translateX(${isPaletteHovered ? "302px" : "0"})`,

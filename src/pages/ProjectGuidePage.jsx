@@ -151,6 +151,17 @@ export default function ProjectGuidePage() {
     }
   }, [serialEntries, serialBoardFilter, autoscroll, serialPaused])
 
+  const sendSerialInput = useCallback(() => {
+    const txt = String(serialInput || "");
+    if (!txt.trim()) return;
+    const lineEndings = { nl: "\n", cr: "\r", "cr+nl": "\r\n", no: "" };
+    const payload = txt + (lineEndings[serialLineEnding] ?? "\n");
+    iframeRef.current?.contentWindow?.postMessage({
+      type: "serial-send", data: payload,
+    }, "*");
+    setSerialInput("");
+  }, [serialInput, serialLineEnding]);
+
   const canvasOnlyUrl = `/${projectName}/demo?canvas-only=1&readonly=1`
 
   useEffect(() => {
