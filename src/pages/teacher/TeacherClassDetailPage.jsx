@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Plus } from "lucide-react";
-import { useNavigate, useParams } from "react-router-dom";
-import ClassroomSidebar from "../../components/common/ClassroomSidebar.jsx";
-import { getAvatarLetters } from "../../components/common/test.js";
+import {
+  Plus, Settings, Bell, GraduationCap, Folder, Layers,
+  FileText, HelpCircle, FolderKanban, ArrowLeft,
+} from "lucide-react";
+import { useNavigate, useParams, Link } from "react-router-dom";
 import TeacherClassDetailSkeleton from "../../components/teacher/class-detail/TeacherClassDetailSkeleton.jsx";
 import TeacherClassHeader from "../../components/teacher/class-detail/TeacherClassHeader.jsx";
 import TeacherClassMainContent from "../../components/teacher/class-detail/TeacherClassMainContent.jsx";
@@ -12,7 +13,6 @@ import TeacherEditClassModal from "../../components/teacher/class-detail/Teacher
 import TeacherAssignmentSubmissionsModal from "../../components/teacher/class-detail/TeacherAssignmentSubmissionsModal.jsx";
 import ClassroomFilePreviewModal from "../../components/common/ClassroomFilePreviewModal.jsx";
 import ProjectBankModal from "../../components/teacher/class-detail/ProjectBankModal.jsx";
-import { sidebarLinks } from "../../components/teacher/class-detail/helpers.js";
 import { uploadClassroomFiles } from "../../components/teacher/class-detail/uploadUtils.js";
 import { useAuth } from "../../context/AuthContext.jsx";
 import {
@@ -113,10 +113,7 @@ export default function TeacherClassDetailPage() {
   const classMenuRef = useRef(null);
   const codeMenuRef = useRef(null);
 
-  const avatarInitials = useMemo(
-    () => getAvatarLetters(user?.name, "T"),
-    [user],
-  );
+  const avatarInitials = user?.name ? user.name.slice(0, 2).toUpperCase() : "TC";
 
   const markStats = useMemo(() => {
     const withDueDate = assignments.filter((item) => item.dueDate);
@@ -347,13 +344,7 @@ export default function TeacherClassDetailPage() {
     navigate("/");
   };
 
-  const navLinks = sidebarLinks.map((item) => ({
-    ...item,
-    isActive: item.key === "classes",
-    onClick: () => {
-      if (item.route) navigate(item.route);
-    },
-  }));
+
 
   const handlePostNotice = async (event) => {
     event.preventDefault();
@@ -948,11 +939,9 @@ export default function TeacherClassDetailPage() {
 
   if (loading) {
     return (
-      <TeacherClassDetailSkeleton
-        navLinks={navLinks}
-        user={user}
-        onLogout={handleLogout}
-      />
+      <div className="student-db-layout" style={{ alignItems: 'center', justifyContent: 'center', display: 'flex' }}>
+        <div style={{ color: '#64748b', fontSize: '14px', fontWeight: 700 }}>Loading class...</div>
+      </div>
     );
   }
 
@@ -967,15 +956,95 @@ export default function TeacherClassDetailPage() {
   }
 
   return (
-    <div className="teacher-dashboard-page">
-      <ClassroomSidebar
-        links={navLinks}
-        user={user}
-        onLogout={handleLogout}
-        onProfileClick={() => navigate('/teacher/profile')}
-      />
+    <div className="student-db-layout">
+      <header className="student-db-header">
+        <div className="student-db-header__left">
+          <Link to="/" className="student-db-header__brand">
+            <img src="/logo-Photoroom.png" alt="OpenHW Studio" style={{ height: '50px', objectFit: 'contain' }} />
+          </Link>
+        </div>
 
-      <main className="teacher-dashboard-main teacher-dashboard-main--with-fixed-sidebar">
+        <nav className="student-db-header__nav">
+          <button onClick={() => navigate('/teacher/dashboard')} className="student-db-header__nav-link">Workbench</button>
+          <button onClick={() => navigate('/simulator')} className="student-db-header__nav-link">Simulation</button>
+          <button onClick={() => navigate('/teacher/project-bank')} className="student-db-header__nav-link">Project Bank</button>
+        </nav>
+
+        <div className="student-db-header__right">
+          <button className="student-db-header__icon-btn" title="Settings"><Settings size={16} /></button>
+          <button className="student-db-header__icon-btn" title="Notifications"><Bell size={16} /></button>
+          <button
+            onClick={() => {
+              setComposerMode(activeTab === 'stream' ? 'notice' : 'assignment');
+              setShowComposer(true);
+            }}
+            className="student-db-header__deploy-btn"
+          >
+            + New Post
+          </button>
+          <div
+            onClick={() => navigate('/teacher/profile')}
+            className="student-db-header__avatar"
+            title="Teacher Profile"
+          >
+            {user?.image ? (
+              <img src={user.image} alt={user?.name || 'Profile'} />
+            ) : (
+              <span>{avatarInitials}</span>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ── Main body ── */}
+      <div className="student-db-main-container">
+
+        {/* ── Left Sidebar ── */}
+        <aside className="student-db-sidebar">
+          <div className="student-db-sidebar__top">
+            <div className="student-db-profile-card">
+              <div className="student-db-profile-card__monogram">{avatarInitials}</div>
+              <div className="student-db-profile-card__info">
+                <span className="student-db-profile-card__title">{user?.name || 'Teacher'}</span>
+                <span className="student-db-profile-card__sub">TEACHER · Authenticated</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => navigate('/teacher/dashboard')}
+              className="student-db-sidebar__sim-btn"
+              style={{ background: '#475569' }}
+            >
+              <ArrowLeft size={16} />
+              Back to Dashboard
+            </button>
+
+            <nav className="student-db-sidebar__nav">
+              <button onClick={() => navigate('/teacher/dashboard')} className="student-db-sidebar__link">
+                <GraduationCap size={16} /> All Classes
+              </button>
+              <button onClick={() => navigate('/teacher/project-bank')} className="student-db-sidebar__link">
+                <FolderKanban size={16} /> Project Bank
+              </button>
+              <button onClick={() => navigate('/simulator')} className="student-db-sidebar__link">
+                <Layers size={16} /> Simulator
+              </button>
+            </nav>
+          </div>
+
+          <div className="student-db-sidebar__bottom">
+            <nav className="student-db-sidebar__nav">
+              <a href="https://openhwgroup.org" target="_blank" rel="noreferrer" className="student-db-sidebar__link">
+                <FileText size={16} /> Docs
+              </a>
+              <button className="student-db-sidebar__link"><HelpCircle size={16} /> Support</button>
+              <button onClick={handleLogout} className="student-db-sidebar__link" style={{ color: '#ef4444' }}>Sign Out</button>
+            </nav>
+          </div>
+        </aside>
+
+        {/* ── Class Content Area ── */}
+        <main className="student-db-content" style={{ overflowY: 'auto' }}>
         <section className="teacher-class-page teacher-class-page--shell">
           <TeacherClassHeader
             classroom={classroom}
@@ -1078,7 +1147,8 @@ export default function TeacherClassDetailPage() {
             </button>
           </div>
         </section>
-      </main>
+        </main>
+      </div>
 
       {info ? (
         <div className="teacher-toast" role="status">

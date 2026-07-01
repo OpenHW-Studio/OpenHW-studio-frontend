@@ -119,8 +119,10 @@ export default function SignupPage() {
     setError("");
 
     try {
+      const imageUrl = `https://api.dicebear.com/9.x/${avatarStyle}/svg?seed=${avatarSeed}`;
       const data = await signupUser({
         ...formData,
+        image: imageUrl,
         avatarSeed,
         avatarStyle,
       });

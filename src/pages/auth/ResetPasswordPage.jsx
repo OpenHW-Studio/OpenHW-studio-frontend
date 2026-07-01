@@ -41,7 +41,7 @@ export default function ResetPasswordPage() {
       <div className="auth-shell" style={{ display: 'flex', justifyContent: 'center' }}>
         <section className="auth-panel" style={{ width: '100%', maxWidth: '520px' }}>
           <div className="auth-panel__brand">
-            <img src="/image.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
+            <img src="/logo-Photoroom.png" alt="OpenHW-Studio" className="brand-logo brand-logo--auth" />
           </div>
 
           <header className="auth-panel__header">

@@ -14,11 +14,23 @@ export const getToken = () => {
 };
 export const removeToken = () => localStorage.removeItem('openhw_token');
 
-export const saveUser = (user) => localStorage.setItem('openhw_user', JSON.stringify(user));
+export const saveUser = (user) => {
+  if (user) {
+    user.college = user.school || user.college;
+    user.semester = user.classStandard || user.semester;
+  }
+  localStorage.setItem('openhw_user', JSON.stringify(user));
+};
 export const getUser = () => {
   try {
-    const user = localStorage.getItem('openhw_user');
-    return user ? JSON.parse(user) : null;
+    const userStr = localStorage.getItem('openhw_user');
+    if (!userStr) return null;
+    const user = JSON.parse(userStr);
+    if (user) {
+      user.college = user.school || user.college;
+      user.semester = user.classStandard || user.semester;
+    }
+    return user;
   } catch (e) {
     return null;
   }
@@ -54,9 +66,9 @@ export const signupUser = async (userData) => {
       email: userData.email,
       password: userData.password,
       role: userData.role,
-      college: userData.college,
+      school: userData.college,
       branch: userData.branch,
-      semester: userData.semester,
+      classStandard: userData.semester,
       bio: userData.bio,
       image: userData.image
     }),
@@ -177,6 +189,11 @@ export const fetchProfile = async () => {
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch profile');
   
+  if (data.user) {
+    data.user.college = data.user.school || data.user.college;
+    data.user.semester = data.user.classStandard || data.user.semester;
+  }
+  
   return data;
 };
 
@@ -190,7 +207,11 @@ export const updateProfile = async (profileData) => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
-    body: JSON.stringify(profileData)
+    body: JSON.stringify({
+      ...profileData,
+      school: profileData.college,
+      classStandard: profileData.semester
+    })
   });
 
   const data = await response.json();
