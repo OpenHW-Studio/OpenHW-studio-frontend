@@ -22,6 +22,23 @@ const ESP32_WORLDS = [
   { id: 1, name: 'ESP32 Basics', theme: 'Coming Soon', color: '#e74c3c', bg: 'rgba(231,76,60,0.06)', border: 'rgba(231,76,60,0.18)', icon: '📡', slugs: [], comingSoon: true },
 ]
 
+// Helper to classify project journey type (arduino vs esp32)
+function getProjectJourney(project) {
+  if (!project) return 'arduino';
+  const BUILTIN_ARDUINO_SLUGS = ['led-blink', 'rgb-led', 'buzzer', 'potentiometer', 'ldr', 'servo-motor', 'led-strip', 'button-debounce', 'temperature-sensor', 'dc-motor'];
+  if (BUILTIN_ARDUINO_SLUGS.includes(project.slug)) {
+    return 'arduino';
+  }
+  const components = project.components || [];
+  for (const comp of components) {
+    const type = String(comp.type || comp.id || "").toLowerCase();
+    if (type.includes('esp32')) {
+      return 'esp32';
+    }
+  }
+  return 'arduino';
+}
+
 // Winding x-positions
 const PATH_X = [50, 75, 50, 25, 50, 75, 50, 25, 50, 75]
 
@@ -433,7 +450,10 @@ export default function AdventureMapPage() {
   const totalProjects  = resolvedProjects.length
 
   const worldGroups = useMemo(() => {
-    if (!classAdventure?.worlds?.length) {
+    const journeyProjects = resolvedProjects.filter(p => getProjectJourney(p) === activeJourney)
+    const isESP32Empty = activeJourney === 'esp32' && journeyProjects.length === 0
+
+    if (!classAdventure?.worlds?.length || isESP32Empty) {
       return WORLDS.map(w => ({
         ...w,
         projects: resolvedProjects.filter(p => w.slugs.includes(p.slug)).sort((a, b) => a.number - b.number),
@@ -449,8 +469,9 @@ export default function AdventureMapPage() {
         bg: `${world.color || '#3b82f6'}14`,
         border: `${world.color || '#3b82f6'}44`,
         icon: world.icon || '🧭',
-        projects: resolvedProjects.filter((project) => project.worldId === world.id).sort((a, b) => (a.order || 0) - (b.order || 0)),
+        projects: journeyProjects.filter((project) => project.worldId === world.id).sort((a, b) => (a.order || 0) - (b.order || 0)),
       }))
+      .filter(w => w.projects.length > 0)
   }, [classId, classAdventure, resolvedProjects, activeJourney])
 
   const stepGap = 80
