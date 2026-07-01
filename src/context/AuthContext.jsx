@@ -45,6 +45,10 @@ export function AuthProvider({ children }) {
    * @param {object} userProfile - { id, name, email, role, points, coins, level }
    */
   const login = (jwtToken, userProfile, isAdminPortal = false) => {
+    if (userProfile) {
+      userProfile.college = userProfile.school || userProfile.college;
+      userProfile.semester = userProfile.classStandard || userProfile.semester;
+    }
     if (isAdminPortal) {
       saveAdminToken(jwtToken)
       saveAdminUser(userProfile)
@@ -65,6 +69,10 @@ export function AuthProvider({ children }) {
   }
 
   const updateUserSession = (userProfile) => {
+    if (userProfile) {
+      userProfile.college = userProfile.school || userProfile.college;
+      userProfile.semester = userProfile.classStandard || userProfile.semester;
+    }
     saveUser(userProfile)
     setUser(userProfile)
   }

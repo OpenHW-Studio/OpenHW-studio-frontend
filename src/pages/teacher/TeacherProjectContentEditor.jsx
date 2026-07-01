@@ -873,57 +873,72 @@ const handleReturnFromSimulator = useCallback(() => {
 
 return (
     <div className="teacher-editor-page">
-      <div className="teacher-editor-topbar">
-        <button
-          type="button"
-          className="btn-back"
-          onClick={() => bankMode ? navigate("/teacher/project-bank") : navigate(`/teacher/classes/${classId}`)}
-        >
-          ← {bankMode ? "Project Bank" : "Back to Class"}
-        </button>
-          <div style={{ textAlign: "center", flex: 1 }}>
-            <div style={{ fontSize: 12, color, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase" }}>
-              📖
-              {bankMode ? (
-                <input
-                  type="text"
-                  value={customTitle || ""}
-                  onChange={(e) => setCustomTitle(e.target.value)}
-                  className="editor-field"
-                  style={{
-                    marginLeft: 8,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "#f0f4ff",
-                    background: "rgba(255,255,255,.06)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 6,
-                    padding: "4px 8px",
-                    width: 260,
-                    textAlign: "center",
-                    textTransform: "none",
-                    letterSpacing: "0",
-                  }}
-                  placeholder="Project title"
-                />
-              ) : (
-                <span>{projectMeta?.title || projectSlug}</span>
-              )}
-            </div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: "#f0f4ff" }}>Content Editor</div>
-          </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+      <header className="student-db-header">
+        {/* Left: logo + back button */}
+        <div className="student-db-header__left" style={{ gap: 16 }}>
+          <a href="/" className="student-db-header__brand">
+            <img src="/logo-Photoroom.png" alt="OpenHW Studio" style={{ height: '44px', objectFit: 'contain' }} />
+          </a>
+          <button
+            type="button"
+            onClick={() => bankMode ? navigate("/teacher/project-bank") : navigate(`/teacher/classes/${classId}`)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '7px 14px', borderRadius: 8,
+              border: '1px solid #e2e8f0', background: '#f8fafc',
+              color: '#475569', fontWeight: 700, fontSize: 13,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >
+            ← {bankMode ? 'Project Bank' : 'Back to Class'}
+          </button>
+        </div>
+
+        {/* Center: project title */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          {bankMode ? (
+            <input
+              type="text"
+              value={customTitle || ''}
+              onChange={(e) => setCustomTitle(e.target.value)}
+              style={{
+                fontSize: 15, fontWeight: 800, color: '#0f172a',
+                background: 'transparent', border: '1px solid #e2e8f0',
+                borderRadius: 8, padding: '5px 12px', width: 320,
+                fontFamily: 'inherit', outline: 'none', textAlign: 'center',
+              }}
+              placeholder="Project title..."
+            />
+          ) : (
+            <span style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>
+              {projectMeta?.title || projectSlug}
+            </span>
+          )}
+          <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 800, letterSpacing: '0.1em', marginTop: 2 }}>CONTENT EDITOR</span>
+        </div>
+
+        {/* Right: visibility + actions */}
+        <div className="student-db-header__right">
           {bankMode && (
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: "var(--text2)" }}>
-              <input type="checkbox" checked={bankVisibility === "published"} onChange={handlePublishToggle} disabled={publishing || savingBank || !canEditBankProject} />
-              Shared / Published
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12, fontWeight: 700, color: '#64748b', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={bankVisibility === 'published'}
+                onChange={handlePublishToggle}
+                disabled={publishing || savingBank || !canEditBankProject}
+              />
+              Publish
             </label>
           )}
           <button
             type="button"
-            onClick={() => navigate(`/teacher/classes/${classId}`)}
-            className="btn-ghost"
+            onClick={() => bankMode ? navigate('/teacher/project-bank') : navigate(`/teacher/classes/${classId}`)}
             disabled={saving || savingBank}
+            style={{
+              padding: '7px 14px', borderRadius: 8, border: '1px solid #e2e8f0',
+              background: '#f8fafc', color: '#475569', fontWeight: 700,
+              fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+            }}
           >
             Cancel
           </button>
@@ -932,24 +947,24 @@ return (
               type="button"
               onClick={handleSaveToBank}
               disabled={savingBank}
-              className="btn-primary"
+              className="student-db-header__deploy-btn"
               style={{ opacity: savingBank ? 0.6 : 1 }}
             >
-              {savingBank ? "Saving..." : canEditBankProject ? "Save to Bank" : "Save a Copy"}
+              {savingBank ? 'Saving...' : canEditBankProject ? 'Save to Bank' : 'Save a Copy'}
             </button>
           ) : (
             <button
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="btn-primary"
+              className="student-db-header__deploy-btn"
               style={{ opacity: saving ? 0.6 : 1 }}
             >
-              {saving ? "Saving..." : "Save"}
+              {saving ? 'Saving...' : 'Save'}
             </button>
           )}
         </div>
-      </div>
+      </header>
 
        {error && (
          <div style={{ color: "#f87171", padding: "12px 24px", background: "rgba(239,68,68,.12)" }}>
