@@ -1087,13 +1087,24 @@ export default function StudentClassDetailPage() {
                       <h3>Class Adventure</h3>
                       <small>Open the class-specific learning path</small>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}`)}
-                      className="teacher-assignment-modal__resource-pill"
-                    >
-                      Open Adventure
-                    </button>
+                    <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&journey=arduino`)}
+                        className="teacher-assignment-modal__resource-pill"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+                      >
+                        🔵 Arduino Uno Map
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/adventure?classId=${encodeURIComponent(classId)}&journey=esp32`)}
+                        className="teacher-assignment-modal__resource-pill"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, borderColor: '#e74c3c', color: '#e74c3c' }}
+                      >
+                        📡 ESP32 Map
+                      </button>
+                    </div>
                   </section>
                 )}
               </section>
