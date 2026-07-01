@@ -17,9 +17,8 @@ const ARDUINO_WORLDS = [
 ]
 
 // ─── ESP32 journey worlds ────────────────────────────────────────────────────
-// No ESP32 projects exist yet in ProjectsConfig — shown as "coming soon" until added.
 const ESP32_WORLDS = [
-  { id: 1, name: 'ESP32 Basics', theme: 'Coming Soon', color: '#e74c3c', bg: 'rgba(231,76,60,0.06)', border: 'rgba(231,76,60,0.18)', icon: '📡', slugs: [], comingSoon: true },
+  { id: 4, name: 'IoT & Smart Home', theme: 'IoT', color: '#0ea5e9', bg: 'rgba(14,165,233,0.06)', border: 'rgba(14,165,233,0.18)', icon: '📡', slugs: ['esp32-led-blink', 'esp32-smart-home'] },
 ]
 
 // Winding x-positions
@@ -970,6 +969,4 @@ export default function AdventureMapPage() {
     </div>
   )
 }
-
-
 

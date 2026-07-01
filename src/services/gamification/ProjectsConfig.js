@@ -1,4 +1,3 @@
-
 import { PROJECT_DATA, getOpenhwType } from './ProjectData';
 
 export const PROJECTS = [
@@ -1238,6 +1237,217 @@ void loop() {
       rarity: 'rare',
     },
   },
+  // ── World 4: ESP32 / IoT ────────────────────────────────────────────────────
+// ── World 4: ESP32 / IoT ───────────────────────────────────────────────────
+  {
+    id: 'esp32-led-blink',
+    slug: 'esp32-led-blink',
+    number: 11,
+    prerequisite: 'dc-motor',
+    title: 'ESP32 LED Blink',
+    subtitle: 'Your first IoT board!',
+    description:
+      'Meet the ESP32 — a tiny board with WiFi and Bluetooth built in! ' +
+      'Unlike Arduino Uno, the ESP32 can connect to the internet, run web servers, and talk to other devices wirelessly. ' +
+      'We will start simple: blink an LED, just like your very first Arduino project, but on this powerful new board.',
+    difficulty: 'beginner',
+    difficultyLabel: 'Beginner',
+    estimatedTime: '20 min',
+    xpReward: 180,
+    color: '#0ea5e9',
+    icon: '📡',
+    world: 4,
+    tags: ['ESP32', 'GPIO', 'digital output', 'IoT'],
+    startingComponents: ['openhw-esp32', 'openhw-led', 'openhw-resistor'],
+    rewardComponents: [
+      { type: 'openhw-esp32-cam', name: 'ESP32-CAM', icon: '📷', description: 'An ESP32 with a built-in camera — stream live video over WiFi!' },
+    ],
+    components: [
+      { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
+      { type: 'openhw-led', label: 'LED', qty: 1 },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+    ],
+    wiring: [
+      { from: 'ESP32 GPIO2', to: 'LED anode (+)' },
+      { from: 'LED cathode (−)', to: '220Ω resistor' },
+      { from: 'Resistor', to: 'ESP32 GND' },
+    ],
+    starterCode: `// ESP32 LED Blink — note: we use GPIO2, the built-in LED pin on most boards!
+#define LED_PIN 2
+
+void setup() {
+  pinMode(LED_PIN, OUTPUT);
+  Serial.begin(115200);   // ESP32 default baud rate is faster than Arduino's 9600
+}
+
+void loop() {
+  digitalWrite(LED_PIN, HIGH);
+  Serial.println("LED ON");
+  delay(1000);
+  digitalWrite(LED_PIN, LOW);
+  Serial.println("LED OFF");
+  delay(1000);
+}`,
+    concepts: ['ESP32 GPIO numbering', 'WiFi/Bluetooth microcontrollers', 'Serial.begin(115200)', 'IoT basics'],
+    kidFriendlyTip: '📡 Tip: ESP32 boards run at 115200 baud by default (much faster than Arduino\'s 9600!). Make sure your Serial Monitor matches, or you\'ll see garbled text.',
+    evaluation: {
+      passingThreshold: 70,
+      evaluationCriteria: {
+        components: {
+          description: 'Correct components placed',
+          weight: 0.3,
+          required: [
+            { type: 'esp32', count: 1 },
+            { type: 'led', count: 1 },
+            { type: 'resistor', count: 1 },
+          ],
+        },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.3,
+          requiredConnections: [
+            { from: { component: 'esp32', pin: 'gpio2' }, to: { component: 'led', terminal: 'A' } },
+            { from: { component: 'led', terminal: 'K' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'esp32', pin: 'gnd' } },
+          ],
+          alternativeConnections: [
+            [
+              { from: { component: 'esp32', pin: 'gpio2' }, to: { component: 'resistor', terminal: '1' } },
+              { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+              { from: { component: 'led', terminal: 'K' }, to: { component: 'esp32', pin: 'gnd' } },
+            ]
+          ],
+        },
+        codeFunctionality: {
+          description: 'Code blinks LED correctly',
+          weight: 0.4,
+          requiredFunctions: ['setup', 'loop'],
+          expectedBehavior: { pinNumber: 2, pinMode: 'OUTPUT', pattern: 'alternating high/low', blinkDelay: 1000 },
+        },
+      },
+    },
+    badge: {
+      id: 'badge_esp32_led_blink',
+      name: 'IoT Initiate',
+      description: 'Blinked your first LED on an ESP32!',
+      icon: '📡',
+      rarity: 'uncommon',
+    },
+  },
+
+  {
+    id: 'esp32-smart-home',
+    slug: 'esp32-smart-home',
+    number: 12,
+    prerequisite: 'esp32-led-blink',
+    title: 'ESP32 Smart Home System',
+    subtitle: 'Control your home from anywhere!',
+    description:
+      'Build a mini smart home system: an LED light, a DC motor (like a fan), and a buzzer (for alarms) — ' +
+      'all controlled by a single ESP32. Real smart home hubs use exactly this idea: one connected board ' +
+      'controlling many devices, ready to be triggered over WiFi.',
+    difficulty: 'advanced',
+    difficultyLabel: 'Advanced',
+    estimatedTime: '45 min',
+    xpReward: 340,
+    color: '#0ea5e9',
+    icon: '🏠',
+    world: 4,
+    tags: ['ESP32', 'IoT', 'smart home', 'multi-device control'],
+    startingComponents: ['openhw-esp32', 'openhw-led', 'openhw-resistor', 'openhw-motor', 'openhw-buzzer'],
+    rewardComponents: [
+      // Completing this unlocks ALL remaining components — full IoT Engineer!
+      { type: '*', name: 'ALL Components Unlocked!', icon: '🏆', description: 'You completed the full ESP32 journey! You now have access to the entire component library!' },
+    ],
+    components: [
+      { type: 'openhw-esp32', label: 'ESP32 DevKit', qty: 1 },
+      { type: 'openhw-led', label: 'LED (light)', qty: 1 },
+      { type: 'openhw-resistor', label: '220Ω Resistor', qty: 1, attrs: { value: '220' } },
+      { type: 'openhw-motor', label: 'DC Motor (fan)', qty: 1 },
+      { type: 'openhw-buzzer', label: 'Buzzer (alarm)', qty: 1 },
+    ],
+    wiring: [
+      { from: 'ESP32 GPIO2', to: 'LED anode → 220Ω resistor → ESP32 GND' },
+      { from: 'ESP32 GPIO4', to: 'DC Motor (+)' },
+      { from: 'DC Motor (−)', to: 'ESP32 GND' },
+      { from: 'ESP32 GPIO5', to: 'Buzzer (+)' },
+      { from: 'Buzzer (−)', to: 'ESP32 GND' },
+    ],
+    starterCode: `// ESP32 Smart Home — three devices, one board!
+#define LIGHT_PIN  2
+#define FAN_PIN    4
+#define ALARM_PIN  5
+
+void setup() {
+  pinMode(LIGHT_PIN, OUTPUT);
+  pinMode(FAN_PIN, OUTPUT);
+  pinMode(ALARM_PIN, OUTPUT);
+  Serial.begin(115200);
+  Serial.println("Smart Home System Ready!");
+}
+
+void loop() {
+  // Light ON, fan ON, alarm silent — normal daytime mode
+  digitalWrite(LIGHT_PIN, HIGH);
+  digitalWrite(FAN_PIN, HIGH);
+  digitalWrite(ALARM_PIN, LOW);
+  Serial.println("Mode: Day — Light ON, Fan ON");
+  delay(3000);
+
+  // Night mode: light off, fan off, quick alarm chirp
+  digitalWrite(LIGHT_PIN, LOW);
+  digitalWrite(FAN_PIN, LOW);
+  digitalWrite(ALARM_PIN, HIGH);
+  Serial.println("Mode: Night — Light OFF, Alarm chirp");
+  delay(300);
+  digitalWrite(ALARM_PIN, LOW);
+  delay(2700);
+}`,
+    concepts: ['Multi-device GPIO control', 'Smart home automation', 'State machines', 'Single-board IoT hubs'],
+    kidFriendlyTip: '🏠 Tip: Real smart home systems (like Google Nest or Amazon Echo) work exactly like this — one small connected board controlling many devices through simple digital signals!',
+    evaluation: {
+      passingThreshold: 80,
+      evaluationCriteria: {
+        components: {
+          description: 'Correct components placed',
+          weight: 0.3,
+          required: [
+            { type: 'esp32', count: 1 },
+            { type: 'led', count: 1 },
+            { type: 'motor', count: 1 },
+            { type: 'buzzer', count: 1 },
+          ],
+        },
+        wiringAccuracy: {
+          description: 'Correct wiring',
+          weight: 0.4,
+          requiredConnections: [
+            { from: { component: 'esp32', pin: 'gpio2' }, to: { component: 'resistor', terminal: '1' } },
+            { from: { component: 'resistor', terminal: '2' }, to: { component: 'led', terminal: 'A' } },
+            { from: { component: 'led', terminal: 'K' }, to: { component: 'esp32', pin: 'gnd' } },
+            { from: { component: 'esp32', pin: 'gpio4' }, to: { component: 'motor', terminal: '1' } },
+            { from: { component: 'motor', terminal: '2' }, to: { component: 'esp32', pin: 'gnd' } },
+            { from: { component: 'esp32', pin: 'gpio5' }, to: { component: 'buzzer', terminal: 'p' } },
+            { from: { component: 'buzzer', terminal: 'n' }, to: { component: 'esp32', pin: 'gnd' } },
+          ],
+          alternativeConnections: [],
+        },
+        codeFunctionality: {
+          description: 'All three devices respond correctly',
+          weight: 0.3,
+          requiredFunctions: ['setup', 'loop'],
+        },
+      },
+    },
+    badge: {
+      id: 'badge_esp32_smart_home',
+      name: 'IoT Engineer',
+      description: 'Built a full smart home automation system with ESP32!',
+      icon: '🏆',
+      rarity: 'legendary',
+    },
+  },
+
 ];
 
 // Difficulty styling
@@ -1311,3 +1521,4 @@ export function getProjectRewardComponents(projectSlug) {
 export function getLockedProjects(completedProjects = []) {
   return PROJECTS.filter(p => getProjectStatus(p.slug, completedProjects) === 'locked');
 }
+
