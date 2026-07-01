@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
-import { PROJECTS, getProjectStatus, getProjectRewardComponents } from '../services/gamification/ProjectsConfig'
+import { PROJECTS, getProjectStatus, getProjectRewardComponents, normalizeDifficulty } from '../services/gamification/ProjectsConfig'
 import {
   getAdventureContent,
   getAdventureProgress,
@@ -9,11 +9,17 @@ import {
 } from '../services/adventureService'
 import { buildFallbackClassAdventureContent } from '../services/classAdventureAdapter'
 
-// ─── World groupings ────────────────────────────────────────────────────────
-const WORLDS = [
-  { id: 1, name: 'Circuit Basics',      theme: 'Beginner',     color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '⚡', slugs: ['led-blink','rgb-led','buzzer','potentiometer','ldr'] },
+// ─── Arduino journey worlds ──────────────────────────────────────────────────
+const ARDUINO_WORLDS = [
+  { id: 1, name: 'Circuit Basics',      theme: 'Easy',         color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '⚡', slugs: ['led-blink','rgb-led','buzzer','potentiometer','ldr'] },
   { id: 2, name: 'Signal Control',      theme: 'Intermediate', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)',  border: 'rgba(59,130,246,0.18)', icon: '🎮', slugs: ['servo-motor','led-strip','button-debounce','temperature-sensor'] },
-  { id: 3, name: 'Machines & Sensors',  theme: 'Advanced',     color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🤖', slugs: ['dc-motor'] },
+  { id: 3, name: 'Machines & Sensors',  theme: 'Hard',         color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🤖', slugs: ['dc-motor'] },
+]
+
+// ─── ESP32 journey worlds ────────────────────────────────────────────────────
+// No ESP32 projects exist yet in ProjectsConfig — shown as "coming soon" until added.
+const ESP32_WORLDS = [
+  { id: 1, name: 'ESP32 Basics', theme: 'Coming Soon', color: '#e74c3c', bg: 'rgba(231,76,60,0.06)', border: 'rgba(231,76,60,0.18)', icon: '📡', slugs: [], comingSoon: true },
 ]
 
 // Winding x-positions
@@ -176,7 +182,7 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }
             fontSize: 10, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase',
             color: project.color, marginBottom: 6,
           }}>
-            {project.difficulty} · Project {project.number}
+            {normalizeDifficulty(project.difficulty).charAt(0).toUpperCase() + normalizeDifficulty(project.difficulty).slice(1)} · Project {project.number}
           </div>
           <div style={{ fontSize: 22, fontWeight: 900, color: T.rewardItemText, marginBottom: 4 }}>
             {project.title}
@@ -327,6 +333,11 @@ export default function AdventureMapPage() {
   // ── Read initial theme from document (set by LandingPage) ──
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const [selectedProject, setSelectedProject] = useState(null)
+
+  // Journey tabs: 'arduino' | 'esp32' — only swaps which WORLDS array feeds worldGroups.
+  const [activeJourney, setActiveJourney] = useState('arduino')
+  const WORLDS = activeJourney === 'arduino' ? ARDUINO_WORLDS : ESP32_WORLDS
+
   const T = getT(theme)
 
   const toggleTheme = () => {
@@ -400,12 +411,19 @@ export default function AdventureMapPage() {
   const handleStepNavigate = (project, step) => {
     if (!step?.route) return
     const route = step.route(project.slug)
-    navigate(classId ? `${route}?classId=${encodeURIComponent(classId)}` : route)
+    const url = new URL(route, window.location.origin)
+    if (classId) url.searchParams.set('classId', classId)
+    url.searchParams.set('fromMap', '1')
+    navigate(url.pathname + url.search)
   }
 
   const handleStart = (slug, mode) => {
     setSelectedProject(null)
-    const suffix = classId ? `?classId=${encodeURIComponent(classId)}` : ''
+    const searchParams = new URLSearchParams()
+    if (classId) searchParams.set('classId', classId)
+    searchParams.set('fromMap', '1')
+    const suffix = `?${searchParams.toString()}`
+
     if (mode === 'guide') navigate(`/${slug}/reading${suffix}`)
     else if (mode === 'guide-simple') navigate(`/${slug}/guide${suffix}`)
     else navigate(`/${slug}/assessment${suffix}`)
@@ -433,7 +451,7 @@ export default function AdventureMapPage() {
         icon: world.icon || '🧭',
         projects: resolvedProjects.filter((project) => project.worldId === world.id).sort((a, b) => (a.order || 0) - (b.order || 0)),
       }))
-  }, [classId, classAdventure, resolvedProjects])
+  }, [classId, classAdventure, resolvedProjects, activeJourney])
 
   const stepGap = 80
   const stepTopPad = 36
@@ -580,6 +598,42 @@ export default function AdventureMapPage() {
         </div>
       </header>
 
+      {/* ── Journey Tabs: Arduino / ESP32 ────────────────────────────────── */}
+      <div style={{
+        position: 'sticky', top: 60, zIndex: 99,
+        background: T.headerBg, backdropFilter: 'blur(16px)',
+        borderBottom: `1px solid ${T.headerBorder}`,
+      }}>
+        <div style={{
+          maxWidth: 900, margin: '0 auto', padding: '0 20px',
+          display: 'flex', alignItems: 'center', gap: 4, height: 48,
+        }}>
+          {[
+            { id: 'arduino', icon: '🔵', label: 'Arduino Journey', color: '#00979d' },
+            { id: 'esp32',   icon: '📡', label: 'ESP32 Journey',   color: '#e74c3c' },
+          ].map(j => {
+            const active = activeJourney === j.id
+            return (
+              <button key={j.id} type="button"
+                onClick={() => { setActiveJourney(j.id); setSelectedProject(null) }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 16px', borderRadius: 8, border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+                  background: active ? `${j.color}22` : 'transparent',
+                  color: active ? j.color : T.pageColor,
+                  borderBottom: active ? `2px solid ${j.color}` : '2px solid transparent',
+                  transition: 'all .18s',
+                }}
+              >
+                <span>{j.icon}</span>
+                <span>{j.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       {/* Hero */}
       <div style={{ textAlign: 'center', padding: '32px 20px 6px', animation: 'fadeSlideUp .5s ease both' }}>
         <div style={{
@@ -592,7 +646,7 @@ export default function AdventureMapPage() {
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
           lineHeight: 1.2,
         }}>
-          Adventure Map
+          {activeJourney === 'arduino' ? 'Arduino Adventure Map' : 'ESP32 Adventure Map'}
         </h1>
         <p style={{ color: T.heroSubText, fontSize: 14, margin: '0 auto 6px', maxWidth: 380, lineHeight: 1.6 }}>
           Complete projects to earn more components.<br/>
@@ -611,6 +665,24 @@ export default function AdventureMapPage() {
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '12px 20px 120px' }}>
         {worldGroups.map((world, wi) => {
           const allDone = world.projects.every(p => completedProjects.includes(p.slug))
+          const isComingSoon = world.comingSoon === true || world.projects.length === 0
+
+          if (isComingSoon) return (
+            <div key={world.id} style={{ marginBottom: 10, animation: `fadeSlideUp .5s ease ${wi * 0.1}s both`, opacity: 0.6 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '14px 18px', borderRadius: 10,
+                background: world.bg, border: `1px dashed ${world.border}`, color: world.color,
+              }}>
+                <span style={{ fontSize: 20 }}>{world.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>{world.name}</div>
+                  <div style={{ fontSize: 11, opacity: .7, fontWeight: 600 }}>Projects coming soon — check back later!</div>
+                </div>
+              </div>
+            </div>
+          )
+
           return (
             <div key={world.id} style={{ marginBottom: 10, animation: `fadeSlideUp .5s ease ${wi * 0.1}s both` }}>
               {/* World header */}
@@ -641,7 +713,8 @@ export default function AdventureMapPage() {
                   { key: 'read', label: 'Reading Part', icon: '\u{1F4D6}', order: 1, route: (slug) => '/' + slug + '/reading' },
                   { key: 'quiz', label: 'Quiz', icon: '\u2753', order: 2, route: (slug) => '/' + slug + '/quiz' },
                   { key: 'unlock', label: 'Component Unlock', icon: '\u{1F381}', order: 3, route: (slug) => '/' + slug + '/components' },
-                  { key: 'sim', label: 'Simulator / Project', icon: '\u{1F527}', order: 4, route: (slug) => '/' + slug + '/assessment' },
+                  { key: 'demo', label: 'Learn from project demo', icon: '📺', order: 4, route: (slug) => '/' + slug + '/guide' },
+                  { key: 'sim', label: 'Simulator / Project', icon: '\u{1F527}', order: 5, route: (slug) => '/' + slug + '/assessment' },
                 ]
 
                 const points = getStepPoints(steps.length)
