@@ -1153,6 +1153,27 @@ body {
   .component-palette {
     width: 160px;
   }
+
+  .teacher-editor-topbar {
+    flex-direction: column;
+    padding: 12px 16px;
+    min-height: auto;
+    height: auto;
+  }
+
+  .teacher-editor-header-center {
+    order: -1;
+    margin-bottom: 8px;
+  }
+
+  .teacher-editor-actions {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .header-title-input {
+    width: 200px;
+  }
 }
 
 /* ─── PALETTE SCROLLBAR ───────────────────────────────────────────────────── */
@@ -11173,9 +11194,87 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
-  height: 64px;
+  height: auto;
+  min-height: 64px;
   border-bottom: 1px solid var(--border);
   background: var(--bg2);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.teacher-editor-header-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-width: 200px;
+  gap: 4px;
+}
+
+.teacher-editor-project-title {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.teacher-editor-project-title span,
+.teacher-editor-project-title input {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f0f4ff;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.teacher-editor-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: #f0f4ff;
+}
+
+.teacher-editor-difficulty {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.teacher-editor-difficulty label {
+  font-size: 12px;
+  color: var(--text2);
+  font-weight: 700;
+}
+
+.teacher-editor-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.teacher-editor-publish-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text2);
+}
+
+.header-title-input {
+  margin-left: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f0f4ff;
+  background: rgba(255,255,255,.06);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  width: 260px;
+  text-align: center;
 }
 
 .teacher-editor-topbar .btn-back {
@@ -11459,4 +11558,85 @@ body {
   text-align: center;
 }
 
+.editor-message {
+  padding: 12px 24px;
+  font-size: 14px;
+}
+
+.editor-message--error {
+  color: #f87171;
+  background: rgba(239,68,68,.12);
+}
+
+.editor-message--success {
+  color: #34d399;
+  background: rgba(52,211,153,.12);
+}
+
+.editor-toolbar {
+  display: flex;
+  gap: 10;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.editor-toolbar-group {
+  display: flex;
+  gap: 8;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.editor-toolbar-group label {
+  font-size: 12px;
+  color: var(--text2);
+  font-weight: 700;
+}
+
+.editor-card-difficulty {
+  margin-left: auto;
+  margin-right: 10px;
+  width: 150px;
+}
+
+.editor-rewards-label {
+  font-size: 14px;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.editor-rewards-controls {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.editor-rewards-categories {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.editor-empty-state {
+  color: #94a3b8;
+  font-size: 13px;
+  padding: 14px 12px;
+  border: 1px dashed rgba(148,163,184,.4);
+  border-radius: 10px;
+  text-align: center;
+}
+
+/* ─── BLOCKLY FIXES ──────────────────────────────────────────────────────── */
+.blocklyHtmlInput {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  text-shadow: none !important;
+  border: none !important;
+  outline: none !important;
+  font-family: inherit !important;
+}
 

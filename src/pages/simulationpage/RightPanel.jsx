@@ -149,6 +149,17 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
 
   const [isLibPanelOpen, setIsLibPanelOpen] = React.useState(false);
 
+  React.useEffect(() => {
+    const handleOpenLib = () => setIsLibPanelOpen(true);
+    const handleCloseLib = () => setIsLibPanelOpen(false);
+    window.addEventListener('open-library-panel', handleOpenLib);
+    window.addEventListener('close-library-panel', handleCloseLib);
+    return () => {
+      window.removeEventListener('open-library-panel', handleOpenLib);
+      window.removeEventListener('close-library-panel', handleCloseLib);
+    };
+  }, []);
+
   const isActiveFileLibraryTxt = React.useMemo(() => {
     const activeFile = (projectFiles || []).find(f => f.id === activeCodeFileId);
     return activeFile ? activeFile.name === 'library.txt' : false;
@@ -831,6 +842,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                           {projectRootFiles.map((file) => (
                             <div
                               key={file.id}
+                              data-tour-file={file.name}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setFileMenu(null);
@@ -914,6 +926,7 @@ const RightPanelInternal = React.forwardRef((props, ref) => {
                               {!collapsedBoards[group.boardId] && group.files.map((file) => (
                                 <div
                                   key={file.id}
+                                  data-tour-file={file.name}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setFileMenu(null);

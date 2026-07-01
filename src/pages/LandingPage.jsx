@@ -1,9 +1,28 @@
-import { useState, startTransition } from "react";
+import { useState, useMemo, startTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
-import ProjectIcon from "../components/common/ProjectIcon.jsx";
+import { PROJECTS } from "../services/gamification/ProjectsConfig.js";
+import GUIDED_JSON from "../services/guidedProjects.json";
 const DOCS_URL =
   import.meta.env.VITE_DOCS_URL || "https://openhw-studio.fossee.in/docs/";
+
+// JSON slug → URL slug for projects where they differ
+const JSON_SLUG_TO_URL = {
+  "rgb-led-blink": "rgb-led",
+};
+
+const PREFERRED_SLUGS = [
+  "led-blink", "rgb-led", "buzzer", "potentiometer", "ldr",
+  "button-debounce", "traffic-light", "led-pwm", "lcd-scrolling-text",
+];
+
+const PROJECT_ICONS = {};
+for (const p of PROJECTS) {
+  PROJECT_ICONS[p.slug] = p.icon || "🔌";
+}
+
+const LEVEL_ORDER = ["BEGINNER", "INTERMEDIATE", "ADVANCED"];
+const LEVEL_LABELS = { BEGINNER: "Beginner", INTERMEDIATE: "Intermediate", ADVANCED: "Advanced" };
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -11,6 +30,28 @@ export default function LandingPage() {
   const [theme, setTheme] = useState(
     () => localStorage.getItem("theme") || "dark",
   );
+
+  const allCards = useMemo(() => {
+    const cards = [];
+    for (const level of LEVEL_ORDER) {
+      const levelData = GUIDED_JSON[level];
+      if (!levelData) continue;
+      const levelLabel = LEVEL_LABELS[level] || level;
+      for (const cat of Object.values(levelData.categories)) {
+        for (const p of cat.projects) {
+          const urlSlug = JSON_SLUG_TO_URL[p.slug] || p.slug;
+          cards.push({
+            slug: urlSlug,
+            title: p.title,
+            board: p.board,
+            difficulty: levelLabel,
+            xp: 100,
+          });
+        }
+      }
+    }
+    return cards;
+  }, []);
   const toggleTheme = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);
@@ -176,103 +217,28 @@ export default function LandingPage() {
         >
           Explore pre-built circuits and code — no login required
         </p>
-        <div className="features-grid">
-          {[
-            {
-              icon: "💡",
-              title: "LED Blink",
-              slug: "led-blink",
-              board: "Arduino Uno",
-              difficulty: "Beginner",
-              xp: 100,
-            },
-            {
-              icon: "🌈",
-              title: "RGB LED",
-              slug: "rgb-led",
-              board: "Arduino Uno",
-              difficulty: "Beginner",
-              xp: 150,
-            },
-            {
-              icon: "🔊",
-              title: "Buzzer",
-              slug: "buzzer",
-              board: "Arduino Uno",
-              difficulty: "Beginner",
-              xp: 150,
-            },
-            {
-              icon: "🎛️",
-              title: "Potentiometer",
-              slug: "potentiometer",
-              board: "Arduino Uno",
-              difficulty: "Beginner",
-              xp: 175,
-            },
-            {
-              icon: "🌞",
-              title: "Light Sensor",
-              slug: "ldr",
-              board: "Arduino Uno",
-              difficulty: "Beginner",
-              xp: 140,
-            },
-            {
-              icon: "🔘",
-              title: "Button & Debounce",
-              slug: "button-debounce",
-              board: "Arduino Uno",
-              difficulty: "Beginner",
-              xp: 200,
-            },
-            {
-              icon: "⚙️",
-              title: "Servo Motor",
-              slug: "servo-motor",
-              board: "Arduino Uno",
-              difficulty: "Intermediate",
-              xp: 200,
-            },
-            {
-              icon: "✨",
-              title: "LED Strip",
-              slug: "led-strip",
-              board: "Arduino Uno",
-              difficulty: "Intermediate",
-              xp: 220,
-            },
-            {
-              icon: "🌡️",
-              title: "Temperature Sensor",
-              slug: "temperature-sensor",
-              board: "Arduino Uno",
-              difficulty: "Intermediate",
-              xp: 250,
-            },
-            {
-              icon: "🔩",
-              title: "DC Motor",
-              slug: "dc-motor",
-              board: "Arduino Uno",
-              difficulty: "Advanced",
-              xp: 300,
-            },
-          ].map((p) => (
+        <div style={{
+          maxHeight: 520, overflowY: "auto",
+          paddingRight: 8,
+          scrollbarWidth: "thin",
+          scrollbarColor: "var(--border, rgba(255,255,255,0.1)) transparent",
+        }}>
+          <div className="features-grid">
+            {allCards.map((p) => (
             <div
               className="feature-card"
               key={p.slug}
               onClick={() => handleNavigate(`/${p.slug}/guide`)}
-              style={{ cursor: "pointer", textAlign: "left" }}
+              style={{ cursor: "pointer", textAlign: "center" }}
             >
-              <div className="feature-icon" style={{ display: 'flex', alignItems: 'center' }}>
-                <ProjectIcon slug={p.slug} />
+              <div style={{ fontSize: 40, marginBottom: 10, lineHeight: 1 }}>
+                {PROJECT_ICONS[p.slug] || "🔌"}
               </div>
-              <h3 style={{ marginBottom: 4 }}>{p.title}</h3>
+              <h3 style={{ marginBottom: 4, fontSize: 15 }}>{p.title}</h3>
               <p style={{ margin: "0 0 10px", fontSize: 13, opacity: 0.6 }}>
                 {p.board}
               </p>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center" }}>
                 <span
                   style={{
                     fontSize: 11,
@@ -302,14 +268,11 @@ export default function LandingPage() {
                 >
                   {p.difficulty}
                 </span>
-                <span
-                  style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24" }}
-                >
-                  +{p.xp} XP
-                </span>
+
               </div>
             </div>
           ))}
+          </div>
         </div>
       </section>
 
