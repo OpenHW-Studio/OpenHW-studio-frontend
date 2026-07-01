@@ -374,33 +374,7 @@ export default function StudentDashboard() {
     }
   };
 
-  // Mock fallbacks for classroom cards to match the design aesthetics when list is empty
   const renderedClassrooms = useMemo(() => {
-    const mockClasses = [
-      {
-        _id: "mock-class-1",
-        name: "Intro to Embedded Systems",
-        code: "EE-204",
-        teacher: { name: "Prof. Vance" },
-        students: Array(45).fill(0),
-        bannerType: "blue",
-        footerIcons: ["folder", "terminal", "chart"]
-      },
-      {
-        _id: "mock-class-2",
-        name: "Advanced Computer Architecture",
-        code: "CS-401",
-        teacher: { name: "Dr. Chen" },
-        students: Array(22).fill(0),
-        bannerType: "dark",
-        footerIcons: ["folder", "terminal"]
-      }
-    ];
-
-    if (classrooms.length === 0) {
-      return mockClasses;
-    }
-
     return classrooms.map((cls, idx) => ({
       ...cls,
       bannerType: idx % 2 === 0 ? "blue" : "dark",
@@ -785,15 +759,7 @@ export default function StudentDashboard() {
                   {renderedClassrooms.map((cls) => (
                     <div
                       key={cls._id}
-                      onClick={() => {
-                        if (!cls._id.startsWith("mock-")) {
-                          navigate(`/student/classes/${cls._id}`);
-                        } else {
-                          setInfo(
-                            `Selected mock environment: ${cls.name}. Key secure.`
-                          );
-                        }
-                      }}
+                      onClick={() => navigate(`/student/classes/${cls._id}`)}
                       className="roster-card"
                     >
                       <div
