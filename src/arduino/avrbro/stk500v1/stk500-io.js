@@ -88,18 +88,18 @@ export const sendCommand = async ({ reader, writer }, opt) => {
   }
   if (reader && writer) {
     try {
-      writer.write(cmd)
+      await writer.write(cmd)
     } catch(err) {
-      throw new Error(`Sending ${cmd.toString('hex')} : {err.message}`)
+      throw new Error(`Sending ${cmd.toString('hex')} : ${err.message}`)
     }
     try {
       const data = await receiveData(reader, timeout, responseLength)
       if (responseData && !bufferEqual(data, responseData)) {
-        throw new Error(`${cmd} response mismatch: ${data.toString('hex')}, ${responseData.toString('hex')}`)
+        throw new Error(`${cmd.toString('hex')} response mismatch: ${data.toString('hex')}, ${responseData.toString('hex')}`)
       }
       return data
     } catch (err) {
-      throw new Error(`Sending ${cmd.toString('hex')}: ${err.message}`)
+      throw new Error(`Sending ${cmd.toString('hex')} : ${err.message}`)
     }
   } else {
     throw new Error(`serial port not found`)

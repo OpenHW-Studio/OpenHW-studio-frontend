@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { Microchip, Lightbulb, CircuitBoard, FlaskConical, Cpu } from "lucide-react";
-import PROJECT_DATA from "../services/guidedProjects.json";
+import { SerialTabBar, SerialOutputPane, SerialSendRow } from "./simulationpage/components/SerialMonitor";
 
 const SLUG_MAP = {
   "led-blink": "led-blink",
@@ -45,19 +45,62 @@ const SLUG_MAP = {
   "line-following-robot": "line-following-robot",
 };
 
+import { markAdventureStepComplete } from "../services/adventureService";
+
+import PROJECT_INDEX from "../services/guideProjectsIndex.json";
+
 export default function ProjectGuidePage() {
   const { projectName = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const classId = searchParams.get('classId');
+
+  useEffect(() => {
+    if (projectName) {
+      markAdventureStepComplete({
+        classId,
+        projectSlug: projectName,
+        stepKey: 'demo',
+        stepOrder: 4,
+      }).catch(() => {});
+    }
+  }, [projectName, classId]);
+
+  const jsonSlug = SLUG_MAP[projectName]
+  const project = jsonSlug ? PROJECT_INDEX[jsonSlug] : null
+
   const iframeRef = useRef(null);
   const [iframeLoading, setIframeLoading] = useState(true);
   const [serialBtnHovered, setSerialBtnHovered] = useState(false);
   const [serialOpen, setSerialOpen] = useState(false);
   const [serialEntries, setSerialEntries] = useState([]);
-  const serialEndRef = useRef(null);
-  const serialContainerRef = useRef(null);
+  const serialOutputRef = useRef(null);
+  const serialPopupRef = useRef(null);
   const [serialPopupPos, setSerialPopupPos] = useState(null);
   const serialPopupDragging = useRef(false);
   const serialPopupDragOffset = useRef({ x: 0, y: 0 });
-  const serialPopupRef = useRef(null);
+  const [serialBoardFilter, setSerialBoardFilter] = useState('all');
+  const [serialPaused, setSerialPaused] = useState(false);
+  const [autoscroll, setAutoscroll] = useState(true);
+  const [serialInput, setSerialInput] = useState('');
+  const [serialBaudRate, setSerialBaudRate] = useState('9600');
+  const [serialLineEnding, setSerialLineEnding] = useState('nl');
+  const [isSerialSplit, setIsSerialSplit] = useState(false);
+
+  const BOARD_ID = 'board-0';
+  const serialBoardOptions = ['all', BOARD_ID];
+  const serialBoardLabels = { [BOARD_ID]: 'Arduino Uno' };
+  const serialBoardKinds = { [BOARD_ID]: 'arduino_uno' };
+  const boardColors = { [BOARD_ID]: '#1a5276' };
+
+  const serialHistory = useMemo(() =>
+    serialEntries.map(e => ({
+      ...e,
+      ts: '',
+      boardId: BOARD_ID,
+      source: 'simulation',
+    })),
+    [serialEntries]
+  );
 
   const handleSerialPopupMouseDown = useCallback((e) => {
     serialPopupDragging.current = true;
@@ -103,24 +146,32 @@ export default function ProjectGuidePage() {
   }, [])
 
   useEffect(() => {
-    if (serialContainerRef.current) {
-      serialContainerRef.current.scrollTop = serialContainerRef.current.scrollHeight
+    if (autoscroll && !serialPaused && serialOutputRef.current) {
+      serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
     }
-  }, [serialEntries])
+  }, [serialEntries, serialBoardFilter, autoscroll, serialPaused])
+
+  const sendSerialInput = useCallback(() => {
+    const txt = String(serialInput || "");
+    if (!txt.trim()) return;
+    const lineEndings = { nl: "\n", cr: "\r", "cr+nl": "\r\n", no: "" };
+    const payload = txt + (lineEndings[serialLineEnding] ?? "\n");
+    iframeRef.current?.contentWindow?.postMessage({
+      type: "serial-send", data: payload,
+    }, "*");
+    setSerialInput("");
+  }, [serialInput, serialLineEnding]);
 
   const canvasOnlyUrl = `/${projectName}/demo?canvas-only=1&readonly=1`
 
-  const project = useMemo(() => {
-    const jsonSlug = SLUG_MAP[projectName]
-    if (!jsonSlug) return null
-    for (const level of Object.values(PROJECT_DATA)) {
-      for (const cat of Object.values(level.categories)) {
-        const found = cat.projects.find(p => p.slug === jsonSlug)
-        if (found) return found
-      }
-    }
-    return null
-  }, [projectName])
+  useEffect(() => {
+    const link = document.createElement('link')
+    link.rel = 'prefetch'
+    link.href = canvasOnlyUrl
+    link.as = 'document'
+    document.head.appendChild(link)
+    return () => document.head.removeChild(link)
+  }, [canvasOnlyUrl])
 
   const explanation = project?.description
     ? `This project demonstrates ${project.description.charAt(0).toLowerCase() + project.description.slice(1)}. The code configures the board in the setup() function and runs the main logic repeatedly in the loop() function.`
@@ -152,6 +203,7 @@ export default function ProjectGuidePage() {
               width: "100%", height: "100%", border: "none", display: "block",
             }}
             title={`${projectName} Simulator`}
+            fetchpriority="high"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-top-navigation-by-user-activation"
           />
 
@@ -166,7 +218,7 @@ export default function ProjectGuidePage() {
                 <path d="M21 12a9 9 0 1 1-6.219-8.56" />
               </svg>
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text, #e2e8f0)" }}>
-                Loading circuit...
+                Loading circuit… Placing components and wiring connection
               </div>
             </div>
           )}
@@ -286,22 +338,26 @@ export default function ProjectGuidePage() {
             </div>
           )}
 
-          {project?.code && (
-            <div style={{
-              background: "var(--bg3, #1e293b)", borderRadius: 10, padding: 14,
-            }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}>
-                <Cpu size={12} strokeWidth={2.5} /> Arduino Code
+
+            
+            {searchParams.get('fromMap') && (
+              <div style={{ marginTop: 'auto', paddingTop: 20 }}>
+                <button 
+                  onClick={() => {
+                    window.location.href = classId ? `/adventure?classId=${encodeURIComponent(classId)}` : '/adventure';
+                  }}
+                  style={{
+                    display: 'block', width: '100%', textAlign: 'center',
+                    padding: '14px', borderRadius: 12, border: 'none', cursor: 'pointer',
+                    background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                    color: '#fff', fontSize: 15, fontWeight: 800,
+                    boxShadow: '0 8px 24px rgba(34,197,94,0.35)',
+                  }}>
+                  ← Back to Adventure Map
+                </button>
               </div>
-              <pre style={{
-                margin: 0, fontSize: 12, lineHeight: 1.6,
-                color: "#e2e8f0", overflowX: "auto",
-                fontFamily: "'JetBrains Mono','Fira Code',monospace",
-                whiteSpace: "pre-wrap", wordBreak: "break-word",
-              }}>{project.code}</pre>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -310,7 +366,7 @@ export default function ProjectGuidePage() {
           position: 'fixed',
           left: serialPopupPos?.x ?? (typeof window !== 'undefined' ? window.innerWidth - 420 : 700),
           top: serialPopupPos?.y ?? (typeof window !== 'undefined' ? window.innerHeight - 350 : 400),
-          width: 400, height: 320,
+          width: 'min(520px, 94vw)', height: 'min(400px, 70vh)',
           background: '#0f172a',
           border: '1px solid rgba(255,255,255,0.1)',
           borderRadius: 12,
@@ -327,7 +383,7 @@ export default function ProjectGuidePage() {
               borderBottom: '1px solid rgba(255,255,255,0.06)',
               fontSize: 12, fontWeight: 700, color: '#e2e8f0',
               cursor: 'grab', userSelect: 'none',
-              background: '#1e293b',
+              background: '#1e293b', flexShrink: 0,
             }}
           >
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -347,23 +403,47 @@ export default function ProjectGuidePage() {
               }}
             >✕ Close</button>
           </div>
-          <div ref={serialContainerRef} style={{
-            flex: 1, overflowY: 'auto', padding: '10px 14px',
-            fontFamily: "'JetBrains Mono','Fira Code',monospace", fontSize: 12, lineHeight: 1.6,
-          }}>
-            {serialEntries.length === 0 && (
-              <div style={{ color: '#64748b', fontStyle: 'italic' }}>Waiting for serial data...</div>
-            )}
-            {serialEntries.map((entry, i) => (
-              <div key={i} style={{
-                color: entry.dir === 'rx' ? '#22c55e' : entry.dir === 'tx' ? '#60a5fa' : '#f59e0b',
-                whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-              }}>
-                {entry.text}
-              </div>
-            ))}
-            <div ref={serialEndRef} />
-          </div>
+
+          <SerialTabBar
+            activeBoard={serialBoardFilter}
+            otherActiveBoard={null}
+            setBoard={setSerialBoardFilter}
+            isPaused={serialPaused}
+            onTogglePause={() => setSerialPaused(p => !p)}
+            autoscroll={autoscroll}
+            onToggleAutoscroll={setAutoscroll}
+            onClear={() => setSerialEntries([])}
+            onToggleSplit={() => setIsSerialSplit(s => !s)}
+            isSplit={isSerialSplit}
+            boardOptions={serialBoardOptions}
+            boardColors={boardColors}
+            boardLabels={serialBoardLabels}
+            boardKinds={serialBoardKinds}
+          />
+
+          <SerialOutputPane
+            boardId={serialBoardFilter}
+            history={serialHistory}
+            outputRef={serialOutputRef}
+            isPaused={serialPaused}
+            boardColors={boardColors}
+            isRunning={true}
+          />
+
+          <SerialSendRow
+            boardId={serialBoardFilter === 'all' ? BOARD_ID : serialBoardFilter}
+            input={serialInput}
+            setInput={setSerialInput}
+            onSend={sendSerialInput}
+            isRunning={true}
+            hardwareConnected={false}
+            serialLineEnding={serialLineEnding}
+            setSerialLineEnding={setSerialLineEnding}
+            serialBaudRate={serialBaudRate}
+            setSerialBaudRate={setSerialBaudRate}
+            boardLabels={serialBoardLabels}
+            theme="dark"
+          />
         </div>
       )}
 

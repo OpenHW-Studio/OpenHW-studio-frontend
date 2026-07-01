@@ -11,6 +11,7 @@ import {
   getSharedProjectBank,
   deleteProjectBankEntry,
 } from "../../services/projectBankService";
+import { getDifficultyDisplay } from "../../services/gamification/ProjectsConfig.js";
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
 function getProjectBoardType(project) {
@@ -350,18 +351,30 @@ export default function TeacherProjectBankPage() {
                         </p>
 
                         {/* Meta tags */}
-                        {project.nodes?.length > 0 && (
-                          <div className="project-bank-card__tags">
+                        <div className="project-bank-card__tags">
+                          {project.nodes?.length > 0 && (
                             <span className="project-bank-card__tag">
                               <BookOpen size={11} /> {project.nodes.length} Nodes
                             </span>
-                            {project.xpReward && (
-                              <span className="project-bank-card__tag project-bank-card__tag--xp">
-                                {project.xpReward} XP
-                              </span>
-                            )}
-                          </div>
-                        )}
+                          )}
+                          {project.xpReward && (
+                            <span className="project-bank-card__tag project-bank-card__tag--xp">
+                              {project.xpReward} XP
+                            </span>
+                          )}
+                          {project.difficulty && (
+                            <span
+                              className="project-bank-card__tag"
+                              style={{
+                                background: getDifficultyDisplay(project.difficulty).bg,
+                                color: getDifficultyDisplay(project.difficulty).color,
+                                border: `1px solid ${getDifficultyDisplay(project.difficulty).color}40`,
+                              }}
+                            >
+                              {getDifficultyDisplay(project.difficulty).label}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Actions */}
