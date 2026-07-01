@@ -47,7 +47,9 @@ import ProjectsGallery from "./pages/ProjectsGallery.jsx";
 import ComponentsPage from "./pages/ComponentsPage.jsx";
 import ComponentEditorPage from "./pages/ComponentEditorPage.jsx";
 import AdventureMapPage from "./pages/AdventureMapPage.jsx";
-import ProjectGuidePage from "./pages/ProjectGuidePage.jsx";
+const ProjectGuidePage = React.lazy(
+  () => import("./pages/ProjectGuidePage.jsx"),
+);
 import ExploreCommunity from "./pages/ExploreCommunity.jsx";
 const GuidedSimulatorPage = React.lazy(
   () => import("./pages/GuidedSimulatorPage.jsx"),
@@ -230,8 +232,8 @@ export default function App() {
                   path="/simulator"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -239,8 +241,8 @@ export default function App() {
                   path="/mobile-simulator"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -249,8 +251,8 @@ export default function App() {
                   path="/simulator/live/:liveCode"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -258,8 +260,8 @@ export default function App() {
                   path="/mobile-simulator/live/:liveCode"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -268,8 +270,8 @@ export default function App() {
                   path="/simulator/share/:shareId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -277,8 +279,8 @@ export default function App() {
                   path="/mobile-simulator/share/:shareId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -287,8 +289,8 @@ export default function App() {
                   path="/simulator/share/:shareId/assignment/:classId/:assignmentId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -296,8 +298,8 @@ export default function App() {
                   path="/simulator/assignment/:classId/:assignmentId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -305,8 +307,8 @@ export default function App() {
                   path="/mobile-simulator/share/:shareId/assignment/:classId/:assignmentId"
                   element={
                     <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
+                      desktopElement={<SimulatorPage />}
+                      mobileElement={<MobileSimulatorPage />}
                     />
                   }
                 />
@@ -316,11 +318,13 @@ export default function App() {
                 <Route
                   path="/:projectName/demo"
                   element={
-                    <ResponsiveSimulatorRoute
-                      desktopElement={<SimulatorPage gamificationMode />}
-                      mobileElement={<MobileSimulatorPage gamificationMode />}
-                    />
+                    <SimulatorPage gamificationMode />
                   }
+                />
+
+                <Route
+                  path="/guide"
+                  element={<Navigate to="/led-blink/guide" replace />}
                 />
 
                 <Route
@@ -399,6 +403,14 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRole="teacher">
                       <TeacherClassDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/teacher/classes/:classId/projects/:projectSlug/edit"
+                  element={
+                    <ProtectedRoute allowedRole="teacher">
+                      <TeacherProjectContentEditor />
                     </ProtectedRoute>
                   }
                 />

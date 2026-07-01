@@ -55,6 +55,23 @@ function CanvasBottomControlsBase({
   canvasZoom,
   handleZoomTextClick,
 }) {
+  React.useEffect(() => {
+    if (!setIsConsoleOpen) return;
+    const handleOpen = () => setIsConsoleOpen(true);
+    const handleClose = () => setIsConsoleOpen(false);
+    const handleClear = () => {
+      if (clearConsoleEntries) clearConsoleEntries('console');
+    };
+    window.addEventListener('open-simulation-console', handleOpen);
+    window.addEventListener('close-simulation-console', handleClose);
+    window.addEventListener('clear-simulation-console', handleClear);
+    return () => {
+      window.removeEventListener('open-simulation-console', handleOpen);
+      window.removeEventListener('close-simulation-console', handleClose);
+      window.removeEventListener('clear-simulation-console', handleClear);
+    };
+  }, [setIsConsoleOpen, clearConsoleEntries]);
+
   return (
     <>
       <div
@@ -65,12 +82,15 @@ function CanvasBottomControlsBase({
         onDoubleClick={e => e.stopPropagation()}
       >
         <button
+          id="tour-console-btn"
+          data-tour-step="console"
           className="zoom-btn"
           onClick={() => setIsConsoleOpen(v => !v)}
           style={{ background: isConsoleOpen ? 'var(--card)' : 'none', border: isConsoleOpen ? '1px solid var(--accent)' : 'none', color: isConsoleOpen ? 'var(--accent)' : 'var(--text)', cursor: 'pointer', lineHeight: 1, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }}
           title="Toggle Console"
         >
-          <TerminalIcon size={16} />
+          <TerminalIcon size={14} />
+          {isConsoleOpen && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700 }}>CONSOLE</span>}
         </button>
         <button className="zoom-btn" onClick={() => applyZoomAtCenter(Math.max(0.25, parseFloat((canvasZoomRef.current - 0.25).toFixed(2))))} style={{ background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', lineHeight: 1, padding: '4px 7px', borderRadius: 6, display: 'flex', alignItems: 'center' }} title="Zoom Out">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /><line x1="8" y1="11" x2="14" y2="11" /></svg>

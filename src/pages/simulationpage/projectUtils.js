@@ -1016,7 +1016,7 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
           } else if (type === 'openhw-potentiometer') {
             if (pinId === 'GND' || pinId === '1') pinId = '1';
             else if (pinId === 'VCC' || pinId === '3') pinId = '2';
-            else if (pinId === 'SIG' || pinId === '2') pinId = 'SIG';
+            else if (pinId === 'SIG') pinId = 'SIG';
           } else if (type === 'openhw-slide-potentiometer') {
             if (pinId === 'OUT') pinId = 'SIG';
           } else if (type === 'openhw-pushbutton') {
@@ -1098,9 +1098,8 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
             }
           } else if (type === 'openhw-7segment') {
             pinId = pinId.toUpperCase();
-            if (pinId === 'COM.1' || pinId === 'COM.2') {
-              pinId = 'DIG1';
-            }
+            // COM.1 and COM.2 are the actual pin names; do NOT remap to DIG1.
+            // The emulator logic already checks COM.1, COM.2 and DIG1 as fallback.
           } else if (type === 'openhw-max7219') {
             if (pinId === 'LOAD') pinId = 'CS';
           } else if (type === 'openhw-pca9685' || type === 'openhw-pca9865') {
@@ -1117,7 +1116,10 @@ export function normalizeImportedCircuitData(rawComponents, rawConnections) {
               if (num >= 0 && num <= 15) pinId = `G${num}`;
             }
           } else if (type === 'openhw-ntc-temperature-sensor') {
-            if (pinId === '1') pinId = 'p1';
+            if (pinId === 's') pinId = 'OUT';
+            else if (pinId === 'v') pinId = 'VCC';
+            else if (pinId === 'g') pinId = 'GND';
+            else if (pinId === '1') pinId = 'p1';
             else if (pinId === '2') pinId = 'p2';
           } else if (type === 'logic-ic-74xx') {
             const num = parseInt(pinId, 10);

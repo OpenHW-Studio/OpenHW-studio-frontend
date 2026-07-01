@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { getSharedProjectBank } from "../../services/projectBankService";
+import { getDifficultyDisplay } from "../../services/gamification/ProjectsConfig.js";
 
 function getProjectBoardType(project) {
   const components = project.components || [];
@@ -221,19 +222,35 @@ export default function ProjectBankModal({ isOpen, onClose, onAddProject, select
                       <strong style={{ fontSize: 14, fontWeight: 700, color: "var(--text, #e2e8f0)" }}>
                         {project.title || project.slug}
                       </strong>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          padding: "3px 7px",
-                          borderRadius: 5,
-                          background: "rgba(56,189,248,0.15)",
-                          color: "var(--accent, #38bdf8)",
-                        }}
-                      >
-                        {board}
-                      </span>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            padding: "3px 7px",
+                            borderRadius: 5,
+                            background: "rgba(56,189,248,0.15)",
+                            color: "var(--accent, #38bdf8)",
+                          }}
+                        >
+                          {board}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            textTransform: "capitalize",
+                            padding: "3px 7px",
+                            borderRadius: 5,
+                            background: getDifficultyDisplay(project.difficulty).bg,
+                            color: getDifficultyDisplay(project.difficulty).color,
+                            border: `1px solid ${getDifficultyDisplay(project.difficulty).color}40`,
+                          }}
+                        >
+                          {getDifficultyDisplay(project.difficulty).label}
+                        </span>
+                      </div>
                     </div>
                     <p
                       style={{
