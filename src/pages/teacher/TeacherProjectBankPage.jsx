@@ -22,6 +22,69 @@ const isBoardLike = (value) => {
   return Boolean(normalized) && BOARD_HINTS.some((hint) => normalized.includes(hint) || hint.includes(normalized));
 };
 
+const hasProjectBuildContent = (project) =>
+  Boolean(
+    (Array.isArray(project?.components) && project.components.length) ||
+      String(project?.starterCode || "").trim() ||
+      (Array.isArray(project?.guidedSteps) && project.guidedSteps.length) ||
+      (project?.assessment && Object.keys(project.assessment || {}).length) ||
+      (Array.isArray(project?.rewardComponents) && project.rewardComponents.length)
+  );
+
+const getProjectContentType = (project) => {
+  const theoryCount = Array.isArray(project?.theory) ? project.theory.length : 0;
+  const quizCount = Array.isArray(project?.quizQuestions) ? project.quizQuestions.length : 0;
+  const hasBuildContent = hasProjectBuildContent(project);
+
+  if (theoryCount > 0 && quizCount > 0) return hasBuildContent ? "full" : "mixed";
+  if (theoryCount > 0) return hasBuildContent ? "theory-project" : "theory";
+  if (quizCount > 0) return hasBuildContent ? "quiz-project" : "quiz";
+  return hasBuildContent ? "project" : "draft";
+};
+
+const getProjectContentLabel = (project) => {
+  const theoryCount = Array.isArray(project?.theory) ? project.theory.length : 0;
+  const quizCount = Array.isArray(project?.quizQuestions) ? project.quizQuestions.length : 0;
+  const hasBuildContent = hasProjectBuildContent(project);
+
+  if (theoryCount > 0 && quizCount > 0) return hasBuildContent ? "Full Project" : "Theory + Quiz";
+  if (theoryCount > 0) return hasBuildContent ? "Project + Theory" : "Theory Set";
+  if (quizCount > 0) return hasBuildContent ? "Project + Quiz" : "Quiz Set";
+  return hasBuildContent ? "Project Shell" : "Draft";
+};
+
+const getProjectContentCountLabel = (project) => {
+  const theoryCount = Array.isArray(project?.theory) ? project.theory.length : 0;
+  const quizCount = Array.isArray(project?.quizQuestions) ? project.quizQuestions.length : 0;
+
+  if (theoryCount && quizCount) return `${theoryCount} theory, ${quizCount} quiz`;
+  if (theoryCount) return `${theoryCount} theory`;
+  if (quizCount) return `${quizCount} quiz`;
+  return "No theory or quiz content";
+};
+
+const matchesContentFilter = (project, filter) => {
+  if (filter === "all") return true;
+
+  const theoryCount = Array.isArray(project?.theory) ? project.theory.length : 0;
+  const quizCount = Array.isArray(project?.quizQuestions) ? project.quizQuestions.length : 0;
+  const hasBuildContent = hasProjectBuildContent(project);
+
+  if (filter === "theory") return theoryCount > 0 && quizCount === 0 && !hasBuildContent;
+  if (filter === "quiz") return quizCount > 0 && theoryCount === 0 && !hasBuildContent;
+  if (filter === "mixed") return theoryCount > 0 && quizCount > 0 && !hasBuildContent;
+  if (filter === "project") return hasBuildContent;
+  return true;
+};
+
+const CONTENT_TYPE_FILTERS = [
+  { value: "all", label: "All Content" },
+  { value: "theory", label: "Theory Sets" },
+  { value: "quiz", label: "Quiz Sets" },
+  { value: "mixed", label: "Theory + Quiz" },
+  { value: "project", label: "Full Projects" },
+];
+
 function getProjectBoards(project) {
   const storedBoards = Array.isArray(project?.boards) ? project.boards : [];
   const fromField = project?.board ? [project.board] : [];
@@ -68,12 +131,14 @@ export default function TeacherProjectBankPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [view, setView] = useState("my");
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [myProjects, setMyProjects] = useState([]);
   const [sharedProjects, setSharedProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [boardFilter, setBoardFilter] = useState("all");
   const [difficultyFilter, setDifficultyFilter] = useState("all");
+  const [contentFilter, setContentFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   const load = async () => {
@@ -117,12 +182,13 @@ export default function TeacherProjectBankPage() {
     if (difficultyFilter !== "all") {
       list = list.filter((p) => normalizeDifficulty(p.difficulty) === difficultyFilter);
     }
+    list = list.filter((p) => matchesContentFilter(p, contentFilter));
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter((p) => getProjectSearchBlob(p).includes(q));
     }
     return list;
-  }, [current, boardFilter, difficultyFilter, searchQuery]);
+  }, [current, boardFilter, difficultyFilter, contentFilter, searchQuery]);
 
   const handleDelete = async (project) => {
     if (!window.confirm(`Delete "${project.title || project.slug}"?`)) return;
@@ -135,12 +201,22 @@ export default function TeacherProjectBankPage() {
   };
 
   const handleOpenEditor = (project) => {
-    navigate(`/teacher/project-bank/${project.slug}/edit`);
+    const contentType = getProjectContentType(project);
+    const params = new URLSearchParams();
+    if (contentType === "theory" || contentType === "quiz") {
+      params.set("contentType", contentType);
+    } else if (contentType === "mixed") {
+      params.set("contentType", "theory-quiz");
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    navigate(`/teacher/project-bank/${project.slug}/edit${suffix}`);
   };
 
-  const handleCreateNew = () => {
+  const handleCreateNew = (contentType = "full") => {
     const visibility = view === "shared" ? "published" : "personal";
-    navigate(`/teacher/project-bank/new?visibility=${encodeURIComponent(visibility)}`);
+    const params = new URLSearchParams({ visibility });
+    if (contentType !== "full") params.set("contentType", contentType);
+    navigate(`/teacher/project-bank/new?${params.toString()}`);
   };
 
   return (
@@ -175,13 +251,13 @@ export default function TeacherProjectBankPage() {
             <div>
               <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: "var(--text)" }}>Project Bank</h1>
               <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--text2)" }}>
-                Browse, manage, and share project templates.
+                Browse, manage, and share full projects, theory sets, and quiz sets.
               </p>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", position: "relative" }}>
               <button
                 type="button"
-                onClick={handleCreateNew}
+                onClick={() => handleCreateNew("full")}
                 style={{
                   padding: "8px 14px",
                   borderRadius: 10,
@@ -196,6 +272,102 @@ export default function TeacherProjectBankPage() {
               >
                 + New Project
               </button>
+              <div style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  onClick={() => setAddMenuOpen((prev) => !prev)}
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    border: "1px solid var(--border)",
+                    background: "transparent",
+                    color: "var(--text2)",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontSize: 13,
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  + Add Set
+                </button>
+                {addMenuOpen && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 8px)",
+                      right: 0,
+                      minWidth: 190,
+                      background: "var(--card)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 12,
+                      boxShadow: "0 16px 40px rgba(0,0,0,0.25)",
+                      overflow: "hidden",
+                      zIndex: 20,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddMenuOpen(false);
+                        handleCreateNew("theory");
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: "0",
+                        background: "transparent",
+                        color: "var(--text)",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        fontSize: 13,
+                      }}
+                    >
+                      Theory Set
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddMenuOpen(false);
+                        handleCreateNew("quiz");
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: "0",
+                        background: "transparent",
+                        color: "var(--text)",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        fontSize: 13,
+                      }}
+                    >
+                      Quiz Set
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAddMenuOpen(false);
+                        handleCreateNew("theory-quiz");
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: "0",
+                        background: "transparent",
+                        color: "var(--text)",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontWeight: 600,
+                        fontSize: 13,
+                      }}
+                    >
+                      Theory + Quiz Set
+                    </button>
+                  </div>
+                )}
+              </div>
               {["my", "shared"].map((t) => (
                 <button
                   key={t}
@@ -270,6 +442,24 @@ export default function TeacherProjectBankPage() {
               <option value="intermediate">Intermediate</option>
               <option value="hard">Hard</option>
             </select>
+            <select
+              value={contentFilter}
+              onChange={(e) => setContentFilter(e.target.value)}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 8,
+                border: "1px solid var(--border)",
+                background: "var(--bg2)",
+                color: "var(--text)",
+                fontSize: 13,
+              }}
+            >
+              {CONTENT_TYPE_FILTERS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               placeholder="Search projects..."
@@ -302,6 +492,8 @@ export default function TeacherProjectBankPage() {
             >
               {filtered.map((project) => {
                 const projectBoards = getProjectBoards(project);
+                const contentLabel = getProjectContentLabel(project);
+                const contentCountLabel = getProjectContentCountLabel(project);
                 return (
                   <div
                     key={project._id || project.slug}
@@ -376,6 +568,20 @@ export default function TeacherProjectBankPage() {
                           style={{
                             fontSize: 11,
                             fontWeight: 700,
+                            textTransform: "uppercase",
+                            padding: "3px 7px",
+                            borderRadius: 5,
+                            background: "rgba(245,158,11,0.15)",
+                            color: "#f59e0b",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {contentLabel}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
                             textTransform: "capitalize",
                             padding: "3px 7px",
                             borderRadius: 5,
@@ -403,6 +609,9 @@ export default function TeacherProjectBankPage() {
                     >
                       {project.description || "No description"}
                     </p>
+                    <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 12 }}>
+                      {contentCountLabel}
+                    </div>
                     <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                       <button
                         type="button"
