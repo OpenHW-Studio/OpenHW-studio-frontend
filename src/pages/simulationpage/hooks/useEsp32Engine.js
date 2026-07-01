@@ -41,6 +41,7 @@ export function useEsp32Engine({
   const micropythonModeRef = useRef(false);
 
   // Webcam refs
+  const ledcRoutingRef = useRef({});
   const webcamStreamRef = useRef(null);
   const webcamIntervalRef = useRef(null);
   const webcamVideoRef = useRef(null);
@@ -66,14 +67,31 @@ export function useEsp32Engine({
       }
     },
     onPwmSync: (channel, duty_pct) => {
+      const pins = Array.from(ledcRoutingRef.current[channel] || []);
       const esp32Board = componentsRef.current?.find(c => /(esp32|stm32)/i.test(c.type));
       if (esp32Board && workerRef?.current) {
         workerRef.current.postMessage({
           type: 'esp32:pwm:sync',
           boardId: esp32Board.id,
           channel,
-          duty_pct
+          duty_pct,
+          pins
         });
+      }
+    },
+    onGpioRouting: (gpio, signal_id) => {
+      let channel = -1;
+      if (signal_id >= 71 && signal_id <= 78) channel = signal_id - 71;
+      else if (signal_id >= 79 && signal_id <= 86) channel = 8 + (signal_id - 79);
+      
+      if (channel >= 0) {
+          if (!ledcRoutingRef.current[channel]) ledcRoutingRef.current[channel] = new Set();
+          ledcRoutingRef.current[channel].add(gpio);
+      }
+    },
+    onGpioRoutingClear: (gpio) => {
+      for (const ch in ledcRoutingRef.current) {
+          ledcRoutingRef.current[ch].delete(gpio);
       }
     },
     onSpiBatch: (b64) => {
@@ -143,6 +161,9 @@ export function useEsp32Engine({
       setIsBooting(false); // Reset booting state on stop
       if (runStartGuardRef && runStartGuardRef.current !== undefined) {
           runStartGuardRef.current = false;
+      }
+      if (workerRef?.current) {
+          workerRef.current.postMessage({ type: 'STOP' });
       }
       micropythonModeRef.current = false;
       replStateRef.current = 'idle';

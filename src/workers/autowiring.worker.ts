@@ -217,6 +217,31 @@ self.onmessage = async (e) => {
           throw new Error(plan);
         }
 
+        // WORKAROUND: Force Neopixel DIN to map to pin 6 on Arduino
+        if (newComp.type.includes('neopixel') && plan.added_wires) {
+            plan.added_wires.forEach((w: any) => {
+                if (w.from === `${newComp.id}:DIN` && w.to.startsWith(boardId + ':')) {
+                    w.to = `${boardId}:6`;
+                } else if (w.to === `${newComp.id}:DIN` && w.from.startsWith(boardId + ':')) {
+                    w.from = `${boardId}:6`;
+                }
+            });
+        }
+
+        // WORKAROUND: Force Rotary Encoder pins for ESP32
+        if (newComp.type.includes('rotary-encoder') && boardId.includes('esp32')) {
+            if (!plan.added_wires) plan.added_wires = [];
+            // Remove any existing wires for this component to prevent duplicates
+            plan.added_wires = plan.added_wires.filter((w: any) => !w.from.startsWith(newComp.id + ':') && !w.to.startsWith(newComp.id + ':'));
+            
+            // Wire to 2, 3, 4 because the manifest hardcodes these pins in its auto-code block
+            plan.added_wires.push({ from: `${newComp.id}:GND`, to: `${boardId}:GND.1`, color: 'black' });
+            plan.added_wires.push({ from: `${newComp.id}:VCC`, to: `${boardId}:3V3`, color: 'red' });
+            plan.added_wires.push({ from: `${newComp.id}:SW`, to: `${boardId}:4`, color: 'green' });
+            plan.added_wires.push({ from: `${newComp.id}:DT`, to: `${boardId}:3`, color: 'blue' });
+            plan.added_wires.push({ from: `${newComp.id}:CLK`, to: `${boardId}:2`, color: 'yellow' });
+        }
+
         // Forward library dependencies from manifest
         if (manifest?.autocoding?.libraries) {
             plan.libraries = manifest.autocoding.libraries;
@@ -249,7 +274,53 @@ self.onmessage = async (e) => {
         
         reset(); // reset engine state just in case, though this pure function might not strictly need it
         
-        const snippet = generateCodeForComponent(compId, wires || [], manifest, components || []);
+        // WORKAROUND: The WASM engine currently struggles to trace wires through intermediate 
+        // passive components (like resistors). We create a "flattened" virtual wire list
+        // where resistors are bypassed, allowing the engine to correctly identify the Arduino pins.
+        let virtualWires = [...(wires || [])];
+        const resistors = (components || []).filter((c: any) => c.type === 'openhw-resistor' || c.type === 'openhw-resistor-10k');
+        
+        resistors.forEach((res: any) => {
+           const wireToRes = virtualWires.find((w: any) => 
+               (w.from.startsWith(compId + ':') && w.to.startsWith(res.id + ':')) || 
+               (w.to.startsWith(compId + ':') && w.from.startsWith(res.id + ':'))
+           );
+           const wireFromRes = virtualWires.find((w: any) => 
+               w !== wireToRes && (w.from.startsWith(res.id + ':') || w.to.startsWith(res.id + ':'))
+           );
+           
+           if (wireToRes && wireFromRes) {
+               const compPinInfo = wireToRes.from.startsWith(compId + ':') ? wireToRes.from : wireToRes.to;
+               const targetPinInfo = wireFromRes.from.startsWith(res.id + ':') ? wireFromRes.to : wireFromRes.from;
+               
+               virtualWires = virtualWires.filter((w: any) => w !== wireToRes && w !== wireFromRes);
+               virtualWires.push({
+                   id: 'virtual_' + res.id,
+                   from: compPinInfo,
+                   to: targetPinInfo
+               });
+           }
+        });
+
+        // WORKAROUND: Force L293D pins and digitalWrite specifically for ESP32
+        if (manifest && manifest.type === 'openhw-l293d') {
+            let isESP32 = false;
+            for (const w of virtualWires) {
+                if ((w.from && w.from.includes('esp32')) || (w.to && w.to.includes('esp32'))) {
+                    isESP32 = true;
+                    break;
+                }
+            }
+            if (isESP32) {
+                manifest = JSON.parse(JSON.stringify(manifest));
+                if (manifest.autocoding && manifest.autocoding.arduino) {
+                    manifest.autocoding.arduino.globals = "const int enA_${COMP_SUFFIX} = 12;\nconst int in1_${COMP_SUFFIX} = 5;\nconst int in2_${COMP_SUFFIX} = 4;";
+                    manifest.autocoding.arduino.loop = "digitalWrite(in1_${COMP_SUFFIX}, HIGH);\ndigitalWrite(in2_${COMP_SUFFIX}, LOW);\ndigitalWrite(enA_${COMP_SUFFIX}, HIGH);\ndelay(2000);\ndigitalWrite(in1_${COMP_SUFFIX}, LOW);\ndigitalWrite(in2_${COMP_SUFFIX}, HIGH);\ndigitalWrite(enA_${COMP_SUFFIX}, HIGH);\ndelay(2000);";
+                }
+            }
+        }
+
+        const snippet = generateCodeForComponent(compId, virtualWires, manifest, components || []);
         
         // Post-process: replace placeholders the WASM engine left unresolved
         if (snippet && typeof snippet === 'object') {

@@ -207,7 +207,7 @@ import "prismjs/themes/prism-tomorrow.css";
 
 const EXAMPLES_BASE_URL =
   import.meta.env.VITE_EXAMPLES_BASE_URL ||
-  (import.meta.env.DEV ? "http://localhost:5000/examples" : "/examples");
+  (import.meta.env.DEV ? "http://localhost:5001/examples" : "/examples");
 const EDIT_COPY_KEY = "openhw_edit_copy";
 const EDIT_COPY_PAYLOAD_PREFIX = "openhw_edit_copy_payload_";
 const RP2040_SIM_PROTOCOL_VERSION = "rp2040-sim-uart0-v4";
@@ -1609,11 +1609,7 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
         event?.type === "input" &&
         event.value !== undefined
       ) {
-        if (comp.type === "openhw-hc-sr04" || comp.type === "wokwi-hc-sr04") {
-          updateComponentAttr(comp.id, "distance", event.value);
-        } else {
-          updateComponentAttr(comp.id, "value", event.value);
-        }
+        updateComponentAttr(comp.id, "value", event.value);
       }
 
       if (workerRef.current && isRunning) {
@@ -1663,20 +1659,6 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   }, [notifyLiveOopStateListeners]);
 
   const workerRef = useRef(null);
-  
-  useEffect(() => {
-    const handleDownloadPcap = (e) => {
-      const { componentId } = e.detail;
-      if (isRunning && workerRef.current) {
-        workerRef.current.postMessage({
-          type: 'DOWNLOAD_PCAP',
-          boardId: componentId
-        });
-      }
-    };
-    window.addEventListener('network:download-pcap', handleDownloadPcap);
-    return () => window.removeEventListener('network:download-pcap', handleDownloadPcap);
-  }, [isRunning]);
   const pushSerialRxChunkRef = useRef(null);
   const runStartGuardRef = useRef(false);
   const {
@@ -1768,6 +1750,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
   const [telemetrySampleInterval, setTelemetrySampleInterval] = useState(250);
   const [selectedTelemetryComponentIds, setSelectedTelemetryComponentIds] =
     useState([]);
+  
+  useEffect(() => {
+    setComponentTelemetryEnabled(selectedTelemetryComponentIds.length > 0);
+  }, [selectedTelemetryComponentIds]);
   const [showTelemetrySelectModal, setShowTelemetrySelectModal] =
     useState(false);
 
@@ -3893,26 +3879,6 @@ loadDemoProject();
     }
   }, []);
 
-  // ── Smart Prefetching for Simulation Runners ───────────────────────────────
-  const preloadedBoardsRef = useRef(new Set());
-  useEffect(() => {
-    if (!components) return;
-    const currentBoardTypes = components
-      .filter((c) => /arduino|esp32|stm32|pico|rp2040|attiny/i.test(c.type))
-      .map((c) => c.type);
-    
-    const newTypesToPreload = currentBoardTypes.filter(type => !preloadedBoardsRef.current.has(type));
-    if (newTypesToPreload.length > 0) {
-      newTypesToPreload.forEach(t => preloadedBoardsRef.current.add(t));
-      const prefetchWorker = new Worker(new URL("../../worker/simulation.worker.ts", import.meta.url), { type: "module" });
-      const dummyComponents = newTypesToPreload.map(type => ({ type }));
-      prefetchWorker.postMessage({ type: "PRELOAD_RUNNERS", components: dummyComponents });
-      
-      const timer = setTimeout(() => prefetchWorker.terminate(), 5000);
-      return () => { clearTimeout(timer); prefetchWorker.terminate(); };
-    }
-  }, [components]);
-
   // ── Validation toast auto-dismiss ───────────────────────────────────────────
   useEffect(() => {
     if (!validationToast) return undefined;
@@ -4102,12 +4068,10 @@ loadDemoProject();
 
   // ── Serial auto-scroll ────────────────────────────────────────────────────────
   useEffect(() => {
-    const activeAutoscroll = boardAutoscrolls[serialBoardFilter] ?? true;
-    const activePaused = boardPausedStates[serialBoardFilter] ?? serialPaused;
-    if (activeAutoscroll && !activePaused && serialOutputRef.current) {
+    if (!serialPaused && serialOutputRef.current) {
       serialOutputRef.current.scrollTop = serialOutputRef.current.scrollHeight;
     }
-  }, [serialHistory, serialPaused, serialBoardFilter, boardAutoscrolls, boardPausedStates]);
+  }, [serialHistory, serialPaused]);
 
   useEffect(() => {
     serialPausedRef.current = serialPaused;
@@ -5264,89 +5228,20 @@ loadDemoProject();
                   console.log(
                     `[Autonomous] Auto-installing library: ${libName}`,
                   );
-                  try {
-                    await handleInstallLibrary(libName);
-                  } catch (err) {
-                    console.warn(
-                      `[Autonomous] API install failed for ${libName}, falling back to library.txt:`,
-                      err,
-                    );
-                  }
+                  await handleInstallLibrary(libName);
                 }
-              }
-              // Fallback: write libraries to library.txt for runtime resolution
-              const boardComp = result.components.find((c) =>
-                isProgrammableBoardType(c.type),
-              );
-              if (boardComp) {
-                const libPath = `project/${boardComp.id}/library.txt`;
-                setProjectFiles((prev) => {
-                  const fileObj = prev.find((f) => f.id === libPath);
-                  let currentContent = fileObj
-                    ? fileObj.content || ''
-                    : '# Add your libraries here (one per line, e.g. ArduinoJson@6.21.3)\n';
-                  const lines = currentContent.split('\n').map((l) => l.trim());
-                  const existingSet = new Set(
-                    lines
-                      .filter((l) => l && !l.startsWith('#'))
-                      .map((l) => l.split('@')[0].trim().toLowerCase()),
-                  );
-                  const linesToAdd = [];
-                  plan.libraries.forEach((lib) => {
-                    const cleanLib = String(lib).trim();
-                    const libNameOnly = cleanLib
-                      .split('@')[0]
-                      .trim()
-                      .toLowerCase();
-                    if (!existingSet.has(libNameOnly)) {
-                      linesToAdd.push(cleanLib);
-                    }
-                  });
-                  if (linesToAdd.length > 0) {
-                    const newLines = [...currentContent.split('\n')];
-                    linesToAdd.forEach((lib) => {
-                      if (
-                        newLines.length > 0 &&
-                        newLines[newLines.length - 1].trim() !== ''
-                      ) {
-                        newLines.push(lib);
-                      } else {
-                        newLines.splice(newLines.length, 0, lib);
-                      }
-                    });
-                    const nextContent = newLines.join('\n');
-                    return prev.map((f) =>
-                      f.id === libPath
-                        ? { ...f, content: nextContent, dirty: true }
-                        : f,
-                    );
-                  }
-                  return prev;
-                });
               }
             }
 
             // ── Restore Code Merging ──
             if (plan.code_snippet) {
-              const snippetOwnerId = mainCompWithPos.id;
-              const nextCode = mergeCodeSnippet(
-                currentCodeRef.current || code,
-                plan.code_snippet,
-                snippetOwnerId,
-                plan.reasoning || [],
+              setEditorCode(
+                mergeCodeSnippet(
+                  editorCode,
+                  plan.code_snippet,
+                  plan.reasoning || [],
+                ),
               );
-              setCode(nextCode);
-              if (activeCodeFileId) {
-                setProjectFiles((prev) =>
-                  prev.map((f) =>
-                    f.id === activeCodeFileId
-                      ? { ...f, content: nextCode, dirty: true }
-                      : f,
-                  ),
-                );
-              }
-              setCodeTab("code");
-              setIsPanelOpen(true);
             }
 
             // ── Restore Reasoning Logs ──
@@ -6753,8 +6648,7 @@ loadDemoProject();
     setShowCodeExplorer(true);
   };
 
-  const handleAutoCode = async (compId, options = {}) => {
-    const { silent = false, openEditor = true } = options;
+  const handleAutoCode = async (compId) => {
     console.log("[handleAutoCode] Triggered for component:", compId);
     const comp = components.find((c) => c.id === compId);
     if (!comp) {
@@ -6795,7 +6689,7 @@ loadDemoProject();
         "[handleAutoCode] No target board found for component:",
         compId,
       );
-      if (!silent) alert("Component must be wired to a board first to generate code.");
+      alert("Component must be wired to a board first to generate code.");
       return;
     }
 
@@ -6885,17 +6779,17 @@ loadDemoProject();
             });
           }
 
-          let resolvedTargetFileId = filename;
           setProjectFiles((prev) => {
-            let nextFiles = prev;
-            let targetFile = nextFiles.find(
-              (f) =>
-                f.boardId === targetBoardId ||
-                f.id === filename ||
-                f.name === filename,
+            let targetFile = prev.find(
+              (f) => f.id === filename || f.name === filename
             );
             if (!targetFile) {
-              const codeFiles = nextFiles.filter(
+              targetFile = prev.find(
+                (f) => f.boardId === targetBoardId && f.name !== 'library.txt' && /\.(ino|py|c|cpp)$/i.test(f.name)
+              );
+            }
+            if (!targetFile) {
+              const codeFiles = prev.filter(
                 (f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name),
               );
               if (codeFiles.length > 0) {
@@ -6917,16 +6811,15 @@ loadDemoProject();
                   }),
                   dirty: false,
                 };
-                nextFiles = [...nextFiles, targetFile];
+                prev = [...prev, targetFile];
               }
             }
-            resolvedTargetFileId = targetFile.id;
 
             console.log(
               "[handleAutoCode] Injecting code into file:",
               targetFile.id,
             );
-            return nextFiles.map((f) => {
+            return prev.map((f) => {
               if (f.id === targetFile.id) {
                 const currentContent =
                   activeCodeFileId === f.id || activeCodeFileId === f.name
@@ -6941,23 +6834,44 @@ loadDemoProject();
                 if (activeCodeFileId === targetFile.id) {
                   setCode(newContent);
                 }
-                return { ...f, content: newContent, dirty: true };
+                return { ...f, content: newContent };
               }
               return f;
             });
           });
 
-          if (openEditor) {
-            setOpenCodeTabs((prevTabs) =>
-              prevTabs.includes(resolvedTargetFileId)
-                ? prevTabs
-                : [...prevTabs, resolvedTargetFileId],
-            );
-            setActiveCodeFileId(resolvedTargetFileId);
+          setOpenCodeTabs((prevTabs) => {
+            // Re-find the target file ID since state update is asynchronous
+            let targetFile = projectFiles.find((f) => f.id === filename || f.name === filename);
+            if (!targetFile) {
+              targetFile = projectFiles.find((f) => f.boardId === targetBoardId && f.name !== 'library.txt' && /\.(ino|py|c|cpp)$/i.test(f.name));
+            }
+            if (!targetFile) {
+              targetFile = projectFiles.filter((f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name))[0] || { id: filename };
+            }
+            if (!prevTabs.includes(targetFile.id)) {
+              return [...prevTabs, targetFile.id];
+            }
+            return prevTabs;
+          });
+
+          // Re-find to set active
+          setTimeout(() => {
+            const latestFiles = projectFiles; // this closure might be stale, but activeCodeFileId handles it gracefully if missing
+            setActiveCodeFileId((prev) => {
+              let file = (projectFiles || []).find((f) => f.id === filename || f.name === filename);
+              if (!file) {
+                file = (projectFiles || []).find((f) => f.boardId === targetBoardId && f.name !== 'library.txt' && /\.(ino|py|c|cpp)$/i.test(f.name));
+              }
+              if (!file) {
+                file = (projectFiles || []).filter((f) => f.kind === "code" || /\.(ino|py|c|cpp)$/i.test(f.name))[0] || { id: filename };
+              }
+              return file.id;
+            });
             setCodeTab("code");
             setIsPanelOpen(true);
             setShowCodeExplorer(true);
-          }
+          }, 0);
         } else {
           console.warn("[handleAutoCode] Worker returned empty snippet.");
         }
@@ -6965,51 +6879,6 @@ loadDemoProject();
       worker.terminate();
     };
   };
-
-  useEffect(() => {
-    if (!autoCodingEnabled || isRunning || liveEditingDisabled) return;
-
-    const hasAutocodeSnippet = (compId) =>
-      projectFiles.some((file) =>
-        String(file.content || "").includes(`autocoding for ${compId} start`),
-      );
-
-    const touchesBoard = (compId) => {
-      const visited = new Set();
-      const stack = [compId];
-      while (stack.length > 0) {
-        const current = stack.pop();
-        if (!current || visited.has(current)) continue;
-        visited.add(current);
-        const comp = components.find((c) => c.id === current);
-        if (comp && isProgrammableBoardType(comp.type)) return true;
-        for (const wire of wires) {
-          const [fromComp] = String(wire.from || "").split(":");
-          const [toComp] = String(wire.to || "").split(":");
-          if (fromComp === current && !visited.has(toComp)) stack.push(toComp);
-          if (toComp === current && !visited.has(fromComp)) stack.push(fromComp);
-        }
-      }
-      return false;
-    };
-
-    const timer = window.setTimeout(() => {
-      components
-        .filter((comp) =>
-          !isProgrammableBoardType(comp.type) &&
-          !isBreadboardType(comp.type) &&
-          !isResistorType(comp.type) &&
-          !hasAutocodeSnippet(comp.id) &&
-          touchesBoard(comp.id),
-        )
-        .slice(0, 3)
-        .forEach((comp) => {
-          handleAutoCode(comp.id, { silent: true, openEditor: false });
-        });
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [autoCodingEnabled, components, wires, projectFiles, isRunning, liveEditingDisabled]);
 
   const deleteWire = (id) => {
     if (isRunning || liveEditingDisabled) return;
@@ -9535,8 +9404,8 @@ loadDemoProject();
                   }
                   
                   pollCount++;
-                  if (pollCount > 180) {
-                    throw new Error('ESP32 compilation timed out after 90 seconds.');
+                  if (pollCount > 120) {
+                    throw new Error('ESP32 compilation timed out after 60 seconds.');
                   }
                 }
               } else {
@@ -10314,13 +10183,6 @@ loadDemoProject();
           handleTelemetryStateMessageRef.current(msg);
         }
         if (msg.type === "state") {
-          if (msg.wifi && typeof window !== "undefined") {
-            window.dispatchEvent(
-              new CustomEvent("OPENHW_WIFI_STATS", {
-                detail: { boardId: msg.boardId, ...msg.wifi },
-              })
-            );
-          }
           const boardIdKey = String(msg.boardId || "default");
           const boardComp =
             components.find((c) => c.id === boardIdKey) ||
@@ -10720,7 +10582,6 @@ loadDemoProject();
 
       worker.postMessage({
         type: "START",
-        networkRoomCode: localStorage.getItem("NETWORK_ROOM_CODE") || "",
         hex: result.hex,
         neopixels: neopixelWiring,
         wires: cleanWires,

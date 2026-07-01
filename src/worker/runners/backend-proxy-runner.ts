@@ -190,6 +190,7 @@ export class BackendProxyRunner implements BoardRunner {
 
                 // 2. Custom backendDataReceived dashboard state
                 if (!boardInst.state) boardInst.state = {};
+
                 if (!boardInst.state.backendDataReceived) {
                     boardInst.state.backendDataReceived = {
                         digital: { totalToggles: 0, lastActivePin: 'none', lastActiveValue: 0 },
@@ -278,6 +279,7 @@ export class BackendProxyRunner implements BoardRunner {
                 }
             }
         }
+        this.updatePhysicsInternal();
     }
     
     public syncSerial(char: string) {
@@ -329,18 +331,23 @@ export class BackendProxyRunner implements BoardRunner {
         }
     }
 
-    public syncPwm(channel: number, duty_pct: number) {
+    public syncPwm(channel: number | string, duty_pct: number, pins?: (number | string)[]) {
         console.log(`[BackendProxyRunner] Routing PWM for channel ${channel}, duty ${duty_pct}`);
         const pwmDuty = Math.max(0, Math.min(1.0, duty_pct));
         
         // Treat channel as pin for now as that's what we emitted from backend (>PWM:pin:val<)
-        const pin = String(channel);
-        const aliases = [pin];
-        if (/^\d+$/.test(pin)) {
-            aliases.push(`D${pin}`, `GPIO${pin}`);
-        } else if (/^(D|GPIO)(\d+)$/i.test(pin)) {
-            const num = pin.replace(/\D/g, '');
-            aliases.push(num, `D${num}`, `GPIO${num}`);
+        const aliases = [];
+        if (pins && pins.length > 0) {
+            for (const p of pins) aliases.push(String(p));
+        } else {
+            const pin = String(channel);
+            aliases.push(pin);
+            if (/^\d+$/.test(pin)) {
+                aliases.push(`D${pin}`, `GPIO${pin}`);
+            } else if (/^(D|GPIO)(\d+)$/i.test(pin)) {
+                const num = pin.replace(/\D/g, '');
+                aliases.push(num, `D${num}`, `GPIO${num}`);
+            }
         }
 
         const endpoints = collectConnectedComponentPins(
@@ -653,6 +660,22 @@ export class BackendProxyRunner implements BoardRunner {
                     (inst as any).setPinVoltage?.(pinKey, 3.3);
                 }
             });
+        }
+
+        // Propagate Power and generic Output Pins
+        for (const inst of this.instances.values()) {
+            for (const pinId of Object.keys((inst as any).pins || {})) {
+                const pin = (inst as any).pins[pinId];
+                const upper = pinId.toUpperCase();
+                const isPowerOut = upper === '3V3' || upper === 'VCC' || upper === '5V' || upper === 'VIN' || upper.startsWith('3V3.') || upper.startsWith('5V.');
+                
+                if ((pin && pin.mode === 'OUTPUT') || isPowerOut) {
+                    const voltage = pin?.voltage || (isPowerOut && (upper.includes('5V') || upper === 'VIN') ? 5.0 : isPowerOut ? 3.3 : 0);
+                    if (voltage > 0) {
+                        this.visitNode(`${inst.id}:${pinId}`, voltage);
+                    }
+                }
+            }
         }
 
         // Propagate Proxy Board Pins

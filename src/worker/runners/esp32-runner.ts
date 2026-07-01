@@ -744,6 +744,7 @@ export class ESP32Runner implements BoardRunner {
                 if (gpioMatch) {
                     const pin = parseInt(gpioMatch[1], 10);
                     const val = parseInt(gpioMatch[2], 10) !== 0;
+                    this.processBoardPinState(String(pin), val);
                     // Update component netlist voltage (drives LED)
                     if (this._updateOopPin) {
                         this._updateOopPin(String(pin), val ? 3.3 : 0);
@@ -777,6 +778,27 @@ export class ESP32Runner implements BoardRunner {
                     const val = parseInt(pwmMatch[2], 10);
                     const duty_pct = Math.max(0, Math.min(1.0, val / 255.0));
                     this.syncPwm(pin, duty_pct);
+                    
+                    // Update backendEmittedVoltages so repropagateAllVoltages retains PWM voltage
+                    this.backendEmittedVoltages[String(pin)] = duty_pct * 3.3;
+                    this.pinStates[String(pin)] = duty_pct > 0;
+                    this.circuitDirty = true;
+                    this.pinsChanged = true;
+                    
+                    // Track PWM in telemetry
+                    const boardInst = this.instances.get(this.boardId);
+                    if (boardInst && boardInst.state && boardInst.state.backendDataReceived) {
+                        const bdr = boardInst.state.backendDataReceived;
+                        bdr.pwm.totalToggles++;
+                        const strPin = String(pin);
+                        if (!bdr.pwm.detectedPwmPins.includes(strPin)) {
+                            bdr.pwm.detectedPwmPins.push(strPin);
+                        }
+                        const runtime = (boardInst as any).telemetryRuntime;
+                        if (runtime && runtime.io) {
+                            runtime.io.pwmCount = (runtime.io.pwmCount || 0) + 1;
+                        }
+                    }
                     return;
                 }
 
