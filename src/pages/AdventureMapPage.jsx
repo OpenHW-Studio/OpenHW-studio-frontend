@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useGamification } from '../context/GamificationContext'
 import { PROJECTS, getProjectStatus, getProjectRewardComponents, normalizeDifficulty } from '../services/gamification/ProjectsConfig'
 import {
@@ -338,6 +338,7 @@ function ProjectModal({ project, isCompleted, isAvailable, onClose, onStart, T }
 // --- Main Page -----------------------------------------------------------
 export default function AdventureMapPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const classId = searchParams.get('classId')
   const {
@@ -352,8 +353,18 @@ export default function AdventureMapPage() {
   const [selectedProject, setSelectedProject] = useState(null)
 
   // Journey tabs: 'arduino' | 'esp32' — only swaps which WORLDS array feeds worldGroups.
-  const [activeJourney, setActiveJourney] = useState('arduino')
+  const journeyParam = searchParams.get('journey')
+  const [activeJourney, setActiveJourney] = useState(
+    journeyParam === 'esp32' || journeyParam === 'arduino' ? journeyParam : 'arduino'
+  )
   const WORLDS = activeJourney === 'arduino' ? ARDUINO_WORLDS : ESP32_WORLDS
+
+  useEffect(() => {
+    const jp = searchParams.get('journey')
+    if (jp === 'esp32' || jp === 'arduino') {
+      setActiveJourney(jp)
+    }
+  }, [searchParams])
 
   const T = getT(theme)
 
@@ -636,7 +647,13 @@ export default function AdventureMapPage() {
             const active = activeJourney === j.id
             return (
               <button key={j.id} type="button"
-                onClick={() => { setActiveJourney(j.id); setSelectedProject(null) }}
+                onClick={() => {
+                  setActiveJourney(j.id);
+                  setSelectedProject(null);
+                  const nextParams = new URLSearchParams(searchParams);
+                  nextParams.set('journey', j.id);
+                  navigate(`${location.pathname}?${nextParams.toString()}`, { replace: true });
+                }}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '6px 16px', borderRadius: 8, border: 'none',

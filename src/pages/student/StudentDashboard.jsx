@@ -165,6 +165,7 @@ export default function StudentDashboard() {
 
   // Tab State
   const [activeTab, setActiveTab] = useState("classroom"); // "classroom" | "guided-projects" | "modules" | "adventure-map"
+  const [isAdventureExpanded, setIsAdventureExpanded] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Guided Projects inline workspace states
@@ -643,17 +644,69 @@ export default function StudentDashboard() {
                 Modules
               </button>
 
-              <button
-                onClick={() => {
-                  setActiveTab("adventure-map");
-                }}
-                className={`student-db-sidebar__link ${
-                  activeTab === "adventure-map" ? "is-active" : ""
-                }`}
-              >
-                <Activity className="w-4 h-4" />
-                Adventure map
-              </button>
+              <div className="student-db-sidebar__accordion" style={{ width: '100%' }}>
+                <button
+                  onClick={() => {
+                    setIsAdventureExpanded(!isAdventureExpanded);
+                    setActiveTab("adventure-map");
+                  }}
+                  className={`student-db-sidebar__link ${
+                    activeTab === "adventure-map" ? "is-active" : ""
+                  }`}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <Activity className="w-4 h-4" />
+                    <span>Adventure map</span>
+                  </div>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isAdventureExpanded ? 'rotate-180' : ''}`} style={{ transition: 'transform 0.2s' }} />
+                </button>
+                
+                {isAdventureExpanded && (
+                  <div className="student-db-sidebar__submenu" style={{ paddingLeft: 24, display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                    <Link
+                      to="/adventure?journey=arduino"
+                      className="student-db-sidebar__submenu-link"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        color: 'var(--text-color, #475569)',
+                        textDecoration: 'none',
+                        transition: 'all 0.15s',
+                        fontWeight: 600
+                      }}
+                      onMouseEnter={(e) => e.target.style.background = 'rgba(0,0,0,0.04)'}
+                      onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                    >
+                      🔵 Arduino Uno
+                    </Link>
+                    <Link
+                      to="/adventure?journey=esp32"
+                      className="student-db-sidebar__submenu-link"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        fontSize: 13,
+                        color: 'var(--text-color, #475569)',
+                        textDecoration: 'none',
+                        transition: 'all 0.15s',
+                        fontWeight: 600
+                      }}
+                      onMouseEnter={(e) => e.target.style.background = 'rgba(0,0,0,0.04)'}
+                      onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                    >
+                      📡 ESP32
+                    </Link>
+                  </div>
+                )}
+              </div>
             </nav>
           </div>
 
@@ -1144,17 +1197,32 @@ export default function StudentDashboard() {
                   <h2>Adventure Map Progress</h2>
                   <p>Track your gamified learning journey and statistics.</p>
                 </div>
-                <button
-                  onClick={() => navigate("/adventure")}
-                  className="student-db-rosters__join-btn"
-                  style={{
-                    borderColor: "#10b981",
-                    color: "#10b981",
-                    backgroundColor: "rgba(16, 185, 129, 0.05)"
-                  }}
-                >
-                  🗺️ FULL ADVENTURE MAP
-                </button>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button
+                    onClick={() => navigate("/adventure?journey=arduino")}
+                    className="student-db-rosters__join-btn"
+                    style={{
+                      borderColor: "#00979d",
+                      color: "#00979d",
+                      backgroundColor: "rgba(0, 151, 157, 0.05)",
+                      fontWeight: 800
+                    }}
+                  >
+                    🔵 Arduino Uno Map
+                  </button>
+                  <button
+                    onClick={() => navigate("/adventure?journey=esp32")}
+                    className="student-db-rosters__join-btn"
+                    style={{
+                      borderColor: "#e74c3c",
+                      color: "#e74c3c",
+                      backgroundColor: "rgba(231, 76, 60, 0.05)",
+                      fontWeight: 800
+                    }}
+                  >
+                    📡 ESP32 Map
+                  </button>
+                </div>
               </header>
 
               {/* Progress Panel */}
