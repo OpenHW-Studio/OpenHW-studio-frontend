@@ -77,6 +77,25 @@ const normalizeQuizQuestion = (question, fallbackDifficulty = "intermediate") =>
   difficulty: normalizeDifficulty(question?.difficulty, fallbackDifficulty),
 });
 
+const createBlankTheoryCard = (difficulty = "intermediate") => ({
+  id: `card-${Date.now()}`,
+  emoji: "📚",
+  front: "",
+  simple: "",
+  detail: "",
+  funFact: "",
+  difficulty,
+});
+
+const createBlankQuizQuestion = (difficulty = "intermediate") => ({
+  id: `quiz-${Date.now()}`,
+  question: "",
+  options: ["", "", "", ""],
+  correctAnswer: 0,
+  explanation: "",
+  difficulty,
+});
+
 const SIMULATOR_CRITERIA_STORAGE_KEY = "bankProjectCriteria";
 
 const createDefaultAssessment = () => ({
@@ -99,6 +118,8 @@ export default function TeacherProjectContentEditor() {
   const bankMode = location.pathname.includes("/project-bank/");
   const isNewBankProject = location.pathname.includes("/project-bank/new");
   const initialBankVisibility = query.get("visibility") || "personal";
+  const initialContentType = query.get("contentType") || "full";
+  const editorMode = bankMode ? initialContentType : "full";
   const [bankVisibility, setBankVisibility] = useState(initialBankVisibility);
   const [bankProjectId, setBankProjectId] = useState(null);
   const [bankProjectOwnerId, setBankProjectOwnerId] = useState("");
@@ -108,6 +129,7 @@ export default function TeacherProjectContentEditor() {
   const [bankProjects, setBankProjects] = useState([]);
   const [customTitle, setCustomTitle] = useState("");
   const importedFromSimulatorRef = useRef(false);
+  const seededNewBankContentRef = useRef(false);
 
   const [theoryCards, setTheoryCards] = useState([]);
   const [quizQuestions, setQuizQuestions] = useState([]);
@@ -131,7 +153,7 @@ export default function TeacherProjectContentEditor() {
     overrideJson: "",
   });
 
-  const [activeTab, setActiveTab] = useState("theory");
+  const [activeTab, setActiveTab] = useState(initialContentType === "quiz" ? "quiz" : "theory");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
@@ -139,6 +161,16 @@ export default function TeacherProjectContentEditor() {
   const [successMsg, setSuccessMsg] = useState("");
   const currentUserId = getEntityId(user);
   const canEditBankProject = isNewBankProject || !bankProjectOwnerId || bankProjectOwnerId === currentUserId;
+  const showTheoryTab = !bankMode || ["full", "theory", "theory-quiz"].includes(editorMode);
+  const showQuizTab = !bankMode || ["full", "quiz", "theory-quiz"].includes(editorMode);
+  const showRewardsTab = !bankMode || editorMode === "full";
+  const showAssessmentTab = !bankMode || editorMode === "full";
+  const visibleTabs = [
+    showTheoryTab ? "theory" : null,
+    showQuizTab ? "quiz" : null,
+    showRewardsTab ? "rewards" : null,
+    showAssessmentTab ? "assessment" : null,
+  ].filter(Boolean);
 
   const rewardCategories = CATEGORIES || ["All", "Input", "Output", "Passive", "Sensor", "Actuator"];
   const filteredRewardComponents = COMPONENTS.filter((comp) => {
@@ -365,6 +397,30 @@ export default function TeacherProjectContentEditor() {
       cancelled = true;
     };
   }, [classId, projectSlug, bankMode, isNewBankProject, initialBankVisibility]);
+
+  useEffect(() => {
+    if (!bankMode || !isNewBankProject || loading || seededNewBankContentRef.current) return;
+
+    if (initialContentType === "theory" && theoryCards.length === 0) {
+      setTheoryCards([createBlankTheoryCard(projectDifficulty)]);
+      setActiveTab("theory");
+    } else if (initialContentType === "quiz" && quizQuestions.length === 0) {
+      setQuizQuestions([createBlankQuizQuestion(projectDifficulty)]);
+      setActiveTab("quiz");
+    } else if (initialContentType === "theory-quiz" && theoryCards.length === 0 && quizQuestions.length === 0) {
+      setTheoryCards([createBlankTheoryCard(projectDifficulty)]);
+      setQuizQuestions([createBlankQuizQuestion(projectDifficulty)]);
+      setActiveTab("theory");
+    }
+
+    seededNewBankContentRef.current = true;
+  }, [bankMode, isNewBankProject, loading, initialContentType, projectDifficulty, theoryCards.length, quizQuestions.length]);
+
+  useEffect(() => {
+    if (!visibleTabs.includes(activeTab)) {
+      setActiveTab(visibleTabs[0] || "theory");
+    }
+  }, [activeTab, visibleTabs]);
 
   const projectMeta = PROJECTS.find((p) => p.slug === projectSlug);
   const color = projectMeta?.color || "#3b82f6";
@@ -1214,34 +1270,42 @@ return (
       )}
 
       <div className="teacher-editor-tabs">
-          <button
-            type="button"
-            onClick={() => setActiveTab("theory")}
-            className={"teacher-editor-tab" + (activeTab === "theory" ? " active" : "")}
-          >
-            Theory ({theoryCards.length} cards)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("quiz")}
-            className={"teacher-editor-tab" + (activeTab === "quiz" ? " active" : "")}
-          >
-            Quiz ({quizQuestions.length} questions)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("rewards")}
-            className={"teacher-editor-tab" + (activeTab === "rewards" ? " active" : "")}
-          >
-            Rewards ({rewardComponents.length} components)
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("assessment")}
-            className={"teacher-editor-tab" + (activeTab === "assessment" ? " active" : "")}
-          >
-            Assessment
-          </button>
+          {showTheoryTab && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("theory")}
+              className={"teacher-editor-tab" + (activeTab === "theory" ? " active" : "")}
+            >
+              Theory ({theoryCards.length} cards)
+            </button>
+          )}
+          {showQuizTab && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("quiz")}
+              className={"teacher-editor-tab" + (activeTab === "quiz" ? " active" : "")}
+            >
+              Quiz ({quizQuestions.length} questions)
+            </button>
+          )}
+          {showRewardsTab && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("rewards")}
+              className={"teacher-editor-tab" + (activeTab === "rewards" ? " active" : "")}
+            >
+              Rewards ({rewardComponents.length} components)
+            </button>
+          )}
+          {showAssessmentTab && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("assessment")}
+              className={"teacher-editor-tab" + (activeTab === "assessment" ? " active" : "")}
+            >
+              Assessment
+            </button>
+          )}
         </div>
 
         <div className="teacher-editor-content">
