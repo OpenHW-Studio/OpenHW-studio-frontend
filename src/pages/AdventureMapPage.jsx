@@ -9,11 +9,16 @@ import {
 } from '../services/adventureService'
 import { buildFallbackClassAdventureContent } from '../services/classAdventureAdapter'
 
-// ─── World groupings ────────────────────────────────────────────────────────
-const WORLDS = [
+// ─── Arduino journey worlds ──────────────────────────────────────────────────
+const ARDUINO_WORLDS = [
   { id: 1, name: 'Circuit Basics',      theme: 'Easy',         color: '#22c55e', bg: 'rgba(34,197,94,0.06)',   border: 'rgba(34,197,94,0.18)',  icon: '⚡', slugs: ['led-blink','rgb-led','buzzer','potentiometer','ldr'] },
   { id: 2, name: 'Signal Control',      theme: 'Intermediate', color: '#3b82f6', bg: 'rgba(59,130,246,0.06)',  border: 'rgba(59,130,246,0.18)', icon: '🎮', slugs: ['servo-motor','led-strip','button-debounce','temperature-sensor'] },
   { id: 3, name: 'Machines & Sensors',  theme: 'Hard',         color: '#f97316', bg: 'rgba(249,115,22,0.06)',  border: 'rgba(249,115,22,0.18)', icon: '🤖', slugs: ['dc-motor'] },
+]
+
+// ─── ESP32 journey worlds ────────────────────────────────────────────────────
+const ESP32_WORLDS = [
+  { id: 4, name: 'IoT & Smart Home', theme: 'IoT', color: '#0ea5e9', bg: 'rgba(14,165,233,0.06)', border: 'rgba(14,165,233,0.18)', icon: '📡', slugs: ['esp32-led-blink', 'esp32-smart-home'] },
 ]
 
 // Winding x-positions
@@ -327,6 +332,11 @@ export default function AdventureMapPage() {
   // ── Read initial theme from document (set by LandingPage) ──
   const [theme, setTheme] = useState(() => document.documentElement.getAttribute('data-theme') || 'dark')
   const [selectedProject, setSelectedProject] = useState(null)
+
+  // Journey tabs: 'arduino' | 'esp32' — only swaps which WORLDS array feeds worldGroups.
+  const [activeJourney, setActiveJourney] = useState('arduino')
+  const WORLDS = activeJourney === 'arduino' ? ARDUINO_WORLDS : ESP32_WORLDS
+
   const T = getT(theme)
 
   const toggleTheme = () => {
@@ -440,7 +450,7 @@ export default function AdventureMapPage() {
         icon: world.icon || '🧭',
         projects: resolvedProjects.filter((project) => project.worldId === world.id).sort((a, b) => (a.order || 0) - (b.order || 0)),
       }))
-  }, [classId, classAdventure, resolvedProjects])
+  }, [classId, classAdventure, resolvedProjects, activeJourney])
 
   const stepGap = 80
   const stepTopPad = 36
@@ -587,6 +597,42 @@ export default function AdventureMapPage() {
         </div>
       </header>
 
+      {/* ── Journey Tabs: Arduino / ESP32 ────────────────────────────────── */}
+      <div style={{
+        position: 'sticky', top: 60, zIndex: 99,
+        background: T.headerBg, backdropFilter: 'blur(16px)',
+        borderBottom: `1px solid ${T.headerBorder}`,
+      }}>
+        <div style={{
+          maxWidth: 900, margin: '0 auto', padding: '0 20px',
+          display: 'flex', alignItems: 'center', gap: 4, height: 48,
+        }}>
+          {[
+            { id: 'arduino', icon: '🔵', label: 'Arduino Journey', color: '#00979d' },
+            { id: 'esp32',   icon: '📡', label: 'ESP32 Journey',   color: '#e74c3c' },
+          ].map(j => {
+            const active = activeJourney === j.id
+            return (
+              <button key={j.id} type="button"
+                onClick={() => { setActiveJourney(j.id); setSelectedProject(null) }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 16px', borderRadius: 8, border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+                  background: active ? `${j.color}22` : 'transparent',
+                  color: active ? j.color : T.pageColor,
+                  borderBottom: active ? `2px solid ${j.color}` : '2px solid transparent',
+                  transition: 'all .18s',
+                }}
+              >
+                <span>{j.icon}</span>
+                <span>{j.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       {/* Hero */}
       <div style={{ textAlign: 'center', padding: '32px 20px 6px', animation: 'fadeSlideUp .5s ease both' }}>
         <div style={{
@@ -599,7 +645,7 @@ export default function AdventureMapPage() {
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
           lineHeight: 1.2,
         }}>
-          Adventure Map
+          {activeJourney === 'arduino' ? 'Arduino Adventure Map' : 'ESP32 Adventure Map'}
         </h1>
         <p style={{ color: T.heroSubText, fontSize: 14, margin: '0 auto 6px', maxWidth: 380, lineHeight: 1.6 }}>
           Complete projects to earn more components.<br/>
@@ -618,6 +664,24 @@ export default function AdventureMapPage() {
       <div style={{ maxWidth: 700, margin: '0 auto', padding: '12px 20px 120px' }}>
         {worldGroups.map((world, wi) => {
           const allDone = world.projects.every(p => completedProjects.includes(p.slug))
+          const isComingSoon = world.comingSoon === true || world.projects.length === 0
+
+          if (isComingSoon) return (
+            <div key={world.id} style={{ marginBottom: 10, animation: `fadeSlideUp .5s ease ${wi * 0.1}s both`, opacity: 0.6 }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '14px 18px', borderRadius: 10,
+                background: world.bg, border: `1px dashed ${world.border}`, color: world.color,
+              }}>
+                <span style={{ fontSize: 20 }}>{world.icon}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 800 }}>{world.name}</div>
+                  <div style={{ fontSize: 11, opacity: .7, fontWeight: 600 }}>Projects coming soon — check back later!</div>
+                </div>
+              </div>
+            </div>
+          )
+
           return (
             <div key={world.id} style={{ marginBottom: 10, animation: `fadeSlideUp .5s ease ${wi * 0.1}s both` }}>
               {/* World header */}
@@ -905,6 +969,4 @@ export default function AdventureMapPage() {
     </div>
   )
 }
-
-
 
