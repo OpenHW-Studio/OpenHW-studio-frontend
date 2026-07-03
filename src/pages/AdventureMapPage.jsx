@@ -432,10 +432,10 @@ export default function AdventureMapPage() {
   const totalProjects  = resolvedProjects.length
 
   const worldGroups = useMemo(() => {
-    if (!classAdventure?.worlds?.length) {
+    if (activeJourney === 'esp32' || !classAdventure?.worlds?.length) {
       return WORLDS.map(w => ({
         ...w,
-        projects: resolvedProjects.filter(p => w.slugs.includes(p.slug)).sort((a, b) => a.number - b.number),
+        projects: resolvedProjects.filter(p => w.slugs?.includes(p.slug)).sort((a, b) => a.number - b.number),
       }))
     }
     return classAdventure.worlds
