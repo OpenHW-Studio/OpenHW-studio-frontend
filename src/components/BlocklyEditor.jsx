@@ -1941,8 +1941,9 @@ function generateSketch(gen, ws) {
       } else if (FUNCTION_BLOCK_TYPES.has(b.type)) {
         extras.push(code)
       } else {
-        // All other statement blocks (loops, conditionals, actions) go inside loop()
-        loop_ += code
+        // Any block that is not a root container (setup/loop/function) is an orphaned block on the canvas.
+        // We skip generating code for orphaned blocks so floating blocks do not execute!
+        console.log('[generateSketch] Skipping orphaned block:', b.type)
       }
     } catch (err) {
       // Don't let one block break generation for others
@@ -2771,6 +2772,10 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
     })
     workspaceRef.current = ws
     setLoadStatus('ready')
+
+    if (B && typeof B.Events?.disableOrphans === 'function') {
+      ws.addChangeListener(B.Events.disableOrphans)
+    }
 
     if (xml) {
       try {
