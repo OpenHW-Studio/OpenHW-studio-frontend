@@ -862,6 +862,10 @@ export function SimulatorPage({ gamificationMode = false, returnTo = null }) {
     toggleCodeFileDisabled,
     deleteCodeFile,
   } = useEditorStore();
+  const projectFilesRef = useRef(projectFiles);
+  useEffect(() => {
+    projectFilesRef.current = projectFiles;
+  }, [projectFiles]);
   const suppressCodeSyncRef = useRef(false);
   const [isPanelOpen, setIsPanelOpen] = useState(true);
   const [panelWidth, setPanelWidth] = useState(580);
@@ -6970,7 +6974,7 @@ loadDemoProject();
     if (!autoCodingEnabled || isRunning || liveEditingDisabled) return;
 
     const hasAutocodeSnippet = (compId) =>
-      projectFiles.some((file) =>
+      projectFilesRef.current.some((file) =>
         String(file.content || "").includes(`autocoding for ${compId} start`),
       );
 
@@ -7009,7 +7013,7 @@ loadDemoProject();
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [autoCodingEnabled, components, wires, projectFiles, isRunning, liveEditingDisabled]);
+  }, [autoCodingEnabled, components, wires, isRunning, liveEditingDisabled]);
 
   const deleteWire = (id) => {
     if (isRunning || liveEditingDisabled) return;

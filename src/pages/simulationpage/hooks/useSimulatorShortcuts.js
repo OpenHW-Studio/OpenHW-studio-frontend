@@ -29,7 +29,19 @@ export function useSimulatorShortcuts({
         return;
       }
 
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      const target = e.target || document.activeElement;
+      if (target) {
+        const tag = target.tagName?.toUpperCase();
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+        if (target.isContentEditable) return;
+        if (target.closest && target.closest('.monaco-editor, .monaco-diff-editor, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, [role="textbox"], [contenteditable="true"], .right-panel-editor, .code-tab-content')) return;
+      }
+      if (document.activeElement) {
+        const activeTag = document.activeElement.tagName?.toUpperCase();
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) return;
+        if (document.activeElement.isContentEditable) return;
+        if (document.activeElement.closest && document.activeElement.closest('.monaco-editor, .monaco-diff-editor, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, [role="textbox"], [contenteditable="true"], .right-panel-editor, .code-tab-content')) return;
+      }
 
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
