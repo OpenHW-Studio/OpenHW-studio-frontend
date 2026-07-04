@@ -8394,13 +8394,14 @@ loadDemoProject();
       components: normalizedComponents,
       wires: normalizedWires,
       activeCodeFileId: activeCodeFileId || "",
-      code: useBlocklyCode ? blocklyGeneratedCode || "" : code || "",
+      code: (useBlocklyCode || codeTab === 'block') ? blocklyGeneratedCode || code || "" : code || "",
     });
   }, [
     components,
     wires,
     activeCodeFileId,
     useBlocklyCode,
+    codeTab,
     blocklyGeneratedCode,
     code,
   ]);
@@ -8436,7 +8437,7 @@ loadDemoProject();
         const projectData = {
           components: targetComponents,
           connections: targetWires,
-          code: useBlocklyCode ? blocklyGeneratedCode : code || "",
+          code: (useBlocklyCode || codeTab === 'block') ? blocklyGeneratedCode || code || "" : code || "",
           activeCodeFileId,
         };
 
