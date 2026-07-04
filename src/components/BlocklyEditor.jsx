@@ -3444,26 +3444,6 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
             </svg>
           </button>
         </div>
-
-        <button
-          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px', marginLeft: 'auto', flexShrink: 0 }}
-          onClick={() => importFileRef.current?.click()}
-        >Import</button>
-
-        <button
-          style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px', flexShrink: 0 }}
-          onClick={handleExportPng}
-        >Export</button>
-
-        <input
-          ref={importFileRef}
-          type="file"
-          accept="image/png"
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            if (e.target.files?.[0]) handleImportPng(e.target.files[0])
-          }}
-        />
       </div>
 
       {/* ── Body ── */}
