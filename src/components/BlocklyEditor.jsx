@@ -3446,24 +3446,6 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
         </div>
 
         <button
-          style={{
-            ...BTN,
-            borderColor: useBlocklyCode ? 'var(--green)' : tok.border,
-            color: useBlocklyCode ? 'var(--green)' : tok.textMuted,
-            display: 'flex', alignItems: 'center', gap: 6,
-            fontWeight: isMobile ? 800 : 700,
-            marginLeft: isMobile ? 4 : 8,
-            padding: isMobile ? '4px 8px' : '3px 10px',
-            fontSize: isMobile ? 10 : 11
-          }}
-          onClick={onToggleUseBlocklyCode}
-          title={useBlocklyCode ? "System is using Blocks" : "System is using Code"}
-        >
-          <div style={{ width: isMobile ? 6 : 8, height: isMobile ? 6 : 8, borderRadius: '50%', background: useBlocklyCode ? 'var(--green)' : 'currentColor' }} />
-          Use Blocks
-        </button>
-
-        <button
           style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px', marginLeft: 'auto', flexShrink: 0 }}
           onClick={() => importFileRef.current?.click()}
         >Import</button>
@@ -3472,37 +3454,6 @@ export default function BlocklyEditor({ onExportCode, onChange, xml, onXmlChange
           style={{ ...BTN, borderColor: tok.border, color: tok.textMuted, fontSize: 10, padding: '4px 8px', flexShrink: 0 }}
           onClick={handleExportPng}
         >Export</button>
-
-        <div style={{ width: 1, height: 16, background: tok.border, margin: '0 2px' }} />
-
-        <button
-          style={{
-            ...BTN,
-            borderColor: showCode ? 'var(--accent)' : tok.border,
-            color: showCode ? 'var(--accent)' : tok.textMuted,
-            background: showCode ? 'rgba(0,255,255,0.05)' : 'transparent',
-            fontSize: isMobile ? 10 : 11,
-            padding: isMobile ? '4px 8px' : '3px 10px',
-            marginRight: isMobile ? 2 : 0,
-            flexShrink: 0,
-          }}
-          onClick={() => setShowCode(v => !v)}
-        >Preview</button>
-
-        <button
-          style={{
-            ...BTN,
-            background: 'var(--accent)',
-            borderColor: 'var(--accent)',
-            color: '#000',
-            fontWeight: 800,
-            fontSize: isMobile ? 11 : 11,
-            padding: isMobile ? '5px 12px' : '3px 10px',
-            boxShadow: isMobile ? '0 2px 8px rgba(0,255,255,0.2)' : 'none',
-            flexShrink: 0,
-          }}
-          onClick={handleExport} disabled={loadStatus !== 'ready'}
-        >Use Code</button>
 
         <input
           ref={importFileRef}
