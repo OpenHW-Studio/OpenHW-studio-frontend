@@ -34,22 +34,22 @@ export function useSimulatorShortcuts({
         const tag = target.tagName?.toUpperCase();
         if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
         if (target.isContentEditable) return;
-        if (target.closest && target.closest('.monaco-editor, .monaco-diff-editor, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, [role="textbox"], [contenteditable="true"], .right-panel-editor, .code-tab-content')) return;
+        if (target.closest && target.closest('.monaco-editor, .monaco-diff-editor, .monaco-editor-background, .right-panel-editor, .code-tab-content, .injectionDiv, .blocklySvg, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, .blocklyFlyout, .blocklyToolboxDiv, [class*="blockly"], [class*="monaco"], [role="textbox"], [contenteditable="true"]')) return;
       }
       if (document.activeElement) {
         const activeTag = document.activeElement.tagName?.toUpperCase();
         if (['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag)) return;
         if (document.activeElement.isContentEditable) return;
-        if (document.activeElement.closest && document.activeElement.closest('.monaco-editor, .monaco-diff-editor, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, [role="textbox"], [contenteditable="true"], .right-panel-editor, .code-tab-content')) return;
+        if (document.activeElement.closest && document.activeElement.closest('.monaco-editor, .monaco-diff-editor, .monaco-editor-background, .right-panel-editor, .code-tab-content, .injectionDiv, .blocklySvg, .blocklyWorkspace, .blocklyWidgetDiv, .blocklyTooltipDiv, .blocklyFlyout, .blocklyToolboxDiv, [class*="blockly"], [class*="monaco"], [role="textbox"], [contenteditable="true"]')) return;
+      }
+
+      // When Blocks tab is active and panel is open, ALL shortcuts (Delete, Backspace, Undo, Redo) belong to Blockly!
+      if (isPanelOpen && codeTab === 'block') {
+        return;
       }
 
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
-
-      // Blocks tab uses Blockly's own undo stack — do not touch the circuit history.
-      if (isPanelOpen && codeTab === 'block') {
-        if (mod && (key === 'z' || key === 'y')) return;
-      }
 
       // Undo/Redo (circuit canvas only)
       if (mod && key === 'z' && !e.shiftKey) {
