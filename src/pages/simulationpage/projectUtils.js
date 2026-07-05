@@ -39,11 +39,11 @@ export function calculateProjectPlanApplication(plan, currentComponents, current
   const nextComponents = JSON.parse(JSON.stringify(currentComponents));
   let nextWires = JSON.parse(JSON.stringify(currentWires));
 
-  // 1. Remove components if requested (by ID)
+  // 1. Remove components if requested (by ID) - GUARANTEE PRESERVATION OF PHYSICAL COMPONENTS:
+  // As per user policy: All physical components (including resistors, LEDs, boards, etc.) placed on the canvas 
+  // must never be removed by automated synchronization plans without explicit user deletion.
   let finalComponents = nextComponents;
-  if (removedComponents.length > 0) {
-    finalComponents = nextComponents.filter(c => !removedComponents.includes(c.id));
-  }
+  // We explicitly ignore removedComponents so that existing canvas components are preserved.
 
   // 2. Remove wires (by ID or Pin matching)
   if (removedWires.length > 0) {
